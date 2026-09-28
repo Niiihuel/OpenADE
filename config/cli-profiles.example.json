@@ -1,0 +1,10 @@
+[
+  {
+    "id": "my-agent",
+    "label": "Mi agente",
+    "executable": "my-agent",
+    "args": ["--non-interactive"],
+    "env": {},
+    "prompt_transport": "stdin"
+  }
+]

@@ -1,0 +1,1760 @@
+//! Composable, controlled controls built from the same backend-neutral tree.
+//! State such as the selected tab or whether a menu is open belongs to the
+//! caller; stable action IDs let [`crate::UiTree`] retain focus and hover while
+//! these controls are rebuilt on every frame.
+
+use crate::{
+    Color, Element, FontFamily, Icon, Point, PopoverPlacement, ScrollArea, TooltipPlacement,
+    TooltipStyle, ICON_SIZE,
+};
+
+/// A component can render to an ordinary [`Element`] and be used anywhere in
+/// the tree. App-specific views and generic controls follow the same contract.
+pub trait Component {
+    fn render(self) -> Element;
+}
+
+/// A small, viewport-aware hint anchored to an existing focusable control.
+/// It appears after a short hover delay or immediately with keyboard focus,
+/// without adding layout size or stealing pointer/keyboard input.
+pub struct Tooltip {
+    anchor: Element,
+    anchor_id: String,
+    title: String,
+    shortcut: Option<String>,
+    placement: TooltipPlacement,
+    palette: ComponentPalette,
+}
+
+impl Tooltip {
+    pub fn new(
+        anchor: Element,
+        anchor_id: impl Into<String>,
+        title: impl Into<String>,
+        palette: ComponentPalette,
+    ) -> Self {
+        Self {
+            anchor,
+            anchor_id: anchor_id.into(),
+            title: title.into(),
+            shortcut: None,
+            placement: TooltipPlacement::Above,
+            palette,
+        }
+    }
+
+    pub fn shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.shortcut = Some(shortcut.into());
+        self
+    }
+
+    pub fn placement(mut self, placement: TooltipPlacement) -> Self {
+        self.placement = placement;
+        self
+    }
+}
+
+impl Component for Tooltip {
+    fn render(self) -> Element {
+        Element::tooltip(
+            self.anchor,
+            self.anchor_id,
+            self.title,
+            self.shortcut,
+            self.placement,
+            TooltipStyle {
+                background: self.palette.raised,
+                border: self.palette.border,
+                keycap: self.palette.selected,
+                text: self.palette.text,
+                muted: self.palette.muted,
+                shadow: self.palette.shadow,
+            },
+        )
+    }
+}
+
+/// Shared control heights in logical pixels.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControlSize {
+    Dense,
+    Compact,
+    Regular,
+    Spacious,
+}
+
+impl ControlSize {
+    pub const fn height(self) -> f32 {
+        match self {
+            Self::Dense => 24.0,
+            Self::Compact => 28.0,
+            Self::Regular => 32.0,
+            Self::Spacious => 36.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ControlState {
+    #[default]
+    Enabled,
+    Disabled,
+}
+
+/// Semantic colors shared by tabs, dropdowns, and floating surfaces.
+#[derive(Clone, Copy, Debug)]
+pub struct ComponentPalette {
+    pub surface: Color,
+    pub raised: Color,
+    pub hover: Color,
+    pub selected: Color,
+    pub border: Color,
+    pub text: Color,
+    pub muted: Color,
+    pub shadow: Color,
+}
+
+impl ComponentPalette {
+    pub const fn neutral_dark() -> Self {
+        Self {
+            surface: Color::rgb(24, 24, 24),
+            raised: Color::rgb(38, 38, 38),
+            hover: Color::rgb(48, 48, 48),
+            selected: Color::rgb(58, 58, 58),
+            border: Color::rgb(63, 63, 63),
+            text: Color::rgb(225, 225, 225),
+            muted: Color::rgb(153, 153, 153),
+            shadow: Color::rgba(0, 0, 0, 100),
+        }
+    }
+}
+
+/// Paint treatment for an action. All variants use the same geometry for a
+/// given [`ControlSize`]; the visual state only changes color and border.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ButtonVariant {
+    /// A toolbar action without a persistent fill.
+    #[default]
+    Ghost,
+    /// A navigation row on its parent surface.
+    Subtle,
+    /// A control raised above its parent surface.
+    Raised,
+    /// An outlined control on its parent surface.
+    Outline,
+    /// A prominent, neutral action.
+    Solid,
+}
+
+/// A semantic action with one stable ID. Selection and availability belong to
+/// the caller, while hover/press/focus are retained by [`crate::UiTree`].
+pub struct Button {
+    action_id: String,
+    label: String,
+    icon: Option<Icon>,
+    trailing_icon: Option<Icon>,
+    variant: ButtonVariant,
+    size: ControlSize,
+    width: Option<f32>,
+    active: bool,
+    state: ControlState,
+    hover_ink: Option<Color>,
+    pressed_ink: Option<Color>,
+    palette: ComponentPalette,
+}
+
+impl Button {
+    pub fn new(
+        action_id: impl Into<String>,
+        label: impl Into<String>,
+        palette: ComponentPalette,
+    ) -> Self {
+        Self {
+            action_id: action_id.into(),
+            label: label.into(),
+            icon: None,
+            trailing_icon: None,
+            variant: ButtonVariant::default(),
+            size: ControlSize::Regular,
+            width: None,
+            active: false,
+            state: ControlState::Enabled,
+            hover_ink: None,
+            pressed_ink: None,
+            palette,
+        }
+    }
+
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn trailing_icon(mut self, icon: Icon) -> Self {
+        self.trailing_icon = Some(icon);
+        self
+    }
+
+    pub fn variant(mut self, variant: ButtonVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        if width.is_finite() {
+            self.width = Some(width.max(0.0));
+        }
+        self
+    }
+
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.state = ControlState::Disabled;
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.state = if enabled {
+            ControlState::Enabled
+        } else {
+            ControlState::Disabled
+        };
+        self
+    }
+
+    pub fn hover_ink(mut self, color: Color) -> Self {
+        self.hover_ink = Some(color);
+        self
+    }
+
+    pub fn pressed_ink(mut self, color: Color) -> Self {
+        self.pressed_ink = Some(color);
+        self
+    }
+
+    fn colors(&self) -> (Color, Color, Color, Color, bool) {
+        let palette = self.palette;
+        let base = match self.variant {
+            ButtonVariant::Ghost => Color::TRANSPARENT,
+            ButtonVariant::Subtle | ButtonVariant::Outline => palette.surface,
+            ButtonVariant::Raised => palette.raised,
+            ButtonVariant::Solid => palette.selected,
+        };
+        let selected = lighter(palette.selected, 10);
+        let (base, hover, pressed) = if self.active {
+            (palette.selected, selected, lighter(palette.selected, 18))
+        } else if self.variant == ButtonVariant::Solid {
+            (base, selected, lighter(palette.selected, 18))
+        } else {
+            (base, palette.hover, palette.selected)
+        };
+        let ink = if self.state == ControlState::Disabled {
+            palette.muted
+        } else {
+            palette.text
+        };
+        (
+            base,
+            hover,
+            pressed,
+            ink,
+            self.variant == ButtonVariant::Outline,
+        )
+    }
+
+    fn padding(&self) -> f32 {
+        // Icon-only controls are squares with a canonical 16 px visual glyph.
+        // The same inset also gives text controls a stable 4 px rhythm.
+        ((self.size.height() - ICON_SIZE) / 2.0).max(4.0)
+    }
+}
+
+impl Component for Button {
+    fn render(self) -> Element {
+        let (base, hover, pressed, ink, outline) = self.colors();
+        let padding = self.padding();
+        let icon_only = self.icon.is_some() && self.label.is_empty();
+        let width = self.width.or(icon_only.then_some(self.size.height()));
+        let height = self.size.height();
+        let radius = match self.size {
+            ControlSize::Dense | ControlSize::Compact => 6.0,
+            ControlSize::Regular => 7.0,
+            ControlSize::Spacious => 8.0,
+        };
+
+        if self.state == ControlState::Disabled {
+            // The engine's Button element always registers a hit target. A
+            // disabled action is instead ordinary painted content: it remains
+            // visible, but cannot be focused or activated by any input path.
+            let has_label = !self.label.is_empty();
+            let icon_space = if self.icon.is_some() {
+                ICON_SIZE + 6.0
+            } else {
+                0.0
+            };
+            let trailing_space = if self.trailing_icon.is_some() {
+                ICON_SIZE + 6.0
+            } else {
+                0.0
+            };
+            let label_width =
+                width.map(|value| (value - padding * 2.0 - icon_space - trailing_space).max(0.0));
+            let label = Element::truncated_text(self.label)
+                .foreground(ink)
+                .font_family(FontFamily::Sans)
+                .font_size(13.0)
+                .size(label_width, Some((height - padding * 2.0).max(0.0)));
+            let visual = if let Some(icon) = self.icon {
+                let mut children = vec![Element::icon(icon).foreground(ink)];
+                if has_label {
+                    children.push(label);
+                }
+                if let Some(trailing) = self.trailing_icon {
+                    children.push(Element::icon(trailing).foreground(ink));
+                }
+                Element::row(children).gap(6.0)
+            } else {
+                label
+            };
+            let mut element = Element::panel(visual)
+                .padding(padding)
+                .background(base)
+                .radius(radius)
+                .size(width, Some(height));
+            if outline {
+                element = element.border(self.palette.border, 1.0);
+            }
+            return element;
+        }
+
+        let mut element = if let Some(icon) = self.icon {
+            Element::icon_button(self.action_id, icon, self.label)
+        } else {
+            Element::button(self.action_id, self.label)
+        };
+        if let Some(trailing) = self.trailing_icon {
+            element = element.trailing_icon(trailing);
+        }
+        element = element
+            .background(base)
+            .hover_background(hover)
+            .pressed_background(pressed)
+            .hover_foreground(self.hover_ink.unwrap_or(ink))
+            .pressed_foreground(self.pressed_ink.or(self.hover_ink).unwrap_or(ink))
+            .transition_ms(120)
+            .foreground(ink)
+            .font_family(FontFamily::Sans)
+            .font_size(13.0)
+            .padding(padding)
+            .gap(6.0)
+            .radius(radius)
+            .size(width, Some(height));
+        if outline {
+            element = element.border(self.palette.border, 1.0);
+        }
+        element
+    }
+}
+
+/// A button whose leading icon is mandatory. Without a label it uses a square
+/// hit target, while the glyph remains 16 logical pixels at every density.
+pub struct IconButton(Button);
+
+impl IconButton {
+    pub fn new(action_id: impl Into<String>, icon: Icon, palette: ComponentPalette) -> Self {
+        Self(Button::new(action_id, "", palette).icon(icon))
+    }
+
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.0.label = label.into();
+        self
+    }
+
+    pub fn trailing_icon(mut self, icon: Icon) -> Self {
+        self.0.trailing_icon = Some(icon);
+        self
+    }
+
+    pub fn variant(mut self, variant: ButtonVariant) -> Self {
+        self.0.variant = variant;
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.0.size = size;
+        self
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        self.0 = self.0.width(width);
+        self
+    }
+
+    pub fn active(mut self, active: bool) -> Self {
+        self.0.active = active;
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.0.state = ControlState::Disabled;
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.0 = self.0.enabled(enabled);
+        self
+    }
+
+    pub fn hover_ink(mut self, color: Color) -> Self {
+        self.0.hover_ink = Some(color);
+        self
+    }
+}
+
+impl Component for IconButton {
+    fn render(self) -> Element {
+        self.0.render()
+    }
+}
+
+/// An editable search control. Its magnifier, text, caret, selection and
+/// focus border all live in the same hit box, so pointer and keyboard focus
+/// cannot disagree about the field's bounds. The host owns the query and
+/// handles `UiAction::InputChanged` for `id`.
+pub struct SearchField {
+    id: String,
+    value: String,
+    placeholder: String,
+    palette: ComponentPalette,
+    size: ControlSize,
+    width: Option<f32>,
+    state: ControlState,
+}
+
+impl SearchField {
+    pub fn new(
+        id: impl Into<String>,
+        value: impl Into<String>,
+        placeholder: impl Into<String>,
+        palette: ComponentPalette,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            value: value.into(),
+            placeholder: placeholder.into(),
+            palette,
+            size: ControlSize::Spacious,
+            width: None,
+            state: ControlState::Enabled,
+        }
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        if width.is_finite() {
+            self.width = Some(width.max(0.0));
+        }
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.state = ControlState::Disabled;
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.state = if enabled {
+            ControlState::Enabled
+        } else {
+            ControlState::Disabled
+        };
+        self
+    }
+}
+
+impl Component for SearchField {
+    fn render(self) -> Element {
+        let height = self.size.height().max(28.0);
+        let radius = if height >= 36.0 { 10.0 } else { 8.0 };
+        let surface = self.palette.raised;
+        if self.state == ControlState::Disabled {
+            let (value, ink) = if self.value.is_empty() {
+                (self.placeholder, self.palette.muted)
+            } else {
+                (self.value, self.palette.muted)
+            };
+            return Element::panel(
+                Element::row(vec![
+                    Element::icon(Icon::Search)
+                        .foreground(self.palette.muted)
+                        .size(Some(ICON_SIZE), Some(ICON_SIZE)),
+                    Element::truncated_text(value)
+                        .foreground(ink)
+                        .font_family(FontFamily::Sans)
+                        .font_size(13.0)
+                        .flex(1.0),
+                ])
+                .gap(8.0),
+            )
+            .background(surface)
+            .border(self.palette.border, 1.0)
+            .radius(radius)
+            .padding(8.0)
+            .size(self.width, Some(height));
+        }
+        Element::text_input(self.id, self.value, self.placeholder)
+            .leading_icon(Icon::Search)
+            .leading_icon_tint(self.palette.muted)
+            .background(surface)
+            .hover_background(lighter(surface, 5))
+            .border(self.palette.border, 1.0)
+            .focus_border(lighter(self.palette.border, 70), 1.5)
+            .foreground(self.palette.text)
+            .font_family(FontFamily::Sans)
+            .font_size(13.0)
+            .padding(8.0)
+            .radius(radius)
+            .min_size(80.0, height)
+            .size(self.width, Some(height))
+    }
+}
+
+/// A caller-controlled switch with a single focusable target. The thumb is
+/// painted inside its track and moves only when the caller passes a new
+/// `checked` value after receiving `UiAction::Clicked`.
+pub struct Switch {
+    action_id: String,
+    checked: bool,
+    state: ControlState,
+    palette: ComponentPalette,
+}
+
+impl Switch {
+    pub fn new(action_id: impl Into<String>, checked: bool, palette: ComponentPalette) -> Self {
+        Self {
+            action_id: action_id.into(),
+            checked,
+            state: ControlState::Enabled,
+            palette,
+        }
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.state = ControlState::Disabled;
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.state = if enabled {
+            ControlState::Enabled
+        } else {
+            ControlState::Disabled
+        };
+        self
+    }
+}
+
+impl Component for Switch {
+    fn render(self) -> Element {
+        const TRACK_WIDTH: f32 = 36.0;
+        const TRACK_HEIGHT: f32 = 20.0;
+        const THUMB: f32 = 14.0;
+        let thumb_color = if self.checked {
+            self.palette.surface
+        } else {
+            self.palette.text
+        };
+        let track_color = if self.checked {
+            self.palette.text
+        } else {
+            self.palette.selected
+        };
+        let thumb = Element::spacer()
+            .size(Some(THUMB), Some(THUMB))
+            .background(thumb_color)
+            .radius(THUMB / 2.0);
+        let offset = Element::spacer().size(Some(TRACK_WIDTH - THUMB - 6.0), Some(THUMB));
+        let contents = if self.checked {
+            Element::row(vec![offset, thumb])
+        } else {
+            Element::row(vec![thumb, offset])
+        };
+        let enabled = self.state == ControlState::Enabled;
+        let track = if enabled {
+            Element::clickable(self.action_id, contents)
+                .hover_background(lighter(track_color, 10))
+                .pressed_background(lighter(track_color, 16))
+                .transition_ms(120)
+        } else {
+            Element::panel(contents)
+        };
+        track
+            .background(track_color)
+            .padding(3.0)
+            .radius(TRACK_HEIGHT / 2.0)
+            .size(Some(TRACK_WIDTH), Some(TRACK_HEIGHT))
+    }
+}
+
+fn lighter(color: Color, amount: u8) -> Color {
+    Color::rgba(
+        color.r.saturating_add(amount),
+        color.g.saturating_add(amount),
+        color.b.saturating_add(amount),
+        color.a,
+    )
+}
+
+/// One selectable tab. `action_id` is a stable ID handled by the host's
+/// `UiAction::Clicked`; it can represent any domain value (file, view, task).
+pub struct Tab {
+    pub action_id: String,
+    pub label: String,
+    pub icon: Option<Icon>,
+    pub active: bool,
+    pub width: f32,
+    pub state: ControlState,
+}
+
+impl Tab {
+    pub fn new(action_id: impl Into<String>, label: impl Into<String>, width: f32) -> Self {
+        Self {
+            action_id: action_id.into(),
+            label: label.into(),
+            icon: None,
+            active: false,
+            width: width.max(40.0),
+            state: ControlState::Enabled,
+        }
+    }
+
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.state = ControlState::Disabled;
+        self
+    }
+}
+
+/// A compact tab strip. It owns appearance, while the host owns navigation.
+pub struct Tabs {
+    pub items: Vec<Tab>,
+    pub palette: ComponentPalette,
+    pub height: f32,
+    pub gap: f32,
+    pub id: Option<String>,
+    pub animation_ms: u16,
+}
+
+impl Tabs {
+    pub fn new(items: Vec<Tab>, palette: ComponentPalette) -> Self {
+        Self {
+            items,
+            palette,
+            height: ControlSize::Compact.height(),
+            gap: 3.0,
+            id: None,
+            animation_ms: 170,
+        }
+    }
+
+    /// A stable ID for the strip's selection animation. Useful when tabs are
+    /// dynamically inserted, removed, or reordered.
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    pub fn animation_ms(mut self, duration: u16) -> Self {
+        self.animation_ms = duration;
+        self
+    }
+
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = height.max(24.0);
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.height = size.height();
+        self
+    }
+}
+
+impl Component for Tabs {
+    fn render(self) -> Element {
+        let selected_id = self
+            .items
+            .iter()
+            .find(|item| item.active && item.state == ControlState::Enabled)
+            .map(|item| item.action_id.clone());
+        let enabled_ids = self
+            .items
+            .iter()
+            .filter(|item| item.state == ControlState::Enabled)
+            .map(|item| item.action_id.clone())
+            .collect();
+        let group_id = self.id.unwrap_or_else(|| {
+            self.items
+                .first()
+                .map(|item| format!("tabs:{}", item.action_id))
+                .unwrap_or_else(|| "tabs:empty".to_owned())
+        });
+        let items = self
+            .items
+            .into_iter()
+            .map(|item| {
+                let ink = if item.active {
+                    self.palette.text
+                } else {
+                    self.palette.muted
+                };
+                // The shared indicator paints below the controls and moves
+                // between them. Individual surfaces stay transparent so they
+                // cannot hide its intermediate position.
+                let fill = Color::TRANSPARENT;
+                // A tab is a text treatment above the shared selection
+                // indicator. Hover changes ink only; another fill would
+                // obscure the sliding indicator and make the track look
+                // uneven. The active tab retains its selected surface.
+                let hover_ink = if item.active {
+                    lighter(self.palette.text, 12)
+                } else {
+                    self.palette.text
+                };
+                if item.state == ControlState::Disabled {
+                    let label = Element::text(item.label)
+                        .foreground(self.palette.muted)
+                        .font_family(FontFamily::Sans)
+                        .font_size(12.0);
+                    let visual = if let Some(icon) = item.icon {
+                        Element::row(vec![
+                            Element::icon(icon).foreground(self.palette.muted),
+                            label,
+                        ])
+                        .gap(5.0)
+                    } else {
+                        label
+                    };
+                    return visual
+                        .padding(5.0)
+                        .background(Color::TRANSPARENT)
+                        .radius(7.0)
+                        .size(Some(item.width), Some(self.height));
+                }
+                let button = if let Some(icon) = item.icon {
+                    Element::icon_button(item.action_id, icon, item.label)
+                } else {
+                    Element::button(item.action_id, item.label)
+                };
+                button
+                    .background(fill)
+                    .hover_foreground(hover_ink)
+                    .pressed_foreground(hover_ink)
+                    .foreground(ink)
+                    .font_family(FontFamily::Sans)
+                    .font_size(12.0)
+                    .padding(5.0)
+                    .gap(5.0)
+                    .radius(7.0)
+                    .size(Some(item.width), Some(self.height))
+            })
+            .collect();
+        let strip = Element::tab_strip(items, enabled_ids).gap(self.gap);
+        if let Some(selected_id) = selected_id {
+            strip.tab_selection(
+                group_id,
+                selected_id,
+                self.palette.selected,
+                7.0,
+                self.animation_ms,
+            )
+        } else {
+            strip
+        }
+    }
+}
+
+/// Tabs in one rounded track. Each item remains a normal tab action, so the
+/// existing keyboard navigation and focus model also applies to segmented
+/// selectors. The caller controls the selected item and every visual color.
+pub struct SegmentedControl {
+    items: Vec<Tab>,
+    palette: ComponentPalette,
+    height: f32,
+}
+
+impl SegmentedControl {
+    pub fn new(items: Vec<Tab>, palette: ComponentPalette) -> Self {
+        Self {
+            items,
+            palette,
+            height: 28.0,
+        }
+    }
+
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = height.max(28.0);
+        self
+    }
+}
+
+impl Component for SegmentedControl {
+    fn render(self) -> Element {
+        let inner_width = self.items.iter().map(|item| item.width).sum::<f32>();
+        let inner = Tabs::new(self.items, self.palette)
+            .height(self.height - 4.0)
+            .render()
+            .gap(0.0);
+        Element::panel(inner)
+            .padding(2.0)
+            .background(self.palette.surface)
+            // The track follows the selected tab's 7 px corners plus its 2 px
+            // inset. A pill-shaped track makes the two layers disagree.
+            .radius(9.0)
+            .size(Some(inner_width + 4.0), Some(self.height))
+    }
+}
+
+/// A floating slot anchored to any element. The child may itself be a
+/// dropdown, command list, form, or another application-specific component.
+/// While open, Tab stays among visible controls in the floating surface;
+/// Escape or backdrop dismissal returns focus to the first focusable anchor.
+pub struct Popover {
+    pub anchor: Element,
+    pub content: Element,
+    pub open: bool,
+    pub dismiss_id: String,
+    pub placement: PopoverPlacement,
+    pub width: f32,
+    pub palette: ComponentPalette,
+    pub animation_ms: u16,
+}
+
+impl Popover {
+    pub fn new(
+        anchor: Element,
+        content: Element,
+        open: bool,
+        dismiss_id: impl Into<String>,
+        palette: ComponentPalette,
+    ) -> Self {
+        Self {
+            anchor,
+            content,
+            open,
+            dismiss_id: dismiss_id.into(),
+            placement: PopoverPlacement::BottomStart,
+            width: 240.0,
+            palette,
+            animation_ms: 140,
+        }
+    }
+
+    pub fn placement(mut self, placement: PopoverPlacement) -> Self {
+        self.placement = placement;
+        self
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        if width.is_finite() {
+            self.width = width.max(96.0);
+        }
+        self
+    }
+
+    pub fn animation_ms(mut self, duration: u16) -> Self {
+        self.animation_ms = duration;
+        self
+    }
+}
+
+impl Component for Popover {
+    fn render(self) -> Element {
+        if !self.open {
+            return self.anchor;
+        }
+        let floating = Element::panel(self.content)
+            .padding(6.0)
+            .size(Some(self.width), None)
+            .background(self.palette.raised)
+            .border(self.palette.border, 1.0)
+            .radius(10.0)
+            .shadow(self.palette.shadow, Point::new(0.0, 9.0), 22.0, 0.0);
+        Element::popover(self.anchor, floating, self.dismiss_id, self.placement)
+            .popover_animation_ms(self.animation_ms)
+    }
+}
+
+/// One option in a dropdown list; its ID is the host action to execute.
+pub struct DropdownOption {
+    pub action_id: String,
+    pub label: String,
+    pub icon: Option<Icon>,
+    pub selected: bool,
+    pub state: ControlState,
+}
+
+impl DropdownOption {
+    pub fn new(action_id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            action_id: action_id.into(),
+            label: label.into(),
+            icon: None,
+            selected: false,
+            state: ControlState::Enabled,
+        }
+    }
+
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.state = ControlState::Disabled;
+        self
+    }
+}
+
+/// A dropdown with caller-owned selection/open state and stable action IDs.
+/// The anchor is a slot, so callers can supply an icon button, field, or any
+/// other visual trigger without changing the list behavior. Arrow keys,
+/// Home/End and Tab move through enabled options and reveal offscreen rows;
+/// Enter activates the focused option. The host still owns the open state and
+/// handles the resulting ID.
+pub struct DropdownList {
+    pub anchor: Element,
+    pub options: Vec<DropdownOption>,
+    pub open: bool,
+    pub dismiss_id: String,
+    pub width: f32,
+    pub placement: PopoverPlacement,
+    pub palette: ComponentPalette,
+}
+
+impl DropdownList {
+    pub fn new(
+        anchor: Element,
+        options: Vec<DropdownOption>,
+        open: bool,
+        dismiss_id: impl Into<String>,
+        palette: ComponentPalette,
+    ) -> Self {
+        Self {
+            anchor,
+            options,
+            open,
+            dismiss_id: dismiss_id.into(),
+            width: 240.0,
+            placement: PopoverPlacement::BottomStart,
+            palette,
+        }
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        if width.is_finite() {
+            self.width = width.max(96.0);
+        }
+        self
+    }
+
+    pub fn placement(mut self, placement: PopoverPlacement) -> Self {
+        self.placement = placement;
+        self
+    }
+}
+
+impl Component for DropdownList {
+    fn render(self) -> Element {
+        if !self.open {
+            return self.anchor;
+        }
+        let width = self.width;
+        let palette = self.palette;
+        let count = self.options.len();
+        let reserve_icon = self.options.iter().any(|option| option.icon.is_some());
+        let reserve_check = self.options.iter().any(|option| option.selected);
+        let dismiss_id = self.dismiss_id;
+        let options = self
+            .options
+            .into_iter()
+            .map(|option| {
+                let enabled = option.state == ControlState::Enabled;
+                let mut children = Vec::with_capacity(4);
+                if reserve_icon {
+                    children.push(
+                        if let Some(icon) = option.icon {
+                            Element::icon(icon).foreground(palette.muted)
+                        } else {
+                            Element::spacer()
+                        }
+                        .size(Some(ICON_SIZE), Some(18.0)),
+                    );
+                }
+                children.push(
+                    Element::truncated_text(option.label)
+                        .foreground(if enabled { palette.text } else { palette.muted })
+                        .font_family(FontFamily::Sans)
+                        .font_size(13.0)
+                        .flex(1.0)
+                        .size(None, Some(18.0)),
+                );
+                if reserve_check {
+                    children.push(
+                        if option.selected {
+                            Element::icon(Icon::Check).foreground(palette.text)
+                        } else {
+                            Element::spacer()
+                        }
+                        .size(Some(ICON_SIZE), Some(18.0)),
+                    );
+                }
+                let visual = Element::row(children).gap(9.0);
+                let fill = if option.selected {
+                    palette.selected
+                } else {
+                    palette.raised
+                };
+                let row = if enabled {
+                    Element::clickable(option.action_id, visual)
+                } else {
+                    Element::panel(visual)
+                };
+                row.background(fill)
+                    .hover_background(if option.selected {
+                        lighter(fill, 8)
+                    } else {
+                        palette.hover
+                    })
+                    .pressed_background(if option.selected {
+                        lighter(fill, 14)
+                    } else {
+                        palette.selected
+                    })
+                    .padding(9.0)
+                    .radius(7.0)
+                    .size(Some(width - 12.0), Some(ControlSize::Spacious.height()))
+            })
+            .collect();
+        let list = Element::column(options).gap(2.0);
+        let content = if count > 8 {
+            ScrollArea::new(format!("{dismiss_id}:options"), list)
+                .tint(palette.muted)
+                .render()
+                .size(Some(width - 12.0), Some(8.0 * 38.0 - 2.0))
+        } else {
+            list
+        };
+        Popover::new(self.anchor, content, true, dismiss_id, palette)
+            .width(width)
+            .placement(self.placement)
+            .render()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DrawCommand, ElementKind, Point, Size, UiAction, UiEvent, UiTree};
+
+    #[test]
+    fn semantic_button_preserves_one_action_for_both_icons() {
+        let palette = ComponentPalette::neutral_dark();
+        let button = Button::new("backend:codex", "Codex", palette)
+            .icon(Icon::Code)
+            .trailing_icon(Icon::ArrowDown)
+            .variant(ButtonVariant::Raised)
+            .width(180.0)
+            .render();
+        let mut tree = UiTree::new(button);
+        let frame = tree.layout(Size::new(180.0, 32.0));
+        assert_eq!(frame.regions.len(), 1);
+        assert_eq!(frame.regions[0].id, "backend:codex");
+        assert_eq!(frame.regions[0].rect.width, 180.0);
+        assert_eq!(
+            frame.hit_test(Point::new(172.0, 16.0)),
+            Some("backend:codex")
+        );
+        tree.handle_event(UiEvent::PointerDown(Point::new(172.0, 16.0)));
+        assert_eq!(
+            tree.handle_event(UiEvent::PointerUp(Point::new(172.0, 16.0))),
+            vec![UiAction::Clicked {
+                id: "backend:codex".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn disabled_button_keeps_its_box_but_has_no_action() {
+        let palette = ComponentPalette::neutral_dark();
+        let enabled = IconButton::new("new", Icon::Add, palette)
+            .label("Nueva tarea")
+            .variant(ButtonVariant::Raised)
+            .width(168.0)
+            .render();
+        let disabled = IconButton::new("new", Icon::Add, palette)
+            .label("Nueva tarea")
+            .variant(ButtonVariant::Raised)
+            .width(168.0)
+            .disabled()
+            .render();
+        let enabled_frame = UiTree::new(enabled).layout(Size::new(168.0, 32.0));
+        let disabled_frame = UiTree::new(disabled).layout(Size::new(168.0, 32.0));
+        assert_eq!(enabled_frame.regions[0].rect.width, 168.0);
+        assert_eq!(enabled_frame.regions[0].rect.height, 32.0);
+        assert!(disabled_frame.regions.is_empty());
+        assert!(disabled_frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::FillRect { rect, color, .. }
+                if rect.width == 168.0 && rect.height == 32.0 && *color == palette.raised
+        )));
+        assert!(disabled_frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Icon { tint, .. } if *tint == palette.muted
+        )));
+    }
+
+    #[test]
+    fn disabled_intrinsic_width_matches_enabled_width() {
+        let palette = ComponentPalette::neutral_dark();
+        let enabled = Button::new("save", "Guardar", palette)
+            .variant(ButtonVariant::Raised)
+            .render();
+        let disabled = Button::new("save", "Guardar", palette)
+            .variant(ButtonVariant::Raised)
+            .disabled()
+            .render();
+        let enabled_frame = UiTree::new(enabled).layout(Size::new(300.0, 32.0));
+        let disabled_frame = UiTree::new(disabled).layout(Size::new(300.0, 32.0));
+        let enabled_width = enabled_frame.regions[0].rect.width;
+        let painted_width = disabled_frame.commands.iter().find_map(|command| {
+            if let DrawCommand::FillRect { rect, color, .. } = command {
+                (*color == palette.raised).then_some(rect.width)
+            } else {
+                None
+            }
+        });
+        assert_eq!(painted_width, Some(enabled_width));
+        assert!(disabled_frame.regions.is_empty());
+    }
+
+    #[test]
+    fn disabled_button_truncates_long_label_inside_fixed_width() {
+        let palette = ComponentPalette::neutral_dark();
+        let button = Button::new(
+            "project",
+            "Proyecto con un nombre demasiado largo para el control",
+            palette,
+        )
+        .icon(Icon::Folder)
+        .width(140.0)
+        .disabled()
+        .render();
+        let mut tree = UiTree::new(button);
+        tree.set_text_measurer(|value, _, _| value.chars().count() as f32 * 7.0);
+        let frame = tree.layout(Size::new(140.0, 32.0));
+        let label = frame.commands.iter().find_map(|command| match command {
+            DrawCommand::Text { text, position, .. } => Some((text, position.x)),
+            _ => None,
+        });
+        let (text, x) = label.expect("button label");
+        assert!(text.ends_with('…'));
+        assert!(x + text.chars().count() as f32 * 7.0 <= 140.0);
+    }
+
+    #[test]
+    fn icon_button_sizes_keep_the_same_glyph_and_hit_bounds_during_press() {
+        let palette = ComponentPalette::neutral_dark();
+        for size in [
+            ControlSize::Compact,
+            ControlSize::Regular,
+            ControlSize::Spacious,
+        ] {
+            let button = IconButton::new("settings", Icon::Settings, palette)
+                .variant(ButtonVariant::Subtle)
+                .size(size)
+                .render();
+            let extent = size.height();
+            let mut tree = UiTree::new(button);
+            tree.set_reduced_motion(true);
+            let base = tree.layout(Size::new(extent, extent));
+            let hit = base.regions[0].rect;
+            assert_eq!(hit.width, extent);
+            assert_eq!(hit.height, extent);
+            let glyph = base.commands.iter().find_map(|command| match command {
+                DrawCommand::Icon { rect, .. } => Some(*rect),
+                _ => None,
+            });
+            assert_eq!(glyph.unwrap().width, ICON_SIZE);
+            tree.handle_event(UiEvent::PointerMove(Point::new(4.0, 4.0)));
+            let hover = tree.layout(Size::new(extent, extent));
+            assert!(hover.commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::FillRect { color, .. } if *color == palette.hover
+            )));
+            tree.handle_event(UiEvent::PointerDown(Point::new(4.0, 4.0)));
+            let pressed = tree.layout(Size::new(extent, extent));
+            assert!(pressed.commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::FillRect { color, .. } if *color == palette.selected
+            )));
+            assert_eq!(base.regions, hover.regions);
+            assert_eq!(hover.regions, pressed.regions);
+        }
+    }
+
+    #[test]
+    fn active_state_changes_only_paint() {
+        let palette = ComponentPalette::neutral_dark();
+        let regular = Button::new("session", "Sesión", palette)
+            .variant(ButtonVariant::Subtle)
+            .width(140.0)
+            .render();
+        let active = Button::new("session", "Sesión", palette)
+            .variant(ButtonVariant::Subtle)
+            .width(140.0)
+            .active(true)
+            .render();
+        let regular_frame = UiTree::new(regular).layout(Size::new(140.0, 32.0));
+        let active_frame = UiTree::new(active).layout(Size::new(140.0, 32.0));
+        assert_eq!(regular_frame.regions, active_frame.regions);
+        assert!(regular_frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::FillRect { color, .. } if *color == palette.surface
+        )));
+        assert!(active_frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::FillRect { color, .. } if *color == palette.selected
+        )));
+    }
+
+    #[test]
+    fn tabs_preserve_domain_action_ids() {
+        let palette = ComponentPalette::neutral_dark();
+        let tabs = Tabs::new(
+            vec![
+                Tab::new("files", "Archivos", 100.0).icon(Icon::Folder),
+                Tab::new("sessions", "Sesiones", 100.0).active(true),
+            ],
+            palette,
+        )
+        .render();
+        let mut tree = UiTree::new(tabs);
+        let frame = tree.layout(Size::new(240.0, 40.0));
+        assert!(frame.regions.iter().any(|region| region.id == "files"));
+        assert!(frame.regions.iter().any(|region| region.id == "sessions"));
+    }
+
+    #[test]
+    fn segmented_control_keeps_the_tab_keyboard_contract_and_fixed_track() {
+        let palette = ComponentPalette::neutral_dark();
+        let segment = SegmentedControl::new(
+            vec![
+                Tab::new("group", "Grupo", 70.0).icon(Icon::Hash),
+                Tab::new("project", "Proyecto", 78.0)
+                    .icon(Icon::Folder)
+                    .active(true),
+            ],
+            palette,
+        )
+        .render();
+        assert_eq!(segment.style.radius, 9.0);
+        let mut tree = UiTree::new(segment);
+        let frame = tree.layout(Size::new(152.0, 28.0));
+        assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::FillRect { rect, color, radius }
+                if *color == palette.surface && rect.width == 152.0 && rect.height == 28.0 && *radius == 9.0
+        )));
+        assert!(tree.focus("group"));
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: crate::Key::ArrowRight,
+                shift: false,
+                ctrl: false
+            }),
+            vec![UiAction::Clicked {
+                id: "project".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn active_tab_hover_preserves_selected_treatment() {
+        let palette = ComponentPalette::neutral_dark();
+        let tabs = Tabs::new(
+            vec![
+                Tab::new("group", "Grupo", 80.0),
+                Tab::new("project", "Proyecto", 80.0).active(true),
+            ],
+            palette,
+        )
+        .render();
+        let ElementKind::TabStrip { children, .. } = tabs.kind else {
+            panic!("Tabs must render a tab strip");
+        };
+        assert_eq!(children[0].style.hover_background, None);
+        assert_eq!(children[1].style.hover_background, None);
+        assert_eq!(children[0].style.hover_foreground, Some(palette.text));
+        assert_eq!(
+            children[1].style.hover_foreground,
+            Some(lighter(palette.text, 12))
+        );
+    }
+
+    #[test]
+    fn search_field_keeps_icon_editor_and_focus_ring_in_one_hit_box() {
+        let palette = ComponentPalette::neutral_dark();
+        let mut tree = UiTree::new(
+            SearchField::new("query", "", "Buscar", palette)
+                .width(280.0)
+                .render(),
+        );
+        let frame = tree.layout(Size::new(280.0, 40.0));
+        let region = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "query")
+            .unwrap();
+        assert_eq!(region.rect.width, 280.0);
+        assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Icon { icon: Icon::Search, rect, .. }
+                if rect.x >= region.rect.x && rect.x + rect.width <= region.rect.x + region.rect.width
+        )));
+        let hit_box = region.rect;
+        assert!(tree.focus("query"));
+        let focused = tree.layout(Size::new(280.0, 40.0));
+        assert_eq!(
+            focused
+                .regions
+                .iter()
+                .find(|region| region.id == "query")
+                .unwrap()
+                .rect,
+            hit_box
+        );
+        assert!(focused.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::StrokeRect { rect, .. } if *rect == hit_box
+        )));
+    }
+
+    #[test]
+    fn switch_is_one_keyboard_and_pointer_target() {
+        let palette = ComponentPalette::neutral_dark();
+        let mut tree = UiTree::new(Switch::new("keep_awake", false, palette).render());
+        let frame = tree.layout(Size::new(36.0, 20.0));
+        assert_eq!(frame.regions.len(), 1);
+        assert_eq!(frame.regions[0].id, "keep_awake");
+        assert_eq!(frame.regions[0].rect.width, 36.0);
+        assert_eq!(frame.regions[0].rect.height, 20.0);
+        assert!(tree.focus("keep_awake"));
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: crate::Key::Enter,
+                shift: false,
+                ctrl: false,
+            }),
+            vec![UiAction::Clicked {
+                id: "keep_awake".into()
+            }]
+        );
+        tree.set_root(
+            Switch::new("keep_awake", false, palette)
+                .disabled()
+                .render(),
+        );
+        let disabled = tree.layout(Size::new(36.0, 20.0));
+        assert!(disabled.regions.is_empty());
+    }
+
+    #[test]
+    fn tab_arrows_activate_visible_enabled_tabs_and_wrap_within_their_strip() {
+        let palette = ComponentPalette::neutral_dark();
+        let tabs = Tabs::new(
+            vec![
+                Tab::new("sessions", "Sesiones", 100.0),
+                Tab::new("unavailable", "Pronto", 100.0).disabled(),
+                Tab::new("files", "Archivos", 100.0),
+            ],
+            palette,
+        )
+        .render();
+        let mut tree = UiTree::new(Element::column(vec![
+            tabs,
+            Element::button("outside", "Otro"),
+        ]));
+        tree.layout(Size::new(340.0, 100.0));
+        let key = |key| UiEvent::Key {
+            key,
+            shift: false,
+            ctrl: false,
+        };
+        assert!(tree.focus("sessions"));
+        assert!(tree
+            .handle_event(UiEvent::Key {
+                key: crate::Key::ArrowRight,
+                shift: true,
+                ctrl: false,
+            })
+            .is_empty());
+        assert_eq!(tree.focused_id(), Some("sessions"));
+        assert_eq!(
+            tree.handle_event(key(crate::Key::ArrowRight)),
+            vec![UiAction::Clicked { id: "files".into() }]
+        );
+        assert_eq!(tree.focused_id(), Some("files"));
+        assert_eq!(
+            tree.handle_event(key(crate::Key::ArrowRight)),
+            vec![UiAction::Clicked {
+                id: "sessions".into()
+            }]
+        );
+        assert_eq!(
+            tree.handle_event(key(crate::Key::ArrowLeft)),
+            vec![UiAction::Clicked { id: "files".into() }]
+        );
+        assert_eq!(
+            tree.handle_event(key(crate::Key::Home)),
+            vec![UiAction::Clicked {
+                id: "sessions".into()
+            }]
+        );
+        assert!(tree.handle_event(key(crate::Key::Home)).is_empty());
+        assert_eq!(
+            tree.handle_event(key(crate::Key::End)),
+            vec![UiAction::Clicked { id: "files".into() }]
+        );
+        assert!(!tree.focus("unavailable"));
+        assert!(tree.focus("outside"));
+        assert!(tree.handle_event(key(crate::Key::ArrowLeft)).is_empty());
+        assert_eq!(tree.focused_id(), Some("outside"));
+    }
+
+    #[test]
+    fn dropdown_uses_shared_popover_and_keeps_item_ids() {
+        let palette = ComponentPalette::neutral_dark();
+        let dropdown = DropdownList::new(
+            Element::button("trigger", "Agente").size(Some(100.0), Some(30.0)),
+            vec![
+                DropdownOption::new("backend:codex", "Codex").selected(true),
+                DropdownOption::new("backend:claude", "Claude"),
+            ],
+            true,
+            "dismiss",
+            palette,
+        )
+        .render();
+        let mut tree = UiTree::new(dropdown);
+        let frame = tree.layout(Size::new(400.0, 300.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "backend:codex"));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "backend:claude"));
+        assert_eq!(frame.hit_test(Point::new(390.0, 290.0)), Some("dismiss"));
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: crate::Key::Escape,
+                shift: false,
+                ctrl: false,
+            }),
+            vec![UiAction::Clicked {
+                id: "dismiss".into()
+            }]
+        );
+        assert_eq!(tree.focused_id(), Some("trigger"));
+    }
+
+    #[test]
+    fn selected_dropdown_option_keeps_selected_hover_color() {
+        let palette = ComponentPalette::neutral_dark();
+        let dropdown = DropdownList::new(
+            Element::button("trigger", "Agent"),
+            vec![
+                DropdownOption::new("codex", "Codex").selected(true),
+                DropdownOption::new("claude", "Claude"),
+            ],
+            true,
+            "dismiss",
+            palette,
+        )
+        .render();
+        let ElementKind::Popover { floating, .. } = dropdown.kind else {
+            panic!("open dropdown must have a popover");
+        };
+        let ElementKind::Panel(content) = floating.kind else {
+            panic!("popover must contain a panel");
+        };
+        let ElementKind::Column(options) = content.kind else {
+            panic!("short dropdown must contain an option column");
+        };
+        assert_eq!(
+            options[0].style.hover_background,
+            Some(lighter(palette.selected, 8))
+        );
+        assert_eq!(options[1].style.hover_background, Some(palette.hover));
+    }
+
+    #[test]
+    fn dropdown_rows_keep_one_hit_target_and_stable_icon_columns() {
+        let palette = ComponentPalette::neutral_dark();
+        let dropdown = DropdownList::new(
+            Element::button("trigger", "Agente").size(Some(100.0), Some(30.0)),
+            vec![
+                DropdownOption::new("codex", "Codex")
+                    .icon(Icon::Chat)
+                    .selected(true),
+                DropdownOption::new("native", "Nativo"),
+                DropdownOption::new("offline", "No instalado").disabled(),
+            ],
+            true,
+            "dismiss",
+            palette,
+        )
+        .width(180.0)
+        .render();
+        let mut tree = UiTree::new(dropdown);
+        tree.set_reduced_motion(true);
+        let frame = tree.layout(Size::new(400.0, 300.0));
+        let rows: Vec<_> = frame
+            .regions
+            .iter()
+            .filter(|region| region.id == "codex" || region.id == "native")
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].rect.width, rows[1].rect.width);
+        assert_eq!(rows[0].rect.height, 36.0);
+        assert_eq!(rows[1].rect.height, 36.0);
+        assert!(!frame.regions.iter().any(|region| region.id == "offline"));
+        assert_eq!(
+            frame
+                .commands
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    DrawCommand::Icon {
+                        icon: Icon::Check,
+                        ..
+                    }
+                ))
+                .count(),
+            1
+        );
+        tree.handle_event(UiEvent::PointerMove(Point::new(
+            rows[1].rect.x + 4.0,
+            rows[1].rect.y + 4.0,
+        )));
+        let hovered = tree.layout(Size::new(400.0, 300.0));
+        assert!(hovered.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::FillRect { rect, color, .. }
+                if *rect == rows[1].rect && *color == palette.hover
+        )));
+    }
+
+    #[test]
+    fn dropdown_keyboard_stays_in_menu_skips_disabled_and_returns_to_trigger() {
+        let palette = ComponentPalette::neutral_dark();
+        let make_dropdown = || {
+            DropdownList::new(
+                Element::button("trigger", "Agente").size(Some(100.0), Some(30.0)),
+                vec![
+                    DropdownOption::new("codex", "Codex"),
+                    DropdownOption::new("offline", "No instalado").disabled(),
+                    DropdownOption::new("claude", "Claude"),
+                ],
+                true,
+                "dismiss",
+                palette,
+            )
+            .width(170.0)
+            .render()
+        };
+        let key = |key, shift| UiEvent::Key {
+            key,
+            shift,
+            ctrl: false,
+        };
+        let mut tree = UiTree::new(make_dropdown());
+        tree.layout(Size::new(400.0, 300.0));
+        assert!(tree.focus("trigger"));
+
+        tree.handle_event(key(crate::Key::ArrowDown, false));
+        assert_eq!(tree.focused_id(), Some("codex"));
+        tree.handle_event(key(crate::Key::ArrowDown, false));
+        assert_eq!(tree.focused_id(), Some("claude"));
+        tree.handle_event(key(crate::Key::ArrowDown, false));
+        assert_eq!(tree.focused_id(), Some("codex"));
+        tree.handle_event(key(crate::Key::End, false));
+        assert_eq!(tree.focused_id(), Some("claude"));
+        tree.handle_event(key(crate::Key::Home, false));
+        assert_eq!(tree.focused_id(), Some("codex"));
+        tree.handle_event(key(crate::Key::Tab, true));
+        assert_eq!(tree.focused_id(), Some("claude"));
+        tree.handle_event(key(crate::Key::Tab, false));
+        assert_eq!(tree.focused_id(), Some("codex"));
+        assert_eq!(
+            tree.handle_event(key(crate::Key::Enter, false)),
+            vec![UiAction::Clicked { id: "codex".into() }]
+        );
+
+        tree.set_root(Element::button("trigger", "Agente"));
+        tree.layout(Size::new(400.0, 300.0));
+        assert_eq!(tree.focused_id(), Some("trigger"));
+
+        tree.set_root(make_dropdown());
+        tree.layout(Size::new(400.0, 300.0));
+        tree.handle_event(key(crate::Key::Tab, false));
+        assert_eq!(tree.focused_id(), Some("codex"));
+        assert_eq!(
+            tree.handle_event(key(crate::Key::Escape, false)),
+            vec![UiAction::Clicked {
+                id: "dismiss".into()
+            }]
+        );
+        assert_eq!(tree.focused_id(), Some("trigger"));
+    }
+
+    #[test]
+    fn long_dropdown_reveals_options_reached_by_keyboard() {
+        let palette = ComponentPalette::neutral_dark();
+        let options = (0..12)
+            .map(|index| {
+                let option =
+                    DropdownOption::new(format!("option:{index}"), format!("Opción {index}"));
+                if index == 5 {
+                    option.disabled()
+                } else {
+                    option
+                }
+            })
+            .collect();
+        let dropdown = DropdownList::new(
+            Element::button("trigger", "Agente").size(Some(100.0), Some(30.0)),
+            options,
+            true,
+            "dismiss",
+            palette,
+        )
+        .width(180.0)
+        .render();
+        let mut tree = UiTree::new(dropdown);
+        let viewport = Size::new(400.0, 400.0);
+        tree.layout(viewport);
+        assert!(tree.focus("trigger"));
+        let key = |key| UiEvent::Key {
+            key,
+            shift: false,
+            ctrl: false,
+        };
+        for _ in 0..9 {
+            tree.handle_event(key(crate::Key::ArrowDown));
+        }
+        assert_eq!(tree.focused_id(), Some("option:9"));
+        assert!(tree.scroll_offset("dismiss:options") > 0.0);
+        let scrolled = tree.layout(viewport);
+        assert!(scrolled
+            .regions
+            .iter()
+            .any(|region| region.id == "option:9"));
+        tree.handle_event(key(crate::Key::End));
+        assert_eq!(tree.focused_id(), Some("option:11"));
+        let end = tree.layout(viewport);
+        assert!(end.regions.iter().any(|region| region.id == "option:11"));
+        tree.handle_event(key(crate::Key::Home));
+        assert_eq!(tree.focused_id(), Some("option:0"));
+        assert_eq!(tree.scroll_offset("dismiss:options"), 0.0);
+        let home = tree.layout(viewport);
+        assert!(home.regions.iter().any(|region| region.id == "option:0"));
+        tree.handle_event(UiEvent::Key {
+            key: crate::Key::Tab,
+            shift: true,
+            ctrl: false,
+        });
+        assert_eq!(tree.focused_id(), Some("option:11"));
+        let wrapped = tree.layout(viewport);
+        assert!(wrapped
+            .regions
+            .iter()
+            .any(|region| region.id == "option:11"));
+    }
+
+    #[test]
+    fn clicking_outside_dropdown_returns_focus_before_dismiss_action() {
+        let palette = ComponentPalette::neutral_dark();
+        let dropdown = DropdownList::new(
+            Element::button("trigger", "Agente").size(Some(100.0), Some(30.0)),
+            vec![DropdownOption::new("codex", "Codex")],
+            true,
+            "dismiss",
+            palette,
+        )
+        .render();
+        let mut tree = UiTree::new(dropdown);
+        tree.layout(Size::new(400.0, 300.0));
+        assert!(tree.focus("codex"));
+        let outside = Point::new(390.0, 290.0);
+        tree.handle_event(UiEvent::PointerDown(outside));
+        assert_eq!(tree.focused_id(), Some("trigger"));
+        assert_eq!(
+            tree.handle_event(UiEvent::PointerUp(outside)),
+            vec![UiAction::Clicked {
+                id: "dismiss".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn disabled_options_are_visible_without_click_regions() {
+        let palette = ComponentPalette::neutral_dark();
+        let tabs = Tabs::new(
+            vec![Tab::new("soon", "Próximamente", 140.0).disabled()],
+            palette,
+        )
+        .render();
+        let frame = UiTree::new(tabs).layout(Size::new(180.0, 40.0));
+        assert!(!frame.regions.iter().any(|region| region.id == "soon"));
+        let dropdown = DropdownList::new(
+            Element::button("trigger", "Agente"),
+            vec![DropdownOption::new("offline", "No instalado").disabled()],
+            true,
+            "dismiss",
+            palette,
+        )
+        .render();
+        let frame = UiTree::new(dropdown).layout(Size::new(300.0, 200.0));
+        assert!(!frame.regions.iter().any(|region| region.id == "offline"));
+    }
+}

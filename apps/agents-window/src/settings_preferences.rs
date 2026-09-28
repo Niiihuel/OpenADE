@@ -1,0 +1,553 @@
+//! Small, persistent preferences that have a native effect in this window.
+//!
+//! This file owns the JSON format and validation. It deliberately does not
+//! depend on SettingsPage or the UI tree so the app can load it before either
+//! view is built. Provider credentials and permissions live elsewhere.
+
+use std::{
+    env,
+    ffi::OsString,
+    fs,
+    io::{self, Write},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
+
+use serde::{Deserialize, Serialize};
+
+const FILE_NAME: &str = "settings-preferences.json";
+const MAX_FILE_BYTES: u64 = 64 * 1024;
+const CURRENT_VERSION: u64 = 1;
+const DEFAULT_SETTINGS_PAGE: &str = "settings_page:general";
+static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// A small set of shells with known launch arguments, plus an explicit local
+/// executable. `System` preserves the current OPENIDE_TERMINAL_SHELL behavior.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "path", rename_all = "snake_case")]
+pub(crate) enum TerminalShell {
+    #[default]
+    System,
+    PowerShell,
+    PowerShellCore,
+    CommandPrompt,
+    Bash,
+    Zsh,
+    Fish,
+    Custom(PathBuf),
+}
+
+impl TerminalShell {
+    /// Returns a validated executable and its fixed arguments. `None` means
+    /// TerminalSession::spawn should choose the current system/default shell.
+    pub fn command(&self) -> Result<Option<(OsString, Vec<OsString>)>, String> {
+        let (program, args): (&str, &[&str]) = match self {
+            Self::System => return Ok(None),
+            Self::PowerShell => ("powershell.exe", &["-NoLogo"]),
+            Self::PowerShellCore => (
+                if cfg!(windows) { "pwsh.exe" } else { "pwsh" },
+                &["-NoLogo"],
+            ),
+            Self::CommandPrompt => ("cmd.exe", &[]),
+            Self::Bash => (if cfg!(windows) { "bash.exe" } else { "bash" }, &[]),
+            Self::Zsh => (if cfg!(windows) { "zsh.exe" } else { "zsh" }, &[]),
+            Self::Fish => (if cfg!(windows) { "fish.exe" } else { "fish" }, &[]),
+            Self::Custom(path) => {
+                let executable = validate_executable(path)?;
+                return Ok(Some((executable.into_os_string(), Vec::new())));
+            }
+        };
+        let executable = find_on_path(program)?;
+        Ok(Some((
+            executable.into_os_string(),
+            args.iter().map(OsString::from).collect(),
+        )))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SettingsPreferences {
+    pub reduced_motion: bool,
+    pub terminal_shell: TerminalShell,
+    pub reopen_last_workspace: bool,
+    pub last_workspace: Option<PathBuf>,
+    /// Stores a `settings_page:<slug>` action ID. The app verifies that the
+    /// page still exists with `SettingsPage::from_action_id` on startup.
+    pub last_settings_page: String,
+}
+
+impl Default for SettingsPreferences {
+    fn default() -> Self {
+        Self {
+            reduced_motion: env::var("OPENIDE_REDUCED_MOTION").is_ok_and(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes"
+                )
+            }),
+            terminal_shell: TerminalShell::System,
+            reopen_last_workspace: false,
+            last_workspace: None,
+            last_settings_page: DEFAULT_SETTINGS_PAGE.to_owned(),
+        }
+    }
+}
+
+impl SettingsPreferences {
+    /// Missing, malformed, future-version, and oversized files use defaults.
+    /// Each valid v1 field is recovered independently from malformed siblings.
+    pub fn load(root: &Path) -> Self {
+        let path = root.join(FILE_NAME);
+        if !fs::metadata(&path).is_ok_and(|metadata| metadata.len() <= MAX_FILE_BYTES) {
+            return Self::default();
+        }
+        let Some(value) = fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        else {
+            return Self::default();
+        };
+        if value.get("version").and_then(serde_json::Value::as_u64) != Some(CURRENT_VERSION) {
+            return Self::default();
+        }
+        let mut preferences = Self::default();
+        if let Some(reduced_motion) = value
+            .get("reduced_motion")
+            .and_then(serde_json::Value::as_bool)
+        {
+            preferences.reduced_motion = reduced_motion;
+        }
+        if let Some(shell) = value
+            .get("terminal_shell")
+            .and_then(|value| serde_json::from_value::<TerminalShell>(value.clone()).ok())
+        {
+            // Keep the configured choice even if a shell was uninstalled since
+            // the last run; command() then reports the precise launch error.
+            if !matches!(&shell, TerminalShell::Custom(path) if !valid_custom_path_syntax(path)) {
+                preferences.terminal_shell = shell;
+            }
+        }
+        if let Some(reopen) = value
+            .get("reopen_last_workspace")
+            .and_then(serde_json::Value::as_bool)
+        {
+            preferences.reopen_last_workspace = reopen;
+        }
+        preferences.last_workspace = value
+            .get("last_workspace")
+            .and_then(serde_json::Value::as_str)
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute() && path.is_dir());
+        if let Some(page) = value
+            .get("last_settings_page")
+            .and_then(serde_json::Value::as_str)
+            .filter(|page| valid_page_id(page))
+        {
+            preferences.last_settings_page = page.to_owned();
+        }
+        preferences
+    }
+
+    /// Only opt-in reopening changes the app's initial workspace.
+    pub fn startup_workspace(&self) -> Option<&Path> {
+        if self.reopen_last_workspace {
+            self.last_workspace.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// Record a directory selected by the user. The stored path is absolute
+    /// and canonical, so launching from another current directory is safe.
+    pub fn set_last_workspace(&mut self, workspace: &Path) -> Result<(), String> {
+        let path = validate_workspace(workspace)?;
+        self.last_workspace = Some(path);
+        Ok(())
+    }
+
+    /// Reject an unavailable shell before changing the in-memory selection.
+    /// A custom choice must be an absolute path to an executable file.
+    pub fn set_terminal_shell(&mut self, shell: TerminalShell) -> Result<(), String> {
+        shell.command()?;
+        self.terminal_shell = shell;
+        Ok(())
+    }
+
+    pub fn set_last_settings_page(&mut self, action_id: &str) -> Result<(), String> {
+        if !valid_page_id(action_id) {
+            return Err("La sección de Settings no es válida".to_owned());
+        }
+        self.last_settings_page = action_id.to_owned();
+        Ok(())
+    }
+
+    /// Resolve the selected shell immediately before creating a PTY. The
+    /// system choice delegates to TerminalSession::spawn.
+    pub fn terminal_command(&self) -> Result<Option<(OsString, Vec<OsString>)>, String> {
+        self.terminal_shell.command()
+    }
+
+    /// Write to a unique temporary file, fsync it, then atomically replace the
+    /// previous JSON (including on Windows). A failed write leaves it intact.
+    pub fn save(&self, root: &Path) -> Result<(), String> {
+        if matches!(&self.terminal_shell, TerminalShell::Custom(path) if !valid_custom_path_syntax(path))
+        {
+            return Err("La ruta del shell debe ser absoluta y válida".to_owned());
+        }
+        if !valid_page_id(&self.last_settings_page) {
+            return Err("La sección de Settings no es válida".to_owned());
+        }
+        let workspace_text = self
+            .last_workspace
+            .as_deref()
+            .map(|path| {
+                if !path.is_absolute() {
+                    return Err("La ruta del proyecto debe ser absoluta".to_owned());
+                }
+                path.to_str()
+                    .ok_or_else(|| "La ruta del proyecto no se puede guardar en JSON".to_owned())
+            })
+            .transpose()?;
+        fs::create_dir_all(root)
+            .map_err(|error| format!("No se pudo crear la carpeta de configuración: {error}"))?;
+        let payload = serde_json::to_vec_pretty(&serde_json::json!({
+            "version": CURRENT_VERSION,
+            "reduced_motion": self.reduced_motion,
+            "terminal_shell": self.terminal_shell,
+            "reopen_last_workspace": self.reopen_last_workspace,
+            "last_workspace": workspace_text,
+            "last_settings_page": self.last_settings_page,
+        }))
+        .map_err(|error| format!("No se pudieron serializar las preferencias: {error}"))?;
+        let temp = root.join(format!(
+            ".settings-preferences-{}-{}.tmp",
+            std::process::id(),
+            SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let result = (|| -> io::Result<()> {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temp)?;
+            file.write_all(&payload)?;
+            file.sync_all()?;
+            drop(file);
+            replace_atomically(&temp, &root.join(FILE_NAME))
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temp);
+        }
+        result.map_err(|error| format!("No se pudieron guardar las preferencias: {error}"))
+    }
+}
+
+fn valid_page_id(page: &str) -> bool {
+    let Some(slug) = page.strip_prefix("settings_page:") else {
+        return false;
+    };
+    !slug.is_empty()
+        && slug.len() <= 48
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+fn validate_workspace(workspace: &Path) -> Result<PathBuf, String> {
+    let path = workspace
+        .canonicalize()
+        .map_err(|error| format!("No se pudo abrir el último proyecto: {error}"))?;
+    if !path.is_dir() {
+        return Err("El último proyecto debe ser una carpeta".to_owned());
+    }
+    Ok(user_facing_path(path))
+}
+
+#[cfg(not(windows))]
+fn user_facing_path(path: PathBuf) -> PathBuf {
+    path
+}
+
+#[cfg(windows)]
+fn user_facing_path(path: PathBuf) -> PathBuf {
+    // canonicalize() returns Windows verbatim paths. They work for file I/O
+    // but make the workspace field and CLI arguments unnecessarily awkward.
+    let Some(text) = path.to_str() else {
+        return path;
+    };
+    if let Some(network) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{network}"));
+    }
+    if let Some(local) = text.strip_prefix(r"\\?\") {
+        if local.as_bytes().get(1) == Some(&b':') {
+            return PathBuf::from(local);
+        }
+    }
+    path
+}
+
+fn valid_custom_path_syntax(path: &Path) -> bool {
+    path.is_absolute()
+        && path.to_str().is_some_and(|text| {
+            !text.is_empty() && text.len() <= 4096 && !text.chars().any(char::is_control)
+        })
+}
+
+fn validate_executable(path: &Path) -> Result<PathBuf, String> {
+    if !valid_custom_path_syntax(path) {
+        return Err(
+            "La ruta del shell debe ser absoluta y no contener caracteres de control".to_owned(),
+        );
+    }
+    let executable = path
+        .canonicalize()
+        .map_err(|error| format!("No se pudo encontrar el shell: {error}"))?;
+    if !executable.is_file() || !is_executable(&executable) {
+        return Err("El shell configurado no es un archivo ejecutable".to_owned());
+    }
+    Ok(executable)
+}
+
+fn find_on_path(program: &str) -> Result<PathBuf, String> {
+    let Some(path) = env::var_os("PATH") else {
+        return Err(format!("No se encontró {program} en PATH"));
+    };
+    for directory in env::split_paths(&path) {
+        let candidate = directory.join(program);
+        if candidate.is_file() && is_executable(&candidate) {
+            if let Ok(absolute) = candidate.canonicalize() {
+                return Ok(absolute);
+            }
+        }
+    }
+    Err(format!("No se encontró {program} en PATH"))
+}
+
+#[cfg(windows)]
+fn is_executable(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("exe") || extension.eq_ignore_ascii_case("com")
+        })
+}
+
+#[cfg(not(windows))]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(windows))]
+fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
+    fs::rename(temporary, destination)
+}
+
+#[cfg(windows)]
+fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+
+    #[link(name = "Kernel32")]
+    extern "system" {
+        fn ReplaceFileW(
+            replaced_file: *const u16,
+            replacement_file: *const u16,
+            backup_file: *const u16,
+            flags: u32,
+            exclude: *mut std::ffi::c_void,
+            reserved: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+
+    if !destination.exists() {
+        return fs::rename(temporary, destination);
+    }
+    let wide = |path: &Path| -> Vec<u16> {
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    };
+    let destination_wide = wide(destination);
+    let temporary_wide = wide(temporary);
+    let replaced = unsafe {
+        ReplaceFileW(
+            destination_wide.as_ptr(),
+            temporary_wide.as_ptr(),
+            ptr::null(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if replaced != 0 {
+        Ok(())
+    } else {
+        let error = io::Error::last_os_error();
+        if !destination.exists() {
+            fs::rename(temporary, destination)
+        } else {
+            Err(error)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_and_atomic_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let mut preferences = SettingsPreferences::default();
+        preferences.reduced_motion = true;
+        preferences.reopen_last_workspace = true;
+        preferences.set_last_workspace(project.path()).unwrap();
+        preferences
+            .set_last_settings_page("settings_page:providers")
+            .unwrap();
+        preferences.save(root.path()).unwrap();
+        assert_eq!(SettingsPreferences::load(root.path()), preferences);
+        assert_eq!(
+            preferences.startup_workspace(),
+            preferences.last_workspace.as_deref()
+        );
+
+        preferences.reduced_motion = false;
+        preferences.save(root.path()).unwrap();
+        assert_eq!(SettingsPreferences::load(root.path()), preferences);
+        assert_eq!(
+            fs::read_dir(root.path()).unwrap().count(),
+            1,
+            "atomic replacement must not leave a temporary file"
+        );
+    }
+
+    #[test]
+    fn malformed_fields_do_not_discard_valid_preferences() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join(FILE_NAME),
+            r#"{"version":1,"reduced_motion":true,"terminal_shell":{"kind":"unknown"},"reopen_last_workspace":true,"last_workspace":"./relative","last_settings_page":"../../oops"}"#,
+        )
+        .unwrap();
+        let loaded = SettingsPreferences::load(root.path());
+        assert!(loaded.reduced_motion);
+        assert!(loaded.reopen_last_workspace);
+        assert_eq!(loaded.terminal_shell, TerminalShell::System);
+        assert_eq!(loaded.last_workspace, None);
+        assert_eq!(loaded.last_settings_page, DEFAULT_SETTINGS_PAGE);
+        assert_eq!(loaded.startup_workspace(), None);
+    }
+
+    #[test]
+    fn last_workspace_does_not_reopen_until_enabled() {
+        let project = tempfile::tempdir().unwrap();
+        let mut preferences = SettingsPreferences::default();
+        preferences.set_last_workspace(project.path()).unwrap();
+        assert_eq!(preferences.startup_workspace(), None);
+        preferences.reopen_last_workspace = true;
+        assert_eq!(
+            preferences.startup_workspace(),
+            preferences.last_workspace.as_deref()
+        );
+    }
+
+    #[test]
+    fn a_removed_last_workspace_does_not_block_other_preferences() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("removed-project");
+        fs::create_dir(&project).unwrap();
+        let mut preferences = SettingsPreferences::default();
+        preferences.set_last_workspace(&project).unwrap();
+        fs::remove_dir(&project).unwrap();
+        preferences.reduced_motion = true;
+        preferences.save(root.path()).unwrap();
+        let loaded = SettingsPreferences::load(root.path());
+        assert!(loaded.reduced_motion);
+        assert!(loaded.last_workspace.is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_workspace_keeps_a_normal_windows_path() {
+        assert_eq!(
+            user_facing_path(PathBuf::from(r"\\?\C:\Users\Ada\Code")),
+            PathBuf::from(r"C:\Users\Ada\Code")
+        );
+        assert_eq!(
+            user_facing_path(PathBuf::from(r"\\?\UNC\host\share\Code")),
+            PathBuf::from(r"\\host\share\Code")
+        );
+    }
+
+    #[test]
+    fn invalid_choice_does_not_replace_previous_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut preferences = SettingsPreferences::default();
+        preferences.save(root.path()).unwrap();
+        let before = fs::read(root.path().join(FILE_NAME)).unwrap();
+
+        preferences.terminal_shell = TerminalShell::Custom(PathBuf::from("relative.exe"));
+        assert!(preferences.save(root.path()).is_err());
+        assert_eq!(fs::read(root.path().join(FILE_NAME)).unwrap(), before);
+
+        preferences.terminal_shell = TerminalShell::System;
+        preferences.last_settings_page = "settings_page:bad/path".to_owned();
+        assert!(preferences.save(root.path()).is_err());
+        assert_eq!(fs::read(root.path().join(FILE_NAME)).unwrap(), before);
+    }
+
+    #[test]
+    fn custom_shell_requires_an_existing_executable() {
+        let current_exe = env::current_exe().unwrap();
+        let shell = TerminalShell::Custom(current_exe.clone());
+        let command = shell.command().unwrap().unwrap();
+        assert_eq!(
+            PathBuf::from(command.0),
+            current_exe.canonicalize().unwrap()
+        );
+        assert!(command.1.is_empty());
+        assert!(
+            TerminalShell::Custom(current_exe.with_file_name("absent-shell"))
+                .command()
+                .is_err()
+        );
+        let mut preferences = SettingsPreferences::default();
+        assert!(preferences
+            .set_terminal_shell(TerminalShell::Custom(PathBuf::from("relative.exe")))
+            .is_err());
+        assert_eq!(preferences.terminal_shell, TerminalShell::System);
+        preferences.set_terminal_shell(shell).unwrap();
+        assert_eq!(TerminalShell::System.command().unwrap(), None);
+    }
+
+    #[test]
+    fn invalid_or_future_file_uses_defaults() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join(FILE_NAME), "{").unwrap();
+        assert_eq!(
+            SettingsPreferences::load(root.path()),
+            SettingsPreferences::default()
+        );
+        fs::write(
+            root.path().join(FILE_NAME),
+            r#"{"version":2,"reduced_motion":true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            SettingsPreferences::load(root.path()),
+            SettingsPreferences::default()
+        );
+        fs::write(
+            root.path().join(FILE_NAME),
+            vec![b' '; MAX_FILE_BYTES as usize + 1],
+        )
+        .unwrap();
+        assert_eq!(
+            SettingsPreferences::load(root.path()),
+            SettingsPreferences::default()
+        );
+    }
+}

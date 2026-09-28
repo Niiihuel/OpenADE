@@ -1,0 +1,9 @@
+[package]
+name = "openide-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+openide-core = { path = "../openide-core" }
+serde = { version = "1", features = ["derive"] }

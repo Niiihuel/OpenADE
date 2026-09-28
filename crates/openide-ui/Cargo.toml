@@ -1,0 +1,9 @@
+[package]
+name = "openide-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Original retained-state UI tree, layout, events and backend-neutral drawing for OpenIDE"
+
+[dependencies]
+unicode-segmentation = "1.12"

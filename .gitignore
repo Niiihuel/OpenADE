@@ -1,0 +1,8 @@
+/target/
+/references/
+/data/
+.env
+.env.*
+!.env.example
+*.log
+*.tmp

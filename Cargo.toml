@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/agents-window",
+    "crates/openide-core",
+    "crates/openide-harness",
+    "crates/openide-cli",
+    "crates/openide-ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
