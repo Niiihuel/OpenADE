@@ -6,6 +6,23 @@ use std::time::{Duration, Instant};
 
 use crate::Color;
 
+/// Durations for a menu's floating surface and item feedback. UiTree keeps
+/// both transitions by stable ID and snaps them under reduced motion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MenuMotion {
+    pub open_ms: u16,
+    pub item_ms: u16,
+}
+
+impl Default for MenuMotion {
+    fn default() -> Self {
+        Self {
+            open_ms: 140,
+            item_ms: 100,
+        }
+    }
+}
+
 /// Timing curve shared by layout and component transitions.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Easing {

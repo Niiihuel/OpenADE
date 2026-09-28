@@ -6,6 +6,8 @@
 //! [`UiEvent`] and paints the resulting [`Frame`].
 
 mod components;
+mod composer;
+mod dropdown_menu;
 mod element;
 mod geometry;
 mod menu;
@@ -20,6 +22,8 @@ pub use components::{
     ControlState, DropdownList, DropdownOption, IconButton, Popover, SearchField, SegmentedControl,
     Switch, Tab, Tabs, Tooltip,
 };
+pub use composer::Composer;
+pub use dropdown_menu::{DropdownMenu, DropdownMenuEntry, DropdownMenuItem};
 pub use element::{
     Border, BoxShadow, Element, ElementKind, FontFamily, Icon, PopoverPlacement, Style,
     TabSelection, TextSpan, TooltipPlacement, TooltipStyle, UniformList, DEFAULT_FONT_SIZE,
@@ -27,7 +31,7 @@ pub use element::{
 };
 pub use geometry::{Color, Point, Rect, Size};
 pub use menu::{MenuItem, MenuSeparator};
-pub use motion::{Easing, ScalarTransition};
+pub use motion::{Easing, MenuMotion, ScalarTransition};
 pub use scroll_area::{ScrollArea, ScrollbarAppearance, ScrollbarPlacement};
 pub use tree::{
     DrawCommand, FontMetrics, Frame, HitKind, HitRegion, Key, UiAction, UiEvent, UiTree,

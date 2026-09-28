@@ -7,8 +7,9 @@
 use std::path::Path;
 
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ControlSize, DropdownList, DropdownOption, Element,
-    FontFamily, Icon, IconButton, Point, Popover, PopoverPlacement, ScrollArea, Tooltip,
+    Button, ButtonVariant, Color, Component, Composer, ControlSize, DropdownList, DropdownMenu,
+    DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, FontFamily, Icon, IconButton,
+    MenuMotion, Popover, PopoverPlacement, ScrollArea, Tooltip,
 };
 
 use crate::{
@@ -308,49 +309,27 @@ fn add_context_control(props: &ComposerProps<'_>) -> Element {
         theme::component_palette(),
     )
     .render();
-    let attach_option = Button::new(
-        "composer_add_file",
-        "Archivo del proyecto",
-        theme::action_palette(theme::CARD, theme::FOREGROUND),
-    )
-    .icon(Icon::Folder)
-    .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Spacious)
-    .width(218.0)
-    .hover_ink(theme::FOREGROUND)
-    .render()
-    .radius(8.0);
-    let browse_option = Button::new(
-        "composer_add_browse",
-        "Explorar archivos",
-        theme::action_palette(theme::CARD, theme::FOREGROUND),
-    )
-    .icon(Icon::Search)
-    .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Spacious)
-    .width(218.0)
-    .hover_ink(theme::FOREGROUND)
-    .render()
-    .radius(8.0);
-    let content = Element::column(vec![
-        Element::text("AÑADIR AL CHAT")
-            .font_family(FontFamily::Sans)
-            .font_size(10.0)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(None, Some(23.0)),
-        attach_option,
-        browse_option,
-    ])
-    .gap(4.0);
-    Popover::new(
+    DropdownMenu::new(
         trigger,
-        content,
+        vec![
+            DropdownMenuEntry::Heading("AÑADIR AL CHAT".into()),
+            DropdownMenuItem::new("composer_add_file", "Archivo del proyecto")
+                .icon(Icon::Folder)
+                .into(),
+            DropdownMenuItem::new("composer_add_browse", "Explorar archivos")
+                .icon(Icon::Search)
+                .into(),
+        ],
         props.add_menu_open && !props.running,
         "composer_add_dismiss",
         theme::component_palette(),
     )
     .width(230.0)
     .placement(PopoverPlacement::TopStart)
+    .motion(MenuMotion {
+        open_ms: 160,
+        item_ms: 100,
+    })
     .render()
 }
 
@@ -779,47 +758,34 @@ fn attachment_rows(props: &ComposerProps<'_>) -> Vec<Element> {
 /// and its supported options; unsupported controls are omitted.
 pub(crate) fn build_composer(props: &ComposerProps<'_>) -> Element {
     let compact = props.width < COMPACT_CONTEXT_WIDTH;
-    let editor = Element::text_area("prompt", props.prompt, props.placeholder)
-        .background(theme::SELECTED)
-        .foreground(theme::FOREGROUND)
-        .font_family(FontFamily::Sans)
-        .font_size(14.0)
-        .padding(14.0)
-        .radius(17.0)
-        .size(
-            None,
-            Some(editor_height(
-                props.prompt,
-                props.width,
-                compact,
-                props.home,
-            )),
-        );
-    let mut contents = vec![editor];
-    contents.extend(attachment_rows(props));
-    contents.push(footer(props));
-    let card = Element::panel(Element::column(contents).gap(5.0))
-        .background(theme::SELECTED)
-        .border(theme::TREE_GUIDE, 1.0)
-        .radius(CARD_RADIUS)
-        .shadow(Color::rgba(0, 0, 0, 48), Point::new(0.0, 5.0), 18.0, 0.0)
-        .padding(if compact { 10.0 } else { 13.0 })
-        .size(Some(props.width), None);
-    let context = Element::row(vec![
-        Element::spacer().flex(1.0),
-        project_metadata(props),
-        Element::spacer().flex(1.0),
-    ])
-    .size(Some(props.width), Some(CONTEXT_HEIGHT));
-    Element::column(vec![context, card])
-        .gap(0.0)
-        .size(Some(props.width), None)
+    Composer::new(
+        "prompt",
+        props.prompt,
+        props.placeholder,
+        props.width,
+        theme::component_palette(),
+    )
+    .editor_height(editor_height(
+        props.prompt,
+        props.width,
+        compact,
+        props.home,
+    ))
+    .compact(compact)
+    .context(project_metadata(props))
+    .context_height(CONTEXT_HEIGHT)
+    .attachments(attachment_rows(props))
+    .footer(footer(props))
+    .border_color(theme::TREE_GUIDE)
+    .shadow_color(Color::rgba(0, 0, 0, 48))
+    .card_radius(CARD_RADIUS)
+    .render()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{DrawCommand, Key, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{DrawCommand, Key, Point, Size, UiAction, UiEvent, UiTree};
 
     const MODELS: &[(String, String)] = &[];
 

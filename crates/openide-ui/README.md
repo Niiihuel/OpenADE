@@ -118,6 +118,20 @@ mientras `UiTree` retiene foco, hover y scroll por ID. `ControlSize` define
 alturas de 24/28/32/36 px lógicos; `ControlState::Disabled` representa una opción
 visual sin región interactiva.
 
+`DropdownMenu` reúne acciones, encabezados y separadores en un popover con un
+único ID de cierre. Cada `DropdownMenuItem` puede tener icono, atajo visible,
+selección o estado deshabilitado. `DropdownList` adapta sus opciones al mismo
+componente para compartir columnas, navegación y movimiento. `MenuMotion`
+controla la entrada del popover y la transición de hover/pulsación de cada
+fila; `UiTree::set_reduced_motion(true)` los muestra sin animación. El host
+mantiene el estado abierto y procesa los IDs de las acciones.
+
+`Composer` ofrece un editor multilínea controlado y espacios para contexto,
+adjuntos y pie. El host suministra el texto, alto, ancho y colores en cada
+reconstrucción; `UiTree` conserva el foco y el cursor por ID. Esta separación
+permite usar la misma tarjeta en inicio y conversación sin trasladar la lógica
+de modelos, permisos o envío al motor de UI.
+
 `DropdownList` pinta cada opción como una única región de 36 px de alto con
 icono de 16 px, etiqueta recortada y marca de selección al extremo derecho.
 Reserva las mismas columnas para todas las filas, incluso cuando una opción

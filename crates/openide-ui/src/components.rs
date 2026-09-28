@@ -4,9 +4,10 @@
 //! these controls are rebuilt on every frame.
 
 use crate::{
-    Color, Element, FontFamily, Icon, Point, PopoverPlacement, ScrollArea, TooltipPlacement,
-    TooltipStyle, ICON_SIZE,
+    Color, Element, FontFamily, Icon, Point, PopoverPlacement, TooltipPlacement, TooltipStyle,
+    ICON_SIZE,
 };
+use crate::{DropdownMenu, DropdownMenuEntry, DropdownMenuItem, MenuMotion};
 
 /// A component can render to an ordinary [`Element`] and be used anywhere in
 /// the tree. App-specific views and generic controls follow the same contract.
@@ -718,7 +719,7 @@ impl Component for Switch {
     }
 }
 
-fn lighter(color: Color, amount: u8) -> Color {
+pub(crate) fn lighter(color: Color, amount: u8) -> Color {
     Color::rgba(
         color.r.saturating_add(amount),
         color.g.saturating_add(amount),
@@ -1066,6 +1067,7 @@ pub struct DropdownList {
     pub width: f32,
     pub placement: PopoverPlacement,
     pub palette: ComponentPalette,
+    pub motion: MenuMotion,
 }
 
 impl DropdownList {
@@ -1084,6 +1086,7 @@ impl DropdownList {
             width: 240.0,
             placement: PopoverPlacement::BottomStart,
             palette,
+            motion: MenuMotion::default(),
         }
     }
 
@@ -1098,93 +1101,41 @@ impl DropdownList {
         self.placement = placement;
         self
     }
+
+    pub fn motion(mut self, motion: MenuMotion) -> Self {
+        self.motion = motion;
+        self
+    }
 }
 
 impl Component for DropdownList {
     fn render(self) -> Element {
-        if !self.open {
-            return self.anchor;
-        }
-        let width = self.width;
-        let palette = self.palette;
-        let count = self.options.len();
-        let reserve_icon = self.options.iter().any(|option| option.icon.is_some());
-        let reserve_check = self.options.iter().any(|option| option.selected);
-        let dismiss_id = self.dismiss_id;
-        let options = self
+        let entries = self
             .options
             .into_iter()
             .map(|option| {
-                let enabled = option.state == ControlState::Enabled;
-                let mut children = Vec::with_capacity(4);
-                if reserve_icon {
-                    children.push(
-                        if let Some(icon) = option.icon {
-                            Element::icon(icon).foreground(palette.muted)
-                        } else {
-                            Element::spacer()
-                        }
-                        .size(Some(ICON_SIZE), Some(18.0)),
-                    );
+                let mut item =
+                    DropdownMenuItem::new(option.action_id, option.label).selected(option.selected);
+                if let Some(icon) = option.icon {
+                    item = item.icon(icon);
                 }
-                children.push(
-                    Element::truncated_text(option.label)
-                        .foreground(if enabled { palette.text } else { palette.muted })
-                        .font_family(FontFamily::Sans)
-                        .font_size(13.0)
-                        .flex(1.0)
-                        .size(None, Some(18.0)),
-                );
-                if reserve_check {
-                    children.push(
-                        if option.selected {
-                            Element::icon(Icon::Check).foreground(palette.text)
-                        } else {
-                            Element::spacer()
-                        }
-                        .size(Some(ICON_SIZE), Some(18.0)),
-                    );
+                if option.state == ControlState::Disabled {
+                    item = item.disabled();
                 }
-                let visual = Element::row(children).gap(9.0);
-                let fill = if option.selected {
-                    palette.selected
-                } else {
-                    palette.raised
-                };
-                let row = if enabled {
-                    Element::clickable(option.action_id, visual)
-                } else {
-                    Element::panel(visual)
-                };
-                row.background(fill)
-                    .hover_background(if option.selected {
-                        lighter(fill, 8)
-                    } else {
-                        palette.hover
-                    })
-                    .pressed_background(if option.selected {
-                        lighter(fill, 14)
-                    } else {
-                        palette.selected
-                    })
-                    .padding(9.0)
-                    .radius(7.0)
-                    .size(Some(width - 12.0), Some(ControlSize::Spacious.height()))
+                DropdownMenuEntry::Item(item)
             })
             .collect();
-        let list = Element::column(options).gap(2.0);
-        let content = if count > 8 {
-            ScrollArea::new(format!("{dismiss_id}:options"), list)
-                .tint(palette.muted)
-                .render()
-                .size(Some(width - 12.0), Some(8.0 * 38.0 - 2.0))
-        } else {
-            list
-        };
-        Popover::new(self.anchor, content, true, dismiss_id, palette)
-            .width(width)
-            .placement(self.placement)
-            .render()
+        DropdownMenu::new(
+            self.anchor,
+            entries,
+            self.open,
+            self.dismiss_id,
+            self.palette,
+        )
+        .width(self.width)
+        .placement(self.placement)
+        .motion(self.motion)
+        .render()
     }
 }
 
