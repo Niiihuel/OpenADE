@@ -2797,9 +2797,23 @@ impl LayoutBuilder<'_> {
                 )
             }
             ElementKind::Icon(_) => Size::new(ICON_SIZE + padding, ICON_SIZE + padding),
-            ElementKind::Button { label, .. } => Size::new(
-                self.text_width(label, style) + padding,
-                metrics.line_height + padding,
+            ElementKind::Button {
+                label,
+                trailing_icon,
+                ..
+            } => Size::new(
+                self.text_width(label, style)
+                    + if trailing_icon.is_some() {
+                        style.gap + ICON_SIZE
+                    } else {
+                        0.0
+                    }
+                    + padding,
+                metrics.line_height.max(if trailing_icon.is_some() {
+                    ICON_SIZE
+                } else {
+                    0.0
+                }) + padding,
             ),
             ElementKind::IconButton {
                 label,
@@ -3436,20 +3450,53 @@ impl LayoutBuilder<'_> {
                 );
                 self.draw_icon(*icon, icon_rect, style);
             }
-            ElementKind::Button { id, label } => {
+            ElementKind::Button {
+                id,
+                label,
+                trailing_icon,
+            } => {
                 self.add_region(id, rect, HitKind::Button, clip);
                 if self.keyboard_focus && self.focused == Some(id.as_str()) {
                     self.draw_focus_ring(rect, style.radius);
                 }
+                let trailing_side = if trailing_icon.is_some() {
+                    ICON_SIZE.min(content.width).min(content.height).max(0.0)
+                } else {
+                    0.0
+                };
+                let label_width = (content.width
+                    - if trailing_icon.is_some() {
+                        trailing_side + style.gap
+                    } else {
+                        0.0
+                    })
+                .max(0.0);
                 let shown =
-                    truncate_measured(label, content.width, |part| self.text_width(part, style));
+                    truncate_measured(label, label_width, |part| self.text_width(part, style));
                 self.frame.commands.push(DrawCommand::Text {
-                    position: Point::new(content.x, content.y),
+                    position: Point::new(
+                        content.x,
+                        content.y + (content.height - metrics.line_height) / 2.0,
+                    ),
                     text: shown,
                     color: style.foreground,
                     font_size: style.font_size,
                     font_family: style.font_family,
                 });
+                if let Some(icon) = trailing_icon {
+                    if trailing_side > 0.0 {
+                        self.draw_icon(
+                            *icon,
+                            Rect::new(
+                                content.x + content.width - trailing_side,
+                                content.y + (content.height - trailing_side) / 2.0,
+                                trailing_side,
+                                trailing_side,
+                            ),
+                            style,
+                        );
+                    }
+                }
             }
             ElementKind::IconButton {
                 id,

@@ -269,6 +269,7 @@ pub enum ElementKind {
     Button {
         id: String,
         label: String,
+        trailing_icon: Option<Icon>,
     },
     IconButton {
         id: String,
@@ -541,6 +542,7 @@ impl Element {
         Self::new(ElementKind::Button {
             id: id.into(),
             label: label.into(),
+            trailing_icon: None,
         })
         .padding(8.0)
         .transition_ms(120)
@@ -562,8 +564,12 @@ impl Element {
     /// Place a second canonical-size icon at the far edge of an icon button.
     /// The entire control keeps one action ID and one hit region.
     pub fn trailing_icon(mut self, icon: Icon) -> Self {
-        if let ElementKind::IconButton { trailing_icon, .. } = &mut self.kind {
-            *trailing_icon = Some(icon);
+        match &mut self.kind {
+            ElementKind::Button { trailing_icon, .. }
+            | ElementKind::IconButton { trailing_icon, .. } => {
+                *trailing_icon = Some(icon);
+            }
+            _ => {}
         }
         self
     }

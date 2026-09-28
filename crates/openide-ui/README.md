@@ -85,6 +85,30 @@ Warp documenta para su framework de UI.
 
 ## Controles compartidos
 
+`Button` es la acción compartida de la aplicación. `ButtonContent` distingue
+etiqueta, icono y ambos; `IconButton` conserva la API breve para acciones de
+icono. `ControlSize::button_sizing()` centraliza alto, tipografía, espaciado y
+radio. El tema llega mediante `ComponentPalette` y `ButtonVariant`; `disabled`
+quita la región de clic y foco. `.tooltip(...)` y
+`.tooltip_shortcut(...)` asocian una ayuda al mismo ID de acción. El atajo se
+muestra en la ayuda; la activación por teclado sigue el enrutamiento de
+`UiTree` y la aplicación interpreta `UiAction::Clicked`.
+
+```rust
+use openide_ui::{Button, ButtonContent, ButtonVariant, Component,
+                 ComponentPalette, Icon};
+
+let action = Button::with_content(
+    "project:open",
+    ButtonContent::IconAndLabel(Icon::Folder, "Abrir proyecto".into()),
+    ComponentPalette::neutral_dark(),
+)
+.variant(ButtonVariant::Raised)
+.tooltip("Abrir proyecto")
+.tooltip_shortcut("Ctrl+O")
+.render();
+```
+
 `Tabs`, `Popover` y `DropdownList` implementan `Component::render()` y devuelven
 un `Element` ordinario. Reciben `ComponentPalette` del tema y admiten contenido
 o acciones de cualquier vista. `Tab` y `DropdownOption` conservan los IDs de

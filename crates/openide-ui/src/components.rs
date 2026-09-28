@@ -146,12 +146,64 @@ pub enum ButtonVariant {
     Solid,
 }
 
+/// The visible content of one action. This keeps icon-only, text-only, and
+/// combined buttons on the same rendering and interaction path.
+#[derive(Clone, Debug)]
+pub enum ButtonContent {
+    Label(String),
+    Icon(Icon),
+    IconAndLabel(Icon, String),
+}
+
+impl ButtonContent {
+    fn parts(self) -> (Option<Icon>, String) {
+        match self {
+            Self::Label(label) => (None, label),
+            Self::Icon(icon) => (Some(icon), String::new()),
+            Self::IconAndLabel(icon, label) => (Some(icon), label),
+        }
+    }
+}
+
+/// Shared button geometry in logical pixels. The current renderer uses one
+/// canonical 16 px icon size, while density controls the hit box and type.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ButtonSizing {
+    pub height: f32,
+    pub font_size: f32,
+    pub icon_size: f32,
+    pub horizontal_padding: f32,
+    pub inner_spacing: f32,
+    pub radius: f32,
+}
+
+impl ControlSize {
+    pub const fn button_sizing(self) -> ButtonSizing {
+        let height = self.height();
+        ButtonSizing {
+            height,
+            font_size: match self {
+                Self::Dense | Self::Compact => 12.0,
+                Self::Regular => 13.0,
+                Self::Spacious => 14.0,
+            },
+            icon_size: ICON_SIZE,
+            horizontal_padding: (height - ICON_SIZE) / 2.0,
+            inner_spacing: 6.0,
+            radius: match self {
+                Self::Dense | Self::Compact => 6.0,
+                Self::Regular => 7.0,
+                Self::Spacious => 8.0,
+            },
+        }
+    }
+}
+
 /// A semantic action with one stable ID. Selection and availability belong to
 /// the caller, while hover/press/focus are retained by [`crate::UiTree`].
 pub struct Button {
     action_id: String,
-    label: String,
-    icon: Option<Icon>,
+    content: ButtonContent,
     trailing_icon: Option<Icon>,
     variant: ButtonVariant,
     size: ControlSize,
@@ -161,6 +213,9 @@ pub struct Button {
     hover_ink: Option<Color>,
     pressed_ink: Option<Color>,
     palette: ComponentPalette,
+    tooltip_title: Option<String>,
+    tooltip_shortcut: Option<String>,
+    tooltip_placement: TooltipPlacement,
 }
 
 impl Button {
@@ -169,10 +224,17 @@ impl Button {
         label: impl Into<String>,
         palette: ComponentPalette,
     ) -> Self {
+        Self::with_content(action_id, ButtonContent::Label(label.into()), palette)
+    }
+
+    pub fn with_content(
+        action_id: impl Into<String>,
+        content: ButtonContent,
+        palette: ComponentPalette,
+    ) -> Self {
         Self {
             action_id: action_id.into(),
-            label: label.into(),
-            icon: None,
+            content,
             trailing_icon: None,
             variant: ButtonVariant::default(),
             size: ControlSize::Regular,
@@ -182,11 +244,34 @@ impl Button {
             hover_ink: None,
             pressed_ink: None,
             palette,
+            tooltip_title: None,
+            tooltip_shortcut: None,
+            tooltip_placement: TooltipPlacement::Above,
         }
     }
 
     pub fn icon(mut self, icon: Icon) -> Self {
-        self.icon = Some(icon);
+        let (_, label) = self.content.parts();
+        self.content = if label.is_empty() {
+            ButtonContent::Icon(icon)
+        } else {
+            ButtonContent::IconAndLabel(icon, label)
+        };
+        self
+    }
+
+    pub fn tooltip(mut self, title: impl Into<String>) -> Self {
+        self.tooltip_title = Some(title.into());
+        self
+    }
+
+    pub fn tooltip_shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.tooltip_shortcut = Some(shortcut.into());
+        self
+    }
+
+    pub fn tooltip_placement(mut self, placement: TooltipPlacement) -> Self {
+        self.tooltip_placement = placement;
         self
     }
 
@@ -270,50 +355,42 @@ impl Button {
             self.variant == ButtonVariant::Outline,
         )
     }
-
-    fn padding(&self) -> f32 {
-        // Icon-only controls are squares with a canonical 16 px visual glyph.
-        // The same inset also gives text controls a stable 4 px rhythm.
-        ((self.size.height() - ICON_SIZE) / 2.0).max(4.0)
-    }
 }
 
 impl Component for Button {
     fn render(self) -> Element {
         let (base, hover, pressed, ink, outline) = self.colors();
-        let padding = self.padding();
-        let icon_only = self.icon.is_some() && self.label.is_empty();
-        let width = self.width.or(icon_only.then_some(self.size.height()));
-        let height = self.size.height();
-        let radius = match self.size {
-            ControlSize::Dense | ControlSize::Compact => 6.0,
-            ControlSize::Regular => 7.0,
-            ControlSize::Spacious => 8.0,
-        };
+        let sizing = self.size.button_sizing();
+        let padding = sizing.horizontal_padding.max(4.0);
+        let (icon, label) = self.content.parts();
+        let icon_only = icon.is_some() && label.is_empty();
+        let width = self.width.or(icon_only.then_some(sizing.height));
+        let height = sizing.height;
+        let radius = sizing.radius;
 
         if self.state == ControlState::Disabled {
             // The engine's Button element always registers a hit target. A
             // disabled action is instead ordinary painted content: it remains
             // visible, but cannot be focused or activated by any input path.
-            let has_label = !self.label.is_empty();
-            let icon_space = if self.icon.is_some() {
-                ICON_SIZE + 6.0
+            let has_label = !label.is_empty();
+            let icon_space = if icon.is_some() {
+                sizing.icon_size + sizing.inner_spacing
             } else {
                 0.0
             };
             let trailing_space = if self.trailing_icon.is_some() {
-                ICON_SIZE + 6.0
+                sizing.icon_size + sizing.inner_spacing
             } else {
                 0.0
             };
             let label_width =
                 width.map(|value| (value - padding * 2.0 - icon_space - trailing_space).max(0.0));
-            let label = Element::truncated_text(self.label)
+            let label = Element::truncated_text(label)
                 .foreground(ink)
                 .font_family(FontFamily::Sans)
-                .font_size(13.0)
+                .font_size(sizing.font_size)
                 .size(label_width, Some((height - padding * 2.0).max(0.0)));
-            let visual = if let Some(icon) = self.icon {
+            let visual = if let Some(icon) = icon {
                 let mut children = vec![Element::icon(icon).foreground(ink)];
                 if has_label {
                     children.push(label);
@@ -321,7 +398,10 @@ impl Component for Button {
                 if let Some(trailing) = self.trailing_icon {
                     children.push(Element::icon(trailing).foreground(ink));
                 }
-                Element::row(children).gap(6.0)
+                Element::row(children).gap(sizing.inner_spacing)
+            } else if let Some(trailing) = self.trailing_icon {
+                Element::row(vec![label, Element::icon(trailing).foreground(ink)])
+                    .gap(sizing.inner_spacing)
             } else {
                 label
             };
@@ -336,10 +416,10 @@ impl Component for Button {
             return element;
         }
 
-        let mut element = if let Some(icon) = self.icon {
-            Element::icon_button(self.action_id, icon, self.label)
+        let mut element = if let Some(icon) = icon {
+            Element::icon_button(self.action_id.clone(), icon, label)
         } else {
-            Element::button(self.action_id, self.label)
+            Element::button(self.action_id.clone(), label)
         };
         if let Some(trailing) = self.trailing_icon {
             element = element.trailing_icon(trailing);
@@ -353,15 +433,24 @@ impl Component for Button {
             .transition_ms(120)
             .foreground(ink)
             .font_family(FontFamily::Sans)
-            .font_size(13.0)
+            .font_size(sizing.font_size)
             .padding(padding)
-            .gap(6.0)
+            .gap(sizing.inner_spacing)
             .radius(radius)
             .size(width, Some(height));
         if outline {
             element = element.border(self.palette.border, 1.0);
         }
-        element
+        if let Some(title) = self.tooltip_title {
+            let mut tooltip = Tooltip::new(element, self.action_id, title, self.palette)
+                .placement(self.tooltip_placement);
+            if let Some(shortcut) = self.tooltip_shortcut {
+                tooltip = tooltip.shortcut(shortcut);
+            }
+            tooltip.render()
+        } else {
+            element
+        }
     }
 }
 
@@ -371,11 +460,31 @@ pub struct IconButton(Button);
 
 impl IconButton {
     pub fn new(action_id: impl Into<String>, icon: Icon, palette: ComponentPalette) -> Self {
-        Self(Button::new(action_id, "", palette).icon(icon))
+        Self(Button::with_content(
+            action_id,
+            ButtonContent::Icon(icon),
+            palette,
+        ))
     }
 
     pub fn label(mut self, label: impl Into<String>) -> Self {
-        self.0.label = label.into();
+        let (icon, _) = self.0.content.parts();
+        self.0.content = ButtonContent::IconAndLabel(icon.expect("IconButton icon"), label.into());
+        self
+    }
+
+    pub fn tooltip(mut self, title: impl Into<String>) -> Self {
+        self.0 = self.0.tooltip(title);
+        self
+    }
+
+    pub fn tooltip_shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.0 = self.0.tooltip_shortcut(shortcut);
+        self
+    }
+
+    pub fn tooltip_placement(mut self, placement: TooltipPlacement) -> Self {
+        self.0 = self.0.tooltip_placement(placement);
         self
     }
 
@@ -1083,6 +1192,91 @@ impl Component for DropdownList {
 mod tests {
     use super::*;
     use crate::{DrawCommand, ElementKind, Point, Size, UiAction, UiEvent, UiTree};
+
+    #[test]
+    fn button_content_and_tooltip_share_one_action_target() {
+        let palette = ComponentPalette::neutral_dark();
+        let button = Button::with_content(
+            "inspect",
+            ButtonContent::IconAndLabel(Icon::Code, "Inspeccionar".into()),
+            palette,
+        )
+        .tooltip("Ver detalles")
+        .tooltip_shortcut("Ctrl+I")
+        .render();
+        let ElementKind::Tooltip {
+            anchor,
+            anchor_id,
+            title,
+            shortcut,
+            ..
+        } = &button.kind
+        else {
+            panic!("button should own its tooltip");
+        };
+        assert_eq!(anchor_id, "inspect");
+        assert_eq!(title, "Ver detalles");
+        assert_eq!(shortcut.as_deref(), Some("Ctrl+I"));
+        assert!(matches!(anchor.kind, ElementKind::IconButton { .. }));
+
+        let mut tree = UiTree::new(button);
+        let frame = tree.layout(Size::new(200.0, 40.0));
+        assert_eq!(frame.regions.len(), 1);
+        let center = Point::new(
+            frame.regions[0].rect.x + frame.regions[0].rect.width / 2.0,
+            frame.regions[0].rect.y + frame.regions[0].rect.height / 2.0,
+        );
+        tree.handle_event(UiEvent::PointerDown(center));
+        assert_eq!(
+            tree.handle_event(UiEvent::PointerUp(center)),
+            vec![UiAction::Clicked {
+                id: "inspect".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn disabled_button_with_tooltip_has_no_action() {
+        let button = Button::new("save", "Guardar", ComponentPalette::neutral_dark())
+            .tooltip("Guardar cambios")
+            .disabled()
+            .render();
+        assert!(!matches!(button.kind, ElementKind::Tooltip { .. }));
+        assert!(UiTree::new(button)
+            .layout(Size::new(200.0, 40.0))
+            .regions
+            .is_empty());
+    }
+
+    #[test]
+    fn label_button_trailing_icon_preserves_width_when_disabled() {
+        let palette = ComponentPalette::neutral_dark();
+        let enabled = Button::new("more", "Más opciones", palette)
+            .trailing_icon(Icon::ChevronDown)
+            .variant(ButtonVariant::Raised)
+            .render();
+        let disabled = Button::new("more", "Más opciones", palette)
+            .trailing_icon(Icon::ChevronDown)
+            .variant(ButtonVariant::Raised)
+            .disabled()
+            .render();
+        let enabled_frame = UiTree::new(enabled).layout(Size::new(300.0, 32.0));
+        let disabled_frame = UiTree::new(disabled).layout(Size::new(300.0, 32.0));
+        let enabled_width = enabled_frame.regions[0].rect.width;
+        let disabled_width = disabled_frame.commands.iter().find_map(|command| {
+            if let DrawCommand::FillRect { rect, color, .. } = command {
+                (*color == palette.raised).then_some(rect.width)
+            } else {
+                None
+            }
+        });
+        assert_eq!(disabled_width, Some(enabled_width));
+        assert!(enabled_frame
+            .commands
+            .iter()
+            .any(|command| matches!(command, DrawCommand::Icon { .. })));
+        assert!(disabled_frame.regions.is_empty());
+    }
 
     #[test]
     fn semantic_button_preserves_one_action_for_both_icons() {

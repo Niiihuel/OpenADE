@@ -1354,8 +1354,7 @@ pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
             } else {
                 "Cuenta guardada sin verificar. Comprueba la conexión."
             });
-            let anchor =
-                Tooltip::new(button.render(), action_id, hint, theme::component_palette()).render();
+            let anchor = button.tooltip(hint).render();
             if many {
                 let mut options: Vec<DropdownOption> = accounts
                     .iter()

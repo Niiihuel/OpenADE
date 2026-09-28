@@ -16,8 +16,9 @@ mod tree_view;
 mod typography;
 
 pub use components::{
-    Button, ButtonVariant, Component, ComponentPalette, ControlSize, ControlState, DropdownList,
-    DropdownOption, IconButton, Popover, SearchField, SegmentedControl, Switch, Tab, Tabs, Tooltip,
+    Button, ButtonContent, ButtonSizing, ButtonVariant, Component, ComponentPalette, ControlSize,
+    ControlState, DropdownList, DropdownOption, IconButton, Popover, SearchField, SegmentedControl,
+    Switch, Tab, Tabs, Tooltip,
 };
 pub use element::{
     Border, BoxShadow, Element, ElementKind, FontFamily, Icon, PopoverPlacement, Style,
