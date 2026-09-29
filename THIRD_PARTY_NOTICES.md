@@ -8,14 +8,6 @@ El aislamiento de comandos en Windows usa
 Corporation, bajo [licencia MIT](third_party/mxc_LICENSE.md). El código se
 obtiene como dependencia Cargo; el harness de OpenIDE no deriva de MXC.
 
-## Models.dev
-
-La configuración de proveedores descarga metadatos de
-[Models.dev](https://github.com/anomalyco/models.dev), publicados bajo
-[licencia MIT](https://github.com/anomalyco/models.dev/blob/dev/LICENSE).
-OpenIDE guarda una copia local del catálogo recibido. Los datos pueden cambiar
-en el origen y no sustituyen la comprobación de disponibilidad del proveedor.
-
 ## Solar Icons
 
 Los iconos incluidos en `apps/agents-window/assets/solar/` provienen de

@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use openide_core::{AgentMessage, MessageRole, ToolCall};
 use reqwest::Client;
+use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -17,28 +18,84 @@ pub(crate) const MAX_MODEL_HTTP_BODY_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_MODEL_HTTP_ERROR_BYTES: usize = 64 * 1024;
 const MAX_MODEL_TRANSPORT_RETRIES: usize = 2;
 const MAX_MODEL_RETRY_DELAY: Duration = Duration::from_secs(10);
-const NATIVE_STANDARD_EFFORTS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
-const NATIVE_GPT55_EFFORTS: &[&str] = &["none", "low", "medium", "high", "xhigh"];
-const NATIVE_GPT6_TOOL_EFFORTS: &[&str] = &["none"];
 
-/// Whether this Chat Completions backend can send its function tools to the
-/// model. Catalog metadata alone cannot describe this transport limitation.
-pub fn native_agent_supports_tool_calls(model: &str) -> bool {
-    !model.starts_with("gpt-6-astra")
+/// Declared capabilities for one model on one wire protocol. The provider
+/// registry or an explicit custom connection supplies these values; model
+/// names never imply capabilities. Enabling tools permits sending them but
+/// does not guarantee the remote server accepts them.
+/// An empty/default contract advertises neither tools nor adjustable effort.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct ModelRequestCapabilities {
+    pub tool_calls: bool,
+    /// Effort values accepted without function tools. These are provider
+    /// values, not a fixed OpenIDE enum.
+    pub reasoning_efforts: Vec<String>,
+    /// When present, narrows the selectable efforts for requests with tools.
+    /// `None` means the ordinary reasoning effort set also applies to tools.
+    pub tool_call_reasoning_efforts: Option<Vec<String>>,
+    /// Some protocols require an effort to be sent when tools are present.
+    /// This value is only emitted for tool requests without a user choice.
+    pub default_tool_call_effort: Option<String>,
 }
 
-/// Efforts safe for this native agent's Chat Completions requests, which
-/// include function tools. An empty/unknown result means the model's own
-/// default remains usable, but the UI must not claim an adjustable effort.
-pub fn native_agent_supported_efforts(model: &str) -> Option<&'static [&'static str]> {
-    if model.starts_with("gpt-5.6") && !model.contains("-codex") {
-        Some(NATIVE_STANDARD_EFFORTS)
-    } else if model.starts_with("gpt-5.5") && !model.contains("-codex") {
-        Some(NATIVE_GPT55_EFFORTS)
-    } else if model.starts_with("gpt-6-sol") || model.starts_with("gpt-6-luna") {
-        Some(NATIVE_GPT6_TOOL_EFFORTS)
-    } else {
-        None
+impl ModelRequestCapabilities {
+    pub fn efforts_with_tools(&self) -> &[String] {
+        self.tool_call_reasoning_efforts
+            .as_deref()
+            .unwrap_or(&self.reasoning_efforts)
+    }
+
+    fn validate(&self) -> Result<(), AgentError> {
+        fn validate_efforts(values: &[String]) -> Result<(), AgentError> {
+            if values.len() > 32 {
+                return Err(AgentError::InvalidRequest(
+                    "model capability contract has too many effort values".into(),
+                ));
+            }
+            let mut seen = std::collections::BTreeSet::new();
+            for value in values {
+                if value.is_empty()
+                    || value.len() > 64
+                    || value.chars().any(char::is_whitespace)
+                    || value.chars().any(char::is_control)
+                    || !seen.insert(value)
+                {
+                    return Err(AgentError::InvalidRequest(
+                        "model capability contract has an invalid or repeated effort".into(),
+                    ));
+                }
+            }
+            Ok(())
+        }
+
+        validate_efforts(&self.reasoning_efforts)?;
+        if let Some(tool_efforts) = &self.tool_call_reasoning_efforts {
+            validate_efforts(tool_efforts)?;
+            if !tool_efforts
+                .iter()
+                .all(|effort| self.reasoning_efforts.contains(effort))
+            {
+                return Err(AgentError::InvalidRequest(
+                    "tool effort values must be supported model efforts".into(),
+                ));
+            }
+        }
+        if !self.tool_calls
+            && (self.tool_call_reasoning_efforts.is_some()
+                || self.default_tool_call_effort.is_some())
+        {
+            return Err(AgentError::InvalidRequest(
+                "a model without tool calls cannot declare tool effort settings".into(),
+            ));
+        }
+        if let Some(default) = &self.default_tool_call_effort {
+            if !self.efforts_with_tools().contains(default) {
+                return Err(AgentError::InvalidRequest(
+                    "default tool effort must be an accepted tool effort".into(),
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -362,8 +419,9 @@ pub struct OpenAiCompatibleBackend {
     endpoint: String,
     api_key: Option<String>,
     model: String,
+    capabilities: ModelRequestCapabilities,
     reasoning_effort: Option<String>,
-    deepseek_non_thinking: bool,
+    request_fields: BTreeMap<String, Value>,
     client: Client,
 }
 
@@ -379,21 +437,13 @@ impl OpenAiCompatibleBackend {
         } else {
             format!("{}/chat/completions", base.trim_end_matches('/'))
         };
-        let model = model.into();
-        let required_none = model.starts_with("gpt-6-sol") || model.starts_with("gpt-6-luna");
         Self {
             endpoint,
             api_key,
-            model,
-            // Chat Completions requires an explicit `none` for these models
-            // when tools are present. Set it here for interactive and scheduled
-            // runs alike, including when the composer hides a one-choice menu.
-            reasoning_effort: if required_none {
-                Some("none".to_owned())
-            } else {
-                None
-            },
-            deepseek_non_thinking: false,
+            model: model.into(),
+            capabilities: ModelRequestCapabilities::default(),
+            reasoning_effort: None,
+            request_fields: BTreeMap::new(),
             client: Client::builder()
                 .timeout(Duration::from_secs(120))
                 .build()
@@ -409,21 +459,55 @@ impl OpenAiCompatibleBackend {
         self
     }
 
-    /// DeepSeek thinking mode requires replaying `reasoning_content` after
-    /// tool calls. Until this backend persists that field, request its
-    /// documented non-thinking mode explicitly for the DeepSeek adapter.
-    pub fn with_deepseek_non_thinking(mut self) -> Self {
-        self.deepseek_non_thinking = true;
-        self
+    /// Attach the capability declaration for this provider, model, and route.
+    /// Call this before requesting function tools or an explicit effort.
+    pub fn with_capabilities(
+        mut self,
+        capabilities: ModelRequestCapabilities,
+    ) -> Result<Self, AgentError> {
+        capabilities.validate()?;
+        if let Some(effort) = &self.reasoning_effort {
+            validate_reasoning_effort(&self.model, &capabilities, effort)?;
+        }
+        self.capabilities = capabilities;
+        Ok(self)
     }
 
-    /// Opt in to the OpenAI Chat Completions `reasoning_effort` parameter.
-    /// Unknown OpenAI-compatible models and ordinary non-reasoning models are
-    /// rejected instead of silently displaying a setting that has no effect.
-    /// Model-specific server support remains the provider's responsibility.
+    pub fn capabilities(&self) -> &ModelRequestCapabilities {
+        &self.capabilities
+    }
+
+    /// Add a documented provider-specific Chat Completions request field.
+    /// Common fields owned by this adapter cannot be replaced.
+    pub fn with_request_field(
+        mut self,
+        field: impl Into<String>,
+        value: Value,
+    ) -> Result<Self, AgentError> {
+        let field = field.into();
+        if field.is_empty()
+            || field.len() > 64
+            || !field
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+            || ["model", "messages", "tools", "stream", "reasoning_effort"]
+                .contains(&field.as_str())
+            || self.request_fields.len() >= 16 && !self.request_fields.contains_key(&field)
+            || serde_json::to_vec(&value).is_ok_and(|encoded| encoded.len() > 8 * 1024)
+        {
+            return Err(AgentError::InvalidRequest(
+                "invalid or oversized Chat Completions request field".into(),
+            ));
+        }
+        self.request_fields.insert(field, value);
+        Ok(self)
+    }
+
+    /// Opt in to the Chat Completions `reasoning_effort` parameter if the
+    /// selected provider/model/route advertises this exact value.
     pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Result<Self, AgentError> {
         let effort = effort.into();
-        validate_reasoning_effort(&self.model, &effort)?;
+        validate_reasoning_effort(&self.model, &self.capabilities, &effort)?;
         self.reasoning_effort = Some(effort);
         Ok(self)
     }
@@ -439,18 +523,32 @@ impl OpenAiCompatibleBackend {
                 "native Chat Completions transport does not accept user images; use Responses with an image-capable model".into(),
             ));
         }
-        if !native_agent_supports_tool_calls(&self.model) && !tools.is_empty() {
+        if !self.capabilities.tool_calls && !tools.is_empty() {
             return Err(AgentError::InvalidRequest(
-                "GPT-6 Astra function calling requires the Responses API; this native backend uses Chat Completions".into(),
+                "function tools are not enabled for this model and Chat Completions route".into(),
             ));
         }
-        if (self.model.starts_with("gpt-6-sol") || self.model.starts_with("gpt-6-luna"))
-            && !tools.is_empty()
-            && self.reasoning_effort.as_deref() != Some("none")
+        let effort = self.reasoning_effort.as_deref().or({
+            if tools.is_empty() {
+                None
+            } else {
+                self.capabilities.default_tool_call_effort.as_deref()
+            }
+        });
+        if !tools.is_empty()
+            && effort.is_some_and(|value| {
+                !self
+                    .capabilities
+                    .efforts_with_tools()
+                    .iter()
+                    .any(|allowed| allowed == value)
+            })
         {
-            return Err(AgentError::InvalidRequest(
-                "GPT-6 Sol and Luna function calling in Chat Completions requires reasoning effort 'none'".into(),
-            ));
+            return Err(AgentError::InvalidRequest(format!(
+                "reasoning effort '{}' is not enabled with function tools for model '{}' on this route",
+                effort.unwrap_or_default(),
+                self.model
+            )));
         }
         let wire_messages: Vec<Value> = messages.iter().map(message_to_wire).collect();
         let wire_tools: Vec<Value> = tools
@@ -474,11 +572,11 @@ impl OpenAiCompatibleBackend {
         if !wire_tools.is_empty() {
             body["tools"] = Value::Array(wire_tools);
         }
-        if let Some(effort) = &self.reasoning_effort {
-            body["reasoning_effort"] = Value::String(effort.clone());
+        if let Some(effort) = effort {
+            body["reasoning_effort"] = Value::String(effort.to_owned());
         }
-        if self.deepseek_non_thinking {
-            body["thinking"] = json!({"type": "disabled"});
+        for (field, value) in &self.request_fields {
+            body[field.as_str()] = value.clone();
         }
         Ok(body)
     }
@@ -498,15 +596,18 @@ impl OpenAiCompatibleBackend {
     }
 }
 
-fn validate_reasoning_effort(model: &str, effort: &str) -> Result<(), AgentError> {
-    let Some(levels) = native_agent_supported_efforts(model) else {
+fn validate_reasoning_effort(
+    model: &str,
+    capabilities: &ModelRequestCapabilities,
+    effort: &str,
+) -> Result<(), AgentError> {
+    if !capabilities
+        .reasoning_efforts
+        .iter()
+        .any(|allowed| allowed == effort)
+    {
         return Err(AgentError::InvalidRequest(format!(
-            "Model '{model}' has no verified reasoning effort with Chat Completions function tools; leave effort unset or use Codex CLI"
-        )));
-    };
-    if !levels.contains(&effort) {
-        return Err(AgentError::InvalidRequest(format!(
-            "Model '{model}' does not support reasoning effort '{effort}' with Chat Completions function tools"
+            "reasoning effort '{effort}' is not enabled for model '{model}' on this route"
         )));
     }
     Ok(())
@@ -519,16 +620,17 @@ impl ModelBackend for OpenAiCompatibleBackend {
     }
 
     fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+        let capabilities = serde_json::to_string(&self.capabilities)
+            .expect("validated model capability contract serializes");
+        let request_fields =
+            serde_json::to_string(&self.request_fields).expect("JSON request fields serialize");
         Some(stable_request_profile_fingerprint(&[
             "chat-completions-v1",
             &self.endpoint,
             &self.model,
+            &capabilities,
             self.reasoning_effort.as_deref().unwrap_or("<absent>"),
-            if self.deepseek_non_thinking {
-                "thinking-disabled"
-            } else {
-                "thinking-unset"
-            },
+            &request_fields,
             "stream-true",
         ]))
     }
@@ -1015,6 +1117,15 @@ mod tests {
         }
     }
 
+    fn tool_capabilities(efforts: &[&str]) -> ModelRequestCapabilities {
+        ModelRequestCapabilities {
+            tool_calls: true,
+            reasoning_efforts: efforts.iter().map(|effort| (*effort).to_owned()).collect(),
+            tool_call_reasoning_efforts: None,
+            default_tool_call_effort: None,
+        }
+    }
+
     #[test]
     fn chat_transport_rejects_images_before_http() {
         let image = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfixture").unwrap();
@@ -1041,7 +1152,9 @@ mod tests {
 
     #[test]
     fn reasoning_effort_is_explicit_in_both_streaming_and_regular_requests() {
-        let backend = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-5.6-sol")
+        let backend = OpenAiCompatibleBackend::new("http://localhost/v1", None, "vendor/model-a")
+            .with_capabilities(tool_capabilities(&["low", "high", "turbo"]))
+            .unwrap()
             .with_reasoning_effort("high")
             .unwrap();
         let messages = [AgentMessage::user("hello")];
@@ -1049,7 +1162,7 @@ mod tests {
             let body = backend
                 .request_body(&messages, &[sample_tool()], streaming)
                 .unwrap();
-            assert_eq!(body["model"], "gpt-5.6-sol");
+            assert_eq!(body["model"], "vendor/model-a");
             assert_eq!(body["reasoning_effort"], "high");
             assert_eq!(body["stream"], streaming);
             assert_eq!(body["tools"][0]["function"]["name"], "read_file");
@@ -1057,101 +1170,136 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_and_unknown_models_do_not_accept_decorative_effort() {
+    fn unknown_capabilities_do_not_accept_decorative_effort_or_tools() {
         assert!(
-            OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-4.1")
+            OpenAiCompatibleBackend::new("http://localhost/v1", None, "vendor/model-a")
                 .with_reasoning_effort("high")
                 .is_err()
         );
+        let unknown = OpenAiCompatibleBackend::new("http://localhost/v1", None, "vendor/model-a");
+        assert!(unknown.request_body(&[], &[sample_tool()], false).is_err());
+        let configured = unknown
+            .with_capabilities(tool_capabilities(&["turbo"]))
+            .unwrap();
+        assert!(configured
+            .request_body(&[], &[sample_tool()], false)
+            .is_ok());
         assert!(
-            OpenAiCompatibleBackend::new("http://localhost/v1", None, "custom-local")
-                .with_reasoning_effort("high")
-                .is_err()
-        );
-        assert!(
-            OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-5.6-sol")
+            OpenAiCompatibleBackend::new("http://localhost/v1", None, "vendor/model-a")
+                .with_capabilities(tool_capabilities(&["turbo"]))
+                .unwrap()
                 .with_reasoning_effort("ultra")
                 .is_err()
         );
     }
 
     #[test]
-    fn deepseek_adapter_explicitly_disables_thinking_when_tools_are_replayed() {
-        let backend =
-            OpenAiCompatibleBackend::new("https://api.deepseek.com", None, "deepseek-flash")
-                .with_deepseek_non_thinking();
+    fn provider_specific_request_fields_are_explicit_and_bounded() {
+        let backend = OpenAiCompatibleBackend::new("https://provider.example/v1", None, "model")
+            .with_capabilities(tool_capabilities(&[]))
+            .unwrap()
+            .with_request_field("thinking", json!({"type": "disabled"}))
+            .unwrap();
         let body = backend
             .request_body(&[AgentMessage::user("hello")], &[sample_tool()], true)
             .unwrap();
         assert_eq!(body["thinking"]["type"], "disabled");
         assert_eq!(body["tools"][0]["function"]["name"], "read_file");
+        assert!(backend
+            .with_request_field("model", json!("override"))
+            .is_err());
+        assert!(
+            OpenAiCompatibleBackend::new("http://localhost", None, "model")
+                .with_request_field("option", json!("x".repeat(9_000)))
+                .is_err()
+        );
     }
 
     #[test]
-    fn request_profile_changes_with_reasoning_and_deepseek_flags() {
-        let base = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-5.6-sol");
-        let high = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-5.6-sol")
+    fn request_profile_changes_with_reasoning_and_capabilities() {
+        let base = OpenAiCompatibleBackend::new("http://localhost/v1", None, "vendor/model-a");
+        let configured =
+            OpenAiCompatibleBackend::new("http://localhost/v1", None, "vendor/model-a")
+                .with_capabilities(tool_capabilities(&["high"]))
+                .unwrap();
+        let high = OpenAiCompatibleBackend::new("http://localhost/v1", None, "vendor/model-a")
+            .with_capabilities(tool_capabilities(&["high"]))
+            .unwrap()
             .with_reasoning_effort("high")
             .unwrap();
         assert_ne!(
             base.request_profile_fingerprint(),
+            configured.request_profile_fingerprint()
+        );
+        assert_ne!(
+            configured.request_profile_fingerprint(),
             high.request_profile_fingerprint()
         );
 
-        let deepseek =
-            OpenAiCompatibleBackend::new("https://api.deepseek.com", None, "deepseek-flash");
-        let non_thinking =
-            OpenAiCompatibleBackend::new("https://api.deepseek.com", None, "deepseek-flash")
-                .with_deepseek_non_thinking();
+        let generic = OpenAiCompatibleBackend::new("https://provider.example", None, "model");
+        let with_option = OpenAiCompatibleBackend::new("https://provider.example", None, "model")
+            .with_request_field("thinking", json!({"type":"disabled"}))
+            .unwrap();
         assert_ne!(
-            deepseek.request_profile_fingerprint(),
-            non_thinking.request_profile_fingerprint()
+            generic.request_profile_fingerprint(),
+            with_option.request_profile_fingerprint()
         );
     }
 
     #[test]
-    fn chat_completion_tool_rules_are_checked_before_http() {
-        let astra = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-astra");
-        assert!(astra.request_body(&[], &[sample_tool()], false).is_err());
-        assert!(
-            OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-astra")
-                .with_reasoning_effort("medium")
-                .is_err()
+    fn chat_completion_tool_effort_contract_is_checked_before_http() {
+        let caps = ModelRequestCapabilities {
+            tool_calls: true,
+            reasoning_efforts: vec!["none".into(), "medium".into()],
+            tool_call_reasoning_efforts: Some(vec!["none".into()]),
+            default_tool_call_effort: Some("none".into()),
+        };
+        let backend = OpenAiCompatibleBackend::new("http://localhost/v1", None, "any-model-id")
+            .with_capabilities(caps.clone())
+            .unwrap();
+        assert_eq!(backend.capabilities().efforts_with_tools(), &["none"]);
+        assert_eq!(
+            backend.request_body(&[], &[sample_tool()], false).unwrap()["reasoning_effort"],
+            "none"
         );
-        assert!(
-            OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-astra")
-                .with_reasoning_effort("none")
-                .is_err()
+        assert!(backend
+            .request_body(&[], &[], false)
+            .unwrap()
+            .get("reasoning_effort")
+            .is_none());
+        let medium = OpenAiCompatibleBackend::new("http://localhost/v1", None, "any-model-id")
+            .with_capabilities(caps)
+            .unwrap()
+            .with_reasoning_effort("medium")
+            .unwrap();
+        assert!(medium.request_body(&[], &[sample_tool()], false).is_err());
+        assert_eq!(
+            medium.request_body(&[], &[], false).unwrap()["reasoning_effort"],
+            "medium"
         );
 
-        let sol = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-sol");
-        assert_eq!(
-            sol.request_body(&[], &[sample_tool()], false).unwrap()["reasoning_effort"],
-            "none"
-        );
-        let luna = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-luna");
-        assert_eq!(
-            luna.request_body(&[], &[sample_tool()], false).unwrap()["reasoning_effort"],
-            "none"
-        );
-        assert!(
-            OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-sol")
-                .with_reasoning_effort("medium")
-                .is_err()
-        );
-        let sol = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-sol")
-            .with_reasoning_effort("none")
+        let denied = OpenAiCompatibleBackend::new("http://localhost/v1", None, "same-model-id")
+            .with_capabilities(ModelRequestCapabilities {
+                tool_calls: false,
+                reasoning_efforts: vec!["medium".into()],
+                ..Default::default()
+            })
             .unwrap();
-        assert_eq!(
-            sol.request_body(&[], &[sample_tool()], false).unwrap()["reasoning_effort"],
-            "none"
-        );
-        assert_eq!(
-            native_agent_supported_efforts("gpt-6-sol"),
-            Some(&["none"][..])
-        );
-        assert!(native_agent_supported_efforts("gpt-4.1").is_none());
-        assert!(native_agent_supported_efforts("gpt-5.6-codex").is_none());
+        assert!(denied.request_body(&[], &[sample_tool()], false).is_err());
+        assert!(denied.with_reasoning_effort("medium").is_ok());
+    }
+
+    #[test]
+    fn capability_contract_rejects_invalid_tool_effort_defaults() {
+        let backend = OpenAiCompatibleBackend::new("http://localhost/v1", None, "custom");
+        assert!(backend
+            .with_capabilities(ModelRequestCapabilities {
+                tool_calls: true,
+                reasoning_efforts: vec!["medium".into()],
+                tool_call_reasoning_efforts: Some(vec!["none".into()]),
+                default_tool_call_effort: Some("none".into()),
+            })
+            .is_err());
     }
 
     #[test]

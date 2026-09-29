@@ -13,8 +13,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use serde::{Deserialize, Serialize};
 use openide_harness::HostedWebSearchMode;
+use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "settings-preferences.json";
 const MAX_FILE_BYTES: u64 = 64 * 1024;

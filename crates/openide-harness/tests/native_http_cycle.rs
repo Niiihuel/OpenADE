@@ -6,8 +6,8 @@ use openide_core::{
 };
 use openide_harness::{
     AgentError, AgentRunner, CheckpointCoordinator, LocalTools, ModelBackend,
-    OpenAiCompatibleBackend, PermissionPolicy, ResumeDisposition, ResumeEngine, RunLimits,
-    ToolCatalog, ToolContext, ToolDefinition, ToolExecutor, ToolOutput,
+    ModelRequestCapabilities, OpenAiCompatibleBackend, PermissionPolicy, ResumeDisposition,
+    ResumeEngine, RunLimits, ToolCatalog, ToolContext, ToolDefinition, ToolExecutor, ToolOutput,
 };
 use serde_json::{json, Value};
 use std::fs::OpenOptions;
@@ -17,6 +17,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
+
+fn fixture_capabilities() -> ModelRequestCapabilities {
+    ModelRequestCapabilities {
+        tool_calls: true,
+        ..Default::default()
+    }
+}
 
 fn read_request(socket: &TcpStream) -> Value {
     let mut reader = BufReader::new(socket.try_clone().unwrap());
@@ -270,7 +277,10 @@ fn plan_build_uncertain_effect_reopens_resumes_and_replays_checkpoint() {
 
     let endpoint = format!("http://{address}/v1");
     let backend: Arc<dyn ModelBackend> = Arc::new(
-        OpenAiCompatibleBackend::new(&endpoint, None, MODEL).with_timeout(Duration::from_secs(10)),
+        OpenAiCompatibleBackend::new(&endpoint, None, MODEL)
+            .with_capabilities(fixture_capabilities())
+            .unwrap()
+            .with_timeout(Duration::from_secs(10)),
     );
     let compatibility = CheckpointCompatibility {
         provider: "fixture".into(),
@@ -566,11 +576,11 @@ fn streamed_http_model_executes_local_tool_and_replays_durable_turn() {
         );
     });
 
-    let backend = Arc::new(OpenAiCompatibleBackend::new(
-        format!("http://{address}/v1"),
-        None,
-        "fixture-model",
-    ));
+    let backend = Arc::new(
+        OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "fixture-model")
+            .with_capabilities(fixture_capabilities())
+            .unwrap(),
+    );
     let runner = AgentRunner::new(backend, Arc::new(LocalTools::new()))
         .with_native_runtime_identity("fixture", format!("http://{address}/v1"))
         .with_event_journal(sessions.clone());
@@ -666,11 +676,11 @@ fn truncated_stream_does_not_execute_a_complete_looking_tool_call() {
         .unwrap();
         socket.flush().unwrap();
     });
-    let backend = Arc::new(OpenAiCompatibleBackend::new(
-        format!("http://{address}/v1"),
-        None,
-        "fixture-model",
-    ));
+    let backend = Arc::new(
+        OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "fixture-model")
+            .with_capabilities(fixture_capabilities())
+            .unwrap(),
+    );
     let runner = AgentRunner::new(backend, Arc::new(LocalTools::new()))
         .with_native_runtime_identity("fixture", format!("http://{address}/v1"))
         .with_event_journal(sessions.clone());

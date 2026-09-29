@@ -1002,31 +1002,17 @@ fn github_page(state: &ViewState, compact: bool) -> Vec<Element> {
 }
 
 pub(crate) fn catalog_model_usable(
-    provider_id: &str,
+    _provider_id: &str,
     model: &crate::model_catalog::ModelInfo,
 ) -> bool {
-    match provider_id {
-        "openai" | "deepseek" => native_provider::native_model_capabilities(provider_id, &model.id)
-            .is_some_and(|capabilities| {
-                capabilities.function_tools
-                    && capabilities.streaming
-                    && native_provider::adapter(provider_id)
-                        .is_some_and(|adapter| adapter.wire_api == capabilities.wire_api)
-            }),
-        // OpenRouter's catalog data can narrow discovery, but never verifies
-        // the routed model's tool/stream contract or token limits. The UI
-        // labels this explicit selection as unverified below.
-        "openrouter" => {
-            !model.id.is_empty()
-                && model.tool_call
-                && model.status.as_deref() != Some("deprecated")
-                && model.modalities.as_ref().is_some_and(|modalities| {
-                    modalities.input.iter().any(|kind| kind == "text")
-                        && modalities.output.iter().any(|kind| kind == "text")
-                })
-        }
-        _ => false,
-    }
+    !model.id.is_empty()
+        && model.tool_call_declared != Some(false)
+        && model.status.as_deref() != Some("deprecated")
+        && model.modalities.as_ref().is_none_or(|modalities| {
+            (modalities.input.is_empty() || modalities.input.iter().any(|kind| kind == "text"))
+                && (modalities.output.is_empty()
+                    || modalities.output.iter().any(|kind| kind == "text"))
+        })
 }
 
 fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<Element> {
@@ -1044,9 +1030,15 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
             })
             .unwrap_or_else(|| state.native_provider_id.clone())
     };
-    let key_name = native_provider::adapter(&state.native_provider_id)
-        .map(|adapter| adapter.key_env)
-        .unwrap_or("OPENIDE_API_KEY");
+    let key_name = state
+        .catalog
+        .as_ref()
+        .and_then(|catalog| catalog.providers.get(&state.native_provider_id))
+        .and_then(|provider| provider.env.first().cloned())
+        .or_else(|| {
+            native_provider::adapter(&state.native_provider_id).map(|adapter| adapter.key_env)
+        })
+        .unwrap_or_else(|| "OPENIDE_API_KEY".to_owned());
     let mut sections = vec![group(
         "Selección activa",
         vec![
@@ -1174,26 +1166,16 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
         providers.sort_by(|left, right| {
             let left_selected = left.id == state.catalog_browse_provider;
             let right_selected = right.id == state.catalog_browse_provider;
-            let left_supported = native_provider::adapter(&left.id).is_some();
-            let right_supported = native_provider::adapter(&right.id).is_some();
-            right_selected.cmp(&left_selected).then_with(|| {
-                right_supported
-                    .cmp(&left_supported)
-                    .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-            })
+            right_selected
+                .cmp(&left_selected)
+                .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
         });
         let count = providers.len();
         for provider in providers.into_iter().take(18) {
-            let available = native_provider::adapter(&provider.id).is_some();
             let title = format!(
-                "{} · {} modelos · {}",
+                "{} · {} modelos · Conexión nativa",
                 provider.name,
                 provider.models.len(),
-                if available {
-                    "Conexión nativa"
-                } else {
-                    "Sólo catálogo"
-                }
             );
             catalog_header.push(
                 Button::new(
@@ -1224,17 +1206,11 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
         .as_ref()
         .and_then(|catalog| catalog.providers.get(&state.catalog_browse_provider))
     {
-        let supported = native_provider::adapter(&provider.id).is_some();
         let mut models = vec![
             subtle(format!(
-                "{} · {} modelos · {}",
+                "{} · {} modelos · Conexión nativa disponible",
                 provider.name,
                 provider.models.len(),
-                if supported {
-                    "Conexión nativa disponible"
-                } else {
-                    "Conexión nativa no disponible"
-                }
             )),
             field(
                 "catalog_model_query",
@@ -1283,30 +1259,35 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
                 .and_then(|cost| cost.input.zip(cost.output))
                 .map(|(input, output)| format!("${input:.2}/${output:.2} por millón de tokens"))
                 .unwrap_or_else(|| "Precio no informado".to_owned());
-            let eligible = supported && catalog_model_usable(&provider.id, model);
+            let eligible = catalog_model_usable(&provider.id, model);
             let availability = if eligible && reviewed.is_some() {
                 "Seleccionable para el agente nativo"
             } else if eligible {
-                "Seleccionable vía OpenRouter; ejecución y límites sin verificar"
-            } else if !supported {
-                "Sin conexión nativa"
-            } else if provider.id == "openai"
-                && !native_provider::openai_native_compatible_model(&model.id)
-            {
-                "Modelo pendiente de verificar para Responses"
-            } else if provider.id == "deepseek"
-                && !native_provider::deepseek_native_compatible_model(&model.id)
-            {
-                "Alias sin soporte nativo verificado"
-            } else if provider.id == "openrouter" && !model.tool_call {
+                "Seleccionable; ejecución y límites sin verificar"
+            } else if model.tool_call_declared == Some(false) {
                 "El proveedor no declara herramientas para este modelo"
             } else {
                 "Modalidad o estado no compatible"
             };
             let updated = model.last_updated.as_deref().unwrap_or("sin fecha");
+            let source = state
+                .catalog
+                .as_ref()
+                .and_then(|catalog| catalog.provider_status.get(&provider.id))
+                .map_or("Base local revisada", |status| {
+                    if status.source == crate::model_catalog::CatalogSource::OfficialApi {
+                        "API del proveedor"
+                    } else {
+                        "Base local revisada"
+                    }
+                });
             let capabilities = format!(
-                "Catálogo del proveedor: herramientas {} · razonamiento {}",
-                if model.tool_call { "sí" } else { "sin dato" },
+                "{source}: herramientas {} · razonamiento {}",
+                match model.tool_call_declared {
+                    Some(true) => "sí",
+                    Some(false) => "no",
+                    None => "sin dato",
+                },
                 if model.reasoning { "sí" } else { "sin dato" }
             );
             let button = Button::new(
@@ -2669,60 +2650,44 @@ mod tests {
     }
 
     #[test]
-    fn catalog_tool_flag_does_not_override_native_protocol_limits() {
-        for (provider, model_id, expected) in [
-            ("openai", "gpt-5.4", true),
-            ("openai", "gpt-5.4-pro", false),
-            ("openai", "gpt-realtime-2.1", false),
-            ("openai", "gpt-6-astra", true),
-            ("deepseek", "deepseek-flash", true),
-            ("deepseek", "deepseek-v4-flash", false),
+    fn catalog_selection_is_not_restricted_by_provider_or_model_prefix() {
+        for (provider, model_id) in [
+            ("openai", "new-future-model"),
+            ("deepseek", "new-future-model"),
+            ("groq", "some-model"),
+            ("my-provider", "unseen-model"),
         ] {
             let model: crate::model_catalog::ModelInfo =
                 serde_json::from_value(serde_json::json!({
                     "id": model_id,
                     "name": model_id,
-                    "tool_call": true,
                     "modalities": {"input": ["text"], "output": ["text"]}
                 }))
                 .unwrap();
-            assert_eq!(
+            assert!(
                 catalog_model_usable(provider, &model),
-                expected,
-                "{model_id}"
+                "{provider}/{model_id}"
             );
         }
     }
 
     #[test]
-    fn reviewed_models_do_not_depend_on_models_dev_capability_flags() {
-        for (provider, model_id) in [("openai", "gpt-6-astra"), ("deepseek", "deepseek-v4-pro")] {
-            let model: crate::model_catalog::ModelInfo =
-                serde_json::from_value(serde_json::json!({
-                    "id": model_id,
-                    "name": model_id,
-                    "tool_call": false
-                }))
-                .unwrap();
-            assert!(catalog_model_usable(provider, &model));
-        }
-    }
-
-    #[test]
-    fn openrouter_catalog_is_only_a_candidate_filter() {
+    fn explicit_tool_or_text_exclusion_blocks_catalog_selection() {
         let model: crate::model_catalog::ModelInfo = serde_json::from_value(serde_json::json!({
-            "id": "anthropic/claude-sonnet-4.6",
-            "name": "Claude Sonnet 4.6",
+            "id": "provider/model",
+            "name": "Model",
             "tool_call": true,
+            "tool_call_declared": true,
             "modalities": {"input": ["text"], "output": ["text"]}
         }))
         .unwrap();
         assert!(catalog_model_usable("openrouter", &model));
-        assert!(
-            crate::native_provider::native_model_capabilities("openrouter", &model.id).is_none()
-        );
         let mut no_tools = model;
         no_tools.tool_call = false;
+        no_tools.tool_call_declared = Some(false);
+        assert!(!catalog_model_usable("openrouter", &no_tools));
+        no_tools.tool_call_declared = None;
+        no_tools.modalities.as_mut().unwrap().output = vec!["image".to_owned()];
         assert!(!catalog_model_usable("openrouter", &no_tools));
     }
 }

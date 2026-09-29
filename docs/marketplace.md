@@ -1,8 +1,8 @@
 # Marketplace de skills
 
-El Marketplace de OpenIDE acepta una carpeta local o un repositorio de GitHub indicado expresamente por la persona usuaria. Busca carpetas con `SKILL.md` en `.agents/skills`, `.opencode/skills`, `.claude/skills` y `skills`. Exige `name` y `description` en el frontmatter, valida que `name` coincida con la carpeta y muestra la licencia cuando está declarada. Esas reglas siguen la [documentación oficial de skills de OpenCode](https://opencode.ai/docs/skills).
+El Marketplace de OpenIDE acepta una carpeta local o un repositorio de GitHub indicado expresamente por la persona usuaria. Busca carpetas con `SKILL.md` en `.agents/skills`, `.claude/skills`, `skills` y en la raíz del origen. Exige `name` y `description` en el frontmatter, valida que `name` coincida con la carpeta y muestra la licencia cuando está declarada.
 
-Las instalaciones se copian a los datos privados de OpenIDE con ámbito de usuario o de proyecto. El agente nativo lee las skills activadas con límites de cantidad y tamaño. Las CLIs externas conservan sus propias reglas de descubrimiento. El Marketplace no carga complementos JavaScript/TypeScript, paquetes npm ni servidores MCP; [OpenCode describe los plugins como otro mecanismo de extensión](https://opencode.ai/docs/plugins/).
+Las instalaciones se copian a los datos privados de OpenIDE con ámbito de usuario o de proyecto. El agente nativo lee las skills activadas con límites de cantidad y tamaño. Las CLIs externas conservan sus propias reglas de descubrimiento. El Marketplace no carga complementos JavaScript/TypeScript, paquetes npm ni servidores MCP.
 
 ## Flujo y estados
 

@@ -60,7 +60,7 @@ pub enum Target {
     OpenSettings,
     OpenAutomations,
     OpenMarketplace,
-    OpenCodeReview,
+    OpenGitReview,
     CompactContext,
     ResumeTurn,
     ToggleRightDock,
@@ -108,7 +108,7 @@ enum StaticTarget {
     OpenSettings,
     OpenAutomations,
     OpenMarketplace,
-    OpenCodeReview,
+    OpenGitReview,
     CompactContext,
     ResumeTurn,
     ToggleRightDock,
@@ -123,7 +123,7 @@ impl From<StaticTarget> for Target {
             StaticTarget::OpenSettings => Self::OpenSettings,
             StaticTarget::OpenAutomations => Self::OpenAutomations,
             StaticTarget::OpenMarketplace => Self::OpenMarketplace,
-            StaticTarget::OpenCodeReview => Self::OpenCodeReview,
+            StaticTarget::OpenGitReview => Self::OpenGitReview,
             StaticTarget::CompactContext => Self::CompactContext,
             StaticTarget::ResumeTurn => Self::ResumeTurn,
             StaticTarget::ToggleRightDock => Self::ToggleRightDock,
@@ -169,7 +169,7 @@ const COMMANDS: [StaticCommand; 10] = [
         keywords: "marketplace skills plugins extensiones catalogo",
     },
     StaticCommand {
-        target: StaticTarget::OpenCodeReview,
+        target: StaticTarget::OpenGitReview,
         title: "Revisar cambios",
         subtitle: "Abrir el diff de Git del proyecto",
         keywords: "review code diff git changes cambios revisar",
@@ -318,7 +318,7 @@ fn target_key(target: &Target) -> String {
         Target::OpenSessions => "1".to_owned(),
         Target::OpenFiles => "2".to_owned(),
         Target::OpenSettings => "3".to_owned(),
-        Target::OpenCodeReview => "4".to_owned(),
+        Target::OpenGitReview => "4".to_owned(),
         Target::CompactContext => "5".to_owned(),
         Target::ResumeTurn => "b".to_owned(),
         Target::ToggleRightDock => "6".to_owned(),
@@ -473,7 +473,7 @@ mod tests {
         let results = search("git diff", Scope::All, &[], &[], DEFAULT_RESULT_LIMIT);
         assert_eq!(
             results.first().map(|item| &item.target),
-            Some(&Target::OpenCodeReview)
+            Some(&Target::OpenGitReview)
         );
     }
 

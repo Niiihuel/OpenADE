@@ -8,9 +8,9 @@ use openide_core::{
     CheckpointFileStore, ReplayRecovery, SessionStore, TurnMode, MODEL_CONTEXT_VERSION,
 };
 use openide_harness::{
-    AgentRunner, LocalTools, ModelBackend, OpenAiCompatibleBackend, PermissionPolicy,
-    ResponsesBackend, ResumeDisposition, ResumeEngine, RunLimits, TokenBudgetPolicy, ToolCatalog,
-    ToolExecutor, ToolPermissions,
+    AgentRunner, LocalTools, ModelBackend, ModelRequestCapabilities, OpenAiCompatibleBackend,
+    PermissionPolicy, ResponsesBackend, ResumeDisposition, ResumeEngine, RunLimits,
+    TokenBudgetPolicy, ToolCatalog, ToolExecutor, ToolPermissions,
 };
 use std::env;
 use std::sync::Arc;
@@ -79,7 +79,13 @@ impl Provider {
             )),
             Self::DeepSeekChat => Arc::new(
                 OpenAiCompatibleBackend::new(self.base(), Some(key.to_owned()), model)
-                    .with_deepseek_non_thinking(),
+                    .with_capabilities(ModelRequestCapabilities {
+                        tool_calls: true,
+                        ..Default::default()
+                    })
+                    .expect("acceptance route opts in to tool calls")
+                    .with_request_field("thinking", serde_json::json!({"type":"disabled"}))
+                    .expect("documented request option is valid"),
             ),
         }
     }

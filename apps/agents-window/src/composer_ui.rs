@@ -985,6 +985,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                             CredentialAvailability::EnvPresentUnverified,
                             ExecutionSupport::Verified,
                         ) => "Clave detectada",
+                        (_, ExecutionSupport::ProviderListedUnverified) => "Listado",
                         (_, ExecutionSupport::ProviderAdvertisedUnverified) => "Anunciado",
                         _ => "Sin verificar",
                     },

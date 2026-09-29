@@ -24,7 +24,6 @@ el modo `argument` rechaza los wrappers `.cmd` y `.bat`; usa un ejecutable
 nativo o un perfil que acepte el prompt por stdin.
 
 La CLI externa puede tener su propia política de aprobación y sus propias
-herramientas. El interruptor de herramientas de la ventana controla únicamente
-el harness nativo de OpenIDE: habilita escritura de archivos dentro del
-workspace y ejecución de comandos iniciados allí. Los comandos heredan los
-permisos del usuario del sistema; el directorio de trabajo no los aísla.
+herramientas. Los permisos configurados en la ventana se aplican únicamente
+al harness nativo de OpenIDE. La ejecución de sus comandos y el aislamiento
+en Windows se describen en [windows-command-sandbox.md](windows-command-sandbox.md).

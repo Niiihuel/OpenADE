@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "endpoint": "https://api.openai.com/v1",
+      "key_env": "OPENAI_API_KEY",
+      "wire_api": "responses",
+      "model_list_path": "models"
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "endpoint": "https://openrouter.ai/api/v1",
+      "key_env": "OPENROUTER_API_KEY",
+      "wire_api": "chat_completions",
+      "model_list_path": "models/user",
+      "catalog_list_path": "models?output_modalities=all",
+      "catalog_anonymous": true,
+      "catalog": {
+        "context_window_path": "context_length",
+        "max_output_path": "top_provider.max_completion_tokens",
+        "tool_call_path": "supported_parameters",
+        "tool_call_contains": "tools",
+        "input_modalities_path": "architecture.input_modalities",
+        "output_modalities_path": "architecture.output_modalities",
+        "pricing_input_path": "pricing.prompt",
+        "pricing_output_path": "pricing.completion",
+        "price_unit": "per_token"
+      }
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "endpoint": "https://api.deepseek.com",
+      "key_env": "DEEPSEEK_API_KEY",
+      "wire_api": "chat_completions",
+      "model_list_path": "models",
+      "chat_request_fields": {"thinking": {"type": "disabled"}},
+      "catalog": {
+        "context_window_path": "context_window",
+        "max_output_path": "max_output_tokens",
+        "effort_levels_path": "effort.supported_levels",
+        "input_modalities_path": "input_modalities",
+        "output_modalities_path": "output_modalities"
+      }
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "endpoint": "https://api.groq.com/openai/v1",
+      "key_env": "GROQ_API_KEY",
+      "wire_api": "chat_completions",
+      "model_list_path": "models",
+      "catalog": {
+        "context_window_path": "context_window",
+        "max_output_path": "max_completion_tokens"
+      }
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "endpoint": "https://api.mistral.ai/v1",
+      "key_env": "MISTRAL_API_KEY",
+      "wire_api": "chat_completions",
+      "model_list_path": "models",
+      "catalog": {
+        "context_window_path": "max_context_length",
+        "tool_call_path": "capabilities.function_calling"
+      }
+    },
+    {
+      "id": "xai",
+      "name": "xAI",
+      "endpoint": "https://api.x.ai/v1",
+      "key_env": "XAI_API_KEY",
+      "wire_api": "chat_completions",
+      "model_list_path": "language-models",
+      "catalog": {
+        "entries_path": "models",
+        "effort_levels_path": "capabilities.reasoning_effort",
+        "input_modalities_path": "input_modalities",
+        "output_modalities_path": "output_modalities",
+        "pricing_input_path": "prompt_text_token_price",
+        "pricing_output_path": "completion_text_token_price",
+        "price_unit": "usd_cents_per_100m_tokens"
+      }
+    },
+    {
+      "id": "custom",
+      "name": "Personalizado",
+      "endpoint": "https://api.openai.com/v1",
+      "key_env": "OPENIDE_API_KEY",
+      "wire_api": "chat_completions",
+      "model_list_path": null,
+      "user_endpoint": true,
+      "key_optional": true
+    }
+  ]
+}

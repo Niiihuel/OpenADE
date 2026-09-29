@@ -614,12 +614,7 @@ fn applies_to(workspace_key: &str, entry: &Installation) -> bool {
 fn scan_skill_folders(root: &Path, source: &SourceRecord) -> io::Result<Vec<DiscoveredSkill>> {
     let root = root.canonicalize()?;
     let mut candidates = Vec::new();
-    for relative in [
-        ".agents/skills",
-        ".claude/skills",
-        "skills",
-        "",
-    ] {
+    for relative in [".agents/skills", ".claude/skills", "skills", ""] {
         let folder = root.join(relative);
         if !folder.is_dir() {
             continue;

@@ -36,8 +36,8 @@ mod tool_scheduler;
 mod tools;
 
 pub use backend::{
-    native_agent_supported_efforts, native_agent_supports_tool_calls, ModelBackend,
-    ModelCompletion, ModelOutput, ModelTokenUsage, OpenAiCompatibleBackend,
+    ModelBackend, ModelCompletion, ModelOutput, ModelRequestCapabilities, ModelTokenUsage,
+    OpenAiCompatibleBackend,
 };
 pub use checkpoint_coordinator::{
     CheckpointCommit, CheckpointCoordinator, CheckpointCoordinatorError,

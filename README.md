@@ -7,7 +7,7 @@ propio y adaptadores configurables para agentes de línea de comandos.
 
 El proyecto está en desarrollo. Las implementaciones originales viven en
 `crates/` y la aplicación de escritorio en `apps/agents-window/`. Los clones de
-Warp y ZCode están en `references/` para estudiar su arquitectura; esa carpeta
+Warp, ZCode y Codex están en `references/` para estudiar su arquitectura; esa carpeta
 queda fuera del proyecto y no se incorpora a sus binarios.
 
 ## Desarrollo
@@ -33,28 +33,31 @@ define `OPENIDE_DATA_ROOT` con una ruta absoluta a una carpeta de datos aislada
 antes de ejecutar la ventana.
 
 En Configuración → Proveedores y modelos, OpenIDE mantiene un catálogo propio
-alimentado por las APIs oficiales de los proveedores admitidos, con caché local
-de la última respuesta válida. El listado permite explorar modelos; la
-ejecución exige un adaptador compatible y capacidades verificadas para el ID
-exacto. OpenAI usa Responses
-(`OPENAI_API_KEY`); OpenRouter (`OPENROUTER_API_KEY`) y DeepSeek
-(`DEEPSEEK_API_KEY`) usan Chat Completions. La conexión personalizada
+alimentado directamente por las APIs oficiales de los proveedores registrados,
+con caché local de la última respuesta válida. El registro incorporado incluye
+OpenAI (Responses), OpenRouter, DeepSeek, Groq, Mistral y xAI (Chat Completions),
+y permite agregar proveedores con esos protocolos mediante
+`provider-registry.json` en el directorio de datos. Cada adaptador declara su
+endpoint, variable de clave y rutas de metadatos; la respuesta del catálogo no
+puede cambiarlos. La conexión personalizada
 usa `OPENIDE_API_KEY`, `OPENIDE_API_BASE` y `OPENIDE_MODEL` como valores iniciales
 para instalaciones anteriores; puede funcionar sin clave con un servidor local.
 La selección se guarda en la carpeta de datos local, sin guardar la clave. Los
 perfiles CLI usan la autenticación de cada programa instalado. `.env.example`
-muestra los nombres, pero la aplicación no carga archivos `.env`
-automáticamente. El adaptador OpenAI y el de DeepSeek usan capacidades verificadas por
-ID exacto para esfuerzos y límites de contexto. OpenRouter y endpoints
-personalizados permiten selección explícita con límites desconocidos, sin
-compactación automática basada en una ventana inventada.
+muestra los nombres de las claves incorporadas, pero la aplicación no carga
+archivos `.env` automáticamente. Los esfuerzos se ofrecen sólo cuando el
+modelo exacto los declara o una revisión específica los confirma y el
+adaptador puede enviarlos por su protocolo. Los modelos sin esos datos quedan
+en «Automático». Una selección explícita sin verificación conserva límites
+desconocidos, sin compactación automática basada en una ventana inventada.
 El selector del composer agrupa las rutas por proveedor. Consulta en segundo
-plano `/models` con la clave configurada para OpenAI y DeepSeek, y
-`/models/user` para OpenRouter; conserva las respuestas sólo en memoria. El
+plano el listado autenticado declarado por cada adaptador y conserva las
+respuestas sólo en memoria. El
 listado autenticado, cuando responde, acota los modelos visibles de esa cuenta.
-La caché conserva la última lista válida para consulta sin conexión, sin
-convertirla en prueba de disponibilidad actual. El menú muestra una acción de
-conexión si falta la clave. Codex CLI es una ruta separada: OpenIDE consulta
+Por separado, el catálogo
+normalizado conserva localmente su última lista válida para consulta sin
+conexión, sin convertirla en prueba de disponibilidad actual. El menú muestra
+una acción de conexión si falta la clave. Codex CLI es una ruta separada: OpenIDE consulta
 `codex app-server` para mostrar los modelos y esfuerzos anunciados por la
 sesión ChatGPT activa, sin leer ni transferir sus credenciales. Si esa consulta
 falla, el menú identifica un catálogo de respaldo y Codex valida la selección
@@ -64,9 +67,6 @@ proveedor/modelo; el slider ajusta al nivel más cercano y ofrece
 variables de entorno, tal como se indica arriba.
 La [arquitectura de proveedores y catálogo propio](docs/providers-models-architecture.md)
 documenta la arquitectura Rust, el alcance actual y los pasos pendientes.
-La [estructura completa de Configuración](docs/settings-navigation.md) reúne
-20 secciones nativas; el [mapa de capacidades](docs/settings-capability-map.md)
-indica cuáles tienen servicio Rust conectado y cuáles son informativas.
 
 La aplicación permite elegir un backend instalado y un directorio de trabajo.
 La barra lateral muestra el harness nativo y sólo los perfiles CLI cuyo
@@ -74,9 +74,9 @@ ejecutable se encuentra en `PATH` al iniciar la ventana. En este equipo se
 detectó Codex; los demás aparecerán al instalarlos y reiniciar OpenIDE. Los
 perfiles personalizados se definen en `cli-profiles.json`.
 La elección explícita de backend se conserva al reiniciar. Sin elección previa,
-una conexión nativa configurada tiene prioridad; Codex CLI sirve como ruta
-inicial cuando no hay conexión nativa disponible. Las sesiones Codex CLI usan
-su propio proceso y las sesiones nativas usan el harness Rust de OpenIDE.
+el harness nativo es la ruta inicial; los perfiles CLI se usan al elegirlos
+expresamente. Las sesiones Codex CLI usan su propio proceso y las sesiones
+nativas usan el harness Rust de OpenIDE.
 El encabezado de la conversación identifica la ruta usada. Los avisos que
 Codex CLI escriba en stderr aparecen como diagnósticos en Actividad; el turno
 no se marca como fallido por la sola presencia de stderr.
@@ -127,16 +127,13 @@ La interfaz usa la estructura y densidad de ZCode con una paleta nativa oscura.
 El composer tiene un acento azul en Enviar y un gradiente azul-violeta en el
 selector de esfuerzo. Los iconos Solar Linear son monocromos, reciben una
 sola tinta del control y se alinean a píxeles físicos para verse nítidos. Consulta
-[el mapa visual](docs/zcode-visual-map.md), [la guía de componentes y layout de WarpUI](docs/warp-visual-system.md),
 [la iconografía](docs/iconography.md) y [los perfiles CLI](docs/cli-profiles.md). El framework Rust implementa
 capas flotantes, sombras, estado por ID y transiciones de controles; el host
 actual usa egui/wgpu para ventanas, fuentes e input.
 
 La paridad con ZCode y la calidad de Warp siguen en curso: el Browser embebido,
 la revisión interactiva de diffs y las vistas de medios necesitan backends
-propios. La terminal integrada ya usa PTY. La [auditoría de WarpUI](docs/warp-gap-analysis.md)
-detalla las brechas del framework; el [estudio del panel derecho](docs/zcode-right-dock.md)
-detalla su alcance actual.
+propios. La terminal integrada ya usa PTY.
 
 ## Fuentes de referencia y licencias
 
@@ -147,6 +144,9 @@ detalla su alcance actual.
 - [ZCode](https://github.com/zai-org/ZCode): se usa como referencia funcional para
   el ciclo de agente, herramientas, sesiones y proveedores. El código de este
   proyecto se escribe en Rust desde cero.
+- [Codex](https://github.com/openai/codex): se estudian los contratos de turno,
+  herramientas y recuperación de su harness Rust. OpenIDE mantiene su propia
+  implementación; el código de Codex se publica bajo Apache-2.0.
 
 Consulta [docs/architecture.md](docs/architecture.md) para el mapa de componentes
 y el alcance funcional.

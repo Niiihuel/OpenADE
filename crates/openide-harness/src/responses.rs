@@ -110,16 +110,18 @@ impl ResponsesBackend {
         self
     }
 
-    /// Validates the parameter spelling; the API validates model availability.
+    /// Validates a bounded wire value. The caller must authorize this value
+    /// against the exact provider/model route before constructing the backend.
     pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Result<Self, AgentError> {
         let effort = effort.into();
-        if !matches!(
-            effort.as_str(),
-            "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
-        ) {
-            return Err(AgentError::InvalidRequest(format!(
-                "unsupported Responses reasoning effort: {effort}"
-            )));
+        if effort.is_empty()
+            || effort.len() > 64
+            || effort.chars().any(char::is_whitespace)
+            || effort.chars().any(char::is_control)
+        {
+            return Err(AgentError::InvalidRequest(
+                "invalid Responses reasoning effort value".into(),
+            ));
         }
         self.reasoning_effort = Some(effort);
         Ok(self)
@@ -1308,6 +1310,29 @@ mod tests {
         assert!(matches!(error, AgentError::Model(_)));
         assert!(receiver.try_recv().is_err());
         server.await.unwrap();
+    }
+
+    #[test]
+    fn accepts_new_provider_effort_without_a_hardcoded_level_list() {
+        let backend = ResponsesBackend::new("https://provider.example/v1", None, "new-model")
+            .with_reasoning_effort("turbo_2027")
+            .unwrap();
+        let body = backend
+            .request_body(&[AgentMessage::user("hello")], &[], false)
+            .unwrap();
+        assert_eq!(body["reasoning"]["effort"], "turbo_2027");
+        for invalid in ["", "too much", "line\nbreak"] {
+            assert!(
+                ResponsesBackend::new("https://provider.example/v1", None, "model")
+                    .with_reasoning_effort(invalid)
+                    .is_err()
+            );
+        }
+        assert!(
+            ResponsesBackend::new("https://provider.example/v1", None, "model")
+                .with_reasoning_effort("x".repeat(65))
+                .is_err()
+        );
     }
 
     #[test]

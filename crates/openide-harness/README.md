@@ -1,19 +1,41 @@
 # Native harness tool permissions
 
-## Native model reasoning effort
+## Native model capabilities and reasoning effort
 
-`OpenAiCompatibleBackend` uses the Chat Completions wire format. To request a
-supported effort explicitly, call `.with_reasoning_effort("high")?` before
-passing the backend to `AgentRunner`. Without that call, the backend does not
-send `reasoning_effort` and the provider chooses its default. The builder
-rejects ordinary or unknown models rather than silently ignoring the setting.
+All provider adapters implement `ModelBackend`. `OpenAiCompatibleBackend` is
+the Chat Completions wire adapter; its model identifier does not imply tool or
+effort support. The caller supplies a `ModelRequestCapabilities` contract for
+the selected provider, model, and route before running the agent:
 
-`native_agent_supported_efforts(model)` returns effort choices safe for this
-agent's Chat Completions requests, which include function tools. GPT-6 Astra
-requires Responses for function calling; GPT-6 Sol and Luna can use Chat
-Completions function tools only with effort `none`. For the full GPT-6 reasoning
-range and agentic tool use, OpenIDE uses `ResponsesBackend` for its OpenAI
-provider. The adapter streams text and function calls and can return response
+```rust
+use openide_harness::{ModelRequestCapabilities, OpenAiCompatibleBackend};
+
+let capabilities = ModelRequestCapabilities {
+    tool_calls: true,
+    reasoning_efforts: vec!["low".into(), "high".into()],
+    tool_call_reasoning_efforts: None,
+    default_tool_call_effort: None,
+};
+let backend = OpenAiCompatibleBackend::new(endpoint, api_key, model_id)
+    .with_capabilities(capabilities)?
+    .with_reasoning_effort("high")?;
+```
+
+The effort values come from provider metadata, a locally reviewed record, or
+an explicit custom connection setting. Unknown capabilities start with tools
+disabled and no adjustable effort. A custom route may explicitly set
+`tool_calls: true` while leaving effort lists empty; the provider then accepts
+or rejects the tool request. When `tool_call_reasoning_efforts` is set, it is
+the subset allowed with tools. `default_tool_call_effort` is sent only on tool
+requests without an explicit choice. Leaving both effort settings empty omits
+`reasoning_effort`, allowing the provider default.
+
+Provider-specific fields on a Chat Completions route can be supplied with
+`.with_request_field("thinking", serde_json::json!({"type":"disabled"}))?`.
+The adapter rejects attempts to replace protocol-owned fields and records
+these options in the request profile used for durable resume checks.
+
+The Responses adapter streams text and function calls and can return response
 IDs, token usage, and original output items through its detailed API. The
 native runner commits the response ID, usage, assistant message, tool calls,
 and original provider output items in `ModelResponseCommitted` before any

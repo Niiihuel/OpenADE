@@ -5102,7 +5102,10 @@ mod tests {
                 )
                 .unwrap();
         }
-        assert_eq!(second.session_approval_grants(&session.id).unwrap().len(), 2);
+        assert_eq!(
+            second.session_approval_grants(&session.id).unwrap().len(),
+            2
+        );
         assert!(!second
             .revoke_session_approval_grant(&session.id, &"c".repeat(64))
             .unwrap());
@@ -5110,19 +5113,21 @@ mod tests {
             .revoke_session_approval_grant(&session.id, &grant.key_digest)
             .unwrap());
         let bytes = fs::read(second.permission_journal_path(&session.id).unwrap()).unwrap();
-        let version = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["version"]
-            .as_u64();
+        let version =
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["version"].as_u64();
         assert_eq!(version, Some(2));
         assert!(!first
             .revoke_session_approval_grant(&session.id, &grant.key_digest)
             .unwrap());
-        assert!(first.session_approval_grants(&session.id).unwrap().is_empty());
+        assert!(first
+            .session_approval_grants(&session.id)
+            .unwrap()
+            .is_empty());
         let decisions = first.load_permission_decisions(&session.id).unwrap();
         assert_eq!(decisions.len(), 2);
         assert!(decisions
             .iter()
-            .all(|entry| entry.grant.as_ref() == Some(&grant)
-                && entry.revoked_at_ms.is_some()));
+            .all(|entry| entry.grant.as_ref() == Some(&grant) && entry.revoked_at_ms.is_some()));
         let retried = first
             .record_permission_decision_with_grant(
                 &session.id,
@@ -5132,10 +5137,16 @@ mod tests {
             )
             .unwrap();
         assert!(retried.revoked_at_ms.is_some());
-        assert!(first.session_approval_grants(&session.id).unwrap().is_empty());
+        assert!(first
+            .session_approval_grants(&session.id)
+            .unwrap()
+            .is_empty());
         drop(first);
         let reopened = SessionStore::open(dir.path()).unwrap();
-        assert!(reopened.session_approval_grants(&session.id).unwrap().is_empty());
+        assert!(reopened
+            .session_approval_grants(&session.id)
+            .unwrap()
+            .is_empty());
         reopened
             .record_permission_decision_with_grant(
                 &session.id,
@@ -5144,7 +5155,10 @@ mod tests {
                 Some(grant.clone()),
             )
             .unwrap();
-        assert_eq!(reopened.session_approval_grants(&session.id).unwrap(), vec![grant]);
+        assert_eq!(
+            reopened.session_approval_grants(&session.id).unwrap(),
+            vec![grant]
+        );
     }
 
     #[test]

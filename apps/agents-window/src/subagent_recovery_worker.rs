@@ -505,7 +505,8 @@ mod tests {
             pending_permission_child(root.path());
         let request = SubagentRecoveryRequest {
             sessions: sessions.clone(),
-            worker: worker.with_session_approvals(openide_harness::CommandIsolation::HostUnrestricted),
+            worker: worker
+                .with_session_approvals(openide_harness::CommandIsolation::HostUnrestricted),
             parent_id,
             child_id: child_id.clone(),
             spawn_id: "spawn-1".into(),

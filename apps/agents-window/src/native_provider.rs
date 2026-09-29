@@ -1,9 +1,10 @@
-//! Persistent connection choice for the native harness.
+//! Persistent connection choice and local provider registry for the native harness.
 //!
-//! The local provider catalog supplies discovery metadata, not trusted connection
-//! targets. Only adapters listed here may use provider credentials. A custom
-//! endpoint is an explicit user choice and uses the legacy OpenIDE_API_KEY.
+//! Provider endpoints and credential variable names come only from the bundled
+//! definitions or an explicit local `provider-registry.json`. Model listings
+//! cannot introduce an endpoint or authorize an effort level by model prefix.
 
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::IpAddr;
@@ -21,57 +22,307 @@ const SETTINGS_FILE: &str = "native-provider.json";
 const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
 const DEFAULT_MODEL: &str = "gpt-4.1";
 const DEFAULT_CUSTOM_ENDPOINT: &str = "https://api.openai.com/v1";
+const REGISTRY_FILE: &str = "provider-registry.json";
+const MAX_REGISTRY_BYTES: u64 = 64 * 1024;
+const MAX_PROVIDERS: usize = 128;
 const MAX_DISCOVERY_BYTES: u64 = 4 * 1024 * 1024;
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Adapter {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub endpoint: &'static str,
-    pub key_env: &'static str,
+    pub id: String,
+    pub name: String,
+    pub endpoint: String,
+    pub key_env: String,
     /// The request protocol implemented by this adapter, not a promise that
     /// every model exposed by its provider supports our tool loop.
     pub wire_api: NativeWireApi,
+    pub model_list_path: Option<String>,
+    #[serde(default)]
+    pub catalog_list_path: Option<String>,
+    #[serde(default)]
+    pub catalog_anonymous: bool,
+    #[serde(default)]
+    pub chat_request_fields: BTreeMap<String, Value>,
+    /// Optional Chat Completions field for an explicitly supported effort
+    /// control. A model listing alone does not authorize sending this field.
+    #[serde(default)]
+    pub reasoning_effort_field: Option<String>,
+    #[serde(default)]
+    pub user_endpoint: bool,
+    #[serde(default)]
+    pub key_optional: bool,
+    #[serde(default)]
+    pub catalog: CatalogMapping,
 }
 
-const ADAPTERS: [Adapter; 4] = [
-    Adapter {
-        id: "openai",
-        name: "OpenAI",
-        endpoint: "https://api.openai.com/v1",
-        key_env: "OPENAI_API_KEY",
-        wire_api: NativeWireApi::Responses,
-    },
-    Adapter {
-        id: "openrouter",
-        name: "OpenRouter",
-        endpoint: "https://openrouter.ai/api/v1",
-        key_env: "OPENROUTER_API_KEY",
-        wire_api: NativeWireApi::ChatCompletions,
-    },
-    Adapter {
-        id: "deepseek",
-        name: "DeepSeek",
-        endpoint: "https://api.deepseek.com",
-        key_env: "DEEPSEEK_API_KEY",
-        wire_api: NativeWireApi::ChatCompletions,
-    },
-    Adapter {
-        id: "custom",
-        name: "Personalizado",
-        endpoint: DEFAULT_CUSTOM_ENDPOINT,
-        key_env: "OPENIDE_API_KEY",
-        wire_api: NativeWireApi::ChatCompletions,
-    },
-];
+/// Declarative paths in a provider-owned JSON model listing. A missing path
+/// means the listing makes no claim; it never means a capability is supported.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct CatalogMapping {
+    pub entries_path: Option<String>,
+    pub id_path: Option<String>,
+    pub name_path: Option<String>,
+    pub context_window_path: Option<String>,
+    pub max_output_path: Option<String>,
+    pub tool_call_path: Option<String>,
+    pub tool_call_contains: Option<String>,
+    pub effort_levels_path: Option<String>,
+    pub input_modalities_path: Option<String>,
+    pub output_modalities_path: Option<String>,
+    pub pricing_input_path: Option<String>,
+    pub pricing_output_path: Option<String>,
+    pub price_unit: Option<String>,
+}
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProviderRegistryFile {
+    version: u32,
+    providers: Vec<Adapter>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ProviderRegistry {
+    adapters: Vec<Adapter>,
+}
+
+impl ProviderRegistry {
+    pub fn builtin() -> Self {
+        let file: ProviderRegistryFile =
+            serde_json::from_str(include_str!("provider-definitions.json"))
+                .expect("bundled provider definitions must be valid");
+        assert_eq!(file.version, 1, "bundled provider registry version");
+        Self {
+            adapters: file.providers,
+        }
+    }
+
+    pub fn load(root: &Path) -> Result<Self, String> {
+        let mut registry = Self::builtin();
+        let path = root.join(REGISTRY_FILE);
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(registry),
+            Err(error) => {
+                return Err(format!(
+                    "No se pudo leer el registro de proveedores: {error}"
+                ))
+            }
+        };
+        if metadata.len() > MAX_REGISTRY_BYTES {
+            return Err("El registro de proveedores excede el tamaño permitido".to_owned());
+        }
+        let bytes = fs::read(&path)
+            .map_err(|error| format!("No se pudo leer el registro de proveedores: {error}"))?;
+        if bytes.len() as u64 > MAX_REGISTRY_BYTES {
+            return Err("El registro de proveedores excede el tamaño permitido".to_owned());
+        }
+        let file: ProviderRegistryFile = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("Registro de proveedores inválido: {error}"))?;
+        if file.version != 1 {
+            return Err(format!(
+                "Versión de registro de proveedores no compatible: {}",
+                file.version
+            ));
+        }
+        if registry.adapters.len() + file.providers.len() > MAX_PROVIDERS {
+            return Err("Demasiados proveedores configurados".to_owned());
+        }
+        let mut ids: HashSet<String> = registry
+            .adapters
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect();
+        let mut used_keys: HashSet<String> = registry
+            .adapters
+            .iter()
+            .map(|entry| entry.key_env.clone())
+            .collect();
+        for mut entry in file.providers {
+            validate_provider_definition(&entry)?;
+            if entry.user_endpoint || entry.key_optional {
+                return Err(format!(
+                    "El proveedor {} debe fijar un endpoint y una variable de credencial propios",
+                    entry.id
+                ));
+            }
+            if !ids.insert(entry.id.clone()) {
+                return Err(format!("Proveedor duplicado o reservado: {}", entry.id));
+            }
+            if !used_keys.insert(entry.key_env.clone()) {
+                return Err(format!(
+                    "La variable {} ya pertenece a otro proveedor",
+                    entry.key_env
+                ));
+            }
+            entry.endpoint = validate_custom_endpoint(&entry.endpoint)?;
+            registry.adapters.push(entry);
+        }
+        Ok(registry)
+    }
+
+    pub fn adapters(&self) -> &[Adapter] {
+        &self.adapters
+    }
+
+    pub fn adapter(&self, provider_id: &str) -> Option<&Adapter> {
+        self.adapters.iter().find(|entry| entry.id == provider_id)
+    }
+}
+
+/// Compatibility lookup for built-ins. Runtime user additions require the
+/// explicit data root through `ProviderRegistry::load` or `adapter_at`.
 pub(crate) fn adapter(provider_id: &str) -> Option<Adapter> {
-    ADAPTERS
-        .iter()
-        .copied()
-        .find(|entry| entry.id == provider_id)
+    ProviderRegistry::builtin().adapter(provider_id).cloned()
+}
+
+pub(crate) fn adapter_at(root: &Path, provider_id: &str) -> Result<Option<Adapter>, String> {
+    Ok(ProviderRegistry::load(root)?.adapter(provider_id).cloned())
+}
+
+fn validate_provider_definition(entry: &Adapter) -> Result<(), String> {
+    if entry.id.is_empty()
+        || entry.id.len() > 64
+        || !entry.id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
+        })
+    {
+        return Err("ID de proveedor inválido".to_owned());
+    }
+    if entry.name.is_empty() || entry.name.len() > 128 || entry.name.chars().any(char::is_control) {
+        return Err(format!("Nombre inválido para {}", entry.id));
+    }
+    if entry.key_env.is_empty()
+        || entry.key_env.len() > 128
+        || !entry
+            .key_env
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Err(format!("Variable de credencial inválida para {}", entry.id));
+    }
+    if let Some(path) = &entry.model_list_path {
+        if path.is_empty()
+            || path.len() > 256
+            || path.starts_with('/')
+            || path.split('/').any(|segment| {
+                segment.is_empty()
+                    || segment == "."
+                    || segment == ".."
+                    || !segment
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+            })
+        {
+            return Err(format!("Ruta de listado inválida para {}", entry.id));
+        }
+    }
+    if let Some(path) = &entry.catalog_list_path {
+        let (resource_path, query) = path
+            .split_once('?')
+            .map_or((path.as_str(), None), |(path, query)| (path, Some(query)));
+        if resource_path.is_empty()
+            || resource_path.len() > 256
+            || resource_path.starts_with('/')
+            || resource_path.split('/').any(|segment| {
+                segment.is_empty()
+                    || segment == "."
+                    || segment == ".."
+                    || !segment
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+            })
+            || query.is_some_and(|query| {
+                query.is_empty()
+                    || query.len() > 128
+                    || !query.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'=' | b'&')
+                    })
+            })
+        {
+            return Err(format!(
+                "Ruta pública de listado inválida para {}",
+                entry.id
+            ));
+        }
+    }
+    for path in [
+        &entry.catalog.entries_path,
+        &entry.catalog.id_path,
+        &entry.catalog.name_path,
+        &entry.catalog.context_window_path,
+        &entry.catalog.max_output_path,
+        &entry.catalog.tool_call_path,
+        &entry.catalog.effort_levels_path,
+        &entry.catalog.input_modalities_path,
+        &entry.catalog.output_modalities_path,
+        &entry.catalog.pricing_input_path,
+        &entry.catalog.pricing_output_path,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if path.is_empty()
+            || path.len() > 128
+            || path.split('.').any(|segment| {
+                segment.is_empty()
+                    || !segment
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            })
+        {
+            return Err(format!("Ruta de metadatos inválida para {}", entry.id));
+        }
+    }
+    if entry
+        .catalog
+        .tool_call_contains
+        .as_ref()
+        .is_some_and(|value| {
+            value.is_empty() || value.len() > 64 || value.chars().any(char::is_control)
+        })
+    {
+        return Err(format!("Valor de herramienta inválido para {}", entry.id));
+    }
+    if entry.catalog.price_unit.as_ref().is_some_and(|unit| {
+        !matches!(
+            unit.as_str(),
+            "per_token" | "per_million_tokens" | "usd_cents_per_100m_tokens"
+        )
+    }) {
+        return Err(format!("Unidad de precio inválida para {}", entry.id));
+    }
+    if entry.chat_request_fields.len() > 16
+        || entry.chat_request_fields.iter().any(|(field, value)| {
+            field.is_empty()
+                || field.len() > 64
+                || !field
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                || matches!(
+                    field.as_str(),
+                    "model" | "messages" | "tools" | "stream" | "reasoning_effort"
+                )
+                || serde_json::to_vec(value).is_ok_and(|encoded| encoded.len() > 8 * 1024)
+        })
+    {
+        return Err(format!("Campos de petición inválidos para {}", entry.id));
+    }
+    if entry
+        .reasoning_effort_field
+        .as_deref()
+        .is_some_and(|field| {
+            field != "reasoning_effort" || entry.wire_api != NativeWireApi::ChatCompletions
+        })
+    {
+        return Err(format!("Campo de esfuerzo inválido para {}", entry.id));
+    }
+    validate_custom_endpoint(&entry.endpoint)?;
+    Ok(())
 }
 
 /// Presence is only a local preflight check. It does not prove that the key
@@ -85,7 +336,7 @@ fn adapter_key_present_with(
     read_key: impl FnOnce(&str) -> Option<String>,
 ) -> bool {
     adapter(provider_id)
-        .and_then(|selected| read_key(selected.key_env))
+        .and_then(|selected| read_key(&selected.key_env))
         .is_some_and(|key| !key.trim().is_empty())
 }
 
@@ -153,7 +404,9 @@ macro_rules! openai_model {
 // Its Chat Completions reference documents streamed function tool calls:
 // https://api-docs.deepseek.com/api/create-chat-completion/
 // DeepSeek runs with thinking disabled in our backend; its effort controls
-// therefore are intentionally not advertised here.
+// therefore are intentionally not advertised here. The provider may list
+// image input for a model, but this Chat Completions adapter does not send
+// image parts yet, so image_input remains false for the native route.
 const MODEL_CAPABILITIES: &[NativeModelCapabilities] = &[
     openai_model!("gpt-4.1", 1_047_576, 32_768, &[]),
     openai_model!("gpt-4.1-mini", 1_047_576, 32_768, &[]),
@@ -206,8 +459,8 @@ const MODEL_CAPABILITIES: &[NativeModelCapabilities] = &[
 ];
 
 /// None means that this exact pair has no reviewed execution guarantee.
-/// OpenRouter routes to upstream providers and custom endpoints are explicit
-/// user choices, so neither inherits native model limits from discovery metadata.
+/// An unknown model can still be chosen explicitly on any registered adapter;
+/// it never inherits native model limits from a listing or its ID prefix.
 pub(crate) fn native_model_capabilities(
     provider_id: &str,
     model_id: &str,
@@ -227,7 +480,7 @@ pub(crate) fn reviewed_native_models() -> &'static [NativeModelCapabilities] {
 pub(crate) enum NativeRouteExecution {
     /// Exact provider/model pair reviewed for this adapter's tool loop.
     Verified,
-    /// A previously configured OpenRouter/custom model, whose capabilities
+    /// A model explicitly configured by the user, whose capabilities
     /// must be checked by the endpoint when a request is sent.
     ExplicitUnverified,
     Unsupported,
@@ -238,7 +491,35 @@ pub(crate) fn native_route_execution(
     model_id: &str,
     explicitly_configured: bool,
 ) -> NativeRouteExecution {
-    let Some(selected) = adapter(provider_id) else {
+    native_route_execution_with_adapter(
+        adapter(provider_id).as_ref(),
+        provider_id,
+        model_id,
+        explicitly_configured,
+    )
+}
+
+pub(crate) fn native_route_execution_with_registry(
+    registry: &ProviderRegistry,
+    provider_id: &str,
+    model_id: &str,
+    explicitly_configured: bool,
+) -> NativeRouteExecution {
+    native_route_execution_with_adapter(
+        registry.adapter(provider_id),
+        provider_id,
+        model_id,
+        explicitly_configured,
+    )
+}
+
+fn native_route_execution_with_adapter(
+    selected: Option<&Adapter>,
+    provider_id: &str,
+    model_id: &str,
+    explicitly_configured: bool,
+) -> NativeRouteExecution {
+    let Some(selected) = selected else {
         return NativeRouteExecution::Unsupported;
     };
     if model_id.trim().is_empty() {
@@ -250,7 +531,7 @@ pub(crate) fn native_route_execution(
             && capabilities.streaming
     }) {
         NativeRouteExecution::Verified
-    } else if explicitly_configured && matches!(provider_id, "openrouter" | "custom") {
+    } else if explicitly_configured {
         NativeRouteExecution::ExplicitUnverified
     } else {
         NativeRouteExecution::Unsupported
@@ -270,23 +551,34 @@ pub(crate) struct ProviderModelDiscovery {
 pub(crate) struct DiscoveredModel {
     pub id: String,
     pub name: String,
-    /// OpenRouter declares `tools` in `supported_parameters` for this model.
-    /// Other providers do not expose an equivalent field in `/models`.
+    /// The provider listing explicitly declares the configured tool field.
     pub provider_reports_tools: bool,
+    /// Distinguishes an explicit negative claim from a missing field.
+    pub tool_call_declared: Option<bool>,
     pub text_input_output: bool,
+    /// Exact levels present in this provider-owned listing. An absent field
+    /// leaves the control on Automatic rather than guessing by model name.
+    pub supported_efforts: Vec<String>,
 }
 
-/// Call on a worker, never from rendering. OpenRouter's `/models/user` filters
-/// the list by the authenticated account's preferences and guardrails; OpenAI
-/// and DeepSeek expose `/models`. Key presence, a successful listing, and
-/// actual permission to generate are distinct states.
-pub(crate) fn discover_connected_models(
+/// Call on a worker, never from rendering. Listing paths and mappings come
+/// from local definitions. Key presence, a successful listing, and actual
+/// permission to generate are distinct states.
+pub(crate) fn discover_connected_models_at(
+    root: &Path,
     provider_id: &str,
 ) -> Result<ProviderModelDiscovery, String> {
-    let selected = adapter(provider_id)
-        .filter(|adapter| adapter.id != "custom")
+    let selected = adapter_at(root, provider_id)?
+        .filter(|adapter| adapter.model_list_path.is_some())
         .ok_or_else(|| format!("No hay catálogo autenticado para {provider_id}"))?;
-    let key = std::env::var(selected.key_env)
+    discover_connected_models_with_adapter(&selected)
+}
+
+fn discover_connected_models_with_adapter(
+    selected: &Adapter,
+) -> Result<ProviderModelDiscovery, String> {
+    let provider_id = &selected.id;
+    let key = std::env::var(&selected.key_env)
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
@@ -294,11 +586,10 @@ pub(crate) fn discover_connected_models(
     if key.len() > 4_096 || key.chars().any(char::is_control) {
         return Err(format!("{} tiene un formato inválido", selected.key_env));
     }
-    let path = if provider_id == "openrouter" {
-        "models/user"
-    } else {
-        "models"
-    };
+    let path = selected
+        .model_list_path
+        .as_deref()
+        .expect("discovery path checked");
     let url = format!("{}/{path}", selected.endpoint.trim_end_matches('/'));
     let client = Client::builder()
         .timeout(DISCOVERY_TIMEOUT)
@@ -331,69 +622,110 @@ pub(crate) fn discover_connected_models(
     if bytes.len() as u64 > MAX_DISCOVERY_BYTES {
         return Err("El catálogo autenticado excede el tamaño permitido".to_owned());
     }
-    parse_connected_models(provider_id, &bytes)
+    parse_connected_models_for_adapter(selected, &bytes)
 }
 
+#[cfg(test)]
 fn parse_connected_models(
     provider_id: &str,
     bytes: &[u8],
 ) -> Result<ProviderModelDiscovery, String> {
+    let selected =
+        adapter(provider_id).ok_or_else(|| format!("Proveedor desconocido: {provider_id}"))?;
+    parse_connected_models_for_adapter(&selected, bytes)
+}
+
+pub(crate) fn parse_connected_models_for_adapter(
+    selected: &Adapter,
+    bytes: &[u8],
+) -> Result<ProviderModelDiscovery, String> {
+    let provider_id = &selected.id;
     let document: Value = serde_json::from_slice(bytes)
         .map_err(|error| format!("Catálogo de {provider_id} inválido: {error}"))?;
-    let entries = document
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| format!("Catálogo de {provider_id} sin lista de modelos"))?;
+    let entries = mapped_value(
+        &document,
+        selected.catalog.entries_path.as_deref().unwrap_or("data"),
+    )
+    .and_then(Value::as_array)
+    .or_else(|| document.as_array())
+    .ok_or_else(|| format!("Catálogo de {provider_id} sin lista de modelos"))?;
     if entries.len() > 5_000 {
         return Err("El catálogo autenticado contiene demasiados modelos".to_owned());
     }
     let mut models = std::collections::BTreeMap::new();
     for entry in entries {
-        let Some(id) = entry
-            .get("id")
+        let Some(id) = mapped_value(entry, selected.catalog.id_path.as_deref().unwrap_or("id"))
             .and_then(Value::as_str)
             .filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control))
         else {
             continue;
         };
-        let name = entry
-            .get("name")
-            .and_then(Value::as_str)
-            .filter(|name| {
-                !name.is_empty() && name.len() <= 256 && !name.chars().any(char::is_control)
-            })
-            .unwrap_or(id);
-        let provider_reports_tools = provider_id == "openrouter"
-            && entry
-                .get("supported_parameters")
-                .and_then(Value::as_array)
-                .is_some_and(|parameters| {
-                    parameters
-                        .iter()
-                        .any(|value| value.as_str() == Some("tools"))
-                });
-        let text_input_output = provider_id == "openrouter"
-            && entry.get("architecture").is_some_and(|architecture| {
-                ["input_modalities", "output_modalities"]
-                    .iter()
-                    .all(|field| {
-                        architecture
-                            .get(*field)
-                            .and_then(Value::as_array)
-                            .is_some_and(|modalities| {
-                                modalities
-                                    .iter()
-                                    .any(|value| value.as_str() == Some("text"))
-                            })
-                    })
+        let name = mapped_value(
+            entry,
+            selected.catalog.name_path.as_deref().unwrap_or("name"),
+        )
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty() && name.len() <= 256 && !name.chars().any(char::is_control))
+        .unwrap_or(id);
+        let tool_call_declared = selected
+            .catalog
+            .tool_call_path
+            .as_deref()
+            .and_then(|path| mapped_value(entry, path))
+            .and_then(|value| {
+                selected.catalog.tool_call_contains.as_ref().map_or_else(
+                    || value.as_bool(),
+                    |needle| {
+                        value
+                            .as_array()
+                            .map(|values| values.iter().any(|value| value.as_str() == Some(needle)))
+                    },
+                )
             });
+        let provider_reports_tools = tool_call_declared == Some(true);
+        let text_input_output = [
+            selected.catalog.input_modalities_path.as_deref(),
+            selected.catalog.output_modalities_path.as_deref(),
+        ]
+        .into_iter()
+        .all(|path| {
+            path.and_then(|path| mapped_value(entry, path))
+                .and_then(Value::as_array)
+                .is_none_or(|modalities| {
+                    modalities
+                        .iter()
+                        .any(|value| value.as_str() == Some("text"))
+                })
+        });
+        let supported_efforts = selected
+            .catalog
+            .effort_levels_path
+            .as_deref()
+            .and_then(|path| mapped_value(entry, path))
+            .and_then(Value::as_array)
+            .map(|levels| {
+                levels
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter(|level| {
+                        !level.is_empty()
+                            && level.len() <= 64
+                            && !level.chars().any(char::is_whitespace)
+                            && !level.chars().any(char::is_control)
+                    })
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         models.insert(
             id.to_owned(),
             DiscoveredModel {
                 id: id.to_owned(),
                 name: name.to_owned(),
                 provider_reports_tools,
+                tool_call_declared,
                 text_input_output,
+                supported_efforts,
             },
         );
     }
@@ -403,10 +735,17 @@ fn parse_connected_models(
     })
 }
 
+pub(crate) fn mapped_value<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    path.split('.')
+        .try_fold(value, |current, segment| current.get(segment))
+}
+
+#[cfg(test)]
 pub(crate) fn openai_native_compatible_model(model_id: &str) -> bool {
     native_model_capabilities("openai", model_id).is_some()
 }
 
+#[cfg(test)]
 pub(crate) fn deepseek_native_compatible_model(model_id: &str) -> bool {
     native_model_capabilities("deepseek", model_id).is_some()
 }
@@ -449,7 +788,8 @@ impl Default for NativeProviderSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum NativeWireApi {
     Responses,
     ChatCompletions,
@@ -489,7 +829,7 @@ impl NativeProviderSettings {
             model_id: self.model_id.trim().to_owned(),
             custom_endpoint: self.custom_endpoint.trim().to_owned(),
         };
-        normalized.validated_endpoint()?;
+        normalized.validated_endpoint_in(&ProviderRegistry::load(root)?)?;
         fs::create_dir_all(root)
             .map_err(|error| format!("No se pudo crear la carpeta de configuración: {error}"))?;
         let payload = serde_json::to_vec_pretty(&normalized)
@@ -519,25 +859,36 @@ impl NativeProviderSettings {
         self.resolve_with_key(|name| std::env::var(name).ok())
     }
 
+    pub fn resolve_at(&self, root: &Path) -> Result<RuntimeConnection, String> {
+        self.resolve_with_registry(&ProviderRegistry::load(root)?, |name| {
+            std::env::var(name).ok()
+        })
+    }
+
     fn resolve_with_key(
         &self,
         read_key: impl FnOnce(&str) -> Option<String>,
     ) -> Result<RuntimeConnection, String> {
-        let endpoint = self.validated_endpoint()?;
-        let selected = adapter(self.provider_id.trim()).expect("validated provider");
+        self.resolve_with_registry(&ProviderRegistry::builtin(), read_key)
+    }
+
+    pub(crate) fn resolve_with_registry(
+        &self,
+        registry: &ProviderRegistry,
+        read_key: impl FnOnce(&str) -> Option<String>,
+    ) -> Result<RuntimeConnection, String> {
+        let endpoint = self.validated_endpoint_in(registry)?;
+        let selected = registry
+            .adapter(self.provider_id.trim())
+            .expect("validated provider");
         Ok(RuntimeConnection {
             endpoint,
-            api_key: read_key(selected.key_env)
+            api_key: read_key(&selected.key_env)
                 .map(|value| value.trim().to_owned())
                 .filter(|value| !value.trim().is_empty()),
             model_id: self.model_id.trim().to_owned(),
             wire_api: selected.wire_api,
         })
-    }
-
-    pub fn key_available(&self) -> bool {
-        self.resolve()
-            .is_ok_and(|connection| connection.api_key.is_some())
     }
 
     fn from_legacy(model: Option<String>, endpoint: Option<String>) -> Self {
@@ -551,25 +902,14 @@ impl NativeProviderSettings {
         settings
     }
 
-    fn validated_endpoint(&self) -> Result<String, String> {
+    fn validated_endpoint_in(&self, registry: &ProviderRegistry) -> Result<String, String> {
         if self.model_id.trim().is_empty() {
             return Err("Selecciona un modelo para el agente nativo".to_owned());
         }
         let provider_id = self.provider_id.trim();
-        let selected = adapter(provider_id)
+        let selected = registry
+            .adapter(provider_id)
             .ok_or_else(|| format!("Proveedor nativo no compatible: {provider_id}"))?;
-        if provider_id == "openai" && !openai_native_compatible_model(self.model_id.trim()) {
-            return Err(
-                "Este modelo de OpenAI aún no está verificado para herramientas y streaming de Responses"
-                    .to_owned(),
-            );
-        }
-        if provider_id == "deepseek" && !deepseek_native_compatible_model(self.model_id.trim()) {
-            return Err(
-                "Este modelo de DeepSeek no es un ID canónico verificado para el harness nativo"
-                    .to_owned(),
-            );
-        }
         if let Some(capabilities) = native_model_capabilities(provider_id, self.model_id.trim()) {
             if capabilities.wire_api != selected.wire_api
                 || !capabilities.function_tools
@@ -578,10 +918,10 @@ impl NativeProviderSettings {
                 return Err("Este modelo aún no está verificado para herramientas y streaming del adaptador nativo".to_owned());
             }
         }
-        if provider_id == "custom" {
+        if selected.user_endpoint {
             validate_custom_endpoint(&self.custom_endpoint)
         } else {
-            Ok(selected.endpoint.to_owned())
+            Ok(selected.endpoint.clone())
         }
     }
 }
@@ -680,8 +1020,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn adapter_allowlist_keeps_credentials_provider_specific() {
-        assert_eq!(ADAPTERS.len(), 4);
+    fn provider_registry_keeps_credentials_provider_specific() {
+        let registry = ProviderRegistry::builtin();
+        assert_eq!(registry.adapters().len(), 7);
         assert_eq!(adapter("openai").unwrap().key_env, "OPENAI_API_KEY");
         assert_eq!(
             adapter("openrouter").unwrap().endpoint,
@@ -692,6 +1033,9 @@ mod tests {
             "https://api.deepseek.com"
         );
         assert_eq!(adapter("custom").unwrap().key_env, "OPENIDE_API_KEY");
+        for id in ["groq", "mistral", "xai"] {
+            assert!(registry.adapter(id).is_some());
+        }
         assert!(adapter("unknown").is_none());
     }
 
@@ -725,7 +1069,7 @@ mod tests {
         );
         assert_eq!(
             native_route_execution("openai", "future-model", true),
-            NativeRouteExecution::Unsupported
+            NativeRouteExecution::ExplicitUnverified
         );
         assert_eq!(
             native_route_execution("unknown", "gpt-6-sol", true),
@@ -757,6 +1101,8 @@ mod tests {
         .unwrap();
         assert_eq!(deepseek.models["deepseek-flash"].name, "Flash");
         assert!(!deepseek.models["deepseek-flash"].provider_reports_tools);
+        assert_eq!(deepseek.models["deepseek-flash"].tool_call_declared, None);
+        assert!(deepseek.models["deepseek-flash"].text_input_output);
     }
 
     #[test]
@@ -887,7 +1233,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_models_need_explicit_responses_stream_review() {
+    fn unknown_openai_models_are_explicit_unverified_routes() {
         for model in [
             "gpt-5.4-pro",
             "gpt-5.4-pro-2026-03-05",
@@ -901,7 +1247,7 @@ mod tests {
                 model_id: model.into(),
                 ..NativeProviderSettings::default()
             };
-            assert!(settings.resolve().is_err());
+            assert!(settings.resolve().is_ok());
         }
         assert!(openai_native_compatible_model("gpt-5.4"));
         assert!(openai_native_compatible_model("gpt-6-astra"));
@@ -1016,9 +1362,92 @@ mod tests {
     }
 
     #[test]
-    fn deepseek_aliases_are_visible_but_not_native_connections() {
+    fn deepseek_aliases_are_unverified_native_connections() {
         assert!(deepseek_native_compatible_model("deepseek-flash"));
         assert!(deepseek_native_compatible_model("deepseek-v4-pro"));
         assert!(!deepseek_native_compatible_model("deepseek-v4-flash"));
+        let settings = NativeProviderSettings {
+            provider_id: "deepseek".into(),
+            model_id: "deepseek-v4-flash".into(),
+            ..NativeProviderSettings::default()
+        };
+        assert!(settings.resolve().is_ok());
+    }
+
+    #[test]
+    fn user_registry_loads_openai_compatible_provider_without_overriding_builtin() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join(REGISTRY_FILE),
+            br#"{
+            "version":1,
+            "providers":[{
+                "id":"my-provider", "name":"My Provider",
+                "endpoint":"https://api.example.test/v1",
+                "key_env":"MY_PROVIDER_API_KEY",
+                "wire_api":"chat_completions",
+                "model_list_path":"models",
+                "catalog":{"effort_levels_path":"capabilities.reasoning_effort"}
+            }]
+        }"#,
+        )
+        .unwrap();
+        let registry = ProviderRegistry::load(root.path()).unwrap();
+        assert_eq!(
+            registry.adapter("my-provider").unwrap().endpoint,
+            "https://api.example.test/v1"
+        );
+        let settings = NativeProviderSettings {
+            provider_id: "my-provider".into(),
+            model_id: "my-reasoner".into(),
+            ..NativeProviderSettings::default()
+        };
+        assert!(settings.resolve().is_err());
+        assert_eq!(
+            settings.resolve_at(root.path()).unwrap().endpoint,
+            "https://api.example.test/v1"
+        );
+        let listing = parse_connected_models_for_adapter(
+            registry.adapter("my-provider").unwrap(),
+            br#"{"data":[{"id":"my-reasoner","capabilities":{"reasoning_effort":["low","high"]}}]}"#,
+        ).unwrap();
+        assert_eq!(
+            listing.models["my-reasoner"].supported_efforts,
+            ["low", "high"]
+        );
+    }
+
+    #[test]
+    fn user_registry_rejects_endpoint_or_credential_takeover() {
+        let root = tempfile::tempdir().unwrap();
+        for entry in [
+            r#"{"id":"openai","name":"Fake","endpoint":"https://evil.example/v1","key_env":"EVIL_KEY","wire_api":"responses","model_list_path":"models"}"#,
+            r#"{"id":"other","name":"Other","endpoint":"https://evil.example/v1","key_env":"OPENAI_API_KEY","wire_api":"responses","model_list_path":"models"}"#,
+            r#"{"id":"other","name":"Other","endpoint":"http://evil.example/v1","key_env":"OTHER_API_KEY","wire_api":"responses","model_list_path":"models"}"#,
+        ] {
+            fs::write(
+                root.path().join(REGISTRY_FILE),
+                format!(r#"{{"version":1,"providers":[{entry}]}}"#),
+            )
+            .unwrap();
+            assert!(ProviderRegistry::load(root.path()).is_err());
+        }
+    }
+
+    #[test]
+    fn xai_listing_exposes_only_advertised_efforts() {
+        let listing = parse_connected_models(
+            "xai",
+            br#"{"models":[
+                {"id":"grok-reasoning","input_modalities":["text"],"output_modalities":["text"],"capabilities":{"reasoning_effort":["low","medium","high"]}},
+                {"id":"grok-plain","input_modalities":["text"],"output_modalities":["text"]}
+            ]}"#,
+        ).unwrap();
+        assert_eq!(
+            listing.models["grok-reasoning"].supported_efforts,
+            ["low", "medium", "high"]
+        );
+        assert!(listing.models["grok-plain"].supported_efforts.is_empty());
+        assert!(listing.models["grok-reasoning"].text_input_output);
     }
 }

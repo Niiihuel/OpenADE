@@ -43,30 +43,30 @@ use crate::{
         build_command_center, build_view, dock_layout, AbortedToolBatchView,
         ComposerAttachmentView, DockLayout, DockRecentlyClosedView, DockTabView, FilePreviewView,
         FileRowView, MainPage, McpOAuthViewPhase, McpOAuthViewStatus, PermissionView,
-        ProviderModelStatus, ReviewDetailView, SessionOrganization, SessionPlanView, SessionRecoveryView, SessionView, SideTab,
-        SessionApprovalGrantView, SubagentPermissionView, SubagentRunView, ToolVerificationView,
-        ViewState,
+        ProviderModelStatus, ReviewDetailView, SessionApprovalGrantView, SessionOrganization,
+        SessionPlanView, SessionRecoveryView, SessionView, SideTab, SubagentPermissionView,
+        SubagentRunView, ToolVerificationView, ViewState,
     },
     voice::{self, VoiceEvent, VoiceHandle},
 };
 use eframe::egui;
 use openide_cli::{CliProfile, CliRunHandle, CliRunner};
 use openide_core::{
-    replay_native, AgentEvent, AgentEventKind, AgentMessage, AgentRunRequest,
+    replay_native, validate_user_images, AgentEvent, AgentEventKind, AgentMessage, AgentRunRequest,
     CheckpointBudgetSnapshot, CheckpointCompatibility, CheckpointFileStore, NativeReplay,
     PermissionDecision, ReplayRecovery, SessionSort, SessionStore, StoredSession, ToolCall,
-    TurnMode, UserImage, UserImageMime, MAX_USER_IMAGE_BYTES, validate_user_images,
+    TurnMode, UserImage, UserImageMime, MAX_USER_IMAGE_BYTES,
 };
 use openide_harness::{
     discard_aborted_tool_batch, finalize_resolved_subagent, load_project_instructions,
     AgentRunHandle, AgentRunner, CheckpointCoordinator, CommandIsolation, ExecDecision, HookPhase,
-    LocalTools, ModelBackend, OpenAiCompatibleBackend, PermissionChoice, PermissionMode,
-    PermissionPolicy, PersistentCommandManager, PersistentCommandSessionInfo,
-    HostedWebSearchConfig, HostedWebSearchMode, ProjectInstructionLimits, ResponsesBackend,
-    ResumeDisposition, RunLimits, SubagentBridgeEvent,
-    SubagentCoordinator, SubagentEventBridge, SubagentLimits, SubagentRecoveryPause,
-    SubagentRecoveryState, SubagentStatus, SubagentToolExecutor, SubagentToolLimits,
-    SubagentWorker, ToolExecutor, ToolOutput,
+    HostedWebSearchConfig, HostedWebSearchMode, LocalTools, ModelBackend, ModelRequestCapabilities,
+    OpenAiCompatibleBackend, PermissionChoice, PermissionMode, PermissionPolicy,
+    PersistentCommandManager, PersistentCommandSessionInfo, ProjectInstructionLimits,
+    ResponsesBackend, ResumeDisposition, RunLimits, SubagentBridgeEvent, SubagentCoordinator,
+    SubagentEventBridge, SubagentLimits, SubagentRecoveryPause, SubagentRecoveryState,
+    SubagentStatus, SubagentToolExecutor, SubagentToolLimits, SubagentWorker, ToolExecutor,
+    ToolOutput,
 };
 use openide_ui::{
     DatePicker, Easing, Element, FontFamily, FontMetrics, Frame as UiFrame, ScalarTransition, Size,
@@ -125,8 +125,36 @@ fn native_model_backend(
     provider_id: &str,
     effort: Option<&str>,
     hosted_web_search_mode: Option<HostedWebSearchMode>,
+    data_root: &Path,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
 ) -> Result<Arc<dyn ModelBackend>, String> {
+    let adapter = native_provider::adapter_at(data_root, provider_id)?
+        .ok_or_else(|| format!("Proveedor nativo no registrado: {provider_id}"))?;
+    if adapter.wire_api != connection.wire_api {
+        return Err("El protocolo del proveedor cambió durante la conexión".to_owned());
+    }
+    let capabilities =
+        native_request_capabilities(&adapter, &connection.model_id, catalog, discoveries);
+    if !capabilities.tool_calls {
+        return Err(format!(
+            "El proveedor declara que {} no admite herramientas en esta ruta nativa",
+            connection.model_id
+        ));
+    }
     let effort = effort.filter(|value| *value != "default");
+    if let Some(effort) = effort {
+        if !capabilities
+            .reasoning_efforts
+            .iter()
+            .any(|allowed| allowed == effort)
+        {
+            return Err(format!(
+                "El esfuerzo '{effort}' no figura para {} en el catálogo del proveedor",
+                connection.model_id
+            ));
+        }
+    }
     match connection.wire_api {
         NativeWireApi::Responses => {
             let mut model =
@@ -148,9 +176,13 @@ fn native_model_backend(
                 connection.endpoint,
                 connection.api_key,
                 connection.model_id,
-            );
-            if provider_id == "deepseek" {
-                model = model.with_deepseek_non_thinking();
+            )
+            .with_capabilities(capabilities)
+            .map_err(|error| error.to_string())?;
+            for (field, value) in adapter.chat_request_fields {
+                model = model
+                    .with_request_field(field, value)
+                    .map_err(|error| error.to_string())?;
             }
             if let Some(effort) = effort {
                 model = model
@@ -162,14 +194,93 @@ fn native_model_backend(
     }
 }
 
-fn native_checkpoint_compatibility(provider_id: &str, model_id: &str) -> CheckpointCompatibility {
+fn native_request_capabilities(
+    adapter: &native_provider::Adapter,
+    model_id: &str,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
+) -> ModelRequestCapabilities {
+    let reviewed = native_provider::native_model_capabilities(&adapter.id, model_id)
+        .filter(|capabilities| capabilities.wire_api == adapter.wire_api);
+    let discovered = discoveries
+        .iter()
+        .find(|discovery| discovery.provider_id == adapter.id)
+        .and_then(|discovery| discovery.models.get(model_id));
+    let listed = catalog.and_then(|snapshot| snapshot.model(&adapter.id, model_id));
+    let reported_tool_calls = discovered
+        .and_then(|model| model.tool_call_declared)
+        .or_else(|| listed.and_then(|model| model.tool_call_declared));
+    // Missing provider metadata leaves an explicitly configured route free to
+    // try tools. A provider that reports a tools field may explicitly deny it.
+    let tool_calls = reviewed.map_or_else(
+        || {
+            if adapter.catalog.tool_call_path.is_some() {
+                reported_tool_calls.unwrap_or(true)
+            } else {
+                true
+            }
+        },
+        |capabilities| capabilities.function_tools && capabilities.streaming,
+    );
+    let wire_supports_effort = adapter.wire_api == NativeWireApi::Responses
+        || adapter.reasoning_effort_field.as_deref() == Some("reasoning_effort");
+    let raw_efforts = wire_supports_effort
+        .then(|| {
+            discovered
+                .map(|model| model.supported_efforts.as_slice())
+                .filter(|efforts| !efforts.is_empty())
+                .or_else(|| {
+                    listed
+                        .map(|model| model.provider_efforts.as_slice())
+                        .filter(|efforts| !efforts.is_empty())
+                })
+        })
+        .flatten();
+    let mut reasoning_efforts = Vec::new();
+    if let Some(efforts) = raw_efforts {
+        for effort in efforts {
+            if !effort.is_empty()
+                && effort.len() <= 64
+                && !effort.chars().any(char::is_whitespace)
+                && !effort.chars().any(char::is_control)
+                && !reasoning_efforts.contains(effort)
+            {
+                reasoning_efforts.push(effort.clone());
+            }
+        }
+    } else if let Some(reviewed) = reviewed.filter(|_| wire_supports_effort) {
+        reasoning_efforts.extend(
+            reviewed
+                .supported_efforts
+                .iter()
+                .map(|effort| (*effort).to_owned()),
+        );
+    }
+    ModelRequestCapabilities {
+        tool_calls,
+        reasoning_efforts,
+        tool_call_reasoning_efforts: None,
+        default_tool_call_effort: None,
+    }
+}
+
+fn native_key_available_at(settings: &NativeProviderSettings, data_root: &Path) -> bool {
+    settings
+        .resolve_at(data_root)
+        .is_ok_and(|connection| connection.api_key.is_some())
+}
+
+fn native_checkpoint_compatibility(
+    provider_id: &str,
+    model_id: &str,
+    wire_api: NativeWireApi,
+) -> CheckpointCompatibility {
     CheckpointCompatibility {
         provider: provider_id.to_owned(),
         model: model_id.to_owned(),
-        context_format_key: if provider_id == "openai" {
-            "responses-v1"
-        } else {
-            "chat-completions-v1"
+        context_format_key: match wire_api {
+            NativeWireApi::Responses => "responses-v1",
+            NativeWireApi::ChatCompletions => "chat-completions-v1",
         }
         .to_owned(),
     }
@@ -668,7 +779,10 @@ impl NativeSteerDraftState {
             workspace: workspace.to_string_lossy().into_owned(),
             session_id: session_id.to_owned(),
             prompt: prompt.to_owned(),
-            attachments: attachments.iter().map(NativeSteerDraftAttachment::from).collect(),
+            attachments: attachments
+                .iter()
+                .map(NativeSteerDraftAttachment::from)
+                .collect(),
             retry: None,
         }
     }
@@ -710,7 +824,11 @@ fn load_native_steer_draft(
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("No se pudo leer el borrador de intervención: {error}")),
+        Err(error) => {
+            return Err(format!(
+                "No se pudo leer el borrador de intervención: {error}"
+            ))
+        }
     };
     if bytes.len() as u64 > MAX_NATIVE_STEER_DRAFT_FILE_BYTES {
         return Err("El borrador de intervención excede el límite de tamaño".to_owned());
@@ -722,8 +840,7 @@ fn load_native_steer_draft(
         || state.prompt.len() > 32 * 1024
         || state.attachments.len() > MAX_COMPOSER_ATTACHMENTS
         || state.attachments.iter().any(|attachment| {
-            attachment.path.is_empty()
-                || attachment.path.len() > MAX_COMPOSER_ATTACHMENT_PATH_BYTES
+            attachment.path.is_empty() || attachment.path.len() > MAX_COMPOSER_ATTACHMENT_PATH_BYTES
         })
         || state.retry.as_ref().is_some_and(|retry| {
             retry.input_id.is_empty()
@@ -774,7 +891,9 @@ fn remove_native_steer_draft(root: &Path, session_id: &str) -> Result<(), String
     match std::fs::remove_file(native_steer_draft_path(root, session_id)?) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("No se pudo limpiar el borrador de intervención: {error}")),
+        Err(error) => Err(format!(
+            "No se pudo limpiar el borrador de intervención: {error}"
+        )),
     }
 }
 
@@ -793,7 +912,10 @@ fn sync_native_steer_draft(
     }
     state.workspace = workspace.to_string_lossy().into_owned();
     state.prompt = prompt.to_owned();
-    state.attachments = attachments.iter().map(NativeSteerDraftAttachment::from).collect();
+    state.attachments = attachments
+        .iter()
+        .map(NativeSteerDraftAttachment::from)
+        .collect();
     state.retry = None;
     save_native_steer_draft(root, &state)
 }
@@ -828,7 +950,10 @@ fn enqueue_native_steer_draft(
         .unwrap_or_else(|| {
             NativeSteerDraftState::for_draft(workspace, session_id, prompt, attachments)
         });
-    let image_keys = images.iter().map(NativeSteerImageKey::from).collect::<Vec<_>>();
+    let image_keys = images
+        .iter()
+        .map(NativeSteerImageKey::from)
+        .collect::<Vec<_>>();
     let retry = state
         .retry
         .take()
@@ -1303,15 +1428,45 @@ fn catalog_status(snapshot: &CatalogSnapshot) -> String {
         .values()
         .map(|provider| provider.models.len())
         .sum();
-    let checked = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(
-        snapshot.fetched_at_ms.min(i64::MAX as u64) as i64,
-    )
-    .map(|date| date.format("%Y-%m-%d %H:%M UTC").to_string())
-    .unwrap_or_else(|| "fecha desconocida".to_owned());
-    format!(
-        "Comprobado {checked}: {} proveedores, {model_count} modelos",
-        snapshot.providers.len()
-    )
+    let verified = snapshot
+        .provider_status
+        .values()
+        .filter(|status| {
+            status.source == model_catalog::CatalogSource::OfficialApi && status.verified_at_ms > 0
+        })
+        .count();
+    let mut summary = if snapshot.fetched_at_ms == 0 {
+        format!(
+            "Base local revisada: {} proveedores, {model_count} modelos; fuentes oficiales sin comprobar",
+            snapshot.providers.len()
+        )
+    } else {
+        let checked = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(
+            snapshot.fetched_at_ms.min(i64::MAX as u64) as i64,
+        )
+        .map(|date| date.format("%Y-%m-%d %H:%M UTC").to_string())
+        .unwrap_or_else(|| "fecha desconocida".to_owned());
+        format!(
+            "Última fuente verificada {checked}: {} proveedores, {model_count} modelos; {verified}/{} fuentes con copia oficial",
+            snapshot.providers.len(),
+            snapshot.provider_status.len()
+        )
+    };
+    let issues: Vec<_> = snapshot
+        .provider_status
+        .iter()
+        .filter_map(|(provider, status)| {
+            status
+                .last_error
+                .as_ref()
+                .map(|error| format!("{provider}: {error}"))
+        })
+        .collect();
+    if !issues.is_empty() {
+        summary.push_str("; ");
+        summary.push_str(&issues.join("; "));
+    }
+    summary
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1657,11 +1812,10 @@ fn native_session_views(
                                 AgentEventKind::TurnAdmitted {
                                     mode: TurnMode::Build,
                                     ..
+                                } | AgentEventKind::TurnAdmittedWithImages {
+                                    mode: TurnMode::Build,
+                                    ..
                                 }
-                                    | AgentEventKind::TurnAdmittedWithImages {
-                                        mode: TurnMode::Build,
-                                        ..
-                                    }
                             )
                     })
             });
@@ -1804,7 +1958,11 @@ impl AgentsWindow {
         self.view.composer_goal_editor_open = false;
         self.tree
             .set_input_value("composer_goal_draft", self.view.composer_goal_draft.clone());
-        self.view.composer_attachments = self.attachment_drafts.get(&key).cloned().unwrap_or_default();
+        self.view.composer_attachments = self
+            .attachment_drafts
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
         let prompt = if let Some(prompt) = self.drafts.get(&key) {
             prompt.clone()
         } else if let Some(store) = &self.store {
@@ -1850,9 +2008,11 @@ impl AgentsWindow {
                             prompt.clear();
                         }
                     } else if state.prompt == prompt && self.view.composer_attachments.is_empty() {
-                        self.view.composer_attachments = state.attachments.into_iter().map(Into::into).collect();
+                        self.view.composer_attachments =
+                            state.attachments.into_iter().map(Into::into).collect();
                         if !self.view.composer_attachments.is_empty() {
-                            self.attachment_drafts.insert(key.clone(), self.view.composer_attachments.clone());
+                            self.attachment_drafts
+                                .insert(key.clone(), self.view.composer_attachments.clone());
                         }
                     }
                 }
@@ -2036,7 +2196,8 @@ impl AgentsWindow {
                 } else {
                     PermissionDecision::Deny
                 };
-                if let Err(error) = store.record_permission_decision(child_id, request_id, decision) {
+                if let Err(error) = store.record_permission_decision(child_id, request_id, decision)
+                {
                     self.persistence_error = Some(error.to_string());
                     self.show_persistence_error();
                     return;
@@ -2072,8 +2233,7 @@ impl AgentsWindow {
                 .subagent_bridge
                 .resolve_permission(child_id, request_id, choice)
             {
-                self.view.status =
-                    "Guardando permiso del subagente para esta sesión".to_owned();
+                self.view.status = "Guardando permiso del subagente para esta sesión".to_owned();
                 self.view.pending_subagent_permissions.retain(|permission| {
                     permission.child_session_id != child_id || permission.request_id != request_id
                 });
@@ -2758,13 +2918,22 @@ impl AgentsWindow {
             choice.model = native_settings.model_id.clone();
             composer_preferences.set("native", choice);
         }
-        let catalog = model_catalog::load_cache(&root).ok().flatten();
+        let (catalog, catalog_load_error) = match model_catalog::load_cache(&root) {
+            Ok(Some(snapshot)) => (Some(snapshot), None),
+            Ok(None) => (Some(model_catalog::reviewed_seed_snapshot()), None),
+            Err(error) => (Some(model_catalog::reviewed_seed_snapshot()), Some(error)),
+        };
         let catalog_should_refresh = catalog
             .as_ref()
             .is_none_or(|snapshot| snapshot.is_stale(Duration::from_secs(3_600)));
-        let catalog_status = catalog.as_ref().map_or_else(
-            || "Sin copia local; buscando el catálogo de proveedores".to_owned(),
-            catalog_status,
+        let catalog_status = catalog_load_error.map_or_else(
+            || {
+                catalog.as_ref().map_or_else(
+                    || "Sin catálogo local; consultando proveedores".to_owned(),
+                    catalog_status,
+                )
+            },
+            |error| format!("Caché local inválida ({error}); usando base revisada"),
         );
         let workspace = settings_preferences
             .startup_workspace()
@@ -2808,11 +2977,6 @@ impl AgentsWindow {
             Err(error) => (HashMap::new(), Some(error)),
         };
         let profiles = load_profiles(&root);
-        let cli_fallback = profiles
-            .iter()
-            .find(|profile| profile.id == "codex" && profile.detect_executable().is_some())
-            .map(|profile| profile.id.clone())
-            .unwrap_or_else(|| "native".to_owned());
         let mut backend_options = vec![("native".to_owned(), "Nativo".to_owned())];
         backend_options.extend(profiles.iter().filter_map(|profile| {
             profile.detect_executable()?;
@@ -2825,9 +2989,6 @@ impl AgentsWindow {
             };
             Some((profile.id.clone(), short.to_owned()))
         }));
-        let native_configured = native_settings.key_available()
-            || (native_settings.provider_id == "custom"
-                && root.join("native-provider.json").is_file());
         let selected_backend = composer_preferences
             .selected_backend()
             .filter(|preferred| {
@@ -2836,13 +2997,7 @@ impl AgentsWindow {
                     .any(|(available, _)| available == preferred)
             })
             .map(str::to_owned)
-            .unwrap_or_else(|| {
-                if native_configured {
-                    "native".to_owned()
-                } else {
-                    cli_fallback
-                }
-            });
+            .unwrap_or_else(|| "native".to_owned());
         let native_model = if root.join("native-provider.json").exists() {
             native_settings.model_id.clone()
         } else {
@@ -2854,19 +3009,37 @@ impl AgentsWindow {
         let selected_choice = composer_preferences.choice(&selected_backend, &native_choice.model);
         let selected_model_options =
             composer_selection::model_options(&selected_backend, &selected_choice.model);
-        let mut selected_routes =
-            composer_selection::model_route_options(catalog.as_ref(), &native_settings);
+        let mut selected_routes = composer_selection::model_route_options_with_discovery_at(
+            catalog.as_ref(),
+            &native_settings,
+            &[],
+            &root,
+        )
+        .unwrap_or_else(|_| {
+            composer_selection::model_route_options(catalog.as_ref(), &native_settings)
+        });
         selected_routes.retain(|route| {
             route.backend == "native"
                 || backend_options
                     .iter()
                     .any(|(backend, _)| backend == &route.backend)
         });
-        let selected_effort_options = composer_selection::effort_options_for_provider(
-            &selected_backend,
-            &selected_choice.model,
-            &native_settings.provider_id,
-        );
+        let selected_effort_options = selected_routes
+            .iter()
+            .find(|route| {
+                route.backend == selected_backend
+                    && route.model_id == selected_choice.model
+                    && (selected_backend != "native"
+                        || route.provider_id == native_settings.provider_id)
+            })
+            .map(|route| route.effort_options.clone())
+            .unwrap_or_else(|| {
+                composer_selection::effort_options_for_provider(
+                    &selected_backend,
+                    &selected_choice.model,
+                    &native_settings.provider_id,
+                )
+            });
         let selected_effort = if selected_effort_options
             .iter()
             .any(|(effort, _)| effort == &selected_choice.effort)
@@ -2944,7 +3117,7 @@ impl AgentsWindow {
             settings_notice_error: agent_tool_settings_error.is_some()
                 || exec_policy_load_error.is_some()
                 || native_skills_load_error.is_some(),
-            native_key_available: native_settings.key_available(),
+            native_key_available: native_key_available_at(&native_settings, &root),
             workspace_writes_enabled: agent_tool_settings.permissions().write_file
                 && agent_tool_settings.permissions().run_command,
             native_tool_permissions: agent_tool_settings.permissions(),
@@ -3374,7 +3547,7 @@ impl AgentsWindow {
             };
             let native_connection = native_settings
                 .as_ref()
-                .map(NativeProviderSettings::resolve)
+                .map(|settings| settings.resolve_at(&self.data_root))
                 .transpose()?;
             let native_provider_id = native_settings
                 .as_ref()
@@ -3386,9 +3559,9 @@ impl AgentsWindow {
                     .is_some_and(|connection| connection.api_key.is_none())
                     && native_provider_id != "custom"
                 {
-                    let key_env = native_provider::adapter(native_provider_id)
+                    let key_env = native_provider::adapter_at(&self.data_root, native_provider_id)?
                         .map(|adapter| adapter.key_env)
-                        .unwrap_or("API_KEY");
+                        .unwrap_or_else(|| "API_KEY".to_owned());
                     return Err(format!("Define {key_env} para ejecutar el agente nativo"));
                 }
                 native_workspace_instructions(&self.data_root, &dispatch.workspace_path)?
@@ -3422,11 +3595,15 @@ impl AgentsWindow {
                 let connection = native_connection.expect("validated native connection");
                 let model_id = connection.model_id.clone();
                 let endpoint = connection.endpoint.clone();
+                let wire_api = connection.wire_api;
                 let model = native_model_backend(
                     connection,
                     native_provider_id,
                     None,
                     self.view.hosted_web_search_mode,
+                    &self.data_root,
+                    self.view.catalog.as_deref(),
+                    &self.model_discoveries,
                 )?;
                 let token_budget =
                     native_provider::verified_token_budget(native_provider_id, &model_id);
@@ -3460,7 +3637,11 @@ impl AgentsWindow {
                         .with_auto_compaction(
                             store.clone(),
                             checkpoints,
-                            native_checkpoint_compatibility(native_provider_id, &model_id),
+                            native_checkpoint_compatibility(
+                                native_provider_id,
+                                &model_id,
+                                wire_api,
+                            ),
                         );
                 }
                 ActiveRun::Native(runner.start_with_lease(request, lease))
@@ -4111,7 +4292,9 @@ impl AgentsWindow {
                                 .or_else(|| {
                                     record.events.iter().find_map(|event| match &event.kind {
                                         AgentEventKind::TurnAdmitted { prompt, .. }
-                                        | AgentEventKind::TurnAdmittedWithImages { prompt, .. } => {
+                                        | AgentEventKind::TurnAdmittedWithImages {
+                                            prompt, ..
+                                        } => {
                                             Some(prompt.lines().next().unwrap_or(prompt).to_owned())
                                         }
                                         _ => None,
@@ -5315,7 +5498,7 @@ impl AgentsWindow {
 
     fn persist_native_settings(&mut self) -> bool {
         let settings = self.native_settings();
-        self.view.native_key_available = settings.key_available();
+        self.view.native_key_available = native_key_available_at(&settings, &self.data_root);
         if let Err(error) = settings.save(&self.data_root) {
             let message = format!("No se pudo guardar el proveedor: {error}");
             self.view.status = message.clone();
@@ -5356,9 +5539,21 @@ impl AgentsWindow {
         if self.model_discovery_response.is_some() {
             return;
         }
-        let providers: Vec<_> = ["openai", "openrouter", "deepseek"]
-            .into_iter()
-            .filter(|provider| native_provider::adapter_key_present(provider))
+        let registry = match native_provider::ProviderRegistry::load(&self.data_root) {
+            Ok(registry) => registry,
+            Err(error) => {
+                self.view.status = format!("Registro de proveedores: {error}");
+                return;
+            }
+        };
+        let providers: Vec<String> = registry
+            .adapters()
+            .iter()
+            .filter(|adapter| {
+                adapter.model_list_path.is_some()
+                    && std::env::var(&adapter.key_env).is_ok_and(|key| !key.trim().is_empty())
+            })
+            .map(|adapter| adapter.id.clone())
             .collect();
         if providers.is_empty() {
             return;
@@ -5366,19 +5561,20 @@ impl AgentsWindow {
         for provider in &providers {
             self.view
                 .composer_provider_status
-                .insert((*provider).to_owned(), ProviderModelStatus::Checking);
+                .insert(provider.clone(), ProviderModelStatus::Checking);
         }
         self.model_discoveries
-            .retain(|entry| !providers.contains(&entry.provider_id.as_str()));
+            .retain(|entry| !providers.contains(&entry.provider_id));
         self.refresh_composer_routes();
         let (sender, receiver) = mpsc::channel();
         self.model_discovery_pending = providers.len();
         self.model_discovery_response = Some(receiver);
         for provider in providers {
             let sender = sender.clone();
+            let root = self.data_root.clone();
             std::thread::spawn(move || {
-                let result = native_provider::discover_connected_models(provider);
-                let _ = sender.send((provider.to_owned(), result));
+                let result = native_provider::discover_connected_models_at(&root, &provider);
+                let _ = sender.send((provider, result));
             });
         }
     }
@@ -5549,12 +5745,19 @@ impl AgentsWindow {
     }
 
     fn refresh_composer_routes(&mut self) {
-        let mut routes = composer_selection::model_route_options_with_codex_discovery(
+        let mut routes = match composer_selection::model_route_options_with_codex_discovery_at(
             self.view.catalog.as_deref(),
             &self.native_settings(),
             &self.model_discoveries,
             &self.codex_models,
-        );
+            &self.data_root,
+        ) {
+            Ok(routes) => routes,
+            Err(error) => {
+                self.view.status = format!("Registro de proveedores: {error}");
+                return;
+            }
+        };
         routes.retain(|route| {
             route.backend == "native"
                 || self
@@ -5597,6 +5800,17 @@ impl AgentsWindow {
                 .iter()
                 .find(|route| {
                     route.backend == "codex" && route.model_id == self.view.composer_model
+                })
+                .map(|route| route.effort_options.clone())
+                .unwrap_or_default()
+        } else if self.view.selected_backend == "native" {
+            self.view
+                .composer_routes
+                .iter()
+                .find(|route| {
+                    route.backend == "native"
+                        && route.provider_id == self.view.native_provider_id
+                        && route.model_id == self.view.composer_model
                 })
                 .map(|route| route.effort_options.clone())
                 .unwrap_or_default()
@@ -5773,9 +5987,11 @@ impl AgentsWindow {
                 self.view.show_settings = true;
                 self.view.settings_page = SettingsPage::Providers;
                 self.view.catalog_browse_provider = route.provider_id.clone();
-                let key_env = native_provider::adapter(&route.provider_id)
+                let key_env = native_provider::adapter_at(&self.data_root, &route.provider_id)
+                    .ok()
+                    .flatten()
                     .map(|adapter| adapter.key_env)
-                    .unwrap_or("API_KEY");
+                    .unwrap_or_else(|| "API_KEY".to_owned());
                 self.set_settings_notice(
                     if provider_status == Some(ProviderModelStatus::CheckFailed) {
                         format!(
@@ -5802,7 +6018,8 @@ impl AgentsWindow {
             if !self.persist_native_settings() {
                 self.view.native_provider_id = previous_provider;
                 self.view.model = previous_model;
-                self.view.native_key_available = self.native_settings().key_available();
+                self.view.native_key_available =
+                    native_key_available_at(&self.native_settings(), &self.data_root);
                 return;
             }
         }
@@ -6374,7 +6591,8 @@ impl AgentsWindow {
             for attachment in &attachments {
                 match composer_attachment_for_path(&workspace, Path::new(&attachment.path)) {
                     Ok(current)
-                        if current.path == attachment.path && current.is_dir == attachment.is_dir => {}
+                        if current.path == attachment.path
+                            && current.is_dir == attachment.is_dir => {}
                     Ok(_) => {
                         self.view.status = "Un adjunto cambió de ubicación o tipo".to_owned();
                         return;
@@ -6396,11 +6614,13 @@ impl AgentsWindow {
         } else {
             composer_prompt_with_attachments(&visible_prompt, &attachments)
         };
-        let native_images = native_attachments.map(|payload| payload.images).unwrap_or_default();
+        let native_images = native_attachments
+            .map(|payload| payload.images)
+            .unwrap_or_default();
         let submitted_draft_key = self.draft_key();
         let active_goal = self.view.composer_goal.clone();
         let native_connection = if backend == "native" {
-            let connection = match self.native_settings().resolve() {
+            let connection = match self.native_settings().resolve_at(&self.data_root) {
                 Ok(connection) => connection,
                 Err(error) => {
                     self.view.status = error;
@@ -6408,9 +6628,12 @@ impl AgentsWindow {
                 }
             };
             if connection.api_key.is_none() && self.view.native_provider_id != "custom" {
-                let key_env = native_provider::adapter(&self.view.native_provider_id)
-                    .map(|adapter| adapter.key_env)
-                    .unwrap_or("API_KEY");
+                let key_env =
+                    native_provider::adapter_at(&self.data_root, &self.view.native_provider_id)
+                        .ok()
+                        .flatten()
+                        .map(|adapter| adapter.key_env)
+                        .unwrap_or_else(|| "API_KEY".to_owned());
                 self.view.status = format!("Define {key_env} para usar el harness nativo");
                 return;
             }
@@ -6530,11 +6753,15 @@ impl AgentsWindow {
             let connection = native_connection.expect("validated native connection");
             let model_id = connection.model_id.clone();
             let endpoint = connection.endpoint.clone();
+            let wire_api = connection.wire_api;
             let model = match native_model_backend(
                 connection,
                 &self.view.native_provider_id,
                 Some(&self.view.composer_effort),
                 self.view.hosted_web_search_mode,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
             ) {
                 Ok(model) => model,
                 Err(error) => {
@@ -6589,7 +6816,11 @@ impl AgentsWindow {
             }
             if replay.checkpoint.as_ref().is_some_and(|checkpoint| {
                 checkpoint.compatibility
-                    != native_checkpoint_compatibility(&self.view.native_provider_id, &model_id)
+                    != native_checkpoint_compatibility(
+                        &self.view.native_provider_id,
+                        &model_id,
+                        wire_api,
+                    )
             }) {
                 self.view.status =
                     "El checkpoint pertenece a otro proveedor o modelo; requiere migración explícita"
@@ -6606,7 +6837,9 @@ impl AgentsWindow {
                     .rev()
                     .find_map(|event| match &event.kind {
                         AgentEventKind::TurnAdmitted { model, .. }
-                        | AgentEventKind::TurnAdmittedWithImages { model, .. } => Some(model.as_str()),
+                        | AgentEventKind::TurnAdmittedWithImages { model, .. } => {
+                            Some(model.as_str())
+                        }
                         _ => None,
                     })
                     != Some(model_id.as_str())
@@ -6693,7 +6926,11 @@ impl AgentsWindow {
             if let Some(checkpoints) = &auto_checkpoints {
                 child_worker = child_worker.with_auto_compaction(
                     checkpoints.clone(),
-                    native_checkpoint_compatibility(&self.view.native_provider_id, &model_id),
+                    native_checkpoint_compatibility(
+                        &self.view.native_provider_id,
+                        &model_id,
+                        wire_api,
+                    ),
                 );
             }
             let lease = Arc::new(lease);
@@ -6752,7 +6989,11 @@ impl AgentsWindow {
                     .with_auto_compaction(
                         store.clone(),
                         checkpoints,
-                        native_checkpoint_compatibility(&self.view.native_provider_id, &model_id),
+                        native_checkpoint_compatibility(
+                            &self.view.native_provider_id,
+                            &model_id,
+                            wire_api,
+                        ),
                     );
             }
             ActiveRun::Native(runner.start_with_shared_lease(request, lease))
@@ -7032,7 +7273,7 @@ impl AgentsWindow {
             self.start_child_resume(stored, replay);
             return;
         }
-        let connection = match self.native_settings().resolve() {
+        let connection = match self.native_settings().resolve_at(&self.data_root) {
             Ok(connection) => connection,
             Err(error) => {
                 self.view.status = error;
@@ -7042,7 +7283,8 @@ impl AgentsWindow {
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
         let provider_id = self.view.native_provider_id.clone();
-        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id);
+        let wire_api = connection.wire_api;
+        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id, wire_api);
         if replay
             .checkpoint
             .as_ref()
@@ -7072,6 +7314,9 @@ impl AgentsWindow {
             &provider_id,
             Some(&self.view.composer_effort),
             self.view.hosted_web_search_mode,
+            &self.data_root,
+            self.view.catalog.as_deref(),
+            &self.model_discoveries,
         ) {
             Ok(model) => model,
             Err(error) => {
@@ -7222,7 +7467,7 @@ impl AgentsWindow {
                 "El turno admitido no coincide con el spawn del subagente".to_owned();
             return;
         }
-        let connection = match self.native_settings().resolve() {
+        let connection = match self.native_settings().resolve_at(&self.data_root) {
             Ok(connection) => connection,
             Err(error) => {
                 self.view.status = error;
@@ -7232,6 +7477,7 @@ impl AgentsWindow {
         let provider = self.view.native_provider_id.clone();
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
+        let wire_api = connection.wire_api;
         if *admitted_model != &model_id {
             self.view.status =
                 "Selecciona el modelo original del subagente interrumpido".to_owned();
@@ -7241,19 +7487,21 @@ impl AgentsWindow {
             self.view.status = "Falta la clave API del proveedor nativo".to_owned();
             return;
         }
-        let model =
-            match native_model_backend(
-                connection,
-                &provider,
-                Some(&self.view.composer_effort),
-                self.view.hosted_web_search_mode,
-            ) {
-                Ok(model) => model,
-                Err(error) => {
-                    self.view.status = error;
-                    return;
-                }
-            };
+        let model = match native_model_backend(
+            connection,
+            &provider,
+            Some(&self.view.composer_effort),
+            self.view.hosted_web_search_mode,
+            &self.data_root,
+            self.view.catalog.as_deref(),
+            &self.model_discoveries,
+        ) {
+            Ok(model) => model,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
         let workspace = &stored.session.workspace;
         let parent_id = link.parent_session_id.clone();
         let goal_key = (
@@ -7332,7 +7580,7 @@ impl AgentsWindow {
                 .with_token_budget_policy(budget)
                 .with_auto_compaction(
                     checkpoints,
-                    native_checkpoint_compatibility(&provider, &model_id),
+                    native_checkpoint_compatibility(&provider, &model_id, wire_api),
                 );
         }
         let request = SubagentRecoveryRequest {
@@ -7822,7 +8070,7 @@ impl AgentsWindow {
             self.view.status = "No hay historial nuevo para compactar".to_owned();
             return;
         }
-        let connection = match self.native_settings().resolve() {
+        let connection = match self.native_settings().resolve_at(&self.data_root) {
             Ok(connection) => connection,
             Err(error) => {
                 self.view.status = error;
@@ -7831,7 +8079,8 @@ impl AgentsWindow {
         };
         let provider_id = self.view.native_provider_id.clone();
         let model_id = connection.model_id.clone();
-        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id);
+        let wire_api = connection.wire_api;
+        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id, wire_api);
         if replay
             .checkpoint
             .as_ref()
@@ -7850,6 +8099,9 @@ impl AgentsWindow {
             &provider_id,
             Some(&self.view.composer_effort),
             self.view.hosted_web_search_mode,
+            &self.data_root,
+            self.view.catalog.as_deref(),
+            &self.model_discoveries,
         ) {
             Ok(model) => model,
             Err(error) => {
@@ -8369,7 +8621,7 @@ impl AgentsWindow {
                 self.marketplace_operation(MarketplaceOperation::Load);
                 self.visit_navigation();
             }
-            Target::OpenCodeReview => {
+            Target::OpenGitReview => {
                 let changed_page =
                     self.view.show_settings || self.view.main_page != MainPage::Workspace;
                 self.view.show_settings = false;
@@ -10322,7 +10574,8 @@ impl AgentsWindow {
                     self.view.native_provider_id = "custom".to_owned();
                     if !self.persist_native_settings() {
                         self.view.native_provider_id = previous;
-                        self.view.native_key_available = self.native_settings().key_available();
+                        self.view.native_key_available =
+                            native_key_available_at(&self.native_settings(), &self.data_root);
                     } else {
                         let message = "Conexión personalizada activa: revisa el endpoint y el ID del modelo antes de ejecutar";
                         self.view.status = message.to_owned();
@@ -10348,7 +10601,10 @@ impl AgentsWindow {
                 if !self.view.running {
                     let selected = id.trim_start_matches("catalog_select:");
                     if let Some((provider_id, model_id)) = selected.split_once('/') {
-                        let usable = native_provider::adapter(provider_id).is_some()
+                        let usable = native_provider::adapter_at(&self.data_root, provider_id)
+                            .ok()
+                            .flatten()
+                            .is_some()
                             && self
                                 .view
                                 .catalog
@@ -10371,8 +10627,10 @@ impl AgentsWindow {
                             } else {
                                 self.view.native_provider_id = previous_provider;
                                 self.view.model = previous_model;
-                                self.view.native_key_available =
-                                    self.native_settings().key_available();
+                                self.view.native_key_available = native_key_available_at(
+                                    &self.native_settings(),
+                                    &self.data_root,
+                                );
                             }
                             self.refresh_composer_context_percent();
                         }
@@ -10580,8 +10838,7 @@ impl AgentsWindow {
                 {
                     self.view.composer_model_list_open = !self.view.composer_model_list_open;
                     self.view.composer_model_query.clear();
-                    self.composer_model_search_focus_pending =
-                        self.view.composer_model_list_open;
+                    self.composer_model_search_focus_pending = self.view.composer_model_list_open;
                     self.view.composer_effort_preview = None;
                 }
             }
@@ -11246,6 +11503,66 @@ mod tests {
     use serde_json::json;
     use std::sync::atomic::AtomicUsize;
 
+    #[test]
+    fn native_capabilities_follow_route_and_exact_provider_metadata() {
+        let mut adapter = native_provider::ProviderRegistry::builtin()
+            .adapter("custom")
+            .unwrap()
+            .clone();
+        let model_id = "gpt-6-astra";
+        let unknown = native_request_capabilities(&adapter, model_id, None, &[]);
+        assert!(unknown.tool_calls, "an explicit custom route may try tools");
+        assert!(unknown.reasoning_efforts.is_empty());
+
+        let discovered = native_provider::ProviderModelDiscovery {
+            provider_id: adapter.id.clone(),
+            models: [(
+                model_id.to_owned(),
+                native_provider::DiscoveredModel {
+                    id: model_id.to_owned(),
+                    name: model_id.to_owned(),
+                    provider_reports_tools: true,
+                    tool_call_declared: Some(true),
+                    text_input_output: true,
+                    supported_efforts: vec!["turbo".to_owned()],
+                },
+            )]
+            .into(),
+        };
+        let no_wire_effort = native_request_capabilities(
+            &adapter,
+            model_id,
+            None,
+            std::slice::from_ref(&discovered),
+        );
+        assert!(no_wire_effort.reasoning_efforts.is_empty());
+        adapter.reasoning_effort_field = Some("reasoning_effort".to_owned());
+        let enabled = native_request_capabilities(
+            &adapter,
+            model_id,
+            None,
+            std::slice::from_ref(&discovered),
+        );
+        assert_eq!(enabled.reasoning_efforts, ["turbo"]);
+
+        adapter.catalog.tool_call_path = Some("tools".to_owned());
+        let mut denied = discovered;
+        denied.models.get_mut(model_id).unwrap().tool_call_declared = Some(false);
+        assert!(!native_request_capabilities(&adapter, model_id, None, &[denied]).tool_calls);
+    }
+
+    #[test]
+    fn native_checkpoint_format_depends_on_protocol_not_provider_name() {
+        let chat = native_checkpoint_compatibility(
+            "custom-provider",
+            "model",
+            NativeWireApi::ChatCompletions,
+        );
+        let responses =
+            native_checkpoint_compatibility("custom-provider", "model", NativeWireApi::Responses);
+        assert_ne!(chat.context_format_key, responses.context_format_key);
+    }
+
     fn committed_usage_events(usage: Option<ModelTokenUsage>) -> Vec<AgentEvent> {
         vec![
             AgentEvent::new(
@@ -11455,13 +11772,9 @@ mod tests {
         let workspace = root.path().join("workspace");
         std::fs::create_dir(&workspace).unwrap();
         std::fs::write(workspace.join("AGENTS.md"), "Primera versión").unwrap();
-        let saved = native_resume_instructions(
-            root.path(),
-            &workspace,
-            Some("Terminar el harness"),
-            None,
-        )
-        .unwrap();
+        let saved =
+            native_resume_instructions(root.path(), &workspace, Some("Terminar el harness"), None)
+                .unwrap();
         std::fs::write(workspace.join("AGENTS.md"), [0xff]).unwrap();
         assert_eq!(
             native_resume_instructions(root.path(), &workspace, None, Some(&saved)).unwrap(),
@@ -11716,7 +12029,10 @@ mod tests {
             clicked(format!("session_approval_revoke:{}", grant.key_digest)),
             &egui::Context::default(),
         );
-        assert!(store.session_approval_grants(&session.id).unwrap().is_empty());
+        assert!(store
+            .session_approval_grants(&session.id)
+            .unwrap()
+            .is_empty());
         assert!(app.view.session_approval_grants.is_empty());
         assert!(app.view.status.contains("revocado"));
     }
@@ -13073,11 +13389,25 @@ mod tests {
     }
 
     #[test]
+    fn fresh_workspace_uses_native_backend_without_cli_fallback() {
+        let root = tempfile::tempdir().unwrap();
+        let app = AgentsWindow::with_data_root(root.path().join("data"));
+        assert_eq!(app.view.selected_backend, "native");
+    }
+
+    #[test]
     fn selecting_codex_route_persists_backend_and_model_together() {
         let root = tempfile::tempdir().unwrap();
         let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
-        if !app.view.backend_options.iter().any(|(backend, _)| backend == "codex") {
-            app.view.backend_options.push(("codex".into(), "Codex".into()));
+        if !app
+            .view
+            .backend_options
+            .iter()
+            .any(|(backend, _)| backend == "codex")
+        {
+            app.view
+                .backend_options
+                .push(("codex".into(), "Codex".into()));
         }
         app.view.selected_backend = "native".into();
         app.refresh_composer_routes();
@@ -13584,7 +13914,7 @@ mod tests {
             .iter()
             .any(|region| region.id == "sidebar_files"));
         app.view.show_settings = true;
-        app.view.command_results[0].target = Target::OpenCodeReview;
+        app.view.command_results[0].target = Target::OpenGitReview;
         app.activate_command_result(0);
         assert!(!app.view.show_settings);
         assert_eq!(app.view.side_tab, SideTab::CodeReview);
@@ -14219,7 +14549,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(retry, first);
-        assert_eq!(reopened.pending_native_steers(&session.id, "turn-1").unwrap().len(), 1);
+        assert_eq!(
+            reopened
+                .pending_native_steers(&session.id, "turn-1")
+                .unwrap()
+                .len(),
+            1
+        );
 
         let changed = enqueue_native_steer_draft(
             &data_root,
@@ -14236,11 +14572,22 @@ mod tests {
         )
         .unwrap();
         assert_ne!(changed, first);
-        assert_eq!(reopened.pending_native_steers(&session.id, "turn-1").unwrap().len(), 2);
+        assert_eq!(
+            reopened
+                .pending_native_steers(&session.id, "turn-1")
+                .unwrap()
+                .len(),
+            2
+        );
         acknowledge_native_steer_draft(&data_root, &reopened, &workspace, &session.id, &changed)
             .unwrap();
-        assert!(load_native_steer_draft(&data_root, &session.id).unwrap().is_none());
-        assert!(reopened.load_draft(&workspace, Some(&session.id)).unwrap().is_none());
+        assert!(load_native_steer_draft(&data_root, &session.id)
+            .unwrap()
+            .is_none());
+        assert!(reopened
+            .load_draft(&workspace, Some(&session.id))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -14259,10 +14606,9 @@ mod tests {
             label: "image.png".into(),
             is_dir: false,
         };
-        let image_a = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfirst")
-            .unwrap();
-        let image_b = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nsecond")
-            .unwrap();
+        let image_a = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfirst").unwrap();
+        let image_b =
+            UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nsecond").unwrap();
         let first = enqueue_native_steer_draft(
             &data_root,
             &store,
@@ -14283,7 +14629,10 @@ mod tests {
         reopened_app.view.selected_session = Some(session.id.clone());
         reopened_app.restore_draft();
         assert!(reopened_app.view.prompt.is_empty());
-        assert_eq!(reopened_app.view.composer_attachments, vec![attachment.clone()]);
+        assert_eq!(
+            reopened_app.view.composer_attachments,
+            vec![attachment.clone()]
+        );
         let reopened = SessionStore::open(data_root.join("sessions")).unwrap();
         let retry = enqueue_native_steer_draft(
             &data_root,
@@ -14315,7 +14664,13 @@ mod tests {
         )
         .unwrap();
         assert_ne!(changed_image, first);
-        assert_eq!(reopened.pending_native_steers(&session.id, "turn-1").unwrap().len(), 2);
+        assert_eq!(
+            reopened
+                .pending_native_steers(&session.id, "turn-1")
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -14343,7 +14698,9 @@ mod tests {
             },
         )
         .unwrap();
-        let mut state = load_native_steer_draft(&data_root, &session.id).unwrap().unwrap();
+        let mut state = load_native_steer_draft(&data_root, &session.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(state.retry.as_ref().unwrap().input_id, id);
         state.retry.as_mut().unwrap().acknowledged = true;
         save_native_steer_draft(&data_root, &state).unwrap();
@@ -14362,15 +14719,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(accepted_retry, id);
-        assert_eq!(store.pending_native_steers(&session.id, "turn-1").unwrap().len(), 1);
+        assert_eq!(
+            store
+                .pending_native_steers(&session.id, "turn-1")
+                .unwrap()
+                .len(),
+            1
+        );
         // Simulate a crash after the accepted marker but before cleanup.
         let mut reopened = AgentsWindow::with_data_root(data_root.clone());
         reopened.view.workspace = workspace.to_string_lossy().into_owned();
         reopened.view.selected_session = Some(session.id.clone());
         reopened.restore_draft();
         assert!(reopened.view.prompt.is_empty());
-        assert!(load_native_steer_draft(&data_root, &session.id).unwrap().is_none());
-        assert!(store.load_draft(&workspace, Some(&session.id)).unwrap().is_none());
+        assert!(load_native_steer_draft(&data_root, &session.id)
+            .unwrap()
+            .is_none());
+        assert!(store
+            .load_draft(&workspace, Some(&session.id))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -14534,12 +14902,18 @@ mod tests {
             clicked(format!("session_recover:{}", corrupt.id)),
             &egui::Context::default(),
         );
-        assert_ne!(reopened.view.selected_session.as_deref(), Some(corrupt.id.as_str()));
+        assert_ne!(
+            reopened.view.selected_session.as_deref(),
+            Some(corrupt.id.as_str())
+        );
         reopened.apply_action(
             clicked(format!("session_recover:{}", pending.id)),
             &egui::Context::default(),
         );
-        assert_eq!(reopened.view.selected_session.as_deref(), Some(pending.id.as_str()));
+        assert_eq!(
+            reopened.view.selected_session.as_deref(),
+            Some(pending.id.as_str())
+        );
     }
 
     #[test]
@@ -14552,7 +14926,13 @@ mod tests {
         let store = app.store.as_ref().unwrap().clone();
         let session = store.create(&workspace, "native").unwrap();
         let admission = store
-            .admit_native_turn(&session.id, "plan", "Plan the work", "model", TurnMode::Plan)
+            .admit_native_turn(
+                &session.id,
+                "plan",
+                "Plan the work",
+                "model",
+                TurnMode::Plan,
+            )
             .unwrap();
         let plan_text = "1. Inspect files\n2. Make the change";
         let mut sequence = admission.sequence;
@@ -14596,7 +14976,14 @@ mod tests {
             .admit_native_turn(&session.id, "build", "Build it", "model", TurnMode::Build)
             .unwrap();
         reopened.refresh_sessions();
-        assert!(!reopened.view.session_plans.get(&session.id).unwrap().can_build);
+        assert!(
+            !reopened
+                .view
+                .session_plans
+                .get(&session.id)
+                .unwrap()
+                .can_build
+        );
         assert_eq!(
             reopened.view.session_recovery.get(&session.id),
             Some(&SessionRecoveryView::Resume)
@@ -14698,7 +15085,11 @@ mod tests {
             &session.id,
             &stored.events,
             None,
-            &native_checkpoint_compatibility("custom", "unverified-model"),
+            &native_checkpoint_compatibility(
+                "custom",
+                "unverified-model",
+                NativeWireApi::ChatCompletions,
+            ),
         )
         .unwrap();
         assert_eq!(replay.recovery, ReplayRecovery::Idle);
@@ -14792,7 +15183,11 @@ mod tests {
             &session.id,
             &stored.events,
             None,
-            &native_checkpoint_compatibility("custom", "former-model"),
+            &native_checkpoint_compatibility(
+                "custom",
+                "former-model",
+                NativeWireApi::ChatCompletions,
+            ),
         )
         .unwrap();
         assert_eq!(replay.recovery, ReplayRecovery::Idle);
