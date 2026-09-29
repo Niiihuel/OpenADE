@@ -1,8 +1,7 @@
 //! Local marketplace inventory for portable `SKILL.md` capabilities.
 //!
-//! OpenCode discovers skills in `.agents/skills` and `.opencode/skills` and
-//! keeps npm/JavaScript plugins separate. OpenIDE only installs skill folders;
-//! it never evaluates plugin code or starts MCP servers while browsing them.
+//! OpenIDE installs skill folders from explicit local or GitHub sources. It
+//! never evaluates plugin code or starts MCP servers while browsing them.
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -617,7 +616,6 @@ fn scan_skill_folders(root: &Path, source: &SourceRecord) -> io::Result<Vec<Disc
     let mut candidates = Vec::new();
     for relative in [
         ".agents/skills",
-        ".opencode/skills",
         ".claude/skills",
         "skills",
         "",

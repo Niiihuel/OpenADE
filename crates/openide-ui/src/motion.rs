@@ -198,6 +198,42 @@ fn channel(from: u8, to: u8, progress: f32) -> u8 {
     (f32::from(from) + (f32::from(to) - f32::from(from)) * progress).round() as u8
 }
 
+/// A slow, paint-only pulse for passive loading surfaces. Its phase belongs to
+/// a stable element ID in UiTree, so rebuilding an Element does not restart it.
+pub(crate) fn skeleton_color(
+    base: Color,
+    highlight: Color,
+    started: Instant,
+    now: Instant,
+    reduced_motion: bool,
+) -> Color {
+    if reduced_motion {
+        return base;
+    }
+    const PERIOD: Duration = Duration::from_millis(1_600);
+    let phase = (now.saturating_duration_since(started).as_secs_f32() % PERIOD.as_secs_f32())
+        / PERIOD.as_secs_f32();
+    let triangle = 1.0 - (2.0 * phase - 1.0).abs();
+    let amount = Easing::InOutCubic.sample(triangle);
+    Color::rgba(
+        channel(base.r, highlight.r, amount),
+        channel(base.g, highlight.g, amount),
+        channel(base.b, highlight.b, amount),
+        channel(base.a, highlight.a, amount),
+    )
+}
+
+/// Continuous paint-only rotation for a passive progress icon. The phase is
+/// measured from a stable element ID's start time and stops under reduced motion.
+pub(crate) fn spinner_angle(started: Instant, now: Instant, reduced_motion: bool) -> f32 {
+    if reduced_motion {
+        return 0.0;
+    }
+    const PERIOD: f32 = 0.9;
+    (now.saturating_duration_since(started).as_secs_f32() / PERIOD * std::f32::consts::TAU)
+        .rem_euclid(std::f32::consts::TAU)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +305,53 @@ mod tests {
             Duration::from_millis(100),
         );
         assert!(!color.is_active(transparent_at));
+    }
+
+    #[test]
+    fn skeleton_pulse_cycles_and_reduced_motion_is_static() {
+        let start = Instant::now();
+        let base = Color::rgb(30, 30, 30);
+        let highlight = Color::rgb(50, 50, 50);
+        assert_eq!(skeleton_color(base, highlight, start, start, false), base);
+        assert_eq!(
+            skeleton_color(
+                base,
+                highlight,
+                start,
+                start + Duration::from_millis(800),
+                false,
+            ),
+            highlight
+        );
+        assert_eq!(
+            skeleton_color(
+                base,
+                highlight,
+                start,
+                start + Duration::from_millis(1_600),
+                false,
+            ),
+            base
+        );
+        assert_eq!(
+            skeleton_color(
+                base,
+                highlight,
+                start,
+                start + Duration::from_millis(800),
+                true,
+            ),
+            base
+        );
+    }
+
+    #[test]
+    fn spinner_rotates_and_reduced_motion_holds_one_angle() {
+        let start = Instant::now();
+        let quarter = start + Duration::from_millis(225);
+        assert_eq!(spinner_angle(start, start, false), 0.0);
+        assert!((spinner_angle(start, quarter, false) - std::f32::consts::FRAC_PI_2).abs() < 0.01);
+        assert!(spinner_angle(start, start + Duration::from_millis(900), false) < 0.001);
+        assert_eq!(spinner_angle(start, quarter, true), 0.0);
     }
 }

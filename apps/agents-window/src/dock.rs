@@ -3,13 +3,14 @@
 //! ordering, selection, and per-workspace layout preferences.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     path::{Component, Path, PathBuf},
 };
 
 const DEFAULT_WIDTH_RATIO: f32 = 0.45;
 const MAX_WIDTH_RATIO: f32 = 0.65;
 const MIN_WIDTH_PX: f32 = 320.0;
+const MAX_RECENT_PER_OWNER: usize = 8;
 
 /// A tab can belong to the whole workspace, a draft, or one task.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -46,7 +47,7 @@ impl DockScope {
 }
 
 /// File preview paths are relative to the owning workspace.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DockTabKind {
     Context,
     Files,
@@ -93,9 +94,18 @@ impl DockTab {
     }
 }
 
+/// A closed tab kept for the overview. Resource-backed terminal sessions are
+/// listed for context but cannot be restored after the host releases the PTY.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecentlyClosedTab {
+    pub tab: DockTab,
+    pub restorable: bool,
+}
+
 #[derive(Default)]
 struct WorkspaceDock {
     tabs: Vec<DockTab>,
+    recently_closed: VecDeque<RecentlyClosedTab>,
     active_by_owner: HashMap<DockOwner, DockTabId>,
     collapsed_by_owner: HashMap<DockOwner, bool>,
     preferred_width_px: Option<f32>,
@@ -117,6 +127,11 @@ impl DockState {
             .workspaces
             .entry(scope.workspace_id.clone())
             .or_default();
+        // An explicit open supersedes an older closed entry for this same
+        // owner and kind, even if an existing tab is merely reactivated.
+        workspace
+            .recently_closed
+            .retain(|entry| entry.tab.owner != scope.owner || entry.tab.kind != kind);
         if let Some(tab) = workspace
             .tabs
             .iter()
@@ -227,6 +242,26 @@ impl DockState {
         if let Some(collapsed) = workspace.collapsed_by_owner.remove(&DockOwner::Draft) {
             workspace.collapsed_by_owner.insert(target, collapsed);
         }
+        // Draft history follows the task just like its open tabs. Keep the
+        // newest entry for each kind and discard entries now open in the task.
+        let target = DockOwner::Task(task_id.to_owned());
+        for entry in &mut workspace.recently_closed {
+            if entry.tab.owner == DockOwner::Draft {
+                entry.tab.owner = target.clone();
+            }
+        }
+        let mut seen = HashSet::new();
+        workspace.recently_closed.retain(|entry| {
+            if entry.tab.owner != target {
+                return true;
+            }
+            !workspace
+                .tabs
+                .iter()
+                .any(|tab| tab.owner == target && tab.kind == entry.tab.kind)
+                && seen.insert(entry.tab.kind.clone())
+        });
+        trim_recent_owner(workspace, &target);
         draft_kinds.len()
     }
 
@@ -242,6 +277,36 @@ impl DockState {
             .iter()
             .filter(|tab| visible_to(tab, &scope.owner))
             .collect()
+    }
+
+    /// Newest first. Task scopes can inspect their own entries and shared
+    /// workspace entries, never those belonging to a different task.
+    pub fn recently_closed(&self, scope: &DockScope) -> Vec<&RecentlyClosedTab> {
+        self.workspaces
+            .get(&scope.workspace_id)
+            .map(|workspace| {
+                workspace
+                    .recently_closed
+                    .iter()
+                    .filter(|entry| visible_to(&entry.tab, &scope.owner))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Restore one visible entry as a fresh tab identity and activate it in
+    /// the requesting scope. Terminal entries remain unavailable because a
+    /// closed tab's PTY has already been released by the host.
+    pub fn reopen_recent(&mut self, scope: &DockScope, closed_id: DockTabId) -> Option<DockTabId> {
+        let workspace = self.workspaces.get_mut(&scope.workspace_id)?;
+        let index = workspace.recently_closed.iter().position(|entry| {
+            entry.tab.id == closed_id && entry.restorable && visible_to(&entry.tab, &scope.owner)
+        })?;
+        let entry = workspace.recently_closed.remove(index)?;
+        let original_scope = DockScope::new(scope.workspace_id.clone(), entry.tab.owner);
+        let id = self.open(&original_scope, entry.tab.kind);
+        self.activate(scope, id);
+        Some(id)
     }
 
     /// The owner keeps a separate active tab. If that tab was closed, the last
@@ -291,6 +356,14 @@ impl DockState {
             .position(|tab| tab.id == id && visible_to(tab, &scope.owner))?;
         let removed = workspace.tabs.remove(index);
         repair_active_after_close(workspace, id, index);
+        workspace
+            .recently_closed
+            .retain(|entry| entry.tab.owner != removed.owner || entry.tab.kind != removed.kind);
+        workspace.recently_closed.push_front(RecentlyClosedTab {
+            restorable: !matches!(removed.kind, DockTabKind::Terminal),
+            tab: removed.clone(),
+        });
+        trim_recent_owner(workspace, &removed.owner);
         Some(removed)
     }
 
@@ -397,6 +470,17 @@ impl DockState {
 
 fn visible_to(tab: &DockTab, owner: &DockOwner) -> bool {
     tab.owner == DockOwner::Workspace || &tab.owner == owner
+}
+
+fn trim_recent_owner(workspace: &mut WorkspaceDock, owner: &DockOwner) {
+    let mut count = 0;
+    workspace.recently_closed.retain(|entry| {
+        if &entry.tab.owner != owner {
+            return true;
+        }
+        count += 1;
+        count <= MAX_RECENT_PER_OWNER
+    });
 }
 
 fn repair_active_after_close(workspace: &mut WorkspaceDock, removed_id: DockTabId, index: usize) {
@@ -642,5 +726,116 @@ mod tests {
         assert_eq!(dock.close_all_visible(&alice).len(), 1);
         assert_eq!(dock.tabs("repo").len(), 1);
         assert_eq!(dock.tabs("repo")[0].id, foreign);
+    }
+
+    #[test]
+    fn closed_active_tab_is_reopened_with_new_identity_and_focus() {
+        let mut dock = DockState::default();
+        let scope = task("repo", "alice");
+        let context = dock.open(&scope, DockTabKind::Context);
+        let activity = dock.open(&scope, DockTabKind::Activity);
+        assert_eq!(
+            dock.close(&scope, activity).map(|tab| tab.id),
+            Some(activity)
+        );
+        assert_eq!(dock.active_tab(&scope).map(|tab| tab.id), Some(context));
+        assert_eq!(dock.recently_closed(&scope)[0].tab.id, activity);
+        let restored = dock
+            .reopen_recent(&scope, activity)
+            .expect("activity can reopen");
+        assert_ne!(restored, activity);
+        assert_eq!(dock.active_tab(&scope).map(|tab| tab.id), Some(restored));
+        assert!(dock.recently_closed(&scope).is_empty());
+    }
+
+    #[test]
+    fn recent_tabs_respect_workspace_and_owner_visibility() {
+        let mut dock = DockState::default();
+        let alice = task("repo", "alice");
+        let bob = task("repo", "bob");
+        let other_workspace = task("other", "alice");
+        let shared = DockScope::new("repo", DockOwner::Workspace);
+        let private = dock.open(&alice, DockTabKind::Activity);
+        let global = dock.open(&shared, DockTabKind::CodeReview);
+        dock.close(&alice, private);
+        dock.close(&alice, global);
+        assert_eq!(dock.recently_closed(&alice).len(), 2);
+        assert_eq!(dock.recently_closed(&bob).len(), 1);
+        assert_eq!(dock.recently_closed(&bob)[0].tab.id, global);
+        assert!(dock.recently_closed(&other_workspace).is_empty());
+        assert_eq!(dock.reopen_recent(&bob, private), None);
+        assert_eq!(dock.reopen_recent(&other_workspace, global), None);
+        let restored = dock.reopen_recent(&bob, global).expect("shared tab");
+        assert_eq!(dock.active_tab(&bob).map(|tab| tab.id), Some(restored));
+        assert_eq!(dock.active_tab(&alice).map(|tab| tab.id), Some(restored));
+        assert_eq!(dock.recently_closed(&alice)[0].tab.id, private);
+    }
+
+    #[test]
+    fn explicit_open_and_repeated_close_never_leave_duplicate_recent_entries() {
+        let mut dock = DockState::default();
+        let scope = task("repo", "alice");
+        let first = dock.open(&scope, DockTabKind::Context);
+        dock.close(&scope, first);
+        let second = dock.open(&scope, DockTabKind::Context);
+        assert!(dock.recently_closed(&scope).is_empty());
+        dock.close(&scope, second);
+        assert_eq!(dock.recently_closed(&scope).len(), 1);
+        assert_eq!(dock.recently_closed(&scope)[0].tab.id, second);
+        assert_eq!(dock.reopen_recent(&scope, first), None);
+    }
+
+    #[test]
+    fn recent_history_is_bounded_to_eight_per_owner() {
+        let mut dock = DockState::default();
+        let alice = task("repo", "alice");
+        let bob = task("repo", "bob");
+        let bob_tab = dock.open(&bob, DockTabKind::Activity);
+        dock.close(&bob, bob_tab);
+        let mut ids = Vec::new();
+        for index in 0..10 {
+            let id = dock.open(
+                &alice,
+                DockTabKind::FilePreview {
+                    path: PathBuf::from(format!("file-{index}.rs")),
+                },
+            );
+            ids.push(id);
+            dock.close(&alice, id);
+        }
+        assert_eq!(dock.recently_closed(&alice).len(), 8);
+        assert_eq!(dock.recently_closed(&alice)[0].tab.id, ids[9]);
+        assert_eq!(dock.recently_closed(&alice)[7].tab.id, ids[2]);
+        assert_eq!(dock.reopen_recent(&alice, ids[0]), None);
+        assert_eq!(dock.recently_closed(&bob).len(), 1);
+    }
+
+    #[test]
+    fn closed_terminal_is_recorded_but_cannot_restore_a_dead_pty() {
+        let mut dock = DockState::default();
+        let scope = task("repo", "alice");
+        let terminal = dock.open(&scope, DockTabKind::Terminal);
+        dock.close(&scope, terminal);
+        assert_eq!(dock.recently_closed(&scope).len(), 1);
+        assert!(!dock.recently_closed(&scope)[0].restorable);
+        assert_eq!(dock.reopen_recent(&scope, terminal), None);
+        assert!(dock.active_tab(&scope).is_none());
+    }
+
+    #[test]
+    fn promoting_draft_moves_only_its_recent_history() {
+        let mut dock = DockState::default();
+        let draft = DockScope::new("repo", DockOwner::Draft);
+        let alice = task("repo", "alice");
+        let bob = task("repo", "bob");
+        let draft_tab = dock.open(&draft, DockTabKind::Activity);
+        let bob_tab = dock.open(&bob, DockTabKind::Activity);
+        dock.close(&draft, draft_tab);
+        dock.close(&bob, bob_tab);
+        assert_eq!(dock.promote_draft("repo", "alice"), 0);
+        assert!(dock.recently_closed(&draft).is_empty());
+        assert_eq!(dock.recently_closed(&alice)[0].tab.id, draft_tab);
+        assert_eq!(dock.recently_closed(&bob)[0].tab.id, bob_tab);
+        assert_eq!(dock.reopen_recent(&bob, draft_tab), None);
     }
 }

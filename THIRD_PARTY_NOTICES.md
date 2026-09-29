@@ -1,5 +1,13 @@
 # Créditos de terceros
 
+## Microsoft MXC
+
+El aislamiento de comandos en Windows usa
+[mxc-sdk](https://github.com/microsoft/mxc) fijado al commit
+`ff53fda4a88463370891cd4a6a0b1aa06acae9e5`, Copyright (c) Microsoft
+Corporation, bajo [licencia MIT](third_party/mxc_LICENSE.md). El código se
+obtiene como dependencia Cargo; el harness de OpenIDE no deriva de MXC.
+
 ## Models.dev
 
 La configuración de proveedores descarga metadatos de
@@ -26,6 +34,23 @@ proviene de [Primer Octicons](https://github.com/primer/octicons/blob/main/icons
 Copyright (c) GitHub, Inc., bajo la [licencia MIT](apps/agents-window/assets/octicons/LICENSE).
 Se usa exclusivamente para identificar la integración con GitHub y respeta los
 colores neutros del tema.
+
+## ChatGPT Model Selector
+
+El selector de esfuerzo en Rust toma como referencia la geometría, el movimiento
+y los efectos del proyecto [chatgpt-model-selector](https://github.com/zanwei/chatgpt-model-selector),
+Copyright (c) 2026 Zanwei Guo, bajo [licencia MIT](third_party/chatgpt-model-selector_LICENSE.md).
+El catálogo de proveedores y modelos de OpenIDE es una integración propia.
+
+## Lobe Icons
+
+Los logos de Codex, OpenAI, OpenRouter y DeepSeek en
+`apps/agents-window/assets/lobe/` provienen de
+[Lobe Icons](https://github.com/lobehub/lobe-icons), revisión
+`329f378cbd1a88f45b60cd096b9111ce16f3ea39`, Copyright (c) 2023 LobeHub,
+bajo [licencia MIT](apps/agents-window/assets/lobe/LICENSE).
+Se usan para identificar proveedores; OpenIDE los tiñe con el token de texto
+del tema oscuro y no incluye el catálogo completo.
 
 ## Repositorios de referencia
 

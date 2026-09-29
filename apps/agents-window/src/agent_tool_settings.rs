@@ -8,11 +8,13 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use openide_harness::{LocalTool, PermissionMode, PermissionPolicy, ToolPermissions};
+use openide_harness::{
+    CommandIsolation, LocalTool, PermissionMode, PermissionPolicy, ToolPermissions,
+};
 use serde::{Deserialize, Serialize};
 
 const SETTINGS_FILE: &str = "agent-tool-settings.json";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
 static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -27,18 +29,27 @@ pub const ALL_TOOLS: [LocalTool; 5] = [
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgentToolSettings {
     permissions: ToolPermissions,
+    command_isolation: CommandIsolation,
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Document {
     version: u32,
     permissions: ToolPermissions,
+    #[serde(default)]
+    command_isolation: Option<CommandIsolation>,
 }
 
 impl Default for AgentToolSettings {
     fn default() -> Self {
         Self {
             permissions: ToolPermissions::default(),
+            command_isolation: if cfg!(windows) {
+                CommandIsolation::WorkspaceWriteOffline
+            } else {
+                CommandIsolation::HostUnrestricted
+            },
         }
     }
 }
@@ -74,14 +85,19 @@ impl AgentToolSettings {
         }
         let document: Document = serde_json::from_slice(&bytes)
             .map_err(|error| format!("Los permisos del agente no son válidos: {error}"))?;
-        if document.version != VERSION {
-            return Err(format!(
-                "Versión de permisos del agente no compatible: {}",
-                document.version
-            ));
-        }
+        let command_isolation = match (document.version, document.command_isolation) {
+            (1, None) => Self::default().command_isolation,
+            (VERSION, Some(isolation)) => isolation,
+            _ => {
+                return Err(format!(
+                    "Versión o aislamiento de permisos del agente no compatible: {}",
+                    document.version
+                ));
+            }
+        };
         Ok(Self {
             permissions: document.permissions,
+            command_isolation,
         })
     }
 
@@ -91,6 +107,7 @@ impl AgentToolSettings {
         let bytes = serde_json::to_vec_pretty(&Document {
             version: VERSION,
             permissions: self.permissions,
+            command_isolation: Some(self.command_isolation),
         })
         .map_err(|error| format!("No se pudieron codificar los permisos del agente: {error}"))?;
         let temporary = root.join(format!(
@@ -118,6 +135,14 @@ impl AgentToolSettings {
         self.permissions
     }
 
+    pub fn command_isolation(&self) -> CommandIsolation {
+        self.command_isolation
+    }
+
+    pub fn set_command_isolation(&mut self, isolation: CommandIsolation) {
+        self.command_isolation = isolation;
+    }
+
     pub fn enabled(&self, tool: LocalTool) -> bool {
         self.permissions.allows(tool)
     }
@@ -142,13 +167,48 @@ impl AgentToolSettings {
         }
     }
 
+    fn persistent_modes(&self) -> [(&'static str, PermissionMode); 5] {
+        let mutating = if self.enabled(LocalTool::RunCommand)
+            && (self.command_isolation == CommandIsolation::HostUnrestricted || cfg!(windows))
+        {
+            PermissionMode::Ask
+        } else {
+            PermissionMode::Deny
+        };
+        let poll = if mutating == PermissionMode::Ask {
+            PermissionMode::Allow
+        } else {
+            PermissionMode::Deny
+        };
+        let resize =
+            if self.command_isolation == CommandIsolation::HostUnrestricted && cfg!(windows) {
+                mutating
+            } else {
+                PermissionMode::Deny
+            };
+        [
+            ("start_command", mutating),
+            ("poll_command", poll),
+            ("write_stdin", mutating),
+            ("terminate_command", mutating),
+            ("resize_command", resize),
+        ]
+    }
+
     /// Deny unknown future tools by default. A disabled tool is also omitted
     /// from the model's advertised definitions by `LocalTools::with_permissions`.
     pub fn permission_policy(&self) -> PermissionPolicy {
-        ALL_TOOLS.iter().copied().fold(
-            PermissionPolicy::new().with_default_mode(PermissionMode::Deny),
-            |policy, tool| policy.with_tool(tool.name(), self.mode_for(tool)),
-        )
+        let policy = ALL_TOOLS
+            .iter()
+            .copied()
+            .fold(
+                PermissionPolicy::new().with_default_mode(PermissionMode::Deny),
+                |policy, tool| policy.with_tool(tool.name(), self.mode_for(tool)),
+            )
+            .with_tool("apply_patch", self.mode_for(LocalTool::WriteFile));
+        self.persistent_modes()
+            .into_iter()
+            .fold(policy, |policy, (name, mode)| policy.with_tool(name, mode))
     }
 
     pub fn tool_from_action_id(id: &str) -> Option<LocalTool> {
@@ -164,12 +224,12 @@ impl AgentToolSettings {
 }
 
 #[cfg(not(windows))]
-fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
+pub(crate) fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
     fs::rename(temporary, destination)
 }
 
 #[cfg(windows)]
-fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
+pub(crate) fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;
 
@@ -228,6 +288,14 @@ mod tests {
     #[test]
     fn safe_defaults_and_independent_modes() {
         let mut settings = AgentToolSettings::default();
+        assert_eq!(
+            settings.command_isolation(),
+            if cfg!(windows) {
+                CommandIsolation::WorkspaceWriteOffline
+            } else {
+                CommandIsolation::HostUnrestricted
+            }
+        );
         for tool in [
             LocalTool::ReadFile,
             LocalTool::ListFiles,
@@ -264,12 +332,59 @@ mod tests {
     }
 
     #[test]
+    fn persistent_command_modes_follow_run_permission_and_isolation() {
+        let mut settings = AgentToolSettings::default();
+        assert!(settings
+            .persistent_modes()
+            .iter()
+            .all(|(_, mode)| *mode == PermissionMode::Deny));
+        settings.set(LocalTool::RunCommand, true);
+        settings.set_command_isolation(CommandIsolation::WorkspaceWriteOffline);
+        if cfg!(windows) {
+            assert_eq!(
+                settings.persistent_modes(),
+                [
+                    ("start_command", PermissionMode::Ask),
+                    ("poll_command", PermissionMode::Allow),
+                    ("write_stdin", PermissionMode::Ask),
+                    ("terminate_command", PermissionMode::Ask),
+                    ("resize_command", PermissionMode::Deny),
+                ]
+            );
+        } else {
+            assert!(settings
+                .persistent_modes()
+                .iter()
+                .all(|(_, mode)| *mode == PermissionMode::Deny));
+        }
+        settings.set_command_isolation(CommandIsolation::HostUnrestricted);
+        assert_eq!(
+            settings.persistent_modes(),
+            [
+                ("start_command", PermissionMode::Ask),
+                ("poll_command", PermissionMode::Allow),
+                ("write_stdin", PermissionMode::Ask),
+                ("terminate_command", PermissionMode::Ask),
+                (
+                    "resize_command",
+                    if cfg!(windows) {
+                        PermissionMode::Ask
+                    } else {
+                        PermissionMode::Deny
+                    },
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn saves_and_replaces_preferences_without_losing_independent_choices() {
         let root = tempfile::tempdir().unwrap();
         let mut settings = AgentToolSettings::default();
         assert_eq!(AgentToolSettings::load(root.path()).unwrap(), settings);
         settings.set(LocalTool::RunCommand, true);
         settings.set(LocalTool::ReadFile, false);
+        settings.set_command_isolation(CommandIsolation::HostUnrestricted);
         settings.save(root.path()).unwrap();
         assert_eq!(AgentToolSettings::load(root.path()).unwrap(), settings);
         settings.set(LocalTool::WriteFile, true);
@@ -290,6 +405,32 @@ mod tests {
         )
         .unwrap();
         assert!(AgentToolSettings::load(root.path()).is_err());
+        fs::write(
+            &path,
+            br#"{"version":2,"permissions":{},"command_isolation":"unexpected"}"#,
+        )
+        .unwrap();
+        assert!(AgentToolSettings::load(root.path()).is_err());
+        fs::write(&path, br#"{"version":2,"permissions":{}}"#).unwrap();
+        assert!(AgentToolSettings::load(root.path()).is_err());
+    }
+
+    #[test]
+    fn migrates_version_one_permissions_without_losing_command_policy() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join(SETTINGS_FILE),
+            br#"{"version":1,"permissions":{"run_command":true}}"#,
+        )
+        .unwrap();
+        let loaded = AgentToolSettings::load(root.path()).unwrap();
+        assert!(loaded.enabled(LocalTool::RunCommand));
+        assert_eq!(
+            loaded.command_isolation(),
+            AgentToolSettings::default().command_isolation()
+        );
+        loaded.save(root.path()).unwrap();
+        assert_eq!(AgentToolSettings::load(root.path()).unwrap(), loaded);
     }
 
     #[test]

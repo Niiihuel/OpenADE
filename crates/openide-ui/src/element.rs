@@ -1,4 +1,4 @@
-use crate::{Color, Point, ScrollbarAppearance};
+use crate::{Color, Point, RasterImage, ScrollbarAppearance};
 use std::sync::Arc;
 
 pub const DEFAULT_FONT_SIZE: f32 = 14.0;
@@ -14,6 +14,9 @@ pub enum PopoverPlacement {
     BottomEnd,
     TopStart,
     TopEnd,
+    RightStart,
+    LeftStart,
+    Center,
 }
 
 /// Preferred side of a non-interactive tooltip. The engine flips to the
@@ -44,9 +47,19 @@ pub enum Icon {
     PanelRightOpen,
     PanelRightClose,
     Add,
+    Microphone,
+    Infinity,
+    Paperclip,
+    Target,
+    Plan,
+    ContextRing,
     Check,
     Settings,
     Github,
+    Codex,
+    OpenAi,
+    OpenRouter,
+    DeepSeek,
     Chat,
     Folder,
     Laptop,
@@ -66,6 +79,8 @@ pub enum Icon {
     Stop,
     History,
     Close,
+    CloseBold,
+    CloseCircle,
     Refresh,
     Menu,
     More,
@@ -80,6 +95,16 @@ pub enum Icon {
     Collapse,
     Expand,
     Clock,
+}
+
+/// Outline forms of the passive loading indicator.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SpinnerVariant {
+    /// An incomplete circular stroke, similar to a rotating LoaderCircle.
+    #[default]
+    Circle,
+    /// Eight short radial strokes, similar to a rotating Loader.
+    Spokes,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -184,6 +209,9 @@ pub struct Element {
     /// Another action whose pointer hover should also highlight this element.
     /// Useful when a row contains a more specific action such as its menu.
     pub hover_peer: Option<String>,
+    /// Optional action dispatched by an interactive element whose focus ID
+    /// must remain distinct from another control with the same action.
+    pub action_alias: Option<String>,
 }
 
 /// A fixed-height, lazily built list. The row factory is called only for rows
@@ -242,6 +270,15 @@ pub enum ElementKind {
         placement: PopoverPlacement,
         gap: f32,
         animation_ms: u16,
+        close_animation_ms: Option<u16>,
+        open_scale: f32,
+        view_key: Option<String>,
+        hover_open: bool,
+        backdrop: bool,
+        backdrop_dismiss: bool,
+        scrim: Option<Color>,
+        initial_focus: Option<String>,
+        return_focus: Option<String>,
     },
     /// A transient, non-interactive overlay whose anchor remains in normal
     /// layout. The `anchor_id` identifies the wrapped focusable action.
@@ -265,6 +302,9 @@ pub enum ElementKind {
     TruncatedText(String),
     /// A paragraph containing inline styles and explicit line breaks.
     FormattedText(Vec<TextSpan>),
+    /// Bounded encoded raster image. The host validates its digest and format
+    /// before decoding and exposes `alt` to its accessibility backend.
+    RasterImage(RasterImage),
     Icon(Icon),
     Button {
         id: String,
@@ -283,11 +323,35 @@ pub enum ElementKind {
         placeholder: String,
         leading_icon: Option<Icon>,
         leading_icon_tint: Option<Color>,
+        shortcut: Option<String>,
+        shortcut_fill: Option<Color>,
     },
     TextArea {
         id: String,
         initial_value: String,
         placeholder: String,
+    },
+    /// Passive loading placeholder. UiTree animates its paint by stable ID.
+    Skeleton {
+        id: String,
+        base: Color,
+        highlight: Color,
+    },
+    /// Passive progress indicator. Its phase is retained by stable ID in UiTree.
+    Spinner {
+        id: String,
+        color: Color,
+        variant: SpinnerVariant,
+    },
+    /// An interactive reasoning-effort track. `fraction` is the selected
+    /// position; `steps` is the current model's number of available levels.
+    EffortSlider {
+        id: String,
+        fraction: f32,
+        steps: usize,
+        /// The final advertised level is Ultra. Other providers can end at
+        /// High or Max without receiving the Ultra treatment.
+        ultra_available: bool,
     },
     Spacer,
 }
@@ -316,10 +380,13 @@ pub struct Style {
     /// Duration of interactive background transitions, in milliseconds.
     pub transition_ms: u16,
     pub border: Option<Border>,
+    pub dashed_border: bool,
     pub shadow: Option<BoxShadow>,
     /// Clip child paint and hit regions to the content rectangle. The parent
     /// background, border and shadow still paint at their normal bounds.
     pub clip_children: bool,
+    pub center_content: bool,
+    pub underline_on_hover: bool,
     pub foreground: Color,
     pub radius: f32,
     pub font_size: f32,
@@ -345,8 +412,11 @@ impl Default for Style {
             focus_border: None,
             transition_ms: 0,
             border: None,
+            dashed_border: false,
             shadow: None,
             clip_children: false,
+            center_content: false,
+            underline_on_hover: false,
             foreground: Color::WHITE,
             radius: 0.0,
             font_size: DEFAULT_FONT_SIZE,
@@ -361,6 +431,7 @@ impl Element {
             kind,
             style: Style::default(),
             hover_peer: None,
+            action_alias: None,
         }
     }
 
@@ -421,6 +492,14 @@ impl Element {
         self
     }
 
+    /// Keep a unique focus target while dispatching an existing action ID.
+    /// For example, a dialog's close icon and Cancel button can both cancel
+    /// without collapsing into one keyboard stop.
+    pub fn dispatch_as(mut self, action_id: impl Into<String>) -> Self {
+        self.action_alias = Some(action_id.into());
+        self
+    }
+
     /// Layer a popover or modal over a base tree. The base determines layout;
     /// floating is painted after the ordinary scene and receives pointer hits
     /// first. The window viewport remains its outer clip.
@@ -447,7 +526,70 @@ impl Element {
             placement,
             gap: 5.0,
             animation_ms: 140,
+            close_animation_ms: None,
+            open_scale: 1.0,
+            view_key: None,
+            hover_open: false,
+            backdrop: true,
+            backdrop_dismiss: true,
+            scrim: None,
+            initial_focus: None,
+            return_focus: None,
         })
+    }
+
+    /// Prefer a control when a modal first opens. The target must be a
+    /// focusable descendant of the floating subtree.
+    pub fn popover_initial_focus(mut self, id: impl Into<String>) -> Self {
+        if let ElementKind::Popover { initial_focus, .. } = &mut self.kind {
+            *initial_focus = Some(id.into());
+        }
+        self
+    }
+
+    /// Restore focus to a stable control when a modal closes, including when
+    /// the action that opened it belonged to a menu that has since closed.
+    pub fn popover_return_focus(mut self, id: impl Into<String>) -> Self {
+        if let ElementKind::Popover { return_focus, .. } = &mut self.kind {
+            *return_focus = Some(id.into());
+        }
+        self
+    }
+
+    /// Show a submenu while its trigger or content is hovered or focused.
+    pub fn popover_on_hover(mut self) -> Self {
+        if let ElementKind::Popover {
+            hover_open,
+            backdrop,
+            gap,
+            ..
+        } = &mut self.kind
+        {
+            *hover_open = true;
+            *backdrop = false;
+            *gap = 0.0;
+        }
+        self
+    }
+
+    /// Dim the viewport behind an open modal surface.
+    pub fn popover_scrim(mut self, color: Color) -> Self {
+        if let ElementKind::Popover { scrim, .. } = &mut self.kind {
+            *scrim = Some(color);
+        }
+        self
+    }
+
+    /// Keep a modal open when its backdrop is clicked while still blocking
+    /// interaction with the content underneath.
+    pub fn popover_backdrop_dismiss(mut self, enabled: bool) -> Self {
+        if let ElementKind::Popover {
+            backdrop_dismiss, ..
+        } = &mut self.kind
+        {
+            *backdrop_dismiss = enabled;
+        }
+        self
     }
 
     /// Set the entrance animation for a floating surface. Visual movement does
@@ -455,6 +597,36 @@ impl Element {
     pub fn popover_animation_ms(mut self, duration: u16) -> Self {
         if let ElementKind::Popover { animation_ms, .. } = &mut self.kind {
             *animation_ms = duration;
+        }
+        self
+    }
+
+    /// Set the exit duration independently of entrance. By default exits use
+    /// the established short fade (at most 110 ms).
+    pub fn popover_close_animation_ms(mut self, duration: u16) -> Self {
+        if let ElementKind::Popover {
+            close_animation_ms, ..
+        } = &mut self.kind
+        {
+            *close_animation_ms = Some(duration);
+        }
+        self
+    }
+
+    /// Start entrance at this visual scale while keeping final hit geometry.
+    pub fn popover_open_scale(mut self, scale: f32) -> Self {
+        if let ElementKind::Popover { open_scale, .. } = &mut self.kind {
+            if scale.is_finite() {
+                *open_scale = scale.clamp(0.5, 1.25);
+            }
+        }
+        self
+    }
+
+    /// Animate content when a retained popover switches between keyed views.
+    pub fn popover_view_key(mut self, key: impl Into<String>) -> Self {
+        if let ElementKind::Popover { view_key, .. } = &mut self.kind {
+            *view_key = Some(key.into());
         }
         self
     }
@@ -534,6 +706,10 @@ impl Element {
         Self::new(ElementKind::FormattedText(spans))
     }
 
+    pub fn raster_image(image: RasterImage) -> Self {
+        Self::new(ElementKind::RasterImage(image))
+    }
+
     pub fn icon(icon: Icon) -> Self {
         Self::new(ElementKind::Icon(icon))
     }
@@ -585,6 +761,8 @@ impl Element {
             placeholder: placeholder.into(),
             leading_icon: None,
             leading_icon_tint: None,
+            shortcut: None,
+            shortcut_fill: None,
         })
         .padding(8.0)
     }
@@ -608,6 +786,22 @@ impl Element {
         self
     }
 
+    /// A decorative keyboard hint inside the input's focus and hit bounds.
+    pub fn input_shortcut(mut self, value: impl Into<String>) -> Self {
+        if let ElementKind::TextInput { shortcut, .. } = &mut self.kind {
+            *shortcut = Some(value.into());
+        }
+        self
+    }
+
+    /// Background of the passive keyboard hint inside a text input.
+    pub fn input_shortcut_fill(mut self, color: Color) -> Self {
+        if let ElementKind::TextInput { shortcut_fill, .. } = &mut self.kind {
+            *shortcut_fill = Some(color);
+        }
+        self
+    }
+
     /// A multi-line editor. Enter inserts a line break; Ctrl+Enter submits.
     pub fn text_area(
         id: impl Into<String>,
@@ -624,6 +818,50 @@ impl Element {
 
     pub fn spacer() -> Self {
         Self::new(ElementKind::Spacer)
+    }
+
+    /// A non-interactive loading surface with paint-only motion.
+    pub fn skeleton(id: impl Into<String>, base: Color, highlight: Color) -> Self {
+        Self::new(ElementKind::Skeleton {
+            id: id.into(),
+            base,
+            highlight,
+        })
+    }
+
+    pub fn spinner(id: impl Into<String>, color: Color, variant: SpinnerVariant) -> Self {
+        Self::new(ElementKind::Spinner {
+            id: id.into(),
+            color,
+            variant,
+        })
+    }
+
+    /// Build a reasoning-effort slider with model-specific stops.
+    /// Dragging previews a continuous fraction; release snaps to a stop.
+    pub fn effort_slider(id: impl Into<String>, fraction: f32, steps: usize) -> Self {
+        Self::new(ElementKind::EffortSlider {
+            id: id.into(),
+            fraction: if fraction.is_finite() {
+                fraction.clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            steps: steps.max(2),
+            ultra_available: false,
+        })
+    }
+
+    /// Enable the violet finish and celebration only for a model whose last
+    /// advertised reasoning level is Ultra.
+    pub fn effort_ultra_available(mut self, available: bool) -> Self {
+        if let ElementKind::EffortSlider {
+            ultra_available, ..
+        } = &mut self.kind
+        {
+            *ultra_available = available;
+        }
+        self
     }
 
     pub fn padding(mut self, value: f32) -> Self {
@@ -688,9 +926,25 @@ impl Element {
         self
     }
 
+    pub fn center_content(mut self) -> Self {
+        self.style.center_content = true;
+        self
+    }
+
+    pub fn underline_on_hover(mut self) -> Self {
+        self.style.underline_on_hover = true;
+        self
+    }
+
     /// Draw a border inside the element's bounds without changing its layout size.
     pub fn border(mut self, color: Color, width: f32) -> Self {
         self.style.border = (width > 0.0 && width.is_finite()).then_some(Border { color, width });
+        self
+    }
+
+    pub fn dashed_border(mut self, color: Color, width: f32) -> Self {
+        self.style.border = (width > 0.0 && width.is_finite()).then_some(Border { color, width });
+        self.style.dashed_border = true;
         self
     }
 

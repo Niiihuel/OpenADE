@@ -6,10 +6,12 @@
 use std::path::Path;
 
 use openide_core::SessionSort;
-use openide_harness::LocalTool;
+use openide_harness::{
+    CommandIsolation, ExecDecision, HookPhase, HostedWebSearchMode, LocalTool, SkillOrigin,
+};
 use openide_ui::{
     Button, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon,
-    IconButton as UiIconButton, ScrollArea, Switch,
+    IconButton as UiIconButton, Kbd, Modal, ScrollArea, Switch, TextArea,
 };
 
 use crate::{
@@ -18,7 +20,7 @@ use crate::{
     settings_parts::{self, CapabilityStatus, FeedbackTone},
     settings_preferences::TerminalShell,
     theme,
-    view::{self, SessionOrganization, ViewState},
+    view::{self, McpOAuthViewPhase, SessionOrganization, ViewState},
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -209,7 +211,7 @@ impl SettingsPage {
             Self::Plugins => "Extensiones ejecutables y capacidades instaladas.",
             Self::Mcp => "Servidores de herramientas externos.",
             Self::Skills => "Instrucciones instaladas para el agente.",
-            Self::Commands => "Acciones rápidas y comandos reutilizables.",
+            Self::Commands => "Centro de comandos y reglas para la ejecución del agente.",
             Self::Automations => "Tareas programadas del proyecto.",
             Self::Hooks => "Acciones asociadas a eventos del agente.",
             Self::Data => "Historial local y organización de tareas.",
@@ -221,13 +223,10 @@ impl SettingsPage {
     const fn status(self) -> CapabilityStatus {
         match self {
             Self::Skills | Self::Automations => CapabilityStatus::Ready,
-            Self::Browser
-            | Self::ComputerUse
-            | Self::Subagents
-            | Self::Plugins
-            | Self::Mcp
-            | Self::Hooks
-            | Self::Usage => CapabilityStatus::Planned,
+            Self::Browser | Self::ComputerUse | Self::Subagents | Self::Plugins | Self::Usage => {
+                CapabilityStatus::Planned
+            }
+            Self::Mcp | Self::Hooks => CapabilityStatus::Partial,
             _ => CapabilityStatus::Partial,
         }
     }
@@ -297,6 +296,19 @@ fn action_button(id: &str, label: &str, icon: Icon) -> Element {
     .render()
 }
 
+fn mcp_action_button(id: &str, label: &str, icon: Icon, enabled: bool) -> Element {
+    Button::new(
+        id,
+        label,
+        theme::action_palette(theme::CARD, theme::FOREGROUND),
+    )
+    .icon(icon)
+    .variant(ButtonVariant::Outline)
+    .size(ControlSize::Regular)
+    .enabled(enabled)
+    .render()
+}
+
 fn choice_button(id: &str, label: &str, active: bool) -> Element {
     Button::new(
         id,
@@ -310,6 +322,23 @@ fn choice_button(id: &str, label: &str, active: bool) -> Element {
     })
     .size(ControlSize::Regular)
     .active(active)
+    .render()
+}
+
+fn isolation_choice(id: &str, label: &str, active: bool, enabled: bool) -> Element {
+    Button::new(
+        id,
+        label,
+        theme::action_palette(theme::CARD, theme::FOREGROUND),
+    )
+    .variant(if active {
+        ButtonVariant::Raised
+    } else {
+        ButtonVariant::Ghost
+    })
+    .size(ControlSize::Regular)
+    .active(active)
+    .enabled(enabled)
     .render()
 }
 
@@ -521,6 +550,7 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         .render(),
     ])
     .gap(12.0);
+    let isolated = state.native_command_isolation == CommandIsolation::WorkspaceWriteOffline;
     vec![
         group(
             "Motor activo",
@@ -567,6 +597,39 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 tool_setting(state, LocalTool::RunCommand, "Ejecutar comandos", "Solicita aprobación para cada comando.", compact),
             ],
         ),
+        group(
+            "Aislamiento de comandos",
+            vec![
+                setting_row(
+                    "Modo actual",
+                    "Se aplica a Ejecutar comandos del agente nativo. Cada comando sigue solicitando aprobación.",
+                    value_badge(if isolated { "Proyecto, sin red" } else { "Sin aislamiento" }),
+                    compact,
+                ),
+                divider(),
+                subtle("Proyecto, sin red: permite escribir sólo dentro del proyecto y bloquea la red local y externa. Disponible en Windows."),
+                subtle("Sin aislamiento: el comando usa los permisos del usuario del equipo para archivos y red."),
+                choice_group(
+                    vec![
+                        isolation_choice(
+                            "command_isolation:workspace_write_offline",
+                            "Proyecto, sin red",
+                            isolated,
+                            cfg!(windows),
+                        ),
+                        isolation_choice(
+                            "command_isolation:host_unrestricted",
+                            "Sin aislamiento",
+                            !isolated,
+                            true,
+                        ),
+                    ],
+                    compact,
+                ),
+            ],
+        ),
+        // Keep the final choices above the scroll viewport edge on short windows.
+        Element::spacer().size(None, Some(64.0)),
     ]
 }
 
@@ -605,9 +668,139 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
         .iter()
         .filter(|item| item.installed_scope.is_some() && item.enabled)
         .count();
-    vec![
+    let local = &state.native_skills;
+    let mut content = Vec::new();
+    if let Some(error) = &local.load_error {
+        content.push(settings_parts::feedback_banner(
+            format!("No se pudo cargar la selección de skills locales: {error}"),
+            FeedbackTone::Error,
+            None,
+            compact,
+        ));
+        content.push(group(
+            "Recuperar configuración",
+            vec![setting_row(
+                "Restablecer selección",
+                "Reemplaza el archivo inválido y borra las selecciones de todos los proyectos tras confirmar.",
+                action_button("native_skill_reset", "Restablecer", Icon::Trash),
+                compact,
+            )],
+        ));
+    }
+    if let Some(error) = &local.catalog_error {
+        content.push(settings_parts::feedback_banner(
+            format!("No se pudo validar el catálogo de skills locales: {error}"),
+            FeedbackTone::Error,
+            None,
+            compact,
+        ));
+    }
+    if let Some(error) = &local.activation_error {
+        content.push(settings_parts::feedback_banner(
+            format!("La selección guardada requiere revisión: {error}"),
+            FeedbackTone::Error,
+            None,
+            compact,
+        ));
+    }
+    let mut selected_rows = vec![setting_row(
+        "Proyecto actual",
+        &local.workspace,
+        value_badge(format!("{} seleccionadas", local.selected.len())),
+        compact,
+    )];
+    if local.selected.is_empty() {
+        selected_rows.push(divider());
+        selected_rows.push(subtle(
+            "No hay skills locales seleccionadas para este proyecto.",
+        ));
+    }
+    for (index, selection) in local.selected.iter().enumerate() {
+        selected_rows.push(divider());
+        let exact = local
+            .available
+            .iter()
+            .any(|entry| entry.selection == *selection);
+        selected_rows.push(setting_row(
+            &selection.name,
+            if exact {
+                "Selección verificada con el documento actual."
+            } else {
+                "El documento cambió, desapareció o el catálogo no está disponible."
+            },
+            mcp_action_button(
+                &format!("native_skill_remove:{index}"),
+                "Quitar",
+                Icon::Trash,
+                local.load_error.is_none() && local.catalog_error.is_none(),
+            ),
+            compact,
+        ));
+    }
+    content.push(group("Selección local para el agente Rust", selected_rows));
+    let mut catalog_rows = vec![setting_row(
+        "Catálogo local",
+        "Se vuelve a leer y verificar antes de cada turno. Ninguna skill se activa sólo por estar presente.",
+        mcp_action_button(
+            "native_skill_refresh",
+            "Actualizar lista",
+            Icon::Refresh,
+            local.load_error.is_none(),
+        ),
+        compact,
+    )];
+    if local.available.is_empty() {
+        catalog_rows.push(divider());
+        catalog_rows.push(subtle(
+            "No se encontraron skills locales en las raíces indicadas.",
+        ));
+    }
+    for (index, entry) in local.available.iter().enumerate() {
+        catalog_rows.push(divider());
+        let selected = local
+            .selected
+            .iter()
+            .find(|selection| selection.name.eq_ignore_ascii_case(&entry.name));
+        let (label, status) = match selected {
+            Some(selection) if *selection == entry.selection => ("Desactivar", "Seleccionada"),
+            Some(_) => ("Aceptar cambios", "Cambió"),
+            None => ("Seleccionar", "Disponible"),
+        };
+        let origin = match entry.origin {
+            SkillOrigin::Project => "Proyecto",
+            SkillOrigin::User => "Usuario",
+        };
+        catalog_rows.push(
+            Element::column(vec![
+                Element::row(vec![
+                    text(&entry.name, theme::FOREGROUND, 13.0).flex(1.0),
+                    value_badge(format!("{origin} · {status}")),
+                ])
+                .gap(8.0),
+                subtle(&entry.description),
+                subtle(entry.document.display().to_string()),
+                mcp_action_button(
+                    &format!("native_skill_toggle:{index}"),
+                    label,
+                    Icon::ArrowRight,
+                    local.load_error.is_none() && local.catalog_error.is_none(),
+                ),
+            ])
+            .gap(8.0),
+        );
+    }
+    content.push(group("Disponibles", catalog_rows));
+    content.push(group(
+        "Raíces autorizadas",
+        vec![
+            subtle(format!("Proyecto: {}", local.project_root)),
+            subtle(format!("Usuario: {}", local.user_root)),
+            subtle("Los documentos y archivos referenciados no se ejecutan automáticamente. Cada selección guarda el nombre, la ruta canónica y el hash del documento."),
+        ],
+    ));
+    content.extend([
         group(
-            "Skills del agente",
+            "Skills del Marketplace",
             vec![
                 setting_row(
                     "Instaladas en OpenIDE",
@@ -627,10 +820,11 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
         group(
             "Alcance actual",
             vec![subtle(
-                "El Marketplace instala instrucciones de skills. Los plugins de proceso y servidores MCP requieren un servicio propio antes de aparecer como controles de Settings.",
+                "El Marketplace conserva sus propias skills instaladas. Los servidores MCP se configuran en su propia sección.",
             )],
         ),
-    ]
+    ]);
+    content
 }
 
 fn automations_page(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -811,16 +1005,28 @@ pub(crate) fn catalog_model_usable(
     provider_id: &str,
     model: &crate::model_catalog::ModelInfo,
 ) -> bool {
-    model.tool_call
-        && openide_harness::native_agent_supports_tool_calls(&model.id)
-        && (provider_id != "openai" || native_provider::openai_native_compatible_model(&model.id))
-        && (provider_id != "deepseek"
-            || native_provider::deepseek_native_compatible_model(&model.id))
-        && model.status.as_deref() != Some("deprecated")
-        && model.modalities.as_ref().is_some_and(|modalities| {
-            modalities.input.iter().any(|kind| kind == "text")
-                && modalities.output.iter().any(|kind| kind == "text")
-        })
+    match provider_id {
+        "openai" | "deepseek" => native_provider::native_model_capabilities(provider_id, &model.id)
+            .is_some_and(|capabilities| {
+                capabilities.function_tools
+                    && capabilities.streaming
+                    && native_provider::adapter(provider_id)
+                        .is_some_and(|adapter| adapter.wire_api == capabilities.wire_api)
+            }),
+        // OpenRouter's catalog data can narrow discovery, but never verifies
+        // the routed model's tool/stream contract or token limits. The UI
+        // labels this explicit selection as unverified below.
+        "openrouter" => {
+            !model.id.is_empty()
+                && model.tool_call
+                && model.status.as_deref() != Some("deprecated")
+                && model.modalities.as_ref().is_some_and(|modalities| {
+                    modalities.input.iter().any(|kind| kind == "text")
+                        && modalities.output.iter().any(|kind| kind == "text")
+                })
+        }
+        _ => false,
+    }
 }
 
 fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<Element> {
@@ -872,6 +1078,37 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
         ],
     )];
 
+    if state.native_provider_id == "openai" {
+        let choices = [
+            ("off", "Desactivada", None),
+            ("cached", "Caché", Some(HostedWebSearchMode::Cached)),
+            ("indexed", "Índice", Some(HostedWebSearchMode::Indexed)),
+            ("live", "Web en vivo", Some(HostedWebSearchMode::Live)),
+        ];
+        let buttons = choices
+            .into_iter()
+            .map(|(id, label, mode)| {
+                Button::new(
+                    format!("native_web_search:{id}"),
+                    label,
+                    theme::action_palette(theme::CARD, theme::FOREGROUND),
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Regular)
+                .enabled(!state.running)
+                .active(state.hosted_web_search_mode == mode)
+                .render()
+            })
+            .collect();
+        sections.push(group(
+            "Búsqueda web alojada",
+            vec![
+                subtle("Disponible para Responses de OpenAI. El modo elegido se fija en el turno y su historial para Resume."),
+                Element::row(buttons).gap(8.0),
+            ],
+        ));
+    }
+
     let custom_button = Button::new(
         "catalog_select_custom",
         "Usar conexión personalizada",
@@ -910,7 +1147,7 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
     .enabled(!state.catalog_refreshing)
     .render();
     let mut catalog_header = vec![
-        subtle("Fuente: models.dev. Los modelos aparecen al publicarse allí; la ejecución requiere un adaptador Rust compatible."),
+        subtle("Fuente de descubrimiento: las APIs oficiales de cada proveedor, con copia local de OpenIDE. La lista de modelos no verifica por sí sola herramientas, acceso de la cuenta ni límites para el agente nativo."),
         setting_row(
             "Estado del catálogo",
             &state.catalog_status,
@@ -1028,12 +1265,18 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
         let count = candidates.len();
         for model in candidates.into_iter().take(24) {
             models.push(divider());
-            let context = model
-                .limit
-                .as_ref()
-                .and_then(|limit| limit.context)
-                .map(|value| format!("{value} tokens de contexto"))
-                .unwrap_or_else(|| "Contexto no informado".to_owned());
+            let reviewed = native_provider::native_model_capabilities(&provider.id, &model.id);
+            let context = reviewed
+                .and_then(|capabilities| capabilities.context_window_tokens)
+                .map(|value| format!("{value} tokens de contexto verificados"))
+                .or_else(|| {
+                    model
+                        .limit
+                        .as_ref()
+                        .and_then(|limit| limit.context)
+                        .map(|value| format!("catálogo: {value} tokens de contexto sin verificar"))
+                })
+                .unwrap_or_else(|| "Contexto sin verificar".to_owned());
             let price = model
                 .cost
                 .as_ref()
@@ -1041,28 +1284,30 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
                 .map(|(input, output)| format!("${input:.2}/${output:.2} por millón de tokens"))
                 .unwrap_or_else(|| "Precio no informado".to_owned());
             let eligible = supported && catalog_model_usable(&provider.id, model);
-            let availability = if eligible {
+            let availability = if eligible && reviewed.is_some() {
                 "Seleccionable para el agente nativo"
+            } else if eligible {
+                "Seleccionable vía OpenRouter; ejecución y límites sin verificar"
             } else if !supported {
                 "Sin conexión nativa"
             } else if provider.id == "openai"
                 && !native_provider::openai_native_compatible_model(&model.id)
             {
-                "Modelo pendiente de verificar para Chat Completions"
+                "Modelo pendiente de verificar para Responses"
             } else if provider.id == "deepseek"
                 && !native_provider::deepseek_native_compatible_model(&model.id)
             {
                 "Alias sin soporte nativo verificado"
-            } else if !model.tool_call {
-                "Sin herramientas para el agente"
+            } else if provider.id == "openrouter" && !model.tool_call {
+                "El proveedor no declara herramientas para este modelo"
             } else {
                 "Modalidad o estado no compatible"
             };
             let updated = model.last_updated.as_deref().unwrap_or("sin fecha");
             let capabilities = format!(
-                "herramientas: {} · razonamiento: {}",
-                if model.tool_call { "sí" } else { "no" },
-                if model.reasoning { "sí" } else { "no" }
+                "Catálogo del proveedor: herramientas {} · razonamiento {}",
+                if model.tool_call { "sí" } else { "sin dato" },
+                if model.reasoning { "sí" } else { "sin dato" }
             );
             let button = Button::new(
                 format!("catalog_select:{}/{}", provider.id, model.id),
@@ -1081,7 +1326,7 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
                     model.id, context, price, updated, capabilities, availability
                 ),
                 button,
-                compact,
+                compact || center_width < 720.0,
             ));
         }
         if count > 24 {
@@ -1132,7 +1377,19 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
                             divider(),
                             subtle(format!("ID: {} / {}", provider.id, model.id)),
                             subtle(format!("Modalidades: {modalities}")),
-                            subtle(format!("Límites: {limit}")),
+                            subtle(format!("Límites del catálogo: {limit}")),
+                            subtle(match native_provider::native_model_capabilities(
+                                &provider.id,
+                                &model.id,
+                            ) {
+                                Some(capabilities) => format!(
+                                    "Límites verificados: contexto {} · salida {} · {}",
+                                    capabilities.context_window_tokens.unwrap_or_default(),
+                                    capabilities.max_output_tokens.unwrap_or_default(),
+                                    capabilities.source_url
+                                ),
+                                None => "Límites nativos sin verificar; compactación automática no disponible".to_owned(),
+                            }),
                             subtle(format!(
                                 "Familia: {} · Estado: {}",
                                 model.family.as_deref().unwrap_or("Sin datos"),
@@ -1200,11 +1457,7 @@ fn providers_page(state: &ViewState, compact: bool, center_width: f32) -> Vec<El
 fn shortcut_row(description: &str, keys: &str) -> Element {
     Element::row(vec![
         text(description, theme::FOREGROUND, 14.0).flex(1.0),
-        text(keys, theme::FOREGROUND_SUBTLE, 12.0)
-            .font_family(FontFamily::Monospace)
-            .padding(7.0)
-            .background(theme::SELECTED)
-            .radius(7.0),
+        Kbd::new(keys, theme::component_palette()).render(),
     ])
     .gap(16.0)
     .min_size(0.0, 40.0)
@@ -1251,6 +1504,826 @@ fn capability_page(
         settings_parts::empty_state(title, current, related),
         group("Para habilitar esta capacidad", vec![subtle(needed)]),
     ]
+}
+
+fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    let editable = state.mcp_load_error.is_none();
+    let mut content = Vec::new();
+    if let Some(error) = &state.mcp_load_error {
+        content.push(settings_parts::feedback_banner(
+            format!("No se pudo cargar la configuración MCP: {error}"),
+            FeedbackTone::Error,
+            None,
+            compact,
+        ));
+    }
+
+    let mut servers = vec![setting_row(
+        "Servidores guardados",
+        &format!("{} configurados en este equipo", state.mcp_servers.len()),
+        mcp_action_button("mcp_new", "Nuevo servidor", Icon::Add, editable),
+        compact,
+    )];
+    if state.mcp_servers.is_empty() {
+        servers.push(divider());
+        servers.push(subtle(
+            "Todavía no hay servidores MCP configurados en este equipo.",
+        ));
+    }
+    for server in &state.mcp_servers {
+        servers.push(divider());
+        let status = if server.enabled {
+            "Activado"
+        } else {
+            "Desactivado"
+        };
+        let toggle_label = if server.enabled {
+            "Desactivar"
+        } else {
+            "Activar"
+        };
+        let mut controls = vec![
+            mcp_action_button(
+                &format!("mcp_select:{}", server.id),
+                "Editar",
+                Icon::Settings,
+                editable,
+            ),
+            mcp_action_button(
+                &format!("mcp_toggle:{}", server.id),
+                toggle_label,
+                Icon::Check,
+                editable,
+            ),
+            mcp_action_button(
+                &format!("mcp_delete:{}", server.id),
+                "Eliminar",
+                Icon::Trash,
+                editable,
+            ),
+        ];
+        let mut server_content = vec![
+            Element::row(vec![
+                text(&server.id, theme::FOREGROUND, 14.0).flex(1.0),
+                value_badge(status),
+            ])
+            .gap(10.0),
+            subtle(match &server.url {
+                Some(url) => format!("Streamable HTTP 2026-07-28: {url}"),
+                None => format!("Programa: {}", server.program),
+            }),
+        ];
+        if let Some(oauth) = &server.http_oauth {
+            server_content.push(subtle(format!(
+                "OAuth 2.1 · issuer: {} · scopes: {}",
+                oauth.issuer,
+                if oauth.scopes.is_empty() {
+                    "los solicitados por el servidor".to_owned()
+                } else {
+                    oauth.scopes.join(", ")
+                }
+            )));
+            let oauth_busy = state.mcp_oauth_status.as_ref().is_some_and(|status| {
+                status.server_id == server.id
+                    && matches!(
+                        status.phase,
+                        McpOAuthViewPhase::Discovering | McpOAuthViewPhase::AwaitingBrowser { .. }
+                    )
+            });
+            controls.push(mcp_action_button(
+                &format!("mcp_oauth_authorize:{}", server.id),
+                "Autorizar",
+                Icon::ArrowRight,
+                editable && cfg!(windows) && !oauth_busy,
+            ));
+            if !cfg!(windows) {
+                server_content.push(subtle("OAuth MCP requiere Credential Manager en Windows."));
+            }
+            if let Some(status) = state
+                .mcp_oauth_status
+                .as_ref()
+                .filter(|status| status.server_id == server.id)
+            {
+                match &status.phase {
+                    McpOAuthViewPhase::Discovering => {
+                        server_content.push(subtle("Buscando el servidor de autorización…"));
+                        controls.push(mcp_action_button(
+                            "mcp_oauth_cancel", "Cancelar", Icon::Close, true,
+                        ));
+                    }
+                    McpOAuthViewPhase::AwaitingBrowser { url } => {
+                        server_content.push(subtle("Esperando autorización en el navegador. La URL es temporal:"));
+                        server_content.push(
+                            TextArea::new("mcp_oauth_url", url, "", theme::component_palette())
+                                .width(if compact { 300.0 } else { 560.0 })
+                                .height(90.0)
+                                .disabled()
+                                .render(),
+                        );
+                        controls.push(mcp_action_button(
+                            "mcp_oauth_open", "Abrir autorización", Icon::ArrowRight, true,
+                        ));
+                        controls.push(mcp_action_button(
+                            "mcp_oauth_cancel", "Cancelar", Icon::Close, true,
+                        ));
+                    }
+                    McpOAuthViewPhase::Authorized => server_content.push(subtle(
+                        "Autorización guardada en Credential Manager. El próximo turno usará esta credencial.",
+                    )),
+                    McpOAuthViewPhase::Failed(message) => server_content.push(
+                        settings_parts::feedback_banner(message, FeedbackTone::Error, None, compact),
+                    ),
+                }
+            }
+        }
+        server_content.push(if compact {
+            Element::column(controls).gap(6.0)
+        } else {
+            Element::row(controls).gap(8.0)
+        });
+        servers.push(Element::column(server_content).gap(9.0));
+    }
+    content.push(group("Servidores MCP", servers));
+
+    content.push(group(
+        "Uso",
+        vec![subtle("Los servidores activados se conectan al ejecutar el agente nativo en modo Construir. Sus herramientas solicitan aprobación antes de usarse. HTTP negocia las revisiones 2026-07-28 y 2025-11-25. OAuth requiere autorización explícita antes de usar el servidor.")],
+    ));
+    content
+}
+
+fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    let settings = &state.native_hooks;
+    let editable = settings.load_error.is_none();
+    let mut content = Vec::new();
+    if let Some(error) = &settings.load_error {
+        content.push(settings_parts::feedback_banner(
+            format!("No se pudo cargar la configuración de hooks: {error}"),
+            FeedbackTone::Error,
+            None,
+            compact,
+        ));
+    }
+    let mut rows = vec![setting_row(
+        "Hooks de comandos guardados",
+        &format!("{} configurados en este equipo", settings.hooks.len()),
+        mcp_action_button("hook_new", "Nuevo hook", Icon::Add, editable),
+        compact,
+    )];
+    if settings.hooks.is_empty() {
+        rows.push(divider());
+        rows.push(subtle(
+            "No hay hooks configurados. El agente nativo no ejecuta comandos automáticos.",
+        ));
+    }
+    for hook in &settings.hooks {
+        rows.push(divider());
+        let phase = match hook.phase {
+            HookPhase::PreToolUse => "Antes de herramienta",
+            HookPhase::PostToolUse => "Después de herramienta",
+        };
+        let controls = vec![
+            mcp_action_button(
+                &format!("hook_select:{}", hook.id),
+                "Editar",
+                Icon::Settings,
+                editable,
+            ),
+            mcp_action_button(
+                &format!("hook_delete:{}", hook.id),
+                "Eliminar",
+                Icon::Trash,
+                editable,
+            ),
+        ];
+        rows.push(
+            Element::column(vec![
+                Element::row(vec![
+                    text(&hook.id, theme::FOREGROUND, 14.0).flex(1.0),
+                    value_badge(phase),
+                ])
+                .gap(10.0),
+                subtle(format!(
+                    "{} · {}",
+                    hook.tool_name,
+                    hook.executable.display()
+                )),
+                if compact {
+                    Element::column(controls).gap(6.0)
+                } else {
+                    Element::row(controls).gap(8.0)
+                },
+            ])
+            .gap(9.0),
+        );
+    }
+    content.push(group("Hooks del agente nativo", rows));
+    content.push(group("Alcance y seguridad", vec![
+        subtle("PreToolUse puede permitir o bloquear una herramienta; PostToolUse observa el resultado y no revierte un efecto. Se ejecutan comandos locales configurados aquí, sin shell y con límites de tiempo y salida."),
+        subtle("Sólo se aplican a turnos interactivos del agente Rust. Las CLI externas y las automatizaciones conservan su política independiente. Cambiar un hook puede impedir reanudar un turno anterior hasta restaurar la misma configuración."),
+    ]));
+    content
+}
+
+pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    if !state.show_settings
+        || state.settings_page != SettingsPage::Hooks
+        || !state.native_hooks.editor_open
+    {
+        return base;
+    }
+    let draft = &state.native_hooks;
+    let width = (viewport_width - 24.0).min(560.0);
+    let body_width = (width - 54.0).max(0.0);
+    let editing = draft.selected_id.is_some();
+    let mut fields = Vec::new();
+    if state.settings_notice_error {
+        if let Some(error) = &state.settings_notice {
+            fields.push(settings_parts::feedback_banner(
+                error,
+                FeedbackTone::Error,
+                None,
+                width < 420.0,
+            ));
+        }
+    }
+    fields.extend([
+        text("ID del hook", theme::FOREGROUND, 13.0),
+        field("hook_draft_id", &draft.draft_id, "ej. revisar-escritura")
+            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
+        text("Fase", theme::FOREGROUND, 13.0),
+        choice_group(vec![
+            choice_button("hook_phase:pre_tool_use", "Antes de herramienta", draft.draft_phase == HookPhase::PreToolUse),
+            choice_button("hook_phase:post_tool_use", "Después de herramienta", draft.draft_phase == HookPhase::PostToolUse),
+        ], width < 420.0),
+        text("Nombre exacto de herramienta", theme::FOREGROUND, 13.0),
+        subtle("Por ejemplo: read_file, write_file o mcp__servidor__herramienta. Los hooks sobre lecturas quedan excluidos del modo Plan."),
+        field("hook_draft_tool_name", &draft.draft_tool_name, "ej. write_file")
+            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
+        text("Ejecutable", theme::FOREGROUND, 13.0),
+        subtle("Ruta absoluta a un archivo existente. Se ejecuta sin shell; el agente no puede configurar esta ruta."),
+        field("hook_draft_executable", &draft.draft_executable, "C:\\tools\\hook.exe")
+            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
+        text("Argumentos (JSON)", theme::FOREGROUND, 13.0),
+        TextArea::new("hook_draft_args", &draft.draft_args, "[\"--check\"]", theme::component_palette())
+            .width(body_width).height(80.0).render(),
+        text("Directorio de trabajo", theme::FOREGROUND, 13.0),
+        subtle("Ruta absoluta a una carpeta existente."),
+        field("hook_draft_cwd", &draft.draft_cwd, "C:\\repo")
+            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
+        text("Límite de tiempo (ms)", theme::FOREGROUND, 13.0),
+        field("hook_draft_timeout_ms", &draft.draft_timeout_ms, "5000")
+            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
+        text("Límite de salida (bytes)", theme::FOREGROUND, 13.0),
+        field("hook_draft_max_output_bytes", &draft.draft_max_output_bytes, "4096")
+            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
+        subtle("El comando recibe JSON del evento por stdin. Puede tener efectos externos; sólo configura ejecutables de confianza."),
+    ]);
+    let cancel = Button::new("hook_cancel", "Cancelar", theme::component_palette())
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .render();
+    let save = Button::new(
+        "hook_save",
+        if editing {
+            "Guardar cambios"
+        } else {
+            "Agregar hook"
+        },
+        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+    )
+    .variant(ButtonVariant::Solid)
+    .size(ControlSize::Compact)
+    .enabled(draft.load_error.is_none())
+    .render();
+    let footer = if width < 350.0 {
+        Element::column(vec![save, cancel]).gap(6.0)
+    } else {
+        Element::row(vec![Element::spacer().flex(1.0), cancel, save]).gap(8.0)
+    };
+    Modal::new(
+        base,
+        true,
+        if editing { "Editar hook" } else { "Nuevo hook" },
+        "Configura un comando para el agente nativo.",
+        "hook_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .height(620.0)
+    .body(
+        Element::column(fields)
+            .gap(7.0)
+            .size(Some(body_width), None),
+    )
+    .footer(footer)
+    .initial_focus("hook_draft_id")
+    .return_focus(
+        draft
+            .selected_id
+            .as_ref()
+            .map(|id| format!("hook_select:{id}"))
+            .unwrap_or_else(|| "hook_new".to_owned()),
+    )
+    .render()
+}
+
+fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
+    let settings = &state.native_exec_rules;
+    let editable = settings.load_error.is_none();
+    let mut content = Vec::new();
+    if let Some(error) = &settings.load_error {
+        content.push(settings_parts::feedback_banner(
+            format!("No se pudo cargar las reglas de comandos: {error}"),
+            FeedbackTone::Error,
+            None,
+            compact,
+        ));
+        content.push(group(
+            "Recuperar configuración",
+            vec![setting_row(
+                "Restablecer reglas",
+                "Reemplaza el archivo inválido por una política vacía después de tu confirmación.",
+                action_button("exec_rule_reset", "Restablecer reglas", Icon::Trash),
+                compact,
+            )],
+        ));
+    }
+    let mut rows = vec![setting_row(
+        "Reglas de prefijo guardadas",
+        &format!("{} configuradas en este equipo", settings.rules.len()),
+        mcp_action_button("exec_rule_new", "Nueva regla", Icon::Add, editable),
+        compact,
+    )];
+    if settings.rules.is_empty() {
+        rows.push(divider());
+        rows.push(subtle(
+            "No hay reglas adicionales para comandos del agente.",
+        ));
+    }
+    for (index, rule) in settings.rules.iter().enumerate() {
+        rows.push(divider());
+        let decision = match rule.decision() {
+            ExecDecision::Ask => "Pedir aprobación",
+            ExecDecision::Deny => "Bloquear",
+            ExecDecision::Allow => "Permitir",
+        };
+        let pattern = serde_json::to_string(rule.pattern()).unwrap_or_default();
+        let summary: String = pattern.chars().take(160).collect();
+        let summary = if pattern.chars().count() > 160 {
+            format!("{summary}…")
+        } else {
+            summary
+        };
+        let mut body = vec![Element::row(vec![
+            text(summary, theme::FOREGROUND, 13.0)
+                .font_family(FontFamily::Monospace)
+                .flex(1.0),
+            value_badge(decision),
+        ])
+        .gap(8.0)];
+        if let Some(justification) = rule.justification() {
+            body.push(subtle(justification));
+        }
+        let controls = vec![
+            mcp_action_button(
+                &format!("exec_rule_select:{index}"),
+                "Editar",
+                Icon::Settings,
+                editable,
+            ),
+            mcp_action_button(
+                &format!("exec_rule_delete:{index}"),
+                "Eliminar",
+                Icon::Trash,
+                editable,
+            ),
+        ];
+        body.push(if compact {
+            Element::column(controls).gap(6.0)
+        } else {
+            Element::row(controls).gap(8.0)
+        });
+        rows.push(Element::column(body).gap(9.0));
+    }
+    content.push(group("Reglas para comandos del agente", rows));
+    content.push(group(
+        "Cómo se aplican",
+        vec![
+            subtle("Cada prefijo contiene el ejecutable y cero o más argumentos exactos. Una lista dentro de un token acepta cualquiera de esas alternativas. Si varias reglas coinciden, gana la más restrictiva."),
+            subtle("Estas reglas pueden pedir aprobación o bloquear. No conceden permisos por encima de la política de herramientas. Los intérpretes y wrappers de shell se tratan de forma conservadora porque pueden ocultar otros comandos."),
+            subtle("Los cambios afectan los próximos turnos. Un turno previo sólo se reanuda con la misma política registrada en su journal."),
+        ],
+    ));
+    content
+}
+
+pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    if !state.show_settings
+        || state.settings_page != SettingsPage::Commands
+        || !state.native_exec_rules.editor_open
+    {
+        return base;
+    }
+    let draft = &state.native_exec_rules;
+    let width = (viewport_width - 24.0).min(560.0);
+    let body_width = (width - 54.0).max(0.0);
+    let editing = draft.selected_index.is_some();
+    let mut fields = Vec::new();
+    if state.settings_notice_error {
+        if let Some(error) = &state.settings_notice {
+            fields.push(settings_parts::feedback_banner(
+                error,
+                FeedbackTone::Error,
+                None,
+                width < 420.0,
+            ));
+        }
+    }
+    fields.extend([
+        text("Prefijo de comando (JSON)", theme::FOREGROUND, 13.0),
+        subtle("Ejemplo: [\"git\",[\"push\",\"reset\"]]. El primer token es el ejecutable; los siguientes son argumentos exactos."),
+        TextArea::new(
+            "exec_rule_draft_pattern",
+            &draft.draft_pattern,
+            "[\"git\",\"push\"]",
+            theme::component_palette(),
+        )
+        .width(body_width)
+        .height(100.0)
+        .render(),
+        text("Decisión", theme::FOREGROUND, 13.0),
+        choice_group(
+            vec![
+                choice_button(
+                    "exec_rule_decision:ask",
+                    "Pedir aprobación",
+                    draft.draft_decision == ExecDecision::Ask,
+                ),
+                choice_button(
+                    "exec_rule_decision:deny",
+                    "Bloquear",
+                    draft.draft_decision == ExecDecision::Deny,
+                ),
+            ],
+            width < 420.0,
+        ),
+        text("Motivo (opcional)", theme::FOREGROUND, 13.0),
+        TextArea::new(
+            "exec_rule_draft_justification",
+            &draft.draft_justification,
+            "Explicá por qué se aplica esta regla",
+            theme::component_palette(),
+        )
+        .width(body_width)
+        .height(75.0)
+        .render(),
+    ]);
+    let cancel = Button::new("exec_rule_cancel", "Cancelar", theme::component_palette())
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .render();
+    let save = Button::new(
+        "exec_rule_save",
+        if editing {
+            "Guardar cambios"
+        } else {
+            "Agregar regla"
+        },
+        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+    )
+    .variant(ButtonVariant::Solid)
+    .size(ControlSize::Compact)
+    .enabled(draft.load_error.is_none())
+    .render();
+    let footer = if width < 350.0 {
+        Element::column(vec![save, cancel]).gap(6.0)
+    } else {
+        Element::row(vec![Element::spacer().flex(1.0), cancel, save]).gap(8.0)
+    };
+    Modal::new(
+        base,
+        true,
+        if editing {
+            "Editar regla"
+        } else {
+            "Nueva regla"
+        },
+        "Configura una decisión para un prefijo de comando del agente Rust.",
+        "exec_rule_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .height(490.0)
+    .body(
+        Element::column(fields)
+            .gap(7.0)
+            .size(Some(body_width), None),
+    )
+    .footer(footer)
+    .initial_focus("exec_rule_draft_pattern")
+    .return_focus(
+        draft
+            .selected_index
+            .map(|index| format!("exec_rule_select:{index}"))
+            .unwrap_or_else(|| "exec_rule_new".to_owned()),
+    )
+    .render()
+}
+
+pub fn exec_rule_reset_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    if !state.show_settings
+        || state.settings_page != SettingsPage::Commands
+        || !state.native_exec_rules.reset_confirm_open
+        || state.native_exec_rules.load_error.is_none()
+    {
+        return base;
+    }
+    let width = (viewport_width - 24.0).min(480.0);
+    let cancel = Button::new(
+        "exec_rule_reset_cancel",
+        "Cancelar",
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Compact)
+    .render();
+    let confirm = Button::new(
+        "exec_rule_reset_confirm",
+        "Reemplazar archivo",
+        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+    )
+    .variant(ButtonVariant::Solid)
+    .size(ControlSize::Compact)
+    .render();
+    Modal::new(
+        base,
+        true,
+        "Restablecer reglas",
+        "El archivo de reglas actual no se puede cargar.",
+        "exec_rule_reset_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .body(subtle(
+        "Esta acción reemplaza el archivo de reglas por una política vacía. Los próximos turnos usarán los permisos generales de herramientas.",
+    ))
+    .footer(Element::row(vec![
+        Element::spacer().flex(1.0),
+        cancel,
+        confirm,
+    ]))
+    .initial_focus("exec_rule_reset_cancel")
+    .return_focus("exec_rule_reset")
+    .render()
+}
+
+pub fn native_skill_reset_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    if !state.show_settings
+        || state.settings_page != SettingsPage::Skills
+        || !state.native_skills.reset_confirm_open
+        || state.native_skills.load_error.is_none()
+    {
+        return base;
+    }
+    let width = (viewport_width - 24.0).min(480.0);
+    let cancel = Button::new(
+        "native_skill_reset_cancel",
+        "Cancelar",
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Compact)
+    .render();
+    let confirm = Button::new(
+        "native_skill_reset_confirm",
+        "Reemplazar archivo",
+        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+    )
+    .variant(ButtonVariant::Solid)
+    .size(ControlSize::Compact)
+    .render();
+    Modal::new(
+        base,
+        true,
+        "Restablecer selección de skills",
+        "El archivo de selección actual no se puede cargar.",
+        "native_skill_reset_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .body(subtle(
+        "Esta acción borra las selecciones de skills locales de todos los proyectos. Se pueden volver a seleccionar desde esta página.",
+    ))
+    .footer(Element::row(vec![
+        Element::spacer().flex(1.0),
+        cancel,
+        confirm,
+    ]))
+    .initial_focus("native_skill_reset_cancel")
+    .return_focus("native_skill_reset")
+    .render()
+}
+
+/// Render the MCP editor above the full window, keeping the saved servers in
+/// the Settings page behind it. The modal owns the scrollable form and footer.
+pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    if !state.show_settings || state.settings_page != SettingsPage::Mcp || !state.mcp_editor_open {
+        return base;
+    }
+
+    let width = (viewport_width - 24.0).min(560.0);
+    // The shared modal reserves a 14 px scrollbar rail beyond its 20 px
+    // horizontal padding, so form controls never sit beneath the thumb.
+    let body_width = (width - 54.0).max(0.0);
+    let editing = state.mcp_selected_id.is_some();
+    let mut fields = Vec::new();
+    if state.settings_notice_error {
+        if let Some(error) = &state.settings_notice {
+            fields.push(settings_parts::feedback_banner(
+                error,
+                FeedbackTone::Error,
+                None,
+                width < 420.0,
+            ));
+        }
+    }
+    fields.extend([
+        text("ID del servidor", theme::FOREGROUND, 13.0),
+        subtle("Minúsculas, números, guiones y guiones bajos. El ID empieza con una letra."),
+        field("mcp_draft_id", &state.mcp_draft_id, "ej. filesystem")
+            .font_family(FontFamily::Monospace)
+            .size(Some(body_width), Some(40.0)),
+    ]);
+    fields.push(text("Transporte", theme::FOREGROUND, 13.0));
+    fields.push(choice_group(
+        vec![
+            choice_button(
+                "mcp_transport:stdio",
+                "Proceso local (stdio)",
+                !state.mcp_draft_http,
+            ),
+            choice_button(
+                "mcp_transport:http",
+                "Streamable HTTP",
+                state.mcp_draft_http,
+            ),
+        ],
+        width < 420.0,
+    ));
+    if state.mcp_draft_http {
+        fields.extend([
+            text("URL MCP", theme::FOREGROUND, 13.0),
+            subtle("Endpoint HTTPS; HTTP sólo para localhost o loopback. Sin query, credenciales en URL ni redirecciones."),
+            field("mcp_draft_url", &state.mcp_draft_url, "https://example.com/mcp")
+                .font_family(FontFamily::Monospace)
+                .size(Some(body_width), Some(40.0)),
+        ]);
+        fields.push(text("Autenticación", theme::FOREGROUND, 13.0));
+        fields.push(choice_group(
+            vec![
+                choice_button(
+                    "mcp_auth:bearer",
+                    "Bearer por entorno o ninguna",
+                    !state.mcp_draft_oauth_enabled,
+                ),
+                isolation_choice(
+                    "mcp_auth:oauth",
+                    "OAuth 2.1",
+                    state.mcp_draft_oauth_enabled,
+                    cfg!(windows) || state.mcp_draft_oauth_enabled,
+                ),
+            ],
+            width < 420.0,
+        ));
+        if state.mcp_draft_oauth_enabled {
+            fields.extend([
+                subtle("Usá un client ID público registrado para este issuer. La autorización se inicia después de guardar; no escribas client secrets ni tokens."),
+                text("Client ID público", theme::FOREGROUND, 13.0),
+                field("mcp_draft_oauth_client_id", &state.mcp_draft_oauth_client_id, "client-id")
+                    .font_family(FontFamily::Monospace)
+                    .size(Some(body_width), Some(40.0)),
+                text("Issuer OAuth", theme::FOREGROUND, 13.0),
+                subtle("URL HTTPS exacta del servidor de autorización, sin query ni credenciales."),
+                field("mcp_draft_oauth_issuer", &state.mcp_draft_oauth_issuer, "https://auth.example.com")
+                    .font_family(FontFamily::Monospace)
+                    .size(Some(body_width), Some(40.0)),
+                text("Scopes solicitados (opcional)", theme::FOREGROUND, 13.0),
+                subtle("Uno por línea. Se unen con los scopes requeridos por el servidor; no son valores secretos."),
+                TextArea::new(
+                    "mcp_draft_oauth_scopes",
+                    &state.mcp_draft_oauth_scopes,
+                    "read\nwrite",
+                    theme::component_palette(),
+                )
+                .width(body_width)
+                .height(76.0)
+                .render(),
+                subtle("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar."),
+            ]);
+        } else {
+            fields.extend([
+                text("Variable del bearer token (opcional)", theme::FOREGROUND, 13.0),
+                subtle("Escribe sólo el nombre de la variable. El valor se lee al conectar y no se guarda. Déjalo vacío si el servidor no exige autenticación."),
+                field(
+                    "mcp_draft_http_bearer_token_env_name",
+                    &state.mcp_draft_http_bearer_token_env_name,
+                    "ej. MCP_HTTP_TOKEN",
+                )
+                .font_family(FontFamily::Monospace)
+                .size(Some(body_width), Some(40.0)),
+            ]);
+        }
+        fields.push(subtle("Compatible con Streamable HTTP 2026-07-28 y 2025-11-25 (con negociación de sesión). Solicitudes de entrada adicional aún no están disponibles."));
+    } else {
+        fields.extend([
+            text("Programa", theme::FOREGROUND, 13.0),
+            subtle("Nombre del ejecutable o ruta absoluta. Se inicia sin shell."),
+            field("mcp_draft_program", &state.mcp_draft_program, "ej. npx")
+                .font_family(FontFamily::Monospace)
+                .size(Some(body_width), Some(40.0)),
+            text("Argumentos (JSON)", theme::FOREGROUND, 13.0),
+            subtle("Lista JSON de textos; cada elemento es un argumento literal. No escribas tokens, claves ni contraseñas aquí."),
+            TextArea::new(
+                "mcp_draft_args",
+                &state.mcp_draft_args,
+                "[\"-y\", \"@modelcontextprotocol/server-filesystem\"]",
+                theme::component_palette(),
+            )
+            .width(body_width)
+            .height(96.0)
+            .render(),
+            text("Directorio de trabajo", theme::FOREGROUND, 13.0),
+            subtle("Ruta relativa dentro del proyecto. Se comprueba al iniciar; vacío usa la carpeta del proyecto."),
+            field("mcp_draft_cwd", &state.mcp_draft_cwd, "ej. tools/mcp")
+                .font_family(FontFamily::Monospace)
+                .size(Some(body_width), Some(40.0)),
+            text("Variables de credenciales", theme::FOREGROUND, 13.0),
+            subtle("Sólo nombres, uno por línea. Sus valores se leen del entorno al iniciar el servidor y no se guardan."),
+            TextArea::new(
+                "mcp_draft_env_names",
+                &state.mcp_draft_env_names,
+                "ej. MCP_API_KEY",
+                theme::component_palette(),
+            )
+            .width(body_width)
+            .height(76.0)
+            .render(),
+        ]);
+    }
+    fields.push(subtle("Los servidores nuevos se guardan desactivados. Usa Activar en la lista cuando estén listos."));
+    let cancel = Button::new("mcp_cancel", "Cancelar", theme::component_palette())
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .render();
+    let save = Button::new(
+        "mcp_save",
+        if editing {
+            "Guardar cambios"
+        } else {
+            "Agregar servidor"
+        },
+        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+    )
+    .variant(ButtonVariant::Solid)
+    .size(ControlSize::Compact)
+    .enabled(state.mcp_load_error.is_none())
+    .render();
+    let footer = if width < 350.0 {
+        Element::column(vec![save, cancel]).gap(6.0)
+    } else {
+        Element::row(vec![Element::spacer().flex(1.0), cancel, save]).gap(8.0)
+    };
+
+    Modal::new(
+        base,
+        true,
+        if editing {
+            "Editar servidor MCP"
+        } else {
+            "Nuevo servidor MCP"
+        },
+        "Configura un servidor para las herramientas del agente.",
+        "mcp_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .height(600.0)
+    .body(
+        Element::column(fields)
+            .gap(7.0)
+            .size(Some(body_width), None),
+    )
+    .footer(footer)
+    .initial_focus("mcp_draft_id")
+    .return_focus(
+        state
+            .mcp_selected_id
+            .as_ref()
+            .map(|id| format!("mcp_select:{id}"))
+            .unwrap_or_else(|| "mcp_new".to_owned()),
+    )
+    .render()
 }
 
 fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -1423,7 +2496,8 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
                 None,
             ),
         ],
-        SettingsPage::Commands => vec![
+        SettingsPage::Commands => {
+            let mut content = vec![
             group(
                 "Acciones de OpenIDE",
                 vec![setting_row(
@@ -1433,12 +2507,10 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
                     compact,
                 )],
             ),
-            settings_parts::empty_state(
-                "Comandos personalizados no disponibles",
-                "Todavía no hay un almacén de comandos reutilizables para el agente.",
-                None,
-            ),
-        ],
+            ];
+            content.extend(exec_rules_page(state, compact));
+            content
+        }
         SettingsPage::Browser => capability_page(
             "Navegador no conectado",
             "El agente nativo no puede abrir ni controlar sesiones de navegador desde OpenIDE.",
@@ -1463,18 +2535,8 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
             "Antes de activar plugins se necesita aislamiento, permisos y control de su ciclo de vida.",
             Some(("settings_page:skills", "Ver skills", Icon::ArrowRight)),
         ),
-        SettingsPage::Mcp => capability_page(
-            "Servidores MCP no conectados",
-            "OpenIDE todavía no inicia servidores MCP ni incorpora sus herramientas al agente.",
-            "La configuración requiere transporte, autenticación, estado de conexión y aprobación por herramienta.",
-            None,
-        ),
-        SettingsPage::Hooks => capability_page(
-            "Hooks no disponibles",
-            "No se ejecutan acciones automáticas alrededor de los eventos del agente.",
-            "Se necesitan eventos definidos, límites de ejecución y permisos de confianza antes de permitir comandos automáticos.",
-            None,
-        ),
+        SettingsPage::Mcp => mcp_page(state, compact),
+        SettingsPage::Hooks => hooks_page(state, compact),
         SettingsPage::Usage => vec![
             group(
                 "Actividad local",
@@ -1533,7 +2595,7 @@ pub fn build_settings_page(
     center_width: f32,
     sidebar_visible: bool,
 ) -> Element {
-    let compact = center_width < 620.0;
+    let compact = center_width < 720.0;
     let sidebar_hidden = !sidebar_visible;
     let cards = match page {
         SettingsPage::General => general_page(state, compact),
@@ -1612,7 +2674,7 @@ mod tests {
             ("openai", "gpt-5.4", true),
             ("openai", "gpt-5.4-pro", false),
             ("openai", "gpt-realtime-2.1", false),
-            ("openai", "gpt-6-astra", false),
+            ("openai", "gpt-6-astra", true),
             ("deepseek", "deepseek-flash", true),
             ("deepseek", "deepseek-v4-flash", false),
         ] {
@@ -1630,5 +2692,37 @@ mod tests {
                 "{model_id}"
             );
         }
+    }
+
+    #[test]
+    fn reviewed_models_do_not_depend_on_models_dev_capability_flags() {
+        for (provider, model_id) in [("openai", "gpt-6-astra"), ("deepseek", "deepseek-v4-pro")] {
+            let model: crate::model_catalog::ModelInfo =
+                serde_json::from_value(serde_json::json!({
+                    "id": model_id,
+                    "name": model_id,
+                    "tool_call": false
+                }))
+                .unwrap();
+            assert!(catalog_model_usable(provider, &model));
+        }
+    }
+
+    #[test]
+    fn openrouter_catalog_is_only_a_candidate_filter() {
+        let model: crate::model_catalog::ModelInfo = serde_json::from_value(serde_json::json!({
+            "id": "anthropic/claude-sonnet-4.6",
+            "name": "Claude Sonnet 4.6",
+            "tool_call": true,
+            "modalities": {"input": ["text"], "output": ["text"]}
+        }))
+        .unwrap();
+        assert!(catalog_model_usable("openrouter", &model));
+        assert!(
+            crate::native_provider::native_model_capabilities("openrouter", &model.id).is_none()
+        );
+        let mut no_tools = model;
+        no_tools.tool_call = false;
+        assert!(!catalog_model_usable("openrouter", &no_tools));
     }
 }

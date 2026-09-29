@@ -14,6 +14,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use openide_harness::HostedWebSearchMode;
 
 const FILE_NAME: &str = "settings-preferences.json";
 const MAX_FILE_BYTES: u64 = 64 * 1024;
@@ -74,6 +75,9 @@ pub(crate) struct SettingsPreferences {
     /// Stores a `settings_page:<slug>` action ID. The app verifies that the
     /// page still exists with `SettingsPage::from_action_id` on startup.
     pub last_settings_page: String,
+    /// Hosted Responses search is an explicit opt-in because it may contact
+    /// external sources and its exact mode is bound to native resume identity.
+    pub hosted_web_search_mode: Option<HostedWebSearchMode>,
 }
 
 impl Default for SettingsPreferences {
@@ -89,6 +93,7 @@ impl Default for SettingsPreferences {
             reopen_last_workspace: false,
             last_workspace: None,
             last_settings_page: DEFAULT_SETTINGS_PAGE.to_owned(),
+            hosted_web_search_mode: None,
         }
     }
 }
@@ -145,6 +150,9 @@ impl SettingsPreferences {
         {
             preferences.last_settings_page = page.to_owned();
         }
+        preferences.hosted_web_search_mode = value
+            .get("hosted_web_search_mode")
+            .and_then(|mode| serde_json::from_value(mode.clone()).ok());
         preferences
     }
 
@@ -217,6 +225,7 @@ impl SettingsPreferences {
             "reopen_last_workspace": self.reopen_last_workspace,
             "last_workspace": workspace_text,
             "last_settings_page": self.last_settings_page,
+            "hosted_web_search_mode": self.hosted_web_search_mode,
         }))
         .map_err(|error| format!("No se pudieron serializar las preferencias: {error}"))?;
         let temp = root.join(format!(
@@ -400,10 +409,13 @@ mod tests {
     fn round_trip_and_atomic_replacement() {
         let root = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
-        let mut preferences = SettingsPreferences::default();
-        preferences.reduced_motion = true;
-        preferences.reopen_last_workspace = true;
+        let mut preferences = SettingsPreferences {
+            reduced_motion: true,
+            reopen_last_workspace: true,
+            ..SettingsPreferences::default()
+        };
         preferences.set_last_workspace(project.path()).unwrap();
+        preferences.hosted_web_search_mode = Some(HostedWebSearchMode::Indexed);
         preferences
             .set_last_settings_page("settings_page:providers")
             .unwrap();

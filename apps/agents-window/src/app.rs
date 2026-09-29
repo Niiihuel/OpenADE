@@ -8,6 +8,7 @@ use crate::{
     composer_selection::{self, ComposerChoice, ComposerPreferences},
     detail_worker::{DetailKind, DetailRequest, DetailResult, DetailWorker},
     dock::{DockOwner, DockScope, DockState, DockTabId, DockTabKind},
+    exec_policy_settings::{ExecPolicySettings, ExecPolicyUiState},
     files::FileExplorer,
     git_review::DiffStage,
     github::GithubStatus,
@@ -15,39 +16,65 @@ use crate::{
     github_worker::{GithubRequest, GithubWorker},
     marketplace::{InstallScope, MarketplaceStore, SourceKind},
     marketplace_view::MarketplaceViewState,
+    mcp_oauth_controller::{
+        forget_oauth_registration, oauth_registration_changed, McpOAuthController, McpOAuthEvent,
+    },
+    mcp_runtime::McpToolPreparation,
+    mcp_settings::{McpHttpOAuthSettings, McpSettings},
     model_catalog::{self, CatalogSnapshot},
-    native_provider::{self, NativeProviderSettings},
+    native_command_sessions::NativeCommandSessions,
+    native_hook_settings::{HookUiState, NativeHookSettings},
+    native_provider::{self, NativeProviderSettings, NativeWireApi, RuntimeConnection},
+    native_skills_settings::{NativeSkillsSettings, NativeSkillsUiState},
     navigation::{NavigationHistory, NavigationTarget},
     render,
+    resume_worker::{ResumeUpdate, ResumeWorkerHandle, ResumeWorkerRequest},
     review_worker::{ReviewRequest, ReviewWorker},
     search_worker::{SearchRequest, SearchResponse, SearchWorker},
     session_groups::SessionGroups,
     settings_preferences::{SettingsPreferences, TerminalShell},
     settings_ui::{self, SettingsPage},
+    subagent_recovery_worker::{
+        SubagentRecoveryHandle, SubagentRecoveryRequest, SubagentRecoveryUpdate,
+    },
     terminal::TerminalSession,
     transcript::TranscriptProjection,
     view::{
-        build_command_center, build_view, dock_layout, ComposerAttachmentView, DockLayout,
-        DockTabView, FilePreviewView, FileRowView, MainPage, PermissionView, ReviewDetailView,
-        SessionOrganization, SessionView, SideTab, ViewState,
+        build_command_center, build_view, dock_layout, AbortedToolBatchView,
+        ComposerAttachmentView, DockLayout, DockRecentlyClosedView, DockTabView, FilePreviewView,
+        FileRowView, MainPage, McpOAuthViewPhase, McpOAuthViewStatus, PermissionView,
+        ProviderModelStatus, ReviewDetailView, SessionOrganization, SessionPlanView, SessionRecoveryView, SessionView, SideTab,
+        SessionApprovalGrantView, SubagentPermissionView, SubagentRunView, ToolVerificationView,
+        ViewState,
     },
+    voice::{self, VoiceEvent, VoiceHandle},
 };
 use eframe::egui;
 use openide_cli::{CliProfile, CliRunHandle, CliRunner};
 use openide_core::{
-    AgentEvent, AgentEventKind, AgentMessage, AgentRunRequest, PermissionDecision, SessionSort,
-    SessionStore, ToolCall,
+    replay_native, AgentEvent, AgentEventKind, AgentMessage, AgentRunRequest,
+    CheckpointBudgetSnapshot, CheckpointCompatibility, CheckpointFileStore, NativeReplay,
+    PermissionDecision, ReplayRecovery, SessionSort, SessionStore, StoredSession, ToolCall,
+    TurnMode, UserImage, UserImageMime, MAX_USER_IMAGE_BYTES, validate_user_images,
 };
 use openide_harness::{
-    AgentRunHandle, AgentRunner, LocalTools, OpenAiCompatibleBackend, PermissionChoice,
-    PermissionPolicy,
+    discard_aborted_tool_batch, finalize_resolved_subagent, load_project_instructions,
+    AgentRunHandle, AgentRunner, CheckpointCoordinator, CommandIsolation, ExecDecision, HookPhase,
+    LocalTools, ModelBackend, OpenAiCompatibleBackend, PermissionChoice, PermissionMode,
+    PermissionPolicy, PersistentCommandManager, PersistentCommandSessionInfo,
+    HostedWebSearchConfig, HostedWebSearchMode, ProjectInstructionLimits, ResponsesBackend,
+    ResumeDisposition, RunLimits, SubagentBridgeEvent,
+    SubagentCoordinator, SubagentEventBridge, SubagentLimits, SubagentRecoveryPause,
+    SubagentRecoveryState, SubagentStatus, SubagentToolExecutor, SubagentToolLimits,
+    SubagentWorker, ToolExecutor, ToolOutput,
 };
 use openide_ui::{
-    Easing, Element, FontFamily, FontMetrics, Frame as UiFrame, ScalarTransition, Size, UiAction,
-    UiEvent, UiTree,
+    DatePicker, Easing, Element, FontFamily, FontMetrics, Frame as UiFrame, ScalarTransition, Size,
+    TimePicker, UiAction, UiEvent, UiTree,
 };
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-use std::io::Write;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{
@@ -55,10 +82,150 @@ use std::sync::{
     Arc,
 };
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
+type ComposerFolderResponse = (String, Result<Option<PathBuf>, String>);
+type NativeCommandSnapshotResponse = (
+    String,
+    Arc<PersistentCommandManager>,
+    Result<Vec<PersistentCommandSessionInfo>, String>,
+);
+type NativeCommandTerminationResponse = (
+    String,
+    String,
+    Arc<PersistentCommandManager>,
+    Result<(), String>,
+);
 
 enum ActiveRun {
     Native(AgentRunHandle),
     Cli(CliRunHandle),
+}
+
+fn subagent_status_label(status: &SubagentStatus) -> &'static str {
+    match status {
+        SubagentStatus::Ready => "pendiente",
+        SubagentStatus::Running => "en ejecución",
+        SubagentStatus::Interrupted => "interrumpido",
+        SubagentStatus::Completed => "completado",
+        SubagentStatus::Failed => "fallido",
+        SubagentStatus::Cancelled => "cancelado",
+    }
+}
+
+struct ActiveCompact {
+    session_id: String,
+    receiver: Receiver<Result<u64, String>>,
+    cancel: CancellationToken,
+}
+
+fn native_model_backend(
+    connection: RuntimeConnection,
+    provider_id: &str,
+    effort: Option<&str>,
+    hosted_web_search_mode: Option<HostedWebSearchMode>,
+) -> Result<Arc<dyn ModelBackend>, String> {
+    let effort = effort.filter(|value| *value != "default");
+    match connection.wire_api {
+        NativeWireApi::Responses => {
+            let mut model =
+                ResponsesBackend::new(connection.endpoint, connection.api_key, connection.model_id);
+            if let Some(effort) = effort {
+                model = model
+                    .with_reasoning_effort(effort)
+                    .map_err(|error| error.to_string())?;
+            }
+            if let Some(mode) = hosted_web_search_mode {
+                model = model
+                    .with_hosted_web_search(HostedWebSearchConfig::new(mode))
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(Arc::new(model))
+        }
+        NativeWireApi::ChatCompletions => {
+            let mut model = OpenAiCompatibleBackend::new(
+                connection.endpoint,
+                connection.api_key,
+                connection.model_id,
+            );
+            if provider_id == "deepseek" {
+                model = model.with_deepseek_non_thinking();
+            }
+            if let Some(effort) = effort {
+                model = model
+                    .with_reasoning_effort(effort)
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(Arc::new(model))
+        }
+    }
+}
+
+fn native_checkpoint_compatibility(provider_id: &str, model_id: &str) -> CheckpointCompatibility {
+    CheckpointCompatibility {
+        provider: provider_id.to_owned(),
+        model: model_id.to_owned(),
+        context_format_key: if provider_id == "openai" {
+            "responses-v1"
+        } else {
+            "chat-completions-v1"
+        }
+        .to_owned(),
+    }
+}
+
+fn context_remaining_percent(used_tokens: u64, context_window_tokens: u64) -> Option<u8> {
+    // Match Codex's status meaning: percentage of usable context remaining.
+    // The baseline is reserved for fixed prompt/tool overhead.
+    const BASELINE_TOKENS: u64 = 12_000;
+    if context_window_tokens <= BASELINE_TOKENS {
+        return None;
+    }
+    let window = u128::from(context_window_tokens - BASELINE_TOKENS);
+    let used = u128::from(used_tokens.saturating_sub(BASELINE_TOKENS)).min(window);
+    let rounded = ((window - used) * 100 + window / 2) / window;
+    Some(rounded.min(100) as u8)
+}
+
+/// Only report a measurement tied to the currently selected verified model.
+/// A checkpoint replaces the old context, so its earlier usage is no longer
+/// representative until the provider commits another response.
+fn committed_context_percent(
+    events: &[AgentEvent],
+    provider_id: &str,
+    model_id: &str,
+) -> Option<u8> {
+    let window =
+        native_provider::verified_token_budget(provider_id, model_id)?.context_window_tokens;
+    let (response_index, usage) =
+        events
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, event)| match &event.kind {
+                AgentEventKind::ModelResponseCommitted { usage, .. } => {
+                    Some((index, usage.as_ref()))
+                }
+                _ => None,
+            })?;
+    let usage = usage?;
+    let request_model =
+        events[..response_index]
+            .iter()
+            .rev()
+            .find_map(|event| match &event.kind {
+                AgentEventKind::ModelRequestStarted { model, .. } => Some(model.as_str()),
+                _ => None,
+            })?;
+    if request_model != model_id
+        || events[response_index + 1..]
+            .iter()
+            .any(|event| matches!(&event.kind, AgentEventKind::CheckpointCommitted { .. }))
+    {
+        return None;
+    }
+    context_remaining_percent(usage.total_tokens, window)
 }
 
 struct BackgroundAutomationRun {
@@ -179,6 +346,13 @@ fn relayout_after_updates(
 }
 
 impl ActiveRun {
+    fn journal_error(&self) -> Option<String> {
+        match self {
+            Self::Native(run) => run.journal_error(),
+            Self::Cli(_) => None,
+        }
+    }
+
     fn resolve_permission(&self, request_id: &str, choice: PermissionChoice) -> bool {
         match self {
             Self::Native(run) => run.resolve_permission(request_id, choice),
@@ -215,21 +389,49 @@ pub struct AgentsWindow {
     composer_preferences: ComposerPreferences,
     settings_preferences: SettingsPreferences,
     agent_tool_settings: AgentToolSettings,
+    exec_policy_settings: ExecPolicySettings,
+    exec_policy_load_error: Option<String>,
+    native_command_sessions: NativeCommandSessions,
+    native_command_snapshot_response: Option<Receiver<NativeCommandSnapshotResponse>>,
+    native_command_termination_response: Option<Receiver<NativeCommandTerminationResponse>>,
+    last_native_command_snapshot: Option<Instant>,
     tree: UiTree,
     projection: TranscriptProjection,
     profiles: Vec<CliProfile>,
-    store: Option<SessionStore>,
+    store: Option<Arc<SessionStore>>,
     /// Project paths from every stored session, before sidebar archive filtering.
     known_project_paths: Vec<String>,
     active_run: Option<ActiveRun>,
+    dictation: Option<VoiceHandle>,
+    dictation_key: Option<(String, Option<String>)>,
+    active_compact: Option<ActiveCompact>,
+    active_resume: Option<ResumeWorkerHandle>,
+    active_child_recovery: Option<SubagentRecoveryHandle>,
+    pending_child_recovery_permission: Option<SubagentPermissionView>,
+    active_mcp_oauth: Option<McpOAuthController>,
+    subagent_bridge: Arc<SubagentEventBridge>,
+    subagent_events: Receiver<SubagentBridgeEvent>,
+    last_subagent_poll: Instant,
+    subagent_poll_needed: bool,
     automation_stores: Vec<AutomationStore>,
     automation_last_poll: Instant,
     background_automation_runs: Vec<BackgroundAutomationRun>,
     automation_queue: VecDeque<(usize, AutomationDispatch)>,
     marketplace_response: Option<Receiver<MarketplaceResponse>>,
     workspace_folder_response: Option<Receiver<Result<Option<PathBuf>, String>>>,
+    composer_folder_response: Option<Receiver<ComposerFolderResponse>>,
     catalog_response: Option<Receiver<Result<CatalogSnapshot, String>>>,
     catalog_last_refresh: Instant,
+    model_discovery_response: Option<
+        Receiver<(
+            String,
+            Result<native_provider::ProviderModelDiscovery, String>,
+        )>,
+    >,
+    model_discovery_pending: usize,
+    model_discoveries: Vec<native_provider::ProviderModelDiscovery>,
+    codex_model_response: Option<Receiver<Result<Vec<openide_cli::DiscoveredCodexModel>, String>>>,
+    codex_models: Vec<openide_cli::DiscoveredCodexModel>,
     history: Vec<AgentMessage>,
     last_sequence: u64,
     dock_drag: Option<DockDrag>,
@@ -246,6 +448,7 @@ pub struct AgentsWindow {
     file_explorer: Option<FileExplorer>,
     drafts: HashMap<(String, Option<String>), String>,
     attachment_drafts: HashMap<(String, Option<String>), Vec<ComposerAttachmentView>>,
+    composer_goals: HashMap<(String, Option<String>), String>,
     draft_dirty_at: Option<Instant>,
     draft_error: Option<String>,
     persistence_error: Option<String>,
@@ -254,6 +457,8 @@ pub struct AgentsWindow {
     command_center_attaches_file: bool,
     command_focus_pending: bool,
     prompt_focus_pending: bool,
+    composer_model_search_focus_pending: bool,
+    rename_focus_pending: bool,
     group_focus_pending: bool,
     search_worker: Option<SearchWorker>,
     search_generation: u64,
@@ -274,6 +479,12 @@ pub struct AgentsWindow {
 }
 
 fn data_root() -> PathBuf {
+    if let Some(path) = std::env::var_os("OPENIDE_DATA_ROOT") {
+        let path = PathBuf::from(path);
+        if path.is_absolute() {
+            return path;
+        }
+    }
     if let Some(base) = std::env::var_os("APPDATA") {
         return PathBuf::from(base).join("OpenIDE");
     }
@@ -286,10 +497,16 @@ fn data_root() -> PathBuf {
     std::env::current_dir().unwrap_or_default().join("data")
 }
 
+fn command_center_rect(area: egui::Rect) -> egui::Rect {
+    let width = (area.width() - 32.0).clamp(0.0, 560.0);
+    let height = (area.height() - 48.0).clamp(0.0, 500.0);
+    egui::Rect::from_center_size(area.center(), egui::vec2(width, height))
+}
+
 /// Runs off the UI thread. PowerShell hosts the Windows folder dialog without
 /// opening a console; the selected path is passed back over stdout as UTF-8.
 #[cfg(windows)]
-fn choose_workspace_folder(initial: &Path) -> Result<Option<PathBuf>, String> {
+fn choose_workspace_folder(initial: &Path, description: &str) -> Result<Option<PathBuf>, String> {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
@@ -299,7 +516,7 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Seleccionar carpeta de proyecto'
+$dialog.Description = $env:OPENIDE_PICKER_DESCRIPTION
 $dialog.ShowNewFolderButton = $true
 if ([System.IO.Directory]::Exists($env:OPENIDE_INITIAL_FOLDER)) {
     $dialog.SelectedPath = $env:OPENIDE_INITIAL_FOLDER
@@ -324,6 +541,7 @@ try {
             SCRIPT,
         ])
         .env("OPENIDE_INITIAL_FOLDER", initial)
+        .env("OPENIDE_PICKER_DESCRIPTION", description)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|error| format!("No se pudo abrir el selector de carpetas: {error}"))?;
@@ -344,7 +562,7 @@ try {
 }
 
 #[cfg(not(windows))]
-fn choose_workspace_folder(_initial: &Path) -> Result<Option<PathBuf>, String> {
+fn choose_workspace_folder(_initial: &Path, _description: &str) -> Result<Option<PathBuf>, String> {
     Err("El selector de carpetas del sistema no está disponible aquí".to_owned())
 }
 
@@ -365,6 +583,436 @@ fn project_branch_for_workspace(workspace: &str) -> Option<String> {
 const MAX_COMPOSER_ATTACHMENTS: usize = 12;
 const MAX_COMPOSER_ATTACHMENT_PATH_BYTES: usize = 2_048;
 const MAX_COMPOSER_PROJECTS: usize = 12;
+const MAX_COMPOSER_GOAL_BYTES: usize = 8 * 1024;
+const MAX_COMPOSER_GOALS_FILE_BYTES: u64 = 2 * 1024 * 1024;
+static COMPOSER_GOALS_SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static NATIVE_STEER_DRAFT_SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+const MAX_NATIVE_STEER_DRAFT_FILE_BYTES: u64 = 128 * 1024;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSteerDraftAttachment {
+    path: String,
+    label: String,
+    is_dir: bool,
+}
+
+impl From<&ComposerAttachmentView> for NativeSteerDraftAttachment {
+    fn from(attachment: &ComposerAttachmentView) -> Self {
+        Self {
+            path: attachment.path.clone(),
+            label: attachment.label.clone(),
+            is_dir: attachment.is_dir,
+        }
+    }
+}
+
+impl From<NativeSteerDraftAttachment> for ComposerAttachmentView {
+    fn from(attachment: NativeSteerDraftAttachment) -> Self {
+        Self {
+            path: attachment.path,
+            label: attachment.label,
+            is_dir: attachment.is_dir,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSteerImageKey {
+    mime_type: UserImageMime,
+    size_bytes: u32,
+    sha256: String,
+}
+
+impl From<&UserImage> for NativeSteerImageKey {
+    fn from(image: &UserImage) -> Self {
+        Self {
+            mime_type: image.mime_type,
+            size_bytes: image.size_bytes,
+            sha256: image.sha256.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSteerDraftRetry {
+    turn_id: String,
+    input_id: String,
+    payload_text: String,
+    images: Vec<NativeSteerImageKey>,
+    acknowledged: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSteerDraftState {
+    version: u32,
+    workspace: String,
+    session_id: String,
+    prompt: String,
+    attachments: Vec<NativeSteerDraftAttachment>,
+    retry: Option<NativeSteerDraftRetry>,
+}
+
+impl NativeSteerDraftState {
+    fn for_draft(
+        workspace: &Path,
+        session_id: &str,
+        prompt: &str,
+        attachments: &[ComposerAttachmentView],
+    ) -> Self {
+        Self {
+            version: 1,
+            workspace: workspace.to_string_lossy().into_owned(),
+            session_id: session_id.to_owned(),
+            prompt: prompt.to_owned(),
+            attachments: attachments.iter().map(NativeSteerDraftAttachment::from).collect(),
+            retry: None,
+        }
+    }
+
+    fn matches_draft(
+        &self,
+        workspace: &Path,
+        prompt: &str,
+        attachments: &[ComposerAttachmentView],
+    ) -> bool {
+        self.workspace == workspace.to_string_lossy()
+            && self.prompt == prompt
+            && self.attachments
+                == attachments
+                    .iter()
+                    .map(NativeSteerDraftAttachment::from)
+                    .collect::<Vec<_>>()
+    }
+}
+
+fn native_steer_draft_path(root: &Path, session_id: &str) -> Result<PathBuf, String> {
+    if session_id.is_empty()
+        || !session_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err("Identificador de sesión inválido para el borrador".to_owned());
+    }
+    Ok(root
+        .join("native-steer-drafts")
+        .join(format!("{session_id}.json")))
+}
+
+fn load_native_steer_draft(
+    root: &Path,
+    session_id: &str,
+) -> Result<Option<NativeSteerDraftState>, String> {
+    let path = native_steer_draft_path(root, session_id)?;
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("No se pudo leer el borrador de intervención: {error}")),
+    };
+    if bytes.len() as u64 > MAX_NATIVE_STEER_DRAFT_FILE_BYTES {
+        return Err("El borrador de intervención excede el límite de tamaño".to_owned());
+    }
+    let state: NativeSteerDraftState = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("El borrador de intervención no es válido: {error}"))?;
+    if state.version != 1
+        || state.session_id != session_id
+        || state.prompt.len() > 32 * 1024
+        || state.attachments.len() > MAX_COMPOSER_ATTACHMENTS
+        || state.attachments.iter().any(|attachment| {
+            attachment.path.is_empty()
+                || attachment.path.len() > MAX_COMPOSER_ATTACHMENT_PATH_BYTES
+        })
+        || state.retry.as_ref().is_some_and(|retry| {
+            retry.input_id.is_empty()
+                || retry.input_id.len() > 128
+                || retry.turn_id.is_empty()
+                || retry.turn_id.len() > 128
+                || retry.payload_text.len() > 32 * 1024
+                || retry.images.len() > 8
+        })
+    {
+        return Err("El borrador de intervención no es válido".to_owned());
+    }
+    Ok(Some(state))
+}
+
+fn save_native_steer_draft(root: &Path, state: &NativeSteerDraftState) -> Result<(), String> {
+    let path = native_steer_draft_path(root, &state.session_id)?;
+    let bytes = serde_json::to_vec(state)
+        .map_err(|error| format!("No se pudo serializar el borrador de intervención: {error}"))?;
+    if bytes.len() as u64 > MAX_NATIVE_STEER_DRAFT_FILE_BYTES {
+        return Err("El borrador de intervención excede el límite de tamaño".to_owned());
+    }
+    let parent = path.parent().expect("the draft path has a parent");
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("No se pudo preparar el borrador de intervención: {error}"))?;
+    let temp = parent.join(format!(
+        ".{session_id}-{}-{}.tmp",
+        std::process::id(),
+        NATIVE_STEER_DRAFT_SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        session_id = state.session_id
+    ));
+    let outcome = (|| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&temp, &path)
+    })();
+    if outcome.is_err() {
+        let _ = std::fs::remove_file(temp);
+    }
+    outcome.map_err(|error| format!("No se pudo guardar el borrador de intervención: {error}"))
+}
+
+fn remove_native_steer_draft(root: &Path, session_id: &str) -> Result<(), String> {
+    match std::fs::remove_file(native_steer_draft_path(root, session_id)?) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("No se pudo limpiar el borrador de intervención: {error}")),
+    }
+}
+
+fn sync_native_steer_draft(
+    root: &Path,
+    workspace: &Path,
+    session_id: &str,
+    prompt: &str,
+    attachments: &[ComposerAttachmentView],
+) -> Result<(), String> {
+    let Some(mut state) = load_native_steer_draft(root, session_id)? else {
+        return Ok(());
+    };
+    if state.matches_draft(workspace, prompt, attachments) {
+        return Ok(());
+    }
+    state.workspace = workspace.to_string_lossy().into_owned();
+    state.prompt = prompt.to_owned();
+    state.attachments = attachments.iter().map(NativeSteerDraftAttachment::from).collect();
+    state.retry = None;
+    save_native_steer_draft(root, &state)
+}
+
+struct NativeSteerDraftSubmission<'a> {
+    workspace: &'a Path,
+    session_id: &'a str,
+    turn_id: &'a str,
+    prompt: &'a str,
+    attachments: &'a [ComposerAttachmentView],
+    payload_text: &'a str,
+    images: &'a [UserImage],
+}
+
+fn enqueue_native_steer_draft(
+    root: &Path,
+    store: &SessionStore,
+    submission: NativeSteerDraftSubmission<'_>,
+) -> Result<String, String> {
+    let NativeSteerDraftSubmission {
+        workspace,
+        session_id,
+        turn_id,
+        prompt,
+        attachments,
+        payload_text,
+        images,
+    } = submission;
+    let previous = load_native_steer_draft(root, session_id)?;
+    let mut state = previous
+        .filter(|state| state.matches_draft(workspace, prompt, attachments))
+        .unwrap_or_else(|| {
+            NativeSteerDraftState::for_draft(workspace, session_id, prompt, attachments)
+        });
+    let image_keys = images.iter().map(NativeSteerImageKey::from).collect::<Vec<_>>();
+    let retry = state
+        .retry
+        .take()
+        .filter(|retry| {
+            retry.turn_id == turn_id
+                && retry.payload_text == payload_text
+                && retry.images == image_keys
+        })
+        .unwrap_or_else(|| NativeSteerDraftRetry {
+            turn_id: turn_id.to_owned(),
+            input_id: Uuid::new_v4().to_string(),
+            payload_text: payload_text.to_owned(),
+            images: image_keys,
+            acknowledged: false,
+        });
+    let input_id = retry.input_id.clone();
+    state.retry = Some(retry);
+    // Both the text draft and its attachment/nonce state must reach disk before
+    // the inbox write. An uncertain enqueue can then retry with this exact ID.
+    store
+        .save_draft(workspace, Some(session_id), prompt)
+        .map_err(|error| error.to_string())?;
+    save_native_steer_draft(root, &state)?;
+    store
+        .enqueue_native_steer_with_images(session_id, turn_id, &input_id, payload_text, images)
+        .map_err(|error| error.to_string())?;
+    Ok(input_id)
+}
+
+fn acknowledge_native_steer_draft(
+    root: &Path,
+    store: &SessionStore,
+    workspace: &Path,
+    session_id: &str,
+    input_id: &str,
+) -> Result<(), String> {
+    let mut state = load_native_steer_draft(root, session_id)?
+        .ok_or_else(|| "Falta el borrador de la intervención aceptada".to_owned())?;
+    let retry = state
+        .retry
+        .as_mut()
+        .filter(|retry| retry.input_id == input_id)
+        .ok_or_else(|| "El borrador de intervención cambió durante el envío".to_owned())?;
+    retry.acknowledged = true;
+    save_native_steer_draft(root, &state)?;
+    // Clear the core draft before dropping the accepted marker. This ordering
+    // also handles image-only drafts, whose core text draft is empty.
+    store
+        .clear_draft(workspace, Some(session_id))
+        .map_err(|error| error.to_string())?;
+    remove_native_steer_draft(root, session_id)
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct ComposerGoalsFile {
+    #[serde(default)]
+    goals: Vec<ComposerGoalEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ComposerGoalEntry {
+    workspace: String,
+    session_id: Option<String>,
+    objective: String,
+}
+
+fn load_composer_goals(root: &Path) -> Result<HashMap<(String, Option<String>), String>, String> {
+    let path = root.join("composer-goals.json");
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
+        Err(error) => return Err(format!("No se pudieron leer las metas: {error}")),
+    };
+    if bytes.len() as u64 > MAX_COMPOSER_GOALS_FILE_BYTES {
+        return Err("El archivo de metas excede el límite de tamaño".to_owned());
+    }
+    let data: ComposerGoalsFile = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("El archivo de metas no es válido: {error}"))?;
+    Ok(data
+        .goals
+        .into_iter()
+        .filter(|entry| {
+            !entry.objective.trim().is_empty() && entry.objective.len() <= MAX_COMPOSER_GOAL_BYTES
+        })
+        .map(|entry| ((entry.workspace, entry.session_id), entry.objective))
+        .collect())
+}
+
+fn save_composer_goals(
+    root: &Path,
+    goals: &HashMap<(String, Option<String>), String>,
+) -> Result<(), String> {
+    let mut entries: Vec<_> = goals
+        .iter()
+        .map(|((workspace, session_id), objective)| ComposerGoalEntry {
+            workspace: workspace.clone(),
+            session_id: session_id.clone(),
+            objective: objective.clone(),
+        })
+        .collect();
+    entries.sort_by(|a, b| (&a.workspace, &a.session_id).cmp(&(&b.workspace, &b.session_id)));
+    let bytes = serde_json::to_vec_pretty(&ComposerGoalsFile { goals: entries })
+        .map_err(|error| format!("No se pudieron serializar las metas: {error}"))?;
+    if bytes.len() as u64 > MAX_COMPOSER_GOALS_FILE_BYTES {
+        return Err("Hay demasiadas metas para guardar".to_owned());
+    }
+    std::fs::create_dir_all(root)
+        .map_err(|error| format!("No se pudo preparar el directorio de metas: {error}"))?;
+    let temp = root.join(format!(
+        ".composer-goals-{}-{}.tmp",
+        std::process::id(),
+        COMPOSER_GOALS_SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let outcome = (|| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&temp, root.join("composer-goals.json"))
+    })();
+    if outcome.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    outcome.map_err(|error| format!("No se pudieron guardar las metas: {error}"))
+}
+
+fn composer_goal_instruction(objective: &str) -> String {
+    format!(
+        "Objetivo vigente de esta tarea:\n{objective}\nTen presente este objetivo al responder a la solicitud actual."
+    )
+}
+
+fn system_instructions_with_goal(skills: String, goal: Option<&str>) -> String {
+    match goal {
+        Some(objective) if !objective.trim().is_empty() => {
+            let instruction = composer_goal_instruction(objective);
+            if skills.is_empty() {
+                instruction
+            } else {
+                format!("{skills}\n\n{instruction}")
+            }
+        }
+        _ => skills,
+    }
+}
+
+fn native_workspace_instructions(data_root: &Path, workspace: &Path) -> Result<String, String> {
+    let project =
+        load_project_instructions(workspace, workspace, ProjectInstructionLimits::default())
+            .map_err(|error| format!("No se pudieron leer AGENTS.md: {error}"))?
+            .text();
+    let skills = crate::marketplace::active_skill_instructions(data_root, workspace)
+        .map_err(|error| format!("No se pudieron leer las skills: {error}"))?;
+    let local_skills = NativeSkillsSettings::load(data_root, workspace)?.activate(data_root)?;
+    let mut sections = Vec::new();
+    if !project.is_empty() {
+        sections.push(format!("Instrucciones del proyecto:\n{project}"));
+    }
+    if !skills.is_empty() {
+        sections.push(skills);
+    }
+    if !local_skills.selected.is_empty() {
+        sections.push(format!(
+            "Skills locales seleccionadas (identidad {}):\n{}",
+            local_skills.sha256_hex, local_skills.instructions
+        ));
+    }
+    Ok(sections.join("\n\n"))
+}
+
+fn native_resume_instructions(
+    data_root: &Path,
+    workspace: &Path,
+    goal: Option<&str>,
+    saved: Option<&str>,
+) -> Result<String, String> {
+    if let Some(saved) = saved {
+        return Ok(saved.to_owned());
+    }
+    native_workspace_instructions(data_root, workspace)
+        .map(|instructions| system_instructions_with_goal(instructions, goal))
+}
 
 fn composer_attachment_for_path(
     workspace: &Path,
@@ -376,9 +1024,10 @@ fn composer_attachment_for_path(
     let file = workspace
         .join(candidate)
         .canonicalize()
-        .map_err(|error| format!("No se pudo leer el archivo: {error}"))?;
-    if !file.is_file() {
-        return Err("Selecciona un archivo del proyecto".to_owned());
+        .map_err(|error| format!("No se pudo leer el adjunto: {error}"))?;
+    let is_dir = file.is_dir();
+    if !file.is_file() && !is_dir {
+        return Err("Selecciona un archivo o carpeta del proyecto".to_owned());
     }
     let relative = file
         .strip_prefix(&root)
@@ -392,7 +1041,11 @@ fn composer_attachment_for_path(
         .and_then(|name| name.to_str())
         .unwrap_or(&path)
         .to_owned();
-    Ok(ComposerAttachmentView { path, label })
+    Ok(ComposerAttachmentView {
+        path,
+        label,
+        is_dir,
+    })
 }
 
 fn composer_prompt_with_attachments(
@@ -402,16 +1055,143 @@ fn composer_prompt_with_attachments(
     if attachments.is_empty() {
         return visible_prompt.to_owned();
     }
-    let paths: Vec<&str> = attachments.iter().map(|file| file.path.as_str()).collect();
-    let listed = serde_json::to_string(&paths).expect("file paths serialize as JSON strings");
+    let paths: Vec<_> = attachments
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "path": entry.path,
+                "type": if entry.is_dir { "folder" } else { "file" },
+            })
+        })
+        .collect();
+    let listed = serde_json::to_string(&paths).expect("attachment paths serialize as JSON");
     let introduction = if visible_prompt.is_empty() {
         "Revisa los archivos adjuntos."
     } else {
         visible_prompt
     };
     format!(
-        "{introduction}\n\nArchivos adjuntos de este proyecto (rutas relativas): {listed}\nAbre estos archivos y úsalos como contexto para esta tarea."
+        "{introduction}\n\nAdjuntos de este proyecto (rutas relativas): {listed}\nAbre los archivos y explora las carpetas pertinentes; úsalos como contexto para esta tarea."
     )
+}
+
+fn native_image_mime(path: &str) -> Option<UserImageMime> {
+    match Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "png" => Some(UserImageMime::Png),
+        "jpg" | "jpeg" => Some(UserImageMime::Jpeg),
+        "webp" => Some(UserImageMime::Webp),
+        "gif" => Some(UserImageMime::Gif),
+        _ => None,
+    }
+}
+
+fn native_image_from_attachment(
+    workspace: &Path,
+    attachment: &ComposerAttachmentView,
+) -> Result<UserImage, String> {
+    let mime = native_image_mime(&attachment.path)
+        .ok_or_else(|| "El adjunto no es una imagen compatible".to_owned())?;
+    let root = workspace
+        .canonicalize()
+        .map_err(|error| format!("No se pudo leer el proyecto: {error}"))?;
+    let path = workspace
+        .join(&attachment.path)
+        .canonicalize()
+        .map_err(|error| format!("No se pudo leer la imagen: {error}"))?;
+    if !path.starts_with(&root) || !path.is_file() {
+        return Err("La imagen debe ser un archivo del proyecto".to_owned());
+    }
+    let file = std::fs::File::open(&path)
+        .map_err(|error| format!("No se pudo abrir la imagen: {error}"))?;
+    if file
+        .metadata()
+        .map_err(|error| format!("No se pudo inspeccionar la imagen: {error}"))?
+        .len()
+        > MAX_USER_IMAGE_BYTES as u64
+    {
+        return Err("La imagen supera el límite de 8 MiB".to_owned());
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_USER_IMAGE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("No se pudo leer la imagen: {error}"))?;
+    UserImage::from_bytes(mime, &bytes)
+        .map_err(|error| format!("Imagen adjunta no válida: {error}"))
+}
+
+fn native_prompt_with_images(
+    visible_prompt: &str,
+    other_attachments: &[ComposerAttachmentView],
+    image_attachments: &[ComposerAttachmentView],
+) -> String {
+    let introduction = if visible_prompt.is_empty() && !image_attachments.is_empty() {
+        "Analiza las imágenes adjuntas."
+    } else {
+        visible_prompt
+    };
+    let mut prompt = composer_prompt_with_attachments(introduction, other_attachments);
+    if !image_attachments.is_empty() {
+        let names = image_attachments
+            .iter()
+            .map(|attachment| attachment.label.as_str())
+            .collect::<Vec<_>>();
+        let names = serde_json::to_string(&names).expect("image labels serialize as JSON");
+        prompt.push_str("\n\nImágenes enviadas al modelo en este orden: ");
+        prompt.push_str(&names);
+    }
+    prompt
+}
+
+struct NativeAttachmentPayload {
+    images: Vec<UserImage>,
+    image_attachments: Vec<ComposerAttachmentView>,
+    path_attachments: Vec<ComposerAttachmentView>,
+}
+
+fn prepare_native_attachments(
+    workspace: &Path,
+    attachments: &[ComposerAttachmentView],
+    provider_id: &str,
+    model_id: &str,
+) -> Result<NativeAttachmentPayload, String> {
+    let mut payload = NativeAttachmentPayload {
+        images: Vec::new(),
+        image_attachments: Vec::new(),
+        path_attachments: Vec::new(),
+    };
+    for attachment in attachments {
+        let current = composer_attachment_for_path(workspace, Path::new(&attachment.path))?;
+        if current.path != attachment.path || current.is_dir != attachment.is_dir {
+            return Err("Un adjunto cambió de ubicación o tipo".to_owned());
+        }
+        if !attachment.is_dir && native_image_mime(&attachment.path).is_some() {
+            payload.image_attachments.push(attachment.clone());
+        } else {
+            payload.path_attachments.push(attachment.clone());
+        }
+    }
+    if !payload.image_attachments.is_empty() {
+        let supported = native_provider::native_model_capabilities(provider_id, model_id)
+            .is_some_and(|capability| capability.image_input);
+        if !supported {
+            return Err(
+                "El modelo nativo seleccionado no tiene entrada de imágenes verificada".to_owned(),
+            );
+        }
+        for attachment in &payload.image_attachments {
+            payload
+                .images
+                .push(native_image_from_attachment(workspace, attachment)?);
+        }
+        validate_user_images(&payload.images)
+            .map_err(|error| format!("Imágenes adjuntas no válidas: {error}"))?;
+    }
+    Ok(payload)
 }
 
 fn composer_project_options(workspace: &str, project_paths: &[String]) -> Vec<(String, String)> {
@@ -683,18 +1463,24 @@ fn flush_tool_batch(
     content: &mut String,
     calls: &mut Vec<ToolCall>,
     results: &mut Vec<AgentMessage>,
+    committed: &mut Option<AgentMessage>,
 ) {
-    if !calls.is_empty() && calls.len() == results.len() {
-        history.push(AgentMessage::assistant(
-            std::mem::take(content),
-            std::mem::take(calls),
-        ));
+    if !calls.is_empty()
+        && calls.len() == results.len()
+        && calls
+            .iter()
+            .zip(results.iter())
+            .all(|(call, result)| result.tool_call_id.as_deref() == Some(call.id.as_str()))
+    {
+        history.push(committed.take().unwrap_or_else(|| {
+            AgentMessage::assistant(std::mem::take(content), std::mem::take(calls))
+        }));
         history.append(results);
-    } else {
-        content.clear();
-        calls.clear();
-        results.clear();
     }
+    content.clear();
+    calls.clear();
+    results.clear();
+    *committed = None;
 }
 
 /// Rebuilds the exact model-visible tool exchange from durable turn events.
@@ -703,6 +1489,8 @@ fn history_from_events(events: &[AgentEvent]) -> Vec<AgentMessage> {
     let mut content = String::new();
     let mut calls = Vec::new();
     let mut results = Vec::new();
+    let mut committed = None;
+    let mut step_has_committed_response = false;
     let mut turn_start_len = 0;
     let mut turn_had_output = false;
     for event in events {
@@ -710,16 +1498,34 @@ fn history_from_events(events: &[AgentEvent]) -> Vec<AgentMessage> {
             AgentEventKind::TurnStarted { prompt } => {
                 turn_start_len = history.len();
                 turn_had_output = false;
+                committed = None;
+                step_has_committed_response = false;
                 history.push(AgentMessage::user(prompt.clone()));
             }
             AgentEventKind::ModelRequestStarted { step, .. } if *step > 1 => {
-                flush_tool_batch(&mut history, &mut content, &mut calls, &mut results);
+                flush_tool_batch(
+                    &mut history,
+                    &mut content,
+                    &mut calls,
+                    &mut results,
+                    &mut committed,
+                );
+                step_has_committed_response = false;
             }
-            AgentEventKind::AssistantMessage { content: message } => {
+            AgentEventKind::ModelResponseCommitted { assistant, .. } => {
+                content = assistant.content.clone();
+                calls = assistant.tool_calls.clone();
+                committed = Some(assistant.clone());
+                step_has_committed_response = true;
+                turn_had_output = true;
+            }
+            AgentEventKind::AssistantMessage { content: message }
+                if !step_has_committed_response =>
+            {
                 content = message.clone();
                 turn_had_output = true;
             }
-            AgentEventKind::ToolStarted { tool_call } => {
+            AgentEventKind::ToolStarted { tool_call } if !step_has_committed_response => {
                 calls.push(tool_call.clone());
                 turn_had_output = true;
             }
@@ -736,11 +1542,34 @@ fn history_from_events(events: &[AgentEvent]) -> Vec<AgentMessage> {
                 }
             }
             AgentEventKind::TurnCompleted { response, .. } => {
-                flush_tool_batch(&mut history, &mut content, &mut calls, &mut results);
-                history.push(AgentMessage::assistant(response.clone(), Vec::new()));
+                if calls.is_empty() {
+                    history.push(
+                        committed.take().unwrap_or_else(|| {
+                            AgentMessage::assistant(response.clone(), Vec::new())
+                        }),
+                    );
+                } else {
+                    flush_tool_batch(
+                        &mut history,
+                        &mut content,
+                        &mut calls,
+                        &mut results,
+                        &mut committed,
+                    );
+                }
             }
             AgentEventKind::TurnCancelled | AgentEventKind::TurnFailed { .. } => {
-                flush_tool_batch(&mut history, &mut content, &mut calls, &mut results);
+                if !calls.is_empty() {
+                    flush_tool_batch(
+                        &mut history,
+                        &mut content,
+                        &mut calls,
+                        &mut results,
+                        &mut committed,
+                    );
+                } else if let Some(message) = committed.take() {
+                    history.push(message);
+                }
                 if !turn_had_output {
                     history.truncate(turn_start_len);
                 }
@@ -751,6 +1580,106 @@ fn history_from_events(events: &[AgentEvent]) -> Vec<AgentMessage> {
     history
 }
 
+fn replay_stored_native(data_root: &Path, stored: &StoredSession) -> Result<NativeReplay, String> {
+    let checkpoint_store = CheckpointFileStore::new(data_root.join("sessions"))
+        .map_err(|error| format!("No se pudo abrir checkpoints: {error}"))?;
+    let expected = stored
+        .events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.kind {
+            AgentEventKind::CheckpointCommitted { reference } => {
+                Some(reference.compatibility.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| CheckpointCompatibility {
+            provider: String::new(),
+            model: String::new(),
+            context_format_key: String::new(),
+        });
+    replay_native(
+        &stored.session.id,
+        &stored.events,
+        Some(&checkpoint_store),
+        &expected,
+    )
+    .map_err(|error| format!("No se pudo reconstruir la sesión nativa: {error}"))
+}
+
+fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
+    match recovery {
+        ReplayRecovery::Idle => "Sesión cargada",
+        ReplayRecovery::ToolOutcomeUncertain { .. } => {
+            "Herramienta interrumpida: pudo haberse ejecutado; requiere resolución antes de continuar"
+        }
+        ReplayRecovery::PermissionPending { .. } => {
+            "Permiso pendiente en turno interrumpido; requiere recuperación antes de continuar"
+        }
+        ReplayRecovery::AdmittedNotStarted => "Turno admitido pendiente de recuperación",
+        ReplayRecovery::ModelInFlight { .. } => "Modelo interrumpido; requiere recuperación",
+        ReplayRecovery::ToolReady { .. } => "Herramienta pendiente de recuperación",
+        ReplayRecovery::ResponseCommitted { .. } => "Respuesta pendiente de cierre",
+        ReplayRecovery::ReadyForModel { .. } => "Turno pendiente de recuperación",
+        ReplayRecovery::AbortedToolBatch { .. } => {
+            "Turno abortado con herramientas pendientes; requiere resolución"
+        }
+    }
+}
+
+fn native_session_views(
+    data_root: &Path,
+    stored: &StoredSession,
+) -> (Option<SessionRecoveryView>, Option<SessionPlanView>) {
+    if stored.session.backend != "native" || stored.events.is_empty() {
+        return (None, None);
+    }
+    match replay_stored_native(data_root, stored) {
+        Ok(replay) => {
+            let recovery = match &replay.recovery {
+                ReplayRecovery::Idle => None,
+                ReplayRecovery::PermissionPending { .. } => Some(SessionRecoveryView::Permission),
+                ReplayRecovery::ToolOutcomeUncertain { .. } => {
+                    Some(SessionRecoveryView::VerifyTool)
+                }
+                ReplayRecovery::AbortedToolBatch { .. } => Some(SessionRecoveryView::ReviewBatch),
+                _ => Some(SessionRecoveryView::Resume),
+            };
+            let last_plan_sequence = stored.events.iter().rev().find_map(|event| {
+                matches!(event.kind, AgentEventKind::PlanProposed { .. }).then_some(event.sequence)
+            });
+            let can_build = last_plan_sequence.is_some_and(|sequence| {
+                recovery.is_none()
+                    && !stored.events.iter().any(|event| {
+                        event.sequence > sequence
+                            && matches!(
+                                event.kind,
+                                AgentEventKind::TurnAdmitted {
+                                    mode: TurnMode::Build,
+                                    ..
+                                }
+                                    | AgentEventKind::TurnAdmittedWithImages {
+                                        mode: TurnMode::Build,
+                                        ..
+                                    }
+                            )
+                    })
+            });
+            let plan = replay.latest_plan.map(|snapshot| SessionPlanView {
+                snapshot,
+                can_build,
+            });
+            (recovery, plan)
+        }
+        Err(error) => (
+            Some(SessionRecoveryView::InvalidJournal(
+                error.chars().take(160).collect(),
+            )),
+            None,
+        ),
+    }
+}
+
 impl AgentsWindow {
     fn draft_key(&self) -> (String, Option<String>) {
         (
@@ -759,8 +1688,69 @@ impl AgentsWindow {
         )
     }
 
+    fn set_composer_goal(&mut self, objective: Option<String>) {
+        if self.view.running || self.view.background_run_selected {
+            self.view.status = "Espera a que termine la tarea para cambiar la meta".to_owned();
+            return;
+        }
+        let objective = objective.map(|value| value.trim().to_owned());
+        if objective
+            .as_ref()
+            .is_some_and(|value| value.len() > MAX_COMPOSER_GOAL_BYTES)
+        {
+            self.view.status = format!("La meta no puede superar {MAX_COMPOSER_GOAL_BYTES} bytes");
+            return;
+        }
+        let objective = objective.filter(|value| !value.is_empty());
+        let key = self.draft_key();
+        let mut goals = self.composer_goals.clone();
+        if let Some(value) = &objective {
+            goals.insert(key, value.clone());
+        } else {
+            goals.remove(&key);
+        }
+        if let Err(error) = save_composer_goals(&self.data_root, &goals) {
+            self.view.status = error;
+            return;
+        }
+        self.composer_goals = goals;
+        self.view.composer_goal = objective.clone();
+        self.view.composer_goal_draft = objective.unwrap_or_default();
+        self.view.composer_goal_editor_open = false;
+        self.view.composer_add_menu_open = false;
+        self.tree
+            .set_input_value("composer_goal_draft", self.view.composer_goal_draft.clone());
+        self.view.status = if self.view.composer_goal.is_some() {
+            "Meta guardada para esta tarea".to_owned()
+        } else {
+            "Meta eliminada de esta tarea".to_owned()
+        };
+    }
+
+    fn transfer_draft_goal_to_session(
+        &mut self,
+        from: &(String, Option<String>),
+        session_id: &str,
+    ) -> Result<(), String> {
+        let Some(objective) = self.composer_goals.get(from).cloned() else {
+            return Ok(());
+        };
+        let mut goals = self.composer_goals.clone();
+        goals.remove(from);
+        goals.insert((from.0.clone(), Some(session_id.to_owned())), objective);
+        save_composer_goals(&self.data_root, &goals)?;
+        self.composer_goals = goals;
+        Ok(())
+    }
+
     fn save_draft(&mut self) {
         let key = self.draft_key();
+        let attachments_changed = self
+            .attachment_drafts
+            .get(&key)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            != self.view.composer_attachments.as_slice();
         if self.view.composer_attachments.is_empty() {
             self.attachment_drafts.remove(&key);
         } else {
@@ -769,7 +1759,7 @@ impl AgentsWindow {
         }
         let changed =
             self.drafts.get(&key).map(String::as_str).unwrap_or("") != self.view.prompt.as_str();
-        if !changed && self.draft_dirty_at.is_none() {
+        if !changed && !attachments_changed && self.draft_dirty_at.is_none() {
             return;
         }
         if self.view.prompt.is_empty() {
@@ -779,12 +1769,29 @@ impl AgentsWindow {
         }
         self.draft_dirty_at = None;
         if let Some(store) = &self.store {
-            match store.save_draft(
+            let result = store.save_draft(
                 Path::new(&self.view.workspace),
                 self.view.selected_session.as_deref(),
                 &self.view.prompt,
-            ) {
-                Ok(()) => self.draft_error = None,
+            );
+            match result {
+                Ok(()) => {
+                    self.draft_error = self
+                        .view
+                        .selected_session
+                        .as_deref()
+                        .map(|session_id| {
+                            sync_native_steer_draft(
+                                &self.data_root,
+                                Path::new(&self.view.workspace),
+                                session_id,
+                                &self.view.prompt,
+                                &self.view.composer_attachments,
+                            )
+                        })
+                        .transpose()
+                        .err();
+                }
                 Err(error) => self.draft_error = Some(error.to_string()),
             }
         }
@@ -792,17 +1799,18 @@ impl AgentsWindow {
 
     fn restore_draft(&mut self) {
         let key = self.draft_key();
-        self.view.composer_attachments = self
-            .attachment_drafts
-            .get(&key)
-            .cloned()
-            .unwrap_or_default();
+        self.view.composer_goal = self.composer_goals.get(&key).cloned();
+        self.view.composer_goal_draft = self.view.composer_goal.clone().unwrap_or_default();
+        self.view.composer_goal_editor_open = false;
+        self.tree
+            .set_input_value("composer_goal_draft", self.view.composer_goal_draft.clone());
+        self.view.composer_attachments = self.attachment_drafts.get(&key).cloned().unwrap_or_default();
         let prompt = if let Some(prompt) = self.drafts.get(&key) {
             prompt.clone()
         } else if let Some(store) = &self.store {
             match store.load_draft(Path::new(&key.0), key.1.as_deref()) {
                 Ok(Some(prompt)) => {
-                    self.drafts.insert(key, prompt.clone());
+                    self.drafts.insert(key.clone(), prompt.clone());
                     self.draft_error = None;
                     prompt
                 }
@@ -815,6 +1823,43 @@ impl AgentsWindow {
         } else {
             String::new()
         };
+        let mut prompt = prompt;
+        if let Some(session_id) = key.1.as_deref() {
+            match load_native_steer_draft(&self.data_root, session_id) {
+                Ok(Some(state)) if state.workspace == key.0 => {
+                    if state.retry.as_ref().is_some_and(|retry| retry.acknowledged) {
+                        let old_draft = state.prompt == prompt;
+                        let cleanup = if old_draft {
+                            match &self.store {
+                                Some(store) => store
+                                    .clear_draft(Path::new(&key.0), Some(session_id))
+                                    .map(|_| ())
+                                    .map_err(|error| error.to_string()),
+                                None => Err("El historial no está disponible".to_owned()),
+                            }
+                        } else {
+                            Ok(())
+                        };
+                        self.draft_error = cleanup
+                            .and_then(|_| remove_native_steer_draft(&self.data_root, session_id))
+                            .err();
+                        if old_draft {
+                            self.drafts.remove(&key);
+                            self.attachment_drafts.remove(&key);
+                            self.view.composer_attachments.clear();
+                            prompt.clear();
+                        }
+                    } else if state.prompt == prompt && self.view.composer_attachments.is_empty() {
+                        self.view.composer_attachments = state.attachments.into_iter().map(Into::into).collect();
+                        if !self.view.composer_attachments.is_empty() {
+                            self.attachment_drafts.insert(key.clone(), self.view.composer_attachments.clone());
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => self.draft_error = Some(error),
+            }
+        }
         self.view.prompt = prompt.clone();
         self.tree.set_input_value("prompt", prompt);
         self.draft_dirty_at = None;
@@ -833,7 +1878,14 @@ impl AgentsWindow {
         self.attachment_drafts.remove(key);
         if let Some(store) = &self.store {
             match store.clear_draft(Path::new(&key.0), key.1.as_deref()) {
-                Ok(_) => self.draft_error = None,
+                Ok(_) => {
+                    self.draft_error = key
+                        .1
+                        .as_deref()
+                        .map(|session_id| remove_native_steer_draft(&self.data_root, session_id))
+                        .transpose()
+                        .err();
+                }
                 Err(error) => self.draft_error = Some(error.to_string()),
             }
         }
@@ -869,11 +1921,15 @@ impl AgentsWindow {
                 } else {
                     PermissionChoice::Deny
                 };
-                if self
+                let active_run_resolved = self
                     .active_run
                     .as_ref()
-                    .is_some_and(|run| run.resolve_permission(request_id, choice))
-                {
+                    .is_some_and(|run| run.resolve_permission(request_id, choice));
+                let active_resume_resolved = self
+                    .active_resume
+                    .as_ref()
+                    .is_some_and(|resume| resume.resolve_permission(request_id, choice));
+                if active_run_resolved || active_resume_resolved {
                     self.view
                         .pending_permissions
                         .retain(|permission| permission.request_id != request_id);
@@ -890,6 +1946,9 @@ impl AgentsWindow {
                 if let Some(run) = &self.active_run {
                     run.resolve_permission(request_id, PermissionChoice::Deny);
                 }
+                if let Some(resume) = &self.active_resume {
+                    resume.resolve_permission(request_id, PermissionChoice::Deny);
+                }
                 self.view
                     .pending_permissions
                     .retain(|permission| permission.request_id != request_id);
@@ -900,11 +1959,185 @@ impl AgentsWindow {
                 if let Some(run) = &self.active_run {
                     run.resolve_permission(request_id, PermissionChoice::Deny);
                 }
+                if let Some(resume) = &self.active_resume {
+                    resume.resolve_permission(request_id, PermissionChoice::Deny);
+                }
                 self.view
                     .pending_permissions
                     .retain(|permission| permission.request_id != request_id);
                 self.view.status = "El historial no está disponible".to_owned();
             }
+        }
+    }
+
+    fn answer_permission_for_session(&mut self, request_id: &str) {
+        if !self
+            .view
+            .pending_permissions
+            .iter()
+            .any(|permission| permission.request_id == request_id)
+        {
+            self.view.status = "La solicitud de permiso ya no está activa".to_owned();
+            return;
+        }
+        if self.store.is_none() || self.view.selected_session.is_none() {
+            self.view.status = "El historial no está disponible para guardar el permiso".to_owned();
+            return;
+        }
+        let choice = PermissionChoice::AllowSession;
+        let resolved = self
+            .active_run
+            .as_ref()
+            .is_some_and(|run| run.resolve_permission(request_id, choice))
+            || self
+                .active_resume
+                .as_ref()
+                .is_some_and(|resume| resume.resolve_permission(request_id, choice));
+        if resolved {
+            self.view
+                .pending_permissions
+                .retain(|permission| permission.request_id != request_id);
+            self.view.status =
+                "El permiso para esta sesión se guardará antes de ejecutar".to_owned();
+        } else {
+            self.view.status = "La solicitud de permiso ya no está activa".to_owned();
+        }
+    }
+
+    fn answer_subagent_permission(
+        &mut self,
+        child_id: &str,
+        request_id: &str,
+        choice: PermissionChoice,
+    ) {
+        if self
+            .pending_child_recovery_permission
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.child_session_id == child_id && pending.request_id == request_id
+            })
+        {
+            let Some(active) = self.active_child_recovery.as_ref() else {
+                self.view.status = "La recuperación del subagente ya no está activa".to_owned();
+                return;
+            };
+            if active.child_id != child_id {
+                self.view.status =
+                    "El permiso no pertenece al subagente en recuperación".to_owned();
+                return;
+            }
+            if choice != PermissionChoice::AllowSession {
+                let Some(store) = self.store.as_ref() else {
+                    self.view.status = "El historial no está disponible".to_owned();
+                    return;
+                };
+                let decision = if choice == PermissionChoice::Allow {
+                    PermissionDecision::Allow
+                } else {
+                    PermissionDecision::Deny
+                };
+                if let Err(error) = store.record_permission_decision(child_id, request_id, decision) {
+                    self.persistence_error = Some(error.to_string());
+                    self.show_persistence_error();
+                    return;
+                }
+            }
+            let queued = active.resolve_permission(request_id, choice);
+            self.pending_child_recovery_permission = None;
+            self.rebuild_live_subagent_views();
+            self.view.status = if queued {
+                if choice == PermissionChoice::AllowSession {
+                    "Guardando permiso para esta sesión; reanudando subagente".to_owned()
+                } else {
+                    "Decisión guardada; reanudando subagente".to_owned()
+                }
+            } else {
+                "La recuperación del subagente ya no acepta esta decisión".to_owned()
+            };
+            return;
+        }
+        if !self
+            .view
+            .pending_subagent_permissions
+            .iter()
+            .any(|permission| {
+                permission.child_session_id == child_id && permission.request_id == request_id
+            })
+        {
+            self.view.status = "La solicitud del subagente ya no está activa".to_owned();
+            return;
+        }
+        if choice == PermissionChoice::AllowSession {
+            if self
+                .subagent_bridge
+                .resolve_permission(child_id, request_id, choice)
+            {
+                self.view.status =
+                    "Guardando permiso del subagente para esta sesión".to_owned();
+                self.view.pending_subagent_permissions.retain(|permission| {
+                    permission.child_session_id != child_id || permission.request_id != request_id
+                });
+            } else {
+                self.view.status = "La solicitud del subagente ya no está activa".to_owned();
+            }
+            return;
+        }
+        let allow = choice == PermissionChoice::Allow;
+        let decision = if allow {
+            PermissionDecision::Allow
+        } else {
+            PermissionDecision::Deny
+        };
+        let recorded = self
+            .store
+            .as_ref()
+            .map(|store| store.record_permission_decision(child_id, request_id, decision));
+        match recorded {
+            Some(Ok(_)) => {
+                if self
+                    .subagent_bridge
+                    .resolve_permission(child_id, request_id, choice)
+                {
+                    self.view.status = if allow {
+                        "Permiso concedido al subagente para esta llamada".to_owned()
+                    } else {
+                        "Permiso denegado al subagente para esta llamada".to_owned()
+                    };
+                } else {
+                    self.view.status = "La solicitud del subagente ya no está activa".to_owned();
+                }
+            }
+            Some(Err(error)) => {
+                self.subagent_bridge.resolve_permission(
+                    child_id,
+                    request_id,
+                    PermissionChoice::Deny,
+                );
+                self.persistence_error = Some(error.to_string());
+                self.show_persistence_error();
+            }
+            None => {
+                self.subagent_bridge.resolve_permission(
+                    child_id,
+                    request_id,
+                    PermissionChoice::Deny,
+                );
+                self.view.status = "El historial no está disponible".to_owned();
+            }
+        }
+        self.view.pending_subagent_permissions.retain(|permission| {
+            permission.child_session_id != child_id || permission.request_id != request_id
+        });
+    }
+
+    fn cancel_subagent(&mut self, child_id: &str) {
+        if self.subagent_bridge.cancel_child(child_id) {
+            self.view
+                .pending_subagent_permissions
+                .retain(|permission| permission.child_session_id != child_id);
+            self.view.status = "Cancelando subagente...".to_owned();
+        } else {
+            self.view.status = "El subagente ya no está en ejecución".to_owned();
         }
     }
 
@@ -1145,6 +2378,24 @@ impl AgentsWindow {
                     tab.kind,
                     DockTabKind::FilePreview { .. } | DockTabKind::Terminal
                 ),
+            })
+            .collect();
+        self.view.dock_recently_closed = self
+            .dock
+            .recently_closed(&scope)
+            .into_iter()
+            .map(|entry| DockRecentlyClosedView {
+                id: entry.tab.id.get(),
+                title: entry.tab.title(),
+                kind: match entry.tab.kind {
+                    DockTabKind::Context => SideTab::Context,
+                    DockTabKind::Files => SideTab::Files,
+                    DockTabKind::Activity => SideTab::Activity,
+                    DockTabKind::CodeReview => SideTab::CodeReview,
+                    DockTabKind::Terminal => SideTab::Terminal,
+                    DockTabKind::FilePreview { .. } => SideTab::FilePreview,
+                },
+                restorable: entry.restorable,
             })
             .collect();
         self.view.show_side_pane = !self.dock.is_collapsed(&scope);
@@ -1495,6 +2746,10 @@ impl AgentsWindow {
             Ok(settings) => (settings, None),
             Err(error) => (AgentToolSettings::default(), Some(error)),
         };
+        let (exec_policy_settings, exec_policy_load_error) = match ExecPolicySettings::load(&root) {
+            Ok(settings) => (settings, None),
+            Err(error) => (ExecPolicySettings::default(), Some(error)),
+        };
         let sidebar_preferences = SidebarPreferences::load(&root);
         let mut composer_preferences = ComposerPreferences::load(&root);
         let native_settings = NativeProviderSettings::load(&root);
@@ -1508,7 +2763,7 @@ impl AgentsWindow {
             .as_ref()
             .is_none_or(|snapshot| snapshot.is_stale(Duration::from_secs(3_600)));
         let catalog_status = catalog.as_ref().map_or_else(
-            || "Sin copia local; buscando el catálogo de models.dev".to_owned(),
+            || "Sin copia local; buscando el catálogo de proveedores".to_owned(),
             catalog_status,
         );
         let workspace = settings_preferences
@@ -1518,12 +2773,42 @@ impl AgentsWindow {
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+        let (native_skills, native_skills_load_error) =
+            match NativeSkillsSettings::load(&root, Path::new(&workspace)) {
+                Ok(settings) => (NativeSkillsUiState::from_settings(&settings, &root), None),
+                Err(error) => (
+                    NativeSkillsUiState::with_load_error(
+                        Path::new(&workspace),
+                        &root,
+                        error.clone(),
+                    ),
+                    Some(error),
+                ),
+            };
+        let (mcp_settings, mcp_load_error) = match McpSettings::load(&root, Path::new(&workspace)) {
+            Ok(settings) => (settings, None),
+            Err(error) => (McpSettings::default(), Some(error)),
+        };
         let (store, status) = match SessionStore::open(root.join("sessions")) {
-            Ok(store) => (Some(store), "Listo".to_owned()),
+            Ok(store) => match store.recover_pending_native_deletions() {
+                Ok(0) => (Some(Arc::new(store)), "Listo".to_owned()),
+                Ok(count) => (
+                    Some(Arc::new(store)),
+                    format!("Se completaron {count} borrados nativos interrumpidos"),
+                ),
+                Err(error) => (
+                    None,
+                    format!("No se pudo recuperar un borrado nativo pendiente: {error}"),
+                ),
+            },
             Err(error) => (None, format!("No se pudo abrir el historial: {error}")),
         };
+        let (composer_goals, composer_goals_error) = match load_composer_goals(&root) {
+            Ok(goals) => (goals, None),
+            Err(error) => (HashMap::new(), Some(error)),
+        };
         let profiles = load_profiles(&root);
-        let selected_backend = profiles
+        let cli_fallback = profiles
             .iter()
             .find(|profile| profile.id == "codex" && profile.detect_executable().is_some())
             .map(|profile| profile.id.clone())
@@ -1540,6 +2825,24 @@ impl AgentsWindow {
             };
             Some((profile.id.clone(), short.to_owned()))
         }));
+        let native_configured = native_settings.key_available()
+            || (native_settings.provider_id == "custom"
+                && root.join("native-provider.json").is_file());
+        let selected_backend = composer_preferences
+            .selected_backend()
+            .filter(|preferred| {
+                backend_options
+                    .iter()
+                    .any(|(available, _)| available == preferred)
+            })
+            .map(str::to_owned)
+            .unwrap_or_else(|| {
+                if native_configured {
+                    "native".to_owned()
+                } else {
+                    cli_fallback
+                }
+            });
         let native_model = if root.join("native-provider.json").exists() {
             native_settings.model_id.clone()
         } else {
@@ -1551,8 +2854,19 @@ impl AgentsWindow {
         let selected_choice = composer_preferences.choice(&selected_backend, &native_choice.model);
         let selected_model_options =
             composer_selection::model_options(&selected_backend, &selected_choice.model);
-        let selected_effort_options =
-            composer_selection::effort_options(&selected_backend, &selected_choice.model);
+        let mut selected_routes =
+            composer_selection::model_route_options(catalog.as_ref(), &native_settings);
+        selected_routes.retain(|route| {
+            route.backend == "native"
+                || backend_options
+                    .iter()
+                    .any(|(backend, _)| backend == &route.backend)
+        });
+        let selected_effort_options = composer_selection::effort_options_for_provider(
+            &selected_backend,
+            &selected_choice.model,
+            &native_settings.provider_id,
+        );
         let selected_effort = if selected_effort_options
             .iter()
             .any(|(effort, _)| effort == &selected_choice.effort)
@@ -1571,11 +2885,16 @@ impl AgentsWindow {
             prompt: String::new(),
             composer_attachments: Vec::new(),
             composer_add_menu_open: false,
+            composer_listening: false,
+            composer_goal: None,
+            composer_goal_editor_open: false,
+            composer_goal_draft: String::new(),
             composer_project_menu_open: false,
             composer_project_options: composer_project_options(&workspace, &[]),
             endpoint: native_settings.custom_endpoint.clone(),
             model: native_choice.model,
             native_provider_id: native_settings.provider_id.clone(),
+            hosted_web_search_mode: settings_preferences.hosted_web_search_mode,
             catalog: catalog.map(Arc::new),
             catalog_status,
             catalog_refreshing: false,
@@ -1591,11 +2910,23 @@ impl AgentsWindow {
             backend_menu_open: false,
             composer_model: selected_choice.model,
             composer_model_options: selected_model_options,
+            composer_routes: selected_routes,
+            composer_provider_status: Default::default(),
             composer_model_menu_open: false,
+            composer_model_list_open: false,
+            composer_model_query: String::new(),
+            composer_advanced_open: false,
             composer_effort: selected_effort,
             composer_effort_options: selected_effort_options,
             composer_effort_menu_open: false,
+            composer_effort_preview: None,
+            composer_effort_hovered: false,
+            composer_context_percent: None,
+            turn_mode: TurnMode::Build,
             sessions: Vec::new(),
+            session_plans: Default::default(),
+            session_recovery: Default::default(),
+            session_approval_grants: Vec::new(),
             sessions_status: None,
             selected_session: None,
             selected_session_title: None,
@@ -1606,12 +2937,47 @@ impl AgentsWindow {
             running: false,
             background_run_selected: false,
             status,
-            settings_notice: agent_tool_settings_error.clone(),
-            settings_notice_error: agent_tool_settings_error.is_some(),
+            settings_notice: agent_tool_settings_error
+                .clone()
+                .or_else(|| exec_policy_load_error.clone())
+                .or_else(|| native_skills_load_error.clone()),
+            settings_notice_error: agent_tool_settings_error.is_some()
+                || exec_policy_load_error.is_some()
+                || native_skills_load_error.is_some(),
             native_key_available: native_settings.key_available(),
             workspace_writes_enabled: agent_tool_settings.permissions().write_file
                 && agent_tool_settings.permissions().run_command,
             native_tool_permissions: agent_tool_settings.permissions(),
+            native_command_isolation: agent_tool_settings.command_isolation(),
+            native_commands: Vec::new(),
+            native_commands_error: None,
+            pending_native_command_termination: None,
+            native_command_terminating: None,
+            native_exec_rules: {
+                let mut state = ExecPolicyUiState::from_settings(&exec_policy_settings);
+                state.load_error = exec_policy_load_error.clone();
+                state
+            },
+            native_skills,
+            native_hooks: HookUiState::from_load(NativeHookSettings::load(&root)),
+            mcp_servers: mcp_settings.servers,
+            mcp_selected_id: None,
+            mcp_editor_open: false,
+            pending_mcp_delete_id: None,
+            mcp_draft_http: false,
+            mcp_draft_id: String::new(),
+            mcp_draft_url: String::new(),
+            mcp_draft_http_bearer_token_env_name: String::new(),
+            mcp_draft_oauth_enabled: false,
+            mcp_draft_oauth_client_id: String::new(),
+            mcp_draft_oauth_issuer: String::new(),
+            mcp_draft_oauth_scopes: String::new(),
+            mcp_oauth_status: None,
+            mcp_draft_program: String::new(),
+            mcp_draft_args: "[]".to_owned(),
+            mcp_draft_cwd: String::new(),
+            mcp_draft_env_names: String::new(),
+            mcp_load_error,
             settings_reduced_motion: settings_preferences.reduced_motion,
             settings_reopen_last_workspace: settings_preferences.reopen_last_workspace,
             settings_terminal_shell: settings_preferences.terminal_shell.clone(),
@@ -1637,6 +3003,9 @@ impl AgentsWindow {
             command_scope: Scope::All,
             command_results: Vec::new(),
             command_selected_index: 0,
+            command_search_loading: false,
+            command_search_errors: Vec::new(),
+            command_search_truncated: false,
             show_side_pane: false,
             sidebar_collapsed: sidebar_preferences.sidebar_collapsed,
             left_dock_width: None,
@@ -1647,6 +3016,8 @@ impl AgentsWindow {
             activity_page: 0,
             review_page: 0,
             dock_tabs: Vec::new(),
+            dock_recently_closed: Vec::new(),
+            dock_overview_query: String::new(),
             show_dock_overview: false,
             show_dock_add_menu: false,
             file_preview: None,
@@ -1656,6 +3027,13 @@ impl AgentsWindow {
             terminal_input: String::new(),
             terminal_error: None,
             pending_permissions: Vec::new(),
+            pending_subagent_permissions: Vec::new(),
+            active_subagents: Vec::new(),
+            recoverable_subagent: None,
+            pending_tool_verification: None,
+            pending_batch_discard: None,
+            tool_verification_output: String::new(),
+            tool_verification_is_error: false,
             selected_tool_id: None,
             show_jump_to_bottom: false,
             show_archived: false,
@@ -1698,26 +3076,51 @@ impl AgentsWindow {
         let mut command_tree = UiTree::new(Element::spacer());
         command_tree.set_reduced_motion(reduced_motion);
         let seeded_workspace = view.workspace.clone();
+        let subagent_bridge = Arc::new(SubagentEventBridge::new());
+        let subagent_events = subagent_bridge.subscribe();
         let mut app = Self {
             data_root: root.clone(),
             view,
             composer_preferences,
             settings_preferences,
             agent_tool_settings,
+            exec_policy_settings,
+            exec_policy_load_error,
+            native_command_sessions: NativeCommandSessions::default(),
+            native_command_snapshot_response: None,
+            native_command_termination_response: None,
+            last_native_command_snapshot: None,
             tree,
             projection: TranscriptProjection::new(),
             profiles,
             store,
             known_project_paths: Vec::new(),
             active_run: None,
+            dictation: None,
+            dictation_key: None,
+            active_compact: None,
+            active_resume: None,
+            active_child_recovery: None,
+            pending_child_recovery_permission: None,
+            active_mcp_oauth: None,
+            subagent_bridge,
+            subagent_events,
+            last_subagent_poll: Instant::now(),
+            subagent_poll_needed: false,
             automation_stores: Vec::new(),
             automation_last_poll: Instant::now() - Duration::from_secs(31),
             background_automation_runs: Vec::new(),
             automation_queue: VecDeque::new(),
             marketplace_response: None,
             workspace_folder_response: None,
+            composer_folder_response: None,
             catalog_response: None,
             catalog_last_refresh: Instant::now(),
+            model_discovery_response: None,
+            model_discovery_pending: 0,
+            model_discoveries: Vec::new(),
+            codex_model_response: None,
+            codex_models: Vec::new(),
             history: Vec::new(),
             last_sequence: 0,
             dock_drag: None,
@@ -1734,6 +3137,7 @@ impl AgentsWindow {
             file_explorer: None,
             drafts: HashMap::new(),
             attachment_drafts: HashMap::new(),
+            composer_goals,
             draft_dirty_at: None,
             draft_error: None,
             persistence_error: None,
@@ -1742,6 +3146,8 @@ impl AgentsWindow {
             command_center_attaches_file: false,
             command_focus_pending: false,
             prompt_focus_pending: false,
+            composer_model_search_focus_pending: false,
+            rename_focus_pending: false,
             group_focus_pending: false,
             search_worker: SearchWorker::spawn(root.join("sessions")).ok(),
             search_generation: 0,
@@ -1769,9 +3175,17 @@ impl AgentsWindow {
         app.load_automation_stores();
         app.refresh_automation_view();
         app.restore_draft();
+        if let Some(error) = composer_goals_error {
+            app.view.status = error;
+        }
         app.refresh_sessions();
         if catalog_should_refresh {
             app.begin_catalog_refresh();
+        }
+        #[cfg(not(test))]
+        {
+            app.begin_model_discovery();
+            app.begin_codex_model_discovery();
         }
         app
     }
@@ -1966,7 +3380,7 @@ impl AgentsWindow {
                 .as_ref()
                 .map(|settings| settings.provider_id.as_str())
                 .unwrap_or("");
-            let skills = if dispatch.backend == "native" {
+            let instructions = if dispatch.backend == "native" {
                 if native_connection
                     .as_ref()
                     .is_some_and(|connection| connection.api_key.is_none())
@@ -1977,11 +3391,7 @@ impl AgentsWindow {
                         .unwrap_or("API_KEY");
                     return Err(format!("Define {key_env} para ejecutar el agente nativo"));
                 }
-                crate::marketplace::active_skill_instructions(
-                    &self.data_root,
-                    &dispatch.workspace_path,
-                )
-                .map_err(|error| format!("No se pudieron leer las skills: {error}"))?
+                native_workspace_instructions(&self.data_root, &dispatch.workspace_path)?
             } else {
                 let profile = self
                     .profiles
@@ -2000,31 +3410,60 @@ impl AgentsWindow {
             let session = store
                 .create(&dispatch.workspace_path, &dispatch.backend)
                 .map_err(|error| error.to_string())?;
-            let request = AgentRunRequest {
+            let mut request = AgentRunRequest {
                 session_id: Some(session.id.clone()),
                 sequence_start: 0,
                 workspace: dispatch.workspace_path.clone(),
                 history: Vec::new(),
                 prompt: dispatch.prompt,
+                mode: TurnMode::Build,
             };
             let run = if dispatch.backend == "native" {
                 let connection = native_connection.expect("validated native connection");
-                let mut model = OpenAiCompatibleBackend::new(
-                    connection.endpoint,
-                    connection.api_key,
-                    connection.model_id,
-                );
-                if native_provider_id == "deepseek" {
-                    model = model.with_deepseek_non_thinking();
-                }
-                let model = Arc::new(model);
+                let model_id = connection.model_id.clone();
+                let endpoint = connection.endpoint.clone();
+                let model = native_model_backend(
+                    connection,
+                    native_provider_id,
+                    None,
+                    self.view.hosted_web_search_mode,
+                )?;
+                let token_budget =
+                    native_provider::verified_token_budget(native_provider_id, &model_id);
+                let auto_checkpoints = token_budget
+                    .map(|_| CheckpointFileStore::new(self.data_root.join("sessions")))
+                    .transpose()
+                    .map_err(|error| format!("No se pudo abrir checkpoints: {error}"))?
+                    .map(Arc::new);
+                let lease = store
+                    .try_acquire_native_lease(&session.id)
+                    .map_err(|error| format!("La sesión nativa ya está en uso: {error}"))?;
+                let admission = store
+                    .admit_native_turn(
+                        &session.id,
+                        &Uuid::new_v4().to_string(),
+                        &request.prompt,
+                        &model_id,
+                        request.mode,
+                    )
+                    .map_err(|error| format!("No se pudo admitir el turno: {error}"))?;
+                request.sequence_start = admission.sequence;
                 let tools = Arc::new(LocalTools::new().with_write_access(false));
-                ActiveRun::Native(
-                    AgentRunner::new(model, tools)
-                        .with_permission_policy(PermissionPolicy::new())
-                        .with_system_instructions(skills)
-                        .start(request),
-                )
+                let mut runner = AgentRunner::new(model, tools)
+                    .with_permission_policy(PermissionPolicy::new())
+                    .with_system_instructions(instructions)
+                    .with_native_runtime_identity(native_provider_id, endpoint)
+                    .with_event_journal(store.clone());
+                if let (Some(budget), Some(checkpoints)) = (token_budget, auto_checkpoints) {
+                    runner = runner
+                        .with_token_budget_policy(budget)
+                        .with_auto_compaction(
+                            store.clone(),
+                            checkpoints,
+                            native_checkpoint_compatibility(native_provider_id, &model_id),
+                        );
+                }
+                ActiveRun::Native(runner.start_with_lease(request, lease))
             } else {
                 let profile = self
                     .profiles
@@ -2076,6 +3515,10 @@ impl AgentsWindow {
         }
         let mut index = 0;
         while index < self.background_automation_runs.len() {
+            let native_run = matches!(
+                &self.background_automation_runs[index].run,
+                ActiveRun::Native(_)
+            );
             let (events, disconnected) = self.background_automation_runs[index].run.drain();
             if !events.is_empty() {
                 changed = true;
@@ -2086,10 +3529,12 @@ impl AgentsWindow {
                         .run
                         .resolve_permission(request_id, PermissionChoice::Deny);
                 }
-                if let Some(store) = &self.store {
-                    if let Err(error) = store.append_event(&event.session_id, &event) {
-                        self.view.automations.error = Some(error.to_string());
-                        self.background_automation_runs[index].run.cancel();
+                if !native_run {
+                    if let Some(store) = &self.store {
+                        if let Err(error) = store.append_event(&event.session_id, &event) {
+                            self.view.automations.error = Some(error.to_string());
+                            self.background_automation_runs[index].run.cancel();
+                        }
                     }
                 }
                 if self.view.selected_session.as_deref() == Some(event.session_id.as_str()) {
@@ -2097,9 +3542,34 @@ impl AgentsWindow {
                     if self.projection.apply_event(&event) {
                         self.view.transcript = self.projection.items().to_vec();
                     }
+                    if native_run
+                        && matches!(
+                            &event.kind,
+                            AgentEventKind::ModelResponseCommitted { .. }
+                                | AgentEventKind::CheckpointCommitted { .. }
+                        )
+                    {
+                        self.refresh_composer_context_percent();
+                    }
                 }
             }
             if disconnected {
+                if let Some(error) = self.background_automation_runs[index].run.journal_error() {
+                    self.view.automations.error = Some(error);
+                }
+                if native_run
+                    && self.view.selected_session.as_deref()
+                        == Some(self.background_automation_runs[index].session_id.as_str())
+                {
+                    if let Some(store) = &self.store {
+                        if let Ok(Some(stored)) =
+                            store.load(&self.background_automation_runs[index].session_id)
+                        {
+                            self.projection = TranscriptProjection::from_events(&stored.events);
+                            self.view.transcript = self.projection.items().to_vec();
+                        }
+                    }
+                }
                 self.background_automation_runs.remove(index);
                 self.rebuild_history();
                 self.refresh_sessions();
@@ -2139,16 +3609,67 @@ impl AgentsWindow {
         changed
     }
 
+    fn sync_automation_form_inputs(&mut self) {
+        let form = &self.view.automations.form;
+        let (once_date, once_time) = form.once_parts();
+        for (id, value) in [
+            ("automation_title", form.title.as_str()),
+            ("automation_prompt", form.prompt.as_str()),
+            ("automation_once_date", once_date),
+            ("automation_once_time", once_time),
+            ("automation_interval", form.interval_minutes.as_str()),
+            ("automation_time", form.time.as_str()),
+        ] {
+            self.tree.set_input_value(id, value);
+        }
+    }
+
     fn handle_automation_action(&mut self, id: &str) {
         let now_ms = chrono::Utc::now().timestamp_millis();
         let current_native = self.native_settings();
         let state = &mut self.view.automations;
+        if let Some(date) = DatePicker::selected_date(id, "automation_once_date") {
+            state.form.set_once_date(date);
+            self.tree.set_input_value("automation_once_date", date);
+            state.calendar_year = date[..4].parse().unwrap_or(state.calendar_year);
+            state.calendar_month = date[5..7].parse().unwrap_or(state.calendar_month);
+            state.error = None;
+            return;
+        }
+        if id == "automation_once_date:month_prev" || id == "automation_once_date:month_next" {
+            let delta = if id.ends_with("month_prev") { -1 } else { 1 };
+            (state.calendar_year, state.calendar_month) =
+                DatePicker::shift_month(state.calendar_year, state.calendar_month, delta);
+            return;
+        }
+        if let Some(time) =
+            TimePicker::adjusted_value(id, "automation_once_time", state.form.once_parts().1)
+        {
+            state.form.set_once_time(&time);
+            self.tree.set_input_value("automation_once_time", time);
+            state.error = None;
+            return;
+        }
+        if let Some(time) = TimePicker::adjusted_value(id, "automation_time", &state.form.time) {
+            state.form.time.clone_from(&time);
+            self.tree.set_input_value("automation_time", time);
+            state.error = None;
+            return;
+        }
         if let Some(filter) = AutomationFilter::from_action_id(id) {
             state.filter = filter;
             return;
         }
         if let Some(frequency) = AutomationFrequency::from_action_id(id) {
             state.form.frequency = frequency;
+            state.error = None;
+            return;
+        }
+        if let Some(step) = crate::automation_view::AutomationEditorStep::from_action_id(id) {
+            if state.screen == AutomationScreen::Edit && step.index() <= state.editor_step.index() {
+                state.editor_step = step;
+                state.error = None;
+            }
             return;
         }
         if let Some(day) = id
@@ -2175,14 +3696,13 @@ impl AgentsWindow {
         }
         match id {
             "automation_new" => {
-                state.form =
+                let mut form =
                     crate::automation_view::AutomationForm::new(&self.view.selected_backend);
-                if state.form.backend == "native" {
-                    state.form.native_provider = Some(current_native);
+                if form.backend == "native" {
+                    form.native_provider = Some(current_native);
                 }
-                state.selected_id = None;
-                state.screen = AutomationScreen::Edit;
-                state.error = None;
+                state.open_editor(form, None);
+                self.sync_automation_form_inputs();
                 return;
             }
             "automation_back" | "automation_cancel" => {
@@ -2196,7 +3716,43 @@ impl AgentsWindow {
                 state.pending_delete_id = None;
                 return;
             }
+            "automation_previous" => {
+                if state.screen == AutomationScreen::Edit {
+                    state.editor_step = state.editor_step.previous();
+                    state.error = None;
+                }
+                return;
+            }
+            "automation_next" => {
+                if state.screen == AutomationScreen::Edit {
+                    match state.form.validate_step(state.editor_step, now_ms) {
+                        Ok(()) => {
+                            state.editor_step = state.editor_step.next();
+                            state.error = None;
+                        }
+                        Err(error) => state.error = Some(error.to_string()),
+                    }
+                }
+                return;
+            }
             "automation_save" => {
+                if state.screen != AutomationScreen::Edit {
+                    return;
+                }
+                for step in [
+                    crate::automation_view::AutomationEditorStep::Content,
+                    crate::automation_view::AutomationEditorStep::Schedule,
+                ] {
+                    if let Err(error) = state.form.validate_step(step, now_ms) {
+                        state.editor_step = step;
+                        state.error = Some(error.to_string());
+                        return;
+                    }
+                }
+                if state.editor_step != crate::automation_view::AutomationEditorStep::Agent {
+                    state.editor_step = crate::automation_view::AutomationEditorStep::Agent;
+                    return;
+                }
                 if state.form.backend == "native" {
                     state.form.native_provider.get_or_insert(current_native);
                 }
@@ -2234,20 +3790,18 @@ impl AgentsWindow {
         }
         if let Some(template) = id.strip_prefix("automation_template:") {
             if let Some(form) = template_form(template, &self.view.selected_backend) {
-                state.form = form;
-                if state.form.backend == "native" {
-                    state.form.native_provider = Some(current_native);
+                let mut form = form;
+                if form.backend == "native" {
+                    form.native_provider = Some(current_native);
                 }
-                state.selected_id = None;
-                state.screen = AutomationScreen::Edit;
-                state.error = None;
+                state.open_editor(form, None);
+                self.sync_automation_form_inputs();
             }
         } else if let Some(selected_id) = id.strip_prefix("automation_edit:") {
             if let Some(item) = state.items.iter().find(|item| item.id == selected_id) {
-                state.form = crate::automation_view::AutomationForm::from_automation(item);
-                state.selected_id = Some(selected_id.to_owned());
-                state.screen = AutomationScreen::Edit;
-                state.error = None;
+                let form = crate::automation_view::AutomationForm::from_automation(item);
+                state.open_editor(form, Some(selected_id.to_owned()));
+                self.sync_automation_form_inputs();
             }
         } else if let Some(selected_id) = id.strip_prefix("automation_history:") {
             if state.items.iter().any(|item| item.id == selected_id) {
@@ -2329,21 +3883,34 @@ impl AgentsWindow {
             "marketplace_add_menu" | "marketplace_empty_add_menu" => {
                 state.add_menu_open = !state.add_menu_open;
             }
+            "marketplace_add_menu_dismiss" => state.add_menu_open = false,
             "marketplace_source_kind:local" => {
                 state.add_source_kind = Some(SourceKind::Local);
                 state.add_menu_open = false;
                 state.source_draft.clear();
+                state.status = None;
             }
             "marketplace_source_kind:github" => {
                 state.add_source_kind = Some(SourceKind::Github);
                 state.add_menu_open = false;
                 state.source_draft.clear();
+                state.status = None;
             }
             "marketplace_source_cancel" => {
-                state.add_source_kind = None;
-                state.source_draft.clear();
+                if !state.busy {
+                    state.add_source_kind = None;
+                    state.source_draft.clear();
+                    state.status = None;
+                }
+            }
+            "marketplace_alert_cancel" => {
+                state.pending_uninstall_id = None;
+                state.pending_remove_source_id = None;
             }
             "marketplace_source_submit" => {
+                if state.busy {
+                    return;
+                }
                 let value = state.source_draft.trim().to_owned();
                 if value.is_empty() {
                     state.status = Some("Indica la carpeta o URL del origen".to_owned());
@@ -2378,23 +3945,100 @@ impl AgentsWindow {
                         ));
                     }
                 } else if let Some(item) = id.strip_prefix("marketplace_uninstall:") {
-                    self.marketplace_operation(MarketplaceOperation::Uninstall(item.to_owned()));
+                    if !state.busy
+                        && state
+                            .snapshot
+                            .items
+                            .iter()
+                            .any(|entry| entry.id == item && entry.installed_scope.is_some())
+                    {
+                        state.pending_uninstall_id = Some(item.to_owned());
+                    }
                 } else if let Some(source) = id.strip_prefix("marketplace_remove_source:") {
-                    self.marketplace_operation(MarketplaceOperation::RemoveSource(
-                        source.to_owned(),
-                    ));
+                    if !state.busy
+                        && state
+                            .snapshot
+                            .sources
+                            .iter()
+                            .any(|entry| entry.id == source)
+                    {
+                        state.pending_remove_source_id = Some(source.to_owned());
+                    }
+                } else if let Some(item) = id.strip_prefix("marketplace_uninstall_confirm:") {
+                    if state.pending_uninstall_id.as_deref() == Some(item) && !state.busy {
+                        state.pending_uninstall_id = None;
+                        self.marketplace_operation(MarketplaceOperation::Uninstall(
+                            item.to_owned(),
+                        ));
+                    }
+                } else if let Some(source) = id.strip_prefix("marketplace_remove_source_confirm:") {
+                    if state.pending_remove_source_id.as_deref() == Some(source) && !state.busy {
+                        state.pending_remove_source_id = None;
+                        self.marketplace_operation(MarketplaceOperation::RemoveSource(
+                            source.to_owned(),
+                        ));
+                    }
                 }
             }
         }
     }
 
+    fn refresh_selected_session_approvals(&mut self) {
+        self.view.session_approval_grants.clear();
+        let (Some(store), Some(session_id)) =
+            (self.store.as_ref(), self.view.selected_session.as_deref())
+        else {
+            return;
+        };
+        match store.session_approval_grants(session_id) {
+            Ok(grants) => {
+                let mut seen = HashSet::new();
+                self.view.session_approval_grants = grants
+                    .into_iter()
+                    .rev()
+                    .filter(|grant| seen.insert(grant.key_digest.clone()))
+                    .take(32)
+                    .map(|grant| SessionApprovalGrantView {
+                        tool_name: grant.tool_name,
+                        key_digest: grant.key_digest,
+                    })
+                    .collect();
+            }
+            Err(error) => {
+                self.view.status = format!("No se pudieron leer los permisos de sesión: {error}");
+            }
+        }
+    }
+
     fn refresh_sessions(&mut self) {
-        if let Some(store) = &self.store {
+        if let Some(store) = self.store.clone() {
             match store.list_with_diagnostics() {
                 Ok(listing) => {
                     self.view.sessions_status = (!listing.diagnostics.is_empty()).then(|| {
                         format!("{} sesiones no se pudieron leer", listing.diagnostics.len())
                     });
+                    let mut recoveries = BTreeMap::new();
+                    let mut plans = BTreeMap::new();
+                    for record in &listing.sessions {
+                        let (recovery, plan) = native_session_views(&self.data_root, record);
+                        if let Some(recovery) = recovery {
+                            let selected_running = self.view.running
+                                && self.view.selected_session.as_deref()
+                                    == Some(record.session.id.as_str());
+                            let background_running = self
+                                .background_automation_runs
+                                .iter()
+                                .any(|run| run.session_id == record.session.id);
+                            if !selected_running && !background_running {
+                                recoveries.insert(record.session.id.clone(), recovery);
+                            }
+                        }
+                        if let Some(plan) = plan {
+                            plans.insert(record.session.id.clone(), plan);
+                        }
+                    }
+                    self.view.session_recovery = recoveries;
+                    self.view.session_plans = plans;
                     if listing.diagnostics.is_empty() {
                         let previous = self.view.session_groups.clone();
                         if self.view.session_groups.prune(
@@ -2406,6 +4050,80 @@ impl AgentsWindow {
                             self.commit_groups(previous);
                         }
                     }
+                    let parents_with_children = listing
+                        .sessions
+                        .iter()
+                        .filter_map(|record| {
+                            record
+                                .session
+                                .subagent
+                                .as_ref()
+                                .map(|link| link.parent_session_id.clone())
+                        })
+                        .collect::<BTreeSet<_>>();
+                    let mut child_statuses = HashMap::new();
+                    if !parents_with_children.is_empty() {
+                        match SubagentCoordinator::new(store.clone(), SubagentLimits::default()) {
+                            Ok(coordinator) => {
+                                for parent_id in parents_with_children {
+                                    match coordinator.list_children_for_ui(&parent_id) {
+                                        Ok(children) => {
+                                            for child in children {
+                                                child_statuses
+                                                    .insert(child.session.id, child.status);
+                                            }
+                                        }
+                                        Err(error) => {
+                                            self.view.sessions_status = Some(format!(
+                                                "No se pudo leer el estado de subagentes: {error}"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                self.view.sessions_status = Some(format!(
+                                    "No se pudo abrir la coordinación de subagentes: {error}"
+                                ));
+                            }
+                        }
+                    }
+                    self.subagent_poll_needed = child_statuses.values().any(|status| {
+                        matches!(status, SubagentStatus::Ready | SubagentStatus::Running)
+                    });
+                    self.view.recoverable_subagent = self
+                        .view
+                        .selected_session
+                        .as_ref()
+                        .filter(|id| child_statuses.get(*id) == Some(&SubagentStatus::Interrupted))
+                        .and_then(|id| {
+                            listing
+                                .sessions
+                                .iter()
+                                .find(|record| &record.session.id == id)
+                        })
+                        .and_then(|record| {
+                            let link = record.session.subagent.as_ref()?;
+                            let title = record
+                                .session
+                                .title
+                                .clone()
+                                .or_else(|| {
+                                    record.events.iter().find_map(|event| match &event.kind {
+                                        AgentEventKind::TurnAdmitted { prompt, .. }
+                                        | AgentEventKind::TurnAdmittedWithImages { prompt, .. } => {
+                                            Some(prompt.lines().next().unwrap_or(prompt).to_owned())
+                                        }
+                                        _ => None,
+                                    })
+                                })
+                                .unwrap_or_else(|| "Subagente".to_owned());
+                            Some(SubagentRunView {
+                                child_session_id: record.session.id.clone(),
+                                parent_session_id: link.parent_session_id.clone(),
+                                title,
+                            })
+                        });
                     let mut projects: Vec<(u64, String)> = listing
                         .sessions
                         .iter()
@@ -2442,22 +4160,35 @@ impl AgentsWindow {
                                 .map(|event| event.timestamp_ms.max(record.session.created_at_ms))
                                 .unwrap_or(record.session.created_at_ms);
                             let title = record.events.iter().find_map(|event| {
-                                if let AgentEventKind::TurnStarted { prompt } = &event.kind {
+                                if let AgentEventKind::TurnAdmitted { prompt, .. }
+                                | AgentEventKind::TurnAdmittedWithImages { prompt, .. }
+                                | AgentEventKind::TurnStarted { prompt } = &event.kind
+                                {
                                     Some(prompt.lines().next().unwrap_or(prompt).trim().to_owned())
                                 } else {
                                     None
                                 }
                             });
                             let session = record.session;
+                            let is_subagent = session.subagent.is_some();
+                            let subagent_status = child_statuses
+                                .get(&session.id)
+                                .map(subagent_status_label)
+                                .unwrap_or("estado desconocido");
+                            let title = session
+                                .title
+                                .or_else(|| title.filter(|text| !text.is_empty()))
+                                .unwrap_or_else(|| "Nueva tarea".to_owned());
                             (
                                 activity_at_ms,
                                 session.created_at_ms,
                                 SessionView {
                                     id: session.id,
-                                    title: session
-                                        .title
-                                        .or_else(|| title.filter(|text| !text.is_empty()))
-                                        .unwrap_or_else(|| "Nueva tarea".to_owned()),
+                                    title: if is_subagent {
+                                        format!("↳ {title} · {subagent_status}")
+                                    } else {
+                                        title
+                                    },
                                     project: session.workspace.to_string_lossy().into_owned(),
                                     backend: session.backend,
                                     pinned: session.pinned,
@@ -2486,12 +4217,182 @@ impl AgentsWindow {
                     }
                 }
                 Err(error) => {
+                    self.subagent_poll_needed = false;
+                    self.view.recoverable_subagent = None;
+                    self.view.session_plans.clear();
+                    self.view.session_recovery.clear();
                     self.view.sessions_status = Some(format!("Error al leer sesiones: {error}"));
                     self.view.status = format!("Error al leer sesiones: {error}");
                 }
             }
         }
         self.refresh_composer_projects();
+        self.refresh_selected_session_approvals();
+    }
+
+    fn poll_subagent_sessions(&mut self) -> bool {
+        if !self.subagent_poll_needed
+            || self.last_subagent_poll.elapsed() < Duration::from_millis(500)
+        {
+            return false;
+        }
+        self.last_subagent_poll = Instant::now();
+        self.refresh_sessions();
+        true
+    }
+
+    fn rebuild_live_subagent_views(&mut self) {
+        let Some(store) = self.store.as_ref() else {
+            self.view.active_subagents.clear();
+            self.view.pending_subagent_permissions.clear();
+            return;
+        };
+        let mut active = Vec::new();
+        let mut permissions = Vec::new();
+        for (child_id, live_requests) in self.subagent_bridge.live_snapshot() {
+            let stored = match store.load(&child_id) {
+                Ok(Some(stored)) => stored,
+                Ok(None) | Err(_) => {
+                    for request_id in live_requests {
+                        self.subagent_bridge.resolve_permission(
+                            &child_id,
+                            &request_id,
+                            PermissionChoice::Deny,
+                        );
+                    }
+                    self.view.status =
+                        format!("No se pudo leer el historial del subagente {child_id}");
+                    continue;
+                }
+            };
+            let Some(link) = stored.session.subagent.as_ref() else {
+                for request_id in live_requests {
+                    self.subagent_bridge.resolve_permission(
+                        &child_id,
+                        &request_id,
+                        PermissionChoice::Deny,
+                    );
+                }
+                continue;
+            };
+            let title = stored
+                .session
+                .title
+                .clone()
+                .or_else(|| {
+                    stored.events.iter().find_map(|event| match &event.kind {
+                        AgentEventKind::TurnAdmitted { prompt, .. }
+                        | AgentEventKind::TurnAdmittedWithImages { prompt, .. }
+                        | AgentEventKind::TurnStarted { prompt } => {
+                            Some(prompt.lines().next().unwrap_or(prompt).trim().to_owned())
+                        }
+                        _ => None,
+                    })
+                })
+                .filter(|title| !title.is_empty())
+                .unwrap_or_else(|| "Subagente".to_owned());
+            active.push(SubagentRunView {
+                child_session_id: child_id.clone(),
+                parent_session_id: link.parent_session_id.clone(),
+                title,
+            });
+            let live_requests: HashSet<_> = live_requests.into_iter().collect();
+            if live_requests.is_empty() {
+                continue;
+            }
+            let mut pending = HashMap::new();
+            for event in &stored.events {
+                match &event.kind {
+                    AgentEventKind::PermissionRequested {
+                        request_id,
+                        tool_call,
+                    } => {
+                        pending.insert(request_id.clone(), tool_call);
+                    }
+                    AgentEventKind::PermissionResolved { request_id, .. } => {
+                        pending.remove(request_id);
+                    }
+                    _ => {}
+                }
+            }
+            for (request_id, tool_call) in pending {
+                if live_requests.contains(&request_id) {
+                    permissions.push(SubagentPermissionView {
+                        child_session_id: child_id.clone(),
+                        parent_session_id: link.parent_session_id.clone(),
+                        request_id,
+                        tool_name: tool_call.name.clone(),
+                        arguments: serde_json::to_string_pretty(&tool_call.arguments)
+                            .unwrap_or_default(),
+                    });
+                }
+            }
+        }
+        active.sort_by(|left, right| left.child_session_id.cmp(&right.child_session_id));
+        permissions.sort_by(|left, right| {
+            left.child_session_id
+                .cmp(&right.child_session_id)
+                .then_with(|| left.request_id.cmp(&right.request_id))
+        });
+        if let Some(pending) = &self.pending_child_recovery_permission {
+            permissions.push(pending.clone());
+        }
+        self.view.active_subagents = active;
+        self.view.pending_subagent_permissions = permissions;
+    }
+
+    fn poll_subagent_events(&mut self) -> bool {
+        let mut changed = false;
+        let mut refresh_status = false;
+        let mut selected_child_changed = false;
+        loop {
+            match self.subagent_events.try_recv() {
+                Ok(SubagentBridgeEvent::Event {
+                    child_session_id,
+                    event,
+                }) => {
+                    if event.session_id != child_session_id {
+                        continue;
+                    }
+                    changed = true;
+                    selected_child_changed |=
+                        self.view.selected_session.as_deref() == Some(child_session_id.as_str());
+                    refresh_status |= matches!(
+                        event.kind,
+                        AgentEventKind::TurnStarted { .. }
+                            | AgentEventKind::TurnCompleted { .. }
+                            | AgentEventKind::TurnFailed { .. }
+                            | AgentEventKind::TurnCancelled
+                    );
+                }
+                Ok(SubagentBridgeEvent::Closed { .. }) => {
+                    changed = true;
+                    refresh_status = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.subagent_events = self.subagent_bridge.subscribe();
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        if changed {
+            self.rebuild_live_subagent_views();
+            if selected_child_changed {
+                if let (Some(store), Some(child_id)) = (&self.store, &self.view.selected_session) {
+                    if let Ok(Some(stored)) = store.load(child_id) {
+                        self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
+                        self.projection = TranscriptProjection::from_events(&stored.events);
+                        self.view.transcript = self.projection.items().to_vec();
+                    }
+                }
+            }
+            if refresh_status {
+                self.refresh_sessions();
+            }
+        }
+        changed
     }
 
     fn refresh_composer_projects(&mut self) {
@@ -2534,6 +4435,445 @@ impl AgentsWindow {
         self.view.settings_notice_error = false;
     }
 
+    fn select_command_hook(&mut self, id: &str) {
+        let Some(hook) = self
+            .view
+            .native_hooks
+            .hooks
+            .iter()
+            .find(|hook| hook.id == id)
+            .cloned()
+        else {
+            self.set_settings_notice("Hook no encontrado", true);
+            return;
+        };
+        let draft = &mut self.view.native_hooks;
+        draft.clear_draft();
+        draft.selected_id = Some(hook.id.clone());
+        draft.draft_id = hook.id;
+        draft.draft_phase = hook.phase;
+        draft.draft_tool_name = hook.tool_name;
+        draft.draft_executable = hook.executable.to_string_lossy().into_owned();
+        draft.draft_args = serde_json::to_string_pretty(&hook.args).unwrap_or_else(|_| "[]".into());
+        draft.draft_cwd = hook.cwd.to_string_lossy().into_owned();
+        draft.draft_timeout_ms = hook.timeout_ms.to_string();
+        draft.draft_max_output_bytes = hook.max_output_bytes.to_string();
+        draft.editor_open = true;
+        self.clear_settings_notice();
+    }
+
+    fn commit_command_hooks(
+        &mut self,
+        hooks: Vec<openide_harness::CommandHookConfig>,
+        message: &str,
+    ) -> bool {
+        if let Some(error) = &self.view.native_hooks.load_error {
+            self.set_settings_notice(
+                format!("Corrige la configuración de hooks antes de guardarla: {error}"),
+                true,
+            );
+            return false;
+        }
+        let settings = NativeHookSettings { hooks };
+        match settings.save(&self.data_root) {
+            Ok(()) => {
+                self.view.native_hooks.hooks = settings.hooks;
+                self.set_settings_notice(message, false);
+                true
+            }
+            Err(error) => {
+                self.set_settings_notice(error, true);
+                false
+            }
+        }
+    }
+
+    fn save_command_hook_draft(&mut self) {
+        let draft = &self.view.native_hooks;
+        let args: Vec<String> = match serde_json::from_str(&draft.draft_args) {
+            Ok(args) => args,
+            Err(error) => {
+                self.set_settings_notice(format!("Argumentos del hook no válidos: {error}"), true);
+                return;
+            }
+        };
+        let timeout_ms = match draft.draft_timeout_ms.trim().parse() {
+            Ok(value) => value,
+            Err(_) => {
+                self.set_settings_notice(
+                    "El límite de tiempo debe ser un entero en milisegundos",
+                    true,
+                );
+                return;
+            }
+        };
+        let max_output_bytes = match draft.draft_max_output_bytes.trim().parse() {
+            Ok(value) => value,
+            Err(_) => {
+                self.set_settings_notice("El límite de salida debe ser un entero en bytes", true);
+                return;
+            }
+        };
+        let hook = openide_harness::CommandHookConfig {
+            id: draft.draft_id.trim().to_owned(),
+            phase: draft.draft_phase,
+            tool_name: draft.draft_tool_name.trim().to_owned(),
+            executable: PathBuf::from(draft.draft_executable.trim()),
+            args,
+            cwd: PathBuf::from(draft.draft_cwd.trim()),
+            timeout_ms,
+            max_output_bytes,
+        };
+        let mut hooks = draft.hooks.clone();
+        if let Some(index) = draft
+            .selected_id
+            .as_deref()
+            .and_then(|id| hooks.iter().position(|item| item.id == id))
+        {
+            hooks[index] = hook;
+        } else {
+            hooks.push(hook);
+        }
+        if self.commit_command_hooks(hooks, "Hook guardado") {
+            self.view.native_hooks.clear_draft();
+        }
+    }
+
+    fn delete_command_hook(&mut self, id: &str) {
+        let mut hooks = self.view.native_hooks.hooks.clone();
+        let before = hooks.len();
+        hooks.retain(|hook| hook.id != id);
+        if hooks.len() == before {
+            self.set_settings_notice("Hook no encontrado", true);
+        } else if self.commit_command_hooks(hooks, "Hook eliminado") {
+            self.view.native_hooks.clear_draft();
+        }
+    }
+
+    fn clear_mcp_draft(&mut self) {
+        self.cancel_mcp_oauth();
+        self.view.mcp_selected_id = None;
+        self.view.mcp_draft_http = false;
+        self.view.mcp_draft_id.clear();
+        self.view.mcp_draft_url.clear();
+        self.view.mcp_draft_http_bearer_token_env_name.clear();
+        self.view.mcp_draft_oauth_enabled = false;
+        self.view.mcp_draft_oauth_client_id.clear();
+        self.view.mcp_draft_oauth_issuer.clear();
+        self.view.mcp_draft_oauth_scopes.clear();
+        self.view.mcp_draft_program.clear();
+        self.view.mcp_draft_args = "[]".to_owned();
+        self.view.mcp_draft_cwd.clear();
+        self.view.mcp_draft_env_names.clear();
+    }
+
+    fn refresh_mcp_settings(&mut self) {
+        match McpSettings::load(&self.data_root, Path::new(&self.view.workspace)) {
+            Ok(settings) => {
+                self.view.mcp_servers = settings.servers;
+                self.view.mcp_load_error = None;
+            }
+            Err(error) => {
+                self.view.mcp_servers.clear();
+                self.view.mcp_load_error = Some(error);
+            }
+        }
+        self.clear_mcp_draft();
+        self.view.mcp_editor_open = false;
+        self.view.pending_mcp_delete_id = None;
+    }
+
+    fn select_mcp_server(&mut self, id: &str) {
+        let Some(server) = self
+            .view
+            .mcp_servers
+            .iter()
+            .find(|server| server.id == id)
+            .cloned()
+        else {
+            self.set_settings_notice("Servidor MCP no encontrado", true);
+            return;
+        };
+        self.cancel_mcp_oauth();
+        self.view.mcp_selected_id = Some(server.id.clone());
+        self.view.mcp_draft_id = server.id;
+        self.view.mcp_draft_program = server.program;
+        self.view.mcp_draft_args =
+            serde_json::to_string_pretty(&server.args).unwrap_or_else(|_| "[]".to_owned());
+        self.view.mcp_draft_cwd = server
+            .cwd
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.view.mcp_draft_env_names = server.credential_env_names.join("\n");
+        self.view.mcp_draft_http = server.url.is_some();
+        self.view.mcp_draft_url = server.url.unwrap_or_default();
+        self.view.mcp_draft_http_bearer_token_env_name =
+            server.http_bearer_token_env_name.unwrap_or_default();
+        self.view.mcp_draft_oauth_enabled = server.http_oauth.is_some();
+        if let Some(oauth) = server.http_oauth {
+            self.view.mcp_draft_oauth_client_id = oauth.client_id;
+            self.view.mcp_draft_oauth_issuer = oauth.issuer;
+            self.view.mcp_draft_oauth_scopes = oauth.scopes.join("\n");
+        } else {
+            self.view.mcp_draft_oauth_client_id.clear();
+            self.view.mcp_draft_oauth_issuer.clear();
+            self.view.mcp_draft_oauth_scopes.clear();
+        }
+        self.clear_settings_notice();
+        self.view.mcp_editor_open = true;
+    }
+
+    fn commit_mcp_settings(
+        &mut self,
+        servers: Vec<crate::mcp_settings::McpServerSettings>,
+        message: &str,
+    ) -> bool {
+        if let Some(error) = &self.view.mcp_load_error {
+            self.set_settings_notice(
+                format!("Corrige la configuración MCP antes de guardarla: {error}"),
+                true,
+            );
+            return false;
+        }
+        let settings = McpSettings { servers };
+        match settings.save(&self.data_root, Path::new(&self.view.workspace)) {
+            Ok(()) => {
+                self.view.mcp_servers = settings.servers;
+                self.set_settings_notice(message, false);
+                true
+            }
+            Err(error) => {
+                self.set_settings_notice(error, true);
+                false
+            }
+        }
+    }
+
+    fn save_mcp_draft(&mut self) {
+        let args: Vec<String> = if self.view.mcp_draft_http {
+            Vec::new()
+        } else {
+            match serde_json::from_str(&self.view.mcp_draft_args) {
+                Ok(args) => args,
+                Err(error) => {
+                    self.set_settings_notice(format!("Argumentos MCP no válidos: {error}"), true);
+                    return;
+                }
+            }
+        };
+        let selected = self.view.mcp_selected_id.clone();
+        let enabled = selected
+            .as_deref()
+            .and_then(|id| self.view.mcp_servers.iter().find(|server| server.id == id))
+            .is_some_and(|server| server.enabled);
+        let server = crate::mcp_settings::McpServerSettings {
+            id: self.view.mcp_draft_id.trim().to_owned(),
+            enabled,
+            program: if self.view.mcp_draft_http {
+                String::new()
+            } else {
+                self.view.mcp_draft_program.trim().to_owned()
+            },
+            args,
+            cwd: (!self.view.mcp_draft_http && !self.view.mcp_draft_cwd.trim().is_empty())
+                .then(|| PathBuf::from(self.view.mcp_draft_cwd.trim())),
+            credential_env_names: if self.view.mcp_draft_http {
+                Vec::new()
+            } else {
+                self.view
+                    .mcp_draft_env_names
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            },
+            url: self
+                .view
+                .mcp_draft_http
+                .then(|| self.view.mcp_draft_url.trim().to_owned()),
+            http_bearer_token_env_name: (self.view.mcp_draft_http
+                && !self.view.mcp_draft_oauth_enabled
+                && !self
+                    .view
+                    .mcp_draft_http_bearer_token_env_name
+                    .trim()
+                    .is_empty())
+            .then(|| {
+                self.view
+                    .mcp_draft_http_bearer_token_env_name
+                    .trim()
+                    .to_owned()
+            }),
+            http_oauth: (self.view.mcp_draft_http && self.view.mcp_draft_oauth_enabled).then(
+                || McpHttpOAuthSettings {
+                    client_id: self.view.mcp_draft_oauth_client_id.trim().to_owned(),
+                    issuer: self.view.mcp_draft_oauth_issuer.trim().to_owned(),
+                    scopes: self
+                        .view
+                        .mcp_draft_oauth_scopes
+                        .lines()
+                        .map(str::trim)
+                        .filter(|scope| !scope.is_empty())
+                        .map(str::to_owned)
+                        .collect(),
+                },
+            ),
+        };
+        let mut servers = self.view.mcp_servers.clone();
+        let previous = selected
+            .as_deref()
+            .and_then(|id| servers.iter().find(|entry| entry.id == id))
+            .cloned();
+        if let Some(index) = selected
+            .as_deref()
+            .and_then(|id| servers.iter().position(|entry| entry.id == id))
+        {
+            servers[index] = server.clone();
+        } else {
+            servers.push(server.clone());
+        }
+        if let Err(error) = (McpSettings {
+            servers: servers.clone(),
+        })
+        .validate_structure()
+        {
+            self.set_settings_notice(error, true);
+            return;
+        }
+        if previous.as_ref().is_some_and(|previous| {
+            self.view
+                .mcp_oauth_status
+                .as_ref()
+                .is_some_and(|status| status.server_id == previous.id)
+        }) {
+            self.cancel_mcp_oauth();
+        }
+        if let Some(previous) = &previous {
+            if oauth_registration_changed(previous, &server) {
+                if let Err(error) = forget_oauth_registration(previous) {
+                    self.set_settings_notice(error, true);
+                    return;
+                }
+            }
+        }
+        if self.commit_mcp_settings(servers, "Servidor MCP guardado") {
+            self.view.mcp_editor_open = false;
+            self.clear_mcp_draft();
+        }
+    }
+
+    fn toggle_mcp_server(&mut self, id: &str) {
+        if self
+            .view
+            .mcp_oauth_status
+            .as_ref()
+            .is_some_and(|status| status.server_id == id)
+        {
+            self.cancel_mcp_oauth();
+        }
+        let mut servers = self.view.mcp_servers.clone();
+        let Some(server) = servers.iter_mut().find(|server| server.id == id) else {
+            self.set_settings_notice("Servidor MCP no encontrado", true);
+            return;
+        };
+        server.enabled = !server.enabled;
+        self.commit_mcp_settings(servers, "Estado MCP guardado");
+    }
+
+    fn delete_mcp_server(&mut self, id: &str) -> bool {
+        if self
+            .view
+            .mcp_oauth_status
+            .as_ref()
+            .is_some_and(|status| status.server_id == id)
+        {
+            self.cancel_mcp_oauth();
+        }
+        let mut servers = self.view.mcp_servers.clone();
+        if let Some(existing) = servers.iter().find(|server| server.id == id) {
+            if let Err(error) = forget_oauth_registration(existing) {
+                self.set_settings_notice(error, true);
+                return false;
+            }
+        }
+        let before = servers.len();
+        servers.retain(|server| server.id != id);
+        if servers.len() == before {
+            self.set_settings_notice("Servidor MCP no encontrado", true);
+            return false;
+        }
+        if !self.commit_mcp_settings(servers, "Servidor MCP eliminado") {
+            return false;
+        }
+        if self.view.mcp_selected_id.as_deref() == Some(id) {
+            self.view.mcp_editor_open = false;
+            self.clear_mcp_draft();
+        }
+        true
+    }
+
+    fn cancel_mcp_oauth(&mut self) {
+        if let Some(controller) = self.active_mcp_oauth.take() {
+            controller.cancel();
+        }
+        self.view.mcp_oauth_status = None;
+    }
+
+    fn start_mcp_oauth(&mut self, id: &str) {
+        let Some(server) = self
+            .view
+            .mcp_servers
+            .iter()
+            .find(|server| server.id == id)
+            .cloned()
+        else {
+            self.set_settings_notice("Servidor MCP no encontrado", true);
+            return;
+        };
+        self.cancel_mcp_oauth();
+        match McpOAuthController::start(server) {
+            Ok(controller) => {
+                self.active_mcp_oauth = Some(controller);
+                self.view.mcp_oauth_status = Some(McpOAuthViewStatus {
+                    server_id: id.to_owned(),
+                    phase: McpOAuthViewPhase::Discovering,
+                });
+                self.clear_settings_notice();
+            }
+            Err(error) => self.set_settings_notice(error, true),
+        }
+    }
+
+    fn poll_mcp_oauth(&mut self) -> bool {
+        let Some(controller) = &self.active_mcp_oauth else {
+            return false;
+        };
+        let mut changed = false;
+        let mut finished = false;
+        while let Some(event) = controller.try_recv() {
+            changed = true;
+            let (server_id, phase) = match event {
+                McpOAuthEvent::NeedBrowser { server_id, url } => {
+                    (server_id, McpOAuthViewPhase::AwaitingBrowser { url })
+                }
+                McpOAuthEvent::Authorized { server_id } => {
+                    finished = true;
+                    (server_id, McpOAuthViewPhase::Authorized)
+                }
+                McpOAuthEvent::Failed { server_id, message } => {
+                    finished = true;
+                    (server_id, McpOAuthViewPhase::Failed(message))
+                }
+            };
+            self.view.mcp_oauth_status = Some(McpOAuthViewStatus { server_id, phase });
+        }
+        if finished {
+            self.active_mcp_oauth = None;
+        }
+        changed
+    }
+
     fn commit_settings_preferences(&mut self, next: SettingsPreferences, message: &str) -> bool {
         if let Err(error) = next.save(&self.data_root) {
             self.set_settings_notice(error, true);
@@ -2544,17 +4884,433 @@ impl AgentsWindow {
         true
     }
 
+    fn save_exec_rule_draft(&mut self) {
+        let mut next_view = self.view.native_exec_rules.clone();
+        if let Err(error) = next_view.upsert_draft() {
+            self.set_settings_notice(error, true);
+            return;
+        }
+        let next = ExecPolicySettings {
+            rules: next_view.rules.clone(),
+        };
+        if let Err(error) = next.save(&self.data_root) {
+            self.set_settings_notice(error, true);
+            return;
+        }
+        self.exec_policy_settings = next;
+        self.exec_policy_load_error = None;
+        self.view.native_exec_rules = next_view;
+        self.set_settings_notice(
+            "Reglas de comandos guardadas para los próximos turnos",
+            false,
+        );
+    }
+
+    fn delete_exec_rule(&mut self, index: usize) {
+        let mut next_view = self.view.native_exec_rules.clone();
+        if let Err(error) = next_view.remove(index) {
+            self.set_settings_notice(error, true);
+            return;
+        }
+        let next = ExecPolicySettings {
+            rules: next_view.rules.clone(),
+        };
+        if let Err(error) = next.save(&self.data_root) {
+            self.set_settings_notice(error, true);
+            return;
+        }
+        self.exec_policy_settings = next;
+        self.exec_policy_load_error = None;
+        self.view.native_exec_rules = next_view;
+        self.set_settings_notice("Regla de comando eliminada para los próximos turnos", false);
+    }
+
+    fn reset_invalid_exec_rules(&mut self) {
+        if self.exec_policy_load_error.is_none() {
+            return;
+        }
+        let empty = ExecPolicySettings::default();
+        if let Err(error) = empty.save(&self.data_root) {
+            self.set_settings_notice(error, true);
+            return;
+        }
+        self.exec_policy_settings = empty;
+        self.exec_policy_load_error = None;
+        self.view.native_exec_rules = ExecPolicyUiState::from_settings(&self.exec_policy_settings);
+        self.set_settings_notice("Se restablecieron las reglas de comandos", false);
+    }
+
+    fn refresh_exec_policy_settings(&mut self) {
+        match ExecPolicySettings::load(&self.data_root) {
+            Ok(settings) => {
+                self.exec_policy_settings = settings;
+                self.exec_policy_load_error = None;
+                self.view.native_exec_rules =
+                    ExecPolicyUiState::from_settings(&self.exec_policy_settings);
+            }
+            Err(error) => {
+                self.exec_policy_settings = ExecPolicySettings::default();
+                self.exec_policy_load_error = Some(error.clone());
+                self.view.native_exec_rules.rules.clear();
+                self.view.native_exec_rules.load_error = Some(error);
+                self.view.native_exec_rules.clear_draft();
+            }
+        }
+    }
+
+    fn refresh_native_skills(&mut self) {
+        let workspace = Path::new(&self.view.workspace);
+        self.view.native_skills = match NativeSkillsSettings::load(&self.data_root, workspace) {
+            Ok(settings) => NativeSkillsUiState::from_settings(&settings, &self.data_root),
+            Err(error) => NativeSkillsUiState::with_load_error(workspace, &self.data_root, error),
+        };
+    }
+
+    fn save_native_skill_selections(&mut self, selections: Vec<openide_harness::SkillSelection>) {
+        let result = NativeSkillsSettings::load(&self.data_root, Path::new(&self.view.workspace))
+            .and_then(|settings| {
+                let updated = settings.with_selections(selections);
+                updated.save(&self.data_root)?;
+                Ok(updated)
+            });
+        match result {
+            Ok(settings) => {
+                self.view.native_skills =
+                    NativeSkillsUiState::from_settings(&settings, &self.data_root);
+                self.set_settings_notice("Selección de skills locales guardada", false);
+            }
+            Err(error) => {
+                self.refresh_native_skills();
+                self.set_settings_notice(error, true);
+            }
+        }
+    }
+
+    fn reset_native_skills(&mut self) {
+        let result =
+            NativeSkillsSettings::reset_all(&self.data_root, Path::new(&self.view.workspace));
+        match result {
+            Ok(settings) => {
+                self.view.native_skills =
+                    NativeSkillsUiState::from_settings(&settings, &self.data_root);
+                self.set_settings_notice("Selección de skills locales restablecida", false);
+            }
+            Err(error) => self.set_settings_notice(error, true),
+        }
+    }
+
     fn commit_agent_tool_settings(&mut self, next: AgentToolSettings, message: &str) -> bool {
         if let Err(error) = next.save(&self.data_root) {
             self.set_settings_notice(error, true);
             return false;
         }
+        let command_access_revoked = next.command_isolation()
+            != self.agent_tool_settings.command_isolation()
+            || !next.permissions().run_command;
+        if command_access_revoked {
+            self.native_command_sessions.revoke_all();
+            self.clear_native_command_ui();
+        }
         self.agent_tool_settings = next;
         self.view.native_tool_permissions = next.permissions();
+        self.view.native_command_isolation = next.command_isolation();
         self.view.workspace_writes_enabled =
             next.permissions().write_file && next.permissions().run_command;
-        self.set_settings_notice(message, false);
+        if command_access_revoked {
+            self.set_settings_notice(
+                format!("{message}; los comandos persistentes quedan revocados"),
+                false,
+            );
+        } else {
+            self.set_settings_notice(message, false);
+        }
         true
+    }
+
+    fn native_parent_tools(
+        &mut self,
+        session_id: &str,
+        workspace: &Path,
+    ) -> Result<Arc<dyn ToolExecutor>, String> {
+        let permissions = self.agent_tool_settings.permissions();
+        let isolation = self.agent_tool_settings.command_isolation();
+        let commands = self.native_command_sessions.for_session(
+            session_id,
+            workspace,
+            isolation,
+            permissions.run_command,
+        )?;
+        let mut tools = LocalTools::new()
+            .with_permissions(permissions)
+            .with_command_isolation(isolation);
+        if let Some(commands) = commands {
+            tools = tools.with_persistent_commands(commands);
+        }
+        Ok(Arc::new(tools))
+    }
+
+    fn clear_native_command_ui(&mut self) {
+        self.view.native_commands.clear();
+        self.view.native_commands_error = None;
+        self.view.pending_native_command_termination = None;
+        self.view.native_command_terminating = None;
+        self.native_command_snapshot_response = None;
+        self.native_command_termination_response = None;
+        self.last_native_command_snapshot = None;
+    }
+
+    /// A command listing reads registry state without draining stdout/stderr.
+    /// Both listing and termination run off the UI thread; only small channel
+    /// results are applied during a frame.
+    fn poll_native_command_sessions(&mut self) -> bool {
+        let mut changed = false;
+        match self
+            .native_command_termination_response
+            .as_ref()
+            .map(Receiver::try_recv)
+        {
+            Some(Ok((owner, command_id, manager, result))) => {
+                self.native_command_termination_response = None;
+                if self.view.selected_session.as_deref() == Some(owner.as_str())
+                    && self
+                        .native_command_sessions
+                        .manager(&owner)
+                        .is_some_and(|current| Arc::ptr_eq(&current, &manager))
+                {
+                    self.view.native_command_terminating = None;
+                    self.view.status = match result {
+                        Ok(()) => format!(
+                            "Proceso {} terminado; la salida pendiente sigue disponible",
+                            command_id.chars().take(8).collect::<String>()
+                        ),
+                        Err(error) => format!("No se pudo terminar el proceso: {error}"),
+                    };
+                    self.last_native_command_snapshot = None;
+                    changed = true;
+                }
+            }
+            Some(Err(TryRecvError::Disconnected)) => {
+                self.native_command_termination_response = None;
+                self.view.native_command_terminating = None;
+                self.view.status = "La operación de terminar proceso se interrumpió".into();
+                changed = true;
+            }
+            _ => {}
+        }
+        match self
+            .native_command_snapshot_response
+            .as_ref()
+            .map(Receiver::try_recv)
+        {
+            Some(Ok((owner, manager, result))) => {
+                self.native_command_snapshot_response = None;
+                if self.view.selected_session.as_deref() == Some(owner.as_str())
+                    && self
+                        .native_command_sessions
+                        .manager(&owner)
+                        .is_some_and(|current| Arc::ptr_eq(&current, &manager))
+                {
+                    match result {
+                        Ok(commands) => {
+                            if self.view.native_commands != commands
+                                || self.view.native_commands_error.is_some()
+                            {
+                                changed = true;
+                            }
+                            self.view.native_commands = commands;
+                            self.view.native_commands_error = None;
+                            if self
+                                .view
+                                .pending_native_command_termination
+                                .as_ref()
+                                .is_some_and(|id| {
+                                    !self
+                                        .view
+                                        .native_commands
+                                        .iter()
+                                        .any(|command| &command.id == id && command.exit.is_none())
+                                })
+                            {
+                                self.view.pending_native_command_termination = None;
+                                changed = true;
+                            }
+                        }
+                        Err(error) => {
+                            self.view.native_commands.clear();
+                            self.view.native_commands_error = Some(error);
+                            self.view.pending_native_command_termination = None;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            Some(Err(TryRecvError::Disconnected)) => {
+                self.native_command_snapshot_response = None;
+                self.view.native_commands_error =
+                    Some("Se interrumpió la lectura de procesos".into());
+                changed = true;
+            }
+            _ => {}
+        }
+        let Some(owner) = self.view.selected_session.as_ref() else {
+            return changed;
+        };
+        let Some(manager) = self.native_command_sessions.manager(owner) else {
+            if !self.view.native_commands.is_empty() || self.view.native_commands_error.is_some() {
+                self.view.native_commands.clear();
+                self.view.native_commands_error = None;
+                self.view.pending_native_command_termination = None;
+                changed = true;
+            }
+            return changed;
+        };
+        if self.view.show_settings
+            || self.view.main_page != MainPage::Workspace
+            || !self.view.show_side_pane
+            || self.view.side_tab != SideTab::Activity
+            || self.native_command_snapshot_response.is_some()
+            || self
+                .last_native_command_snapshot
+                .is_some_and(|last| last.elapsed() < Duration::from_millis(500))
+        {
+            return changed;
+        }
+        let owner = owner.clone();
+        let (sender, receiver) = mpsc::channel();
+        self.native_command_snapshot_response = Some(receiver);
+        self.last_native_command_snapshot = Some(Instant::now());
+        std::thread::spawn(move || {
+            let result = manager.list_sessions().map_err(|error| error.to_string());
+            let _ = sender.send((owner, manager, result));
+        });
+        changed
+    }
+
+    fn confirm_native_command_termination(&mut self, command_id: &str) {
+        if self.view.pending_native_command_termination.as_deref() != Some(command_id) {
+            return;
+        }
+        self.view.pending_native_command_termination = None;
+        if self.native_command_termination_response.is_some() {
+            self.view.status = "Ya se está terminando un proceso".into();
+            return;
+        }
+        let Some(owner) = self.view.selected_session.clone() else {
+            return;
+        };
+        if !self
+            .view
+            .native_commands
+            .iter()
+            .any(|command| command.id == command_id && command.exit.is_none())
+        {
+            self.view.status = "Ese proceso ya no está en ejecución".into();
+            return;
+        }
+        let Some(manager) = self.native_command_sessions.manager(&owner) else {
+            self.view.status = "La sesión de comandos ya no está disponible".into();
+            return;
+        };
+        let command_id = command_id.to_owned();
+        let (sender, receiver) = mpsc::channel();
+        self.native_command_termination_response = Some(receiver);
+        self.view.native_command_terminating = Some(command_id.clone());
+        std::thread::spawn(move || {
+            let result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| error.to_string())
+                .and_then(|runtime| {
+                    runtime
+                        .block_on(manager.terminate(&command_id))
+                        .map_err(|error| error.to_string())
+                });
+            let _ = sender.send((owner, command_id, manager, result));
+        });
+    }
+
+    fn native_permission_policy(&self) -> Result<PermissionPolicy, String> {
+        if let Some(error) = &self.exec_policy_load_error {
+            return Err(format!(
+                "Corregí las reglas de comandos antes de ejecutar el agente nativo: {error}"
+            ));
+        }
+        let exec_policy = ExecPolicySettings::load(&self.data_root)?.policy()?;
+        Ok(self
+            .agent_tool_settings
+            .permission_policy()
+            .with_exec_policy(exec_policy)
+            .with_tool("spawn_agent", PermissionMode::Allow)
+            .with_tool("wait_agent", PermissionMode::Allow)
+            .with_tool("cancel_agent", PermissionMode::Allow)
+            .with_tool("send_input", PermissionMode::Allow))
+    }
+
+    fn ensure_archivable_native_session(&self, session_id: &str) -> Result<(), String> {
+        let Some(store) = &self.store else {
+            return Ok(());
+        };
+        let Some(stored) = store.load(session_id).map_err(|error| error.to_string())? else {
+            return Err("La sesión ya no existe".into());
+        };
+        if stored.session.backend != "native" {
+            return Ok(());
+        }
+        let coordinator = SubagentCoordinator::new(store.clone(), SubagentLimits::default())
+            .map_err(|error| error.to_string())?;
+        if let Some(link) = stored.session.subagent.as_ref() {
+            let siblings = coordinator
+                .list_children_for_ui(&link.parent_session_id)
+                .map_err(|error| error.to_string())?;
+            let current = siblings
+                .iter()
+                .find(|child| child.session.id == session_id)
+                .ok_or_else(|| "No se pudo verificar el estado del subagente".to_owned())?;
+            if !matches!(
+                current.status,
+                SubagentStatus::Completed | SubagentStatus::Failed | SubagentStatus::Cancelled
+            ) {
+                return Err("Recuperá o cancelá el subagente antes de archivarlo".into());
+            }
+            if coordinator
+                .open_input_count_for_ui(session_id)
+                .map_err(|error| error.to_string())?
+                > 0
+            {
+                return Err(
+                    "El subagente tiene mensajes pendientes; resolvelos antes de archivarlo".into(),
+                );
+            }
+        }
+        let mut pending = VecDeque::from([session_id.to_owned()]);
+        while let Some(parent_id) = pending.pop_front() {
+            for child in coordinator
+                .list_children_for_ui(&parent_id)
+                .map_err(|error| error.to_string())?
+            {
+                if !matches!(
+                    child.status,
+                    SubagentStatus::Completed | SubagentStatus::Failed | SubagentStatus::Cancelled
+                ) {
+                    return Err(
+                        "Esta tarea tiene subagentes activos o interrumpidos; resolvelos antes de archivarla"
+                            .into(),
+                    );
+                }
+                if coordinator
+                    .open_input_count_for_ui(&child.session.id)
+                    .map_err(|error| error.to_string())?
+                    > 0
+                {
+                    return Err(
+                        "Esta tarea tiene mensajes de subagentes pendientes; resolvelos antes de archivarla"
+                            .into(),
+                    );
+                }
+                pending.push_back(child.session.id);
+            }
+        }
+        Ok(())
     }
 
     fn persist_native_settings(&mut self) -> bool {
@@ -2574,6 +5330,8 @@ impl AgentsWindow {
         // are synchronized in memory and need no second disk commit.
         if self.view.selected_backend == "native" {
             self.refresh_composer_selection();
+        } else {
+            self.refresh_composer_routes();
         }
         true
     }
@@ -2592,6 +5350,148 @@ impl AgentsWindow {
         self.catalog_response = Some(receiver);
         self.catalog_last_refresh = Instant::now();
         self.view.catalog_refreshing = true;
+    }
+
+    fn begin_model_discovery(&mut self) {
+        if self.model_discovery_response.is_some() {
+            return;
+        }
+        let providers: Vec<_> = ["openai", "openrouter", "deepseek"]
+            .into_iter()
+            .filter(|provider| native_provider::adapter_key_present(provider))
+            .collect();
+        if providers.is_empty() {
+            return;
+        }
+        for provider in &providers {
+            self.view
+                .composer_provider_status
+                .insert((*provider).to_owned(), ProviderModelStatus::Checking);
+        }
+        self.model_discoveries
+            .retain(|entry| !providers.contains(&entry.provider_id.as_str()));
+        self.refresh_composer_routes();
+        let (sender, receiver) = mpsc::channel();
+        self.model_discovery_pending = providers.len();
+        self.model_discovery_response = Some(receiver);
+        for provider in providers {
+            let sender = sender.clone();
+            std::thread::spawn(move || {
+                let result = native_provider::discover_connected_models(provider);
+                let _ = sender.send((provider.to_owned(), result));
+            });
+        }
+    }
+
+    fn poll_model_discovery(&mut self) -> bool {
+        let mut changed = false;
+        while let Some(receiver) = self.model_discovery_response.as_ref() {
+            let result = receiver.try_recv();
+            match result {
+                Ok((provider, Ok(discovery))) => {
+                    self.view.composer_provider_status.remove(&provider);
+                    self.model_discoveries
+                        .retain(|entry| entry.provider_id != provider);
+                    self.model_discoveries.push(discovery);
+                    self.model_discovery_pending = self.model_discovery_pending.saturating_sub(1);
+                    self.refresh_composer_routes();
+                    changed = true;
+                }
+                Ok((provider, Err(_error))) => {
+                    // Failure leaves locally reviewed routes visible as
+                    // key-present, but the menu asks the user to check the
+                    // connection instead of claiming account availability.
+                    self.view
+                        .composer_provider_status
+                        .insert(provider, ProviderModelStatus::CheckFailed);
+                    self.model_discovery_pending = self.model_discovery_pending.saturating_sub(1);
+                    changed = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.model_discovery_pending = 0;
+                    for status in self.view.composer_provider_status.values_mut() {
+                        if *status == ProviderModelStatus::Checking {
+                            *status = ProviderModelStatus::CheckFailed;
+                        }
+                    }
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        if self.model_discovery_pending == 0 {
+            self.model_discovery_response = None;
+        }
+        changed
+    }
+
+    fn begin_codex_model_discovery(&mut self) {
+        if self.codex_model_response.is_some() {
+            return;
+        }
+        let Some(executable) = self
+            .profiles
+            .iter()
+            .find(|profile| profile.id == "codex")
+            .and_then(CliProfile::detect_executable)
+        else {
+            return;
+        };
+        self.codex_models.clear();
+        self.view
+            .composer_provider_status
+            .insert("codex".to_owned(), ProviderModelStatus::Checking);
+        self.refresh_composer_routes();
+        let (sender, receiver) = mpsc::channel();
+        self.codex_model_response = Some(receiver);
+        std::thread::spawn(move || {
+            let result = openide_cli::discover_codex_models_with_executable(&executable);
+            let _ = sender.send(result);
+        });
+    }
+
+    fn poll_codex_model_discovery(&mut self) -> bool {
+        let Some(receiver) = self.codex_model_response.as_ref() else {
+            return false;
+        };
+        let result = match receiver.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Disconnected) => Err("El proceso de consulta terminó".to_owned()),
+        };
+        self.codex_model_response = None;
+        self.view.composer_provider_status.remove("codex");
+        match result {
+            Ok(models) => {
+                self.codex_models = models;
+                self.refresh_composer_routes();
+                if self.view.selected_backend == "codex" {
+                    let previous_model = self.view.composer_model.clone();
+                    let previous_effort = self.view.composer_effort.clone();
+                    self.refresh_composer_choice_options();
+                    if self.view.composer_model != previous_model {
+                        self.remember_composer_selection(true);
+                        self.view.status =
+                            "El modelo anterior no está disponible en tu cuenta; se seleccionó el predeterminado"
+                                .to_owned();
+                    } else if self.view.composer_effort != previous_effort {
+                        self.remember_composer_selection(true);
+                    }
+                }
+            }
+            Err(_error) => {
+                self.codex_models.clear();
+                self.refresh_composer_routes();
+                if self.view.selected_backend == "codex" {
+                    self.refresh_composer_choice_options();
+                    self.view.status =
+                        "No se pudo verificar el catálogo de Codex CLI; se muestran los modelos de respaldo"
+                            .to_owned();
+                }
+            }
+        }
+        true
     }
 
     fn poll_catalog(&mut self) -> bool {
@@ -2620,6 +5520,7 @@ impl AgentsWindow {
             Ok(snapshot) => {
                 self.view.catalog_status = catalog_status(&snapshot);
                 self.view.catalog = Some(Arc::new(snapshot));
+                self.refresh_composer_routes();
             }
             Err(error) => {
                 self.view.catalog_status =
@@ -2630,38 +5531,122 @@ impl AgentsWindow {
     }
 
     fn refresh_composer_selection(&mut self) {
+        self.refresh_composer_routes();
         let choice = self
             .composer_preferences
             .choice(&self.view.selected_backend, &self.view.model);
         self.view.composer_model = choice.model;
-        self.view.composer_model_options = composer_selection::model_options(
-            &self.view.selected_backend,
-            &self.view.composer_model,
-        );
-        self.view.composer_effort_options = composer_selection::effort_options(
-            &self.view.selected_backend,
-            &self.view.composer_model,
-        );
-        self.view.composer_effort = if self
-            .view
-            .composer_effort_options
-            .iter()
-            .any(|(effort, _)| effort == &choice.effort)
-        {
-            choice.effort
-        } else {
-            self.view
-                .composer_effort_options
-                .first()
-                .map(|(effort, _)| effort.clone())
-                .unwrap_or_else(|| "default".to_owned())
-        };
+        self.view.composer_effort = choice.effort;
+        self.refresh_composer_choice_options();
         self.view.composer_model_menu_open = false;
+        self.view.composer_model_list_open = false;
+        self.view.composer_model_query.clear();
+        self.composer_model_search_focus_pending = false;
+        self.view.composer_advanced_open = false;
         self.view.composer_effort_menu_open = false;
+        self.view.composer_effort_preview = None;
         self.view.backend_menu_open = false;
     }
 
+    fn refresh_composer_routes(&mut self) {
+        let mut routes = composer_selection::model_route_options_with_codex_discovery(
+            self.view.catalog.as_deref(),
+            &self.native_settings(),
+            &self.model_discoveries,
+            &self.codex_models,
+        );
+        routes.retain(|route| {
+            route.backend == "native"
+                || self
+                    .view
+                    .backend_options
+                    .iter()
+                    .any(|(backend, _)| backend == &route.backend)
+        });
+        self.view.composer_routes = routes;
+    }
+
+    fn refresh_composer_choice_options(&mut self) {
+        let codex_live = self.view.selected_backend == "codex" && !self.codex_models.is_empty();
+        self.view.composer_model_options = if codex_live {
+            self.view
+                .composer_routes
+                .iter()
+                .filter(|route| route.backend == "codex")
+                .map(|route| (route.model_id.clone(), route.model_name.clone()))
+                .collect()
+        } else {
+            composer_selection::model_options(
+                &self.view.selected_backend,
+                &self.view.composer_model,
+            )
+        };
+        if codex_live
+            && !self
+                .view
+                .composer_model_options
+                .iter()
+                .any(|(id, _)| id == &self.view.composer_model)
+        {
+            self.view.composer_model = "default".to_owned();
+            self.view.composer_effort = "default".to_owned();
+        }
+        self.view.composer_effort_options = if codex_live {
+            self.view
+                .composer_routes
+                .iter()
+                .find(|route| {
+                    route.backend == "codex" && route.model_id == self.view.composer_model
+                })
+                .map(|route| route.effort_options.clone())
+                .unwrap_or_default()
+        } else {
+            composer_selection::effort_options_for_provider(
+                &self.view.selected_backend,
+                &self.view.composer_model,
+                &self.view.native_provider_id,
+            )
+        };
+        if !self
+            .view
+            .composer_effort_options
+            .iter()
+            .any(|(id, _)| id == &self.view.composer_effort)
+        {
+            self.view.composer_effort = self
+                .view
+                .composer_effort_options
+                .first()
+                .map(|(id, _)| id.clone())
+                .unwrap_or_else(|| "default".to_owned());
+        }
+    }
+
+    fn refresh_composer_context_percent(&mut self) {
+        self.view.composer_context_percent = None;
+        if self.view.selected_backend != "native" {
+            return;
+        }
+        let (Some(store), Some(session_id)) = (&self.store, self.view.selected_session.as_deref())
+        else {
+            return;
+        };
+        if let Ok(Some(stored)) = store.load(session_id) {
+            if stored.session.backend == "native"
+                && stored.session.workspace == Path::new(&self.view.workspace)
+            {
+                self.view.composer_context_percent = committed_context_percent(
+                    &stored.events,
+                    &self.view.native_provider_id,
+                    &self.view.model,
+                );
+            }
+        }
+    }
+
     fn remember_composer_selection(&mut self, save: bool) {
+        self.composer_preferences
+            .set_selected_backend(&self.view.selected_backend);
         self.composer_preferences.set(
             &self.view.selected_backend,
             ComposerChoice {
@@ -2688,7 +5673,12 @@ impl AgentsWindow {
         }
         if self.view.selected_backend == "native" && model == "openide:configure-model" {
             self.view.composer_model_menu_open = false;
+            self.view.composer_model_list_open = false;
+            self.view.composer_model_query.clear();
+            self.composer_model_search_focus_pending = false;
+            self.view.composer_advanced_open = false;
             self.view.composer_effort_menu_open = false;
+            self.view.composer_effort_preview = None;
             self.view.show_settings = true;
             self.view.settings_page = SettingsPage::Providers;
             self.clear_settings_notice();
@@ -2696,21 +5686,7 @@ impl AgentsWindow {
             return;
         }
         self.view.composer_model = model.to_owned();
-        self.view.composer_effort_options =
-            composer_selection::effort_options(&self.view.selected_backend, model);
-        if !self
-            .view
-            .composer_effort_options
-            .iter()
-            .any(|(candidate, _)| candidate == &self.view.composer_effort)
-        {
-            self.view.composer_effort = self
-                .view
-                .composer_effort_options
-                .first()
-                .map(|(effort, _)| effort.clone())
-                .unwrap_or_else(|| "default".to_owned());
-        }
+        self.refresh_composer_choice_options();
         if self.view.selected_backend == "native" {
             self.view.model = model.to_owned();
             self.persist_native_settings();
@@ -2718,7 +5694,13 @@ impl AgentsWindow {
             self.remember_composer_selection(true);
         }
         self.view.composer_model_menu_open = false;
+        self.view.composer_model_list_open = false;
+        self.view.composer_model_query.clear();
+        self.composer_model_search_focus_pending = false;
+        self.view.composer_advanced_open = false;
         self.view.composer_effort_menu_open = false;
+        self.view.composer_effort_preview = None;
+        self.refresh_composer_context_percent();
     }
 
     fn select_composer_effort(&mut self, effort: &str) {
@@ -2734,6 +5716,119 @@ impl AgentsWindow {
         self.view.composer_effort = effort.to_owned();
         self.view.composer_effort_menu_open = false;
         self.view.composer_model_menu_open = false;
+        self.view.composer_model_list_open = false;
+        self.view.composer_model_query.clear();
+        self.composer_model_search_focus_pending = false;
+        self.view.composer_advanced_open = false;
+        self.view.composer_effort_preview = None;
+        self.remember_composer_selection(true);
+    }
+
+    fn composer_slider_effort(&self, fraction: f32) -> Option<String> {
+        let levels: Vec<_> = self
+            .view
+            .composer_effort_options
+            .iter()
+            .filter(|(id, _)| id != "default")
+            .collect();
+        if levels.len() < 2 {
+            return None;
+        }
+        let fraction = if fraction.is_finite() {
+            fraction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let index = (fraction * (levels.len() - 1) as f32).round() as usize;
+        Some(levels[index].0.clone())
+    }
+
+    fn select_composer_route(&mut self, route_id: &str) {
+        if self.view.running || self.view.background_run_selected {
+            return;
+        }
+        let Some(route) =
+            composer_selection::model_route_option_by_id(&self.view.composer_routes, route_id)
+                .cloned()
+        else {
+            return;
+        };
+        let provider_status = self
+            .view
+            .composer_provider_status
+            .get(&route.provider_id)
+            .copied();
+        if provider_status == Some(ProviderModelStatus::Checking) {
+            return;
+        }
+        if !route.selectable() || provider_status == Some(ProviderModelStatus::CheckFailed) {
+            if route.credential == composer_selection::CredentialAvailability::MissingCredential
+                || provider_status == Some(ProviderModelStatus::CheckFailed)
+            {
+                self.view.composer_model_menu_open = false;
+                self.view.composer_model_list_open = false;
+                self.view.composer_model_query.clear();
+                self.composer_model_search_focus_pending = false;
+                self.view.composer_advanced_open = false;
+                self.view.show_settings = true;
+                self.view.settings_page = SettingsPage::Providers;
+                self.view.catalog_browse_provider = route.provider_id.clone();
+                let key_env = native_provider::adapter(&route.provider_id)
+                    .map(|adapter| adapter.key_env)
+                    .unwrap_or("API_KEY");
+                self.set_settings_notice(
+                    if provider_status == Some(ProviderModelStatus::CheckFailed) {
+                        format!(
+                            "No se pudo verificar {}. Revisa {key_env} y actualiza proveedores",
+                            route.provider_name
+                        )
+                    } else {
+                        format!(
+                            "Conecta {} con {key_env} para usar sus modelos",
+                            route.provider_name
+                        )
+                    },
+                    provider_status == Some(ProviderModelStatus::CheckFailed),
+                );
+                self.visit_navigation();
+            }
+            return;
+        }
+        if route.backend == "native" {
+            let previous_provider = self.view.native_provider_id.clone();
+            let previous_model = self.view.model.clone();
+            self.view.native_provider_id = route.provider_id.clone();
+            self.view.model = route.model_id.clone();
+            if !self.persist_native_settings() {
+                self.view.native_provider_id = previous_provider;
+                self.view.model = previous_model;
+                self.view.native_key_available = self.native_settings().key_available();
+                return;
+            }
+        }
+        if self.view.selected_backend != route.backend {
+            self.new_session();
+            self.view.selected_backend = route.backend.clone();
+            self.refresh_composer_selection();
+        }
+        if route.backend == "native" {
+            self.refresh_composer_context_percent();
+        } else if route.backend == "codex" {
+            self.select_composer_model(&route.model_id);
+        } else {
+            self.view.composer_model = route.model_id.clone();
+            self.refresh_composer_choice_options();
+        }
+        self.view.composer_model_menu_open = false;
+        self.view.composer_model_list_open = false;
+        self.view.composer_model_query.clear();
+        self.composer_model_search_focus_pending = false;
+        self.view.composer_advanced_open = false;
+        self.view.composer_effort_preview = None;
+        self.view.status = format!(
+            "Modelo seleccionado: {} · {}",
+            route.provider_name, route.model_name
+        );
         self.remember_composer_selection(true);
     }
 
@@ -2747,10 +5842,18 @@ impl AgentsWindow {
         self.view.background_run_selected = false;
         self.view.selected_session = None;
         self.view.selected_session_title = None;
+        self.view.session_approval_grants.clear();
+        self.clear_native_command_ui();
+        self.view.composer_context_percent = None;
         self.view.transcript.clear();
         self.view.selected_tool_id = None;
         self.view.activity_page = 0;
         self.view.pending_permissions.clear();
+        self.view.recoverable_subagent = None;
+        self.view.pending_tool_verification = None;
+        self.view.tool_verification_output.clear();
+        self.view.pending_batch_discard = None;
+        self.view.turn_mode = TurnMode::Build;
         self.close_session_menu();
         self.projection = TranscriptProjection::new();
         self.history.clear();
@@ -2776,6 +5879,17 @@ impl AgentsWindow {
         }
     }
 
+    fn focus_composer_model_search_if_pending(&mut self) {
+        if self.composer_model_search_focus_pending
+            && self.view.composer_model_menu_open
+            && self.view.composer_model_list_open
+            && !self.view.show_command_center
+            && self.tree.focus("composer_model_search")
+        {
+            self.composer_model_search_focus_pending = false;
+        }
+    }
+
     fn focus_group_if_pending(&mut self) {
         if !self.group_focus_pending || self.view.show_command_center {
             return;
@@ -2787,6 +5901,15 @@ impl AgentsWindow {
         };
         if self.tree.focus(target) {
             self.group_focus_pending = false;
+        }
+    }
+
+    fn focus_rename_if_pending(&mut self) {
+        if self.rename_focus_pending
+            && !self.view.show_command_center
+            && self.tree.focus("rename_title")
+        {
+            self.rename_focus_pending = false;
         }
     }
 
@@ -2833,6 +5956,7 @@ impl AgentsWindow {
             if self.commit_groups(previous) {
                 self.view.group_rename_id = None;
                 self.view.group_rename_draft.clear();
+                self.view.group_menu_id = None;
             }
         } else if self
             .view
@@ -2842,6 +5966,7 @@ impl AgentsWindow {
             .any(|group| group.id == group_id && group.title == self.view.group_rename_draft.trim())
         {
             self.view.group_rename_id = None;
+            self.view.group_menu_id = None;
         } else {
             self.view.status = "Escribe un nombre de grupo válido".to_owned();
         }
@@ -2850,6 +5975,7 @@ impl AgentsWindow {
     fn close_session_menu(&mut self) {
         self.view.session_menu_id = None;
         self.view.renaming_session_id = None;
+        self.rename_focus_pending = false;
         self.view.pending_archive_session_id = None;
         self.view.pending_delete_session_id = None;
     }
@@ -2901,7 +6027,10 @@ impl AgentsWindow {
                         .clone()
                         .or_else(|| {
                             stored.events.iter().find_map(|event| {
-                                if let AgentEventKind::TurnStarted { prompt } = &event.kind {
+                                if let AgentEventKind::TurnAdmitted { prompt, .. }
+                                | AgentEventKind::TurnAdmittedWithImages { prompt, .. }
+                                | AgentEventKind::TurnStarted { prompt } = &event.kind
+                                {
                                     Some(prompt.lines().next().unwrap_or(prompt).trim().to_owned())
                                 } else {
                                     None
@@ -2911,7 +6040,7 @@ impl AgentsWindow {
                         .filter(|title| !title.is_empty())
                         .unwrap_or_else(|| "Nueva tarea".to_owned()),
                 );
-                self.view.selected_session = Some(stored.session.id);
+                self.view.selected_session = Some(stored.session.id.clone());
                 let workspace_changed =
                     self.view.workspace != stored.session.workspace.to_string_lossy();
                 self.view.workspace = stored.session.workspace.to_string_lossy().into_owned();
@@ -2919,6 +6048,7 @@ impl AgentsWindow {
                 if workspace_changed {
                     self.view.project_branch = project_branch_for_workspace(&self.view.workspace);
                     self.invalidate_workspace_files();
+                    self.refresh_mcp_settings();
                 }
                 self.refresh_composer_projects();
                 self.restore_draft();
@@ -2928,8 +6058,19 @@ impl AgentsWindow {
                 }
                 self.tree
                     .set_input_value("workspace", self.view.workspace.clone());
-                self.view.selected_backend = stored.session.backend;
+                self.view.selected_backend = stored.session.backend.clone();
                 self.refresh_composer_selection();
+                self.view.turn_mode = stored
+                    .events
+                    .iter()
+                    .rev()
+                    .find_map(|event| match &event.kind {
+                        AgentEventKind::TurnAdmitted { mode, .. }
+                        | AgentEventKind::TurnAdmittedWithImages { mode, .. } => Some(*mode),
+                        _ => None,
+                    })
+                    .unwrap_or(TurnMode::Build);
+                self.refresh_composer_context_percent();
                 self.last_sequence = stored
                     .events
                     .iter()
@@ -2938,9 +6079,23 @@ impl AgentsWindow {
                     .unwrap_or(0);
                 self.projection = TranscriptProjection::from_events(&stored.events);
                 self.view.transcript = self.projection.items().to_vec();
-                self.history = history_from_events(&stored.events);
+                let replay_status = if stored.session.backend == "native" {
+                    match replay_stored_native(&self.data_root, &stored) {
+                        Ok(replay) => {
+                            self.history = replay.history;
+                            recovery_status(&replay.recovery).to_owned()
+                        }
+                        Err(error) => {
+                            self.history.clear();
+                            error
+                        }
+                    }
+                } else {
+                    self.history = history_from_events(&stored.events);
+                    "Sesión cargada".to_owned()
+                };
                 self.tree.scroll_to_end("transcript");
-                self.view.status = "Sesión cargada".to_owned();
+                self.view.status = replay_status;
                 if let Some(marker) = stored.session.unread_at_ms {
                     match self
                         .store
@@ -2956,14 +6111,218 @@ impl AgentsWindow {
                 }
                 self.show_persistence_error();
                 self.sync_background_selected();
+                self.refresh_sessions();
             }
             Ok(None) => self.view.status = "La sesión ya no existe".to_owned(),
             Err(error) => self.view.status = format!("Error al abrir sesión: {error}"),
         }
     }
 
+    fn stop_dictation(&mut self) {
+        if let Some(handle) = self.dictation.take() {
+            handle.cancel();
+        }
+        self.dictation_key = None;
+        self.view.composer_listening = false;
+    }
+
+    fn toggle_dictation(&mut self, ctx: &egui::Context) {
+        if self.dictation.is_some() {
+            self.stop_dictation();
+            self.view.status = "Dictado detenido".to_owned();
+            return;
+        }
+        if self.view.running || self.view.background_run_selected {
+            return;
+        }
+        match voice::start() {
+            Ok(handle) => {
+                self.dictation_key = Some(self.draft_key());
+                self.dictation = Some(handle);
+                self.view.composer_listening = true;
+                self.view.status = "Iniciando dictado…".to_owned();
+                ctx.request_repaint_after(Duration::from_millis(120));
+            }
+            Err(error) => self.view.status = error,
+        }
+    }
+
+    fn poll_dictation(&mut self, ctx: &egui::Context) -> bool {
+        if self.dictation.is_none() {
+            return false;
+        }
+        if self.dictation_key.as_ref() != Some(&self.draft_key()) {
+            self.stop_dictation();
+            return true;
+        }
+        let mut events = Vec::new();
+        if let Some(handle) = &self.dictation {
+            loop {
+                match handle.try_recv() {
+                    Ok(event) => events.push(event),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        events.push(VoiceEvent::Stopped);
+                        break;
+                    }
+                }
+            }
+        }
+        let changed = !events.is_empty();
+        for event in events {
+            match event {
+                VoiceEvent::Listening => {
+                    self.view.status = "Escuchando… Pulsa el micrófono para terminar".to_owned();
+                }
+                VoiceEvent::Final(text) => {
+                    if self.tree.focus("prompt") {
+                        for action in self.tree.handle_event(UiEvent::Text(format!("{text} "))) {
+                            self.apply_action(action, ctx);
+                        }
+                    }
+                }
+                VoiceEvent::Error(error) => {
+                    self.view.status = error;
+                    self.stop_dictation();
+                }
+                VoiceEvent::Stopped => {
+                    self.stop_dictation();
+                }
+            }
+        }
+        if self.dictation.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(120));
+        }
+        changed
+    }
+
+    fn queue_native_steer(&mut self) {
+        let Some(session_id) = self.view.selected_session.as_deref() else {
+            self.view.status = "Selecciona la sesión activa para intervenir".to_owned();
+            return;
+        };
+        let running_here = matches!(
+            self.active_run.as_ref(),
+            Some(ActiveRun::Native(run)) if run.session_id == session_id
+        ) || self
+            .active_resume
+            .as_ref()
+            .is_some_and(|resume| resume.session_id == session_id);
+        if !running_here {
+            self.view.status = "No hay un turno nativo activo en esta sesión".to_owned();
+            return;
+        }
+        let visible = self.view.prompt.trim().to_owned();
+        let attachments = self.view.composer_attachments.clone();
+        if visible.is_empty() && attachments.is_empty() {
+            return;
+        }
+        let workspace = PathBuf::from(self.view.workspace.trim());
+        let payload = match prepare_native_attachments(
+            &workspace,
+            &attachments,
+            &self.view.native_provider_id,
+            &self.view.model,
+        ) {
+            Ok(payload) => payload,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let instruction = native_prompt_with_images(
+            &visible,
+            &payload.path_attachments,
+            &payload.image_attachments,
+        );
+        let Some(store) = self.store.as_ref() else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        let result = store
+            .active_native_turn_id(session_id)
+            .map_err(|error| error.to_string())
+            .and_then(|turn_id| {
+                let turn_id = turn_id.ok_or_else(|| "No hay un turno nativo activo".to_owned())?;
+                enqueue_native_steer_draft(
+                    &self.data_root,
+                    store,
+                    NativeSteerDraftSubmission {
+                        workspace: &workspace,
+                        session_id,
+                        turn_id: &turn_id,
+                        prompt: &self.view.prompt,
+                        attachments: &attachments,
+                        payload_text: &instruction,
+                        images: &payload.images,
+                    },
+                )
+            });
+        match result {
+            Ok(input_id) => {
+                if let Err(error) = acknowledge_native_steer_draft(
+                    &self.data_root,
+                    store,
+                    &workspace,
+                    session_id,
+                    &input_id,
+                ) {
+                    self.view.status = format!(
+                        "Intervención en cola, pero no se pudo limpiar el borrador: {error}. Reintenta para confirmar."
+                    );
+                    return;
+                }
+                let draft_key = self.draft_key();
+                self.view.prompt.clear();
+                self.view.composer_attachments.clear();
+                self.drafts.remove(&draft_key);
+                self.attachment_drafts.remove(&draft_key);
+                self.draft_dirty_at = None;
+                self.draft_error = None;
+                self.tree.set_input_value("prompt", "");
+                self.view.status = "Instrucción en cola para el próximo límite seguro".to_owned();
+            }
+            Err(error) => {
+                self.view.status = format!("No se pudo intervenir el turno: {error}");
+            }
+        }
+    }
+
+    fn revoke_selected_session_approval(&mut self, key_digest: &str) {
+        let Some(session_id) = self.view.selected_session.as_deref() else {
+            self.view.status = "Selecciona una sesión para revocar el permiso".to_owned();
+            return;
+        };
+        let Some(store) = &self.store else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        match store.revoke_session_approval_grant(session_id, key_digest) {
+            Ok(true) => {
+                self.view.status =
+                    "Permiso de sesión revocado para las próximas herramientas".to_owned();
+                self.refresh_sessions();
+            }
+            Ok(false) => {
+                self.view.status = "Ese permiso ya no está activo".to_owned();
+                self.refresh_sessions();
+            }
+            Err(error) => {
+                self.view.status = format!("No se pudo revocar el permiso: {error}");
+            }
+        }
+    }
+
     fn start_run(&mut self) {
+        self.stop_dictation();
         if self.view.running {
+            if self.view.selected_backend == "native" {
+                self.queue_native_steer();
+            }
+            return;
+        }
+        if self.active_compact.is_some() {
+            self.view.status = "Espera a que termine la compactación".to_owned();
             return;
         }
         if self
@@ -2997,22 +6356,49 @@ impl AgentsWindow {
             self.view.status = "El directorio de trabajo no existe".to_owned();
             return;
         }
-        for attachment in &attachments {
-            match composer_attachment_for_path(&workspace, Path::new(&attachment.path)) {
-                Ok(current) if current.path == attachment.path => {}
-                Ok(_) => {
-                    self.view.status = "Un archivo adjunto cambió de ubicación".to_owned();
-                    return;
-                }
+        let backend = self.view.selected_backend.clone();
+        let native_attachments = if backend == "native" {
+            match prepare_native_attachments(
+                &workspace,
+                &attachments,
+                &self.view.native_provider_id,
+                &self.view.model,
+            ) {
+                Ok(payload) => Some(payload),
                 Err(error) => {
-                    self.view.status = format!("Archivo adjunto no disponible: {error}");
+                    self.view.status = error;
                     return;
                 }
             }
-        }
-        let prompt = composer_prompt_with_attachments(&visible_prompt, &attachments);
-        let backend = self.view.selected_backend.clone();
+        } else {
+            for attachment in &attachments {
+                match composer_attachment_for_path(&workspace, Path::new(&attachment.path)) {
+                    Ok(current)
+                        if current.path == attachment.path && current.is_dir == attachment.is_dir => {}
+                    Ok(_) => {
+                        self.view.status = "Un adjunto cambió de ubicación o tipo".to_owned();
+                        return;
+                    }
+                    Err(error) => {
+                        self.view.status = format!("Adjunto no disponible: {error}");
+                        return;
+                    }
+                }
+            }
+            None
+        };
+        let prompt = if let Some(payload) = &native_attachments {
+            native_prompt_with_images(
+                &visible_prompt,
+                &payload.path_attachments,
+                &payload.image_attachments,
+            )
+        } else {
+            composer_prompt_with_attachments(&visible_prompt, &attachments)
+        };
+        let native_images = native_attachments.map(|payload| payload.images).unwrap_or_default();
         let submitted_draft_key = self.draft_key();
+        let active_goal = self.view.composer_goal.clone();
         let native_connection = if backend == "native" {
             let connection = match self.native_settings().resolve() {
                 Ok(connection) => connection,
@@ -3071,18 +6457,41 @@ impl AgentsWindow {
             }
             Some(profile)
         };
-        let native_skills = if backend == "native" {
-            match crate::marketplace::active_skill_instructions(&self.data_root, &workspace) {
-                Ok(skills) => skills,
+        let native_instructions = if backend == "native" {
+            match native_workspace_instructions(&self.data_root, &workspace) {
+                Ok(instructions) => instructions,
                 Err(error) => {
-                    self.view.status = format!("No se pudieron leer las skills: {error}");
+                    self.view.status = error;
                     return;
                 }
             }
         } else {
             String::new()
         };
-        let Some(store) = &self.store else {
+        let native_mcp_servers = if backend == "native" && self.view.turn_mode == TurnMode::Build {
+            match McpSettings::load(&self.data_root, &workspace) {
+                Ok(settings) => settings.enabled_servers().cloned().collect::<Vec<_>>(),
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        let native_hooks = if backend == "native" {
+            match NativeHookSettings::load(&self.data_root).and_then(|settings| settings.registry())
+            {
+                Ok(hooks) => Some(Arc::new(hooks)),
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        let Some(store) = self.store.clone() else {
             self.view.status = "El historial no está disponible".to_owned();
             return;
         };
@@ -3099,44 +6508,261 @@ impl AgentsWindow {
                 }
             },
         };
-        let request = AgentRunRequest {
+        if submitted_draft_key.1.is_none() {
+            if let Err(error) = self.transfer_draft_goal_to_session(&submitted_draft_key, &id) {
+                self.view.status = error;
+                return;
+            }
+        }
+        let mut request = AgentRunRequest {
             session_id: Some(id),
             sequence_start: self.last_sequence,
             workspace,
             history: self.history.clone(),
             prompt: prompt.clone(),
+            mode: if backend == "native" {
+                self.view.turn_mode
+            } else {
+                TurnMode::Build
+            },
         };
         let active = if backend == "native" {
             let connection = native_connection.expect("validated native connection");
-            let mut model = OpenAiCompatibleBackend::new(
-                connection.endpoint,
-                connection.api_key,
-                connection.model_id,
-            );
-            if self.view.native_provider_id == "deepseek" {
-                model = model.with_deepseek_non_thinking();
+            let model_id = connection.model_id.clone();
+            let endpoint = connection.endpoint.clone();
+            let model = match native_model_backend(
+                connection,
+                &self.view.native_provider_id,
+                Some(&self.view.composer_effort),
+                self.view.hosted_web_search_mode,
+            ) {
+                Ok(model) => model,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
+            let lease = match store.try_acquire_native_lease(
+                request
+                    .session_id
+                    .as_deref()
+                    .expect("session id was assigned"),
+            ) {
+                Ok(lease) => lease,
+                Err(error) => {
+                    self.view.status = format!("La sesión nativa ya está en uso: {error}");
+                    return;
+                }
+            };
+            let stored = match store.load(
+                request
+                    .session_id
+                    .as_deref()
+                    .expect("session id was assigned"),
+            ) {
+                Ok(Some(stored)) => stored,
+                Ok(None) => {
+                    self.view.status = "La sesión nativa desapareció".to_owned();
+                    return;
+                }
+                Err(error) => {
+                    self.view.status = format!("No se pudo leer la sesión nativa: {error}");
+                    return;
+                }
+            };
+            if stored.session.subagent.is_some() {
+                self.view.status =
+                    "Esta sesión pertenece a un subagente; retomá el trabajo desde la sesión padre"
+                        .to_owned();
+                return;
             }
-            if self.view.composer_effort != "default" {
-                model = match model.with_reasoning_effort(self.view.composer_effort.clone()) {
-                    Ok(model) => model,
+            let replay = match replay_stored_native(&self.data_root, &stored) {
+                Ok(replay) => replay,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
+            if !replay.can_start_new_turn {
+                self.view.status = recovery_status(&replay.recovery).to_owned();
+                return;
+            }
+            if replay.checkpoint.as_ref().is_some_and(|checkpoint| {
+                checkpoint.compatibility
+                    != native_checkpoint_compatibility(&self.view.native_provider_id, &model_id)
+            }) {
+                self.view.status =
+                    "El checkpoint pertenece a otro proveedor o modelo; requiere migración explícita"
+                        .to_owned();
+                return;
+            }
+            if replay
+                .history
+                .iter()
+                .any(|message| !message.provider_output_items.is_empty())
+                && stored
+                    .events
+                    .iter()
+                    .rev()
+                    .find_map(|event| match &event.kind {
+                        AgentEventKind::TurnAdmitted { model, .. }
+                        | AgentEventKind::TurnAdmittedWithImages { model, .. } => Some(model.as_str()),
+                        _ => None,
+                    })
+                    != Some(model_id.as_str())
+            {
+                self.view.status =
+                    "El historial Responses usa otro modelo; compactalo antes de cambiar de modelo"
+                        .to_owned();
+                return;
+            }
+            let plan_snapshot = if request.mode == TurnMode::Build {
+                replay.latest_plan.clone()
+            } else {
+                None
+            };
+            request.history = replay.history;
+            request.sequence_start = replay.last_sequence;
+            let token_budget =
+                native_provider::verified_token_budget(&self.view.native_provider_id, &model_id);
+            let auto_checkpoints = if token_budget.is_some() {
+                match CheckpointFileStore::new(self.data_root.join("sessions")) {
+                    Ok(checkpoints) => Some(Arc::new(checkpoints)),
                     Err(error) => {
-                        self.view.status = error.to_string();
+                        self.view.status = format!("No se pudo abrir checkpoints: {error}");
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
+            let base_tools = match self.native_parent_tools(
+                request
+                    .session_id
+                    .as_deref()
+                    .expect("session id was assigned"),
+                &stored.session.workspace,
+            ) {
+                Ok(tools) => tools,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
+            let child_tools: Arc<dyn ToolExecutor> = Arc::new(
+                LocalTools::new()
+                    .with_permissions(self.agent_tool_settings.permissions())
+                    .with_command_isolation(self.agent_tool_settings.command_isolation()),
+            );
+            let policy = match self.native_permission_policy() {
+                Ok(policy) => policy,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
+            let instructions =
+                system_instructions_with_goal(native_instructions, active_goal.as_deref());
+            let command_hooks = native_hooks.expect("native hooks were validated");
+            let coordinator =
+                match SubagentCoordinator::new(store.clone(), SubagentLimits::default()) {
+                    Ok(coordinator) => Arc::new(coordinator),
+                    Err(error) => {
+                        self.view.status =
+                            format!("No se pudo iniciar la coordinación de subagentes: {error}");
                         return;
                     }
                 };
-            }
-            let model = Arc::new(model);
-            let tools = Arc::new(
-                LocalTools::new().with_permissions(self.agent_tool_settings.permissions()),
-            );
-            let policy = self.agent_tool_settings.permission_policy();
-            ActiveRun::Native(
-                AgentRunner::new(model, tools)
-                    .with_permission_policy(policy)
-                    .with_system_instructions(native_skills)
-                    .start(request),
+            let mut child_worker = SubagentWorker::new(
+                coordinator.clone(),
+                store.clone(),
+                model.clone(),
+                child_tools,
+                self.view.native_provider_id.clone(),
+                endpoint.clone(),
             )
+            .with_permission_policy(policy.clone())
+            .with_session_approvals(self.agent_tool_settings.command_isolation())
+            .with_event_bridge(self.subagent_bridge.clone())
+            .with_command_hooks(command_hooks.clone())
+            .with_nested_subagents(SubagentToolLimits::default())
+            .with_system_instructions(instructions.clone());
+            if let Some(budget) = token_budget {
+                child_worker = child_worker.with_token_budget_policy(budget);
+            }
+            if let Some(checkpoints) = &auto_checkpoints {
+                child_worker = child_worker.with_auto_compaction(
+                    checkpoints.clone(),
+                    native_checkpoint_compatibility(&self.view.native_provider_id, &model_id),
+                );
+            }
+            let lease = Arc::new(lease);
+            let tools: Arc<dyn ToolExecutor> = match SubagentToolExecutor::new(
+                base_tools,
+                child_worker,
+                coordinator,
+                store.clone(),
+                lease.clone(),
+                SubagentToolLimits::default(),
+            ) {
+                Ok(tools) => Arc::new(tools),
+                Err(error) => {
+                    self.view.status =
+                        format!("No se pudieron preparar las herramientas de subagentes: {error}");
+                    return;
+                }
+            };
+            let turn_id = Uuid::new_v4().to_string();
+            let session_id = request
+                .session_id
+                .as_deref()
+                .expect("session id was assigned");
+            let admission = match store.admit_native_turn_with_images(
+                session_id,
+                &turn_id,
+                &request.prompt,
+                &model_id,
+                request.mode,
+                &native_images,
+            ) {
+                Ok(admission) => admission,
+                Err(error) => {
+                    self.view.status = format!("No se pudo admitir el turno: {error}");
+                    return;
+                }
+            };
+            request.sequence_start = admission.sequence;
+            self.last_sequence = admission.sequence;
+            let mut runner = AgentRunner::new(model, tools)
+                .with_command_hooks(command_hooks)
+                .with_permission_policy(policy)
+                .with_session_approvals(store.clone(), self.agent_tool_settings.command_isolation())
+                .with_plan_snapshot(plan_snapshot)
+                .with_system_instructions(instructions)
+                .with_native_runtime_identity(&self.view.native_provider_id, endpoint)
+                .with_event_journal(store.clone())
+                .with_native_steering(store.clone());
+            if !native_mcp_servers.is_empty() {
+                runner = runner
+                    .with_tool_preparation(Arc::new(McpToolPreparation::new(native_mcp_servers)));
+            }
+            if let (Some(budget), Some(checkpoints)) = (token_budget, auto_checkpoints) {
+                runner = runner
+                    .with_token_budget_policy(budget)
+                    .with_auto_compaction(
+                        store.clone(),
+                        checkpoints,
+                        native_checkpoint_compatibility(&self.view.native_provider_id, &model_id),
+                    );
+            }
+            ActiveRun::Native(runner.start_with_shared_lease(request, lease))
         } else {
+            if let Some(objective) = active_goal.as_deref() {
+                request.history.insert(
+                    0,
+                    AgentMessage::system(composer_goal_instruction(objective)),
+                );
+            }
             ActiveRun::Cli(CliRunner::start(
                 cli_profile.expect("validated CLI profile"),
                 request,
@@ -3170,7 +6796,11 @@ impl AgentsWindow {
     fn process_event(&mut self, event: AgentEvent) -> bool {
         let follow_tail = self.tree.is_scroll_at_end("transcript", 24.0);
         self.last_sequence = self.last_sequence.max(event.sequence);
-        let persisted = if let Some(store) = &self.store {
+        let native_run =
+            self.active_resume.is_some() || matches!(&self.active_run, Some(ActiveRun::Native(_)));
+        let persisted = if native_run {
+            true
+        } else if let Some(store) = &self.store {
             if let Err(error) = store.append_event(&event.session_id, &event) {
                 self.persistence_error = Some(error.to_string());
                 false
@@ -3238,6 +6868,13 @@ impl AgentsWindow {
             AgentEventKind::ModelRequestStarted { step, model } => {
                 self.view.status = format!("{model} · paso {step}");
             }
+            AgentEventKind::ModelResponseCommitted { .. }
+            | AgentEventKind::CheckpointCommitted { .. }
+                if persisted
+                    && self.view.selected_session.as_deref() == Some(event.session_id.as_str()) =>
+            {
+                self.refresh_composer_context_percent();
+            }
             AgentEventKind::TurnCompleted { .. } => {
                 self.view.running = false;
                 self.view.status = "Turno completado".to_owned();
@@ -3265,7 +6902,9 @@ impl AgentsWindow {
 
     fn poll_run(&mut self) {
         let Some(run) = &self.active_run else { return };
+        let native_run = matches!(run, ActiveRun::Native(_));
         let (events, disconnected) = run.drain();
+        let journal_error = disconnected.then(|| run.journal_error()).flatten();
         let mut transcript_changed = false;
         for event in events {
             transcript_changed |= self.process_event(event);
@@ -3274,6 +6913,17 @@ impl AgentsWindow {
             self.view.transcript = self.projection.items().to_vec();
         }
         if disconnected {
+            if let Some(error) = journal_error {
+                self.persistence_error = Some(error);
+            }
+            if native_run {
+                if let (Some(store), Some(id)) = (&self.store, &self.view.selected_session) {
+                    if let Ok(Some(stored)) = store.load(id) {
+                        self.projection = TranscriptProjection::from_events(&stored.events);
+                        self.view.transcript = self.projection.items().to_vec();
+                    }
+                }
+            }
             self.view.pending_permissions.clear();
             if self.view.running {
                 self.view.running = false;
@@ -3287,12 +6937,1055 @@ impl AgentsWindow {
         }
     }
 
-    fn rebuild_history(&mut self) {
-        if let (Some(store), Some(id)) = (&self.store, &self.view.selected_session) {
-            if let Ok(Some(stored)) = store.load(id) {
-                self.history = history_from_events(&stored.events);
+    fn start_resume(&mut self) {
+        if self.view.running || self.active_run.is_some() || self.active_compact.is_some() {
+            self.view.status = "Espera a que termine la operación activa".to_owned();
+            return;
+        }
+        let Some(session_id) = self.view.selected_session.clone() else {
+            self.view.status = "Selecciona una sesión nativa para reanudar".to_owned();
+            return;
+        };
+        if self
+            .background_automation_runs
+            .iter()
+            .any(|run| run.session_id == session_id)
+        {
+            self.view.status = "Espera a que termine la automatización".to_owned();
+            return;
+        }
+        let Some(store) = self.store.clone() else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        let stored = match store.load(&session_id) {
+            Ok(Some(stored)) if stored.session.backend == "native" => stored,
+            Ok(Some(_)) => {
+                self.view.status = "Esta sesión usa un agente CLI".to_owned();
+                return;
+            }
+            Ok(None) => {
+                self.view.status = "La sesión ya no existe".to_owned();
+                return;
+            }
+            Err(error) => {
+                self.view.status = format!("No se pudo leer la sesión: {error}");
+                return;
+            }
+        };
+        let replay = match replay_stored_native(&self.data_root, &stored) {
+            Ok(replay) => replay,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        if replay.recovery == ReplayRecovery::Idle {
+            if stored.session.subagent.is_some() {
+                self.finalize_resolved_child(&stored.session.id);
+            } else {
+                self.view.status = "La sesión no tiene un turno interrumpido".to_owned();
+            }
+            return;
+        }
+        if let ReplayRecovery::AbortedToolBatch { next_tool_call } = &replay.recovery {
+            let Some(batch) = &replay.pending_tool_batch else {
+                self.view.status = "El lote interrumpido no se pudo verificar".to_owned();
+                return;
+            };
+            self.view.pending_batch_discard = Some(AbortedToolBatchView {
+                session_id,
+                next_call_id: next_tool_call.id.clone(),
+                next_tool_name: next_tool_call.name.clone(),
+                next_arguments: serde_json::to_string_pretty(&next_tool_call.arguments)
+                    .unwrap_or_default(),
+                completed_calls: batch.next_call_index,
+                remaining_calls: batch
+                    .assistant
+                    .tool_calls
+                    .len()
+                    .saturating_sub(batch.next_call_index),
+            });
+            self.view.show_settings = false;
+            self.visit_navigation();
+            self.view.status = "Decide qué hacer con las llamadas pendientes".to_owned();
+            return;
+        }
+        if let ReplayRecovery::ToolOutcomeUncertain { tool_call } = &replay.recovery {
+            self.view.pending_tool_verification = Some(ToolVerificationView {
+                session_id,
+                call_id: tool_call.id.clone(),
+                name: tool_call.name.clone(),
+                arguments: serde_json::to_string_pretty(&tool_call.arguments).unwrap_or_default(),
+                error: None,
+            });
+            self.view.tool_verification_output.clear();
+            self.view.tool_verification_is_error = false;
+            self.view.show_settings = false;
+            self.visit_navigation();
+            self.view.status =
+                "Verifica el efecto y registra su resultado para cerrar la llamada pendiente"
+                    .to_owned();
+            return;
+        }
+        if stored.session.subagent.is_some() {
+            self.start_child_resume(stored, replay);
+            return;
+        }
+        let connection = match self.native_settings().resolve() {
+            Ok(connection) => connection,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let model_id = connection.model_id.clone();
+        let endpoint = connection.endpoint.clone();
+        let provider_id = self.view.native_provider_id.clone();
+        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id);
+        if replay
+            .checkpoint
+            .as_ref()
+            .is_some_and(|checkpoint| checkpoint.compatibility != compatibility)
+        {
+            self.view.status = "El checkpoint pertenece a otro proveedor o modelo".to_owned();
+            return;
+        }
+        if replay
+            .active_turn
+            .as_ref()
+            .and_then(|turn| turn.model.as_deref())
+            .is_some_and(|admitted_model| admitted_model != model_id)
+        {
+            self.view.status = "Selecciona el modelo del turno interrumpido".to_owned();
+            return;
+        }
+        // A model without a verified window can still resume. It follows the
+        // same no-auto-compaction behavior as its original native run.
+        let budget_policy = native_provider::verified_token_budget(&provider_id, &model_id);
+        if connection.api_key.is_none() && provider_id != "custom" {
+            self.view.status = "Falta la clave API del proveedor nativo".to_owned();
+            return;
+        }
+        let model = match native_model_backend(
+            connection,
+            &provider_id,
+            Some(&self.view.composer_effort),
+            self.view.hosted_web_search_mode,
+        ) {
+            Ok(model) => model,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let workspace = &stored.session.workspace;
+        let goal_key = (
+            workspace.to_string_lossy().into_owned(),
+            Some(session_id.clone()),
+        );
+        let system_instructions = match native_resume_instructions(
+            &self.data_root,
+            workspace,
+            self.composer_goals.get(&goal_key).map(String::as_str),
+            replay.active_system_instructions.as_deref(),
+        ) {
+            Ok(instructions) => instructions,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let tool_preparation = if replay
+            .active_turn
+            .as_ref()
+            .is_some_and(|turn| turn.mode == TurnMode::Build)
+        {
+            match McpSettings::load(&self.data_root, workspace) {
+                Ok(settings) => {
+                    let enabled = settings.enabled_servers().cloned().collect::<Vec<_>>();
+                    (!enabled.is_empty()).then(|| {
+                        Arc::new(McpToolPreparation::new(enabled))
+                            as Arc<dyn openide_harness::ToolPreparation>
+                    })
+                }
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        let checkpoints = match CheckpointFileStore::new(self.data_root.join("sessions")) {
+            Ok(checkpoints) => Arc::new(checkpoints),
+            Err(error) => {
+                self.view.status = format!("No se pudo abrir checkpoints: {error}");
+                return;
+            }
+        };
+        let command_hooks = match NativeHookSettings::load(&self.data_root)
+            .and_then(|settings| settings.registry())
+        {
+            Ok(hooks) => Arc::new(hooks),
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let base_tools = match self.native_parent_tools(&session_id, workspace) {
+            Ok(tools) => tools,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let permission_policy = match self.native_permission_policy() {
+            Ok(policy) => policy,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let request = ResumeWorkerRequest {
+            session_id,
+            sessions: store,
+            checkpoints,
+            compatibility,
+            model,
+            provider: provider_id,
+            endpoint,
+            base_tools,
+            child_tools: Arc::new(
+                LocalTools::new()
+                    .with_permissions(self.agent_tool_settings.permissions())
+                    .with_command_isolation(self.agent_tool_settings.command_isolation()),
+            ),
+            event_bridge: Some(self.subagent_bridge.clone()),
+            tool_preparation,
+            permission_policy,
+            command_isolation: self.agent_tool_settings.command_isolation(),
+            command_hooks,
+            budget_policy,
+            system_instructions,
+            limits: RunLimits::default(),
+        };
+        match ResumeWorkerHandle::start(request) {
+            Ok(handle) => {
+                self.active_resume = Some(handle);
+                self.view.running = true;
+                self.view.pending_permissions.clear();
+                self.view.pending_tool_verification = None;
+                self.view.tool_verification_output.clear();
+                self.run_has_output = false;
+                self.view.show_settings = false;
+                self.visit_navigation();
+                self.view.status = "Recuperando turno interrumpido...".to_owned();
+            }
+            Err(error) => self.view.status = error,
+        }
+    }
+
+    fn start_child_resume(&mut self, stored: StoredSession, replay: NativeReplay) {
+        let child_id = stored.session.id.clone();
+        let Some(link) = stored.session.subagent.as_ref() else {
+            self.view.status = "La sesión seleccionada no es un subagente".to_owned();
+            return;
+        };
+        let admissions = stored
+            .events
+            .iter()
+            .filter_map(|event| match &event.kind {
+                AgentEventKind::TurnAdmitted {
+                    turn_id,
+                    prompt,
+                    model,
+                    mode,
+                }
+                | AgentEventKind::TurnAdmittedWithImages {
+                    turn_id,
+                    prompt,
+                    model,
+                    mode,
+                    ..
+                } => Some((turn_id, prompt, model, *mode)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [(spawn_id, prompt, admitted_model, mode)] = admissions.as_slice() else {
+            self.view.status =
+                "El journal del subagente no tiene un único turno admitido".to_owned();
+            return;
+        };
+        if *spawn_id != &link.spawn_id {
+            self.view.status =
+                "El turno admitido no coincide con el spawn del subagente".to_owned();
+            return;
+        }
+        let connection = match self.native_settings().resolve() {
+            Ok(connection) => connection,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let provider = self.view.native_provider_id.clone();
+        let model_id = connection.model_id.clone();
+        let endpoint = connection.endpoint.clone();
+        if *admitted_model != &model_id {
+            self.view.status =
+                "Selecciona el modelo original del subagente interrumpido".to_owned();
+            return;
+        }
+        if connection.api_key.is_none() && provider != "custom" {
+            self.view.status = "Falta la clave API del proveedor nativo".to_owned();
+            return;
+        }
+        let model =
+            match native_model_backend(
+                connection,
+                &provider,
+                Some(&self.view.composer_effort),
+                self.view.hosted_web_search_mode,
+            ) {
+                Ok(model) => model,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
+        let workspace = &stored.session.workspace;
+        let parent_id = link.parent_session_id.clone();
+        let goal_key = (
+            workspace.to_string_lossy().into_owned(),
+            Some(parent_id.clone()),
+        );
+        let instructions = match native_resume_instructions(
+            &self.data_root,
+            workspace,
+            self.composer_goals.get(&goal_key).map(String::as_str),
+            replay.active_system_instructions.as_deref(),
+        ) {
+            Ok(instructions) => instructions,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let Some(sessions) = self.store.clone() else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        let coordinator =
+            match SubagentCoordinator::new(sessions.clone(), SubagentLimits::default()) {
+                Ok(coordinator) => Arc::new(coordinator),
+                Err(error) => {
+                    self.view.status =
+                        format!("No se pudo abrir la coordinación de subagentes: {error}");
+                    return;
+                }
+            };
+        let command_hooks = match NativeHookSettings::load(&self.data_root)
+            .and_then(|settings| settings.registry())
+        {
+            Ok(hooks) => Arc::new(hooks),
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let child_tools: Arc<dyn ToolExecutor> = Arc::new(
+            LocalTools::new()
+                .with_permissions(self.agent_tool_settings.permissions())
+                .with_command_isolation(self.agent_tool_settings.command_isolation()),
+        );
+        let policy = match self.native_permission_policy() {
+            Ok(policy) => policy,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let mut worker = SubagentWorker::new(
+            coordinator,
+            sessions.clone(),
+            model,
+            child_tools,
+            provider.clone(),
+            endpoint,
+        )
+        .with_permission_policy(policy)
+        .with_session_approvals(self.agent_tool_settings.command_isolation())
+        .with_event_bridge(self.subagent_bridge.clone())
+        .with_command_hooks(command_hooks)
+        .with_nested_subagents(SubagentToolLimits::default())
+        .with_system_instructions(instructions);
+        if let Some(budget) = native_provider::verified_token_budget(&provider, &model_id) {
+            let checkpoints = match CheckpointFileStore::new(self.data_root.join("sessions")) {
+                Ok(checkpoints) => Arc::new(checkpoints),
+                Err(error) => {
+                    self.view.status = format!("No se pudo abrir checkpoints: {error}");
+                    return;
+                }
+            };
+            worker = worker
+                .with_token_budget_policy(budget)
+                .with_auto_compaction(
+                    checkpoints,
+                    native_checkpoint_compatibility(&provider, &model_id),
+                );
+        }
+        let request = SubagentRecoveryRequest {
+            sessions,
+            worker,
+            parent_id,
+            child_id: child_id.clone(),
+            spawn_id: (*spawn_id).clone(),
+            prompt: (*prompt).clone(),
+            mode: *mode,
+        };
+        match SubagentRecoveryHandle::start(request) {
+            Ok(handle) => {
+                self.active_child_recovery = Some(handle);
+                self.view.running = true;
+                self.view.pending_permissions.clear();
+                self.view.recoverable_subagent = None;
+                self.view.show_settings = false;
+                self.visit_navigation();
+                self.view.status = "Recuperando subagente interrumpido...".to_owned();
+            }
+            Err(error) => self.view.status = error,
+        }
+    }
+
+    fn finalize_resolved_child(&mut self, child_id: &str) {
+        let Some(sessions) = self.store.clone() else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        let stored = match sessions.load(child_id) {
+            Ok(Some(stored)) => stored,
+            Ok(None) => {
+                self.view.status = "La sesión hija ya no existe".to_owned();
+                return;
+            }
+            Err(error) => {
+                self.view.status = format!("No se pudo leer el subagente: {error}");
+                return;
+            }
+        };
+        let Some(link) = stored.session.subagent.as_ref() else {
+            self.view.status = "La sesión seleccionada no es un subagente".to_owned();
+            return;
+        };
+        let parent_lease = match sessions.try_acquire_native_lease(&link.parent_session_id) {
+            Ok(lease) => lease,
+            Err(error) => {
+                self.view.status = format!("La sesión padre está en uso: {error}");
+                return;
+            }
+        };
+        let coordinator =
+            match SubagentCoordinator::new(sessions.clone(), SubagentLimits::default()) {
+                Ok(coordinator) => coordinator,
+                Err(error) => {
+                    self.view.status =
+                        format!("No se pudo abrir la coordinación de subagentes: {error}");
+                    return;
+                }
+            };
+        let result = finalize_resolved_subagent(&sessions, &coordinator, &parent_lease, child_id);
+        drop(parent_lease);
+        match result {
+            Ok(terminal) => {
+                self.refresh_sessions();
+                self.view.status = format!(
+                    "Subagente resuelto: {}",
+                    subagent_status_label(&terminal.status)
+                );
+            }
+            Err(error) => {
+                self.refresh_sessions();
+                self.view.status = format!("No se pudo cerrar el estado del subagente: {error}");
             }
         }
+    }
+
+    fn discard_aborted_batch(&mut self) {
+        let Some(batch) = self.view.pending_batch_discard.clone() else {
+            return;
+        };
+        if self.view.selected_session.as_deref() != Some(batch.session_id.as_str()) {
+            self.view.pending_batch_discard = None;
+            self.view.status = "La sesión cambió antes de resolver el lote".to_owned();
+            return;
+        }
+        let Some(store) = self.store.as_ref() else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        let checkpoints = match CheckpointFileStore::new(self.data_root.join("sessions")) {
+            Ok(checkpoints) => checkpoints,
+            Err(error) => {
+                self.view.status = format!("No se pudo abrir checkpoints: {error}");
+                return;
+            }
+        };
+        let lease = match store.try_acquire_native_lease(&batch.session_id) {
+            Ok(lease) => lease,
+            Err(error) => {
+                self.view.status = format!("La sesión nativa ya está en uso: {error}");
+                return;
+            }
+        };
+        let step =
+            match discard_aborted_tool_batch(store, &checkpoints, &lease, &batch.next_call_id) {
+                Ok(step) => step,
+                Err(error) => {
+                    self.view.status = format!("No se pudo descartar el lote: {error}");
+                    return;
+                }
+            };
+        drop(lease);
+        let stored = match store.load(&batch.session_id) {
+            Ok(Some(stored)) => stored,
+            Ok(None) => {
+                self.view.pending_batch_discard = None;
+                self.view.status = "El lote se descartó, pero la sesión ya no aparece".to_owned();
+                return;
+            }
+            Err(error) => {
+                self.view.pending_batch_discard = None;
+                self.view.status =
+                    format!("El lote se descartó, pero no se pudo recargar la sesión: {error}");
+                return;
+            }
+        };
+        self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
+        self.projection = TranscriptProjection::from_events(&stored.events);
+        self.view.transcript = self.projection.items().to_vec();
+        self.history = step.replay.history;
+        self.view.pending_batch_discard = None;
+        self.refresh_sessions();
+        if stored.session.subagent.is_some() && step.replay.can_start_new_turn {
+            self.finalize_resolved_child(&batch.session_id);
+        } else {
+            self.view.status =
+                "Llamadas pendientes descartadas; la sesión acepta otro turno".to_owned();
+        }
+    }
+
+    fn verify_uncertain_tool(&mut self, pending: &ToolVerificationView, result: ToolOutput) {
+        if self.view.selected_session.as_deref() != Some(pending.session_id.as_str()) {
+            self.view.status = "Selecciona la sesión del resultado pendiente".to_owned();
+            return;
+        }
+        let Some(store) = self.store.clone() else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        let checkpoints = match CheckpointFileStore::new(self.data_root.join("sessions")) {
+            Ok(checkpoints) => checkpoints,
+            Err(error) => {
+                self.view.status = format!("No se pudo abrir checkpoints: {error}");
+                return;
+            }
+        };
+        let lease = match store.try_acquire_native_lease(&pending.session_id) {
+            Ok(lease) => lease,
+            Err(error) => {
+                self.view.status = format!("La sesión nativa ya está en uso: {error}");
+                return;
+            }
+        };
+        let step = match openide_harness::record_verified_tool_outcome(
+            &store,
+            &checkpoints,
+            &lease,
+            &pending.call_id,
+            result,
+            RunLimits::default().max_tool_output_chars,
+        ) {
+            Ok(step) => step,
+            Err(error) => {
+                self.view.status = format!("No se pudo registrar el resultado: {error}");
+                return;
+            }
+        };
+        drop(lease);
+        let stored = match store.load(&pending.session_id) {
+            Ok(Some(stored)) => stored,
+            Ok(None) => {
+                self.view.status =
+                    "El resultado se registró, pero la sesión ya no aparece".to_owned();
+                return;
+            }
+            Err(error) => {
+                self.view.status = format!(
+                    "El resultado se registró, pero no se pudo recargar la sesión: {error}"
+                );
+                return;
+            }
+        };
+        self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
+        self.projection = TranscriptProjection::from_events(&stored.events);
+        self.view.transcript = self.projection.items().to_vec();
+        self.history = step.replay.history;
+        self.view.pending_tool_verification = None;
+        self.view.tool_verification_output.clear();
+        self.refresh_sessions();
+        if matches!(
+            step.replay.recovery,
+            ReplayRecovery::AbortedToolBatch { .. } | ReplayRecovery::ToolOutcomeUncertain { .. }
+        ) {
+            self.start_resume();
+        } else if stored.session.subagent.is_some() && step.replay.can_start_new_turn {
+            self.finalize_resolved_child(&pending.session_id);
+        } else if step.replay.can_start_new_turn {
+            self.view.status = "Resultado verificado; el turno anterior quedó cerrado".to_owned();
+        } else {
+            self.view.status = "Resultado verificado; reanuda para continuar el turno".to_owned();
+        }
+    }
+
+    fn poll_resume(&mut self) -> bool {
+        let (updates, disconnected) = {
+            let Some(active) = &self.active_resume else {
+                return false;
+            };
+            let mut updates = Vec::new();
+            let disconnected = loop {
+                match active.updates.try_recv() {
+                    Ok(update) => updates.push(update),
+                    Err(TryRecvError::Empty) => break false,
+                    Err(TryRecvError::Disconnected) => break true,
+                }
+            };
+            (updates, disconnected)
+        };
+        if updates.is_empty() && !disconnected {
+            return false;
+        }
+        let mut transcript_changed = false;
+        let mut finished = None;
+        for update in updates {
+            match update {
+                ResumeUpdate::Events(events) => {
+                    for event in events {
+                        transcript_changed |= self.process_event(event);
+                    }
+                }
+                ResumeUpdate::NeedsPermission {
+                    request_id,
+                    tool_call,
+                } => {
+                    if !self
+                        .view
+                        .pending_permissions
+                        .iter()
+                        .any(|permission| permission.request_id == request_id)
+                    {
+                        self.view.pending_permissions.push(PermissionView {
+                            request_id,
+                            tool_name: tool_call.name.clone(),
+                            arguments: serde_json::to_string_pretty(&tool_call.arguments)
+                                .unwrap_or_default(),
+                        });
+                    }
+                    self.view.status = format!("Esperando permiso para {}", tool_call.name);
+                }
+                ResumeUpdate::NeedsVerification {
+                    tool_call,
+                    executor_error,
+                } => {
+                    self.view.pending_tool_verification = Some(ToolVerificationView {
+                        session_id: self
+                            .active_resume
+                            .as_ref()
+                            .expect("recovery is active while polling")
+                            .session_id
+                            .clone(),
+                        call_id: tool_call.id.clone(),
+                        name: tool_call.name.clone(),
+                        arguments: serde_json::to_string_pretty(&tool_call.arguments)
+                            .unwrap_or_default(),
+                        error: executor_error.clone(),
+                    });
+                    self.view.tool_verification_output.clear();
+                    self.view.tool_verification_is_error = false;
+                    self.view.status = format!(
+                        "{} tiene un resultado incierto ({}). Verifica el efecto antes de continuar.",
+                        tool_call.name,
+                        executor_error.unwrap_or_else(|| tool_call.id.clone())
+                    );
+                }
+                ResumeUpdate::Finished(result) => finished = Some(result),
+            }
+        }
+        if transcript_changed {
+            self.view.transcript = self.projection.items().to_vec();
+        }
+        if finished.is_none() && !disconnected {
+            // A terminal journal event may precede MCP shutdown; keep the
+            // composer blocked until the worker releases its native lease.
+            self.view.running = true;
+            return true;
+        }
+        let result = finished
+            .unwrap_or_else(|| Err("La recuperación terminó sin un resultado final".to_owned()));
+        let active = self
+            .active_resume
+            .take()
+            .expect("recovery was active while polling");
+        self.view.running = false;
+        self.view.pending_permissions.clear();
+        self.view.pending_tool_verification = None;
+        self.view.tool_verification_output.clear();
+        if let Ok(Some(stored)) = self
+            .store
+            .as_ref()
+            .expect("recovery requires a session store")
+            .load(&active.session_id)
+        {
+            self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
+            self.projection = TranscriptProjection::from_events(&stored.events);
+            self.view.transcript = self.projection.items().to_vec();
+        }
+        self.rebuild_history();
+        self.refresh_sessions();
+        self.view.status = match result {
+            Ok(ResumeDisposition::Complete) => "Turno recuperado".to_owned(),
+            Ok(ResumeDisposition::AbortedTurn) => "El turno ya había terminado".to_owned(),
+            Ok(ResumeDisposition::AbortedToolBatch { .. }) => {
+                "Turno abortado con herramientas pendientes; requiere resolución".to_owned()
+            }
+            Ok(other) => format!("Recuperación pausada: {other:?}"),
+            Err(error) => format!("No se pudo recuperar el turno: {error}"),
+        };
+        true
+    }
+
+    fn poll_child_recovery(&mut self) -> bool {
+        let (updates, disconnected) = {
+            let Some(active) = &self.active_child_recovery else {
+                return false;
+            };
+            let mut updates = Vec::new();
+            let disconnected = loop {
+                match active.updates.try_recv() {
+                    Ok(update) => updates.push(update),
+                    Err(TryRecvError::Empty) => break false,
+                    Err(TryRecvError::Disconnected) => break true,
+                }
+            };
+            (updates, disconnected)
+        };
+        if updates.is_empty() && !disconnected {
+            return false;
+        }
+        let mut finished = None;
+        for update in updates {
+            match update {
+                SubagentRecoveryUpdate::NeedsPermission {
+                    request_id,
+                    tool_call,
+                } => {
+                    let active = self
+                        .active_child_recovery
+                        .as_ref()
+                        .expect("child recovery exists while polling");
+                    self.pending_child_recovery_permission = Some(SubagentPermissionView {
+                        child_session_id: active.child_id.clone(),
+                        parent_session_id: active.parent_id.clone(),
+                        request_id,
+                        tool_name: tool_call.name.clone(),
+                        arguments: serde_json::to_string_pretty(&tool_call.arguments)
+                            .unwrap_or_default(),
+                    });
+                    self.rebuild_live_subagent_views();
+                    self.view.status = format!("Esperando permiso para {}", tool_call.name);
+                }
+                SubagentRecoveryUpdate::Finished(result) => finished = Some(result),
+            }
+        }
+        if finished.is_none() && !disconnected {
+            return true;
+        }
+        let result = finished.unwrap_or_else(|| {
+            Err("La recuperación del subagente terminó sin resultado final".to_owned())
+        });
+        let active = self
+            .active_child_recovery
+            .take()
+            .expect("child recovery exists while polling");
+        self.view.running = false;
+        self.pending_child_recovery_permission = None;
+        self.rebuild_live_subagent_views();
+        if self.view.selected_session.as_deref() == Some(active.child_id.as_str()) {
+            if let Some(store) = &self.store {
+                if let Ok(Some(stored)) = store.load(&active.child_id) {
+                    self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
+                    self.projection = TranscriptProjection::from_events(&stored.events);
+                    self.view.transcript = self.projection.items().to_vec();
+                    if let Ok(replay) = replay_stored_native(&self.data_root, &stored) {
+                        self.history = replay.history;
+                    }
+                }
+            }
+        }
+        self.refresh_sessions();
+        match result {
+            Ok(SubagentRecoveryState::Terminal(terminal)) => {
+                self.view.status = format!(
+                    "Subagente recuperado: {}",
+                    subagent_status_label(&terminal.status)
+                );
+            }
+            Ok(SubagentRecoveryState::Paused {
+                reason:
+                    SubagentRecoveryPause::ToolOutcomeUncertain { .. }
+                    | SubagentRecoveryPause::AbortedToolBatch { .. },
+                ..
+            }) => self.start_resume(),
+            Ok(SubagentRecoveryState::Paused {
+                reason: SubagentRecoveryPause::NeedsPermission { .. },
+                ..
+            }) => {
+                self.view.status = "El permiso del subagente sigue pendiente".to_owned();
+            }
+            Err(error) => {
+                self.view.status = format!("No se pudo recuperar el subagente: {error}");
+            }
+        }
+        true
+    }
+
+    fn start_compact(&mut self) {
+        if self.active_compact.is_some() {
+            self.view.status = "Ya se está compactando una sesión".to_owned();
+            return;
+        }
+        if self.active_run.is_some() || self.active_resume.is_some() || self.view.running {
+            self.view.status = "Espera a que termine el turno antes de compactar".to_owned();
+            return;
+        }
+        let Some(session_id) = self.view.selected_session.clone() else {
+            self.view.status = "Selecciona una sesión nativa para compactar".to_owned();
+            return;
+        };
+        if self
+            .background_automation_runs
+            .iter()
+            .any(|run| run.session_id == session_id)
+        {
+            self.view.status = "Espera a que termine la automatización".to_owned();
+            return;
+        }
+        let Some(store) = self.store.clone() else {
+            self.view.status = "El historial no está disponible".to_owned();
+            return;
+        };
+        let stored = match store.load(&session_id) {
+            Ok(Some(stored)) if stored.session.backend == "native" => stored,
+            Ok(Some(_)) => {
+                self.view.status = "Esta sesión usa un agente CLI".to_owned();
+                return;
+            }
+            Ok(None) => {
+                self.view.status = "La sesión ya no existe".to_owned();
+                return;
+            }
+            Err(error) => {
+                self.view.status = format!("No se pudo leer la sesión: {error}");
+                return;
+            }
+        };
+        let lease = match store.try_acquire_native_lease(&session_id) {
+            Ok(lease) => lease,
+            Err(error) => {
+                self.view.status = format!("La sesión nativa ya está en uso: {error}");
+                return;
+            }
+        };
+        let replay = match replay_stored_native(&self.data_root, &stored) {
+            Ok(replay) => replay,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        if !replay.can_start_new_turn {
+            self.view.status = recovery_status(&replay.recovery).to_owned();
+            return;
+        }
+        if replay.committed_messages.is_empty() {
+            self.view.status = "No hay historial nuevo para compactar".to_owned();
+            return;
+        }
+        let connection = match self.native_settings().resolve() {
+            Ok(connection) => connection,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let provider_id = self.view.native_provider_id.clone();
+        let model_id = connection.model_id.clone();
+        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id);
+        if replay
+            .checkpoint
+            .as_ref()
+            .is_some_and(|checkpoint| checkpoint.compatibility != compatibility)
+        {
+            self.view.status = "El checkpoint pertenece a otro proveedor o modelo".to_owned();
+            return;
+        }
+        let policy = native_provider::verified_token_budget(&provider_id, &model_id);
+        if connection.api_key.is_none() && provider_id != "custom" {
+            self.view.status = "Falta la clave API del proveedor nativo".to_owned();
+            return;
+        }
+        let model = match native_model_backend(
+            connection,
+            &provider_id,
+            Some(&self.view.composer_effort),
+            self.view.hosted_web_search_mode,
+        ) {
+            Ok(model) => model,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        let observed_input_tokens = stored.events.iter().rev().find_map(|event| {
+            if let AgentEventKind::ModelResponseCommitted {
+                usage: Some(usage), ..
+            } = &event.kind
+            {
+                Some(usage.input_tokens)
+            } else {
+                None
+            }
+        });
+        let estimated_input_tokens = replay
+            .history
+            .iter()
+            .map(|message| {
+                serde_json::to_vec(message)
+                    .map(|encoded| encoded.len() as u64)
+                    .unwrap_or(u64::MAX)
+            })
+            .fold(0u64, u64::saturating_add);
+        let budget = match policy {
+            Some(policy) => CheckpointBudgetSnapshot {
+                context_window_tokens: policy.context_window_tokens,
+                estimated_input_tokens,
+                observed_input_tokens,
+                output_reserve_tokens: policy.output_reserve_tokens,
+                tool_schema_reserve_tokens: policy.tool_schema_reserve_tokens,
+                limits_unverified: false,
+            },
+            None => {
+                CheckpointBudgetSnapshot::unverified(estimated_input_tokens, observed_input_tokens)
+            }
+        };
+        let checkpoint_root = self.data_root.join("sessions");
+        let (sender, receiver) = mpsc::channel();
+        let cancel = CancellationToken::new();
+        let worker_cancel = cancel.clone();
+        let result = std::thread::Builder::new()
+            .name("openide-native-compact".to_owned())
+            .spawn(move || {
+                let outcome = (|| {
+                    let checkpoints = Arc::new(
+                        CheckpointFileStore::new(checkpoint_root)
+                            .map_err(|error| error.to_string())?,
+                    );
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|error| error.to_string())?;
+                    let coordinator = CheckpointCoordinator::new(
+                        store,
+                        checkpoints,
+                        model,
+                        compatibility,
+                        budget,
+                    );
+                    runtime
+                        .block_on(coordinator.compact(&lease, worker_cancel))
+                        .map(|commit| commit.marker_event.sequence)
+                        .map_err(|error| error.to_string())
+                })();
+                let _ = sender.send(outcome);
+            });
+        match result {
+            Ok(_) => {
+                self.active_compact = Some(ActiveCompact {
+                    session_id,
+                    receiver,
+                    cancel,
+                });
+                self.view.status = "Compactando contexto...".to_owned();
+            }
+            Err(error) => self.view.status = format!("No se pudo iniciar la compactación: {error}"),
+        }
+    }
+
+    fn poll_compact(&mut self) -> bool {
+        let Some(active) = &self.active_compact else {
+            return false;
+        };
+        let outcome = match active.receiver.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Disconnected) => {
+                Err("El proceso de compactación terminó sin resultado".to_owned())
+            }
+        };
+        let active = self
+            .active_compact
+            .take()
+            .expect("compact operation was active");
+        self.refresh_sessions();
+        if self.view.selected_session.as_deref() == Some(active.session_id.as_str()) {
+            match outcome {
+                Ok(_) => {
+                    self.rebuild_history();
+                    self.view.status = "Contexto compactado y checkpoint confirmado".to_owned();
+                }
+                Err(error) => self.view.status = format!("No se pudo compactar: {error}"),
+            }
+        }
+        true
+    }
+
+    fn rebuild_history(&mut self) {
+        if let (Some(store), Some(id)) = (&self.store, &self.view.selected_session) {
+            match store.load(id) {
+                Ok(Some(stored)) if stored.session.backend == "native" => {
+                    match replay_stored_native(&self.data_root, &stored) {
+                        Ok(replay) => {
+                            self.history = replay.history;
+                            if !replay.can_start_new_turn {
+                                self.view.status = recovery_status(&replay.recovery).to_owned();
+                            }
+                        }
+                        Err(error) => {
+                            self.history.clear();
+                            self.persistence_error = Some(error);
+                        }
+                    }
+                }
+                Ok(Some(stored)) => self.history = history_from_events(&stored.events),
+                Ok(None) => self.history.clear(),
+                Err(error) => {
+                    self.history.clear();
+                    self.persistence_error = Some(error.to_string());
+                }
+            }
+        }
+        self.refresh_composer_context_percent();
     }
 
     fn restore_pending_prompt(&mut self) {
@@ -3406,13 +8099,24 @@ impl AgentsWindow {
                 is_dir: *is_dir,
             })
             .collect();
-        self.view.command_results = command_center::search(
+        let limit = command_center::DEFAULT_RESULT_LIMIT;
+        let mut results = command_center::search(
             &self.view.command_query,
             self.view.command_scope,
             &sessions,
             &files,
-            command_center::DEFAULT_RESULT_LIMIT,
+            limit + 1,
         );
+        let display_limited = results.len() > limit;
+        results.truncate(limit);
+        self.view.command_results = results;
+        let scope =
+            command_center::parse_query(&self.view.command_query, self.view.command_scope).scope;
+        self.view.command_search_truncated = display_limited
+            || self.search_response.as_ref().is_some_and(|response| {
+                (matches!(scope, Scope::All | Scope::Sessions) && response.session_has_more)
+                    || (matches!(scope, Scope::All | Scope::Files) && response.files_truncated)
+            });
         self.view.command_selected_index = self
             .view
             .command_selected_index
@@ -3423,8 +8127,49 @@ impl AgentsWindow {
         self.search_generation = self.search_generation.wrapping_add(1);
         self.search_response = None;
         self.search_in_flight = false;
-        self.search_pending_at = Some(Instant::now());
+        let scope =
+            command_center::parse_query(&self.view.command_query, self.view.command_scope).scope;
+        let needs_worker = scope != Scope::Commands;
+        self.search_pending_at = (needs_worker && self.search_worker.is_some()).then(Instant::now);
+        self.view.command_search_loading = self.search_pending_at.is_some();
+        self.view.command_search_errors = if needs_worker && self.search_worker.is_none() {
+            vec!["El índice de tareas y archivos no está disponible".to_owned()]
+        } else {
+            Vec::new()
+        };
+        self.view.command_search_truncated = false;
         self.refresh_command_results();
+    }
+
+    fn apply_command_search_response(&mut self, response: SearchResponse) -> bool {
+        if !response.matches(self.search_generation, Path::new(&self.view.workspace)) {
+            return false;
+        }
+        let scope =
+            command_center::parse_query(&self.view.command_query, self.view.command_scope).scope;
+        let mut errors = Vec::new();
+        if matches!(scope, Scope::All | Scope::Sessions) {
+            if let Some(error) = &response.session_error {
+                errors.push(format!("Tareas: {error}"));
+            }
+            if !response.session_diagnostics.is_empty() {
+                errors.push(format!(
+                    "{} tarea(s) no se pudieron leer",
+                    response.session_diagnostics.len()
+                ));
+            }
+        }
+        if matches!(scope, Scope::All | Scope::Files) {
+            if let Some(error) = &response.file_error {
+                errors.push(format!("Archivos: {error}"));
+            }
+        }
+        self.search_in_flight = false;
+        self.view.command_search_loading = false;
+        self.view.command_search_errors = errors;
+        self.search_response = Some(response);
+        self.refresh_command_results();
+        true
     }
 
     fn update_command_search(&mut self, ctx: &egui::Context) -> bool {
@@ -3447,6 +8192,12 @@ impl AgentsWindow {
                                 generation: self.search_generation,
                             })
                             .is_ok();
+                        if !self.search_in_flight {
+                            self.view.command_search_loading = false;
+                            self.view.command_search_errors =
+                                vec!["No se pudo iniciar la búsqueda".to_owned()];
+                            changed = true;
+                        }
                     }
                 }
             } else {
@@ -3457,10 +8208,7 @@ impl AgentsWindow {
             if let Some(response) =
                 worker.poll_latest(self.search_generation, Path::new(&self.view.workspace))
             {
-                changed = true;
-                self.search_response = Some(response);
-                self.search_in_flight = false;
-                self.refresh_command_results();
+                changed |= self.apply_command_search_response(response);
             }
         }
         if self.search_in_flight {
@@ -3489,9 +8237,56 @@ impl AgentsWindow {
         self.request_command_search();
     }
 
+    fn open_composer_folder_picker(&mut self, ctx: &egui::Context) {
+        if self.composer_folder_response.is_some() || self.view.running {
+            return;
+        }
+        self.view.composer_add_menu_open = false;
+        let workspace = self.view.workspace.clone();
+        let initial = PathBuf::from(&workspace);
+        let (sender, receiver) = mpsc::channel();
+        let repaint = ctx.clone();
+        match std::thread::Builder::new()
+            .name("composer-folder-picker".to_owned())
+            .spawn(move || {
+                let result = choose_workspace_folder(&initial, "Adjuntar carpeta del proyecto");
+                let _ = sender.send((workspace, result));
+                repaint.request_repaint();
+            }) {
+            Ok(_) => self.composer_folder_response = Some(receiver),
+            Err(error) => {
+                self.view.status = format!("No se pudo abrir el selector de carpetas: {error}");
+            }
+        }
+    }
+
+    fn poll_composer_folder_picker(&mut self) -> bool {
+        let Some(receiver) = &self.composer_folder_response else {
+            return false;
+        };
+        let result = match receiver.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Disconnected) => {
+                self.composer_folder_response = None;
+                self.view.status = "El selector de carpetas se cerró inesperadamente".to_owned();
+                return true;
+            }
+        };
+        self.composer_folder_response = None;
+        if result.0 == self.view.workspace {
+            match result.1 {
+                Ok(Some(path)) => self.attach_composer_file(&path),
+                Ok(None) => {}
+                Err(error) => self.view.status = error,
+            }
+        }
+        true
+    }
+
     fn attach_composer_file(&mut self, candidate: &Path) {
         if self.view.composer_attachments.len() >= MAX_COMPOSER_ATTACHMENTS {
-            self.view.status = format!("Máximo de {MAX_COMPOSER_ATTACHMENTS} archivos adjuntos");
+            self.view.status = format!("Máximo de {MAX_COMPOSER_ATTACHMENTS} adjuntos");
             return;
         }
         match composer_attachment_for_path(Path::new(&self.view.workspace), candidate) {
@@ -3505,11 +8300,17 @@ impl AgentsWindow {
                     self.view.status = "El archivo ya está adjunto".to_owned();
                     return;
                 }
-                self.view.status = format!("Archivo adjunto: {}", file.label);
+                self.view.status = format!(
+                    "{} adjunto: {}",
+                    if file.is_dir { "Carpeta" } else { "Archivo" },
+                    file.label
+                );
                 self.view.composer_attachments.push(file);
                 let key = self.draft_key();
                 self.attachment_drafts
                     .insert(key, self.view.composer_attachments.clone());
+                self.draft_dirty_at = Some(Instant::now());
+                self.save_draft();
                 self.prompt_focus_pending = true;
             }
             Err(error) => self.view.status = error,
@@ -3528,6 +8329,8 @@ impl AgentsWindow {
         self.view.show_command_center = false;
         let attach_file = std::mem::take(&mut self.command_center_attaches_file);
         match target {
+            Target::CompactContext => self.start_compact(),
+            Target::ResumeTurn => self.start_resume(),
             Target::NewTask => {
                 self.new_session();
                 if !self.view.running {
@@ -3717,6 +8520,9 @@ impl AgentsWindow {
         }
         self.view.workspace = value;
         self.view.workspace_draft = self.view.workspace.clone();
+        self.view.composer_context_percent = None;
+        self.refresh_mcp_settings();
+        self.refresh_native_skills();
         self.view.project_branch = project_branch_for_workspace(&self.view.workspace);
         self.view.composer_project_menu_open = false;
         self.refresh_composer_projects();
@@ -3759,7 +8565,10 @@ impl AgentsWindow {
         match std::thread::Builder::new()
             .name("workspace-folder-picker".to_owned())
             .spawn(move || {
-                let _ = sender.send(choose_workspace_folder(&initial));
+                let _ = sender.send(choose_workspace_folder(
+                    &initial,
+                    "Seleccionar carpeta de proyecto",
+                ));
                 repaint.request_repaint();
             }) {
             Ok(_) => self.workspace_folder_response = Some(receiver),
@@ -3805,21 +8614,98 @@ impl AgentsWindow {
     fn apply_action(&mut self, action: UiAction, ctx: &egui::Context) {
         match action {
             UiAction::CopyRequested { text } => ctx.copy_text(text),
+            UiAction::SliderChanged {
+                id,
+                fraction,
+                committed,
+            } if id == "composer_effort_slider" => {
+                if !self.view.running && self.composer_slider_effort(fraction).is_some() {
+                    if committed {
+                        let effort = self.composer_slider_effort(fraction).unwrap();
+                        self.select_composer_effort(&effort);
+                        // Keep the selector visible so the settled tier and model
+                        // can be reviewed after a drag.
+                        self.view.composer_model_menu_open = true;
+                        self.view.composer_advanced_open = true;
+                    } else {
+                        self.view.composer_effort_preview = Some(if fraction.is_finite() {
+                            fraction.clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        });
+                    }
+                }
+            }
             UiAction::Clicked { id } if id == "open_command_center" => {
                 self.open_command_center();
             }
             UiAction::Clicked { id } if id == "composer_add_context" => {
                 if !self.view.running && !self.view.background_run_selected {
                     self.view.composer_add_menu_open = !self.view.composer_add_menu_open;
+                    if !self.view.composer_add_menu_open {
+                        self.view.composer_goal_editor_open = false;
+                    }
                     self.view.composer_project_menu_open = false;
                 }
             }
+            UiAction::Clicked { id } if id == "composer_microphone" => {
+                self.toggle_dictation(ctx);
+            }
             UiAction::Clicked { id } if id == "composer_add_dismiss" => {
                 self.view.composer_add_menu_open = false;
+                self.view.composer_goal_editor_open = false;
             }
-            UiAction::Clicked { id } if id == "composer_add_file" => {
+            UiAction::Clicked { id } if id == "composer_goal_open" => {
+                if !self.view.running && !self.view.background_run_selected {
+                    self.view.composer_add_menu_open = true;
+                    self.view.composer_goal_draft =
+                        self.view.composer_goal.clone().unwrap_or_default();
+                    self.tree.set_input_value(
+                        "composer_goal_draft",
+                        self.view.composer_goal_draft.clone(),
+                    );
+                    self.view.composer_goal_editor_open = true;
+                }
+            }
+            UiAction::Clicked { id } if id == "composer_goal_save" => {
+                if self.view.composer_goal_editor_open {
+                    self.set_composer_goal(Some(self.view.composer_goal_draft.clone()));
+                }
+            }
+            UiAction::Clicked { id } if id == "composer_goal_clear" => {
+                self.set_composer_goal(None);
+            }
+            UiAction::Clicked { id } if id == "composer_goal_cancel" => {
+                self.view.composer_goal_editor_open = false;
+                self.view.composer_add_menu_open = false;
+                self.view.composer_goal_draft = self.view.composer_goal.clone().unwrap_or_default();
+            }
+            UiAction::Clicked { id } if id.starts_with("composer_plugin_") => {
+                let query = match id.as_str() {
+                    "composer_plugin_documents" => Some("document"),
+                    "composer_plugin_spreadsheets" => Some("spreadsheet"),
+                    "composer_plugin_presentations" => Some("presentation"),
+                    "composer_plugin_code_blocks" => Some("code"),
+                    _ => None,
+                };
+                if let Some(query) = query {
+                    self.view.composer_add_menu_open = false;
+                    self.view.marketplace.query = query.to_owned();
+                    self.view.marketplace.installed_only = false;
+                    self.view.show_settings = false;
+                    self.view.main_page = MainPage::Marketplace;
+                    self.marketplace_operation(MarketplaceOperation::Load);
+                    self.visit_navigation();
+                }
+            }
+            UiAction::Clicked { id } if id == "composer_add_files" || id == "composer_add_file" => {
                 if !self.view.running && !self.view.background_run_selected {
                     self.open_composer_file_picker();
+                }
+            }
+            UiAction::Clicked { id } if id == "composer_add_folder" => {
+                if !self.view.running && !self.view.background_run_selected {
+                    self.open_composer_folder_picker(ctx);
                 }
             }
             UiAction::Clicked { id } if id == "composer_add_browse" => {
@@ -3843,6 +8729,8 @@ impl AgentsWindow {
                             self.attachment_drafts
                                 .insert(key, self.view.composer_attachments.clone());
                         }
+                        self.draft_dirty_at = Some(Instant::now());
+                        self.save_draft();
                     }
                 }
             }
@@ -3886,9 +8774,114 @@ impl AgentsWindow {
                 let request_id = id.trim_start_matches("permission_allow:");
                 self.answer_permission(request_id, true);
             }
+            UiAction::Clicked { id } if id.starts_with("permission_allow_session:") => {
+                let request_id = id.trim_start_matches("permission_allow_session:");
+                self.answer_permission_for_session(request_id);
+            }
             UiAction::Clicked { id } if id.starts_with("permission_deny:") => {
                 let request_id = id.trim_start_matches("permission_deny:");
                 self.answer_permission(request_id, false);
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_permission_allow:") => {
+                if let Some((child_id, request_id)) = id
+                    .trim_start_matches("subagent_permission_allow:")
+                    .split_once(':')
+                {
+                    self.answer_subagent_permission(child_id, request_id, PermissionChoice::Allow);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_permission_allow_session:") => {
+                if let Some((child_id, request_id)) = id
+                    .trim_start_matches("subagent_permission_allow_session:")
+                    .split_once(':')
+                {
+                    self.answer_subagent_permission(
+                        child_id,
+                        request_id,
+                        PermissionChoice::AllowSession,
+                    );
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_permission_deny:") => {
+                if let Some((child_id, request_id)) = id
+                    .trim_start_matches("subagent_permission_deny:")
+                    .split_once(':')
+                {
+                    self.answer_subagent_permission(child_id, request_id, PermissionChoice::Deny);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_cancel:") => {
+                self.cancel_subagent(id.trim_start_matches("subagent_cancel:"));
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_resume:") => {
+                let child_id = id.trim_start_matches("subagent_resume:");
+                if self.view.selected_session.as_deref() == Some(child_id)
+                    && self
+                        .view
+                        .recoverable_subagent
+                        .as_ref()
+                        .is_some_and(|child| child.child_session_id == child_id)
+                {
+                    self.start_resume();
+                } else {
+                    self.view.status = "El subagente ya no está listo para recuperación".to_owned();
+                }
+            }
+            UiAction::Clicked { id } if id == "aborted_batch_defer" => {
+                if self.view.pending_batch_discard.take().is_some() {
+                    self.view.status =
+                        "Las llamadas pendientes siguen sin resolver en el journal".to_owned();
+                }
+            }
+            UiAction::Clicked { id } if id == "aborted_batch_discard" => {
+                self.discard_aborted_batch();
+            }
+            UiAction::Clicked { id } if id == "tool_verification_toggle_error" => {
+                if self.view.pending_tool_verification.is_some() {
+                    self.view.tool_verification_is_error = !self.view.tool_verification_is_error;
+                }
+            }
+            UiAction::Clicked { id } if id == "tool_verification_cancel" => {
+                if let Some(resume) = &self.active_resume {
+                    resume.cancel();
+                    self.view.status =
+                        "Cerrando recuperación; el resultado incierto seguirá pendiente".to_owned();
+                } else if self.view.pending_tool_verification.take().is_some() {
+                    self.view.tool_verification_output.clear();
+                    self.view.status =
+                        "El resultado incierto seguirá pendiente en el journal".to_owned();
+                }
+            }
+            UiAction::Clicked { id } if id == "tool_verification_confirm" => {
+                if let Some(pending) = &self.view.pending_tool_verification {
+                    let output = &self.view.tool_verification_output;
+                    if output.trim().is_empty() {
+                        self.view.status =
+                            "Describe el resultado verificado antes de continuar".to_owned();
+                    } else if output.chars().count() > RunLimits::default().max_tool_output_chars {
+                        self.view.status =
+                            "El resultado verificado supera el límite de la herramienta".to_owned();
+                    } else {
+                        let pending = pending.clone();
+                        let result = ToolOutput {
+                            content: output.to_owned(),
+                            is_error: self.view.tool_verification_is_error,
+                        };
+                        if let Some(resume) = &self.active_resume {
+                            if resume.record_verified_tool_outcome(&pending.call_id, result) {
+                                self.view.pending_tool_verification = None;
+                                self.view.tool_verification_output.clear();
+                                self.view.status =
+                                    "Resultado verificado enviado a recuperación".to_owned();
+                            } else {
+                                self.view.status =
+                                    "La recuperación ya no acepta este resultado".to_owned();
+                            }
+                        } else {
+                            self.verify_uncertain_tool(&pending, result);
+                        }
+                    }
+                }
             }
             UiAction::Clicked { id } if id == "run_toggle" => {
                 if self.view.background_run_selected {
@@ -3906,9 +8899,21 @@ impl AgentsWindow {
                     if let Some(run) = &self.active_run {
                         run.cancel();
                         self.view.status = "Cancelando...".to_owned();
+                    } else if let Some(resume) = &self.active_resume {
+                        resume.cancel();
+                        self.view.status = "Cancelando recuperación...".to_owned();
+                    } else if let Some(child) = &self.active_child_recovery {
+                        child.cancel();
+                        self.view.status = "Cancelando recuperación del subagente...".to_owned();
                     }
                 } else {
                     self.start_run();
+                }
+            }
+            UiAction::Clicked { id } if id == "run_steer" => self.queue_native_steer(),
+            UiAction::Clicked { id } if id.starts_with("session_approval_revoke:") => {
+                if let Some(key_digest) = id.strip_prefix("session_approval_revoke:") {
+                    self.revoke_selected_session_approval(key_digest);
                 }
             }
             UiAction::Clicked { id }
@@ -3960,6 +8965,26 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id == "activity_page_next" => {
                 self.view.activity_page = self.view.activity_page.saturating_add(1);
+            }
+            UiAction::Clicked { id } if id.starts_with("native_command_terminate:") => {
+                let command_id = id.trim_start_matches("native_command_terminate:");
+                if self.view.selected_session.is_some()
+                    && self.view.native_command_terminating.is_none()
+                    && self
+                        .view
+                        .native_commands
+                        .iter()
+                        .any(|command| command.id == command_id && command.exit.is_none())
+                {
+                    self.view.pending_native_command_termination = Some(command_id.to_owned());
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("native_command_terminate_confirm:") => {
+                let command_id = id.trim_start_matches("native_command_terminate_confirm:");
+                self.confirm_native_command_termination(command_id);
+            }
+            UiAction::Clicked { id } if id == "native_command_terminate_cancel" => {
+                self.view.pending_native_command_termination = None;
             }
             UiAction::Clicked { id } if id == "review_page_previous" => {
                 self.view.review_page = self.view.review_page.saturating_sub(1);
@@ -4102,6 +9127,22 @@ impl AgentsWindow {
                         "https://github.com/{}",
                         identity.login
                     )));
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("web_citation_open:") => {
+                if let Some(url) = id
+                    .trim_start_matches("web_citation_open:")
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| self.view.transcript.get(index))
+                    .and_then(|item| match item {
+                        crate::transcript::TranscriptItem::WebCitation { url, .. } => Some(url),
+                        _ => None,
+                    })
+                    .and_then(|url| reqwest::Url::parse(url).ok())
+                    .filter(|url| matches!(url.scheme(), "http" | "https"))
+                {
+                    ctx.open_url(egui::OpenUrl::new_tab(url.to_string()));
                 }
             }
             UiAction::Clicked { id } if id == "github_repo_open" => {
@@ -4266,6 +9307,37 @@ impl AgentsWindow {
                             if index > 0 && self.dock.reorder(&scope, tab_id, ids[index - 1]) {
                                 self.sync_dock_view();
                             }
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("dock_move_down:") => {
+                if let Ok(raw) = id.trim_start_matches("dock_move_down:").parse::<u64>() {
+                    if let Some(tab_id) = DockTabId::from_raw(raw) {
+                        let scope = self.dock_scope();
+                        let ids: Vec<DockTabId> = self
+                            .dock
+                            .visible_tabs(&scope)
+                            .iter()
+                            .map(|tab| tab.id)
+                            .collect();
+                        if let Some(index) = ids.iter().position(|id| *id == tab_id) {
+                            if let Some(next) = ids.get(index + 1) {
+                                if self.dock.reorder(&scope, tab_id, *next) {
+                                    self.sync_dock_view();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("dock_reopen:") => {
+                if let Ok(raw) = id.trim_start_matches("dock_reopen:").parse::<u64>() {
+                    if let Some(closed_id) = DockTabId::from_raw(raw) {
+                        let scope = self.dock_scope();
+                        if self.dock.reopen_recent(&scope, closed_id).is_some() {
+                            self.view.show_dock_overview = false;
+                            self.sync_dock_view();
                         }
                     }
                 }
@@ -4458,11 +9530,19 @@ impl AgentsWindow {
                 let group_id = id.trim_start_matches("session_group_menu:");
                 let already_open = self.view.group_menu_id.as_deref() == Some(group_id);
                 self.view.group_menu_id = (!already_open).then(|| group_id.to_owned());
+                if already_open {
+                    self.view.group_rename_id = None;
+                    self.view.group_rename_draft.clear();
+                    self.group_focus_pending = false;
+                }
                 self.view.pending_delete_group_id = None;
                 self.close_session_menu();
             }
             UiAction::Clicked { id } if id == "session_group_menu_dismiss" => {
                 self.view.group_menu_id = None;
+                self.view.group_rename_id = None;
+                self.view.group_rename_draft.clear();
+                self.group_focus_pending = false;
                 self.view.pending_delete_group_id = None;
             }
             UiAction::Clicked { id } if id.starts_with("session_group_rename:") => {
@@ -4483,6 +9563,7 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "session_group_rename_cancel" => {
                 self.view.group_rename_id = None;
                 self.view.group_rename_draft.clear();
+                self.view.group_menu_id = None;
                 self.group_focus_pending = false;
             }
             UiAction::Clicked { id } if id.starts_with("session_group_rename_commit:") => {
@@ -4573,6 +9654,44 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "session_menu_dismiss" => {
                 self.close_session_menu();
             }
+            UiAction::Clicked { id } if id.starts_with("session_recover:") => {
+                let session_id = id.trim_start_matches("session_recover:");
+                if self
+                    .view
+                    .session_recovery
+                    .get(session_id)
+                    .is_some_and(SessionRecoveryView::can_open)
+                {
+                    self.close_session_menu();
+                    self.open_session(session_id);
+                    if self.view.selected_session.as_deref() == Some(session_id) {
+                        self.start_resume();
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("session_build_plan:") => {
+                let session_id = id.trim_start_matches("session_build_plan:");
+                self.refresh_sessions();
+                if !self.view.running
+                    && self
+                        .view
+                        .session_plans
+                        .get(session_id)
+                        .is_some_and(|plan| plan.can_build)
+                {
+                    self.close_session_menu();
+                    if self.view.selected_session.as_deref() != Some(session_id) {
+                        self.open_session(session_id);
+                    }
+                    if self.view.selected_session.as_deref() == Some(session_id)
+                        && self.view.selected_backend == "native"
+                    {
+                        self.view.turn_mode = TurnMode::Build;
+                        self.view.prompt = "Implementa el plan aprobado para esta sesión. Actualiza su progreso con update_plan.".into();
+                        self.start_run();
+                    }
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("session_pin:") => {
                 let session_id = id.trim_start_matches("session_pin:");
                 if let (Some(store), Some(session)) = (
@@ -4622,9 +9741,12 @@ impl AgentsWindow {
                 }
                 if self.view.running && self.view.selected_session.as_deref() == Some(session_id) {
                     self.view.status = "Detén el agente antes de archivar esta tarea".to_owned();
+                } else if let Err(error) = self.ensure_archivable_native_session(session_id) {
+                    self.view.status = error;
                 } else if let Some(store) = &self.store {
                     match store.set_archived(session_id, true) {
                         Ok(_) => {
+                            self.native_command_sessions.revoke_session(session_id);
                             if self.view.selected_session.as_deref() == Some(session_id) {
                                 self.new_session();
                                 self.visit_navigation();
@@ -4654,6 +9776,8 @@ impl AgentsWindow {
                 if let Some(session) = self.view.sessions.iter().find(|item| item.id == session_id)
                 {
                     self.view.renaming_session_id = Some(session_id.to_owned());
+                    self.view.session_menu_id = None;
+                    self.rename_focus_pending = true;
                     self.view.pending_archive_session_id = None;
                     self.view.pending_delete_session_id = None;
                     self.view.rename_draft = session.title.clone();
@@ -4686,14 +9810,50 @@ impl AgentsWindow {
                             "Detén el agente antes de eliminar esta tarea".to_owned();
                     } else if let Some(store) = &self.store {
                         match store.load(session_id) {
+                            Ok(Some(record))
+                                if record.session.archived && record.session.subagent.is_some() =>
+                            {
+                                self.view.status =
+                                    "Elimina la tarea raíz archivada para borrar también sus subagentes"
+                                        .to_owned();
+                            }
                             Ok(Some(record)) if record.session.archived => {
-                                match store.delete(session_id) {
+                                let known_before = store.list().unwrap_or_default();
+                                let deletion = if record.session.backend == "native"
+                                    && record.session.subagent.is_none()
+                                {
+                                    store.delete_native_tree(session_id)
+                                } else {
+                                    store.delete(session_id)
+                                };
+                                match deletion {
                                     Ok(_) => {
-                                        self.close_session_menu();
+                                        let mut selected_deleted = false;
+                                        if let Ok(current) = store.list() {
+                                            let remaining = current
+                                                .into_iter()
+                                                .map(|session| session.id)
+                                                .collect::<HashSet<_>>();
+                                            for removed in known_before
+                                                .iter()
+                                                .filter(|session| !remaining.contains(&session.id))
+                                            {
+                                                self.native_command_sessions
+                                                    .revoke_session(&removed.id);
+                                                self.navigation
+                                                    .forget_task(&removed.workspace, &removed.id);
+                                                selected_deleted |=
+                                                    self.view.selected_session.as_deref()
+                                                        == Some(removed.id.as_str());
+                                            }
+                                        }
+                                        self.native_command_sessions.revoke_session(session_id);
                                         self.navigation
                                             .forget_task(&record.session.workspace, session_id);
-                                        if self.view.selected_session.as_deref() == Some(session_id)
-                                        {
+                                        selected_deleted |= self.view.selected_session.as_deref()
+                                            == Some(session_id);
+                                        self.close_session_menu();
+                                        if selected_deleted {
                                             self.new_session();
                                             self.visit_navigation();
                                         }
@@ -4712,6 +9872,7 @@ impl AgentsWindow {
                             {
                                 match store.delete(session_id) {
                                     Ok(_) => {
+                                        self.native_command_sessions.revoke_session(session_id);
                                         self.close_session_menu();
                                         if let Some(session) = self
                                             .view
@@ -4807,6 +9968,22 @@ impl AgentsWindow {
                 if let Some(page) = SettingsPage::from_action_id(&id) {
                     self.view.settings_page = page;
                     self.view.settings_nav_open = false;
+                    if page != SettingsPage::Mcp {
+                        self.view.mcp_editor_open = false;
+                        self.view.pending_mcp_delete_id = None;
+                    }
+                    if page != SettingsPage::Hooks {
+                        self.view.native_hooks.clear_draft();
+                    } else {
+                        self.view.native_hooks =
+                            HookUiState::from_load(NativeHookSettings::load(&self.data_root));
+                    }
+                    if page == SettingsPage::Skills {
+                        self.refresh_native_skills();
+                    }
+                    if page == SettingsPage::Commands {
+                        self.refresh_exec_policy_settings();
+                    }
                     self.clear_settings_notice();
                     let mut next = self.settings_preferences.clone();
                     if next.set_last_settings_page(page.action_id()).is_ok() {
@@ -4820,6 +9997,223 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id == "settings_nav_toggle" => {
                 self.view.settings_nav_open = !self.view.settings_nav_open;
+            }
+            UiAction::Clicked { id } if id == "exec_rule_new" => {
+                if self.exec_policy_load_error.is_none() {
+                    self.view.native_exec_rules.clear_draft();
+                    self.view.native_exec_rules.editor_open = true;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("exec_rule_select:") => {
+                if self.exec_policy_load_error.is_none() {
+                    if let Ok(index) = id.trim_start_matches("exec_rule_select:").parse() {
+                        if let Err(error) = self.view.native_exec_rules.select(index) {
+                            self.set_settings_notice(error, true);
+                        } else {
+                            self.clear_settings_notice();
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("exec_rule_delete:") => {
+                if !self.view.native_exec_rules.editor_open {
+                    if let Ok(index) = id.trim_start_matches("exec_rule_delete:").parse() {
+                        self.delete_exec_rule(index);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "exec_rule_decision:ask" => {
+                if self.view.native_exec_rules.editor_open {
+                    self.view.native_exec_rules.draft_decision = ExecDecision::Ask;
+                }
+            }
+            UiAction::Clicked { id } if id == "exec_rule_decision:deny" => {
+                if self.view.native_exec_rules.editor_open {
+                    self.view.native_exec_rules.draft_decision = ExecDecision::Deny;
+                }
+            }
+            UiAction::Clicked { id } if id == "exec_rule_cancel" => {
+                self.view.native_exec_rules.clear_draft();
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "exec_rule_save" => {
+                if self.view.native_exec_rules.editor_open {
+                    self.save_exec_rule_draft();
+                }
+            }
+            UiAction::Clicked { id } if id == "exec_rule_reset" => {
+                if self.exec_policy_load_error.is_some() {
+                    self.view.native_exec_rules.reset_confirm_open = true;
+                }
+            }
+            UiAction::Clicked { id } if id == "exec_rule_reset_cancel" => {
+                self.view.native_exec_rules.reset_confirm_open = false;
+            }
+            UiAction::Clicked { id } if id == "exec_rule_reset_confirm" => {
+                if self.view.native_exec_rules.reset_confirm_open {
+                    self.reset_invalid_exec_rules();
+                }
+            }
+            UiAction::Clicked { id } if id == "native_skill_refresh" => {
+                self.refresh_native_skills();
+                if self.view.native_skills.load_error.is_none()
+                    && self.view.native_skills.catalog_error.is_none()
+                    && self.view.native_skills.activation_error.is_none()
+                {
+                    self.set_settings_notice("Catálogo de skills locales actualizado", false);
+                } else {
+                    self.set_settings_notice(
+                        "La selección o el catálogo de skills locales requiere atención",
+                        true,
+                    );
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("native_skill_toggle:") => {
+                if let Ok(index) = id.trim_start_matches("native_skill_toggle:").parse() {
+                    match self.view.native_skills.toggle(index) {
+                        Ok(selections) => self.save_native_skill_selections(selections),
+                        Err(error) => self.set_settings_notice(error, true),
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("native_skill_remove:") => {
+                if let Ok(index) = id.trim_start_matches("native_skill_remove:").parse() {
+                    match self.view.native_skills.remove(index) {
+                        Ok(selections) => self.save_native_skill_selections(selections),
+                        Err(error) => self.set_settings_notice(error, true),
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "native_skill_reset" => {
+                if self.view.native_skills.load_error.is_some() {
+                    self.view.native_skills.reset_confirm_open = true;
+                }
+            }
+            UiAction::Clicked { id } if id == "native_skill_reset_cancel" => {
+                self.view.native_skills.reset_confirm_open = false;
+            }
+            UiAction::Clicked { id } if id == "native_skill_reset_confirm" => {
+                if self.view.native_skills.reset_confirm_open {
+                    self.reset_native_skills();
+                }
+            }
+            UiAction::Clicked { id } if id == "hook_new" => {
+                if self.view.native_hooks.load_error.is_none() {
+                    self.view.native_hooks.clear_draft();
+                    self.view.native_hooks.editor_open = true;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("hook_select:") => {
+                if self.view.native_hooks.load_error.is_none() {
+                    self.select_command_hook(id.trim_start_matches("hook_select:"));
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("hook_delete:") => {
+                if !self.view.native_hooks.editor_open {
+                    self.delete_command_hook(id.trim_start_matches("hook_delete:"));
+                }
+            }
+            UiAction::Clicked { id } if id == "hook_phase:pre_tool_use" => {
+                self.view.native_hooks.draft_phase = HookPhase::PreToolUse;
+            }
+            UiAction::Clicked { id } if id == "hook_phase:post_tool_use" => {
+                self.view.native_hooks.draft_phase = HookPhase::PostToolUse;
+            }
+            UiAction::Clicked { id } if id == "hook_cancel" => {
+                self.view.native_hooks.clear_draft();
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "hook_save" => {
+                if self.view.native_hooks.editor_open {
+                    self.save_command_hook_draft();
+                }
+            }
+            UiAction::Clicked { id } if id == "mcp_new" => {
+                self.clear_mcp_draft();
+                self.clear_settings_notice();
+                self.view.mcp_editor_open = true;
+            }
+            UiAction::Clicked { id } if id == "mcp_transport:stdio" => {
+                if self.view.mcp_editor_open {
+                    self.view.mcp_draft_http = false;
+                    self.view.mcp_draft_oauth_enabled = false;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "mcp_transport:http" => {
+                if self.view.mcp_editor_open {
+                    self.view.mcp_draft_http = true;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "mcp_auth:bearer" => {
+                if self.view.mcp_editor_open {
+                    self.view.mcp_draft_oauth_enabled = false;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "mcp_auth:oauth" => {
+                if self.view.mcp_editor_open && self.view.mcp_draft_http {
+                    self.view.mcp_draft_oauth_enabled = true;
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("mcp_oauth_authorize:") => {
+                self.start_mcp_oauth(id.trim_start_matches("mcp_oauth_authorize:"));
+            }
+            UiAction::Clicked { id } if id == "mcp_oauth_open" => {
+                if let Some(McpOAuthViewStatus {
+                    phase: McpOAuthViewPhase::AwaitingBrowser { url },
+                    ..
+                }) = &self.view.mcp_oauth_status
+                {
+                    ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
+                }
+            }
+            UiAction::Clicked { id } if id == "mcp_oauth_cancel" => {
+                self.cancel_mcp_oauth();
+            }
+            UiAction::Clicked { id } if id.starts_with("mcp_select:") => {
+                self.select_mcp_server(id.trim_start_matches("mcp_select:"));
+            }
+            UiAction::Clicked { id } if id == "mcp_cancel" => {
+                self.view.mcp_editor_open = false;
+                self.clear_mcp_draft();
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "mcp_save" => {
+                if self.view.mcp_editor_open {
+                    self.save_mcp_draft();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("mcp_toggle:") => {
+                self.toggle_mcp_server(id.trim_start_matches("mcp_toggle:"));
+            }
+            UiAction::Clicked { id } if id.starts_with("mcp_delete:") => {
+                let target = id.trim_start_matches("mcp_delete:");
+                if !self.view.mcp_editor_open
+                    && self
+                        .view
+                        .mcp_servers
+                        .iter()
+                        .any(|server| server.id == target)
+                {
+                    self.view.pending_mcp_delete_id = Some(target.to_owned());
+                    self.clear_settings_notice();
+                }
+            }
+            UiAction::Clicked { id } if id == "mcp_delete_cancel" => {
+                self.view.pending_mcp_delete_id = None;
+            }
+            UiAction::Clicked { id } if id.starts_with("mcp_delete_confirm:") => {
+                let target = id.trim_start_matches("mcp_delete_confirm:");
+                if self.view.pending_mcp_delete_id.as_deref() == Some(target)
+                    && self.delete_mcp_server(target)
+                {
+                    self.view.pending_mcp_delete_id = None;
+                }
             }
             UiAction::Clicked { id } if id == "settings_reduced_motion" => {
                 let mut next = self.settings_preferences.clone();
@@ -4884,6 +10278,43 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "catalog_refresh" => {
                 self.clear_settings_notice();
                 self.begin_catalog_refresh();
+                self.begin_model_discovery();
+                self.begin_codex_model_discovery();
+            }
+            UiAction::Clicked { id } if id == "composer_routes_refresh" => {
+                self.begin_model_discovery();
+                self.begin_codex_model_discovery();
+            }
+            UiAction::Clicked { id } if id.starts_with("native_web_search:") => {
+                if !self.view.running && self.view.native_provider_id == "openai" {
+                    let mode = match id.as_str() {
+                        "native_web_search:off" => Some(None),
+                        "native_web_search:cached" => Some(Some(HostedWebSearchMode::Cached)),
+                        "native_web_search:indexed" => Some(Some(HostedWebSearchMode::Indexed)),
+                        "native_web_search:live" => Some(Some(HostedWebSearchMode::Live)),
+                        _ => None,
+                    };
+                    if let Some(mode) = mode {
+                        let previous = self.settings_preferences.hosted_web_search_mode;
+                        self.settings_preferences.hosted_web_search_mode = mode;
+                        match self.settings_preferences.save(&self.data_root) {
+                            Ok(()) => {
+                                self.view.hosted_web_search_mode = mode;
+                                let message = if mode.is_some() {
+                                    "Búsqueda web alojada activada para los próximos turnos"
+                                } else {
+                                    "Búsqueda web alojada desactivada"
+                                };
+                                self.view.status = message.to_owned();
+                                self.set_settings_notice(message, false);
+                            }
+                            Err(error) => {
+                                self.settings_preferences.hosted_web_search_mode = previous;
+                                self.set_settings_notice(error, true);
+                            }
+                        }
+                    }
+                }
             }
             UiAction::Clicked { id } if id == "catalog_select_custom" => {
                 if !self.view.running {
@@ -4897,6 +10328,7 @@ impl AgentsWindow {
                         self.view.status = message.to_owned();
                         self.set_settings_notice(message, false);
                     }
+                    self.refresh_composer_context_percent();
                 }
             }
             UiAction::Clicked { id } if id.starts_with("catalog_browse:") => {
@@ -4942,6 +10374,7 @@ impl AgentsWindow {
                                 self.view.native_key_available =
                                     self.native_settings().key_available();
                             }
+                            self.refresh_composer_context_percent();
                         }
                     }
                 }
@@ -5000,6 +10433,32 @@ impl AgentsWindow {
                     self.commit_agent_tool_settings(next, &message);
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("command_isolation:") => {
+                let selected = match id.as_str() {
+                    "command_isolation:workspace_write_offline" if cfg!(windows) => {
+                        Some(CommandIsolation::WorkspaceWriteOffline)
+                    }
+                    "command_isolation:host_unrestricted" => {
+                        Some(CommandIsolation::HostUnrestricted)
+                    }
+                    _ => None,
+                };
+                if let Some(selected) = selected {
+                    let mut next = self.agent_tool_settings;
+                    next.set_command_isolation(selected);
+                    let message = match selected {
+                        CommandIsolation::WorkspaceWriteOffline => {
+                            "Comandos aislados al proyecto y sin red para próximos turnos"
+                        }
+                        CommandIsolation::HostUnrestricted => {
+                            "Comandos con permisos de tu cuenta para próximos turnos; cada llamada pedirá aprobación"
+                        }
+                    };
+                    self.commit_agent_tool_settings(next, message);
+                } else {
+                    self.set_settings_notice("Modo de aislamiento no disponible", true);
+                }
+            }
             UiAction::Clicked { id } if id == "write_mode" => {
                 let enabled = !self.view.workspace_writes_enabled;
                 let mut next = self.agent_tool_settings;
@@ -5011,6 +10470,14 @@ impl AgentsWindow {
                     "Escritura y comandos desactivados para el agente nativo"
                 };
                 self.commit_agent_tool_settings(next, message);
+            }
+            UiAction::Clicked { id } if id == "turn_mode_toggle" => {
+                if self.view.selected_backend == "native" && !self.view.running {
+                    self.view.turn_mode = match self.view.turn_mode {
+                        TurnMode::Plan => TurnMode::Build,
+                        TurnMode::Build => TurnMode::Plan,
+                    };
+                }
             }
             UiAction::Clicked { id } if id == "workspace_apply" => {
                 let desired = self.view.workspace_draft.trim().to_owned();
@@ -5046,12 +10513,17 @@ impl AgentsWindow {
                     self.new_session();
                     self.view.selected_backend = backend;
                     self.refresh_composer_selection();
+                    self.remember_composer_selection(true);
                 }
             }
             UiAction::Clicked { id } if id == "backend_menu_toggle" => {
                 if !self.view.running {
                     self.view.backend_menu_open = !self.view.backend_menu_open;
                     self.view.composer_model_menu_open = false;
+                    self.view.composer_model_list_open = false;
+                    self.view.composer_model_query.clear();
+                    self.composer_model_search_focus_pending = false;
+                    self.view.composer_advanced_open = false;
                     self.view.composer_effort_menu_open = false;
                 }
             }
@@ -5072,6 +10544,7 @@ impl AgentsWindow {
                     if !self.view.running {
                         self.view.selected_backend = backend.to_owned();
                         self.refresh_composer_selection();
+                        self.remember_composer_selection(true);
                     }
                 }
             }
@@ -5082,13 +10555,60 @@ impl AgentsWindow {
                 {
                     self.view.composer_model_menu_open = !(self.view.composer_model_menu_open
                         || self.view.composer_effort_menu_open);
+                    self.view.composer_model_list_open = false;
+                    self.view.composer_model_query.clear();
+                    self.composer_model_search_focus_pending = false;
+                    self.view.composer_advanced_open = false;
                     self.view.composer_effort_menu_open = false;
+                    self.view.composer_effort_preview = None;
                     self.view.backend_menu_open = false;
                 }
             }
             UiAction::Clicked { id } if id == "composer_model_dismiss" => {
                 self.view.composer_model_menu_open = false;
+                self.view.composer_model_list_open = false;
+                self.view.composer_model_query.clear();
+                self.composer_model_search_focus_pending = false;
+                self.view.composer_advanced_open = false;
                 self.view.composer_effort_menu_open = false;
+                self.view.composer_effort_preview = None;
+            }
+            UiAction::Clicked { id } if id == "composer_model_list_toggle" => {
+                if !self.view.running
+                    && self.view.composer_model_menu_open
+                    && !self.view.composer_advanced_open
+                {
+                    self.view.composer_model_list_open = !self.view.composer_model_list_open;
+                    self.view.composer_model_query.clear();
+                    self.composer_model_search_focus_pending =
+                        self.view.composer_model_list_open;
+                    self.view.composer_effort_preview = None;
+                }
+            }
+            UiAction::Clicked { id }
+                if id == "composer_advanced_toggle" || id == "composer_advanced_chip_toggle" =>
+            {
+                if !self.view.running
+                    && self.view.composer_model_menu_open
+                    && !self.view.composer_model_list_open
+                    && self
+                        .view
+                        .composer_effort_options
+                        .iter()
+                        .any(|(id, _)| id != "default")
+                {
+                    self.view.composer_advanced_open = true;
+                    self.view.composer_effort_preview = None;
+                }
+            }
+            UiAction::Clicked { id } if id == "composer_advanced_back" => {
+                if self.view.composer_model_menu_open {
+                    self.view.composer_advanced_open = false;
+                    self.view.composer_effort_preview = None;
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("composer_route:") => {
+                self.select_composer_route(id.trim_start_matches("composer_route:"));
             }
             UiAction::Clicked { id } if id.starts_with("composer_model:") => {
                 self.select_composer_model(id.trim_start_matches("composer_model:"));
@@ -5100,13 +10620,23 @@ impl AgentsWindow {
                 {
                     self.view.composer_model_menu_open = !(self.view.composer_model_menu_open
                         || self.view.composer_effort_menu_open);
+                    self.view.composer_model_list_open = false;
+                    self.view.composer_model_query.clear();
+                    self.composer_model_search_focus_pending = false;
+                    self.view.composer_advanced_open = false;
                     self.view.composer_effort_menu_open = false;
+                    self.view.composer_effort_preview = None;
                     self.view.backend_menu_open = false;
                 }
             }
             UiAction::Clicked { id } if id == "composer_effort_dismiss" => {
                 self.view.composer_effort_menu_open = false;
                 self.view.composer_model_menu_open = false;
+                self.view.composer_model_list_open = false;
+                self.view.composer_model_query.clear();
+                self.composer_model_search_focus_pending = false;
+                self.view.composer_advanced_open = false;
+                self.view.composer_effort_preview = None;
             }
             UiAction::Clicked { id } if id.starts_with("composer_effort:") => {
                 self.select_composer_effort(id.trim_start_matches("composer_effort:"));
@@ -5119,6 +10649,12 @@ impl AgentsWindow {
                 }
             }
             UiAction::InputChanged { id, value } => match id.as_str() {
+                "composer_model_search" => {
+                    if self.view.composer_model_menu_open && self.view.composer_model_list_open {
+                        self.view.composer_model_query = value.chars().take(128).collect();
+                    }
+                }
+                "dock_overview_query" => self.view.dock_overview_query = value,
                 "command_query" => {
                     self.view.command_query = value;
                     self.view.command_selected_index = 0;
@@ -5128,8 +10664,35 @@ impl AgentsWindow {
                     self.view.prompt = value;
                     self.draft_dirty_at = Some(Instant::now());
                 }
+                "composer_goal_draft" => self.view.composer_goal_draft = value,
                 "terminal_input" => self.view.terminal_input = value,
+                "tool_verification_output" => self.view.tool_verification_output = value,
                 "settings_terminal_shell_path" => self.view.settings_terminal_shell_draft = value,
+                "mcp_draft_id" => self.view.mcp_draft_id = value,
+                "mcp_draft_url" => self.view.mcp_draft_url = value,
+                "mcp_draft_http_bearer_token_env_name" => {
+                    self.view.mcp_draft_http_bearer_token_env_name = value
+                }
+                "mcp_draft_oauth_client_id" => self.view.mcp_draft_oauth_client_id = value,
+                "mcp_draft_oauth_issuer" => self.view.mcp_draft_oauth_issuer = value,
+                "mcp_draft_oauth_scopes" => self.view.mcp_draft_oauth_scopes = value,
+                "mcp_draft_program" => self.view.mcp_draft_program = value,
+                "mcp_draft_args" => self.view.mcp_draft_args = value,
+                "mcp_draft_cwd" => self.view.mcp_draft_cwd = value,
+                "mcp_draft_env_names" => self.view.mcp_draft_env_names = value,
+                "exec_rule_draft_pattern" => self.view.native_exec_rules.draft_pattern = value,
+                "exec_rule_draft_justification" => {
+                    self.view.native_exec_rules.draft_justification = value
+                }
+                "hook_draft_id" => self.view.native_hooks.draft_id = value,
+                "hook_draft_tool_name" => self.view.native_hooks.draft_tool_name = value,
+                "hook_draft_executable" => self.view.native_hooks.draft_executable = value,
+                "hook_draft_args" => self.view.native_hooks.draft_args = value,
+                "hook_draft_cwd" => self.view.native_hooks.draft_cwd = value,
+                "hook_draft_timeout_ms" => self.view.native_hooks.draft_timeout_ms = value,
+                "hook_draft_max_output_bytes" => {
+                    self.view.native_hooks.draft_max_output_bytes = value
+                }
                 "workspace" => self.view.workspace_draft = value,
                 "model" => {
                     self.view.model = value.clone();
@@ -5138,7 +10701,11 @@ impl AgentsWindow {
                         self.view.composer_model_options =
                             composer_selection::model_options("native", &self.view.composer_model);
                         self.view.composer_effort_options =
-                            composer_selection::effort_options("native", &self.view.composer_model);
+                            composer_selection::effort_options_for_provider(
+                                "native",
+                                &self.view.composer_model,
+                                &self.view.native_provider_id,
+                            );
                         self.view.composer_effort = self
                             .view
                             .composer_effort_options
@@ -5148,6 +10715,7 @@ impl AgentsWindow {
                         self.remember_composer_selection(false);
                     }
                     self.persist_native_settings();
+                    self.refresh_composer_context_percent();
                 }
                 "endpoint" => {
                     self.view.endpoint = value;
@@ -5161,7 +10729,18 @@ impl AgentsWindow {
                 "automation_query" => self.view.automations.query = value,
                 "automation_title" => self.view.automations.form.title = value,
                 "automation_prompt" => self.view.automations.form.prompt = value,
-                "automation_once_at" => self.view.automations.form.once_at = value,
+                "automation_once_date" => {
+                    if DatePicker::is_valid_date(&value) {
+                        self.view.automations.calendar_year = value[..4]
+                            .parse()
+                            .unwrap_or(self.view.automations.calendar_year);
+                        self.view.automations.calendar_month = value[5..7]
+                            .parse()
+                            .unwrap_or(self.view.automations.calendar_month);
+                    }
+                    self.view.automations.form.set_once_date(&value);
+                }
+                "automation_once_time" => self.view.automations.form.set_once_time(&value),
                 "automation_interval" => self.view.automations.form.interval_minutes = value,
                 "automation_time" => self.view.automations.form.time = value,
                 "marketplace_search" => self.view.marketplace.query = value,
@@ -5169,6 +10748,16 @@ impl AgentsWindow {
                 _ => {}
             },
             UiAction::Submitted { id, .. } if id == "prompt" => self.start_run(),
+            UiAction::Submitted { id, value } if id == "composer_goal_draft" => {
+                self.view.composer_goal_draft = value;
+                if self.view.composer_goal_editor_open {
+                    self.set_composer_goal(Some(self.view.composer_goal_draft.clone()));
+                }
+            }
+            UiAction::Submitted { id, value } if id == "marketplace_source_draft" => {
+                self.view.marketplace.source_draft = value;
+                self.handle_marketplace_action("marketplace_source_submit");
+            }
             UiAction::Submitted { id, value } if id == "terminal_input" => {
                 self.send_terminal_command(&value);
             }
@@ -5282,11 +10871,24 @@ impl AgentsWindow {
 
 impl eframe::App for AgentsWindow {
     fn on_exit(&mut self) {
+        self.stop_dictation();
+        self.cancel_mcp_oauth();
         // The CLI worker owns a Child behind an Arc. Dropping the UI receiver
         // alone does not terminate it, so stop the run before leaving the app.
         if let Some(run) = self.active_run.take() {
             run.cancel();
         }
+        if let Some(compact) = self.active_compact.take() {
+            compact.cancel.cancel();
+        }
+        if let Some(resume) = self.active_resume.take() {
+            resume.cancel();
+        }
+        if let Some(recovery) = self.active_child_recovery.take() {
+            recovery.cancel();
+        }
+        self.native_command_sessions.revoke_all();
+        self.clear_native_command_ui();
         for run in self.background_automation_runs.drain(..) {
             run.run.cancel();
         }
@@ -5303,11 +10905,22 @@ impl eframe::App for AgentsWindow {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_run();
-        let aux_changed = self.poll_automations()
+        let ctx = ui.ctx().clone();
+        let aux_changed = self.poll_dictation(&ctx)
+            | self.poll_mcp_oauth()
+            | self.poll_subagent_events()
+            | self.poll_subagent_sessions()
+            | self.poll_automations()
+            | self.poll_compact()
+            | self.poll_resume()
+            | self.poll_child_recovery()
+            | self.poll_native_command_sessions()
             | self.poll_marketplace()
             | self.poll_catalog()
-            | self.poll_workspace_folder_picker();
-        let ctx = ui.ctx().clone();
+            | self.poll_model_discovery()
+            | self.poll_codex_model_discovery()
+            | self.poll_workspace_folder_picker()
+            | self.poll_composer_folder_picker();
         let (
             command_shortcut,
             new_task_shortcut,
@@ -5333,15 +10946,26 @@ impl eframe::App for AgentsWindow {
         });
         let terminal_focused = self.view.side_tab == SideTab::Terminal
             && self.tree.focused_id() == Some("terminal_screen");
-        if !terminal_focused && command_shortcut {
+        let workflow_modal_open = self.view.automations.screen == AutomationScreen::Edit
+            || self.view.marketplace.add_source_kind.is_some()
+            || self.view.pending_mcp_delete_id.is_some()
+            || self.view.pending_native_command_termination.is_some()
+            || (self.view.show_settings
+                && self.view.settings_page == SettingsPage::Mcp
+                && self.view.mcp_editor_open);
+        if !terminal_focused && !workflow_modal_open && command_shortcut {
             if self.view.show_command_center {
                 self.view.show_command_center = false;
             } else {
                 self.open_command_center();
             }
-        } else if !terminal_focused && escape && self.view.show_command_center {
+        } else if !terminal_focused
+            && !workflow_modal_open
+            && escape
+            && self.view.show_command_center
+        {
             self.view.show_command_center = false;
-        } else if !terminal_focused && !self.view.show_command_center {
+        } else if !terminal_focused && !workflow_modal_open && !self.view.show_command_center {
             if escape && self.view.group_create_open {
                 self.view.group_create_open = false;
                 self.view.group_create_draft.clear();
@@ -5359,7 +10983,12 @@ impl eframe::App for AgentsWindow {
             {
                 self.view.composer_model_menu_open =
                     !(self.view.composer_model_menu_open || self.view.composer_effort_menu_open);
+                self.view.composer_model_list_open = false;
+                self.view.composer_model_query.clear();
+                self.composer_model_search_focus_pending = false;
+                self.view.composer_advanced_open = false;
                 self.view.composer_effort_menu_open = false;
+                self.view.composer_effort_preview = None;
                 self.view.backend_menu_open = false;
             } else if sidebar_shortcut {
                 self.toggle_left_sidebar();
@@ -5403,20 +11032,27 @@ impl eframe::App for AgentsWindow {
             !self.view.transcript.is_empty() && !self.tree.is_scroll_at_end("transcript", 24.0);
         self.tree.set_root(build_view(&self.view, area.width()));
         let mut frame = self.tree.layout(Size::new(area.width(), area.height()));
-        let focus_was_pending = (self.prompt_focus_pending, self.group_focus_pending);
-        self.focus_prompt_if_pending();
-        self.focus_group_if_pending();
-        let mut needs_relayout = aux_changed
-            || focus_was_pending != (self.prompt_focus_pending, self.group_focus_pending);
-        let modal_width = (area.width() - 28.0).clamp(0.0, 720.0);
-        let modal_height = (area.height() - 28.0).clamp(0.0, 620.0);
-        let modal = egui::Rect::from_min_size(
-            egui::pos2(
-                area.min.x + (area.width() - modal_width) / 2.0,
-                area.min.y + ((area.height() - modal_height) * 0.18).min(100.0),
-            ),
-            egui::vec2(modal_width, modal_height),
+        let focus_was_pending = (
+            self.prompt_focus_pending,
+            self.composer_model_search_focus_pending,
+            self.group_focus_pending,
+            self.rename_focus_pending,
         );
+        self.focus_prompt_if_pending();
+        self.focus_composer_model_search_if_pending();
+        self.focus_group_if_pending();
+        self.focus_rename_if_pending();
+        let mut needs_relayout = aux_changed
+            || focus_was_pending
+                != (
+                    self.prompt_focus_pending,
+                    self.composer_model_search_focus_pending,
+                    self.group_focus_pending,
+                    self.rename_focus_pending,
+                );
+        let modal = command_center_rect(area);
+        let modal_width = modal.width();
+        let modal_height = modal.height();
         let mut command_frame = None;
         if self.view.show_command_center {
             if down {
@@ -5459,16 +11095,24 @@ impl eframe::App for AgentsWindow {
         } else {
             for event in render::events(&ctx, area.min) {
                 needs_relayout = true;
-                if self.handle_dock_drag(&event, area.width()) {
+                if !workflow_modal_open && self.handle_dock_drag(&event, area.width()) {
                     continue;
                 }
-                if self.handle_terminal_event(&event) {
+                if !workflow_modal_open && self.handle_terminal_event(&event) {
                     continue;
                 }
                 for action in self.tree.handle_event(event) {
                     self.apply_action(action, &ctx);
                 }
             }
+        }
+        let effort_hovered = !self.view.show_command_center
+            && self.view.composer_model_menu_open
+            && self.view.composer_advanced_open
+            && self.tree.hovered_id() == Some("composer_effort_slider");
+        if self.view.composer_effort_hovered != effort_hovered {
+            self.view.composer_effort_hovered = effort_hovered;
+            needs_relayout = true;
         }
         needs_relayout |= self.update_command_search(&ctx);
         needs_relayout |= self.update_git_review(&ctx);
@@ -5502,6 +11146,7 @@ impl eframe::App for AgentsWindow {
         if needs_relayout {
             self.focus_prompt_if_pending();
             self.focus_group_if_pending();
+            self.focus_rename_if_pending();
         }
         render::paint(ui, &frame);
         if self.view.show_command_center {
@@ -5535,7 +11180,11 @@ impl eframe::App for AgentsWindow {
         if near_split || self.dock_drag.is_some() {
             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
-        if self.active_run.is_some() {
+        if self.active_run.is_some()
+            || self.active_compact.is_some()
+            || self.active_resume.is_some()
+            || self.active_child_recovery.is_some()
+        {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
         if self.view.show_side_pane
@@ -5550,15 +11199,40 @@ impl eframe::App for AgentsWindow {
         }
         if !self.background_automation_runs.is_empty()
             || !self.automation_queue.is_empty()
+            || self.active_mcp_oauth.is_some()
+            || !self.view.active_subagents.is_empty()
+            || self.subagent_poll_needed
             || self.marketplace_response.is_some()
             || self.catalog_response.is_some()
+            || self.model_discovery_response.is_some()
+            || self.codex_model_response.is_some()
             || self.workspace_folder_response.is_some()
         {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
+        if self.native_command_snapshot_response.is_some()
+            || self.native_command_termination_response.is_some()
+            || (self.view.show_side_pane
+                && self.view.side_tab == SideTab::Activity
+                && self
+                    .view
+                    .selected_session
+                    .as_ref()
+                    .is_some_and(|id| self.native_command_sessions.manager(id).is_some()))
+        {
+            ctx.request_repaint_after(Duration::from_millis(150));
+        }
         ctx.request_repaint_after(Duration::from_secs(30));
-        if dock_animating || self.tree.is_animating() || self.command_tree.is_animating() {
-            ctx.request_repaint_after(Duration::from_millis(16));
+        let animation_interval = [
+            dock_animating.then_some(Duration::from_millis(16)),
+            self.tree.animation_repaint_after(),
+            self.command_tree.animation_repaint_after(),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        if let Some(interval) = animation_interval {
+            ctx.request_repaint_after(interval);
         }
     }
 }
@@ -5566,11 +11240,90 @@ impl eframe::App for AgentsWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_core::MessageRole;
+    use openide_core::{MessageRole, ModelTokenUsage};
     use openide_harness::{LocalTool, PermissionMode};
-    use openide_ui::Key;
+    use openide_ui::{DrawCommand, Key};
     use serde_json::json;
     use std::sync::atomic::AtomicUsize;
+
+    fn committed_usage_events(usage: Option<ModelTokenUsage>) -> Vec<AgentEvent> {
+        vec![
+            AgentEvent::new(
+                "session",
+                1,
+                AgentEventKind::ModelRequestStarted {
+                    step: 1,
+                    model: "gpt-4o".into(),
+                },
+            ),
+            AgentEvent::new(
+                "session",
+                2,
+                AgentEventKind::ModelResponseCommitted {
+                    step: 1,
+                    assistant: AgentMessage::assistant("Respuesta", vec![]),
+                    response_id: None,
+                    usage,
+                },
+            ),
+        ]
+    }
+
+    #[test]
+    fn composer_context_percent_uses_committed_total_and_verified_window() {
+        let events = committed_usage_events(Some(ModelTokenUsage {
+            input_tokens: 60_000,
+            output_tokens: 4_000,
+            total_tokens: 64_000,
+            reasoning_tokens: None,
+            cached_input_tokens: None,
+        }));
+        assert_eq!(
+            committed_context_percent(&events, "openai", "gpt-4o"),
+            Some(55)
+        );
+        assert_eq!(context_remaining_percent(65_000, 128_000), Some(54));
+        assert_eq!(context_remaining_percent(256_000, 128_000), Some(0));
+    }
+
+    #[test]
+    fn composer_context_percent_hides_unknown_usage_or_budget() {
+        let events = committed_usage_events(Some(ModelTokenUsage {
+            input_tokens: 60_000,
+            output_tokens: 4_000,
+            total_tokens: 64_000,
+            reasoning_tokens: None,
+            cached_input_tokens: None,
+        }));
+        assert_eq!(committed_context_percent(&events, "custom", "gpt-4o"), None);
+        assert_eq!(committed_context_percent(&events, "openai", "gpt-5"), None);
+        assert_eq!(
+            committed_context_percent(&committed_usage_events(None), "openai", "gpt-4o"),
+            None
+        );
+        assert_eq!(context_remaining_percent(1, 0), None);
+    }
+
+    #[test]
+    fn command_center_is_compact_and_centered_at_desktop_and_narrow_sizes() {
+        for (area, expected_width, expected_height) in [
+            (
+                egui::Rect::from_min_size(egui::pos2(100.0, 40.0), egui::vec2(1440.0, 900.0)),
+                560.0,
+                500.0,
+            ),
+            (
+                egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(480.0, 320.0)),
+                448.0,
+                272.0,
+            ),
+        ] {
+            let modal = command_center_rect(area);
+            assert_eq!(modal.size(), egui::vec2(expected_width, expected_height));
+            assert_eq!(modal.center(), area.center());
+            assert!(area.contains_rect(modal));
+        }
+    }
 
     #[test]
     fn terminal_keys_forward_control_and_navigation_sequences() {
@@ -5620,6 +11373,248 @@ mod tests {
     }
 
     #[test]
+    fn composer_goal_is_saved_per_draft_and_follows_the_created_session() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let workspace = app.view.workspace.clone();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("composer_goal_open"), &ctx);
+        assert!(app.view.composer_add_menu_open);
+        assert!(app.view.composer_goal_editor_open);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "composer_goal_draft".into(),
+                value: "  Reparar el editor  ".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("composer_goal_save"), &ctx);
+        assert_eq!(app.view.composer_goal.as_deref(), Some("Reparar el editor"));
+        assert!(!app.view.composer_goal_editor_open);
+
+        let draft_key = (workspace.clone(), None);
+        app.transfer_draft_goal_to_session(&draft_key, "session-1")
+            .unwrap();
+        app.view.selected_session = Some("session-1".into());
+        app.restore_draft();
+        assert_eq!(app.view.composer_goal.as_deref(), Some("Reparar el editor"));
+
+        app.view.selected_session = None;
+        app.restore_draft();
+        assert_eq!(app.view.composer_goal, None);
+        app.view.selected_session = Some("session-1".into());
+        app.restore_draft();
+        assert_eq!(app.view.composer_goal.as_deref(), Some("Reparar el editor"));
+
+        let saved = load_composer_goals(root.path()).unwrap();
+        assert_eq!(
+            saved
+                .get(&(workspace, Some("session-1".into())))
+                .map(String::as_str),
+            Some("Reparar el editor")
+        );
+    }
+
+    #[test]
+    fn goal_context_is_separate_from_visible_prompt_and_plugin_opens_real_catalog() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.view.prompt = "Corregir el error".into();
+        app.set_composer_goal(Some("Restaurar la compilación".into()));
+        let context = system_instructions_with_goal(
+            "Skill: pruebas".into(),
+            app.view.composer_goal.as_deref(),
+        );
+        assert!(context.contains("Restaurar la compilación"));
+        assert!(context.contains("Skill: pruebas"));
+        assert_eq!(app.view.prompt, "Corregir el error");
+
+        app.apply_action(
+            clicked("composer_plugin_spreadsheets"),
+            &egui::Context::default(),
+        );
+        assert_eq!(app.view.main_page, MainPage::Marketplace);
+        assert_eq!(app.view.marketplace.query, "spreadsheet");
+    }
+
+    #[test]
+    fn native_workspace_instructions_include_project_file_before_goal() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "Seguir reglas locales").unwrap();
+        let instructions = native_workspace_instructions(root.path(), &workspace).unwrap();
+        let full = system_instructions_with_goal(instructions, Some("Terminar el harness"));
+        assert!(full.contains("Seguir reglas locales"));
+        assert!(full.find("Seguir reglas locales") < full.find("Terminar el harness"));
+    }
+
+    #[test]
+    fn resume_uses_saved_instructions_when_project_document_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "Primera versión").unwrap();
+        let saved = native_resume_instructions(
+            root.path(),
+            &workspace,
+            Some("Terminar el harness"),
+            None,
+        )
+        .unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), [0xff]).unwrap();
+        assert_eq!(
+            native_resume_instructions(root.path(), &workspace, None, Some(&saved)).unwrap(),
+            saved
+        );
+        assert!(native_resume_instructions(root.path(), &workspace, None, None).is_err());
+    }
+
+    #[test]
+    fn local_skill_selection_reaches_native_context_and_changed_content_requires_reselection() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let workspace = root.path().join("project");
+        let skill = workspace.join(".agents/skills/review/SKILL.md");
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        std::fs::write(
+            &skill,
+            "---\nname: review\ndescription: Review skill\n---\nReview version one",
+        )
+        .unwrap();
+        let mut app = AgentsWindow::with_data_root(data.clone());
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        assert_eq!(
+            app.view.native_skills.available.len(),
+            1,
+            "{:?}",
+            app.view.native_skills
+        );
+        assert!(!native_workspace_instructions(&data, &workspace)
+            .unwrap()
+            .contains("Review version one"));
+
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("native_skill_toggle:0"), &ctx);
+        assert!(
+            !app.view.settings_notice_error,
+            "{:?}",
+            app.view.settings_notice
+        );
+        let original = native_workspace_instructions(&data, &workspace).unwrap();
+        assert!(original.contains("Review version one"));
+        assert!(original.contains("Skills locales seleccionadas (identidad "));
+        let mut reopened = AgentsWindow::with_data_root(data.clone());
+        reopened.change_workspace(workspace.to_string_lossy().into_owned());
+        assert_eq!(reopened.view.native_skills.selected.len(), 1);
+
+        std::fs::write(
+            &skill,
+            "---\nname: review\ndescription: Review skill\n---\nReview version two",
+        )
+        .unwrap();
+        assert!(native_workspace_instructions(&data, &workspace).is_err());
+        app.apply_action(clicked("native_skill_refresh"), &ctx);
+        assert!(app.view.native_skills.activation_error.is_some());
+        app.apply_action(clicked("native_skill_toggle:0"), &ctx);
+        assert!(
+            !app.view.settings_notice_error,
+            "{:?}",
+            app.view.settings_notice
+        );
+        let updated = native_workspace_instructions(&data, &workspace).unwrap();
+        assert!(updated.contains("Review version two"));
+        assert_ne!(updated, original);
+    }
+
+    #[test]
+    fn corrupt_local_skill_selection_blocks_native_context_until_confirmed_reset() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let workspace = root.path().join("project");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("native-local-skills.json"), "{broken").unwrap();
+        let mut app = AgentsWindow::with_data_root(data.clone());
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        assert!(app.view.native_skills.load_error.is_some());
+        assert!(native_workspace_instructions(&data, &workspace).is_err());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("native_skill_reset"), &ctx);
+        assert!(app.view.native_skills.reset_confirm_open);
+        app.apply_action(clicked("native_skill_reset_confirm"), &ctx);
+        assert!(app.view.native_skills.load_error.is_none());
+        assert!(native_workspace_instructions(&data, &workspace).is_ok());
+    }
+
+    #[test]
+    fn marketplace_removal_waits_for_alert_confirmation() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.view
+            .marketplace
+            .snapshot
+            .sources
+            .push(crate::marketplace::MarketplaceSource {
+                id: "source".into(),
+                name: "Origen".into(),
+                location: "C:/source".into(),
+                kind: SourceKind::Local,
+            });
+        app.apply_action(clicked("marketplace_remove_source:source"), &ctx);
+        assert_eq!(
+            app.view.marketplace.pending_remove_source_id.as_deref(),
+            Some("source")
+        );
+        assert!(!app.view.marketplace.busy);
+        app.apply_action(clicked("marketplace_alert_cancel"), &ctx);
+        assert!(app.view.marketplace.pending_remove_source_id.is_none());
+        app.apply_action(clicked("marketplace_remove_source_confirm:source"), &ctx);
+        assert!(!app.view.marketplace.busy);
+    }
+
+    #[test]
+    fn marketplace_source_modal_clears_stale_status_and_keeps_busy_draft() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.view.marketplace.status = Some("Error anterior".into());
+        app.apply_action(clicked("marketplace_source_kind:local"), &ctx);
+        assert_eq!(
+            app.view.marketplace.add_source_kind,
+            Some(SourceKind::Local)
+        );
+        assert!(app.view.marketplace.status.is_none());
+        app.apply_action(
+            UiAction::Submitted {
+                id: "marketplace_source_draft".into(),
+                value: String::new(),
+            },
+            &ctx,
+        );
+        assert_eq!(
+            app.view.marketplace.status.as_deref(),
+            Some("Indica la carpeta o URL del origen")
+        );
+        assert!(!app.view.marketplace.busy);
+
+        app.view.marketplace.source_draft = "C:/skills".into();
+        app.view.marketplace.busy = true;
+        app.apply_action(clicked("marketplace_source_cancel"), &ctx);
+        assert_eq!(
+            app.view.marketplace.add_source_kind,
+            Some(SourceKind::Local)
+        );
+        assert_eq!(app.view.marketplace.source_draft, "C:/skills");
+
+        app.view.marketplace.busy = false;
+        app.apply_action(clicked("marketplace_source_cancel"), &ctx);
+        assert!(app.view.marketplace.add_source_kind.is_none());
+        assert!(app.view.marketplace.source_draft.is_empty());
+    }
+
+    #[test]
     fn invalid_saved_tool_permissions_start_read_only_and_show_settings_error() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("agent-tool-settings.json"), "{broken").unwrap();
@@ -5649,7 +11644,81 @@ mod tests {
         let file = composer_attachment_for_path(&project, Path::new("src/main.rs")).unwrap();
         assert_eq!(file.path, "src/main.rs");
         assert_eq!(file.label, "main.rs");
+        assert!(!file.is_dir);
+        let folder = composer_attachment_for_path(&project, Path::new("src")).unwrap();
+        assert_eq!(folder.path, "src");
+        assert!(folder.is_dir);
         assert!(composer_attachment_for_path(&project, Path::new("../private.txt")).is_err());
+    }
+
+    #[test]
+    fn native_image_attachment_is_inline_and_keeps_other_paths_as_context() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        std::fs::write(project.join("screen.png"), b"\x89PNG\r\n\x1a\nfixture").unwrap();
+        let image_attachment =
+            composer_attachment_for_path(&project, Path::new("screen.png")).unwrap();
+        let image = native_image_from_attachment(&project, &image_attachment).unwrap();
+        assert_eq!(image.mime_type, UserImageMime::Png);
+        assert_eq!(image.verified_bytes().unwrap(), b"\x89PNG\r\n\x1a\nfixture");
+        let prepared = prepare_native_attachments(
+            &project,
+            std::slice::from_ref(&image_attachment),
+            "openai",
+            "gpt-4.1",
+        )
+        .unwrap();
+        assert_eq!(prepared.images, vec![image]);
+        assert!(prepare_native_attachments(
+            &project,
+            std::slice::from_ref(&image_attachment),
+            "deepseek",
+            "deepseek-flash",
+        )
+        .is_err());
+        let other = ComposerAttachmentView {
+            path: "src/main.rs".into(),
+            label: "main.rs".into(),
+            is_dir: false,
+        };
+        let prompt = native_prompt_with_images("Revisa ambos", &[other], &[image_attachment]);
+        assert!(prompt.contains("src/main.rs"));
+        assert!(prompt.contains("Imágenes enviadas al modelo"));
+        assert!(!prompt.contains("\"path\":\"screen.png\""));
+    }
+
+    #[test]
+    fn session_approval_revoke_action_updates_durable_grants() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.as_ref().unwrap().clone();
+        let session = store.create(root.path(), "native").unwrap();
+        let grant = openide_core::SessionApprovalGrantRecord {
+            version: 1,
+            session_id: session.id.clone(),
+            tool_name: "run_command".into(),
+            effective_policy_digest: "a".repeat(64),
+            key_digest: "b".repeat(64),
+        };
+        store
+            .record_permission_decision_with_grant(
+                &session.id,
+                "request-1",
+                PermissionDecision::Allow,
+                Some(grant.clone()),
+            )
+            .unwrap();
+        app.view.selected_session = Some(session.id.clone());
+        app.refresh_selected_session_approvals();
+        assert_eq!(app.view.session_approval_grants.len(), 1);
+        app.apply_action(
+            clicked(format!("session_approval_revoke:{}", grant.key_digest)),
+            &egui::Context::default(),
+        );
+        assert!(store.session_approval_grants(&session.id).unwrap().is_empty());
+        assert!(app.view.session_approval_grants.is_empty());
+        assert!(app.view.status.contains("revocado"));
     }
 
     #[test]
@@ -5688,11 +11757,13 @@ mod tests {
         let attachments = vec![ComposerAttachmentView {
             path: "src/main.rs".into(),
             label: "main.rs".into(),
+            is_dir: false,
         }];
         let prompt = composer_prompt_with_attachments("Mejora la UI", &attachments);
         assert!(prompt.starts_with("Mejora la UI\n\n"));
-        assert!(prompt.contains("[\"src/main.rs\"]"));
-        assert!(prompt.contains("Abre estos archivos"));
+        assert!(prompt.contains("\"path\":\"src/main.rs\""));
+        assert!(prompt.contains("\"type\":\"file\""));
+        assert!(prompt.contains("explora las carpetas"));
         assert_eq!(attachments[0].label, "main.rs");
     }
 
@@ -5703,6 +11774,7 @@ mod tests {
         let file = ComposerAttachmentView {
             path: "src/main.rs".into(),
             label: "main.rs".into(),
+            is_dir: false,
         };
         app.view.composer_attachments.push(file.clone());
         app.save_draft();
@@ -5966,6 +12038,285 @@ mod tests {
         assert!(reopened.view.workspace_writes_enabled);
     }
 
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn activity_termination_requires_confirmation_and_preserves_model_output() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let session = app
+            .store
+            .as_ref()
+            .unwrap()
+            .create(&workspace, "native")
+            .unwrap();
+        app.view.selected_session = Some(session.id.clone());
+        app.view.selected_backend = "native".into();
+        app.view.main_page = MainPage::Workspace;
+        app.view.show_settings = false;
+        app.view.show_side_pane = true;
+        app.view.side_tab = SideTab::Activity;
+        let manager = app
+            .native_command_sessions
+            .for_session(
+                &session.id,
+                &workspace,
+                CommandIsolation::HostUnrestricted,
+                true,
+            )
+            .unwrap()
+            .unwrap();
+        let command = std::env::var_os("COMSPEC")
+            .unwrap_or_else(|| "cmd.exe".into())
+            .to_string_lossy()
+            .into_owned();
+        let started = manager
+            .start(
+                &command,
+                &[
+                    "/C".into(),
+                    "echo READY & ping -n 30 127.0.0.1 > NUL".into(),
+                ],
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.poll_native_command_sessions();
+            if app
+                .view
+                .native_commands
+                .iter()
+                .any(|command| command.id == started.id && command.has_output)
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "command did not appear in Activity"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let ctx = egui::Context::default();
+        let other = app
+            .store
+            .as_ref()
+            .unwrap()
+            .create(&workspace, "native")
+            .unwrap();
+        app.view.selected_session = Some(other.id);
+        app.poll_native_command_sessions();
+        assert!(app.view.native_commands.is_empty());
+        app.apply_action(
+            clicked(format!("native_command_terminate:{}", started.id)),
+            &ctx,
+        );
+        assert!(app.view.pending_native_command_termination.is_none());
+        app.view.selected_session = Some(session.id.clone());
+        app.last_native_command_snapshot = None;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.poll_native_command_sessions();
+            if app
+                .view
+                .native_commands
+                .iter()
+                .any(|command| command.id == started.id)
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "command did not return to its task"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        app.apply_action(
+            clicked(format!("native_command_terminate:{}", started.id)),
+            &ctx,
+        );
+        assert_eq!(
+            app.view.pending_native_command_termination.as_deref(),
+            Some(started.id.as_str())
+        );
+        assert!(manager
+            .list_sessions()
+            .unwrap()
+            .iter()
+            .any(|command| command.id == started.id && command.exit.is_none()));
+        app.apply_action(clicked("native_command_terminate_cancel"), &ctx);
+        assert!(app.view.pending_native_command_termination.is_none());
+        assert!(manager
+            .list_sessions()
+            .unwrap()
+            .iter()
+            .any(|command| command.id == started.id && command.exit.is_none()));
+
+        app.apply_action(
+            clicked(format!("native_command_terminate:{}", started.id)),
+            &ctx,
+        );
+        app.apply_action(
+            clicked(format!("native_command_terminate_confirm:{}", started.id)),
+            &ctx,
+        );
+        assert!(app.native_command_termination_response.is_some());
+        assert_eq!(
+            app.view.native_command_terminating.as_deref(),
+            Some(started.id.as_str())
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.poll_native_command_sessions();
+            if app.native_command_termination_response.is_none() {
+                break;
+            }
+            assert!(Instant::now() < deadline, "termination did not finish");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(app.view.status.contains("terminado"), "{}", app.view.status);
+        assert!(manager.list_sessions().unwrap().iter().any(|command| {
+            command.id == started.id
+                && command.exit == Some(openide_harness::PersistentCommandExit::Terminated)
+        }));
+        let final_output = manager
+            .poll(&started.id, Duration::ZERO, &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            final_output.exit,
+            Some(openide_harness::PersistentCommandExit::Terminated)
+        );
+        assert!(final_output.events.iter().any(|event| matches!(
+            event,
+            openide_harness::PersistentCommandEvent::Output { bytes, .. }
+                if String::from_utf8_lossy(bytes).contains("READY")
+        )));
+    }
+
+    #[test]
+    fn command_hook_settings_validate_persist_and_change_runtime_digest() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("trusted-hook.bin");
+        std::fs::write(&executable, b"first version").unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("settings_page:hooks"), &ctx);
+        app.apply_action(clicked("hook_new"), &ctx);
+        for (id, value) in [
+            ("hook_draft_id", "review-write".to_owned()),
+            ("hook_draft_tool_name", "write_file".to_owned()),
+            (
+                "hook_draft_executable",
+                executable.to_string_lossy().into_owned(),
+            ),
+            ("hook_draft_args", "[\"--check\"]".to_owned()),
+            ("hook_draft_cwd", root.path().to_string_lossy().into_owned()),
+        ] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: id.into(),
+                    value,
+                },
+                &ctx,
+            );
+        }
+        app.apply_action(clicked("hook_save"), &ctx);
+        assert!(
+            !app.view.settings_notice_error,
+            "{:?}",
+            app.view.settings_notice
+        );
+        assert_eq!(app.view.native_hooks.hooks.len(), 1);
+        let saved = NativeHookSettings::load(root.path()).unwrap();
+        assert_eq!(saved.hooks[0].id, "review-write");
+        let old_digest = saved.registry().unwrap().digest_hex().unwrap();
+
+        let reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert_eq!(reopened.view.native_hooks.hooks.len(), 1);
+        std::fs::write(&executable, b"changed version").unwrap();
+        let changed_digest = NativeHookSettings::load(root.path())
+            .unwrap()
+            .registry()
+            .unwrap()
+            .digest_hex()
+            .unwrap();
+        assert_ne!(old_digest, changed_digest);
+
+        app.apply_action(clicked("hook_select:review-write"), &ctx);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "hook_draft_executable".into(),
+                value: "relative-hook".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("hook_save"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert_eq!(
+            NativeHookSettings::load(root.path()).unwrap().hooks.len(),
+            1
+        );
+        app.apply_action(clicked("hook_cancel"), &ctx);
+        app.apply_action(clicked("hook_delete:review-write"), &ctx);
+        assert!(NativeHookSettings::load(root.path())
+            .unwrap()
+            .hooks
+            .is_empty());
+    }
+
+    #[test]
+    fn command_rules_ui_persists_effective_policy_and_corruption_blocks_native_runs() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let baseline = app.native_permission_policy().unwrap().digest_hex();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("exec_rule_new"), &ctx);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "exec_rule_draft_pattern".into(),
+                value: "[\"git\",\"push\"]".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("exec_rule_decision:deny"), &ctx);
+        app.apply_action(clicked("exec_rule_save"), &ctx);
+        assert!(
+            !app.view.settings_notice_error,
+            "{:?}",
+            app.view.settings_notice
+        );
+        let saved = app.native_permission_policy().unwrap();
+        assert_ne!(saved.digest_hex(), baseline);
+        let call = ToolCall {
+            id: "push".into(),
+            name: "run_command".into(),
+            arguments: json!({"command":"git","args":["push","origin","main"]}),
+        };
+        assert_eq!(
+            saved.exec_policy().evaluate_call(&call).unwrap().decision,
+            Some(ExecDecision::Deny)
+        );
+
+        let reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert_eq!(
+            reopened.native_permission_policy().unwrap().digest_hex(),
+            saved.digest_hex()
+        );
+        std::fs::write(root.path().join("native-exec-rules.json"), "{broken").unwrap();
+        assert!(app.native_permission_policy().is_err());
+        let mut corrupt = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert!(corrupt.native_permission_policy().is_err());
+        assert!(corrupt.view.native_exec_rules.load_error.is_some());
+        corrupt.apply_action(clicked("exec_rule_reset"), &ctx);
+        corrupt.apply_action(clicked("exec_rule_reset_confirm"), &ctx);
+        assert_eq!(
+            corrupt.native_permission_policy().unwrap().digest_hex(),
+            baseline
+        );
+    }
+
     #[test]
     fn settings_page_action_remembers_last_section_and_ignores_unknown_route() {
         let root = tempfile::tempdir().unwrap();
@@ -5982,6 +12333,699 @@ mod tests {
         assert_eq!(app.view.settings_page, SettingsPage::Mcp);
         let reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
         assert_eq!(reopened.view.settings_page, SettingsPage::Mcp);
+    }
+
+    #[test]
+    fn command_isolation_choice_persists_as_a_host_setting() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("command_isolation:host_unrestricted"), &ctx);
+        assert_eq!(
+            app.view.native_command_isolation,
+            CommandIsolation::HostUnrestricted
+        );
+        assert_eq!(
+            AgentToolSettings::load(root.path())
+                .unwrap()
+                .command_isolation(),
+            CommandIsolation::HostUnrestricted
+        );
+        if cfg!(windows) {
+            app.apply_action(clicked("command_isolation:workspace_write_offline"), &ctx);
+            assert_eq!(
+                app.view.native_command_isolation,
+                CommandIsolation::WorkspaceWriteOffline
+            );
+        }
+        let previous = app.view.native_command_isolation;
+        app.apply_action(clicked("command_isolation:unknown"), &ctx);
+        assert_eq!(app.view.native_command_isolation, previous);
+        assert!(app.view.settings_notice_error);
+    }
+
+    #[test]
+    fn hosted_web_search_choice_persists_for_openai_responses() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.view.native_provider_id = "openai".into();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("native_web_search:indexed"), &ctx);
+        assert_eq!(
+            app.view.hosted_web_search_mode,
+            Some(HostedWebSearchMode::Indexed)
+        );
+        assert_eq!(
+            SettingsPreferences::load(root.path()).hosted_web_search_mode,
+            Some(HostedWebSearchMode::Indexed)
+        );
+        app.apply_action(clicked("native_web_search:off"), &ctx);
+        assert_eq!(app.view.hosted_web_search_mode, None);
+    }
+
+    #[test]
+    fn mcp_settings_actions_round_trip_precise_arguments_and_enabled_state() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("mcp_new"), &ctx);
+        assert!(app.view.mcp_editor_open);
+        for (id, value) in [
+            ("mcp_draft_id", "example"),
+            ("mcp_draft_program", "mock-mcp"),
+            ("mcp_draft_args", "[\"\",\"--verbose\"]"),
+            ("mcp_draft_env_names", "MCP_TOKEN"),
+        ] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: id.into(),
+                    value: value.into(),
+                },
+                &ctx,
+            );
+        }
+        app.apply_action(clicked("mcp_save"), &ctx);
+        assert!(!app.view.mcp_editor_open);
+        assert_eq!(app.view.mcp_servers.len(), 1);
+        assert_eq!(app.view.mcp_servers[0].args, ["", "--verbose"]);
+        assert!(!app.view.mcp_servers[0].enabled);
+        assert_eq!(
+            app.view.settings_notice.as_deref(),
+            Some("Servidor MCP guardado")
+        );
+        app.apply_action(clicked("mcp_toggle:example"), &ctx);
+        assert!(app.view.mcp_servers[0].enabled);
+        let persisted = McpSettings::load(&app.data_root, &workspace).unwrap();
+        assert_eq!(persisted.servers, app.view.mcp_servers);
+        app.apply_action(clicked("mcp_select:example"), &ctx);
+        assert!(app.view.mcp_editor_open);
+        assert_eq!(app.view.mcp_draft_args, "[\n  \"\",\n  \"--verbose\"\n]");
+        app.apply_action(clicked("mcp_cancel"), &ctx);
+        assert!(!app.view.mcp_editor_open);
+        assert!(app.view.mcp_selected_id.is_none());
+        app.apply_action(clicked("mcp_delete_confirm:example"), &ctx);
+        assert_eq!(app.view.mcp_servers.len(), 1);
+        app.apply_action(clicked("mcp_delete:example"), &ctx);
+        assert_eq!(app.view.pending_mcp_delete_id.as_deref(), Some("example"));
+        assert_eq!(app.view.mcp_servers.len(), 1);
+        app.apply_action(clicked("mcp_delete_cancel"), &ctx);
+        assert!(app.view.pending_mcp_delete_id.is_none());
+        assert_eq!(app.view.mcp_servers.len(), 1);
+        app.apply_action(clicked("mcp_delete:example"), &ctx);
+        app.apply_action(clicked("mcp_delete_confirm:example"), &ctx);
+        assert!(app.view.pending_mcp_delete_id.is_none());
+        assert!(McpSettings::load(&app.data_root, &workspace)
+            .unwrap()
+            .servers
+            .is_empty());
+    }
+
+    #[test]
+    fn mcp_http_settings_store_only_token_env_name() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("mcp_new"), &ctx);
+        app.apply_action(clicked("mcp_transport:http"), &ctx);
+        assert!(app.view.mcp_draft_http);
+        for (id, value) in [
+            ("mcp_draft_id", "remote"),
+            ("mcp_draft_url", "https://example.com/mcp"),
+            ("mcp_draft_http_bearer_token_env_name", "MCP_REMOTE_TOKEN"),
+        ] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: id.into(),
+                    value: value.into(),
+                },
+                &ctx,
+            );
+        }
+        app.apply_action(clicked("mcp_save"), &ctx);
+        assert!(!app.view.mcp_editor_open, "{:?}", app.view.settings_notice);
+        let settings = McpSettings::load(&app.data_root, &workspace).unwrap();
+        assert_eq!(settings.servers.len(), 1);
+        let server = &settings.servers[0];
+        assert_eq!(server.url.as_deref(), Some("https://example.com/mcp"));
+        assert_eq!(
+            server.http_bearer_token_env_name.as_deref(),
+            Some("MCP_REMOTE_TOKEN")
+        );
+        assert!(server.program.is_empty());
+        assert!(server.args.is_empty());
+        assert!(server.credential_env_names.is_empty());
+        app.apply_action(clicked("mcp_select:remote"), &ctx);
+        assert!(app.view.mcp_draft_http);
+        assert_eq!(app.view.mcp_draft_url, "https://example.com/mcp");
+        app.apply_action(clicked("mcp_transport:stdio"), &ctx);
+        assert!(!app.view.mcp_draft_http);
+    }
+
+    #[test]
+    fn mcp_oauth_settings_round_trip_public_registration_without_bearer_env() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("mcp_new"), &ctx);
+        app.apply_action(clicked("mcp_transport:http"), &ctx);
+        app.apply_action(clicked("mcp_auth:oauth"), &ctx);
+        for (id, value) in [
+            ("mcp_draft_id", "protected"),
+            ("mcp_draft_url", "https://resource.example/mcp"),
+            ("mcp_draft_oauth_client_id", "openide-public-client"),
+            ("mcp_draft_oauth_issuer", "https://auth.example"),
+            ("mcp_draft_oauth_scopes", "read\nwrite"),
+            ("mcp_draft_http_bearer_token_env_name", "SHOULD_BE_IGNORED"),
+        ] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: id.into(),
+                    value: value.into(),
+                },
+                &ctx,
+            );
+        }
+        app.apply_action(clicked("mcp_save"), &ctx);
+        assert!(!app.view.mcp_editor_open, "{:?}", app.view.settings_notice);
+        let server = McpSettings::load(&app.data_root, &workspace)
+            .unwrap()
+            .servers
+            .remove(0);
+        assert!(server.http_bearer_token_env_name.is_none());
+        let oauth = server.http_oauth.unwrap();
+        assert_eq!(oauth.client_id, "openide-public-client");
+        assert_eq!(oauth.issuer, "https://auth.example");
+        assert_eq!(oauth.scopes, ["read", "write"]);
+        app.apply_action(clicked("mcp_select:protected"), &ctx);
+        assert!(app.view.mcp_draft_oauth_enabled);
+        assert_eq!(app.view.mcp_draft_oauth_scopes, "read\nwrite");
+    }
+
+    #[test]
+    fn sidebar_projects_subagent_status_without_parent_lease() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.clone().unwrap();
+        let parent = store.create(&workspace, "native").unwrap();
+        let parent_lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator = SubagentCoordinator::new(store, SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "sidebar-child",
+                &openide_harness::SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        app.refresh_sessions();
+        let row = app
+            .view
+            .sessions
+            .iter()
+            .find(|row| row.id == child.session.id)
+            .unwrap();
+        assert!(row.title.starts_with("↳ "));
+        assert!(row.title.ends_with("pendiente"));
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        app.refresh_sessions();
+        let row = app
+            .view
+            .sessions
+            .iter()
+            .find(|row| row.id == child.session.id)
+            .unwrap();
+        assert!(row.title.ends_with("en ejecución"));
+        assert!(app.subagent_poll_needed);
+        coordinator
+            .finish_child(&run, openide_harness::SubagentOutcome::Completed)
+            .unwrap();
+        app.refresh_sessions();
+        let row = app
+            .view
+            .sessions
+            .iter()
+            .find(|row| row.id == child.session.id)
+            .unwrap();
+        assert!(row.title.ends_with("completado"));
+        assert!(!app.subagent_poll_needed);
+    }
+
+    #[test]
+    fn archive_waits_for_nonterminal_descendant() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.as_ref().unwrap().clone();
+        let parent = store.create(&workspace, "native").unwrap();
+        let parent_lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "archive-child",
+                &openide_harness::SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked(format!("session_archive:{}", parent.id)), &ctx);
+        app.apply_action(clicked(format!("archive_confirm:{}", parent.id)), &ctx);
+        assert!(!store.load(&parent.id).unwrap().unwrap().session.archived);
+        assert!(app.view.status.contains("subagentes activos"));
+
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .finish_child(&run, openide_harness::SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        app.apply_action(clicked(format!("archive_confirm:{}", parent.id)), &ctx);
+        assert!(store.load(&parent.id).unwrap().unwrap().session.archived);
+    }
+
+    #[test]
+    fn archived_native_root_deletion_removes_terminal_child_and_selected_route() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.as_ref().unwrap().clone();
+        let parent = store.create(&workspace, "native").unwrap();
+        let parent_lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "delete-child",
+                &openide_harness::SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "b".repeat(64),
+                },
+            )
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .finish_child(&run, openide_harness::SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        drop(parent_lease);
+        store.set_archived(&parent.id, true).unwrap();
+        app.view.show_archived = true;
+        app.view.selected_session = Some(child.session.id.clone());
+        app.refresh_sessions();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked(format!("session_delete:{}", parent.id)), &ctx);
+        app.apply_action(clicked(format!("delete_confirm:{}", parent.id)), &ctx);
+        assert!(store.load(&parent.id).unwrap().is_none());
+        assert!(store.load(&child.session.id).unwrap().is_none());
+        assert!(app.view.selected_session.is_none());
+    }
+
+    #[test]
+    fn interrupted_child_recovery_card_and_manual_verification_close_child_once() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "different-current-model".into();
+        let store = app.store.as_ref().unwrap().clone();
+        let parent = store.create(&workspace, "native").unwrap();
+        let parent_lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "spawn-child-1",
+                &openide_harness::SubagentSpec {
+                    prompt: "Check a file".into(),
+                    model: "former-model".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        let child_id = child.session.id;
+        let admission = store
+            .admit_native_turn(
+                &child_id,
+                "spawn-child-1",
+                "Check a file",
+                "former-model",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let run = coordinator.start_child(&parent_lease, &child_id).unwrap();
+        let call = ToolCall {
+            id: "write-1".into(),
+            name: "write_file".into(),
+            arguments: json!({"path":"note.txt","content":"hello"}),
+        };
+        let mut sequence = admission.sequence;
+        for kind in [
+            AgentEventKind::TurnStarted {
+                prompt: "Check a file".into(),
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "former-model".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: AgentMessage::assistant("", vec![call.clone()]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::ToolStarted { tool_call: call },
+            AgentEventKind::TurnFailed {
+                error: "reply lost".into(),
+            },
+        ] {
+            sequence += 1;
+            store
+                .append_native_event(&AgentEvent::new(&child_id, sequence, kind))
+                .unwrap();
+        }
+        drop(run);
+        drop(parent_lease);
+        app.open_session(&child_id);
+        assert_eq!(
+            app.view
+                .recoverable_subagent
+                .as_ref()
+                .map(|child| child.child_session_id.as_str()),
+            Some(child_id.as_str())
+        );
+        let frame = UiTree::new(build_view(&app.view, 1000.0)).layout(Size::new(1000.0, 760.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == format!("subagent_resume:{child_id}")));
+        app.apply_action(
+            clicked(format!("subagent_resume:{child_id}")),
+            &egui::Context::default(),
+        );
+        assert_eq!(
+            app.view
+                .pending_tool_verification
+                .as_ref()
+                .map(|pending| pending.call_id.as_str()),
+            Some("write-1")
+        );
+        assert!(app.active_child_recovery.is_none());
+        app.view.tool_verification_output = "Checked note.txt externally".into();
+        app.apply_action(
+            clicked("tool_verification_confirm"),
+            &egui::Context::default(),
+        );
+        assert!(
+            app.view.pending_tool_verification.is_none(),
+            "{}",
+            app.view.status
+        );
+        assert_eq!(
+            coordinator.list_children_for_ui(&parent.id).unwrap()[0].status,
+            SubagentStatus::Failed,
+            "{}",
+            app.view.status
+        );
+        let events = store.load(&child_id).unwrap().unwrap().events;
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::TurnAdmitted { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::ToolFinished { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn interrupted_child_aborted_batch_is_discarded_without_provider_credentials() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "different-current-model".into();
+        let store = app.store.as_ref().unwrap().clone();
+        let parent = store.create(&workspace, "native").unwrap();
+        let parent_lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "spawn-batch",
+                &openide_harness::SubagentSpec {
+                    prompt: "Read then write".into(),
+                    model: "former-model".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "b".repeat(64),
+                },
+            )
+            .unwrap();
+        let child_id = child.session.id;
+        let admission = store
+            .admit_native_turn(
+                &child_id,
+                "spawn-batch",
+                "Read then write",
+                "former-model",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let run = coordinator.start_child(&parent_lease, &child_id).unwrap();
+        let first = ToolCall {
+            id: "read-1".into(),
+            name: "read_file".into(),
+            arguments: json!({"path":"note.txt"}),
+        };
+        let second = ToolCall {
+            id: "write-2".into(),
+            name: "write_file".into(),
+            arguments: json!({"path":"note.txt","content":"new"}),
+        };
+        let mut sequence = admission.sequence;
+        for kind in [
+            AgentEventKind::TurnStarted {
+                prompt: "Read then write".into(),
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "former-model".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: AgentMessage::assistant("", vec![first.clone(), second.clone()]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::ToolStarted {
+                tool_call: first.clone(),
+            },
+            AgentEventKind::ToolFinished {
+                tool_call_id: first.id,
+                output: "read complete".into(),
+                is_error: false,
+            },
+            AgentEventKind::TurnCancelled,
+        ] {
+            sequence += 1;
+            store
+                .append_native_event(&AgentEvent::new(&child_id, sequence, kind))
+                .unwrap();
+        }
+        drop(run);
+        drop(parent_lease);
+        app.open_session(&child_id);
+        app.start_resume();
+        assert_eq!(
+            app.view
+                .pending_batch_discard
+                .as_ref()
+                .map(|batch| batch.next_call_id.as_str()),
+            Some(second.id.as_str())
+        );
+        app.apply_action(clicked("aborted_batch_discard"), &egui::Context::default());
+        assert!(
+            app.view.pending_batch_discard.is_none(),
+            "{}",
+            app.view.status
+        );
+        assert_eq!(
+            coordinator.list_children_for_ui(&parent.id).unwrap()[0].status,
+            SubagentStatus::Cancelled,
+            "{}",
+            app.view.status
+        );
+        let events = store.load(&child_id).unwrap().unwrap().events;
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::ToolStarted { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::ToolBatchDiscarded { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn invalid_mcp_arguments_do_not_overwrite_saved_configuration() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("mcp_new"), &ctx);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "mcp_draft_args".into(),
+                value: "[7]".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("mcp_save"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert!(app.view.mcp_editor_open);
+        assert_eq!(app.view.mcp_draft_args, "[7]");
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Mcp;
+        let frame = UiTree::new(build_view(&app.view, 1100.0)).layout(Size::new(1100.0, 720.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "popover_surface:mcp_cancel"));
+        assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Text { text, .. } if text.contains("Argumentos MCP no válidos")
+        )));
+        assert!(app.view.mcp_servers.is_empty());
+        assert!(!app.data_root.join("mcp-servers.json").exists());
+    }
+
+    #[test]
+    fn mcp_http_editor_preserves_url_and_token_when_editing() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        let ctx = egui::Context::default();
+
+        app.apply_action(clicked("mcp_new"), &ctx);
+        app.apply_action(clicked("mcp_transport:http"), &ctx);
+        assert!(app.view.mcp_draft_http);
+        for (id, value) in [
+            ("mcp_draft_id", "remote"),
+            ("mcp_draft_url", "https://example.com/mcp"),
+            ("mcp_draft_http_bearer_token_env_name", "MCP_HTTP_TOKEN"),
+        ] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: id.into(),
+                    value: value.into(),
+                },
+                &ctx,
+            );
+        }
+        app.apply_action(clicked("mcp_save"), &ctx);
+        assert!(!app.view.mcp_editor_open);
+        assert_eq!(
+            app.view.mcp_servers[0].url.as_deref(),
+            Some("https://example.com/mcp")
+        );
+        assert_eq!(
+            app.view.mcp_servers[0]
+                .http_bearer_token_env_name
+                .as_deref(),
+            Some("MCP_HTTP_TOKEN")
+        );
+        assert!(app.view.mcp_servers[0].program.is_empty());
+        app.apply_action(clicked("mcp_toggle:remote"), &ctx);
+        assert!(app.view.mcp_servers[0].enabled);
+
+        app.apply_action(clicked("mcp_select:remote"), &ctx);
+        assert!(app.view.mcp_draft_http);
+        assert_eq!(app.view.mcp_draft_url, "https://example.com/mcp");
+        assert_eq!(
+            app.view.mcp_draft_http_bearer_token_env_name,
+            "MCP_HTTP_TOKEN"
+        );
+        app.apply_action(clicked("mcp_save"), &ctx);
+        assert!(!app.view.mcp_editor_open);
+        let persisted = McpSettings::load(&app.data_root, &workspace).unwrap();
+        assert_eq!(persisted.servers[0], app.view.mcp_servers[0]);
+        assert!(persisted.servers[0].enabled);
+        assert_eq!(
+            persisted.servers[0].url.as_deref(),
+            Some("https://example.com/mcp")
+        );
+        assert_eq!(
+            persisted.servers[0].http_bearer_token_env_name.as_deref(),
+            Some("MCP_HTTP_TOKEN")
+        );
+
+        app.apply_action(clicked("mcp_select:remote"), &ctx);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "mcp_draft_url".into(),
+                value: "not-a-url".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("mcp_save"), &ctx);
+        assert!(app.view.mcp_editor_open);
+        assert!(app.view.settings_notice_error);
+        assert_eq!(
+            McpSettings::load(&app.data_root, &workspace)
+                .unwrap()
+                .servers,
+            persisted.servers
+        );
     }
 
     #[test]
@@ -6018,6 +13062,315 @@ mod tests {
     }
 
     #[test]
+    fn explicitly_selected_native_backend_survives_restart() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let mut preferences = ComposerPreferences::default();
+        preferences.set_selected_backend("native");
+        preferences.save(&data_root).unwrap();
+        let reopened = AgentsWindow::with_data_root(data_root);
+        assert_eq!(reopened.view.selected_backend, "native");
+    }
+
+    #[test]
+    fn selecting_codex_route_persists_backend_and_model_together() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        if !app.view.backend_options.iter().any(|(backend, _)| backend == "codex") {
+            app.view.backend_options.push(("codex".into(), "Codex".into()));
+        }
+        app.view.selected_backend = "native".into();
+        app.refresh_composer_routes();
+        let route = app
+            .view
+            .composer_routes
+            .iter()
+            .find(|route| route.backend == "codex" && route.model_id != "default")
+            .unwrap()
+            .clone();
+        app.select_composer_route(&route.route_id);
+        let preferences = ComposerPreferences::load(root.path());
+        assert_eq!(app.view.selected_backend, "codex");
+        assert_eq!(app.view.composer_model, route.model_id);
+        assert_eq!(preferences.selected_backend(), Some("codex"));
+        assert_eq!(preferences.choice("codex", "").model, route.model_id);
+    }
+
+    #[test]
+    fn configured_native_endpoint_takes_initial_backend_priority() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        NativeProviderSettings::default().save(&data_root).unwrap();
+        let app = AgentsWindow::with_data_root(data_root);
+        assert_eq!(app.view.selected_backend, "native");
+    }
+
+    #[test]
+    fn codex_account_catalog_replaces_stale_choice_and_effort_levels() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.view
+            .backend_options
+            .push(("codex".into(), "Codex".into()));
+        app.view.selected_backend = "codex".into();
+        app.refresh_composer_selection();
+        app.select_composer_model("gpt-6-sol");
+        app.select_composer_effort("ultra");
+
+        let (sender, receiver) = mpsc::channel();
+        app.codex_model_response = Some(receiver);
+        app.view
+            .composer_provider_status
+            .insert("codex".into(), ProviderModelStatus::Checking);
+        sender
+            .send(Ok(vec![openide_cli::DiscoveredCodexModel {
+                id: "gpt-6-luna".into(),
+                display_name: "Luna disponible".into(),
+                supported_efforts: vec!["low".into(), "medium".into(), "high".into()],
+                is_default: true,
+            }]))
+            .unwrap();
+
+        assert!(app.poll_codex_model_discovery());
+        assert_eq!(app.view.composer_model, "default");
+        assert_eq!(app.view.composer_effort, "default");
+        assert_eq!(app.view.composer_model_options.len(), 2);
+        assert!(app
+            .view
+            .composer_effort_options
+            .iter()
+            .any(|(effort, _)| effort == "high"));
+        assert!(!app
+            .view
+            .composer_effort_options
+            .iter()
+            .any(|(effort, _)| effort == "ultra"));
+        assert!(app.view.composer_routes.iter().any(|route| {
+            route.model_id == "gpt-6-luna"
+                && route.source == composer_selection::RouteSource::CliLiveCatalog
+        }));
+        assert_eq!(
+            ComposerPreferences::load(root.path())
+                .choice("codex", "")
+                .model,
+            "default"
+        );
+        app.select_composer_model("gpt-6-luna");
+        app.select_composer_effort("high");
+        assert_eq!(app.view.composer_effort, "high");
+    }
+
+    #[test]
+    fn failed_provider_save_keeps_the_open_session_and_backend() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.selected_backend = "codex".into();
+        app.view.selected_session = Some("still-open".into());
+        app.view.native_provider_id = "custom".into();
+        app.view.endpoint = "http://127.0.0.1:1234/v1".into();
+        app.view.model = "local-before".into();
+        app.refresh_composer_routes();
+        let mut route = app
+            .view
+            .composer_routes
+            .iter()
+            .find(|route| route.provider_id == "custom")
+            .unwrap()
+            .clone();
+        assert!(route.selectable());
+        route.route_id = "native:custom:local-after".into();
+        route.model_id = "local-after".into();
+        app.view.composer_routes.push(route);
+        let blocker = root.path().join("file-instead-of-directory");
+        std::fs::write(&blocker, "occupied").unwrap();
+        app.data_root = blocker;
+
+        app.select_composer_route("native:custom:local-after");
+        assert_eq!(app.view.selected_backend, "codex");
+        assert_eq!(app.view.selected_session.as_deref(), Some("still-open"));
+        assert_eq!(app.view.native_provider_id, "custom");
+        assert_eq!(app.view.model, "local-before");
+    }
+
+    #[test]
+    fn effort_slider_previews_then_snaps_to_the_models_advertised_tiers() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.view.selected_backend = "codex".to_owned();
+        app.refresh_composer_selection();
+        app.select_composer_model("gpt-6-sol");
+        let last = app
+            .view
+            .composer_effort_options
+            .iter()
+            .rfind(|(id, _)| id != "default")
+            .unwrap()
+            .0
+            .clone();
+        let before = app.view.composer_effort.clone();
+        app.view.composer_model_menu_open = true;
+
+        app.apply_action(
+            UiAction::SliderChanged {
+                id: "composer_effort_slider".into(),
+                fraction: 1.0,
+                committed: false,
+            },
+            &ctx,
+        );
+        assert_eq!(app.view.composer_effort, before);
+        assert_eq!(app.view.composer_effort_preview, Some(1.0));
+        app.apply_action(
+            UiAction::SliderChanged {
+                id: "composer_effort_slider".into(),
+                fraction: 1.0,
+                committed: true,
+            },
+            &ctx,
+        );
+        assert_eq!(app.view.composer_effort, last);
+        assert_eq!(app.view.composer_effort_preview, None);
+        assert!(app.view.composer_model_menu_open);
+        assert!(app.view.composer_advanced_open);
+        assert_eq!(
+            ComposerPreferences::load(root.path())
+                .choice("codex", "")
+                .effort,
+            last
+        );
+    }
+
+    #[test]
+    fn model_selector_navigation_keeps_advanced_and_provider_list_distinct() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.view.composer_model_menu_open = true;
+        app.view.composer_effort_options = vec![
+            ("default".into(), "Automático".into()),
+            ("low".into(), "Bajo".into()),
+            ("high".into(), "Alto".into()),
+        ];
+
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_advanced_toggle".into(),
+            },
+            &ctx,
+        );
+        assert!(app.view.composer_advanced_open);
+        assert!(!app.view.composer_model_list_open);
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_model_list_toggle".into(),
+            },
+            &ctx,
+        );
+        assert!(!app.view.composer_model_list_open);
+
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_advanced_back".into(),
+            },
+            &ctx,
+        );
+        assert!(!app.view.composer_advanced_open);
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_advanced_chip_toggle".into(),
+            },
+            &ctx,
+        );
+        assert!(app.view.composer_advanced_open);
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_advanced_back".into(),
+            },
+            &ctx,
+        );
+        assert!(!app.view.composer_advanced_open);
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_model_list_toggle".into(),
+            },
+            &ctx,
+        );
+        assert!(app.view.composer_model_list_open);
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_model_dismiss".into(),
+            },
+            &ctx,
+        );
+        assert!(!app.view.composer_model_menu_open);
+        assert!(!app.view.composer_model_list_open);
+        assert!(!app.view.composer_advanced_open);
+    }
+
+    #[test]
+    fn model_search_is_transient_and_preserves_provider_routes() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        let routes_before = app.view.composer_routes.clone();
+
+        app.apply_action(clicked("composer_model_toggle"), &ctx);
+        app.apply_action(clicked("composer_model_list_toggle"), &ctx);
+        assert!(app.view.composer_model_list_open);
+        assert!(app.composer_model_search_focus_pending);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "composer_model_search".into(),
+                value: "Anthropic Claude".into(),
+            },
+            &ctx,
+        );
+        assert_eq!(app.view.composer_model_query, "Anthropic Claude");
+        assert_eq!(app.view.composer_routes, routes_before);
+
+        app.apply_action(clicked("composer_model_list_toggle"), &ctx);
+        assert!(app.view.composer_model_query.is_empty());
+        assert!(!app.composer_model_search_focus_pending);
+        app.apply_action(clicked("composer_model_list_toggle"), &ctx);
+        assert!(app.composer_model_search_focus_pending);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "composer_model_search".into(),
+                value: "GPT".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("composer_model_dismiss"), &ctx);
+        assert!(app.view.composer_model_query.is_empty());
+        assert!(!app.composer_model_search_focus_pending);
+    }
+
+    #[test]
+    fn disconnected_provider_opens_connection_settings_without_changing_model() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        let mut route = app
+            .view
+            .composer_routes
+            .iter()
+            .find(|route| route.provider_id == "openai" && route.backend == "native")
+            .unwrap()
+            .clone();
+        route.credential = composer_selection::CredentialAvailability::MissingCredential;
+        app.view.composer_routes = vec![route.clone()];
+        let previous_model = app.view.model.clone();
+        let previous_provider = app.view.native_provider_id.clone();
+        app.apply_action(clicked(format!("composer_route:{}", route.route_id)), &ctx);
+        assert!(app.view.show_settings);
+        assert_eq!(app.view.settings_page, SettingsPage::Providers);
+        assert_eq!(app.view.catalog_browse_provider, "openai");
+        assert_eq!(app.view.model, previous_model);
+        assert_eq!(app.view.native_provider_id, previous_provider);
+    }
+
+    #[test]
     fn automation_editor_actions_persist_and_pause_a_real_workspace_task() {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");
@@ -6029,6 +13382,10 @@ mod tests {
 
         app.apply_action(clicked("open_automations"), &ctx);
         app.apply_action(clicked("automation_new"), &ctx);
+        app.apply_action(clicked("automation_save"), &ctx);
+        assert_eq!(app.view.automations.screen, AutomationScreen::Edit);
+        assert!(app.view.automations.error.is_some());
+        assert!(app.view.automations.items.is_empty());
         app.apply_action(
             UiAction::InputChanged {
                 id: "automation_title".into(),
@@ -6042,6 +13399,16 @@ mod tests {
                 value: "Resume los cambios del proyecto".into(),
             },
             &ctx,
+        );
+        app.apply_action(clicked("automation_next"), &ctx);
+        assert_eq!(
+            app.view.automations.editor_step,
+            crate::automation_view::AutomationEditorStep::Schedule
+        );
+        app.apply_action(clicked("automation_next"), &ctx);
+        assert_eq!(
+            app.view.automations.editor_step,
+            crate::automation_view::AutomationEditorStep::Agent
         );
         app.apply_action(clicked("automation_save"), &ctx);
 
@@ -6077,6 +13444,47 @@ mod tests {
         app.apply_action(clicked("dock_open:context"), &ctx);
         assert_eq!(app.view.dock_tabs.len(), 1);
         assert_eq!(app.view.side_tab, SideTab::Context);
+    }
+
+    #[test]
+    fn dock_overview_reorders_and_reopens_a_recent_tab() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        let first = app.view.dock_tabs[0].id;
+        let second = app.view.dock_tabs[1].id;
+        app.apply_action(clicked(format!("dock_move_down:{first}")), &ctx);
+        assert_eq!(app.view.dock_tabs[0].id, second);
+        assert_eq!(app.view.dock_tabs[1].id, first);
+
+        app.apply_action(clicked("dock_close_all"), &ctx);
+        let closed = app
+            .view
+            .dock_recently_closed
+            .iter()
+            .find(|tab| tab.restorable)
+            .expect("closed dock tab is available to restore")
+            .id;
+        app.apply_action(clicked("dock_overview_toggle"), &ctx);
+        assert!(app.view.show_dock_overview);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "dock_overview_query".into(),
+                value: "contexto".into(),
+            },
+            &ctx,
+        );
+        assert_eq!(app.view.dock_overview_query, "contexto");
+        app.apply_action(clicked(format!("dock_reopen:{closed}")), &ctx);
+        assert!(!app.view.show_dock_overview);
+        assert_eq!(app.view.dock_tabs.len(), 1);
+        assert!(app.view.dock_tabs[0].active);
+        assert_ne!(app.view.dock_tabs[0].id, closed);
+        assert!(!app
+            .view
+            .dock_recently_closed
+            .iter()
+            .any(|tab| tab.id == closed));
     }
 
     #[test]
@@ -6462,6 +13870,11 @@ mod tests {
             app.view.renaming_session_id.as_deref(),
             Some(first.id.as_str())
         );
+        assert!(app.view.session_menu_id.is_none());
+        app.tree.set_root(build_view(&app.view, 1200.0));
+        app.tree.layout(Size::new(1200.0, 720.0));
+        app.focus_rename_if_pending();
+        assert_eq!(app.tree.focused_id(), Some("rename_title"));
         app.apply_action(clicked(format!("session_menu:{}", second.id)), &ctx);
         assert_eq!(
             app.view.session_menu_id.as_deref(),
@@ -6608,6 +14021,71 @@ mod tests {
     }
 
     #[test]
+    fn resumed_history_uses_committed_model_items_once() {
+        let call = ToolCall {
+            id: "call-1".into(),
+            name: "read_file".into(),
+            arguments: json!({"path":"src/main.rs"}),
+        };
+        let mut assistant = AgentMessage::assistant("Inspecting", vec![call.clone()]);
+        assistant.provider_output_items = vec![
+            json!({"type":"reasoning","encrypted_content":"opaque"}),
+            json!({"type":"function_call","call_id":"call-1","name":"read_file","arguments":"{\"path\":\"src/main.rs\"}"}),
+        ];
+        let kinds = [
+            AgentEventKind::TurnStarted {
+                prompt: "Inspect".into(),
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "test".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: assistant.clone(),
+                response_id: Some("resp-1".into()),
+                usage: None,
+            },
+            AgentEventKind::AssistantMessage {
+                content: "Inspecting".into(),
+            },
+            AgentEventKind::ToolStarted { tool_call: call },
+            AgentEventKind::ToolFinished {
+                tool_call_id: "call-1".into(),
+                output: "fn main() {}".into(),
+                is_error: false,
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 2,
+                model: "test".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 2,
+                assistant: AgentMessage::assistant("Reviewed", Vec::new()),
+                response_id: Some("resp-2".into()),
+                usage: None,
+            },
+            AgentEventKind::AssistantMessage {
+                content: "Reviewed".into(),
+            },
+            AgentEventKind::TurnCompleted {
+                response: "Reviewed".into(),
+                steps: 2,
+            },
+        ];
+        let events = kinds
+            .into_iter()
+            .enumerate()
+            .map(|(index, kind)| AgentEvent::new("session", index as u64 + 1, kind))
+            .collect::<Vec<_>>();
+        let history = history_from_events(&events);
+        assert_eq!(history.len(), 4);
+        assert_eq!(history[1], assistant);
+        assert_eq!(history[2].tool_call_id.as_deref(), Some("call-1"));
+        assert_eq!(history[3].content, "Reviewed");
+    }
+
+    #[test]
     fn failed_turn_without_output_does_not_duplicate_prompt_on_retry() {
         let kinds = [
             AgentEventKind::TurnStarted {
@@ -6633,6 +14111,831 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].content, "Intento fallido");
         assert_eq!(history[1].content, "Hecho");
+    }
+
+    #[test]
+    fn native_submit_admits_selected_mode_before_clearing_draft() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.endpoint = "http://127.0.0.1:9".into();
+        app.view.model = "test-model".into();
+        app.view.composer_effort = "default".into();
+        app.view.prompt = "Inspect this project".into();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("turn_mode_toggle"), &ctx);
+        assert_eq!(app.view.turn_mode, TurnMode::Plan);
+        app.start_run();
+
+        let session_id = app.view.selected_session.as_deref().unwrap().to_owned();
+        let events = app
+            .store
+            .as_ref()
+            .unwrap()
+            .load(&session_id)
+            .unwrap()
+            .unwrap()
+            .events;
+        assert!(!events.is_empty(), "{}", app.view.status);
+        assert!(matches!(
+            &events[0].kind,
+            AgentEventKind::TurnAdmitted { prompt, model, mode: TurnMode::Plan, .. }
+                if prompt == "Inspect this project" && model == "test-model"
+        ));
+        assert!(app.view.prompt.is_empty());
+        app.active_run.as_ref().unwrap().cancel();
+        for _ in 0..100 {
+            app.poll_run();
+            if app.active_run.is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(app.active_run.is_none());
+        let saved = app
+            .store
+            .as_ref()
+            .unwrap()
+            .load(&session_id)
+            .unwrap()
+            .unwrap()
+            .events;
+        let sequences = saved
+            .iter()
+            .map(|event| event.sequence)
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            saved.len(),
+            sequences.len(),
+            "native UI duplicated journal events"
+        );
+    }
+
+    #[test]
+    fn native_steer_draft_retries_same_id_after_reopen_and_rotates_on_change() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let data_root = root.path().join("data");
+        let store = SessionStore::open(data_root.join("sessions")).unwrap();
+        let session = store.create(&workspace, "native").unwrap();
+        store
+            .admit_native_turn(&session.id, "turn-1", "First", "model", TurnMode::Build)
+            .unwrap();
+        let first = enqueue_native_steer_draft(
+            &data_root,
+            &store,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "Follow up",
+                attachments: &[],
+                payload_text: "Follow up",
+                images: &[],
+            },
+        )
+        .unwrap();
+
+        // Simulate an ambiguous acknowledgement: the inbox write completed,
+        // but the UI did not observe it. A new process must use the same ID.
+        let reopened = SessionStore::open(data_root.join("sessions")).unwrap();
+        let retry = enqueue_native_steer_draft(
+            &data_root,
+            &reopened,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "Follow up",
+                attachments: &[],
+                payload_text: "Follow up",
+                images: &[],
+            },
+        )
+        .unwrap();
+        assert_eq!(retry, first);
+        assert_eq!(reopened.pending_native_steers(&session.id, "turn-1").unwrap().len(), 1);
+
+        let changed = enqueue_native_steer_draft(
+            &data_root,
+            &reopened,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "Changed",
+                attachments: &[],
+                payload_text: "Changed",
+                images: &[],
+            },
+        )
+        .unwrap();
+        assert_ne!(changed, first);
+        assert_eq!(reopened.pending_native_steers(&session.id, "turn-1").unwrap().len(), 2);
+        acknowledge_native_steer_draft(&data_root, &reopened, &workspace, &session.id, &changed)
+            .unwrap();
+        assert!(load_native_steer_draft(&data_root, &session.id).unwrap().is_none());
+        assert!(reopened.load_draft(&workspace, Some(&session.id)).unwrap().is_none());
+    }
+
+    #[test]
+    fn native_steer_image_only_draft_restores_attachment_and_changes_id_with_image_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let data_root = root.path().join("data");
+        let store = SessionStore::open(data_root.join("sessions")).unwrap();
+        let session = store.create(&workspace, "native").unwrap();
+        store
+            .admit_native_turn(&session.id, "turn-1", "First", "model", TurnMode::Build)
+            .unwrap();
+        let attachment = ComposerAttachmentView {
+            path: "image.png".into(),
+            label: "image.png".into(),
+            is_dir: false,
+        };
+        let image_a = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfirst")
+            .unwrap();
+        let image_b = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nsecond")
+            .unwrap();
+        let first = enqueue_native_steer_draft(
+            &data_root,
+            &store,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "",
+                attachments: std::slice::from_ref(&attachment),
+                payload_text: "Analiza la imagen adjunta",
+                images: std::slice::from_ref(&image_a),
+            },
+        )
+        .unwrap();
+
+        let mut reopened_app = AgentsWindow::with_data_root(data_root.clone());
+        reopened_app.view.workspace = workspace.to_string_lossy().into_owned();
+        reopened_app.view.selected_session = Some(session.id.clone());
+        reopened_app.restore_draft();
+        assert!(reopened_app.view.prompt.is_empty());
+        assert_eq!(reopened_app.view.composer_attachments, vec![attachment.clone()]);
+        let reopened = SessionStore::open(data_root.join("sessions")).unwrap();
+        let retry = enqueue_native_steer_draft(
+            &data_root,
+            &reopened,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "",
+                attachments: std::slice::from_ref(&attachment),
+                payload_text: "Analiza la imagen adjunta",
+                images: std::slice::from_ref(&image_a),
+            },
+        )
+        .unwrap();
+        assert_eq!(retry, first);
+        let changed_image = enqueue_native_steer_draft(
+            &data_root,
+            &reopened,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "",
+                attachments: std::slice::from_ref(&attachment),
+                payload_text: "Analiza la imagen adjunta",
+                images: std::slice::from_ref(&image_b),
+            },
+        )
+        .unwrap();
+        assert_ne!(changed_image, first);
+        assert_eq!(reopened.pending_native_steers(&session.id, "turn-1").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn accepted_native_steer_marker_suppresses_stale_text_draft_after_restart() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let data_root = root.path().join("data");
+        let store = SessionStore::open(data_root.join("sessions")).unwrap();
+        let session = store.create(&workspace, "native").unwrap();
+        store
+            .admit_native_turn(&session.id, "turn-1", "First", "model", TurnMode::Build)
+            .unwrap();
+        let id = enqueue_native_steer_draft(
+            &data_root,
+            &store,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "Follow up",
+                attachments: &[],
+                payload_text: "Follow up",
+                images: &[],
+            },
+        )
+        .unwrap();
+        let mut state = load_native_steer_draft(&data_root, &session.id).unwrap().unwrap();
+        assert_eq!(state.retry.as_ref().unwrap().input_id, id);
+        state.retry.as_mut().unwrap().acknowledged = true;
+        save_native_steer_draft(&data_root, &state).unwrap();
+        let accepted_retry = enqueue_native_steer_draft(
+            &data_root,
+            &store,
+            NativeSteerDraftSubmission {
+                workspace: &workspace,
+                session_id: &session.id,
+                turn_id: "turn-1",
+                prompt: "Follow up",
+                attachments: &[],
+                payload_text: "Follow up",
+                images: &[],
+            },
+        )
+        .unwrap();
+        assert_eq!(accepted_retry, id);
+        assert_eq!(store.pending_native_steers(&session.id, "turn-1").unwrap().len(), 1);
+        // Simulate a crash after the accepted marker but before cleanup.
+        let mut reopened = AgentsWindow::with_data_root(data_root.clone());
+        reopened.view.workspace = workspace.to_string_lossy().into_owned();
+        reopened.view.selected_session = Some(session.id.clone());
+        reopened.restore_draft();
+        assert!(reopened.view.prompt.is_empty());
+        assert!(load_native_steer_draft(&data_root, &session.id).unwrap().is_none());
+        assert!(store.load_draft(&workspace, Some(&session.id)).unwrap().is_none());
+    }
+
+    #[test]
+    fn native_run_commits_saved_hook_digest_and_invalid_hooks_block_admission() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let data_root = root.path().join("data");
+        let executable = root.path().join("trusted-hook.bin");
+        std::fs::write(&executable, b"trusted hook").unwrap();
+        let hook = openide_harness::CommandHookConfig {
+            id: "review".into(),
+            phase: HookPhase::PreToolUse,
+            tool_name: "write_file".into(),
+            executable: executable.clone(),
+            args: vec![],
+            cwd: workspace.clone(),
+            timeout_ms: 1000,
+            max_output_bytes: 4096,
+        };
+        NativeHookSettings { hooks: vec![hook] }
+            .save(&data_root)
+            .unwrap();
+        let expected_digest = NativeHookSettings::load(&data_root)
+            .unwrap()
+            .registry()
+            .unwrap()
+            .digest_hex()
+            .unwrap();
+        let mut app = AgentsWindow::with_data_root(data_root.clone());
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.endpoint = "http://127.0.0.1:9".into();
+        app.view.model = "test-model".into();
+        app.view.composer_effort = "default".into();
+        app.view.prompt = "Inspect".into();
+        app.start_run();
+        let session_id = app.view.selected_session.clone().unwrap();
+        for _ in 0..100 {
+            app.poll_run();
+            if app.active_run.is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let events = app
+            .store
+            .as_ref()
+            .unwrap()
+            .load(&session_id)
+            .unwrap()
+            .unwrap()
+            .events;
+        assert!(events.iter().any(|event| matches!(
+            &event.kind, AgentEventKind::HooksCommitted { digest, .. } if digest == &expected_digest
+        )), "{:?}", app.view.status);
+        if let Some(active) = app.active_run.as_ref() {
+            active.cancel();
+        }
+        for _ in 0..100 {
+            app.poll_run();
+            if app.active_run.is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(app.active_run.is_none());
+
+        std::fs::write(&executable, b"changed hook").unwrap();
+        std::fs::remove_file(&executable).unwrap();
+        app.view.selected_session = None;
+        app.view.prompt = "Keep this draft".into();
+        app.start_run();
+        assert!(app.active_run.is_none());
+        assert_eq!(app.view.prompt, "Keep this draft");
+        assert!(app.view.status.contains("hooks"));
+    }
+
+    #[test]
+    fn failed_native_replay_keeps_unsent_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.endpoint = "http://127.0.0.1:9".into();
+        app.view.model = "test-model".into();
+        app.view.composer_effort = "default".into();
+        app.view.prompt = "Keep this draft".into();
+        let session = app
+            .store
+            .as_ref()
+            .unwrap()
+            .create(&workspace, "native")
+            .unwrap();
+        app.view.selected_session = Some(session.id.clone());
+        std::fs::create_dir(
+            root.path()
+                .join("data/sessions")
+                .join(format!("{}.jsonl", session.id)),
+        )
+        .unwrap();
+
+        app.start_run();
+        assert_eq!(app.view.prompt, "Keep this draft");
+        assert!(app.active_run.is_none());
+        assert!(
+            app.view.status.contains("No se pudo leer la sesión nativa"),
+            "{}",
+            app.view.status
+        );
+    }
+
+    #[test]
+    fn reopened_sessions_expose_recovery_and_invalid_journal_cannot_auto_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.as_ref().unwrap().clone();
+        let pending = store.create(&workspace, "native").unwrap();
+        store
+            .admit_native_turn(&pending.id, "pending", "Continue", "model", TurnMode::Build)
+            .unwrap();
+        let corrupt = store.create(&workspace, "native").unwrap();
+        let admission = store
+            .admit_native_turn(&corrupt.id, "corrupt", "Check", "model", TurnMode::Build)
+            .unwrap();
+        store
+            .append_native_event(&AgentEvent::new(
+                &corrupt.id,
+                admission.sequence + 1,
+                AgentEventKind::ToolFinished {
+                    tool_call_id: "never-started".into(),
+                    output: String::new(),
+                    is_error: false,
+                },
+            ))
+            .unwrap();
+        app.refresh_sessions();
+        assert_eq!(
+            app.view.session_recovery.get(&pending.id),
+            Some(&SessionRecoveryView::Resume)
+        );
+        assert!(matches!(
+            app.view.session_recovery.get(&corrupt.id),
+            Some(SessionRecoveryView::InvalidJournal(_))
+        ));
+        drop(app);
+
+        let mut reopened = AgentsWindow::with_data_root(data_root);
+        assert_eq!(
+            reopened.view.session_recovery.get(&pending.id),
+            Some(&SessionRecoveryView::Resume)
+        );
+        reopened.apply_action(
+            clicked(format!("session_recover:{}", corrupt.id)),
+            &egui::Context::default(),
+        );
+        assert_ne!(reopened.view.selected_session.as_deref(), Some(corrupt.id.as_str()));
+        reopened.apply_action(
+            clicked(format!("session_recover:{}", pending.id)),
+            &egui::Context::default(),
+        );
+        assert_eq!(reopened.view.selected_session.as_deref(), Some(pending.id.as_str()));
+    }
+
+    #[test]
+    fn plan_handoff_is_visible_after_reopen_and_consumed_by_build_admission() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.as_ref().unwrap().clone();
+        let session = store.create(&workspace, "native").unwrap();
+        let admission = store
+            .admit_native_turn(&session.id, "plan", "Plan the work", "model", TurnMode::Plan)
+            .unwrap();
+        let plan_text = "1. Inspect files\n2. Make the change";
+        let mut sequence = admission.sequence;
+        for kind in [
+            AgentEventKind::TurnStarted {
+                prompt: "Plan the work".into(),
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "model".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: AgentMessage::assistant(plan_text, vec![]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::AssistantMessage {
+                content: plan_text.into(),
+            },
+            AgentEventKind::PlanProposed {
+                plan: openide_core::PlanSnapshot::from_plan_response(plan_text),
+            },
+            AgentEventKind::TurnCompleted {
+                response: plan_text.into(),
+                steps: 1,
+            },
+        ] {
+            sequence += 1;
+            store
+                .append_native_event(&AgentEvent::new(&session.id, sequence, kind))
+                .unwrap();
+        }
+        drop(app);
+
+        let mut reopened = AgentsWindow::with_data_root(data_root);
+        let plan = reopened.view.session_plans.get(&session.id).unwrap();
+        assert!(plan.can_build);
+        assert_eq!(plan.snapshot.plan.len(), 2);
+        store
+            .admit_native_turn(&session.id, "build", "Build it", "model", TurnMode::Build)
+            .unwrap();
+        reopened.refresh_sessions();
+        assert!(!reopened.view.session_plans.get(&session.id).unwrap().can_build);
+        assert_eq!(
+            reopened.view.session_recovery.get(&session.id),
+            Some(&SessionRecoveryView::Resume)
+        );
+    }
+
+    #[test]
+    fn aborted_batch_can_be_discarded_without_model_credentials() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "unverified-model".into();
+        let store = app.store.as_ref().unwrap().clone();
+        let session = store.create(&workspace, "native").unwrap();
+        app.view.selected_session = Some(session.id.clone());
+        let admission = store
+            .admit_native_turn(
+                &session.id,
+                "aborted-turn",
+                "Make two changes",
+                "unverified-model",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let first = ToolCall {
+            id: "call-1".into(),
+            name: "read_file".into(),
+            arguments: serde_json::json!({"path":"notes.txt"}),
+        };
+        let second = ToolCall {
+            id: "call-2".into(),
+            name: "write_file".into(),
+            arguments: serde_json::json!({"path":"notes.txt","content":"done"}),
+        };
+        let mut sequence = admission.sequence;
+        for kind in [
+            AgentEventKind::TurnStarted {
+                prompt: "Make two changes".into(),
+            },
+            AgentEventKind::ToolCatalogCommitted {
+                digest: "a".repeat(64),
+            },
+            AgentEventKind::ModelContextCommitted {
+                version: openide_core::MODEL_CONTEXT_VERSION,
+                digest: "b".repeat(64),
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "unverified-model".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: AgentMessage::assistant("", vec![first.clone(), second.clone()]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::ToolStarted {
+                tool_call: first.clone(),
+            },
+            AgentEventKind::ToolFinished {
+                tool_call_id: first.id,
+                output: "confirmed read".into(),
+                is_error: false,
+            },
+            AgentEventKind::TurnCancelled,
+        ] {
+            sequence += 1;
+            store
+                .append_native_event(&AgentEvent::new(&session.id, sequence, kind))
+                .unwrap();
+        }
+
+        app.refresh_sessions();
+        assert_eq!(
+            app.view.session_recovery.get(&session.id),
+            Some(&SessionRecoveryView::ReviewBatch)
+        );
+        app.apply_action(
+            clicked(format!("session_recover:{}", session.id)),
+            &egui::Context::default(),
+        );
+        let pending = app.view.pending_batch_discard.as_ref().unwrap();
+        assert_eq!(pending.next_call_id, second.id);
+        assert_eq!(pending.completed_calls, 1);
+        assert_eq!(pending.remaining_calls, 1);
+        assert!(app.active_resume.is_none());
+        app.apply_action(clicked("aborted_batch_discard"), &egui::Context::default());
+        assert!(
+            app.view.pending_batch_discard.is_none(),
+            "{}",
+            app.view.status
+        );
+        let stored = store.load(&session.id).unwrap().unwrap();
+        let replay = replay_native(
+            &session.id,
+            &stored.events,
+            None,
+            &native_checkpoint_compatibility("custom", "unverified-model"),
+        )
+        .unwrap();
+        assert_eq!(replay.recovery, ReplayRecovery::Idle);
+        assert!(replay.can_start_new_turn);
+        assert!(stored.events.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::ToolBatchDiscarded { next_tool_call_id } if next_tool_call_id == "call-2"
+        )));
+    }
+
+    #[test]
+    fn uncertain_tool_can_be_verified_without_model_credentials() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "different-current-model".into();
+        let store = app.store.as_ref().unwrap().clone();
+        let session = store.create(&workspace, "native").unwrap();
+        app.view.selected_session = Some(session.id.clone());
+        let admission = store
+            .admit_native_turn(
+                &session.id,
+                "uncertain-turn",
+                "Make a change",
+                "former-model",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let call = ToolCall {
+            id: "write-1".into(),
+            name: "write_file".into(),
+            arguments: serde_json::json!({"path":"note.txt","content":"hello"}),
+        };
+        let mut sequence = admission.sequence;
+        for kind in [
+            AgentEventKind::TurnStarted {
+                prompt: "Make a change".into(),
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "former-model".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: AgentMessage::assistant("", vec![call.clone()]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::ToolStarted { tool_call: call },
+            AgentEventKind::TurnFailed {
+                error: "tool reply lost".into(),
+            },
+        ] {
+            sequence += 1;
+            store
+                .append_native_event(&AgentEvent::new(&session.id, sequence, kind))
+                .unwrap();
+        }
+
+        app.refresh_sessions();
+        assert_eq!(
+            app.view.session_recovery.get(&session.id),
+            Some(&SessionRecoveryView::VerifyTool)
+        );
+        app.apply_action(
+            clicked(format!("session_recover:{}", session.id)),
+            &egui::Context::default(),
+        );
+        assert_eq!(
+            app.view.pending_tool_verification.as_ref().unwrap().call_id,
+            "write-1"
+        );
+        assert!(app.active_resume.is_none());
+        app.view.tool_verification_output = "Checked note.txt on disk".into();
+        app.apply_action(
+            clicked("tool_verification_confirm"),
+            &egui::Context::default(),
+        );
+
+        assert!(
+            app.view.pending_tool_verification.is_none(),
+            "{}",
+            app.view.status
+        );
+        let stored = store.load(&session.id).unwrap().unwrap();
+        let replay = replay_native(
+            &session.id,
+            &stored.events,
+            None,
+            &native_checkpoint_compatibility("custom", "former-model"),
+        )
+        .unwrap();
+        assert_eq!(replay.recovery, ReplayRecovery::Idle);
+        assert!(replay.can_start_new_turn);
+        assert!(stored.events.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::ToolFinished { tool_call_id, output, .. }
+                if tool_call_id == "write-1" && output == "Checked note.txt on disk"
+        )));
+    }
+
+    #[test]
+    fn native_submit_does_not_repeat_a_tool_with_uncertain_outcome() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.endpoint = "http://127.0.0.1:9".into();
+        app.view.model = "test-model".into();
+        app.view.composer_effort = "default".into();
+        app.view.prompt = "Continue after interruption".into();
+        let store = app.store.as_ref().unwrap().clone();
+        let session = store.create(&workspace, "native").unwrap();
+        app.view.selected_session = Some(session.id.clone());
+        let admission = store
+            .admit_native_turn(
+                &session.id,
+                "original-turn",
+                "Original request",
+                "test-model",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let call = ToolCall {
+            id: "write-1".into(),
+            name: "write_file".into(),
+            arguments: serde_json::json!({"path":"note.txt","content":"hello"}),
+        };
+        let mut sequence = admission.sequence;
+        for kind in [
+            AgentEventKind::TurnStarted {
+                prompt: "Original request".into(),
+            },
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "test-model".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: AgentMessage::assistant("", vec![call.clone()]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::ToolStarted { tool_call: call },
+        ] {
+            sequence += 1;
+            store
+                .append_native_event(&AgentEvent::new(&session.id, sequence, kind))
+                .unwrap();
+        }
+
+        app.start_run();
+        assert_eq!(app.view.prompt, "Continue after interruption");
+        assert!(app.active_run.is_none());
+        assert!(app.view.status.contains("Herramienta interrumpida"));
+        let events = store.load(&session.id).unwrap().unwrap().events;
+        assert_eq!(events.len() as u64, sequence);
+    }
+
+    #[test]
+    fn compact_command_requires_a_selected_native_session() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.command_results = vec![command_center::ResultItem {
+            target: Target::CompactContext,
+            section: Scope::Commands,
+            title: "Compactar contexto".into(),
+            subtitle: String::new(),
+        }];
+        app.activate_command_result(0);
+        assert_eq!(
+            app.view.status,
+            "Selecciona una sesión nativa para compactar"
+        );
+        assert!(app.active_compact.is_none());
+    }
+
+    #[test]
+    fn native_build_uses_enabled_mcp_before_requesting_a_model() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.endpoint = "http://127.0.0.1:9".into();
+        app.view.model = "test-model".into();
+        app.view.composer_effort = "default".into();
+        app.view.prompt = "Use configured tools".into();
+        McpSettings {
+            servers: vec![crate::mcp_settings::McpServerSettings {
+                id: "fixture".into(),
+                enabled: true,
+                program: "openide_missing_mcp_fixture_executable_987654".into(),
+                args: Vec::new(),
+                cwd: None,
+                credential_env_names: Vec::new(),
+                url: None,
+                http_bearer_token_env_name: None,
+                http_oauth: None,
+            }],
+        }
+        .save(&app.data_root, &workspace)
+        .unwrap();
+
+        app.start_run();
+        let session_id = app.view.selected_session.clone().unwrap();
+        for _ in 0..100 {
+            app.poll_run();
+            if app.active_run.is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(app.active_run.is_none());
+        let events = app
+            .store
+            .as_ref()
+            .unwrap()
+            .load(&session_id)
+            .unwrap()
+            .unwrap()
+            .events;
+        assert!(events
+            .iter()
+            .any(|event| matches!(event.kind, AgentEventKind::TurnFailed { .. })));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event.kind, AgentEventKind::ModelRequestStarted { .. })));
     }
 
     #[test]
@@ -6707,5 +15010,84 @@ mod tests {
         assert!(app.handle_dock_drag(&UiEvent::PointerDown(pointer), viewport_width));
         assert!(app.handle_dock_drag(&UiEvent::PointerMove(pointer), viewport_width));
         assert_eq!(app.view.right_dock_width, Some(360.0));
+    }
+
+    #[test]
+    fn command_search_keeps_valid_hits_when_one_source_fails_and_reports_limits() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.search_worker = Some(SearchWorker::spawn(root.path().join("sessions")).unwrap());
+        app.view.show_command_center = true;
+        app.view.command_scope = Scope::Sessions;
+        app.view.command_query = "aguja".into();
+        app.request_command_search();
+        assert!(app.view.command_search_loading);
+
+        let response = SearchResponse {
+            workspace: PathBuf::from(&app.view.workspace),
+            query: "aguja".into(),
+            generation: app.search_generation,
+            sessions: (0..14)
+                .map(|index| crate::search_worker::SessionHit {
+                    id: format!("session-{index}"),
+                    title: format!("aguja {index}"),
+                    backend: "native".into(),
+                    workspace: PathBuf::from(&app.view.workspace),
+                    snippets: Vec::new(),
+                    pinned: false,
+                    archived: false,
+                })
+                .collect(),
+            session_total: 20,
+            session_has_more: true,
+            session_diagnostics: Vec::new(),
+            session_error: None,
+            files: Vec::new(),
+            file_matches: 0,
+            files_truncated: false,
+            file_error: Some("acceso denegado".into()),
+        };
+        let stale = SearchResponse {
+            generation: response.generation.wrapping_sub(1),
+            ..response.clone()
+        };
+        assert!(!app.apply_command_search_response(stale));
+        assert!(app.view.command_search_loading);
+        assert!(app.apply_command_search_response(response));
+        assert!(!app.view.command_search_loading);
+        assert!(app.view.command_search_errors.is_empty());
+        assert!(app.view.command_search_truncated);
+        assert_eq!(
+            app.view.command_results.len(),
+            command_center::DEFAULT_RESULT_LIMIT
+        );
+
+        app.view.command_scope = Scope::All;
+        app.request_command_search();
+        let partial = SearchResponse {
+            workspace: PathBuf::from(&app.view.workspace),
+            query: "aguja".into(),
+            generation: app.search_generation,
+            sessions: Vec::new(),
+            session_total: 0,
+            session_has_more: false,
+            session_diagnostics: Vec::new(),
+            session_error: None,
+            files: Vec::new(),
+            file_matches: 0,
+            files_truncated: false,
+            file_error: Some("acceso denegado".into()),
+        };
+        assert!(app.apply_command_search_response(partial));
+        assert_eq!(
+            app.view.command_search_errors,
+            ["Archivos: acceso denegado"]
+        );
+        assert!(!app.view.command_search_truncated);
+
+        app.view.command_scope = Scope::Commands;
+        app.request_command_search();
+        assert!(!app.view.command_search_loading);
+        assert!(app.view.command_search_errors.is_empty());
     }
 }

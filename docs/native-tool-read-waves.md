@@ -1,0 +1,9 @@
+# Native read waves
+
+The native runner may execute at most four consecutive calls concurrently when every call is an enabled built-in `read_file`, `list_files`, or `search_files`. The active `ToolExecutor` must explicitly certify each implementation as a parallel read. Its default answer is false; `LocalTools` certifies its enabled built-in reads. The MCP composite delegates certification only for calls routed to its local executor. MCP calls themselves remain serial. Mutating tools and permission prompts are barriers.
+
+Before starting any read in a wave, the runner appends and syncs a `ToolStarted` event for **every** call, in model order, under the native session lease. After all reads finish, it appends `ToolFinished` events in model order, then passes results back to the model in that order. If appending a start fails, none of the reads in that wave execute. The journal remains the single source of truth; there is no separate scheduler log.
+
+After a crash, replay treats each `ToolStarted` without a matching `ToolFinished` as an uncertain outcome. Recovery exposes the first unresolved call ID, then advances to the next only after an independently verified result is recorded for that ID. No uncertain call is executed again automatically. A start can have been synced just before a crash without the read actually running, so this is an **at-most-once automatic execution** guarantee, not exactly-once execution. A full wave can require up to four manual verifications, including reads that may never have started. A partial result does not make the remaining open starts safe to retry.
+
+Plan mode advertises a read only when the executor certifies that implementation. The certification is a host-side contract on `ToolExecutor`; composites must delegate it only when they route the call to the same trusted local read.

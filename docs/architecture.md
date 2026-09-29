@@ -31,7 +31,7 @@ broker de permisos del harness.
 
 ## Reglas de procedencia
 
-1. `references/warp` y `references/ZCode` son clones de lectura y quedan
+1. `references/warp`, `references/ZCode` y `references/codex` son clones de lectura y quedan
    excluidos por `.gitignore`.
 2. No se copia código de las partes AGPL de Warp.
 3. El framework de UI implementa conceptos documentados por Warp con código
@@ -39,3 +39,5 @@ broker de permisos del harness.
    aviso de copyright y atribución.
 4. La referencia funcional a ZCode no equivale a paridad de implementación.
    Las funciones pendientes se registran explícitamente al verificarlas.
+5. El harness nativo usa Codex como referencia. La decisión vigente y los
+   criterios verificables están en [native-harness-roadmap.md](native-harness-roadmap.md).

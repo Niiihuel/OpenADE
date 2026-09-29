@@ -28,21 +28,41 @@ $env:PATH = "$env:USERPROFILE\.local\toolchains\msys2-mingw64-binutils\mingw64\b
 & "$env:USERPROFILE\.cargo\bin\cargo.exe" +stable-x86_64-pc-windows-gnu run -p agents-window
 ```
 
-En Configuración → Proveedores y modelos, el harness nativo consulta el catálogo
-de [Models.dev](https://models.dev/) en segundo plano, conserva la última copia
-válida y permite elegir proveedor y modelo. Por ahora los adaptadores de Chat
-Completions admiten OpenAI (`OPENAI_API_KEY`), OpenRouter
-(`OPENROUTER_API_KEY`) y DeepSeek (`DEEPSEEK_API_KEY`). La conexión personalizada
+Para revisar la UI sin leer las tareas ni automatizaciones del perfil habitual,
+define `OPENIDE_DATA_ROOT` con una ruta absoluta a una carpeta de datos aislada
+antes de ejecutar la ventana.
+
+En Configuración → Proveedores y modelos, OpenIDE mantiene un catálogo propio
+alimentado por las APIs oficiales de los proveedores admitidos, con caché local
+de la última respuesta válida. El listado permite explorar modelos; la
+ejecución exige un adaptador compatible y capacidades verificadas para el ID
+exacto. OpenAI usa Responses
+(`OPENAI_API_KEY`); OpenRouter (`OPENROUTER_API_KEY`) y DeepSeek
+(`DEEPSEEK_API_KEY`) usan Chat Completions. La conexión personalizada
 usa `OPENIDE_API_KEY`, `OPENIDE_API_BASE` y `OPENIDE_MODEL` como valores iniciales
 para instalaciones anteriores; puede funcionar sin clave con un servidor local.
 La selección se guarda en la carpeta de datos local, sin guardar la clave. Los
 perfiles CLI usan la autenticación de cada programa instalado. `.env.example`
 muestra los nombres, pero la aplicación no carga archivos `.env`
-automáticamente. Un modelo visible en el catálogo sólo se puede seleccionar
-para ejecutar si existe un adaptador compatible y admite texto y herramientas.
-Los modelos nuevos aparecen como metadata al refrescar el catálogo; la
-ejecución de cada protocolo se habilita tras verificar su compatibilidad.
-La [investigación de proveedores, Models.dev y OpenCode ACP](docs/providers-models-architecture.md)
+automáticamente. El adaptador OpenAI y el de DeepSeek usan capacidades verificadas por
+ID exacto para esfuerzos y límites de contexto. OpenRouter y endpoints
+personalizados permiten selección explícita con límites desconocidos, sin
+compactación automática basada en una ventana inventada.
+El selector del composer agrupa las rutas por proveedor. Consulta en segundo
+plano `/models` con la clave configurada para OpenAI y DeepSeek, y
+`/models/user` para OpenRouter; conserva las respuestas sólo en memoria. El
+listado autenticado, cuando responde, acota los modelos visibles de esa cuenta.
+La caché conserva la última lista válida para consulta sin conexión, sin
+convertirla en prueba de disponibilidad actual. El menú muestra una acción de
+conexión si falta la clave. Codex CLI es una ruta separada: OpenIDE consulta
+`codex app-server` para mostrar los modelos y esfuerzos anunciados por la
+sesión ChatGPT activa, sin leer ni transferir sus credenciales. Si esa consulta
+falla, el menú identifica un catálogo de respaldo y Codex valida la selección
+al ejecutar. Los niveles de esfuerzo provienen del par exacto
+proveedor/modelo; el slider ajusta al nivel más cercano y ofrece
+«Automático» aparte. La interfaz no guarda API keys y hoy las recibe mediante
+variables de entorno, tal como se indica arriba.
+La [arquitectura de proveedores y catálogo propio](docs/providers-models-architecture.md)
 documenta la arquitectura Rust, el alcance actual y los pasos pendientes.
 La [estructura completa de Configuración](docs/settings-navigation.md) reúne
 20 secciones nativas; el [mapa de capacidades](docs/settings-capability-map.md)
@@ -53,7 +73,18 @@ La barra lateral muestra el harness nativo y sólo los perfiles CLI cuyo
 ejecutable se encuentra en `PATH` al iniciar la ventana. En este equipo se
 detectó Codex; los demás aparecerán al instalarlos y reiniciar OpenIDE. Los
 perfiles personalizados se definen en `cli-profiles.json`.
-Las claves y configuración privadas se leen del entorno local; nunca se guardan
+La elección explícita de backend se conserva al reiniciar. Sin elección previa,
+una conexión nativa configurada tiene prioridad; Codex CLI sirve como ruta
+inicial cuando no hay conexión nativa disponible. Las sesiones Codex CLI usan
+su propio proceso y las sesiones nativas usan el harness Rust de OpenIDE.
+El encabezado de la conversación identifica la ruta usada. Los avisos que
+Codex CLI escriba en stderr aparecen como diagnósticos en Actividad; el turno
+no se marca como fallido por la sola presencia de stderr.
+La conexión nativa a OpenAI usa una clave de API del proyecto, como exige la
+[guía oficial de la API](https://developers.openai.com/api/docs/quickstart).
+El inicio de sesión de Codex CLI pertenece a ese perfil externo y no configura
+automáticamente la conexión nativa.
+Las claves de los proveedores se leen de variables de entorno y no se guardan
 en el historial de sesiones.
 
 La ventana separa tres superficies redimensionables: sesiones y archivos a la
@@ -88,9 +119,13 @@ llamada a `write_file` o `run_command` pide permiso
 en el composer. La decisión se registra de forma durable antes de enviarse al
 runner; un fallo de guardado deniega la llamada. Los agentes CLI instalados
 siguen el flujo de permisos de sus propias herramientas.
+Para sesiones nativas, el composer separa Plan/Build de los permisos. Plan
+anuncia solamente las herramientas locales de lectura y el runner rechaza
+las llamadas fuera de ese catálogo; Build aplica los permisos configurados.
 
-La interfaz usa la estructura y densidad de ZCode con una paleta nativa oscura
-**neutra**, sin acento azul. Los iconos Solar Linear son monocromos, reciben una
+La interfaz usa la estructura y densidad de ZCode con una paleta nativa oscura.
+El composer tiene un acento azul en Enviar y un gradiente azul-violeta en el
+selector de esfuerzo. Los iconos Solar Linear son monocromos, reciben una
 sola tinta del control y se alinean a píxeles físicos para verse nítidos. Consulta
 [el mapa visual](docs/zcode-visual-map.md), [la guía de componentes y layout de WarpUI](docs/warp-visual-system.md),
 [la iconografía](docs/iconography.md) y [los perfiles CLI](docs/cli-profiles.md). El framework Rust implementa
@@ -115,3 +150,5 @@ detalla su alcance actual.
 
 Consulta [docs/architecture.md](docs/architecture.md) para el mapa de componentes
 y el alcance funcional.
+La [decisión y el mapa del harness nativo](docs/native-harness-roadmap.md)
+registran las capacidades pendientes y los criterios de verificación.

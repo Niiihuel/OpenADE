@@ -9,7 +9,7 @@ use crate::{
     view::ViewState,
 };
 
-const MAX_CONTENT_WIDTH: f32 = 840.0;
+const MAX_CONTENT_WIDTH: f32 = 1120.0;
 const MIN_GUTTER: f32 = 24.0;
 
 fn text(value: impl Into<String>, color: Color, size: f32) -> Element {
@@ -64,7 +64,7 @@ pub fn build_home(state: &ViewState, available_width: f32) -> Element {
         content_width(available_width),
         true,
         Some("home_workspace_settings"),
-        "Pide al agente que explore, construya o resuelva algo…",
+        "Ask me anything",
         None,
     );
     build_home_with(&props, available_width)
@@ -82,24 +82,38 @@ mod tests {
             project_branch: Some("main"),
             project_menu_open: false,
             project_options: &[],
-            environment_label: "Local",
             prompt: "Tarea",
             attachments: &[],
             add_menu_open: false,
+            listening: false,
             placeholder: "Pide al agente que explore, construya o resuelva algo…",
             selected_backend: "codex",
+            native_provider_id: "openai",
+            backend_options: &[],
+            backend_menu_open: false,
             model: "",
             model_label: "GPT-6 Sol",
             model_options: &[],
+            model_routes: &[],
+            provider_status: None,
             selected_model: "gpt-6-sol",
             model_menu_open: false,
+            model_list_open: false,
+            model_query: "",
+            advanced_open: false,
             effort_label: "Ultra",
             effort_options: &[],
             selected_effort: "ultra",
             effort_menu_open: false,
+            effort_preview: None,
+            turn_mode: openide_core::TurnMode::Build,
             running: false,
             workspace_writes_enabled: false,
             status: None,
+            context_percent: None,
+            goal: None,
+            goal_editor_open: false,
+            goal_draft: "",
             width: MAX_CONTENT_WIDTH,
             home: true,
         }
@@ -115,8 +129,8 @@ mod tests {
         assert!(prompt.rect.x >= MIN_GUTTER);
         assert!(prompt.rect.x + prompt.rect.width <= 900.0 - MIN_GUTTER);
         assert!(prompt.rect.width <= MAX_CONTENT_WIDTH);
-        assert!(project.rect.y < prompt.rect.y);
-        assert!(submit.rect.y > prompt.rect.y);
+        assert!(project.rect.y > prompt.rect.y);
+        assert_eq!(submit.rect.y, prompt.rect.y);
         assert!(prompt.rect.y > 150.0 && prompt.rect.y < 460.0);
         assert!(!frame
             .regions

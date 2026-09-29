@@ -2,10 +2,11 @@
 //! renders stable action IDs and validates the editor before it reaches the
 //! durable [`crate::automations::AutomationStore`].
 
-use chrono::{Local, TimeZone};
+use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon, ScrollArea,
-    SearchField, Switch,
+    Button, ButtonVariant, Color, Component, ControlSize, DateTimePicker, Element, Empty,
+    FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Step, Stepper, Switch, Tab, Tabs,
+    TextArea, TextField, TimePicker, Tooltip,
 };
 
 use crate::{
@@ -23,6 +24,47 @@ pub enum AutomationScreen {
     List,
     Edit,
     History,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum AutomationEditorStep {
+    #[default]
+    Content,
+    Schedule,
+    Agent,
+}
+
+impl AutomationEditorStep {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Content => 0,
+            Self::Schedule => 1,
+            Self::Agent => 2,
+        }
+    }
+
+    pub const fn previous(self) -> Self {
+        match self {
+            Self::Content | Self::Schedule => Self::Content,
+            Self::Agent => Self::Schedule,
+        }
+    }
+
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Content => Self::Schedule,
+            Self::Schedule | Self::Agent => Self::Agent,
+        }
+    }
+
+    pub fn from_action_id(id: &str) -> Option<Self> {
+        match id {
+            "automation_step:content" => Some(Self::Content),
+            "automation_step:schedule" => Some(Self::Schedule),
+            "automation_step:agent" => Some(Self::Agent),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -172,7 +214,25 @@ impl AutomationForm {
         form
     }
 
-    pub fn to_draft(&self, now_ms: i64) -> Result<AutomationDraft, AutomationError> {
+    pub fn once_parts(&self) -> (&str, &str) {
+        match self.once_at.split_once(' ') {
+            Some((date, time)) => (date, time),
+            None if self.once_at.is_empty() => ("", "09:00"),
+            None => (&self.once_at, "09:00"),
+        }
+    }
+
+    pub fn set_once_date(&mut self, date: &str) {
+        let time = self.once_parts().1.to_owned();
+        self.once_at = format!("{date} {time}");
+    }
+
+    pub fn set_once_time(&mut self, time: &str) {
+        let date = self.once_parts().0.to_owned();
+        self.once_at = format!("{date} {time}");
+    }
+
+    fn parsed_schedule(&self, now_ms: i64) -> Result<AutomationSchedule, AutomationError> {
         let schedule = match self.frequency {
             AutomationFrequency::Once => AutomationSchedule::Once {
                 at_ms: parse_local_once(&self.once_at)?,
@@ -198,6 +258,41 @@ impl AutomationForm {
                 }
             }
         };
+        schedule.validate()?;
+        if schedule.next_after(now_ms.saturating_sub(1)).is_none() {
+            return Err(AutomationError::Invalid(
+                "Elige una fecha y hora futuras".to_owned(),
+            ));
+        }
+        Ok(schedule)
+    }
+
+    pub fn validate_step(
+        &self,
+        step: AutomationEditorStep,
+        now_ms: i64,
+    ) -> Result<(), AutomationError> {
+        match step {
+            AutomationEditorStep::Content => {
+                if self.title.trim().is_empty() || self.title.trim().chars().count() > 100 {
+                    return Err(AutomationError::Invalid(
+                        "El título debe tener entre 1 y 100 caracteres".to_owned(),
+                    ));
+                }
+                if self.prompt.trim().is_empty() || self.prompt.trim().chars().count() > 10_000 {
+                    return Err(AutomationError::Invalid(
+                        "La instrucción debe tener entre 1 y 10 000 caracteres".to_owned(),
+                    ));
+                }
+                Ok(())
+            }
+            AutomationEditorStep::Schedule => self.parsed_schedule(now_ms).map(|_| ()),
+            AutomationEditorStep::Agent => self.to_draft(now_ms).map(|_| ()),
+        }
+    }
+
+    pub fn to_draft(&self, now_ms: i64) -> Result<AutomationDraft, AutomationError> {
+        let schedule = self.parsed_schedule(now_ms)?;
         let draft = AutomationDraft {
             title: self.title.clone(),
             prompt: self.prompt.clone(),
@@ -210,15 +305,6 @@ impl AutomationForm {
             schedule,
         };
         draft.validate()?;
-        if draft
-            .schedule
-            .next_after(now_ms.saturating_sub(1))
-            .is_none()
-        {
-            return Err(AutomationError::Invalid(
-                "Elige una fecha y hora futuras".to_owned(),
-            ));
-        }
         Ok(draft)
     }
 }
@@ -254,6 +340,9 @@ pub struct AutomationViewState {
     pub screen: AutomationScreen,
     pub selected_id: Option<String>,
     pub form: AutomationForm,
+    pub editor_step: AutomationEditorStep,
+    pub calendar_year: i32,
+    pub calendar_month: u32,
     pub filter: AutomationFilter,
     pub query: String,
     pub busy_id: Option<String>,
@@ -264,6 +353,7 @@ pub struct AutomationViewState {
 
 impl AutomationViewState {
     pub fn new(workspace: impl Into<String>, backends: Vec<(String, String)>, now_ms: i64) -> Self {
+        let today = Local::now().date_naive();
         let backend = backends
             .first()
             .map(|item| item.0.clone())
@@ -277,6 +367,9 @@ impl AutomationViewState {
             screen: AutomationScreen::List,
             selected_id: None,
             form: AutomationForm::new(backend),
+            editor_step: AutomationEditorStep::Content,
+            calendar_year: today.year(),
+            calendar_month: today.month(),
             filter: AutomationFilter::All,
             query: String::new(),
             busy_id: None,
@@ -284,6 +377,23 @@ impl AutomationViewState {
             notice: None,
             error: None,
         }
+    }
+
+    pub fn open_editor(&mut self, form: AutomationForm, selected_id: Option<String>) {
+        if let Some((year, month)) = form.once_at.get(..7).and_then(|value| {
+            let (year, month) = value.split_once('-')?;
+            Some((year.parse::<i32>().ok()?, month.parse::<u32>().ok()?))
+        }) {
+            if (1..=9999).contains(&year) && (1..=12).contains(&month) {
+                self.calendar_year = year;
+                self.calendar_month = month;
+            }
+        }
+        self.form = form;
+        self.selected_id = selected_id;
+        self.editor_step = AutomationEditorStep::Content;
+        self.screen = AutomationScreen::Edit;
+        self.error = None;
     }
 
     pub fn selected(&self) -> Option<&Automation> {
@@ -431,7 +541,7 @@ fn text(value: impl Into<String>, size: f32, color: Color) -> Element {
 }
 
 fn muted(value: impl Into<String>) -> Element {
-    text(value, 13.0, theme::FOREGROUND_SUBTLE)
+    text(value, 12.0, theme::FOREGROUND_SUBTLE)
 }
 
 fn divider() -> Element {
@@ -440,63 +550,45 @@ fn divider() -> Element {
         .background(theme::BORDER)
 }
 
-fn centered(element: Element) -> Element {
-    Element::row(vec![
-        Element::spacer().flex(1.0),
-        element,
-        Element::spacer().flex(1.0),
-    ])
-}
-
 fn action(
     id: impl Into<String>,
     title: impl Into<String>,
     icon: Option<Icon>,
     variant: ButtonVariant,
 ) -> Element {
-    let palette = if variant == ButtonVariant::Solid {
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND)
-    } else {
-        theme::component_palette()
-    };
-    let mut button = Button::new(id, title, palette)
+    let mut button = Button::new(id, title, theme::component_palette())
         .variant(variant)
-        .size(ControlSize::Spacious);
+        .size(ControlSize::Compact);
     if let Some(icon) = icon {
         button = button.icon(icon);
     }
-    button.render().font_size(13.0)
+    button.render()
 }
 
-fn field(id: &str, value: &str, placeholder: &str, height: f32) -> Element {
-    Element::text_input(id, value, placeholder)
-        .background(theme::CARD)
-        .hover_background(theme::hover_for(theme::CARD))
-        .border(theme::BORDER, 1.0)
-        .focus_border(theme::FOREGROUND_SUBTLE, 1.0)
-        .foreground(theme::FOREGROUND)
-        .font_family(FontFamily::Sans)
-        .font_size(14.0)
-        .padding(11.0)
-        .radius(9.0)
-        .size(None, Some(height))
+fn icon_action(id: String, icon: Icon, tooltip: &str, enabled: bool) -> Element {
+    IconButton::new(id, icon, theme::component_palette())
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .tooltip(tooltip)
+        .enabled(enabled)
+        .render()
+}
+
+fn field(id: &str, value: &str, placeholder: &str) -> Element {
+    TextField::new(id, value, placeholder, theme::component_palette())
+        .size(ControlSize::Regular)
+        .render()
 }
 
 fn section_label(value: &str) -> Element {
-    text(value, 14.0, theme::FOREGROUND_SUBTLE)
+    text(value, 13.0, theme::FOREGROUND)
 }
 
 fn form_label(value: &str) -> Element {
-    text(value, 13.0, theme::FOREGROUND).min_size(0.0, 22.0)
+    text(value, 12.0, theme::FOREGROUND_SUBTLE).min_size(0.0, 18.0)
 }
 
-fn automation_card(
-    item: &Automation,
-    runs: &[AutomationRun],
-    width: f32,
-    busy: bool,
-    pending_delete: bool,
-) -> Element {
+fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: bool) -> Element {
     let status = status_for(item, runs);
     let next = if status == AutomationStatus::Active {
         item.next_run_at
@@ -514,128 +606,89 @@ fn automation_card(
     } else {
         theme::FOREGROUND_SUBTLE
     };
-    let status_badge = Element::panel(text(status.title(), 11.0, status_color))
-        .padding(6.0)
+    let status_badge = Element::panel(text(status.title(), 10.0, status_color))
+        .padding(5.0)
         .background(theme::SELECTED)
         .radius(6.0);
+    let toggle_id = format!("automation_toggle:{}", item.id);
+    let toggle = Tooltip::new(
+        Switch::new(toggle_id.clone(), item.enabled, theme::component_palette()).render(),
+        toggle_id,
+        if item.enabled {
+            "Pausar tarea"
+        } else {
+            "Activar tarea"
+        },
+        theme::component_palette(),
+    )
+    .render();
+    let header = vec![
+        Element::truncated_text(&item.title)
+            .foreground(theme::FOREGROUND)
+            .font_family(FontFamily::Sans)
+            .font_size(14.0)
+            .flex(1.0),
+        status_badge,
+    ];
     let mut rows = vec![
-        Element::row(vec![
-            Element::truncated_text(&item.title)
-                .foreground(theme::FOREGROUND)
-                .font_family(FontFamily::Sans)
-                .font_size(15.0)
-                .flex(1.0),
-            status_badge,
-        ])
-        .gap(8.0),
+        Element::row(header).gap(8.0),
         Element::truncated_text(&item.prompt)
             .foreground(theme::FOREGROUND_SUBTLE)
             .font_family(FontFamily::Sans)
-            .font_size(13.0)
-            .min_size(0.0, 24.0),
+            .font_size(12.0)
+            .min_size(0.0, 18.0),
         Element::row(vec![
             Element::icon(Icon::Clock).foreground(theme::FOREGROUND_SUBTLE),
             Element::truncated_text(summary)
                 .foreground(theme::FOREGROUND_SUBTLE)
                 .font_family(FontFamily::Sans)
-                .font_size(12.0)
+                .font_size(11.0)
                 .flex(1.0),
-            muted(format!("{} ejec.", item.run_count)).font_size(11.0),
+            muted(format!("{} ejec.", item.run_count)).font_size(10.0),
         ])
-        .gap(6.0),
+        .gap(5.0),
     ];
-    if pending_delete {
-        rows.push(text("¿Eliminar esta tarea?", 12.0, theme::FOREGROUND));
-        rows.push(
-            Element::row(vec![
-                Element::spacer().flex(1.0),
-                action(
-                    "automation_delete_cancel",
-                    "Cancelar",
-                    None,
-                    ButtonVariant::Ghost,
-                ),
-                action(
-                    format!("automation_delete_confirm:{}", item.id),
-                    "Eliminar",
-                    Some(Icon::Trash),
-                    ButtonVariant::Outline,
-                ),
-            ])
-            .gap(4.0),
-        );
-    } else {
-        let edit = action(
-            format!("automation_edit:{}", item.id),
-            "Editar",
-            Some(Icon::Edit),
-            ButtonVariant::Ghost,
-        );
-        let history = action(
-            format!("automation_history:{}", item.id),
-            "Historial",
-            Some(Icon::History),
-            ButtonVariant::Ghost,
-        );
-        let run = if busy {
-            Button::new(
-                format!("automation_run:{}", item.id),
-                "Iniciando…",
-                theme::component_palette(),
-            )
-            .icon(Icon::ArrowUp)
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Spacious)
-            .disabled()
-            .render()
+    let edit = icon_action(
+        format!("automation_edit:{}", item.id),
+        Icon::Edit,
+        "Editar tarea",
+        true,
+    );
+    let history = icon_action(
+        format!("automation_history:{}", item.id),
+        Icon::History,
+        "Ver historial",
+        true,
+    );
+    let run = icon_action(
+        format!("automation_run:{}", item.id),
+        Icon::ArrowUp,
+        if busy {
+            "Iniciando…"
         } else {
-            action(
-                format!("automation_run:{}", item.id),
-                "Ejecutar",
-                Some(Icon::ArrowUp),
-                ButtonVariant::Ghost,
-            )
-        };
-        let enabled = Switch::new(
-            format!("automation_toggle:{}", item.id),
-            item.enabled,
-            theme::component_palette(),
-        )
-        .render();
-        if width < 440.0 {
-            rows.push(Element::row(vec![edit, history, Element::spacer().flex(1.0)]).gap(5.0));
-            rows.push(Element::row(vec![run, Element::spacer().flex(1.0), enabled]).gap(5.0));
-        } else {
-            rows.push(
-                Element::row(vec![
-                    edit,
-                    history,
-                    Element::spacer().flex(1.0),
-                    run,
-                    enabled,
-                ])
-                .gap(6.0),
-            );
-        }
-        // Destructive action is distinct from the card's primary actions.
-        rows.push(
-            action(
-                format!("automation_delete_request:{}", item.id),
-                "Eliminar tarea",
-                Some(Icon::Trash),
-                ButtonVariant::Ghost,
-            )
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(None, Some(25.0)),
-        );
+            "Ejecutar ahora"
+        },
+        !busy,
+    );
+    let delete = icon_action(
+        format!("automation_delete_request:{}", item.id),
+        Icon::Trash,
+        "Eliminar tarea",
+        true,
+    );
+    let mut actions = vec![edit, history, run];
+    if busy {
+        actions.push(muted("Iniciando…").font_size(10.0));
     }
-    Element::panel(Element::column(rows).gap(8.0))
-        .padding(14.0)
+    actions.extend([Element::spacer().flex(1.0), toggle]);
+    actions.push(delete);
+    rows.push(Element::row(actions).gap(4.0));
+    Element::panel(Element::column(rows).gap(5.0))
+        .padding(10.0)
         .background(theme::BACKGROUND)
         .border(theme::BORDER, 1.0)
-        .radius(12.0)
+        .radius(10.0)
         .size(Some(width), None)
-        .min_size(0.0, 160.0)
 }
 
 fn template_card(template: &AutomationTemplate, width: f32) -> Element {
@@ -660,23 +713,29 @@ fn template_card(template: &AutomationTemplate, width: f32) -> Element {
         Element::column(vec![
             Element::row(vec![
                 Element::icon(template.icon).foreground(theme::FOREGROUND),
-                text(template.title, 14.0, theme::FOREGROUND),
+                Element::truncated_text(template.title)
+                    .font_family(FontFamily::Sans)
+                    .font_size(13.0)
+                    .foreground(theme::FOREGROUND)
+                    .flex(1.0),
             ])
-            .gap(8.0),
-            muted(template.description),
-            Element::spacer().flex(1.0),
-            text(schedule, 12.0, theme::FOREGROUND_SUBTLE),
+            .gap(6.0),
+            Element::truncated_text(template.description)
+                .font_family(FontFamily::Sans)
+                .font_size(11.0)
+                .foreground(theme::FOREGROUND_SUBTLE),
+            text(schedule, 10.0, theme::FOREGROUND_SUBTLE),
         ])
-        .gap(8.0),
+        .gap(5.0),
     )
     .background(theme::BACKGROUND)
     .hover_background(theme::HOVER)
     .pressed_background(theme::SELECTED)
     .transition_ms(140)
     .border(theme::BORDER, 1.0)
-    .radius(12.0)
-    .padding(14.0)
-    .size(Some(width), Some(130.0))
+    .radius(10.0)
+    .padding(10.0)
+    .size(Some(width), Some(94.0))
 }
 
 fn cards_grid(items: Vec<Element>, content_width: f32, gap: f32) -> Element {
@@ -698,9 +757,13 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     let card_width = if compact {
         content_width
     } else {
-        (content_width - 14.0) / 2.0
+        (content_width - 8.0) / 2.0
     };
-    let heading = text("Automatizaciones", 30.0, theme::FOREGROUND);
+    let heading = Element::column(vec![
+        text("Automatizaciones", 22.0, theme::FOREGROUND),
+        muted("Tareas programadas para este proyecto"),
+    ])
+    .gap(2.0);
     let heading = if state.items.is_empty() {
         heading
     } else if content_width < 440.0 {
@@ -710,10 +773,10 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
                 "automation_new",
                 "Nueva tarea",
                 Some(Icon::Add),
-                ButtonVariant::Solid,
+                ButtonVariant::Default,
             ),
         ])
-        .gap(12.0)
+        .gap(8.0)
     } else {
         Element::row(vec![
             heading,
@@ -722,45 +785,30 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
                 "automation_new",
                 "Nueva tarea",
                 Some(Icon::Add),
-                ButtonVariant::Solid,
+                ButtonVariant::Default,
             ),
         ])
-        .gap(12.0)
+        .gap(8.0)
     };
-    let mut body = vec![
-        heading,
-        muted("Programa tareas para trabajar en tu proyecto mientras la aplicación está abierta."),
-        Element::spacer().size(None, Some(8.0)),
-    ];
+    let mut body = vec![heading];
     let visible = state.visible_items();
     if state.items.is_empty() {
         body.push(
-            Element::panel(
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    centered(text(
-                        "Todavía no hay tareas programadas",
-                        16.0,
-                        theme::FOREGROUND_SUBTLE,
-                    )),
-                    centered(muted(
-                        "Crea una tarea recurrente o empieza desde una plantilla.",
-                    )),
-                    centered(action(
-                        "automation_new",
-                        "Crear tarea programada",
-                        Some(Icon::Add),
-                        ButtonVariant::Solid,
-                    )),
-                    Element::spacer().flex(1.0),
-                ])
-                .gap(12.0),
+            Empty::new(
+                "Todavía no hay tareas programadas",
+                "Crea una tarea recurrente o empieza desde una plantilla.",
+                theme::component_palette(),
             )
-            .padding(18.0)
-            .background(theme::BACKGROUND)
-            .border(theme::BORDER, 1.0)
-            .radius(16.0)
-            .size(Some(content_width), Some(226.0)),
+            .icon(Icon::Clock)
+            .action(
+                "automation_new",
+                "Crear tarea programada",
+                ButtonVariant::Default,
+            )
+            .compact()
+            .width(content_width)
+            .height(if content_width < 420.0 { 204.0 } else { 188.0 })
+            .render(),
         );
     } else {
         body.push(
@@ -770,7 +818,7 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
                 "Buscar tareas programadas…",
                 theme::component_palette(),
             )
-            .size(ControlSize::Spacious)
+            .size(ControlSize::Regular)
             .width(content_width)
             .render(),
         );
@@ -781,57 +829,49 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
             AutomationFilter::Completed,
             AutomationFilter::Failed,
         ];
-        let filter_buttons: Vec<_> = filters
+        let tab_widths = [62.0, 68.0, 72.0, 96.0, 86.0];
+        let filter_tabs: Vec<_> = filters
             .into_iter()
-            .map(|filter| {
-                let active = state.filter == filter;
-                Button::new(
-                    filter.action_id(),
-                    filter.title(),
-                    theme::component_palette(),
-                )
-                .variant(if active {
-                    ButtonVariant::Raised
-                } else {
-                    ButtonVariant::Ghost
-                })
-                .size(ControlSize::Compact)
-                .active(active)
-                .render()
-                .font_size(12.0)
+            .zip(tab_widths)
+            .map(|(filter, width)| {
+                Tab::new(filter.action_id(), filter.title(), width).active(state.filter == filter)
             })
             .collect();
-        if content_width < 490.0 {
-            let mut filter_buttons = filter_buttons.into_iter();
+        if content_width < 410.0 {
+            let mut tabs = filter_tabs.into_iter();
             body.push(
                 Element::column(vec![
-                    Element::row(vec![
-                        filter_buttons.next().unwrap(),
-                        filter_buttons.next().unwrap(),
-                        filter_buttons.next().unwrap(),
-                    ])
-                    .gap(5.0),
-                    Element::row(vec![
-                        filter_buttons.next().unwrap(),
-                        filter_buttons.next().unwrap(),
-                    ])
-                    .gap(5.0),
+                    Tabs::new(tabs.by_ref().take(3).collect(), theme::segmented_palette())
+                        .id("automation_filters_primary")
+                        .size(ControlSize::Compact)
+                        .render(),
+                    Tabs::new(tabs.collect(), theme::segmented_palette())
+                        .id("automation_filters_secondary")
+                        .size(ControlSize::Compact)
+                        .render(),
                 ])
                 .gap(4.0),
             );
         } else {
-            body.push(Element::row(filter_buttons).gap(5.0));
+            body.push(
+                Tabs::new(filter_tabs, theme::segmented_palette())
+                    .id("automation_filters")
+                    .size(ControlSize::Compact)
+                    .render(),
+            );
         }
         if visible.is_empty() {
             body.push(
-                Element::panel(muted(
-                    "No hay tareas que coincidan con el filtro o la búsqueda.",
-                ))
-                .padding(24.0)
-                .background(theme::BACKGROUND)
-                .border(theme::BORDER, 1.0)
-                .radius(12.0)
-                .size(Some(content_width), Some(92.0)),
+                Empty::new(
+                    "Sin resultados",
+                    "Prueba otra búsqueda o cambia el filtro.",
+                    theme::component_palette(),
+                )
+                .icon(Icon::Search)
+                .compact()
+                .height(150.0)
+                .width(content_width)
+                .render(),
             );
         } else {
             let cards = visible
@@ -842,15 +882,13 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
                         &state.runs,
                         card_width,
                         state.busy_id.as_deref() == Some(&item.id),
-                        state.pending_delete_id.as_deref() == Some(&item.id),
                     )
                 })
                 .collect();
-            body.push(cards_grid(cards, content_width, 14.0));
+            body.push(cards_grid(cards, content_width, 8.0));
         }
     }
     body.extend([
-        Element::spacer().size(None, Some(10.0)),
         divider(),
         section_label("Plantillas de tareas programadas"),
         cards_grid(
@@ -859,7 +897,7 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
                 .map(|template| template_card(template, card_width))
                 .collect(),
             content_width,
-            14.0,
+            8.0,
         ),
     ]);
     body
@@ -872,62 +910,66 @@ fn frequency_control(form: &AutomationForm, available_width: f32) -> Element {
         AutomationFrequency::Daily,
         AutomationFrequency::Weekly,
     ];
-    let columns = if available_width < 520.0 { 2 } else { 4 };
-    let button_width = (available_width - 8.0 - 6.0 * (columns - 1) as f32) / columns as f32;
-    let buttons: Vec<_> = frequencies
+    let compact = available_width < 390.0;
+    let columns = if compact { 2 } else { 4 };
+    let tab_width =
+        ((available_width - 4.0 - 2.0 * (columns - 1) as f32) / columns as f32).max(44.0);
+    let tabs: Vec<_> = frequencies
         .into_iter()
         .map(|frequency| {
-            Button::new(
-                frequency.action_id(),
-                frequency.title(),
-                theme::component_palette(),
-            )
-            .variant(if form.frequency == frequency {
-                ButtonVariant::Raised
-            } else {
-                ButtonVariant::Ghost
-            })
-            .size(ControlSize::Spacious)
-            .width(button_width)
-            .active(form.frequency == frequency)
-            .render()
+            Tab::new(frequency.action_id(), frequency.title(), tab_width)
+                .active(form.frequency == frequency)
         })
         .collect();
-    let content = if columns == 2 {
-        let mut buttons = buttons.into_iter();
+    if compact {
+        let mut tabs = tabs.into_iter();
         Element::column(vec![
-            Element::row(vec![buttons.next().unwrap(), buttons.next().unwrap()]).gap(6.0),
-            Element::row(vec![buttons.next().unwrap(), buttons.next().unwrap()]).gap(6.0),
+            Tabs::new(tabs.by_ref().take(2).collect(), theme::segmented_palette())
+                .id("automation_frequency_primary")
+                .size(ControlSize::Compact)
+                .render(),
+            Tabs::new(tabs.collect(), theme::segmented_palette())
+                .id("automation_frequency_secondary")
+                .size(ControlSize::Compact)
+                .render(),
         ])
-        .gap(5.0)
+        .gap(4.0)
     } else {
-        Element::row(buttons).gap(6.0)
-    };
-    content.padding(4.0).background(theme::CARD).radius(11.0)
+        Tabs::new(tabs, theme::segmented_palette())
+            .id("automation_frequency")
+            .size(ControlSize::Compact)
+            .render()
+    }
 }
 
-fn schedule_editor(form: &AutomationForm, content_width: f32) -> Vec<Element> {
+fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
+    let form = &state.form;
     let mut rows = vec![
         form_label("Frecuencia"),
-        frequency_control(form, content_width - 36.0),
+        frequency_control(form, content_width - 26.0),
     ];
     match form.frequency {
-        AutomationFrequency::Once => rows.extend([
-            form_label("Fecha y hora local"),
-            field(
-                "automation_once_at",
-                &form.once_at,
-                "AAAA-MM-DD HH:MM",
-                42.0,
-            ),
-        ]),
+        AutomationFrequency::Once => {
+            let (date, time) = form.once_parts();
+            rows.push(
+                DateTimePicker::new(
+                    "automation_once_date",
+                    "automation_once_time",
+                    date,
+                    time,
+                    theme::component_palette(),
+                )
+                .display_month(state.calendar_year, state.calendar_month)
+                .render(),
+            );
+        }
         AutomationFrequency::EveryMinutes => rows.extend([
             form_label("Cada cuántos minutos"),
-            field("automation_interval", &form.interval_minutes, "60", 42.0),
+            field("automation_interval", &form.interval_minutes, "60"),
         ]),
         AutomationFrequency::Daily => rows.extend([
             form_label("Hora local"),
-            field("automation_time", &form.time, "09:00", 42.0),
+            TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
         ]),
         AutomationFrequency::Weekly => {
             let days = ["L", "M", "X", "J", "V", "S", "D"];
@@ -937,38 +979,40 @@ fn schedule_editor(form: &AutomationForm, content_width: f32) -> Vec<Element> {
                     days.into_iter()
                         .enumerate()
                         .map(|(index, day)| {
+                            let selected = usize::from(form.weekday) == index;
                             Button::new(
                                 format!("automation_weekday:{index}"),
                                 day,
                                 theme::component_palette(),
                             )
-                            .variant(if usize::from(form.weekday) == index {
-                                ButtonVariant::Raised
+                            .variant(if selected {
+                                ButtonVariant::Secondary
                             } else {
                                 ButtonVariant::Ghost
                             })
                             .size(ControlSize::Compact)
-                            .active(usize::from(form.weekday) == index)
+                            .width(((content_width - 26.0 - 24.0) / 7.0).max(28.0))
+                            .active(selected)
                             .render()
                         })
                         .collect(),
                 )
-                .gap(6.0),
+                .gap(4.0),
             );
             rows.push(form_label("Hora local"));
-            rows.push(field("automation_time", &form.time, "09:00", 42.0));
+            rows.push(
+                TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
+            );
         }
     }
     rows
 }
 
-fn editor_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
-    let existing = state.selected_id.is_some();
-    let mut schedule = schedule_editor(&state.form, content_width);
-    let backend_options = if state.backends.is_empty() {
-        vec![muted("No hay agentes disponibles para programar tareas.")]
+fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element {
+    let backend_controls = if state.backends.is_empty() {
+        muted("No hay agentes disponibles para programar tareas.")
     } else {
-        state
+        let backend_options: Vec<_> = state
             .backends
             .iter()
             .map(|(id, title)| {
@@ -978,19 +1022,25 @@ fn editor_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> 
                     theme::component_palette(),
                 )
                 .variant(if state.form.backend == *id {
-                    ButtonVariant::Raised
+                    ButtonVariant::Secondary
                 } else {
                     ButtonVariant::Ghost
                 })
-                .size(ControlSize::Regular)
+                .size(ControlSize::Compact)
                 .active(state.form.backend == *id)
                 .render()
             })
-            .collect()
+            .collect();
+        if content_width < 430.0 && backend_options.len() > 2 {
+            Element::column(backend_options).gap(4.0)
+        } else {
+            Element::row(backend_options).gap(4.0)
+        }
     };
     let mut backend_rows = vec![
-        form_label("Motor del agente"),
-        Element::row(backend_options).gap(8.0),
+        section_label("Motor del agente"),
+        muted("Elige quién iniciará cada ejecución."),
+        backend_controls,
     ];
     if state.form.backend == "native" {
         let selected = state
@@ -1009,78 +1059,109 @@ fn editor_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> 
     } else {
         backend_rows.push(muted("Se usa la CLI detectada en PATH para este equipo."));
     }
-    let mut body = vec![
-        action("automation_back", "Volver", Some(Icon::ArrowLeft), ButtonVariant::Ghost),
-        text(
-            if existing { "Editar tarea" } else { "Nueva tarea programada" },
-            29.0,
-            theme::FOREGROUND,
-        ),
-        muted("El agente iniciará una sesión nueva en este proyecto cuando llegue el horario."),
-        Element::spacer().size(None, Some(8.0)),
-        Element::panel(
-            Element::column(vec![
-                form_label("Título"),
-                field("automation_title", &state.form.title, "Ej. Resumen diario", 44.0),
-                form_label("Instrucciones"),
-                Element::text_area(
-                    "automation_prompt",
-                    &state.form.prompt,
-                    "Describe el resultado esperado y los límites de esta tarea…",
-                )
-                .background(theme::CARD)
-                .border(theme::BORDER, 1.0)
-                .focus_border(theme::FOREGROUND_SUBTLE, 1.0)
-                .foreground(theme::FOREGROUND)
-                .font_family(FontFamily::Sans)
-                .font_size(14.0)
-                .padding(12.0)
-                .radius(10.0)
-                .size(None, Some(144.0)),
-                muted("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos."),
-            ])
-            .gap(10.0),
-        )
-        .padding(18.0)
-        .background(theme::BACKGROUND)
-        .border(theme::BORDER, 1.0)
-        .radius(13.0),
-        Element::panel(Element::column(std::mem::take(&mut schedule)).gap(10.0))
-            .padding(18.0)
-            .background(theme::BACKGROUND)
-            .border(theme::BORDER, 1.0)
-            .radius(13.0),
-        Element::panel(Element::column(backend_rows).gap(10.0))
-            .padding(18.0)
-            .background(theme::BACKGROUND)
-            .border(theme::BORDER, 1.0)
-            .radius(13.0),
-        Element::row(vec![
-            Element::spacer().flex(1.0),
-            action("automation_cancel", "Cancelar", None, ButtonVariant::Ghost),
-            action(
-                "automation_save",
-                if existing { "Guardar cambios" } else { "Crear tarea" },
-                Some(Icon::Check),
-                ButtonVariant::Solid,
-            ),
-        ])
-        .gap(10.0),
-    ];
-    if let Some(error) = &state.error {
-        body.insert(
-            4,
-            Element::panel(text(error, 13.0, theme::DESTRUCTIVE))
-                .background(theme::CARD)
-                .border(theme::DESTRUCTIVE, 1.0)
-                .padding(12.0)
-                .radius(9.0),
-        );
-    }
-    body
+    Element::column(backend_rows)
+        .gap(10.0)
+        .size(Some(content_width), None)
 }
 
-fn history_page(state: &AutomationViewState) -> Vec<Element> {
+pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
+    let stepper = Stepper::new(
+        vec![
+            Step::new("automation_step:content", "Contenido")
+                .description("Define la tarea"),
+            Step::new("automation_step:schedule", "Horario")
+                .description("Elige cuándo"),
+            Step::new("automation_step:agent", "Agente")
+                .description("Modelo y acceso"),
+        ],
+        state.editor_step.index(),
+        theme::component_palette(),
+    )
+    .width(width)
+    .render();
+    let form = match state.editor_step {
+        AutomationEditorStep::Content => Element::column(vec![
+            section_label("¿Qué hará esta tarea?"),
+            form_label("Título"),
+            field("automation_title", &state.form.title, "Ej. Resumen diario"),
+            form_label("Instrucciones"),
+            TextArea::new(
+                "automation_prompt",
+                &state.form.prompt,
+                "Describe el resultado esperado y los límites de esta tarea…",
+                theme::component_palette(),
+            )
+            .height(112.0)
+            .render(),
+            muted("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos."),
+        ])
+        .gap(8.0),
+        AutomationEditorStep::Schedule => Element::column({
+            let mut rows = vec![section_label("¿Cuándo se ejecutará?")];
+            rows.extend(schedule_editor(state, width));
+            rows
+        })
+        .gap(9.0),
+        AutomationEditorStep::Agent => editor_agent_step(state, width),
+    };
+    Element::column(vec![stepper, divider(), form])
+        .gap(14.0)
+        .size(Some(width), None)
+}
+
+pub fn editor_modal_footer(state: &AutomationViewState) -> Element {
+    let mut controls = vec![Element::spacer().flex(1.0)];
+    if state.editor_step == AutomationEditorStep::Content {
+        controls.push(action(
+            "automation_cancel",
+            "Cancelar",
+            None,
+            ButtonVariant::Ghost,
+        ));
+    } else {
+        controls.push(action(
+            "automation_previous",
+            "Anterior",
+            Some(Icon::ArrowLeft),
+            ButtonVariant::Ghost,
+        ));
+    }
+    if state.editor_step == AutomationEditorStep::Agent {
+        controls.push(action(
+            "automation_save",
+            if state.selected_id.is_some() {
+                "Guardar cambios"
+            } else {
+                "Crear tarea"
+            },
+            Some(Icon::Check),
+            ButtonVariant::Default,
+        ));
+    } else {
+        controls.push(action(
+            "automation_next",
+            "Siguiente",
+            Some(Icon::ArrowRight),
+            ButtonVariant::Default,
+        ));
+    }
+    let actions = Element::row(controls).gap(6.0);
+    if let Some(error) = &state.error {
+        Element::column(vec![
+            Element::panel(text(error, 12.0, theme::DESTRUCTIVE))
+                .background(theme::CARD)
+                .border(theme::DESTRUCTIVE, 1.0)
+                .padding(9.0)
+                .radius(8.0),
+            actions,
+        ])
+        .gap(8.0)
+    } else {
+        actions
+    }
+}
+
+fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     let Some(item) = state.selected() else {
         return vec![
             action(
@@ -1089,7 +1170,16 @@ fn history_page(state: &AutomationViewState) -> Vec<Element> {
                 Some(Icon::ArrowLeft),
                 ButtonVariant::Ghost,
             ),
-            muted("Esta tarea ya no existe."),
+            Empty::new(
+                "Tarea no disponible",
+                "Esta tarea ya no existe.",
+                theme::component_palette(),
+            )
+            .icon(Icon::History)
+            .compact()
+            .height(150.0)
+            .width(content_width)
+            .render(),
         ];
     };
     let mut runs: Vec<_> = state
@@ -1105,21 +1195,24 @@ fn history_page(state: &AutomationViewState) -> Vec<Element> {
             Some(Icon::ArrowLeft),
             ButtonVariant::Ghost,
         ),
-        text(
-            format!("Historial · {}", item.title),
-            27.0,
-            theme::FOREGROUND,
-        ),
+        Element::truncated_text(format!("Historial · {}", item.title))
+            .font_family(FontFamily::Sans)
+            .font_size(22.0)
+            .foreground(theme::FOREGROUND),
         muted("Cada ejecución queda asociada a una sesión; los fallos conservan su diagnóstico."),
-        Element::spacer().size(None, Some(8.0)),
     ];
     if runs.is_empty() {
         body.push(
-            Element::panel(muted("Aún no hay ejecuciones de esta tarea."))
-                .padding(28.0)
-                .background(theme::BACKGROUND)
-                .border(theme::BORDER, 1.0)
-                .radius(12.0),
+            Empty::new(
+                "Sin ejecuciones",
+                "Aún no hay ejecuciones de esta tarea.",
+                theme::component_palette(),
+            )
+            .icon(Icon::History)
+            .compact()
+            .height(150.0)
+            .width(content_width)
+            .render(),
         );
     } else {
         for run in runs {
@@ -1137,18 +1230,19 @@ fn history_page(state: &AutomationViewState) -> Vec<Element> {
                 .unwrap_or_else(|| "Fecha desconocida".to_owned());
             let mut details = vec![
                 Element::row(vec![
-                    text(status, 14.0, color),
+                    text(status, 13.0, color),
                     Element::spacer().flex(1.0),
-                    muted(when),
+                    muted(when).font_size(11.0),
                 ]),
                 muted(if run.manual {
                     "Inicio manual"
                 } else {
                     "Programada"
-                }),
+                })
+                .font_size(11.0),
             ];
             if let Some(error) = &run.error {
-                details.push(text(error, 12.0, theme::DESTRUCTIVE));
+                details.push(text(error, 11.0, theme::DESTRUCTIVE));
             }
             if let Some(session_id) = &run.session_id {
                 details.push(action(
@@ -1159,11 +1253,11 @@ fn history_page(state: &AutomationViewState) -> Vec<Element> {
                 ));
             }
             body.push(
-                Element::panel(Element::column(details).gap(7.0))
-                    .padding(14.0)
+                Element::panel(Element::column(details).gap(5.0))
+                    .padding(10.0)
                     .background(theme::BACKGROUND)
                     .border(theme::BORDER, 1.0)
-                    .radius(11.0),
+                    .radius(9.0),
             );
         }
     }
@@ -1173,37 +1267,37 @@ fn history_page(state: &AutomationViewState) -> Vec<Element> {
 /// Responsive page body for the center dock. `width` is its available width
 /// after the shared workspace border, not the entire window width.
 pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
-    let gutter = if width < 640.0 { 22.0 } else { 44.0 };
-    let content_width = (width - 2.0 * gutter).clamp(240.0, 980.0);
+    let gutter = if width < 640.0 { 14.0 } else { 28.0 };
+    let content_width = (width - 2.0 * gutter).clamp(240.0, 960.0);
     let mut body = match state.screen {
         AutomationScreen::List => list_page(state, content_width),
-        AutomationScreen::Edit => editor_page(state, content_width),
-        AutomationScreen::History => history_page(state),
+        AutomationScreen::Edit => list_page(state, content_width),
+        AutomationScreen::History => history_page(state, content_width),
     };
     if let Some(notice) = &state.notice {
         body.insert(
             0,
             Element::panel(text(notice, 12.0, theme::FOREGROUND))
-                .padding(10.0)
+                .padding(8.0)
                 .background(theme::CARD)
                 .border(theme::BORDER, 1.0)
-                .radius(8.0),
+                .radius(7.0),
         );
     }
-    if state.screen == AutomationScreen::List {
+    if state.screen != AutomationScreen::Edit {
         if let Some(error) = &state.error {
             body.insert(
                 0,
                 Element::panel(text(error, 12.0, theme::DESTRUCTIVE))
-                    .padding(10.0)
+                    .padding(8.0)
                     .background(theme::CARD)
                     .border(theme::DESTRUCTIVE, 1.0)
-                    .radius(8.0),
+                    .radius(7.0),
             );
         }
     }
     let content = Element::column(body)
-        .gap(17.0)
+        .gap(10.0)
         .size(Some(content_width), None);
     let centered = Element::row(vec![
         Element::spacer().flex(1.0),
@@ -1211,16 +1305,48 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
         Element::spacer().flex(1.0),
     ])
     .padding(gutter);
-    ScrollArea::new("automation_page", centered)
+    let base = ScrollArea::new("automation_page", centered)
         .tint(theme::FOREGROUND_SUBTLE)
         .render()
-        .flex(1.0)
+        .flex(1.0);
+    if state.screen == AutomationScreen::Edit {
+        let width = (width - 24.0).clamp(240.0, 560.0);
+        let initial_focus = match state.editor_step {
+            AutomationEditorStep::Content => "automation_title".to_owned(),
+            AutomationEditorStep::Schedule => state.form.frequency.action_id().to_owned(),
+            AutomationEditorStep::Agent => state
+                .backends
+                .first()
+                .map(|(id, _)| format!("automation_backend:{id}"))
+                .unwrap_or_else(|| "automation_previous".to_owned()),
+        };
+        Modal::new(
+            base,
+            true,
+            if state.selected_id.is_some() {
+                "Editar tarea"
+            } else {
+                "Nueva tarea programada"
+            },
+            "Inicia una sesión nueva en este proyecto cuando llegue el horario.",
+            "automation_cancel",
+            theme::component_palette(),
+        )
+        .width(width)
+        .height(520.0)
+        .body(editor_modal_body(state, width - 54.0))
+        .footer(editor_modal_footer(state))
+        .initial_focus(initial_focus)
+        .render()
+    } else {
+        base
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{DrawCommand, Point, Size, UiEvent, UiTree};
+    use openide_ui::{Key, Size, UiAction, UiEvent, UiTree};
 
     fn state() -> AutomationViewState {
         AutomationViewState::new(
@@ -1271,6 +1397,36 @@ mod tests {
     }
 
     #[test]
+    fn once_date_and_time_roundtrip_without_losing_either_value() {
+        let mut form = AutomationForm::new("codex");
+        form.title = "Recordatorio".into();
+        form.prompt = "Prepara el resumen".into();
+        form.frequency = AutomationFrequency::Once;
+        form.set_once_date("2035-05-17");
+        form.set_once_time("16:45");
+        assert_eq!(form.once_at, "2035-05-17 16:45");
+        let draft = form.to_draft(1_000_000).unwrap();
+        let automation = Automation {
+            id: "once".into(),
+            title: form.title.clone(),
+            prompt: form.prompt.clone(),
+            backend: form.backend.clone(),
+            native_provider: None,
+            schedule: draft.schedule,
+            enabled: true,
+            next_run_at: None,
+            last_run_at: None,
+            run_count: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let mut restored = AutomationForm::from_automation(&automation);
+        assert_eq!(restored.once_parts(), ("2035-05-17", "16:45"));
+        restored.set_once_time("17:20");
+        assert_eq!(restored.once_parts(), ("2035-05-17", "17:20"));
+    }
+
+    #[test]
     fn native_form_keeps_its_provider_and_model_when_saved() {
         let mut form = AutomationForm::new("native");
         form.title = "Resumen".into();
@@ -1305,19 +1461,50 @@ mod tests {
         state.screen = AutomationScreen::Edit;
         let mut tree = UiTree::new(build_automations(&state, 960.0));
         let editor = tree.layout(Size::new(960.0, 780.0));
-        for id in [
-            "automation_title",
-            "automation_prompt",
-            "automation_frequency:weekly",
-        ] {
+        assert_eq!(tree.focused_id(), Some("automation_title"));
+        assert!(editor
+            .regions
+            .iter()
+            .any(|r| r.id == "popover_surface:automation_cancel"));
+        assert!(editor
+            .regions
+            .iter()
+            .any(|r| r.id == "modal_body:automation_cancel"));
+        for id in ["automation_title", "automation_prompt", "automation_next"] {
             assert!(editor.regions.iter().any(|r| r.id == id), "missing {id}");
         }
-        tree.handle_event(UiEvent::Scroll {
-            position: Point::new(930.0, 500.0),
-            delta_y: -2_000.0,
-        });
-        let scrolled = tree.layout(Size::new(960.0, 780.0));
-        assert!(scrolled.regions.iter().any(|r| r.id == "automation_save"));
+        assert!(!editor.regions.iter().any(|r| r.id == "automation_save"));
+        state.editor_step = AutomationEditorStep::Schedule;
+        tree.set_root(build_automations(&state, 960.0));
+        let schedule = tree.layout(Size::new(960.0, 780.0));
+        for id in [
+            "automation_frequency:once",
+            "automation_time",
+            "automation_previous",
+        ] {
+            assert!(schedule.regions.iter().any(|r| r.id == id), "missing {id}");
+        }
+        assert!(!schedule.regions.iter().any(|r| r.id == "automation_prompt"));
+        state.editor_step = AutomationEditorStep::Agent;
+        tree.set_root(build_automations(&state, 960.0));
+        let agent = tree.layout(Size::new(960.0, 780.0));
+        for id in [
+            "automation_backend:codex",
+            "automation_previous",
+            "automation_save",
+        ] {
+            assert!(agent.regions.iter().any(|r| r.id == id), "missing {id}");
+        }
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: Key::Escape,
+                shift: false,
+                ctrl: false,
+            }),
+            vec![UiAction::Clicked {
+                id: "automation_cancel".into(),
+            }]
+        );
     }
 
     #[test]
@@ -1364,6 +1551,91 @@ mod tests {
                 region.id
             );
         }
+        state.editor_step = AutomationEditorStep::Schedule;
+        state.form.frequency = AutomationFrequency::Once;
+        state.form.set_once_date("2035-05-17");
+        state.calendar_year = 2035;
+        state.calendar_month = 5;
+        let mut calendar_tree = UiTree::new(build_automations(&state, viewport.width));
+        let calendar = calendar_tree.layout(viewport);
+        assert!(calendar
+            .regions
+            .iter()
+            .any(|r| r.id == "automation_once_date"));
+        assert!(calendar_tree.focus("automation_once_time"));
+        let time_visible = calendar_tree.layout(viewport);
+        assert!(time_visible
+            .regions
+            .iter()
+            .any(|r| r.id == "automation_once_time"));
+        assert!(calendar_tree.scroll_offset("modal_body:automation_cancel") > 0.0);
+        for region in &time_visible.regions {
+            assert!(
+                region.rect.x + region.rect.width <= viewport.width + 0.5,
+                "{} ends outside calendar at {}",
+                region.id,
+                region.rect.x + region.rect.width
+            );
+        }
+    }
+
+    #[test]
+    fn short_viewport_keeps_editor_actions_visible() {
+        let mut state = state();
+        state.screen = AutomationScreen::Edit;
+        state.error = Some("Escribe un título".into());
+        let viewport = Size::new(320.0, 240.0);
+        for (step, expected_action) in [
+            (AutomationEditorStep::Content, "automation_next"),
+            (AutomationEditorStep::Schedule, "automation_next"),
+            (AutomationEditorStep::Agent, "automation_save"),
+        ] {
+            state.editor_step = step;
+            let frame = UiTree::new(build_automations(&state, viewport.width)).layout(viewport);
+            let card = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:automation_cancel")
+                .expect("editor modal")
+                .rect;
+            for id in ["automation_cancel:close", expected_action] {
+                let control = frame
+                    .regions
+                    .iter()
+                    .find(|region| {
+                        region.id == id
+                            && region.rect.x >= card.x
+                            && region.rect.y >= card.y
+                            && region.rect.x + region.rect.width <= card.x + card.width
+                            && region.rect.y + region.rect.height <= card.y + card.height
+                    })
+                    .unwrap_or_else(|| panic!("missing {id} in {step:?}"));
+                assert!(
+                    control.rect.width > 0.0 && control.rect.height > 0.0,
+                    "{id}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn editor_restores_focus_to_its_trigger() {
+        for trigger in ["automation_new", "automation_template:risk_scan"] {
+            let mut state = state();
+            let mut tree = UiTree::new(build_automations(&state, 960.0));
+            tree.layout(Size::new(960.0, 780.0));
+            assert!(tree.focus(trigger), "cannot focus {trigger}");
+
+            state.screen = AutomationScreen::Edit;
+            tree.set_root(build_automations(&state, 960.0));
+            tree.layout(Size::new(960.0, 780.0));
+            assert_eq!(tree.focused_id(), Some("automation_title"));
+
+            state.screen = AutomationScreen::List;
+            tree.set_root(build_automations(&state, 960.0));
+            tree.layout(Size::new(960.0, 780.0));
+            assert_eq!(tree.focused_id(), Some(trigger));
+        }
     }
 
     #[test]
@@ -1377,9 +1649,5 @@ mod tests {
         state.busy_id = Some("one".into());
         let busy = UiTree::new(build_automations(&state, viewport.width)).layout(viewport);
         assert!(!busy.regions.iter().any(|r| r.id == "automation_run:one"));
-        assert!(busy.commands.iter().any(|command| matches!(
-            command,
-            DrawCommand::Text { text, .. } if text == "Iniciando…"
-        )));
     }
 }

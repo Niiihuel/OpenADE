@@ -19,6 +19,11 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+mod codex_discovery;
+pub use codex_discovery::{
+    discover_codex_models, discover_codex_models_with_executable, DiscoveredCodexModel,
+};
+
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 const OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(30);
@@ -151,9 +156,6 @@ impl CliProfile {
     pub fn with_model(mut self, model: impl Into<String>) -> Result<Self, String> {
         let model = model.into();
         validate_codex_model(&self, &model)?;
-        if let Some(effort) = &self.reasoning_effort {
-            validate_codex_model_effort(&model, effort)?;
-        }
         self.model = Some(model);
         Ok(self)
     }
@@ -163,9 +165,6 @@ impl CliProfile {
     pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Result<Self, String> {
         let effort = effort.into();
         validate_codex_effort(&self, &effort)?;
-        if let Some(model) = &self.model {
-            validate_codex_model_effort(model, &effort)?;
-        }
         self.reasoning_effort = Some(effort);
         Ok(self)
     }
@@ -191,10 +190,43 @@ pub fn detect_executable(executable: impl AsRef<Path>) -> Option<PathBuf> {
         return executable_candidates(executable).find(|candidate| executable_file(candidate));
     }
 
-    let path = env::var_os("PATH")?;
-    env::split_paths(&path)
-        .flat_map(|directory| executable_candidates(&directory.join(executable)))
-        .find(|candidate| executable_file(candidate))
+    if let Some(path) = env::var_os("PATH") {
+        if let Some(found) = env::split_paths(&path)
+            .flat_map(|directory| executable_candidates(&directory.join(executable)))
+            .find(|candidate| executable_file(candidate))
+        {
+            return Some(found);
+        }
+    }
+    #[cfg(windows)]
+    if matches!(executable.to_str(), Some("codex" | "codex.exe")) {
+        return env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .and_then(|root| codex_windows_install(&root));
+    }
+    None
+}
+
+#[cfg(windows)]
+fn codex_windows_install(local_app_data: &Path) -> Option<PathBuf> {
+    let bin = local_app_data.join("OpenAI").join("Codex").join("bin");
+    let mut candidates = Vec::new();
+    for entry in std::fs::read_dir(bin).ok()?.flatten() {
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let candidate = entry.path().join("codex.exe");
+        if executable_file(&candidate) {
+            let modified = candidate
+                .metadata()
+                .ok()
+                .and_then(|meta| meta.modified().ok());
+            candidates.push((modified, candidate));
+        }
+    }
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    candidates.pop().map(|(_, path)| path)
 }
 
 fn executable_candidates(path: &Path) -> impl Iterator<Item = PathBuf> {
@@ -587,20 +619,8 @@ fn validate_codex_model(profile: &CliProfile, model: &str) -> Result<(), String>
 
 fn validate_codex_effort(profile: &CliProfile, effort: &str) -> Result<(), String> {
     validate_codex_profile(profile)?;
-    if !matches!(
-        effort,
-        "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
-    ) {
+    if !codex_discovery::effort_is_safe(effort) {
         return Err(format!("Unsupported Codex reasoning effort: {effort}"));
-    }
-    Ok(())
-}
-
-fn validate_codex_model_effort(model: &str, effort: &str) -> Result<(), String> {
-    if codex_supported_efforts(model).is_some_and(|levels| !levels.contains(&effort)) {
-        return Err(format!(
-            "Codex model '{model}' does not advertise reasoning effort '{effort}'"
-        ));
     }
     Ok(())
 }
@@ -615,9 +635,6 @@ fn render_model_options(
     }
     if let Some(effort) = &profile.reasoning_effort {
         validate_codex_effort(profile, effort)?;
-        if let Some(model) = &profile.model {
-            validate_codex_model_effort(model, effort)?;
-        }
         // The quoted value is TOML syntax for Codex's `--config key=value`.
         // Effort is an allowlisted token, and both pieces are passed directly
         // to Command::args, without shell expansion or prompt substitution.
@@ -788,6 +805,7 @@ mod tests {
             workspace: env::current_dir().expect("current directory"),
             history: Vec::new(),
             prompt: prompt.to_owned(),
+            mode: openide_core::TurnMode::Build,
         }
     }
 
@@ -841,6 +859,21 @@ mod tests {
                 eprint!("stderr: diagnostic");
                 io::stderr().flush().expect("flush stderr");
             }
+            "codex_diagnostics" => {
+                eprintln!("WARN codex_skills: icon path is invalid");
+                eprintln!("WARN shell_snapshot: shell snapshot unavailable");
+                eprintln!("OpenAI Codex CLI");
+                io::stderr().flush().expect("flush stderr");
+                println!("Respuesta válida a {prompt}");
+                io::stdout().flush().expect("flush stdout");
+            }
+            "failed_after_output" => {
+                println!("Partial response");
+                io::stdout().flush().expect("flush stdout");
+                eprintln!("fatal CLI error");
+                io::stderr().flush().expect("flush stderr");
+                std::process::exit(17);
+            }
             "wait" => {
                 println!("ready");
                 io::stdout().flush().expect("flush stdout");
@@ -877,6 +910,51 @@ mod tests {
         assert!(matches!(
             &events.last().expect("last event").kind,
             AgentEventKind::TurnCompleted { response, .. } if response.contains("¡Hola, mundo! 😀")
+        ));
+    }
+
+    #[test]
+    fn codex_style_stderr_diagnostics_do_not_fail_a_successful_turn() {
+        let handle = CliRunner::start(mock_profile("codex_diagnostics"), request("hola"));
+        let events = receive_until_terminal(&handle);
+        let diagnostics = events
+            .iter()
+            .filter_map(|event| match &event.kind {
+                AgentEventKind::ProcessOutput {
+                    stream: OutputStream::Stderr,
+                    text,
+                } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(diagnostics.contains("codex_skills"));
+        assert!(diagnostics.contains("shell_snapshot"));
+        assert!(diagnostics.contains("OpenAI Codex CLI"));
+        assert!(matches!(
+            &events.last().expect("terminal event").kind,
+            AgentEventKind::TurnCompleted { response, .. }
+                if response.contains("Respuesta válida a hola")
+        ));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event.kind, AgentEventKind::TurnFailed { .. })));
+    }
+
+    #[test]
+    fn nonzero_exit_fails_even_when_stdout_contains_a_response() {
+        let handle = CliRunner::start(mock_profile("failed_after_output"), request("hola"));
+        let events = receive_until_terminal(&handle);
+        assert!(events.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::ProcessOutput {
+                stream: OutputStream::Stdout,
+                text,
+            } if text.contains("Partial response")
+        )));
+        assert!(matches!(
+            &events.last().expect("terminal event").kind,
+            AgentEventKind::TurnFailed { error }
+                if error.contains("exit code 17") && error.contains("fatal CLI error")
         ));
     }
 
@@ -959,7 +1037,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_codex_model_capabilities_reject_unadvertised_level() {
+    fn bundled_codex_capabilities_are_fallback_only() {
         assert!(codex_known_models()
             .iter()
             .any(|(slug, label)| *slug == "gpt-6-sol" && *label == "GPT-6 Sol"));
@@ -971,17 +1049,32 @@ mod tests {
             .into_iter()
             .find(|profile| profile.id == "codex")
             .unwrap();
+        // The installed Codex process validates the live model/effort pair.
+        // A bundled catalog may be stale relative to model/list, so this
+        // wrapper only enforces safe argument syntax.
         assert!(profile
             .clone()
             .with_model("gpt-6-luna")
             .unwrap()
             .with_reasoning_effort("ultra")
-            .is_err());
+            .is_ok());
         assert!(profile
             .with_reasoning_effort("ultra")
             .unwrap()
             .with_model("gpt-6-luna")
-            .is_err());
+            .is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn finds_codex_desktop_binary_under_versioned_windows_bin() {
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("OpenAI").join("Codex").join("bin");
+        let versioned = bin.join("installation-hash");
+        std::fs::create_dir_all(&versioned).unwrap();
+        let executable = versioned.join("codex.exe");
+        std::fs::write(&executable, b"mock executable").unwrap();
+        assert_eq!(codex_windows_install(root.path()), Some(executable));
     }
 
     #[test]

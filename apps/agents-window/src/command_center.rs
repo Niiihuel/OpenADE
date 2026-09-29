@@ -61,6 +61,8 @@ pub enum Target {
     OpenAutomations,
     OpenMarketplace,
     OpenCodeReview,
+    CompactContext,
+    ResumeTurn,
     ToggleRightDock,
     OpenSession(String),
     OpenFile(PathBuf),
@@ -107,6 +109,8 @@ enum StaticTarget {
     OpenAutomations,
     OpenMarketplace,
     OpenCodeReview,
+    CompactContext,
+    ResumeTurn,
     ToggleRightDock,
 }
 
@@ -120,12 +124,14 @@ impl From<StaticTarget> for Target {
             StaticTarget::OpenAutomations => Self::OpenAutomations,
             StaticTarget::OpenMarketplace => Self::OpenMarketplace,
             StaticTarget::OpenCodeReview => Self::OpenCodeReview,
+            StaticTarget::CompactContext => Self::CompactContext,
+            StaticTarget::ResumeTurn => Self::ResumeTurn,
             StaticTarget::ToggleRightDock => Self::ToggleRightDock,
         }
     }
 }
 
-const COMMANDS: [StaticCommand; 8] = [
+const COMMANDS: [StaticCommand; 10] = [
     StaticCommand {
         target: StaticTarget::NewTask,
         title: "Nueva tarea",
@@ -167,6 +173,18 @@ const COMMANDS: [StaticCommand; 8] = [
         title: "Revisar cambios",
         subtitle: "Abrir el diff de Git del proyecto",
         keywords: "review code diff git changes cambios revisar",
+    },
+    StaticCommand {
+        target: StaticTarget::CompactContext,
+        title: "Compactar contexto",
+        subtitle: "Resumir el historial de la conversación activa",
+        keywords: "compact compaction summarize resumen contexto context historial tokens",
+    },
+    StaticCommand {
+        target: StaticTarget::ResumeTurn,
+        title: "Reanudar turno interrumpido",
+        subtitle: "Recuperar un turno nativo sin repetir efectos inciertos",
+        keywords: "resume reanudar recuperar interrupted turno interrumpido recovery",
     },
     StaticCommand {
         target: StaticTarget::ToggleRightDock,
@@ -301,11 +319,13 @@ fn target_key(target: &Target) -> String {
         Target::OpenFiles => "2".to_owned(),
         Target::OpenSettings => "3".to_owned(),
         Target::OpenCodeReview => "4".to_owned(),
-        Target::ToggleRightDock => "5".to_owned(),
-        Target::OpenAutomations => "6".to_owned(),
-        Target::OpenMarketplace => "7".to_owned(),
-        Target::OpenSession(id) => format!("8:{id}"),
-        Target::OpenFile(path) => format!("9:{}", path.to_string_lossy()),
+        Target::CompactContext => "5".to_owned(),
+        Target::ResumeTurn => "b".to_owned(),
+        Target::ToggleRightDock => "6".to_owned(),
+        Target::OpenAutomations => "7".to_owned(),
+        Target::OpenMarketplace => "8".to_owned(),
+        Target::OpenSession(id) => format!("9:{id}"),
+        Target::OpenFile(path) => format!("a:{}", path.to_string_lossy()),
     }
 }
 
@@ -454,6 +474,36 @@ mod tests {
         assert_eq!(
             results.first().map(|item| &item.target),
             Some(&Target::OpenCodeReview)
+        );
+    }
+
+    #[test]
+    fn compact_context_is_visible_and_searchable_as_a_command() {
+        let defaults = search("", Scope::All, &[], &[], DEFAULT_RESULT_LIMIT);
+        assert!(defaults
+            .iter()
+            .any(|item| item.target == Target::CompactContext && item.section == Scope::Commands));
+        let exact = search(
+            ">compactar contexto",
+            Scope::Files,
+            &[],
+            &[],
+            DEFAULT_RESULT_LIMIT,
+        );
+        assert_eq!(
+            exact.first().map(|item| &item.target),
+            Some(&Target::CompactContext)
+        );
+        let english = search(
+            "summarize context",
+            Scope::Commands,
+            &[],
+            &[],
+            DEFAULT_RESULT_LIMIT,
+        );
+        assert_eq!(
+            english.first().map(|item| &item.target),
+            Some(&Target::CompactContext)
         );
     }
 

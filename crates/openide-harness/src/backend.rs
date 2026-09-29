@@ -4,13 +4,19 @@ use futures_util::StreamExt;
 use openide_core::{AgentMessage, MessageRole, ToolCall};
 use reqwest::Client;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::future::Future;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 const MAX_STREAM_BUFFER_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ASSEMBLED_STREAM_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_MODEL_HTTP_BODY_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_MODEL_HTTP_ERROR_BYTES: usize = 64 * 1024;
+const MAX_MODEL_TRANSPORT_RETRIES: usize = 2;
+const MAX_MODEL_RETRY_DELAY: Duration = Duration::from_secs(10);
 const NATIVE_STANDARD_EFFORTS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
 const NATIVE_GPT55_EFFORTS: &[&str] = &["none", "low", "medium", "high", "xhigh"];
 const NATIVE_GPT6_TOOL_EFFORTS: &[&str] = &["none"];
@@ -42,9 +48,61 @@ pub struct ModelOutput {
     pub tool_calls: Vec<ToolCall>,
 }
 
+pub use openide_core::ModelTokenUsage;
+
+/// A provider-neutral completion with optional protocol metadata.
+///
+/// `provider_output_items` may contain opaque reasoning state. Callers that
+/// persist it must treat it as sensitive and replay it unchanged when the
+/// provider requires stateless continuation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModelCompletion {
+    pub output: ModelOutput,
+    pub response_id: Option<String>,
+    pub usage: Option<ModelTokenUsage>,
+    pub provider_output_items: Vec<Value>,
+}
+
+impl From<ModelOutput> for ModelCompletion {
+    fn from(output: ModelOutput) -> Self {
+        Self {
+            output,
+            response_id: None,
+            usage: None,
+            provider_output_items: Vec::new(),
+        }
+    }
+}
+
 #[async_trait]
 pub trait ModelBackend: Send + Sync {
     fn model_id(&self) -> &str;
+
+    /// Whether this transport can send durable user images. The selected
+    /// provider and model must be checked separately before offering images.
+    fn supports_user_images(&self) -> bool {
+        false
+    }
+
+    /// Exact input token count for a request containing images, when this
+    /// transport offers a pre-request counting API. `None` means unknown and
+    /// must not be treated as a zero-cost image by a budget gate.
+    async fn count_input_tokens(
+        &self,
+        _messages: &[AgentMessage],
+        _tools: &[ToolDefinition],
+        _cancel: CancellationToken,
+    ) -> Result<Option<u64>, AgentError> {
+        Ok(None)
+    }
+
+    /// Stable identity of the request protocol and effective model options.
+    /// Native journaled runs fail closed when this is None. Test doubles must
+    /// supply a fixed value explicitly; production adapters must include
+    /// every option that changes the request sent to the provider.
+    fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+        None
+    }
 
     async fn complete(
         &self,
@@ -61,6 +119,241 @@ pub trait ModelBackend: Send + Sync {
         _deltas: UnboundedSender<String>,
     ) -> Result<ModelOutput, AgentError> {
         self.complete(messages, tools, cancel).await
+    }
+
+    /// Backends with richer protocols can override this method. Existing
+    /// Chat Completions and test backends keep their original implementation.
+    async fn stream_complete_detailed(
+        &self,
+        messages: &[AgentMessage],
+        tools: &[ToolDefinition],
+        cancel: CancellationToken,
+        deltas: UnboundedSender<String>,
+    ) -> Result<ModelCompletion, AgentError> {
+        self.stream_complete(messages, tools, cancel, deltas)
+            .await
+            .map(ModelCompletion::from)
+    }
+}
+
+pub(crate) fn stable_request_profile_fingerprint(fields: &[&str]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"openide-model-request-profile\0");
+    for field in fields {
+        hasher.update((field.len() as u64).to_be_bytes());
+        hasher.update(field.as_bytes());
+    }
+    hasher.finalize().into()
+}
+
+pub(crate) async fn read_model_http_body(
+    mut response: reqwest::Response,
+    limit: usize,
+    cancel: &CancellationToken,
+) -> Result<Vec<u8>, AgentError> {
+    let mut body = Vec::new();
+    loop {
+        let chunk = tokio::select! {
+            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+            chunk = response.chunk() => chunk.map_err(|error| AgentError::Model(error.to_string()))?,
+        };
+        let Some(chunk) = chunk else {
+            return Ok(body);
+        };
+        if chunk.len() > limit.saturating_sub(body.len()) {
+            return Err(AgentError::Limit(format!(
+                "model HTTP body exceeds {limit} bytes"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+}
+
+pub(crate) enum ModelAttemptError {
+    Terminal(AgentError),
+    Retryable {
+        error: AgentError,
+        retry_after: Option<Duration>,
+    },
+}
+
+impl ModelAttemptError {
+    fn request(error: reqwest::Error) -> Self {
+        let retryable = error.is_connect() || error.is_timeout();
+        let error = AgentError::Model(error.to_string());
+        if retryable {
+            Self::Retryable {
+                error,
+                retry_after: None,
+            }
+        } else {
+            Self::Terminal(error)
+        }
+    }
+
+    pub(crate) fn stream(error: reqwest::Error, published_delta: bool) -> Self {
+        let retryable = !published_delta
+            && (error.is_connect() || error.is_timeout() || error.is_body() || error.is_decode());
+        let error = AgentError::Model(error.to_string());
+        if retryable {
+            Self::Retryable {
+                error,
+                retry_after: None,
+            }
+        } else {
+            Self::Terminal(error)
+        }
+    }
+
+    pub(crate) fn incomplete_stream(message: &'static str, published_delta: bool) -> Self {
+        let error = AgentError::Model(message.into());
+        if published_delta {
+            Self::Terminal(error)
+        } else {
+            Self::Retryable {
+                error,
+                retry_after: None,
+            }
+        }
+    }
+}
+
+/// Retry only failures that cannot have returned a completed model response to
+/// the runner. Streaming callers must mark an attempt terminal after publishing
+/// the first delta, preserving live delivery and journaled partial output.
+pub(crate) async fn retry_model_transport<T, F, Fut>(
+    cancel: &CancellationToken,
+    mut attempt: F,
+) -> Result<T, AgentError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, ModelAttemptError>>,
+{
+    for retry in 0..=MAX_MODEL_TRANSPORT_RETRIES {
+        if cancel.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
+        match attempt().await {
+            Ok(value) => return Ok(value),
+            Err(ModelAttemptError::Terminal(error)) => return Err(error),
+            Err(ModelAttemptError::Retryable { error, retry_after }) => {
+                if retry == MAX_MODEL_TRANSPORT_RETRIES {
+                    return Err(error);
+                }
+                let backoff = Duration::from_millis(150 * (1u64 << retry));
+                let delay = retry_after.unwrap_or(backoff);
+                if delay > MAX_MODEL_RETRY_DELAY {
+                    return Err(AgentError::Model(format!(
+                        "{error}; Retry-After exceeds the bounded retry window"
+                    )));
+                }
+                tokio::select! {
+                    _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+                    _ = tokio::time::sleep(delay) => {}
+                }
+            }
+        }
+    }
+    unreachable!("bounded model retry loop returns on every path")
+}
+
+pub(crate) async fn send_model_request(
+    request: reqwest::RequestBuilder,
+    cancel: &CancellationToken,
+) -> Result<reqwest::Response, ModelAttemptError> {
+    let response = tokio::select! {
+        _ = cancel.cancelled() => return Err(ModelAttemptError::Terminal(AgentError::Cancelled)),
+        response = request.send() => response.map_err(ModelAttemptError::request)?,
+    };
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    let retryable_status =
+        status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
+    let retry_after = if retryable_status {
+        response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_retry_after)
+    } else {
+        None
+    };
+    let bytes = match read_model_http_body(response, MAX_MODEL_HTTP_ERROR_BYTES, cancel).await {
+        Ok(bytes) => bytes,
+        Err(AgentError::Model(detail)) if retryable_status => {
+            return Err(ModelAttemptError::Retryable {
+                error: AgentError::Model(format!("HTTP {status}: {detail}")),
+                retry_after,
+            });
+        }
+        Err(error) => return Err(ModelAttemptError::Terminal(error)),
+    };
+    let detail: String = String::from_utf8_lossy(&bytes).chars().take(500).collect();
+    let error = AgentError::Model(format!("HTTP {status}: {detail}"));
+    if retryable_status {
+        Err(ModelAttemptError::Retryable { error, retry_after })
+    } else {
+        Err(ModelAttemptError::Terminal(error))
+    }
+}
+
+fn parse_retry_after(value: &str) -> Option<Duration> {
+    if let Ok(seconds) = value.trim().parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let parts = value.split_ascii_whitespace().collect::<Vec<_>>();
+    let [weekday, day, month, year, clock, zone] = parts.as_slice() else {
+        return None;
+    };
+    if !weekday.ends_with(',') || *zone != "GMT" {
+        return None;
+    }
+    let day = day.parse::<u32>().ok()?;
+    let month = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+    .iter()
+    .position(|candidate| candidate == month)? as u32
+        + 1;
+    let year = year.parse::<i64>().ok()?;
+    if !(1970..=9999).contains(&year) || day == 0 || day > days_in_month(year, month) {
+        return None;
+    }
+    let time = clock.split(':').collect::<Vec<_>>();
+    let [hour, minute, second] = time.as_slice() else {
+        return None;
+    };
+    let (hour, minute, second) = (
+        hour.parse::<u64>().ok()?,
+        minute.parse::<u64>().ok()?,
+        second.parse::<u64>().ok()?,
+    );
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = adjusted_year / 400;
+    let year_of_era = adjusted_year - era * 400;
+    let adjusted_month = i64::from(if month > 2 { month - 3 } else { month + 9 });
+    let day_of_year = (153 * adjusted_month + 2) / 5 + i64::from(day) - 1;
+    let year_day = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + year_day - 719_468;
+    let timestamp = u64::try_from(days)
+        .ok()?
+        .checked_mul(86_400)?
+        .checked_add(hour * 3600 + minute * 60 + second)?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    Some(Duration::from_secs(timestamp.saturating_sub(now)))
+}
+
+fn days_in_month(year: i64, month: u32) -> u32 {
+    match month {
+        4 | 6 | 9 | 11 => 30,
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        _ => 31,
     }
 }
 
@@ -141,6 +434,11 @@ impl OpenAiCompatibleBackend {
         tools: &[ToolDefinition],
         stream: bool,
     ) -> Result<Value, AgentError> {
+        if messages.iter().any(|message| !message.images.is_empty()) {
+            return Err(AgentError::InvalidRequest(
+                "native Chat Completions transport does not accept user images; use Responses with an image-capable model".into(),
+            ));
+        }
         if !native_agent_supports_tool_calls(&self.model) && !tools.is_empty() {
             return Err(AgentError::InvalidRequest(
                 "GPT-6 Astra function calling requires the Responses API; this native backend uses Chat Completions".into(),
@@ -220,30 +518,43 @@ impl ModelBackend for OpenAiCompatibleBackend {
         &self.model
     }
 
+    fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+        Some(stable_request_profile_fingerprint(&[
+            "chat-completions-v1",
+            &self.endpoint,
+            &self.model,
+            self.reasoning_effort.as_deref().unwrap_or("<absent>"),
+            if self.deepseek_non_thinking {
+                "thinking-disabled"
+            } else {
+                "thinking-unset"
+            },
+            "stream-true",
+        ]))
+    }
+
     async fn complete(
         &self,
         messages: &[AgentMessage],
         tools: &[ToolDefinition],
         cancel: CancellationToken,
     ) -> Result<ModelOutput, AgentError> {
-        let request = self.request(messages, tools, false)?;
-        let response = tokio::select! {
-            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-            response = request.send() => response.map_err(|error| AgentError::Model(error.to_string()))?,
-        };
-        let status = response.status();
-        let bytes = tokio::select! {
-            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-            bytes = response.bytes() => bytes.map_err(|error| AgentError::Model(error.to_string()))?,
-        };
-        if !status.is_success() {
-            let body = String::from_utf8_lossy(&bytes);
-            let detail: String = body.chars().take(500).collect();
-            return Err(AgentError::Model(format!("HTTP {status}: {detail}")));
-        }
-        let body: Value = serde_json::from_slice(&bytes)
-            .map_err(|error| AgentError::Model(format!("invalid JSON response: {error}")))?;
-        parse_model_output(&body)
+        retry_model_transport(&cancel, || async {
+            let request = self
+                .request(messages, tools, false)
+                .map_err(ModelAttemptError::Terminal)?;
+            let response = send_model_request(request, &cancel).await?;
+            let bytes = read_model_http_body(response, MAX_MODEL_HTTP_BODY_BYTES, &cancel)
+                .await
+                .map_err(ModelAttemptError::Terminal)?;
+            let body: Value = serde_json::from_slice(&bytes).map_err(|error| {
+                ModelAttemptError::Terminal(AgentError::Model(format!(
+                    "invalid JSON response: {error}"
+                )))
+            })?;
+            parse_model_output(&body).map_err(ModelAttemptError::Terminal)
+        })
+        .await
     }
 
     async fn stream_complete(
@@ -253,54 +564,69 @@ impl ModelBackend for OpenAiCompatibleBackend {
         cancel: CancellationToken,
         deltas: UnboundedSender<String>,
     ) -> Result<ModelOutput, AgentError> {
-        let response = tokio::select! {
-            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-            response = self.request(messages, tools, true)?.send() => {
-                response.map_err(|error| AgentError::Model(error.to_string()))?
-            }
-        };
-        let status = response.status();
-        if !status.is_success() {
-            let body = tokio::select! {
-                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-                body = response.text() => body.map_err(|error| AgentError::Model(error.to_string()))?,
-            };
-            let detail: String = body.chars().take(500).collect();
-            return Err(AgentError::Model(format!("HTTP {status}: {detail}")));
-        }
-        let mut stream = Box::pin(response.bytes_stream());
-        let mut pending = Vec::<u8>::new();
-        let mut assembler = SseAssembler::default();
-        loop {
-            let next = tokio::select! {
-                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-                next = stream.next() => next,
-            };
-            let Some(next) = next else { break };
-            let chunk = next.map_err(|error| AgentError::Model(error.to_string()))?;
-            pending.extend_from_slice(&chunk);
-            if pending.len() > MAX_STREAM_BUFFER_BYTES {
-                return Err(AgentError::Limit("streaming response is too large".into()));
-            }
-            while let Some(frame) = take_sse_frame(&mut pending) {
-                assembler.ingest(&frame, &deltas)?;
-                if assembler.done {
-                    return assembler.finish();
+        self.stream_complete_detailed(messages, tools, cancel, deltas)
+            .await
+            .map(|completion| completion.output)
+    }
+
+    async fn stream_complete_detailed(
+        &self,
+        messages: &[AgentMessage],
+        tools: &[ToolDefinition],
+        cancel: CancellationToken,
+        deltas: UnboundedSender<String>,
+    ) -> Result<ModelCompletion, AgentError> {
+        retry_model_transport(&cancel, || async {
+            let request = self
+                .request(messages, tools, true)
+                .map_err(ModelAttemptError::Terminal)?;
+            let response = send_model_request(request, &cancel).await?;
+            let is_sse = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("text/event-stream"));
+            let mut stream = Box::pin(response.bytes_stream());
+            let mut pending = Vec::<u8>::new();
+            let mut assembler = SseAssembler::default();
+            loop {
+                let next = tokio::select! {
+                    _ = cancel.cancelled() => return Err(ModelAttemptError::Terminal(AgentError::Cancelled)),
+                    next = stream.next() => next,
+                };
+                let Some(next) = next else { break };
+                let chunk = next.map_err(|error| ModelAttemptError::stream(error, assembler.published_delta))?;
+                pending.extend_from_slice(&chunk);
+                if pending.len() > MAX_STREAM_BUFFER_BYTES {
+                    return Err(ModelAttemptError::Terminal(AgentError::Limit("streaming response is too large".into())));
+                }
+                while let Some(frame) = take_sse_frame(&mut pending) {
+                    assembler.ingest(&frame, &deltas).map_err(ModelAttemptError::Terminal)?;
+                    if assembler.done {
+                        return assembler.finish_detailed().map_err(ModelAttemptError::Terminal);
+                    }
                 }
             }
-        }
-        if assembler.seen_frame {
-            if !pending.is_empty() {
-                assembler.ingest(&pending, &deltas)?;
+            if assembler.seen_frame || is_sse {
+                // A truncated stream may be repeated only before live output.
+                Err(ModelAttemptError::incomplete_stream(
+                    "streaming response ended before [DONE]",
+                    assembler.published_delta,
+                ))
+            } else {
+                // Some compatible providers ignore `stream: true` and return ordinary JSON.
+                let body: Value = serde_json::from_slice(&pending).map_err(|error| {
+                    ModelAttemptError::Terminal(AgentError::Model(format!("invalid streaming response: {error}")))
+                })?;
+                Ok(ModelCompletion {
+                    output: parse_model_output(&body).map_err(ModelAttemptError::Terminal)?,
+                    response_id: body.get("id").and_then(Value::as_str).map(str::to_owned),
+                    usage: parse_chat_usage(&body).map_err(ModelAttemptError::Terminal)?,
+                    provider_output_items: Vec::new(),
+                })
             }
-            assembler.finish()
-        } else {
-            // Some compatible providers ignore `stream: true` and return ordinary JSON.
-            let body: Value = serde_json::from_slice(&pending).map_err(|error| {
-                AgentError::Model(format!("invalid streaming response: {error}"))
-            })?;
-            parse_model_output(&body)
-        }
+        })
+        .await
     }
 }
 
@@ -318,6 +644,10 @@ struct SseAssembler {
     assembled_bytes: usize,
     done: bool,
     seen_frame: bool,
+    published_delta: bool,
+    usage: Option<ModelTokenUsage>,
+    response_id: Option<String>,
+    finish_reason: Option<String>,
 }
 
 impl SseAssembler {
@@ -340,11 +670,33 @@ impl SseAssembler {
         }
         let payload: Value = serde_json::from_str(&data)
             .map_err(|error| AgentError::Model(format!("invalid SSE payload: {error}")))?;
+        if let Some(id) = payload.get("id").and_then(Value::as_str) {
+            self.response_id.get_or_insert_with(|| id.to_owned());
+        }
+        if let Some(usage) = parse_chat_usage(&payload)? {
+            self.usage = Some(usage);
+        }
+        if let Some(reason) = payload
+            .pointer("/choices/0/finish_reason")
+            .and_then(Value::as_str)
+        {
+            if self
+                .finish_reason
+                .as_deref()
+                .is_some_and(|prior| prior != reason)
+            {
+                return Err(AgentError::Model(
+                    "streaming response has conflicting finish reasons".into(),
+                ));
+            }
+            self.finish_reason = Some(reason.to_owned());
+        }
         let Some(delta) = payload.pointer("/choices/0/delta") else {
             return Ok(());
         };
         if let Some(text) = delta.get("content").and_then(Value::as_str) {
             append_assembled_fragment(&mut self.content, text, &mut self.assembled_bytes)?;
+            self.published_delta = true;
             let _ = deltas.send(text.to_owned());
         }
         if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
@@ -381,6 +733,22 @@ impl SseAssembler {
     }
 
     fn finish(self) -> Result<ModelOutput, AgentError> {
+        if !self.done {
+            return Err(AgentError::Model(
+                "streaming response ended before [DONE]".into(),
+            ));
+        }
+        validate_finish_reason(self.finish_reason.as_deref())?;
+        if !self.calls.is_empty()
+            && !matches!(
+                self.finish_reason.as_deref(),
+                Some("tool_calls" | "function_call")
+            )
+        {
+            return Err(AgentError::Model(
+                "streaming tool calls have no matching finish reason".into(),
+            ));
+        }
         let mut tool_calls = Vec::new();
         for (_, partial) in self.calls {
             if partial.id.is_empty() || partial.name.is_empty() {
@@ -404,6 +772,39 @@ impl SseAssembler {
             tool_calls,
         })
     }
+
+    fn finish_detailed(self) -> Result<ModelCompletion, AgentError> {
+        let response_id = self.response_id.clone();
+        let usage = self.usage.clone();
+        Ok(ModelCompletion {
+            output: self.finish()?,
+            response_id,
+            usage,
+            provider_output_items: Vec::new(),
+        })
+    }
+}
+
+fn parse_chat_usage(body: &Value) -> Result<Option<ModelTokenUsage>, AgentError> {
+    let Some(usage) = body.get("usage").filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let required = |field: &str| {
+        usage.get(field).and_then(Value::as_u64).ok_or_else(|| {
+            AgentError::Model(format!("Chat Completions usage has no valid {field}"))
+        })
+    };
+    Ok(Some(ModelTokenUsage {
+        input_tokens: required("prompt_tokens")?,
+        output_tokens: required("completion_tokens")?,
+        total_tokens: required("total_tokens")?,
+        reasoning_tokens: usage
+            .pointer("/completion_tokens_details/reasoning_tokens")
+            .and_then(Value::as_u64),
+        cached_input_tokens: usage
+            .pointer("/prompt_tokens_details/cached_tokens")
+            .and_then(Value::as_u64),
+    }))
 }
 
 fn append_assembled_fragment(
@@ -421,7 +822,7 @@ fn append_assembled_fragment(
     Ok(())
 }
 
-fn take_sse_frame(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
+pub(crate) fn take_sse_frame(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
     let lf = pending.windows(2).position(|window| window == b"\n\n");
     let crlf = pending.windows(4).position(|window| window == b"\r\n\r\n");
     let (position, delimiter_len) = match (lf, crlf) {
@@ -469,6 +870,10 @@ fn message_to_wire(message: &AgentMessage) -> Value {
 }
 
 fn parse_model_output(body: &Value) -> Result<ModelOutput, AgentError> {
+    let finish_reason = body
+        .pointer("/choices/0/finish_reason")
+        .and_then(Value::as_str);
+    validate_finish_reason(finish_reason)?;
     let message = body
         .pointer("/choices/0/message")
         .ok_or_else(|| AgentError::Model("response has no assistant message".into()))?;
@@ -513,17 +918,94 @@ fn parse_model_output(body: &Value) -> Result<ModelOutput, AgentError> {
             });
         }
     }
+    if !tool_calls.is_empty() && !matches!(finish_reason, Some("tool_calls" | "function_call")) {
+        return Err(AgentError::Model(
+            "tool calls have no matching finish reason".into(),
+        ));
+    }
     Ok(ModelOutput {
         content,
         tool_calls,
     })
 }
 
+fn validate_finish_reason(reason: Option<&str>) -> Result<(), AgentError> {
+    match reason {
+        None | Some("stop" | "tool_calls" | "function_call") => Ok(()),
+        Some("length") => Err(AgentError::Model(
+            "model stopped at its output limit; refusing an incomplete response".into(),
+        )),
+        Some("content_filter") => Err(AgentError::Model(
+            "provider filtered the model response".into(),
+        )),
+        Some(other) => Err(AgentError::Model(format!(
+            "unsupported model finish reason: {other}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openide_core::{UserImage, UserImageMime};
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn scripted_http_server(responses: Vec<String>) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let server = tokio::spawn(async move {
+            for response in responses {
+                let (mut socket, _) =
+                    tokio::time::timeout(Duration::from_secs(3), listener.accept())
+                        .await
+                        .expect("expected HTTP request")
+                        .unwrap();
+                let mut request = Vec::new();
+                let mut chunk = [0u8; 2048];
+                loop {
+                    let count = socket.read(&mut chunk).await.unwrap();
+                    assert!(count > 0, "request ended before headers");
+                    request.extend_from_slice(&chunk[..count]);
+                    if let Some(header_end) =
+                        request.windows(4).position(|part| part == b"\r\n\r\n")
+                    {
+                        let headers = String::from_utf8_lossy(&request[..header_end]);
+                        let body_len = headers
+                            .lines()
+                            .find_map(|line| {
+                                line.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .and_then(|value| value.trim().parse::<usize>().ok())
+                            })
+                            .unwrap_or(0);
+                        if request.len() >= header_end + 4 + body_len {
+                            break;
+                        }
+                    }
+                }
+                socket.write_all(response.as_bytes()).await.unwrap();
+                socket.flush().await.unwrap();
+            }
+            assert!(
+                tokio::time::timeout(Duration::from_millis(450), listener.accept())
+                    .await
+                    .is_err(),
+                "unexpected model retry"
+            );
+        });
+        (address, server)
+    }
+
+    fn scripted_response(
+        status: &str,
+        body: &str,
+        extra_headers: &str,
+        declared_len: usize,
+    ) -> String {
+        format!("HTTP/1.1 {status}\r\nContent-Type: text/event-stream\r\nContent-Length: {declared_len}\r\nConnection: close\r\n{extra_headers}\r\n{body}")
+    }
 
     fn sample_tool() -> ToolDefinition {
         ToolDefinition {
@@ -531,6 +1013,30 @@ mod tests {
             description: "Read a file".into(),
             parameters: json!({"type":"object"}),
         }
+    }
+
+    #[test]
+    fn chat_transport_rejects_images_before_http() {
+        let image = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfixture").unwrap();
+        let message = AgentMessage::user_with_images("describe", vec![image]).unwrap();
+        let chat = OpenAiCompatibleBackend::new("http://127.0.0.1:1/v1", None, "mock");
+        assert!(!chat.supports_user_images());
+        let error = chat.request_body(&[message], &[], true).unwrap_err();
+        assert!(
+            matches!(error, AgentError::InvalidRequest(detail) if detail.contains("does not accept user images"))
+        );
+    }
+
+    #[test]
+    fn retry_after_accepts_http_dates_and_bounds_future_advice() {
+        assert_eq!(
+            parse_retry_after("Thu, 01 Jan 1970 00:00:00 GMT"),
+            Some(Duration::ZERO)
+        );
+        assert!(
+            parse_retry_after("Fri, 31 Dec 9999 23:59:59 GMT").unwrap() > MAX_MODEL_RETRY_DELAY
+        );
+        assert_eq!(parse_retry_after("not a date"), None);
     }
 
     #[test]
@@ -582,6 +1088,28 @@ mod tests {
     }
 
     #[test]
+    fn request_profile_changes_with_reasoning_and_deepseek_flags() {
+        let base = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-5.6-sol");
+        let high = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-5.6-sol")
+            .with_reasoning_effort("high")
+            .unwrap();
+        assert_ne!(
+            base.request_profile_fingerprint(),
+            high.request_profile_fingerprint()
+        );
+
+        let deepseek =
+            OpenAiCompatibleBackend::new("https://api.deepseek.com", None, "deepseek-flash");
+        let non_thinking =
+            OpenAiCompatibleBackend::new("https://api.deepseek.com", None, "deepseek-flash")
+                .with_deepseek_non_thinking();
+        assert_ne!(
+            deepseek.request_profile_fingerprint(),
+            non_thinking.request_profile_fingerprint()
+        );
+    }
+
+    #[test]
     fn chat_completion_tool_rules_are_checked_before_http() {
         let astra = OpenAiCompatibleBackend::new("http://localhost/v1", None, "gpt-6-astra");
         assert!(astra.request_body(&[], &[sample_tool()], false).is_err());
@@ -629,7 +1157,7 @@ mod tests {
     #[test]
     fn parses_tool_calls_and_null_content() {
         let output = parse_model_output(&json!({
-            "choices": [{"message": {
+            "choices": [{"finish_reason":"tool_calls","message": {
                 "content": null,
                 "tool_calls": [{"id":"call-1","function":{"name":"read_file","arguments":"{\"path\":\"README.md\"}"}}]
             }}]
@@ -679,11 +1207,79 @@ mod tests {
         while let Some(frame) = take_sse_frame(&mut pending) {
             assembler.ingest(&frame, &sender).unwrap();
         }
+        assembler
+            .ingest(
+                b"data: {\"choices\":[{\"finish_reason\":\"tool_calls\"}]}",
+                &sender,
+            )
+            .unwrap();
+        assembler.ingest(b"data: [DONE]", &sender).unwrap();
         let result = assembler.finish().unwrap();
         assert_eq!(result.content, "Hi there");
         assert_eq!(result.tool_calls[0].arguments["path"], "a.txt");
         assert_eq!(receiver.try_recv().unwrap(), "Hi ");
         assert_eq!(receiver.try_recv().unwrap(), "there");
+    }
+
+    #[test]
+    fn refuses_output_limit_even_if_tool_arguments_are_valid_json() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let mut assembler = SseAssembler::default();
+        let call = json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"id":"call-1","function":{"name":"write_file","arguments":"{\"path\":\"a.txt\",\"content\":\"x\"}"}
+        }]}}]});
+        assembler
+            .ingest(format!("data: {call}").as_bytes(), &sender)
+            .unwrap();
+        assembler
+            .ingest(
+                b"data: {\"choices\":[{\"finish_reason\":\"length\"}]}",
+                &sender,
+            )
+            .unwrap();
+        assembler.ingest(b"data: [DONE]", &sender).unwrap();
+        assert!(matches!(
+            assembler.finish(),
+            Err(AgentError::Model(message)) if message.contains("output limit")
+        ));
+        assert!(matches!(
+            parse_model_output(&json!({"choices":[{"finish_reason":"length","message":{"content":"","tool_calls":[]}}]})),
+            Err(AgentError::Model(message)) if message.contains("output limit")
+        ));
+    }
+
+    #[test]
+    fn refuses_tool_calls_without_matching_finish_reason() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let call = json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"id":"call-1","function":{"name":"write_file","arguments":"{}"}
+        }]}}]});
+        for finish_reason in [None, Some("stop")] {
+            let mut assembler = SseAssembler::default();
+            assembler
+                .ingest(format!("data: {call}").as_bytes(), &sender)
+                .unwrap();
+            if let Some(reason) = finish_reason {
+                assembler
+                    .ingest(
+                        format!("data: {}", json!({"choices":[{"finish_reason":reason}]}))
+                            .as_bytes(),
+                        &sender,
+                    )
+                    .unwrap();
+            }
+            assembler.ingest(b"data: [DONE]", &sender).unwrap();
+            assert!(matches!(
+                assembler.finish(),
+                Err(AgentError::Model(message)) if message.contains("matching finish reason")
+            ));
+        }
+        assert!(matches!(
+            parse_model_output(&json!({"choices":[{"finish_reason":"stop","message":{
+                "content":"","tool_calls":[{"id":"call-1","function":{"name":"write_file","arguments":"{}"}}]
+            }}]})),
+            Err(AgentError::Model(message)) if message.contains("matching finish reason")
+        ));
     }
 
     #[test]
@@ -750,7 +1346,7 @@ mod tests {
             let mut content_length = 0usize;
             loop {
                 let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
                 if line == "\r\n" {
                     break;
                 }
@@ -791,5 +1387,240 @@ mod tests {
         assert_eq!(output.content, "hello world");
         assert_eq!(receiver.try_recv().unwrap(), "hello ");
         assert_eq!(receiver.try_recv().unwrap(), "world");
+    }
+
+    #[tokio::test]
+    async fn bounds_non_streaming_http_body_while_reading() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let body = "x".repeat(64);
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+            socket.flush().unwrap();
+        });
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!("http://{address}/body"))
+            .send()
+            .await
+            .unwrap();
+        let result = read_model_http_body(response, 16, &CancellationToken::new()).await;
+        server.join().unwrap();
+        assert!(matches!(
+            result,
+            Err(AgentError::Limit(message)) if message.contains("16 bytes")
+        ));
+    }
+
+    #[tokio::test]
+    async fn chat_retries_429_then_streams_live() {
+        let success =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\ndata: [DONE]\n\n";
+        let (address, server) = scripted_http_server(vec![
+            scripted_response("429 Too Many Requests", "busy", "Retry-After: 0\r\n", 4),
+            scripted_response("200 OK", success, "", success.len()),
+        ])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let output = backend
+            .stream_complete(
+                &[AgentMessage::user("hi")],
+                &[],
+                CancellationToken::new(),
+                sender,
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.content, "hello");
+        assert_eq!(receiver.try_recv().unwrap(), "hello");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn chat_retries_broken_sse_only_before_first_delta() {
+        let pre_delta = "data: {\"choices\":[{\"delta\":{}}]}\n\n";
+        let success = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n";
+        let (address, server) = scripted_http_server(vec![
+            scripted_response("200 OK", pre_delta, "", pre_delta.len() + 40),
+            scripted_response("200 OK", success, "", success.len()),
+        ])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let output = backend
+            .stream_complete(
+                &[AgentMessage::user("hi")],
+                &[],
+                CancellationToken::new(),
+                sender,
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.content, "ok");
+        assert_eq!(receiver.try_recv().unwrap(), "ok");
+        assert!(receiver.try_recv().is_err());
+        server.await.unwrap();
+
+        let emitted = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n";
+        let (address, server) = scripted_http_server(vec![scripted_response(
+            "200 OK",
+            emitted,
+            "",
+            emitted.len() + 40,
+        )])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let error = backend
+            .stream_complete(
+                &[AgentMessage::user("hi")],
+                &[],
+                CancellationToken::new(),
+                sender,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AgentError::Model(_)));
+        assert_eq!(receiver.try_recv().unwrap(), "partial");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn responses_retries_503_and_pre_delta_disconnect_but_not_post_delta() {
+        let completed = "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_retry\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}]}}\n\n";
+        let (address, server) = scripted_http_server(vec![
+            scripted_response("503 Service Unavailable", "busy", "Retry-After: 0\r\n", 4),
+            scripted_response("200 OK", completed, "", completed.len()),
+        ])
+        .await;
+        let backend = crate::ResponsesBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let result = backend
+            .stream_complete_detailed(
+                &[AgentMessage::user("hi")],
+                &[],
+                CancellationToken::new(),
+                sender,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.output.content, "ok");
+        server.await.unwrap();
+
+        let created = "data: {\"type\":\"response.created\"}\n\n";
+        let (address, server) = scripted_http_server(vec![
+            scripted_response("200 OK", created, "", created.len() + 40),
+            scripted_response("200 OK", completed, "", completed.len()),
+        ])
+        .await;
+        let backend = crate::ResponsesBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let result = backend
+            .stream_complete_detailed(
+                &[AgentMessage::user("hi")],
+                &[],
+                CancellationToken::new(),
+                sender,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.output.content, "ok");
+        server.await.unwrap();
+
+        let emitted = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n";
+        let (address, server) = scripted_http_server(vec![scripted_response(
+            "200 OK",
+            emitted,
+            "",
+            emitted.len() + 40,
+        )])
+        .await;
+        let backend = crate::ResponsesBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let error = backend
+            .stream_complete_detailed(
+                &[AgentMessage::user("hi")],
+                &[],
+                CancellationToken::new(),
+                sender,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AgentError::Model(_)));
+        assert_eq!(receiver.try_recv().unwrap(), "partial");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn retry_after_is_bounded_and_cancellation_stops_waiting() {
+        let (address, server) = scripted_http_server(vec![scripted_response(
+            "429 Too Many Requests",
+            "busy",
+            "Retry-After: 60\r\n",
+            4,
+        )])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let error = backend
+            .complete(&[AgentMessage::user("hi")], &[], CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, AgentError::Model(message) if message.contains("Retry-After exceeds"))
+        );
+        server.await.unwrap();
+
+        let (address, server) = scripted_http_server(vec![scripted_response(
+            "429 Too Many Requests",
+            "busy",
+            "Retry-After: 2\r\n",
+            4,
+        )])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let cancel = CancellationToken::new();
+        let cancellation = cancel.clone();
+        let task = tokio::spawn(async move {
+            backend
+                .complete(&[AgentMessage::user("hi")], &[], cancellation)
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        cancel.cancel();
+        assert!(matches!(task.await.unwrap(), Err(AgentError::Cancelled)));
+        server.await.unwrap();
+
+        let (address, server) = scripted_http_server(vec![scripted_response(
+            "400 Bad Request",
+            "invalid request",
+            "",
+            15,
+        )])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let error = backend
+            .complete(&[AgentMessage::user("hi")], &[], CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AgentError::Model(message) if message.contains("HTTP 400")));
+        server.await.unwrap();
     }
 }

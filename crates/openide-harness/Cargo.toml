@@ -7,15 +7,36 @@ rust-version.workspace = true
 [dependencies]
 openide-core = { path = "../openide-core" }
 async-trait = "0.1"
+base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 futures-util = "0.3"
+jsonschema = { version = "0.58.2", default-features = false, features = ["idna"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
 thiserror = "2"
-tokio = { version = "1", features = ["rt", "time", "sync", "macros", "process", "io-util"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros", "process", "io-util", "net", "fs"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+mxc-sdk = { git = "https://github.com/microsoft/mxc.git", rev = "ff53fda4a88463370891cd4a6a0b1aa06acae9e5" }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Credentials",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Console",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile = "3"

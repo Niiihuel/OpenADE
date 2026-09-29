@@ -1,13 +1,61 @@
 //! Pure, incremental projection of stored or live agent events into timeline rows.
 
-use openide_core::{AgentEvent, AgentEventKind, OutputStream, PermissionResolution};
+use openide_core::{
+    AgentEvent, AgentEventKind, OutputStream, PermissionResolution, UserImage, UserImageMime,
+    MAX_USER_IMAGES_PER_MESSAGE, MAX_USER_IMAGE_MESSAGE_BYTES,
+};
+use openide_ui::{RasterImage, RasterImageFormat};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranscriptImage {
+    /// The renderer verifies and decodes only visible images on cache misses.
+    /// An unavailable image retains its accessible label.
+    pub raster: Option<RasterImage>,
+    pub alt: String,
+}
+
+fn transcript_images(images: &[UserImage]) -> Vec<TranscriptImage> {
+    let mut encoded_total = 0usize;
+    let encoded_cap =
+        MAX_USER_IMAGE_MESSAGE_BYTES.div_ceil(3) * 4 + MAX_USER_IMAGES_PER_MESSAGE * 4;
+    images
+        .iter()
+        .take(MAX_USER_IMAGES_PER_MESSAGE)
+        .enumerate()
+        .map(|(index, image)| {
+            let alt = format!("Imagen adjunta {} de {}", index + 1, images.len());
+            let format = match image.mime_type {
+                UserImageMime::Png => RasterImageFormat::Png,
+                UserImageMime::Jpeg => RasterImageFormat::Jpeg,
+                UserImageMime::Webp => RasterImageFormat::Webp,
+                UserImageMime::Gif => RasterImageFormat::Gif,
+            };
+            let raster = encoded_total
+                .checked_add(image.data_base64.len())
+                .filter(|total| *total <= encoded_cap)
+                .and_then(|total| {
+                    encoded_total = total;
+                    RasterImage::new(
+                        &image.sha256,
+                        format,
+                        image.size_bytes,
+                        Arc::from(image.data_base64.as_str()),
+                        &alt,
+                    )
+                });
+            TranscriptImage { raster, alt }
+        })
+        .collect()
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TranscriptItem {
     User {
         content: String,
+        images: Vec<TranscriptImage>,
     },
     Assistant {
         content: String,
@@ -24,6 +72,10 @@ pub enum TranscriptItem {
         stream: OutputStream,
         text: String,
     },
+    WebCitation {
+        title: String,
+        url: String,
+    },
     Notice {
         message: String,
         is_error: bool,
@@ -38,6 +90,8 @@ pub struct TranscriptProjection {
     active_assistant: Option<usize>,
     stdout_row: Option<usize>,
     stdout_text: String,
+    pending_web_citations: Vec<(String, String)>,
+    pending_admission_images: Vec<TranscriptImage>,
 }
 
 impl TranscriptProjection {
@@ -49,6 +103,33 @@ impl TranscriptProjection {
         let mut projection = Self::new();
         for event in events {
             projection.apply_event(event);
+        }
+        projection.flush_web_citations();
+        let last_admission = events.iter().rposition(|event| {
+            matches!(
+                &event.kind,
+                AgentEventKind::TurnAdmitted { .. } | AgentEventKind::TurnAdmittedWithImages { .. }
+            )
+        });
+        let last_start = events
+            .iter()
+            .rposition(|event| matches!(&event.kind, AgentEventKind::TurnStarted { .. }));
+        if let Some(index) =
+            last_admission.filter(|index| last_start.is_none_or(|start| *index > start))
+        {
+            if let AgentEventKind::TurnAdmitted { prompt, .. }
+            | AgentEventKind::TurnAdmittedWithImages { prompt, .. } = &events[index].kind
+            {
+                projection.items.push(TranscriptItem::User {
+                    content: prompt.clone(),
+                    images: std::mem::take(&mut projection.pending_admission_images),
+                });
+                projection.items.push(TranscriptItem::Notice {
+                    message: "Turno admitido, pero interrumpido antes de iniciar".to_owned(),
+                    is_error: true,
+                });
+            }
+            return projection;
         }
         let unfinished_turn = events
             .iter()
@@ -65,8 +146,17 @@ impl TranscriptProjection {
             });
         if unfinished_turn {
             projection.finish_streaming();
+            let uncertain_tools = projection
+                .items
+                .iter()
+                .filter(|item| matches!(item, TranscriptItem::Tool { output: None, .. }))
+                .count();
             projection.items.push(TranscriptItem::Notice {
-                message: "Turno interrumpido al cerrar la aplicación".to_owned(),
+                message: if uncertain_tools > 0 {
+                    "Turno interrumpido. Una herramienta pudo haberse ejecutado; su resultado es incierto. No se reintentará automáticamente.".to_owned()
+                } else {
+                    "Turno interrumpido al cerrar la aplicación".to_owned()
+                },
                 is_error: true,
             });
             projection.reset_turn();
@@ -87,7 +177,41 @@ impl TranscriptProjection {
     pub fn apply_kind(&mut self, kind: &AgentEventKind) -> bool {
         match kind {
             AgentEventKind::SessionStarted { .. }
+            | AgentEventKind::ModelContextCommitted { .. }
+            | AgentEventKind::SystemInstructionsCommitted { .. }
+            | AgentEventKind::PlanProposed { .. }
+            | AgentEventKind::PlanUpdated { .. }
+            | AgentEventKind::McpRuntimeCommitted { .. }
+            | AgentEventKind::HooksCommitted { .. }
+            | AgentEventKind::ExecPolicyCommitted { .. }
+            | AgentEventKind::HookStarted { .. }
+            | AgentEventKind::HookFinished { .. }
+            | AgentEventKind::ToolCatalogCommitted { .. }
+            | AgentEventKind::CheckpointCommitted { .. }
             | AgentEventKind::ModelRequestStarted { step: 1, .. } => false,
+            AgentEventKind::TurnAdmitted { .. } => {
+                self.pending_admission_images.clear();
+                false
+            }
+            AgentEventKind::TurnAdmittedWithImages { images, .. } => {
+                self.pending_admission_images = transcript_images(images);
+                false
+            }
+            AgentEventKind::ModelResponseCommitted { assistant, .. } => {
+                self.pending_web_citations =
+                    openide_harness::hosted_web_citations(&assistant.provider_output_items)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .take(32)
+                        .map(|citation| {
+                            (
+                                citation.title.unwrap_or_else(|| citation.url.clone()),
+                                citation.url,
+                            )
+                        })
+                        .collect();
+                false
+            }
             AgentEventKind::ModelRequestStarted { .. } => {
                 let changed = self.finish_streaming();
                 self.active_assistant = None;
@@ -97,14 +221,37 @@ impl TranscriptProjection {
                 self.reset_turn();
                 self.items.push(TranscriptItem::User {
                     content: prompt.clone(),
+                    images: std::mem::take(&mut self.pending_admission_images),
+                });
+                true
+            }
+            AgentEventKind::TurnSteered { text, .. } => {
+                self.finish_streaming();
+                self.active_assistant = None;
+                self.items.push(TranscriptItem::User {
+                    content: text.clone(),
+                    images: Vec::new(),
+                });
+                true
+            }
+            AgentEventKind::TurnSteeredWithImages { text, images, .. } => {
+                self.finish_streaming();
+                self.active_assistant = None;
+                self.items.push(TranscriptItem::User {
+                    content: text.clone(),
+                    images: transcript_images(images),
                 });
                 true
             }
             AgentEventKind::AssistantDelta { content } => self.assistant_delta(content),
-            AgentEventKind::AssistantMessage { content } => self.assistant_message(content),
+            AgentEventKind::AssistantMessage { content } => {
+                let changed = self.assistant_message(content);
+                self.flush_web_citations() || changed
+            }
             AgentEventKind::ToolStarted { tool_call } => {
                 self.finish_streaming();
                 self.active_assistant = None;
+                self.flush_web_citations();
                 if let Some(index) = self.tool_rows.get(&tool_call.id).copied() {
                     if let TranscriptItem::Tool {
                         name,
@@ -180,14 +327,25 @@ impl TranscriptProjection {
                 self.tool_rows.insert(tool_call_id.clone(), index);
                 true
             }
+            AgentEventKind::ToolBatchDiscarded { next_tool_call_id } => {
+                self.items.push(TranscriptItem::Notice {
+                    message: format!(
+                        "Llamadas pendientes descartadas desde {next_tool_call_id}; los efectos anteriores permanecen"
+                    ),
+                    is_error: false,
+                });
+                true
+            }
             AgentEventKind::ProcessOutput { stream, text } => self.process_output(*stream, text),
             AgentEventKind::TurnCompleted { response, .. } => {
                 let changed = self.complete_assistant(response);
+                let cited = self.flush_web_citations();
                 self.reset_turn();
-                changed
+                changed || cited
             }
             AgentEventKind::TurnFailed { error } => {
                 self.finish_streaming();
+                self.flush_web_citations();
                 self.items.push(TranscriptItem::Notice {
                     message: error.clone(),
                     is_error: true,
@@ -197,6 +355,7 @@ impl TranscriptProjection {
             }
             AgentEventKind::TurnCancelled => {
                 self.finish_streaming();
+                self.flush_web_citations();
                 self.items.push(TranscriptItem::Notice {
                     message: "Turno cancelado".into(),
                     is_error: false,
@@ -323,22 +482,260 @@ impl TranscriptProjection {
         false
     }
 
+    fn flush_web_citations(&mut self) -> bool {
+        let mut added = false;
+        for (title, url) in self.pending_web_citations.drain(..) {
+            if self.items.iter().rev().take(32).any(|item| {
+                matches!(item, TranscriptItem::WebCitation { url: existing, .. } if existing == &url)
+            }) {
+                continue;
+            }
+            self.items.push(TranscriptItem::WebCitation { title, url });
+            added = true;
+        }
+        added
+    }
+
     fn reset_turn(&mut self) {
         self.tool_rows.clear();
         self.active_assistant = None;
         self.stdout_row = None;
         self.stdout_text.clear();
+        self.pending_web_citations.clear();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_core::ToolCall;
+    use image::ImageEncoder as _;
+    use openide_core::{AgentMessage, SessionStore, ToolCall, TurnMode};
     use serde_json::json;
 
     fn event(sequence: u64, kind: AgentEventKind) -> AgentEvent {
         AgentEvent::new("session", sequence, kind)
+    }
+
+    fn image_fixture() -> UserImage {
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&[255, 0, 0, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        UserImage::from_bytes(UserImageMime::Png, &png).unwrap()
+    }
+
+    #[test]
+    fn admission_and_steer_images_match_live_and_replayed_rows() {
+        let image = image_fixture();
+        let events = vec![
+            event(
+                1,
+                AgentEventKind::TurnAdmittedWithImages {
+                    turn_id: "turn-1".into(),
+                    prompt: "Describe".into(),
+                    model: "model".into(),
+                    mode: TurnMode::Plan,
+                    images: vec![image.clone()],
+                },
+            ),
+            event(
+                2,
+                AgentEventKind::TurnStarted {
+                    prompt: "Describe".into(),
+                },
+            ),
+            event(
+                3,
+                AgentEventKind::TurnSteeredWithImages {
+                    turn_id: "turn-1".into(),
+                    input_id: "input-1".into(),
+                    text: "También esta".into(),
+                    images: vec![image.clone()],
+                },
+            ),
+            event(
+                4,
+                AgentEventKind::TurnCompleted {
+                    response: "Listo".into(),
+                    steps: 1,
+                },
+            ),
+        ];
+        let mut live = TranscriptProjection::new();
+        for event in &events {
+            live.apply_event(event);
+        }
+        let reopened = TranscriptProjection::from_events(&events);
+        assert_eq!(live.items(), reopened.items());
+        for (index, content) in [(0, "Describe"), (1, "También esta")] {
+            let TranscriptItem::User {
+                content: actual,
+                images,
+            } = &reopened.items()[index]
+            else {
+                panic!("expected user image row");
+            };
+            assert_eq!(actual, content);
+            assert_eq!(images.len(), 1);
+            assert_eq!(images[0].alt, "Imagen adjunta 1 de 1");
+            assert_eq!(
+                images[0].raster.as_ref().unwrap().data_base64(),
+                image.data_base64
+            );
+        }
+    }
+
+    #[test]
+    fn image_admission_reopens_from_disk_without_original_file() {
+        let root = tempfile::tempdir().unwrap();
+        let store = SessionStore::open(root.path()).unwrap();
+        let session = store.create("/workspace", "native").unwrap();
+        let image = image_fixture();
+        store
+            .admit_native_turn_with_images(
+                &session.id,
+                "turn-image",
+                "Describe",
+                "model",
+                TurnMode::Plan,
+                std::slice::from_ref(&image),
+            )
+            .unwrap();
+        drop(store);
+        let reopened = SessionStore::open(root.path()).unwrap();
+        let events = reopened.load(&session.id).unwrap().unwrap().events;
+        let projection = TranscriptProjection::from_events(&events);
+        let TranscriptItem::User { images, .. } = &projection.items()[0] else {
+            panic!("missing admitted user row");
+        };
+        assert_eq!(
+            images[0].raster.as_ref().unwrap().data_base64(),
+            image.data_base64
+        );
+        assert!(matches!(
+            &projection.items()[1],
+            TranscriptItem::Notice { .. }
+        ));
+    }
+
+    #[test]
+    fn malformed_live_image_keeps_label_for_render_boundary_validation() {
+        let mut image = image_fixture();
+        image.sha256 = "0".repeat(64);
+        let mut projection = TranscriptProjection::new();
+        projection.apply_kind(&AgentEventKind::TurnAdmittedWithImages {
+            turn_id: "turn-1".into(),
+            prompt: "Describe".into(),
+            model: "model".into(),
+            mode: TurnMode::Build,
+            images: vec![image],
+        });
+        projection.apply_kind(&AgentEventKind::TurnStarted {
+            prompt: "Describe".into(),
+        });
+        let TranscriptItem::User { images, .. } = &projection.items()[0] else {
+            unreachable!()
+        };
+        assert_eq!(images[0].alt, "Imagen adjunta 1 de 1");
+        assert_eq!(images[0].raster.as_ref().unwrap().sha256(), "0".repeat(64));
+    }
+
+    #[test]
+    fn saved_system_instructions_never_appear_in_transcript() {
+        let content = "Instrucción privada del proyecto";
+        let events = vec![
+            event(
+                1,
+                AgentEventKind::TurnStarted {
+                    prompt: "Revisar código".into(),
+                },
+            ),
+            event(
+                2,
+                AgentEventKind::SystemInstructionsCommitted {
+                    version: openide_core::SYSTEM_INSTRUCTIONS_VERSION,
+                    digest: openide_core::system_instructions_digest(content).unwrap(),
+                    content: content.into(),
+                },
+            ),
+        ];
+        let mut projection = TranscriptProjection::new();
+        for event in &events {
+            projection.apply_event(event);
+        }
+        assert_eq!(
+            projection.items(),
+            &[TranscriptItem::User {
+                content: "Revisar código".into(),
+                images: Vec::new(),
+            }]
+        );
+    }
+
+    #[test]
+    fn web_citation_survives_live_projection_and_reopen() {
+        let mut assistant = AgentMessage::assistant("Encontré una fuente", vec![]);
+        assistant.provider_output_items = vec![json!({
+            "type": "message",
+            "content": [{
+                "type": "output_text",
+                "text": "Encontré una fuente",
+                "annotations": [{
+                    "type": "url_citation",
+                    "start_index": 0,
+                    "end_index": 8,
+                    "url": "https://example.com/source",
+                    "title": "Fuente primaria"
+                }]
+            }]
+        })];
+        let events = vec![
+            event(
+                1,
+                AgentEventKind::TurnStarted {
+                    prompt: "Busca".into(),
+                },
+            ),
+            event(
+                2,
+                AgentEventKind::AssistantDelta {
+                    content: "Encontré una fuente".into(),
+                },
+            ),
+            event(
+                3,
+                AgentEventKind::ModelResponseCommitted {
+                    step: 1,
+                    assistant,
+                    response_id: Some("response-1".into()),
+                    usage: None,
+                },
+            ),
+            event(
+                4,
+                AgentEventKind::AssistantMessage {
+                    content: "Encontré una fuente".into(),
+                },
+            ),
+            event(
+                5,
+                AgentEventKind::TurnCompleted {
+                    response: "Encontré una fuente".into(),
+                    steps: 1,
+                },
+            ),
+        ];
+        let mut live = TranscriptProjection::new();
+        for event in &events {
+            live.apply_event(event);
+        }
+        let reopened = TranscriptProjection::from_events(&events);
+        assert_eq!(live.items(), reopened.items());
+        assert!(matches!(
+            &live.items()[2],
+            TranscriptItem::WebCitation { title, url }
+                if title == "Fuente primaria" && url == "https://example.com/source"
+        ));
     }
 
     #[test]
@@ -511,6 +908,103 @@ mod tests {
     }
 
     #[test]
+    fn replay_marks_unfinished_tool_effect_as_uncertain() {
+        let events = vec![
+            event(
+                1,
+                AgentEventKind::TurnStarted {
+                    prompt: "Change file".into(),
+                },
+            ),
+            event(
+                2,
+                AgentEventKind::ToolStarted {
+                    tool_call: ToolCall {
+                        id: "call-1".into(),
+                        name: "write_file".into(),
+                        arguments: json!({"path":"file.txt","content":"x"}),
+                    },
+                },
+            ),
+        ];
+        let projection = TranscriptProjection::from_events(&events);
+        assert!(matches!(
+            &projection.items()[1],
+            TranscriptItem::Tool { output: None, .. }
+        ));
+        assert!(matches!(
+            &projection.items()[2],
+            TranscriptItem::Notice { message, is_error: true }
+                if message.contains("resultado es incierto")
+                    && message.contains("No se reintentará automáticamente")
+        ));
+    }
+
+    #[test]
+    fn replay_shows_admitted_prompt_when_worker_never_started() {
+        let events = vec![event(
+            1,
+            AgentEventKind::TurnAdmitted {
+                turn_id: "turn-1".into(),
+                prompt: "Inspect the workspace".into(),
+                model: "model-a".into(),
+                mode: TurnMode::Plan,
+            },
+        )];
+        let projection = TranscriptProjection::from_events(&events);
+        assert_eq!(projection.items().len(), 2);
+        assert_eq!(
+            projection.items()[0],
+            TranscriptItem::User {
+                content: "Inspect the workspace".into(),
+                images: Vec::new(),
+            }
+        );
+        assert!(matches!(
+            &projection.items()[1],
+            TranscriptItem::Notice { is_error: true, .. }
+        ));
+    }
+
+    #[test]
+    fn admitted_then_started_turn_projects_one_user_prompt() {
+        let events = vec![
+            event(
+                1,
+                AgentEventKind::TurnAdmitted {
+                    turn_id: "turn-1".into(),
+                    prompt: "Inspect the workspace".into(),
+                    model: "model-a".into(),
+                    mode: TurnMode::Plan,
+                },
+            ),
+            event(
+                2,
+                AgentEventKind::TurnStarted {
+                    prompt: "Inspect the workspace".into(),
+                },
+            ),
+            event(
+                3,
+                AgentEventKind::TurnCompleted {
+                    response: "Done".into(),
+                    steps: 1,
+                },
+            ),
+        ];
+        let projection = TranscriptProjection::from_events(&events);
+        assert_eq!(projection.items().len(), 2);
+        assert!(matches!(
+            &projection.items()[0],
+            TranscriptItem::User { .. }
+        ));
+        assert!(matches!(
+            &projection.items()[1],
+            TranscriptItem::Assistant { .. }
+        ));
+    }
+
+    #[test]
     fn cancellation_preserves_partial_output_and_adds_notice() {
         let mut projection = TranscriptProjection::new();
         projection.apply_kind(&AgentEventKind::TurnStarted {
@@ -535,5 +1029,23 @@ mod tests {
                 is_error: false,
             }
         );
+    }
+
+    #[test]
+    fn discarded_batch_is_visible_without_synthesizing_tool_results() {
+        let mut projection = TranscriptProjection::new();
+        projection.apply_kind(&AgentEventKind::TurnStarted {
+            prompt: "Edit notes".into(),
+        });
+        projection.apply_kind(&AgentEventKind::TurnCancelled);
+        projection.apply_kind(&AgentEventKind::ToolBatchDiscarded {
+            next_tool_call_id: "call-2".into(),
+        });
+        assert_eq!(projection.items().len(), 3);
+        assert!(matches!(
+            &projection.items()[2],
+            TranscriptItem::Notice { message, is_error: false }
+                if message.contains("call-2")
+        ));
     }
 }

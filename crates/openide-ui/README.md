@@ -7,7 +7,7 @@ El backend de ventana traduce esos comandos a su propio renderer.
 
 ## Contrato para el backend
 
-1. Construir el árbol con `Element::{column,row,panel,overlay,popover,scroll,text,formatted_text,icon,button,icon_button,text_input,text_area,spacer}`.
+1. Construir el árbol con `Element::{column,row,panel,overlay,popover,scroll,text,formatted_text,icon,button,icon_button,text_input,text_area,skeleton,spinner,spacer}`.
 2. Conservar una instancia de `UiTree` y llamar `set_root` al actualizar el árbol.
    Los controles con el mismo ID conservan foco, cursor, selección y scroll.
 3. Llamar `layout(Size)` antes de entregar eventos de puntero y otra vez antes
@@ -83,6 +83,58 @@ El motor no depende de Warp ni de sus recursos. Toma como referencia la
 separación conceptual entre estado, árbol visual, layout, escena y renderer que
 Warp documenta para su framework de UI.
 
+`Skeleton` representa contenido en carga sin agregar un objetivo de clic. Su
+pulso de color se calcula en `motion.rs`, conserva la fase por ID entre cambios
+del árbol y no cambia la geometría. El host sigue usando `is_animating()` para
+pedir repintados; al quitar los Skeletons del árbol, deja de pedirlos. Con
+`set_reduced_motion(true)` el bloque queda estático.
+
+```rust
+use openide_ui::{Component, ComponentPalette, Skeleton};
+
+let placeholder = Skeleton::new("catalog-title", ComponentPalette::neutral_dark())
+    .width(180.0)
+    .height(12.0)
+    .radius(6.0)
+    .render();
+```
+
+`Spinner` indica una operación sin duración conocida. Su forma predeterminada
+es un aro incompleto que gira continuamente; `SpinnerVariant::Spokes` ofrece la
+variante de radios. El backend dibuja ambas con trazos vectoriales. Conserva la
+fase por ID, no crea una región interactiva y se detiene en una posición fija
+con `UiTree::set_reduced_motion(true)`.
+
+```rust
+use openide_ui::{Color, Component, Spinner, SpinnerVariant};
+
+let progress = Spinner::new("search-progress", Color::WHITE)
+    .size(28.0)
+    .variant(SpinnerVariant::Circle)
+    .render();
+```
+
+`Modal` sirve para formularios que deben quedar centrados sobre la ventana. Su
+`body` es desplazable cuando se fija `height`, con la barra reservada fuera del
+ancho del formulario; la cabecera y el pie permanecen visibles.
+`initial_focus` elige el primer campo; Escape y la X gruesa sin círculo
+despachan el mismo ID de cierre, y el foco vuelve al control anterior al cerrar.
+El fondo queda bloqueado y `backdrop_dismiss(true)` permite cerrar al pulsarlo
+cuando el flujo admite descartarlo.
+
+`Stepper` muestra pasos completados, activo y pendientes en una barra compacta.
+Recibe el paso actual del host y emite los IDs de los pasos ya alcanzados;
+los pendientes no se pueden pulsar para saltar validaciones. El host muestra
+un solo formulario por paso, conserva los valores al volver y decide si
+`Siguiente` puede avanzar. Automatizaciones lo usa para Contenido, Horario y
+Agente dentro del `Modal`, con un único scroll exterior al formulario.
+
+`DatePicker` ofrece entrada ISO y calendario mensual navegable; `TimePicker`
+ofrece entrada `HH:MM` y ajustes de hora/minuto. `DateTimePicker` los combina
+sin unir sus estados, para conservar lo escrito en cada campo mientras se
+edita el otro. El host procesa los IDs de navegación y selección que documenta
+cada componente y valida los valores antes de guardar.
+
 ## Controles compartidos
 
 `Button` es la acción compartida de la aplicación. `ButtonContent` distingue
@@ -93,6 +145,50 @@ quita la región de clic y foco. `.tooltip(...)` y
 `.tooltip_shortcut(...)` asocian una ayuda al mismo ID de acción. El atajo se
 muestra en la ayuda; la activación por teclado sigue el enrutamiento de
 `UiTree` y la aplicación interpreta `UiAction::Clicked`.
+
+`Empty` ofrece un estado vacío centrado con icono, título, descripción y una o
+varias acciones `Button`. Mantiene una altura legible aun si el contenedor pide
+menos espacio: 256 px, o 228 px con `.compact()`. `.height(...)` permite darle
+más espacio, por ejemplo para centrarlo en el viewport. `.action_element(...)`
+admite un control propio en la misma fila centrada. Por ejemplo:
+
+```rust
+use openide_ui::{Button, ButtonVariant, Component, ComponentPalette, Empty, Icon};
+
+let palette = ComponentPalette::neutral_dark();
+let retry = Button::new("retry", "Reintentar", palette)
+    .variant(ButtonVariant::Secondary)
+    .render();
+let empty = Empty::new("Sin resultados", "Prueba otro término.", palette)
+    .icon(Icon::Search)
+    .compact()
+    .height(320.0)
+    .action_element(retry)
+    .render();
+```
+
+El borde discontinuo y la versión compacta sirven para páginas y paneles.
+`Kbd::new("Ctrl+Shift+M", palette)` muestra el atajo
+completo en una cápsula. Úsalo también en filas y listas; `Tooltip::shortcut`,
+`Search::shortcut`, `DropdownMenuItem::shortcut` y `MenuItem::shortcut` aplican
+el mismo tratamiento. Para un estado como “Abierta”, usa
+`DropdownMenuItem::annotation` y conserva el texto sin apariencia de tecla.
+`Search` (también disponible como `SearchField`) permite agregar una pista con
+`.shortcut("Ctrl+K")` dentro del único objetivo de foco del campo. Todas las
+instancias de `Tabs` comparten el carril redondeado del selector de
+Grupo/Proyecto, incluido su indicador animado.
+
+`TextField` y `TextArea` aplican la misma paleta, borde de foco y densidad a los
+formularios. Ambos conservan el valor por ID y dejan de emitir acciones de
+entrada al usar `.disabled()` o `.enabled(false)`; el host sigue manejando
+`UiAction::InputChanged`.
+
+Las variantes visuales son `Default`, `Secondary`, `Outline`, `Ghost`,
+`Destructive`, `Link`, `Warning` y `Success`. `Link` se subraya al recibir hover
+o foco de teclado. `ButtonSize` ofrece `Default` (36 px), `Small` (32 px),
+`Large` (40 px), `Icon` (36 px), `IconSmall` (32 px) e `IconExtraSmall` (24 px)
+mediante `.button_size(...)`. `Subtle`, `Raised` y `Solid`, junto con
+`.size(ControlSize)`, siguen disponibles para los controles existentes.
 
 ```rust
 use openide_ui::{Button, ButtonContent, ButtonVariant, Component,
@@ -125,6 +221,24 @@ componente para compartir columnas, navegación y movimiento. `MenuMotion`
 controla la entrada del popover y la transición de hover/pulsación de cada
 fila; `UiTree::set_reduced_motion(true)` los muestra sin animación. El host
 mantiene el estado abierto y procesa los IDs de las acciones.
+El popover pinta una sola superficie; las filas normales son transparentes y
+solo la fila bajo el puntero o seleccionada recibe un fondo. Así el fundido de
+entrada y salida no superpone capas de color en todas las filas.
+Una fila puede declarar `.submenu(vec![...])`; el panel secundario aparece al
+pasar el puntero o enfocar la fila, se coloca a la derecha y cambia a la
+izquierda si falta espacio. Flecha derecha entra al submenú y flecha izquierda
+regresa a su fila. Encabezados y separadores también funcionan dentro de él.
+`DropdownMenuEntry::Custom` permite incluir controles propios cuando hacen falta;
+las acciones destructivas pueden
+usar `.destructive(color)`.
+
+`AlertDialog` muestra una superficie modal centrada con título, descripción,
+cancelación, cierre y acción principal. El fondo atenuado bloquea acciones de
+la pantalla; Escape cancela y un clic fuera no cierra el diálogo. El foco queda dentro
+del diálogo y vuelve al control anterior al cerrarlo. El host conserva el
+estado abierto y ejecuta la operación sólo tras recibir el ID de confirmación.
+`.body(element)` agrega un campo u otro contenido entre la descripción y el
+pie; el renombrado de tareas y grupos usa esta forma en lugar de un menú lateral.
 
 `Composer` ofrece un editor multilínea controlado y espacios para contexto,
 adjuntos y pie. El host suministra el texto, alto, ancho y colores en cada
@@ -141,6 +255,13 @@ el menú con su borde derecho. `SegmentedControl` mantiene el radio del track
 en 9 px para acompañar los 7 px de los tabs y el inset de 2 px.
 En listas que superan ocho opciones, flechas, Home/End y Tab desplazan el
 `ScrollArea` para revelar la opción enfocada.
+
+`ScrollArea::uniform_list` construye solo las filas visibles; la lista de
+tareas y el árbol de archivos lo usan para mantener estable el trabajo por
+cuadro. Las áreas anidadas reparten un gesto de rueda: al llegar un panel a su
+límite, el desplazamiento restante pasa al contenedor exterior en el mismo
+evento. Los deltas no finitos se descartan y la posición conservada por ID se
+limita al contenido actual.
 
 ```rust
 use openide_ui::{Component, ComponentPalette, DropdownList, DropdownOption,

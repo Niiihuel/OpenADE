@@ -3,7 +3,7 @@
 //! These functions describe UI only. Callers own values, loading state and
 //! action IDs; an optional action is rendered only when it is supplied.
 
-use openide_ui::{Color, Element, FontFamily, Icon};
+use openide_ui::{Color, Component, Element, Empty, FontFamily, Icon, Skeleton};
 
 use crate::theme;
 
@@ -195,23 +195,36 @@ pub fn empty_state(
     description: impl Into<String>,
     action: Option<Element>,
 ) -> Element {
-    state_panel(
-        Icon::Grid,
-        title,
-        description,
-        theme::FOREGROUND_SUBTLE,
-        action,
-    )
+    let mut empty = Empty::new(title, description, theme::component_palette()).icon(Icon::Grid);
+    if let Some(action) = action {
+        empty = empty.action_element(action);
+    }
+    empty.render()
 }
 
 /// A named in-progress operation. No fake retry or cancel action is shown.
 pub fn loading_state(title: impl Into<String>, description: impl Into<String>) -> Element {
+    let title = title.into();
+    let palette = theme::component_palette();
+    let placeholder_id = format!("settings-loading:{title}");
     state_panel(
         Icon::Refresh,
         title,
         description,
         theme::FOREGROUND_SUBTLE,
-        None,
+        Some(
+            Element::row(vec![
+                Skeleton::circle(format!("{placeholder_id}:icon"), palette, 32.0).render(),
+                Element::column(vec![
+                    Skeleton::line(format!("{placeholder_id}:name"), palette, 188.0).render(),
+                    Skeleton::line(format!("{placeholder_id}:detail"), palette, 120.0)
+                        .height(10.0)
+                        .render(),
+                ])
+                .gap(7.0),
+            ])
+            .gap(12.0),
+        ),
     )
 }
 
@@ -312,5 +325,24 @@ mod tests {
         let mut ids = Vec::new();
         action_ids(&banner, &mut ids);
         assert_eq!(ids, vec!["dismiss_notice".to_owned()]);
+    }
+
+    #[test]
+    fn loading_state_contains_passive_skeletons() {
+        fn count_skeletons(element: &Element) -> usize {
+            match &element.kind {
+                ElementKind::Skeleton { .. } => 1,
+                ElementKind::Column(children) | ElementKind::Row(children) => {
+                    children.iter().map(count_skeletons).sum()
+                }
+                ElementKind::Panel(child) => count_skeletons(child),
+                _ => 0,
+            }
+        }
+        let loading = loading_state("Cargando", "Espera un momento");
+        assert_eq!(count_skeletons(&loading), 3);
+        let mut ids = Vec::new();
+        action_ids(&loading, &mut ids);
+        assert!(ids.is_empty());
     }
 }

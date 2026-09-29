@@ -4,14 +4,15 @@
 //! Each item owns one complete hit target, so moving between its icon, label,
 //! and trailing hint never creates separate hover patches.
 
-use crate::{Color, Component, ComponentPalette, Element, FontFamily, Icon, ICON_SIZE};
+use crate::{Color, Component, ComponentPalette, Element, FontFamily, Icon, Kbd, ICON_SIZE};
 
-/// A full-width menu action with optional icon and trailing annotation.
+/// A full-width menu action with an optional icon, annotation or shortcut.
 pub struct MenuItem {
     action_id: String,
     label: String,
     icon: Option<Icon>,
     trailing: Option<String>,
+    shortcut: Option<String>,
     width: f32,
     height: f32,
     palette: ComponentPalette,
@@ -29,6 +30,7 @@ impl MenuItem {
             label: label.into(),
             icon: None,
             trailing: None,
+            shortcut: None,
             width: 220.0,
             height: 36.0,
             palette,
@@ -43,6 +45,13 @@ impl MenuItem {
 
     pub fn trailing(mut self, trailing: impl Into<String>) -> Self {
         self.trailing = Some(trailing.into());
+        self.shortcut = None;
+        self
+    }
+
+    pub fn shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.shortcut = Some(shortcut.into());
+        self.trailing = None;
         self
     }
 
@@ -69,7 +78,7 @@ impl MenuItem {
 impl Component for MenuItem {
     fn render(self) -> Element {
         let ink = self.destructive.unwrap_or(self.palette.text);
-        let content_height = (self.height - 18.0).max(12.0);
+        let content_height = (self.height - 14.0).max(10.0);
         let mut children = Vec::with_capacity(3);
         if let Some(icon) = self.icon {
             children.push(
@@ -86,7 +95,9 @@ impl Component for MenuItem {
                 .size(None, Some(content_height))
                 .flex(1.0),
         );
-        if let Some(trailing) = self.trailing {
+        if let Some(shortcut) = self.shortcut {
+            children.push(Kbd::new(shortcut, self.palette).render());
+        } else if let Some(trailing) = self.trailing {
             children.push(
                 Element::text(trailing)
                     .foreground(self.palette.muted)
@@ -96,12 +107,11 @@ impl Component for MenuItem {
             );
         }
         Element::clickable(self.action_id, Element::row(children).gap(10.0))
-            .background(self.palette.raised)
             .hover_background(self.palette.hover)
             .pressed_background(self.palette.selected)
             .transition_ms(0)
             .foreground(ink)
-            .padding(9.0)
+            .padding(7.0)
             .radius(7.0)
             .size(Some(self.width), Some(self.height))
     }
@@ -139,12 +149,16 @@ mod tests {
         let mut tree = UiTree::new(
             MenuItem::new("rename", "Renombrar", palette)
                 .icon(Icon::Edit)
-                .trailing("Ctrl+R")
+                .shortcut("Ctrl+R")
                 .width(236.0)
                 .render(),
         );
         tree.set_reduced_motion(true);
-        tree.layout(Size::new(236.0, 36.0));
+        let initial = tree.layout(Size::new(236.0, 36.0));
+        assert!(initial.commands.iter().any(|command| matches!(command,
+            DrawCommand::Text { text, font_family: FontFamily::Monospace, .. }
+                if text == "Ctrl+R"
+        )));
         for x in [8.0, 42.0, 205.0] {
             tree.handle_event(UiEvent::PointerMove(Point::new(x, 18.0)));
             let frame = tree.layout(Size::new(236.0, 36.0));

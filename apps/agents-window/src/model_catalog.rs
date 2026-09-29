@@ -36,6 +36,12 @@ impl CatalogSnapshot {
     pub fn is_stale(&self, ttl: Duration) -> bool {
         now_ms().saturating_sub(self.fetched_at_ms) >= ttl.as_millis() as u64
     }
+
+    /// Discovery metadata only. A caller must separately resolve an adapter,
+    /// credential source, and reviewed or explicit execution route.
+    pub fn model(&self, provider_id: &str, model_id: &str) -> Option<&ModelInfo> {
+        self.providers.get(provider_id)?.models.get(model_id)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -584,6 +590,9 @@ mod tests {
         assert_eq!(model.extra["new_model_field"], json!({"supported": true}));
         assert!(!provider.models["model-two"].tool_call);
         assert_eq!(provider.models["model-two"].cost, None);
+        assert_eq!(snapshot.model("example", "model-one"), Some(model));
+        assert!(snapshot.model("example", "absent").is_none());
+        assert!(snapshot.model("absent", "model-one").is_none());
     }
 
     #[test]

@@ -5,8 +5,9 @@
 //! are different runtimes and are not offered as installable items here.
 
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon, IconButton,
-    ScrollArea, SearchField, Switch, Tab, Tabs,
+    Button, ButtonVariant, Color, Component, ControlSize, DropdownMenu, DropdownMenuItem, Element,
+    Empty, FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Switch, Tab, Tabs,
+    TextField, TextSpan, Tooltip,
 };
 
 use crate::{
@@ -14,8 +15,9 @@ use crate::{
     theme,
 };
 
-const MAX_WIDTH: f32 = 1040.0;
-const CARD_GAP: f32 = 12.0;
+// Keep the center-dock measure in sync with Automations.
+const MAX_WIDTH: f32 = 960.0;
+const CARD_GAP: f32 = 8.0;
 
 #[derive(Clone, Debug)]
 pub struct MarketplaceViewState {
@@ -28,6 +30,8 @@ pub struct MarketplaceViewState {
     pub install_scope: InstallScope,
     pub status: Option<String>,
     pub busy: bool,
+    pub pending_uninstall_id: Option<String>,
+    pub pending_remove_source_id: Option<String>,
 }
 
 impl Default for MarketplaceViewState {
@@ -42,6 +46,8 @@ impl Default for MarketplaceViewState {
             install_scope: InstallScope::User,
             status: None,
             busy: false,
+            pending_uninstall_id: None,
+            pending_remove_source_id: None,
         }
     }
 }
@@ -61,7 +67,7 @@ fn clipped(value: impl Into<String>, color: Color, size: f32) -> Element {
 }
 
 fn title(value: &str) -> Element {
-    text(value, theme::FOREGROUND, 20.0)
+    text(value, theme::FOREGROUND, 15.0)
 }
 
 fn divider() -> Element {
@@ -70,45 +76,12 @@ fn divider() -> Element {
         .background(theme::BORDER)
 }
 
-fn button(id: impl Into<String>, label: impl Into<String>, prominent: bool) -> Element {
-    Button::new(
-        id,
-        label,
-        theme::action_palette(
-            if prominent { theme::BRAND } else { theme::CARD },
-            if prominent {
-                theme::PRIMARY_FOREGROUND
-            } else {
-                theme::FOREGROUND
-            },
-        ),
-    )
-    .variant(if prominent {
-        ButtonVariant::Solid
-    } else {
-        ButtonVariant::Outline
-    })
-    .size(ControlSize::Regular)
-    .render()
-}
-
-fn icon_button(id: impl Into<String>, icon: Icon) -> Element {
-    IconButton::new(
-        id,
-        icon,
-        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
-    )
-    .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Regular)
-    .render()
-    .size(Some(32.0), Some(32.0))
-}
-
 fn capsule(value: impl Into<String>) -> Element {
-    Element::panel(text(value, theme::FOREGROUND_SUBTLE, 11.0))
-        .padding(6.0)
+    Element::panel(text(value, theme::FOREGROUND_SUBTLE, 10.0))
+        .padding(5.0)
         .background(theme::SELECTED)
-        .radius(7.0)
+        .radius(6.0)
+        .size(None, Some(20.0))
 }
 
 fn source_label(kind: SourceKind) -> &'static str {
@@ -140,7 +113,7 @@ fn section_heading(label: &str, count: usize) -> Element {
         capsule(count.to_string()),
     ])
     .gap(10.0)
-    .size(None, Some(32.0))
+    .size(None, Some(24.0))
 }
 
 fn item_card(item: &MarketplaceItem, width: f32, busy: bool) -> Element {
@@ -150,82 +123,89 @@ fn item_card(item: &MarketplaceItem, width: f32, busy: bool) -> Element {
         } else {
             Icon::Folder
         })
-        .foreground(theme::FOREGROUND)
+        .foreground(theme::FOREGROUND_SUBTLE)
         .size(Some(16.0), Some(16.0)),
     )
     .background(theme::SELECTED)
-    .padding(12.0)
-    .radius(11.0)
-    .size(Some(40.0), Some(40.0));
+    .padding(8.0)
+    .radius(8.0)
+    .size(Some(32.0), Some(32.0));
     let header = Element::row(vec![
         marker,
         Element::column(vec![
-            clipped(&item.name, theme::FOREGROUND, 14.0),
+            clipped(&item.name, theme::FOREGROUND, 13.0),
             clipped(
                 format!("{} · {}", item.source_name, source_label(item.source_kind)),
                 theme::FOREGROUND_SUBTLE,
-                11.0,
+                10.0,
             ),
         ])
-        .gap(3.0)
+        .gap(2.0)
         .flex(1.0),
     ])
-    .gap(10.0)
-    .size(None, Some(42.0));
+    .gap(8.0)
+    .size(None, Some(34.0));
 
     let mut details = vec![
         header,
-        clipped(&item.description, theme::FOREGROUND_SUBTLE, 12.0).size(None, Some(31.0)),
+        clipped(&item.description, theme::FOREGROUND_SUBTLE, 12.0).size(None, Some(18.0)),
     ];
     if !item.source_available {
         details.push(text(
             "El origen ya no está disponible",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
+            theme::DESTRUCTIVE,
+            10.0,
         ));
     }
     let bottom = if let Some(scope) = item.installed_scope {
         let badge = capsule(format!("Instalada · {}", scope_label(scope)));
-        let toggle = Switch::new(
-            format!("marketplace_toggle:{}", item.id),
-            item.enabled,
+        let toggle_id = format!("marketplace_toggle:{}", item.id);
+        let toggle = Tooltip::new(
+            Switch::new(&toggle_id, item.enabled, theme::component_palette())
+                .enabled(!busy)
+                .render(),
+            toggle_id,
+            if item.enabled {
+                "Desactivar skill"
+            } else {
+                "Activar skill"
+            },
             theme::component_palette(),
         )
-        .enabled(!busy)
         .render();
         let uninstall = IconButton::new(
             format!("marketplace_uninstall:{}", item.id),
             Icon::Trash,
-            theme::action_palette(theme::CARD, theme::FOREGROUND_SUBTLE),
+            theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE),
         )
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Regular)
+        .size(ControlSize::Compact)
+        .tooltip("Desinstalar skill")
         .enabled(!busy)
-        .render()
-        .size(Some(30.0), Some(30.0));
-        if width < 390.0 {
+        .render();
+        if width < 350.0 {
             Element::column(vec![
                 Element::row(vec![badge, Element::spacer().flex(1.0)]),
                 Element::row(vec![
-                    text("Activa", theme::FOREGROUND_SUBTLE, 11.0),
+                    text("Habilitada", theme::FOREGROUND_SUBTLE, 10.0),
                     toggle,
                     Element::spacer().flex(1.0),
                     uninstall,
                 ])
-                .gap(7.0)
-                .size(None, Some(30.0)),
+                .gap(6.0)
+                .size(None, Some(28.0)),
             ])
-            .gap(6.0)
+            .gap(4.0)
         } else {
             Element::row(vec![
                 badge,
                 Element::spacer().flex(1.0),
-                text("Activa", theme::FOREGROUND_SUBTLE, 11.0),
+                text("Habilitada", theme::FOREGROUND_SUBTLE, 10.0),
                 toggle,
                 uninstall,
             ])
-            .gap(7.0)
-            .size(None, Some(32.0))
+            .gap(6.0)
+            .size(None, Some(28.0))
         }
     } else {
         let license = capsule(
@@ -244,21 +224,20 @@ fn item_card(item: &MarketplaceItem, width: f32, busy: bool) -> Element {
         .enabled(!busy && item.source_available)
         .render();
         Element::row(vec![license, Element::spacer().flex(1.0), install])
-            .gap(7.0)
-            .size(None, Some(32.0))
+            .gap(6.0)
+            .size(None, Some(28.0))
     };
-    details.push(Element::spacer().size(None, Some(3.0)));
     details.push(bottom);
-    Element::panel(Element::column(details).gap(12.0))
-        .padding(16.0)
+    Element::panel(Element::column(details).gap(5.0))
+        .padding(10.0)
         .background(theme::PANEL)
         .border(theme::BORDER, 1.0)
-        .radius(13.0)
+        .radius(10.0)
         .size(Some(width), None)
 }
 
 fn item_grid(items: &[&MarketplaceItem], width: f32, busy: bool) -> Element {
-    let two_columns = width >= 700.0;
+    let two_columns = width >= 690.0;
     let card_width = if two_columns {
         (width - CARD_GAP) / 2.0
     } else {
@@ -278,164 +257,131 @@ fn item_grid(items: &[&MarketplaceItem], width: f32, busy: bool) -> Element {
     Element::column(rows).gap(CARD_GAP)
 }
 
-fn source_editor(state: &MarketplaceViewState, width: f32) -> Option<Element> {
-    if !state.add_menu_open {
-        return None;
-    }
-    let kind = state.add_source_kind;
-    let choices = vec![
-        Button::new(
-            "marketplace_source_kind:local",
-            "Carpeta local",
-            theme::action_palette(
-                if kind == Some(SourceKind::Local) {
-                    theme::SELECTED
-                } else {
-                    theme::CARD
-                },
-                theme::FOREGROUND,
-            ),
-        )
-        .icon(Icon::Folder)
-        .variant(ButtonVariant::Subtle)
-        .active(kind == Some(SourceKind::Local))
-        .render(),
-        Button::new(
-            "marketplace_source_kind:github",
-            "GitHub",
-            theme::action_palette(
-                if kind == Some(SourceKind::Github) {
-                    theme::SELECTED
-                } else {
-                    theme::CARD
-                },
-                theme::FOREGROUND,
-            ),
-        )
-        .icon(Icon::Github)
-        .variant(ButtonVariant::Subtle)
-        .active(kind == Some(SourceKind::Github))
-        .render(),
-    ];
-    let choice = if width < 390.0 {
-        Element::column(choices).gap(8.0)
-    } else {
-        Element::row(choices).gap(8.0)
-    };
+fn source_form_body(state: &MarketplaceViewState, width: f32) -> Element {
+    let kind = state.add_source_kind.expect("source form requires a kind");
     let mut contents = vec![
-        Element::row(vec![
-            text("Agregar origen", theme::FOREGROUND, 16.0),
-            Element::spacer().flex(1.0),
-            icon_button("marketplace_source_cancel", Icon::Close),
-        ]),
         text(
-            "Se buscan carpetas con SKILL.md. Revisa el origen antes de instalar.",
-            theme::FOREGROUND_SUBTLE,
+            match kind {
+                SourceKind::Local => "Ruta de la carpeta",
+                SourceKind::Github => "URL del repositorio",
+            },
+            theme::FOREGROUND,
             12.0,
         ),
-        choice,
+        TextField::new(
+            "marketplace_source_draft",
+            &state.source_draft,
+            match kind {
+                SourceKind::Local => "Ruta absoluta a la carpeta de skills",
+                SourceKind::Github => "https://github.com/usuario/repositorio",
+            },
+            theme::component_palette(),
+        )
+        .size(ControlSize::Regular)
+        .width((width - 48.0).max(80.0))
+        .enabled(!state.busy)
+        .render(),
+        text(
+            match kind {
+                SourceKind::Local => "Se detectarán las carpetas que contengan SKILL.md.",
+                SourceKind::Github => "Usa una URL de GitHub que contenga archivos SKILL.md.",
+            },
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ),
     ];
-    if let Some(kind) = kind {
+    if let Some(status) = state.status.as_deref() {
         contents.push(
-            Element::text_input(
-                "marketplace_source_draft",
-                &state.source_draft,
-                match kind {
-                    SourceKind::Local => "Ruta absoluta a la carpeta de skills",
-                    SourceKind::Github => "https://github.com/usuario/repositorio",
+            Element::formatted_text(vec![TextSpan::new(
+                status,
+                if state.busy {
+                    theme::FOREGROUND_SUBTLE
+                } else {
+                    theme::DESTRUCTIVE
                 },
-            )
-            .background(theme::INPUT)
-            .foreground(theme::FOREGROUND)
-            .focus_border(theme::FOREGROUND_SUBTLE, 1.0)
-            .border(theme::BORDER, 1.0)
-            .font_family(FontFamily::Sans)
-            .font_size(13.0)
-            .radius(9.0)
-            .min_size(80.0, 38.0),
-        );
-        contents.push(
-            Element::row(vec![
-                Element::spacer().flex(1.0),
-                Button::new(
-                    "marketplace_source_submit",
-                    "Agregar origen",
-                    theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
-                )
-                .variant(ButtonVariant::Solid)
-                .enabled(!state.busy && !state.source_draft.trim().is_empty())
-                .render(),
-            ])
-            .gap(8.0),
+                11.0,
+                FontFamily::Sans,
+            )])
+            .size(Some((width - 40.0).max(80.0)), None),
         );
     }
-    Some(
-        Element::panel(Element::column(contents).gap(12.0))
-            .padding(16.0)
-            .background(theme::CARD)
-            .border(theme::BORDER, 1.0)
-            .radius(13.0)
-            .size(Some(width), None),
-    )
+    Element::column(contents).gap(8.0)
+}
+
+fn source_form_footer(state: &MarketplaceViewState) -> Element {
+    Element::row(vec![
+        Element::spacer().flex(1.0),
+        Button::new(
+            "marketplace_source_cancel",
+            "Cancelar",
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .enabled(!state.busy)
+        .render(),
+        Button::new(
+            "marketplace_source_submit",
+            if state.busy {
+                "Agregando…"
+            } else {
+                "Agregar origen"
+            },
+            theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+        )
+        .variant(ButtonVariant::Solid)
+        .size(ControlSize::Compact)
+        .enabled(!state.busy && !state.source_draft.trim().is_empty())
+        .render(),
+    ])
+    .gap(8.0)
 }
 
 fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
     let mut rows = vec![section_heading("Orígenes", state.snapshot.sources.len())];
-    if state.snapshot.sources.is_empty() {
-        rows.push(text(
-            "No hay orígenes agregados. Puedes empezar con una carpeta local o un repositorio GitHub.",
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        ));
-    } else {
-        for source in &state.snapshot.sources {
-            rows.push(
-                Element::row(vec![
-                    Element::icon(match source.kind {
-                        SourceKind::Local => Icon::Folder,
-                        SourceKind::Github => Icon::Github,
-                    })
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(Some(16.0), Some(16.0)),
-                    Element::column(vec![
-                        clipped(&source.name, theme::FOREGROUND, 13.0),
-                        clipped(&source.location, theme::FOREGROUND_SUBTLE, 11.0),
-                    ])
-                    .gap(4.0)
-                    .flex(1.0),
-                    IconButton::new(
-                        format!("marketplace_remove_source:{}", source.id),
-                        Icon::Trash,
-                        theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE),
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Regular)
-                    .enabled(!state.busy)
-                    .render()
-                    .size(Some(32.0), Some(32.0)),
+    for source in &state.snapshot.sources {
+        rows.push(
+            Element::row(vec![
+                Element::icon(match source.kind {
+                    SourceKind::Local => Icon::Folder,
+                    SourceKind::Github => Icon::Github,
+                })
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(16.0), Some(16.0)),
+                Element::column(vec![
+                    clipped(&source.name, theme::FOREGROUND, 12.0),
+                    clipped(&source.location, theme::FOREGROUND_SUBTLE, 10.0),
                 ])
-                .gap(12.0)
-                .padding(10.0)
-                .background(theme::PANEL)
-                .radius(10.0)
-                .size(None, Some(58.0)),
-            );
-        }
+                .gap(2.0)
+                .flex(1.0),
+                IconButton::new(
+                    format!("marketplace_remove_source:{}", source.id),
+                    Icon::Trash,
+                    theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Quitar origen")
+                .enabled(!state.busy)
+                .render(),
+            ])
+            .gap(8.0)
+            .padding(8.0)
+            .background(theme::PANEL)
+            .border(theme::BORDER, 1.0)
+            .radius(8.0)
+            .size(None, Some(48.0)),
+        );
     }
-    Element::column(rows).gap(8.0).size(Some(width), None)
+    Element::column(rows).gap(6.0).size(Some(width), None)
 }
 
 /// Build the Marketplace's scrollable center-dock surface. The host owns all
 /// state changes and should refresh the snapshot after a completed operation.
 pub fn marketplace_page(state: &MarketplaceViewState, available_width: f32) -> Element {
-    let width = (available_width - 48.0).clamp(260.0, MAX_WIDTH);
-    let compact = width < 620.0;
-    let installed = state
-        .snapshot
-        .items
-        .iter()
-        .filter(|item| item.installed_scope.is_some())
-        .count();
+    let gutter = if available_width < 640.0 { 14.0 } else { 28.0 };
+    let width = (available_width - 2.0 * gutter).clamp(240.0, MAX_WIDTH);
+    let compact = width < 600.0;
     let items: Vec<_> = state
         .snapshot
         .items
@@ -444,13 +390,18 @@ pub fn marketplace_page(state: &MarketplaceViewState, available_width: f32) -> E
         .filter(|item| matches_query(item, &state.query))
         .collect();
 
-    let refresh = IconButton::new(
+    let refresh = Button::new(
         "marketplace_refresh",
-        Icon::Refresh,
-        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
+        if state.busy {
+            "Actualizando…"
+        } else {
+            "Actualizar"
+        },
+        theme::action_palette(theme::PANEL, theme::FOREGROUND),
     )
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Regular)
+    .icon(Icon::Refresh)
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Compact)
     .enabled(!state.busy)
     .render();
     let add = Button::new(
@@ -460,69 +411,85 @@ pub fn marketplace_page(state: &MarketplaceViewState, available_width: f32) -> E
     )
     .icon(Icon::Add)
     .variant(ButtonVariant::Solid)
-    .size(ControlSize::Regular)
+    .size(ControlSize::Compact)
     .enabled(!state.busy)
+    .render();
+    let add = DropdownMenu::new(
+        add,
+        vec![
+            DropdownMenuItem::new("marketplace_source_kind:local", "Carpeta local")
+                .icon(Icon::Folder)
+                .into(),
+            DropdownMenuItem::new("marketplace_source_kind:github", "Repositorio GitHub")
+                .icon(Icon::Github)
+                .into(),
+        ],
+        state.add_menu_open && !state.busy,
+        "marketplace_add_menu_dismiss",
+        theme::menu_palette(),
+    )
+    .width(200.0)
     .render();
     let header = if compact {
         Element::column(vec![
             Element::row(vec![
-                text("Marketplace", theme::FOREGROUND, 27.0),
+                text("Marketplace", theme::FOREGROUND, 22.0),
                 Element::spacer().flex(1.0),
                 refresh,
             ])
-            .gap(8.0),
+            .gap(6.0),
             Element::row(vec![
                 text(
-                    "Skills abiertas para el agente nativo",
+                    "Skills para el agente nativo",
                     theme::FOREGROUND_SUBTLE,
-                    12.0,
+                    11.0,
                 )
                 .flex(1.0),
                 add,
             ])
-            .gap(8.0),
+            .gap(6.0),
         ])
-        .gap(12.0)
+        .gap(4.0)
     } else {
         Element::row(vec![
             Element::column(vec![
-                text("Marketplace", theme::FOREGROUND, 30.0),
+                text("Marketplace", theme::FOREGROUND, 22.0),
                 text(
-                    "Skills abiertas para el agente nativo",
+                    "Skills para el agente nativo",
                     theme::FOREGROUND_SUBTLE,
-                    13.0,
+                    11.0,
                 ),
             ])
-            .gap(8.0)
+            .gap(2.0)
             .flex(1.0),
             refresh,
             add,
         ])
-        .gap(10.0)
+        .gap(8.0)
     };
 
     let tabs = Tabs::new(
         vec![
-            Tab::new("marketplace_filter_all", "Todas", 104.0).active(!state.installed_only),
-            Tab::new("marketplace_filter_installed", "Instaladas", 118.0)
+            Tab::new("marketplace_filter_all", "Todas", 76.0).active(!state.installed_only),
+            Tab::new("marketplace_filter_installed", "Instaladas", 90.0)
                 .active(state.installed_only),
         ],
-        theme::component_palette(),
+        theme::segmented_palette(),
     )
     .id("marketplace_filters")
-    .height(32.0)
+    .size(ControlSize::Compact)
     .render();
     let scope = Tabs::new(
         vec![
-            Tab::new("marketplace_scope_user", "Usuario", 92.0)
+            Tab::new("marketplace_scope_user", "Usuario", 72.0)
                 .active(state.install_scope == InstallScope::User),
-            Tab::new("marketplace_scope_workspace", "Proyecto", 92.0)
+            Tab::new("marketplace_scope_workspace", "Proyecto", 78.0)
                 .active(state.install_scope == InstallScope::Workspace),
         ],
-        theme::component_palette(),
+        theme::segmented_palette(),
     )
     .id("marketplace_scope")
-    .height(30.0)
+    .size(ControlSize::Compact)
     .render();
 
     let search = SearchField::new(
@@ -531,130 +498,140 @@ pub fn marketplace_page(state: &MarketplaceViewState, available_width: f32) -> E
         "Buscar skills, descripciones u orígenes…",
         theme::component_palette(),
     )
-    .size(ControlSize::Spacious)
+    .size(ControlSize::Regular)
     .render()
-    .size(Some(width), Some(40.0));
+    .size(Some(width), Some(ControlSize::Regular.height()));
     let filters = if compact {
         Element::column(vec![
             Element::row(vec![tabs, Element::spacer().flex(1.0)]),
             Element::row(vec![
-                text("Instalar para", theme::FOREGROUND_SUBTLE, 11.0),
+                clipped("Instalar en", theme::FOREGROUND_SUBTLE, 10.0),
                 Element::spacer().flex(1.0),
                 scope,
             ])
             .gap(8.0),
         ])
-        .gap(8.0)
+        .gap(6.0)
     } else {
         Element::row(vec![
             tabs,
             Element::spacer().flex(1.0),
-            text("Instalar para", theme::FOREGROUND_SUBTLE, 11.0),
+            clipped("Instalar en", theme::FOREGROUND_SUBTLE, 10.0),
             scope,
         ])
         .gap(8.0)
-        .size(None, Some(36.0))
+        .size(None, Some(28.0))
     };
 
-    let mut sections = vec![
-        header,
-        Element::spacer().size(None, Some(7.0)),
-        search,
-        filters,
-        divider(),
-    ];
-    if let Some(editor) = source_editor(state, width) {
-        sections.push(editor);
-    }
-    if let Some(status) = state.status.as_deref() {
-        sections.push(
-            Element::panel(text(status, theme::FOREGROUND, 12.0))
-                .padding(12.0)
-                .background(theme::SELECTED)
-                .radius(9.0),
-        );
+    let mut sections = vec![header, search, filters, divider()];
+    if let Some(status) = state
+        .status
+        .as_deref()
+        .filter(|value| *value != "Catálogo cargado" && state.add_source_kind.is_none())
+    {
+        sections.push(text(status, theme::FOREGROUND, 11.0));
     }
     for diagnostic in &state.snapshot.diagnostics {
         sections.push(
-            Element::panel(text(diagnostic, theme::FOREGROUND_SUBTLE, 12.0))
-                .padding(10.0)
-                .background(theme::PANEL)
-                .border(theme::BORDER, 1.0)
-                .radius(9.0),
+            Element::panel(
+                Element::row(vec![
+                    Element::icon(Icon::CloseCircle)
+                        .foreground(theme::DESTRUCTIVE)
+                        .size(Some(16.0), Some(16.0)),
+                    text(diagnostic, theme::FOREGROUND, 11.0),
+                ])
+                .gap(7.0),
+            )
+            .padding(8.0)
+            .background(theme::PANEL)
+            .border(theme::BORDER, 1.0)
+            .radius(8.0),
         );
     }
     if items.is_empty() {
         let (heading, explanation) = if !state.query.trim().is_empty() {
-            ("Sin resultados", "Prueba otro término o cambia el filtro.")
+            ("Sin resultados", "Prueba otra búsqueda o cambia el filtro.")
         } else if state.installed_only {
             (
-                "Todavía no hay skills instaladas",
-                "Explora las skills disponibles e instala una para usarla en el agente nativo.",
+                "Sin skills instaladas",
+                "Explora el catálogo para instalar una skill.",
             )
         } else if state.snapshot.sources.is_empty() {
             (
-                "Empieza con un origen abierto",
-                "Agrega una carpeta local o un repositorio GitHub que contenga SKILL.md.",
+                "Empieza con un origen",
+                "Agrega un origen que contenga SKILL.md.",
             )
         } else {
             (
                 "No hay skills disponibles",
-                "Revisa los diagnósticos de los orígenes o agrega otro repositorio.",
+                "Actualiza el catálogo o revisa los orígenes.",
             )
         };
-        sections.push(
-            Element::panel(
-                Element::column(vec![
-                    Element::icon(Icon::Grid)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .size(Some(16.0), Some(16.0)),
-                    text(heading, theme::FOREGROUND, 18.0),
-                    text(explanation, theme::FOREGROUND_SUBTLE, 12.0),
-                    button("marketplace_empty_add_menu", "Agregar origen", true),
-                ])
-                .gap(14.0),
-            )
-            .padding(28.0)
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
-            .radius(14.0)
-            .size(Some(width), Some(208.0)),
-        );
+        let mut empty = Empty::new(heading, explanation, theme::component_palette())
+            .icon(Icon::Grid)
+            .width(width);
+        if state.installed_only && state.query.trim().is_empty() {
+            empty = empty.action(
+                "marketplace_filter_all",
+                "Ver todas",
+                ButtonVariant::Secondary,
+            );
+        }
+        // The scroll child fills the viewport even when its measured content is
+        // shorter. Flexible space places the empty state in that remaining
+        // area while keeping the header, filters, and any origins scrollable.
+        sections.push(Element::spacer().flex(1.0));
+        sections.push(empty.render());
+        sections.push(Element::spacer().flex(1.0));
     } else {
         sections.push(section_heading("Skills", items.len()));
         sections.push(item_grid(&items, width, state.busy));
     }
-    sections.push(Element::spacer().size(None, Some(20.0)));
-    sections.push(source_list(state, width));
-    sections.push(Element::spacer().size(None, Some(9.0)));
-    sections.push(text(
-        format!(
-            "{installed} instalada(s). Las CLIs externas administran sus propias skills; este catálogo alimenta el agente nativo. No ejecuta plugins JavaScript ni servidores MCP."
-        ),
-        theme::FOREGROUND_SUBTLE,
-        11.0,
-    ));
-    let content = Element::column(sections)
-        .gap(16.0)
-        .size(Some(width), None)
-        .padding(0.0);
+    if !state.snapshot.sources.is_empty() {
+        sections.push(divider());
+        sections.push(source_list(state, width));
+    }
+    let content = Element::column(sections).gap(10.0).size(Some(width), None);
     let centered = Element::row(vec![
         Element::spacer().flex(1.0),
         content,
         Element::spacer().flex(1.0),
     ])
-    .padding(24.0);
-    ScrollArea::new("marketplace_page", centered)
+    .padding(gutter);
+    let page = ScrollArea::new("marketplace_page", centered)
         .tint(theme::FOREGROUND_SUBTLE)
         .render()
-        .flex(1.0)
+        .flex(1.0);
+    if let Some(kind) = state.add_source_kind {
+        let modal_width = (available_width - 24.0).clamp(240.0, 460.0);
+        Modal::new(
+            page,
+            true,
+            match kind {
+                SourceKind::Local => "Agregar carpeta local",
+                SourceKind::Github => "Agregar repositorio GitHub",
+            },
+            "Agrega un origen para descubrir skills del catálogo.",
+            "marketplace_source_cancel",
+            theme::component_palette(),
+        )
+        .width(modal_width)
+        .body(source_form_body(state, modal_width))
+        .footer(source_form_footer(state))
+        .initial_focus("marketplace_source_draft")
+        .return_focus("marketplace_add_menu")
+        .backdrop_dismiss(!state.busy)
+        .render()
+    } else {
+        page
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::marketplace::MarketplaceSource;
-    use openide_ui::{Size, UiTree};
+    use openide_ui::{DrawCommand, Key, Size, UiAction, UiEvent, UiTree};
 
     fn sample_state() -> MarketplaceViewState {
         MarketplaceViewState {
@@ -701,6 +678,26 @@ mod tests {
     }
 
     #[test]
+    fn install_scope_caption_is_centered_with_segmented_tabs() {
+        for width in [560.0, 920.0] {
+            let frame = UiTree::new(marketplace_page(&sample_state(), width))
+                .layout(Size::new(width, 800.0));
+            let text_y = |target: &str| {
+                frame.commands.iter().find_map(|command| match command {
+                    DrawCommand::Text { text, position, .. } if text == target => Some(position.y),
+                    _ => None,
+                })
+            };
+            let caption = text_y("Instalar en").expect("scope caption");
+            let tab = text_y("Usuario").expect("scope tab");
+            assert!(
+                (caption - tab).abs() < 2.0,
+                "scope caption y={caption}, tab y={tab}, width={width}"
+            );
+        }
+    }
+
+    #[test]
     fn installed_item_has_toggle_and_uninstall() {
         let mut state = sample_state();
         state.snapshot.items[0].installed_scope = Some(InstallScope::Workspace);
@@ -735,13 +732,108 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id == "marketplace_source_submit"));
+        // Selecting a menu option closes the menu and opens a centered form.
+        state.add_menu_open = false;
         state.add_source_kind = Some(SourceKind::Github);
         state.source_draft = "https://github.com/owner/repo".into();
         let frame = UiTree::new(marketplace_page(&state, 600.0)).layout(Size::new(600.0, 800.0));
         assert!(frame
             .regions
             .iter()
+            .any(|region| region.id == "marketplace_source_draft"));
+        assert!(frame
+            .regions
+            .iter()
             .any(|region| region.id == "marketplace_source_submit"));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "marketplace_source_cancel"));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "marketplace_source_kind:local"));
+    }
+
+    #[test]
+    fn adding_source_is_a_centered_modal_without_reflowing_catalog() {
+        let mut state = sample_state();
+        let base = UiTree::new(marketplace_page(&state, 920.0)).layout(Size::new(920.0, 800.0));
+        let base_item_y = base
+            .regions
+            .iter()
+            .find(|region| region.id == "marketplace_install:source-1:git-review")
+            .unwrap()
+            .rect
+            .y;
+        state.add_source_kind = Some(SourceKind::Local);
+        state.source_draft = "C:/team-skills".into();
+        let mut tree = UiTree::new(marketplace_page(&state, 920.0));
+        let frame = tree.layout(Size::new(920.0, 800.0));
+        let input = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "marketplace_source_draft")
+            .unwrap();
+        assert!((input.rect.x + input.rect.width / 2.0 - 460.0).abs() < 8.0);
+        assert!((input.rect.y + input.rect.height / 2.0 - 400.0).abs() < 180.0);
+        assert_eq!(tree.focused_id(), Some("marketplace_source_draft"));
+        let open_item_y = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "marketplace_install:source-1:git-review")
+            .unwrap()
+            .rect
+            .y;
+        assert!((base_item_y - open_item_y).abs() < 1.0);
+        assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::FillRect { color, .. } if *color == Color::rgba(0, 0, 0, 180)
+        )));
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: Key::Escape,
+                shift: false,
+                ctrl: false,
+            }),
+            vec![UiAction::Clicked {
+                id: "marketplace_source_cancel".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn catalog_refresh_has_a_visible_label_instead_of_an_icon_tooltip() {
+        let state = sample_state();
+        let frame = UiTree::new(marketplace_page(&state, 920.0)).layout(Size::new(920.0, 800.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "marketplace_refresh"));
+        assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Text { text, .. } if text == "Actualizar"
+        )));
+    }
+
+    #[test]
+    fn source_modal_restores_focus_to_add_source_after_closing() {
+        let mut state = sample_state();
+        state.add_menu_open = true;
+        let mut tree = UiTree::new(marketplace_page(&state, 920.0));
+        tree.layout(Size::new(920.0, 800.0));
+        assert!(tree.focus("marketplace_source_kind:local"));
+
+        state.add_menu_open = false;
+        state.add_source_kind = Some(SourceKind::Local);
+        tree.set_root(marketplace_page(&state, 920.0));
+        tree.layout(Size::new(920.0, 800.0));
+        assert_eq!(tree.focused_id(), Some("marketplace_source_draft"));
+
+        state.add_source_kind = None;
+        tree.set_root(marketplace_page(&state, 920.0));
+        tree.layout(Size::new(920.0, 800.0));
+        assert_eq!(tree.focused_id(), Some("marketplace_add_menu"));
     }
 
     #[test]
@@ -751,6 +843,24 @@ mod tests {
             assert!(matches_query(item, query), "{query}");
         }
         assert!(!matches_query(item, "calendar"));
+    }
+
+    #[test]
+    fn empty_catalog_has_one_add_source_action() {
+        let state = MarketplaceViewState::default();
+        let frame = UiTree::new(marketplace_page(&state, 920.0)).layout(Size::new(920.0, 800.0));
+        assert_eq!(
+            frame
+                .regions
+                .iter()
+                .filter(|region| region.id == "marketplace_add_menu")
+                .count(),
+            1
+        );
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "marketplace_empty_add_menu"));
     }
 
     #[test]
@@ -772,5 +882,53 @@ mod tests {
                 region.rect
             );
         }
+    }
+
+    #[test]
+    fn marketplace_uses_the_same_center_dock_measure_as_automations() {
+        let state = MarketplaceViewState::default();
+        for (viewport_width, expected_gutter) in [(920.0, 28.0), (320.0, 14.0)] {
+            let frame = UiTree::new(marketplace_page(&state, viewport_width))
+                .layout(Size::new(viewport_width, 800.0));
+            let search = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "marketplace_search")
+                .unwrap();
+            assert!(
+                (search.rect.x - expected_gutter).abs() <= 1.0,
+                "search at {} with viewport {viewport_width}",
+                search.rect.x
+            );
+        }
+        let wide = UiTree::new(marketplace_page(&state, 1600.0)).layout(Size::new(1600.0, 800.0));
+        let search = wide
+            .regions
+            .iter()
+            .find(|region| region.id == "marketplace_search")
+            .unwrap();
+        assert!((search.rect.width - MAX_WIDTH).abs() <= 1.0);
+    }
+
+    #[test]
+    fn empty_catalog_centers_in_the_available_viewport_height() {
+        let state = MarketplaceViewState::default();
+        let title_y = |height| {
+            UiTree::new(marketplace_page(&state, 920.0))
+                .layout(Size::new(920.0, height))
+                .commands
+                .into_iter()
+                .find_map(|command| match command {
+                    DrawCommand::Text { position, text, .. } if text == "Empieza con un origen" => {
+                        Some(position.y)
+                    }
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let short_y = title_y(800.0);
+        let tall_y = title_y(1200.0);
+        assert!(short_y > 320.0 && short_y < 600.0, "title at {short_y}");
+        assert!(tall_y > short_y + 150.0, "title at {tall_y}");
     }
 }

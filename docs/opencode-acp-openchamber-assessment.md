@@ -1,5 +1,10 @@
 # OpenCode, ACP y OpenChamber: frontera del motor de OpenIDE
 
+> **Decisión posterior (28 de septiembre de 2026):** OpenIDE desarrollará el
+> harness principal en Rust. Este estudio documenta la alternativa OpenCode;
+> [la decisión vigente](native-harness-roadmap.md) la deja como adaptador
+> opcional futuro.
+
 Revisión: 28 de septiembre de 2026. Esta es una decisión de arquitectura para
 implementar y verificar, no una integración ACP ya terminada. OpenIDE conserva
 su interfaz y framework visual en Rust.

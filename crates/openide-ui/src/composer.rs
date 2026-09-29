@@ -15,6 +15,7 @@ pub struct Composer {
     context_height: f32,
     attachments: Vec<Element>,
     footer: Option<Element>,
+    pill_controls: Option<(Element, Element)>,
     palette: ComponentPalette,
     border_color: Color,
     shadow_color: Color,
@@ -44,6 +45,7 @@ impl Composer {
             context_height: 44.0,
             attachments: Vec::new(),
             footer: None,
+            pill_controls: None,
             palette,
             border_color: palette.border,
             shadow_color: palette.shadow,
@@ -85,6 +87,13 @@ impl Composer {
         self
     }
 
+    /// Put the editor between leading and trailing actions in one rounded
+    /// composer pill. In this layout `context` is the metadata row below it.
+    pub fn pill_controls(mut self, leading: Element, trailing: Element) -> Self {
+        self.pill_controls = Some((leading, trailing));
+        self
+    }
+
     pub fn border_color(mut self, color: Color) -> Self {
         self.border_color = color;
         self
@@ -105,6 +114,44 @@ impl Composer {
 
 impl Component for Composer {
     fn render(self) -> Element {
+        if let Some((leading, trailing)) = self.pill_controls {
+            let expanded = self.editor_height > 36.0 || !self.attachments.is_empty();
+            let editor = Element::text_area(self.editor_id, self.prompt, self.placeholder)
+                .background(self.palette.selected)
+                .foreground(self.palette.text)
+                .font_family(FontFamily::Sans)
+                .font_size(14.0)
+                .padding(9.0)
+                .radius(10.0)
+                .size(None, Some(self.editor_height));
+            let body = if expanded {
+                let mut contents = vec![editor];
+                contents.extend(self.attachments);
+                contents.push(
+                    Element::row(vec![leading, Element::spacer().flex(1.0), trailing])
+                        .gap(8.0)
+                        .size(None, Some(36.0)),
+                );
+                Element::column(contents).gap(6.0)
+            } else {
+                Element::row(vec![leading, editor.flex(1.0), trailing])
+                    .gap(8.0)
+                    .size(None, Some(36.0))
+            };
+            let pill = Element::panel(body)
+                .background(self.palette.selected)
+                .border(self.border_color, 1.0)
+                .radius(self.card_radius)
+                .padding(8.0)
+                .size(Some(self.width), None);
+            return if let Some(context) = self.context {
+                Element::column(vec![pill, context])
+                    .gap(5.0)
+                    .size(Some(self.width), None)
+            } else {
+                pill
+            };
+        }
         let editor = Element::text_area(self.editor_id, self.prompt, self.placeholder)
             .background(self.palette.selected)
             .foreground(self.palette.text)

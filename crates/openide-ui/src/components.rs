@@ -63,14 +63,7 @@ impl Component for Tooltip {
             self.title,
             self.shortcut,
             self.placement,
-            TooltipStyle {
-                background: self.palette.raised,
-                border: self.palette.border,
-                keycap: self.palette.selected,
-                text: self.palette.text,
-                muted: self.palette.muted,
-                shadow: self.palette.shadow,
-            },
+            self.palette.tooltip_style(),
         )
     }
 }
@@ -128,15 +121,57 @@ impl ComponentPalette {
             shadow: Color::rgba(0, 0, 0, 100),
         }
     }
+
+    fn tooltip_style(self) -> TooltipStyle {
+        // Buttons may use an action palette with a light fill or muted ink.
+        // The shared tooltip still belongs to the surrounding theme: its
+        // border and muted text are stable semantic tokens across actions.
+        // Dark surfaces need a clearer edge and a darker interior than a
+        // regular raised control. Light themes retain their own colors.
+        let dark_theme =
+            u16::from(self.border.r) + u16::from(self.border.g) + u16::from(self.border.b)
+                < 3 * 128;
+        if dark_theme {
+            TooltipStyle {
+                background: darker(self.border, 19),
+                border: lighter(self.border, 18),
+                keycap: lighter(self.border, 10),
+                text: lighter(self.muted, 76),
+                muted: self.muted,
+                shadow: self.shadow,
+            }
+        } else {
+            TooltipStyle {
+                background: self.raised,
+                border: self.border,
+                keycap: crate::shortcut::cap_fill(self.selected),
+                text: self.text,
+                muted: self.muted,
+                shadow: self.shadow,
+            }
+        }
+    }
 }
 
 /// Paint treatment for an action. All variants use the same geometry for a
 /// given [`ControlSize`]; the visual state only changes color and border.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ButtonVariant {
-    /// A toolbar action without a persistent fill.
+    /// Light primary action with dark text.
     #[default]
+    Default,
+    /// Quiet filled action on a raised surface.
+    Secondary,
+    /// Filled action for irreversible operations.
+    Destructive,
+    /// Filled action for cautionary operations.
+    Warning,
+    /// Filled action for a successful or affirmative operation.
+    Success,
+    /// A toolbar action without a persistent fill.
     Ghost,
+    /// A text action with an underline on hover and keyboard focus.
+    Link,
     /// A navigation row on its parent surface.
     Subtle,
     /// A control raised above its parent surface.
@@ -145,6 +180,40 @@ pub enum ButtonVariant {
     Outline,
     /// A prominent, neutral action.
     Solid,
+}
+
+/// Sizes matching the reference button family. Existing `ControlSize` values
+/// remain available for compact chrome and navigation controls.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ButtonSize {
+    #[default]
+    Default,
+    Small,
+    Large,
+    Icon,
+    IconSmall,
+    IconExtraSmall,
+}
+
+impl ButtonSize {
+    pub const fn sizing(self) -> ButtonSizing {
+        let (height, font_size, horizontal_padding) = match self {
+            Self::Default => (36.0, 14.0, 16.0),
+            Self::Small => (32.0, 13.0, 12.0),
+            Self::Large => (40.0, 14.0, 24.0),
+            Self::Icon => (36.0, 14.0, 10.0),
+            Self::IconSmall => (32.0, 13.0, 8.0),
+            Self::IconExtraSmall => (24.0, 12.0, 4.0),
+        };
+        ButtonSizing {
+            height,
+            font_size,
+            icon_size: ICON_SIZE,
+            horizontal_padding,
+            inner_spacing: 8.0,
+            radius: 8.0,
+        }
+    }
 }
 
 /// The visible content of one action. This keeps icon-only, text-only, and
@@ -208,6 +277,7 @@ pub struct Button {
     trailing_icon: Option<Icon>,
     variant: ButtonVariant,
     size: ControlSize,
+    button_size: Option<ButtonSize>,
     width: Option<f32>,
     active: bool,
     state: ControlState,
@@ -239,6 +309,7 @@ impl Button {
             trailing_icon: None,
             variant: ButtonVariant::default(),
             size: ControlSize::Regular,
+            button_size: None,
             width: None,
             active: false,
             state: ControlState::Enabled,
@@ -288,6 +359,12 @@ impl Button {
 
     pub fn size(mut self, size: ControlSize) -> Self {
         self.size = size;
+        self.button_size = None;
+        self
+    }
+
+    pub fn button_size(mut self, size: ButtonSize) -> Self {
+        self.button_size = Some(size);
         self
     }
 
@@ -329,24 +406,104 @@ impl Button {
 
     fn colors(&self) -> (Color, Color, Color, Color, bool) {
         let palette = self.palette;
-        let base = match self.variant {
-            ButtonVariant::Ghost => Color::TRANSPARENT,
-            ButtonVariant::Subtle | ButtonVariant::Outline => palette.surface,
-            ButtonVariant::Raised => palette.raised,
-            ButtonVariant::Solid => palette.selected,
+        let (base, hover, pressed, ink) = match self.variant {
+            ButtonVariant::Default => (
+                palette.text,
+                darker(palette.text, 16),
+                darker(palette.text, 30),
+                palette.surface,
+            ),
+            ButtonVariant::Secondary => (
+                palette.raised,
+                lighter(palette.raised, 10),
+                lighter(palette.raised, 18),
+                palette.text,
+            ),
+            ButtonVariant::Destructive => (
+                Color::rgb(161, 67, 71),
+                Color::rgb(178, 77, 81),
+                Color::rgb(139, 54, 58),
+                Color::WHITE,
+            ),
+            ButtonVariant::Warning => (
+                Color::rgb(209, 154, 55),
+                Color::rgb(225, 169, 65),
+                Color::rgb(183, 132, 42),
+                Color::rgb(32, 27, 19),
+            ),
+            ButtonVariant::Success => (
+                Color::rgb(47, 140, 94),
+                Color::rgb(57, 157, 105),
+                Color::rgb(36, 120, 78),
+                Color::WHITE,
+            ),
+            ButtonVariant::Ghost => (
+                Color::TRANSPARENT,
+                palette.hover,
+                palette.selected,
+                palette.text,
+            ),
+            ButtonVariant::Link => (
+                Color::TRANSPARENT,
+                Color::TRANSPARENT,
+                Color::TRANSPARENT,
+                palette.text,
+            ),
+            ButtonVariant::Subtle | ButtonVariant::Outline => (
+                palette.surface,
+                palette.hover,
+                palette.selected,
+                palette.text,
+            ),
+            ButtonVariant::Raised => (
+                palette.raised,
+                palette.hover,
+                palette.selected,
+                palette.text,
+            ),
+            ButtonVariant::Solid => (
+                palette.selected,
+                lighter(palette.selected, 10),
+                lighter(palette.selected, 18),
+                palette.text,
+            ),
         };
-        let selected = lighter(palette.selected, 10);
-        let (base, hover, pressed) = if self.active {
-            (palette.selected, selected, lighter(palette.selected, 18))
-        } else if self.variant == ButtonVariant::Solid {
-            (base, selected, lighter(palette.selected, 18))
+        let (base, hover, pressed) = if self.active
+            && matches!(
+                self.variant,
+                ButtonVariant::Subtle
+                    | ButtonVariant::Raised
+                    | ButtonVariant::Outline
+                    | ButtonVariant::Ghost
+            ) {
+            (
+                palette.selected,
+                lighter(palette.selected, 10),
+                lighter(palette.selected, 18),
+            )
+        } else if self.active {
+            (hover, pressed, pressed)
         } else {
-            (base, palette.hover, palette.selected)
+            (base, hover, pressed)
+        };
+        // A muted label on a light or saturated fill loses contrast. Disabled
+        // controls use the quiet raised surface while retaining their size.
+        let base = if self.state == ControlState::Disabled
+            && matches!(
+                self.variant,
+                ButtonVariant::Default
+                    | ButtonVariant::Destructive
+                    | ButtonVariant::Warning
+                    | ButtonVariant::Success
+            ) {
+            palette.raised
+        } else {
+            base
         };
         let ink = if self.state == ControlState::Disabled {
             palette.muted
         } else {
-            palette.text
+            ink
         };
         (
             base,
@@ -361,7 +518,10 @@ impl Button {
 impl Component for Button {
     fn render(self) -> Element {
         let (base, hover, pressed, ink, outline) = self.colors();
-        let sizing = self.size.button_sizing();
+        let sizing = self
+            .button_size
+            .map(ButtonSize::sizing)
+            .unwrap_or_else(|| self.size.button_sizing());
         let padding = sizing.horizontal_padding.max(4.0);
         let (icon, label) = self.content.parts();
         let icon_only = icon.is_some() && label.is_empty();
@@ -439,6 +599,22 @@ impl Component for Button {
             .gap(sizing.inner_spacing)
             .radius(radius)
             .size(width, Some(height));
+        if matches!(
+            self.variant,
+            ButtonVariant::Default
+                | ButtonVariant::Secondary
+                | ButtonVariant::Destructive
+                | ButtonVariant::Warning
+                | ButtonVariant::Success
+                | ButtonVariant::Ghost
+                | ButtonVariant::Outline
+                | ButtonVariant::Link
+        ) {
+            element = element.center_content();
+        }
+        if self.variant == ButtonVariant::Link {
+            element = element.underline_on_hover();
+        }
         if outline {
             element = element.border(self.palette.border, 1.0);
         }
@@ -500,7 +676,12 @@ impl IconButton {
     }
 
     pub fn size(mut self, size: ControlSize) -> Self {
-        self.0.size = size;
+        self.0 = self.0.size(size);
+        self
+    }
+
+    pub fn button_size(mut self, size: ButtonSize) -> Self {
+        self.0 = self.0.button_size(size);
         self
     }
 
@@ -528,6 +709,11 @@ impl IconButton {
         self.0.hover_ink = Some(color);
         self
     }
+
+    pub fn pressed_ink(mut self, color: Color) -> Self {
+        self.0.pressed_ink = Some(color);
+        self
+    }
 }
 
 impl Component for IconButton {
@@ -536,11 +722,37 @@ impl Component for IconButton {
     }
 }
 
-/// An editable search control. Its magnifier, text, caret, selection and
-/// focus border all live in the same hit box, so pointer and keyboard focus
-/// cannot disagree about the field's bounds. The host owns the query and
-/// handles `UiAction::InputChanged` for `id`.
-pub struct SearchField {
+/// A keyboard shortcut shown in the same compact capsule as tooltip hints.
+pub struct Kbd {
+    keys: String,
+    palette: ComponentPalette,
+}
+
+impl Kbd {
+    pub fn new(keys: impl Into<String>, palette: ComponentPalette) -> Self {
+        Self {
+            keys: keys.into(),
+            palette,
+        }
+    }
+}
+
+impl Component for Kbd {
+    fn render(self) -> Element {
+        Element::truncated_text(crate::shortcut::label(&self.keys))
+            .foreground(self.palette.muted)
+            .font_family(FontFamily::Monospace)
+            .font_size(crate::shortcut::FONT_SIZE)
+            .padding(crate::shortcut::HORIZONTAL_PADDING)
+            .background(crate::shortcut::cap_fill(self.palette.selected))
+            .radius(crate::shortcut::RADIUS)
+            .size(None, Some(crate::shortcut::HEIGHT))
+    }
+}
+
+/// A single-line input with the same density, focus treatment and palette as
+/// the shared search field. The host owns its value through `InputChanged`.
+pub struct TextField {
     id: String,
     value: String,
     placeholder: String,
@@ -550,7 +762,7 @@ pub struct SearchField {
     state: ControlState,
 }
 
-impl SearchField {
+impl TextField {
     pub fn new(
         id: impl Into<String>,
         value: impl Into<String>,
@@ -562,7 +774,7 @@ impl SearchField {
             value: value.into(),
             placeholder: placeholder.into(),
             palette,
-            size: ControlSize::Spacious,
+            size: ControlSize::Regular,
             width: None,
             state: ControlState::Enabled,
         }
@@ -595,10 +807,232 @@ impl SearchField {
     }
 }
 
+impl Component for TextField {
+    fn render(self) -> Element {
+        if self.state == ControlState::Disabled {
+            let text = if self.value.is_empty() {
+                self.placeholder
+            } else {
+                self.value
+            };
+            return Element::panel(
+                Element::truncated_text(text)
+                    .foreground(self.palette.muted)
+                    .font_family(FontFamily::Sans)
+                    .font_size(13.0),
+            )
+            .padding(8.0)
+            .background(self.palette.raised)
+            .border(self.palette.border, 1.0)
+            .radius(input_radius(self.size))
+            .size(self.width, Some(self.size.height().max(28.0)));
+        }
+        input_surface(
+            Element::text_input(self.id, self.value, self.placeholder),
+            self.palette,
+            self.size,
+            self.width,
+        )
+    }
+}
+
+/// A multi-line editor using the same palette and focus treatment as
+/// [`TextField`]. The host owns its text through `InputChanged`.
+pub struct TextArea {
+    id: String,
+    value: String,
+    placeholder: String,
+    palette: ComponentPalette,
+    width: Option<f32>,
+    height: f32,
+    state: ControlState,
+}
+
+impl TextArea {
+    pub fn new(
+        id: impl Into<String>,
+        value: impl Into<String>,
+        placeholder: impl Into<String>,
+        palette: ComponentPalette,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            value: value.into(),
+            placeholder: placeholder.into(),
+            palette,
+            width: None,
+            height: 96.0,
+            state: ControlState::Enabled,
+        }
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        if width.is_finite() {
+            self.width = Some(width.max(0.0));
+        }
+        self
+    }
+
+    pub fn height(mut self, height: f32) -> Self {
+        if height.is_finite() {
+            self.height = height.max(64.0);
+        }
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.state = ControlState::Disabled;
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.state = if enabled {
+            ControlState::Enabled
+        } else {
+            ControlState::Disabled
+        };
+        self
+    }
+}
+
+impl Component for TextArea {
+    fn render(self) -> Element {
+        if self.state == ControlState::Disabled {
+            let text = if self.value.is_empty() {
+                self.placeholder
+            } else {
+                self.value
+            };
+            return Element::panel(
+                Element::text(text)
+                    .foreground(self.palette.muted)
+                    .font_family(FontFamily::Sans)
+                    .font_size(13.0),
+            )
+            .padding(8.0)
+            .background(self.palette.raised)
+            .border(self.palette.border, 1.0)
+            .radius(8.0)
+            .size(self.width, Some(self.height));
+        }
+        Element::text_area(self.id, self.value, self.placeholder)
+            .background(self.palette.raised)
+            .hover_background(lighter(self.palette.raised, 5))
+            .border(self.palette.border, 1.0)
+            .focus_border(lighter(self.palette.border, 70), 1.5)
+            .foreground(self.palette.text)
+            .font_family(FontFamily::Sans)
+            .font_size(13.0)
+            .padding(8.0)
+            .radius(8.0)
+            .min_size(80.0, self.height)
+            .size(self.width, Some(self.height))
+    }
+}
+
+fn input_radius(size: ControlSize) -> f32 {
+    if size.height() >= 36.0 {
+        10.0
+    } else {
+        8.0
+    }
+}
+
+fn input_surface(
+    input: Element,
+    palette: ComponentPalette,
+    size: ControlSize,
+    width: Option<f32>,
+) -> Element {
+    let height = size.height().max(28.0);
+    input
+        .background(palette.raised)
+        .hover_background(lighter(palette.raised, 5))
+        .border(palette.border, 1.0)
+        .focus_border(lighter(palette.border, 70), 1.5)
+        .foreground(palette.text)
+        .font_family(FontFamily::Sans)
+        .font_size(13.0)
+        .padding(8.0)
+        .radius(input_radius(size))
+        .min_size(80.0, height)
+        .size(width, Some(height))
+}
+
+/// An editable search control. Its magnifier, text, caret, selection and
+/// focus border all live in the same hit box, so pointer and keyboard focus
+/// cannot disagree about the field's bounds. The host owns the query and
+/// handles `UiAction::InputChanged` for `id`.
+pub struct SearchField {
+    id: String,
+    value: String,
+    placeholder: String,
+    palette: ComponentPalette,
+    size: ControlSize,
+    width: Option<f32>,
+    state: ControlState,
+    shortcut: Option<String>,
+}
+
+/// The application's shared search input; the existing `SearchField` name
+/// remains available to current callers.
+pub type Search = SearchField;
+
+impl SearchField {
+    pub fn new(
+        id: impl Into<String>,
+        value: impl Into<String>,
+        placeholder: impl Into<String>,
+        palette: ComponentPalette,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            value: value.into(),
+            placeholder: placeholder.into(),
+            palette,
+            size: ControlSize::Spacious,
+            width: None,
+            state: ControlState::Enabled,
+            shortcut: None,
+        }
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        if width.is_finite() {
+            self.width = Some(width.max(0.0));
+        }
+        self
+    }
+
+    pub fn shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.shortcut = Some(shortcut.into());
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.state = ControlState::Disabled;
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.state = if enabled {
+            ControlState::Enabled
+        } else {
+            ControlState::Disabled
+        };
+        self
+    }
+}
+
 impl Component for SearchField {
     fn render(self) -> Element {
         let height = self.size.height().max(28.0);
-        let radius = if height >= 36.0 { 10.0 } else { 8.0 };
+        let radius = input_radius(self.size);
         let surface = self.palette.raised;
         if self.state == ControlState::Disabled {
             let (value, ink) = if self.value.is_empty() {
@@ -606,39 +1040,40 @@ impl Component for SearchField {
             } else {
                 (self.value, self.palette.muted)
             };
-            return Element::panel(
-                Element::row(vec![
-                    Element::icon(Icon::Search)
-                        .foreground(self.palette.muted)
-                        .size(Some(ICON_SIZE), Some(ICON_SIZE)),
-                    Element::truncated_text(value)
-                        .foreground(ink)
-                        .font_family(FontFamily::Sans)
-                        .font_size(13.0)
-                        .flex(1.0),
-                ])
-                .gap(8.0),
-            )
-            .background(surface)
-            .border(self.palette.border, 1.0)
-            .radius(radius)
-            .padding(8.0)
-            .size(self.width, Some(height));
+            let mut children = vec![
+                Element::icon(Icon::Search)
+                    .foreground(self.palette.muted)
+                    .size(Some(ICON_SIZE), Some(ICON_SIZE)),
+                Element::truncated_text(value)
+                    .foreground(ink)
+                    .font_family(FontFamily::Sans)
+                    .font_size(13.0)
+                    .flex(1.0),
+            ];
+            if let Some(shortcut) = self.shortcut {
+                children.push(Kbd::new(shortcut, self.palette).render());
+            }
+            return Element::panel(Element::row(children).gap(8.0))
+                .background(surface)
+                .border(self.palette.border, 1.0)
+                .radius(radius)
+                .padding(8.0)
+                .size(self.width, Some(height));
         }
-        Element::text_input(self.id, self.value, self.placeholder)
-            .leading_icon(Icon::Search)
-            .leading_icon_tint(self.palette.muted)
-            .background(surface)
-            .hover_background(lighter(surface, 5))
-            .border(self.palette.border, 1.0)
-            .focus_border(lighter(self.palette.border, 70), 1.5)
-            .foreground(self.palette.text)
-            .font_family(FontFamily::Sans)
-            .font_size(13.0)
-            .padding(8.0)
-            .radius(radius)
-            .min_size(80.0, height)
-            .size(self.width, Some(height))
+        let mut input = input_surface(
+            Element::text_input(self.id, self.value, self.placeholder)
+                .leading_icon(Icon::Search)
+                .leading_icon_tint(self.palette.muted),
+            self.palette,
+            self.size,
+            self.width,
+        );
+        if let Some(shortcut) = self.shortcut {
+            input = input
+                .input_shortcut(shortcut)
+                .input_shortcut_fill(crate::shortcut::cap_fill(self.palette.selected));
+        }
+        input
     }
 }
 
@@ -728,6 +1163,15 @@ pub(crate) fn lighter(color: Color, amount: u8) -> Color {
     )
 }
 
+fn darker(color: Color, amount: u8) -> Color {
+    Color::rgba(
+        color.r.saturating_sub(amount),
+        color.g.saturating_sub(amount),
+        color.b.saturating_sub(amount),
+        color.a,
+    )
+}
+
 /// One selectable tab. `action_id` is a stable ID handled by the host's
 /// `UiAction::Clicked`; it can represent any domain value (file, view, task).
 pub struct Tab {
@@ -768,6 +1212,12 @@ impl Tab {
 }
 
 /// A compact tab strip. It owns appearance, while the host owns navigation.
+const TAB_GAP: f32 = 2.0;
+const TAB_TRACK_PADDING: f32 = 2.0;
+const TAB_ITEM_PADDING: f32 = 4.0;
+const TAB_ICON_GAP: f32 = 4.0;
+const TAB_FONT_SIZE: f32 = 11.5;
+
 pub struct Tabs {
     pub items: Vec<Tab>,
     pub palette: ComponentPalette,
@@ -782,8 +1232,8 @@ impl Tabs {
         Self {
             items,
             palette,
-            height: ControlSize::Compact.height(),
-            gap: 3.0,
+            height: ControlSize::Dense.height(),
+            gap: TAB_GAP,
             id: None,
             animation_ms: 170,
         }
@@ -857,21 +1307,25 @@ impl Component for Tabs {
                     let label = Element::text(item.label)
                         .foreground(self.palette.muted)
                         .font_family(FontFamily::Sans)
-                        .font_size(12.0);
+                        .font_size(TAB_FONT_SIZE);
                     let visual = if let Some(icon) = item.icon {
                         Element::row(vec![
                             Element::icon(icon).foreground(self.palette.muted),
                             label,
                         ])
-                        .gap(5.0)
+                        .gap(TAB_ICON_GAP)
                     } else {
                         label
                     };
-                    return visual
-                        .padding(5.0)
-                        .background(Color::TRANSPARENT)
-                        .radius(7.0)
-                        .size(Some(item.width), Some(self.height));
+                    return Element::row(vec![
+                        Element::spacer().flex(1.0),
+                        visual,
+                        Element::spacer().flex(1.0),
+                    ])
+                    .padding(TAB_ITEM_PADDING)
+                    .background(Color::TRANSPARENT)
+                    .radius(7.0)
+                    .size(Some(item.width), Some(self.height));
                 }
                 let button = if let Some(icon) = item.icon {
                     Element::icon_button(item.action_id, icon, item.label)
@@ -884,14 +1338,20 @@ impl Component for Tabs {
                     .pressed_foreground(hover_ink)
                     .foreground(ink)
                     .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .padding(5.0)
-                    .gap(5.0)
+                    .font_size(TAB_FONT_SIZE)
+                    .padding(TAB_ITEM_PADDING)
+                    .gap(TAB_ICON_GAP)
                     .radius(7.0)
+                    .center_content()
                     .size(Some(item.width), Some(self.height))
             })
             .collect();
-        let strip = Element::tab_strip(items, enabled_ids).gap(self.gap);
+        let strip = Element::tab_strip(items, enabled_ids)
+            .gap(self.gap)
+            .padding(TAB_TRACK_PADDING)
+            .background(self.palette.surface)
+            .radius(9.0)
+            .size(None, Some(self.height + TAB_TRACK_PADDING * 2.0));
         if let Some(selected_id) = selected_id {
             strip.tab_selection(
                 group_id,
@@ -932,18 +1392,15 @@ impl SegmentedControl {
 
 impl Component for SegmentedControl {
     fn render(self) -> Element {
-        let inner_width = self.items.iter().map(|item| item.width).sum::<f32>();
-        let inner = Tabs::new(self.items, self.palette)
-            .height(self.height - 4.0)
+        let inner_width = self.items.iter().map(|item| item.width).sum::<f32>()
+            + TAB_GAP * self.items.len().saturating_sub(1) as f32;
+        Tabs::new(self.items, self.palette)
+            .height(self.height - TAB_TRACK_PADDING * 2.0)
             .render()
-            .gap(0.0);
-        Element::panel(inner)
-            .padding(2.0)
-            .background(self.palette.surface)
-            // The track follows the selected tab's 7 px corners plus its 2 px
-            // inset. A pill-shaped track makes the two layers disagree.
-            .radius(9.0)
-            .size(Some(inner_width + 4.0), Some(self.height))
+            .size(
+                Some(inner_width + TAB_TRACK_PADDING * 2.0),
+                Some(self.height),
+            )
     }
 }
 
@@ -960,6 +1417,9 @@ pub struct Popover {
     pub width: f32,
     pub palette: ComponentPalette,
     pub animation_ms: u16,
+    pub close_animation_ms: Option<u16>,
+    pub open_scale: f32,
+    pub view_key: Option<String>,
 }
 
 impl Popover {
@@ -979,6 +1439,9 @@ impl Popover {
             width: 240.0,
             palette,
             animation_ms: 140,
+            close_animation_ms: None,
+            open_scale: 1.0,
+            view_key: None,
         }
     }
 
@@ -998,6 +1461,23 @@ impl Popover {
         self.animation_ms = duration;
         self
     }
+
+    pub fn close_animation_ms(mut self, duration: u16) -> Self {
+        self.close_animation_ms = Some(duration);
+        self
+    }
+
+    pub fn open_scale(mut self, scale: f32) -> Self {
+        if scale.is_finite() {
+            self.open_scale = scale.clamp(0.5, 1.25);
+        }
+        self
+    }
+
+    pub fn view_key(mut self, key: impl Into<String>) -> Self {
+        self.view_key = Some(key.into());
+        self
+    }
 }
 
 impl Component for Popover {
@@ -1012,8 +1492,16 @@ impl Component for Popover {
             .border(self.palette.border, 1.0)
             .radius(10.0)
             .shadow(self.palette.shadow, Point::new(0.0, 9.0), 22.0, 0.0);
-        Element::popover(self.anchor, floating, self.dismiss_id, self.placement)
+        let mut popover = Element::popover(self.anchor, floating, self.dismiss_id, self.placement)
             .popover_animation_ms(self.animation_ms)
+            .popover_open_scale(self.open_scale);
+        if let Some(duration) = self.close_animation_ms {
+            popover = popover.popover_close_animation_ms(duration);
+        }
+        if let Some(key) = self.view_key {
+            popover = popover.popover_view_key(key);
+        }
+        popover
     }
 }
 
@@ -1145,6 +1633,261 @@ mod tests {
     use crate::{DrawCommand, ElementKind, Point, Size, UiAction, UiEvent, UiTree};
 
     #[test]
+    fn reference_variants_have_distinct_semantic_treatments() {
+        let palette = ComponentPalette::neutral_dark();
+        for variant in [
+            ButtonVariant::Default,
+            ButtonVariant::Secondary,
+            ButtonVariant::Outline,
+            ButtonVariant::Ghost,
+            ButtonVariant::Destructive,
+            ButtonVariant::Link,
+            ButtonVariant::Warning,
+            ButtonVariant::Success,
+        ] {
+            let element = Button::new("action", "Action", palette)
+                .variant(variant)
+                .render();
+            assert!(element.style.center_content);
+            assert_eq!(
+                element.style.underline_on_hover,
+                variant == ButtonVariant::Link
+            );
+            assert_eq!(
+                element.style.border.is_some(),
+                variant == ButtonVariant::Outline
+            );
+            assert_eq!(
+                element.style.background,
+                Some(match variant {
+                    ButtonVariant::Default => palette.text,
+                    ButtonVariant::Secondary => palette.raised,
+                    ButtonVariant::Outline => palette.surface,
+                    ButtonVariant::Ghost | ButtonVariant::Link => Color::TRANSPARENT,
+                    ButtonVariant::Destructive => Color::rgb(161, 67, 71),
+                    ButtonVariant::Warning => Color::rgb(209, 154, 55),
+                    ButtonVariant::Success => Color::rgb(47, 140, 94),
+                    _ => unreachable!(),
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn reference_sizes_define_button_and_icon_hit_bounds() {
+        let palette = ComponentPalette::neutral_dark();
+        for (size, expected) in [
+            (ButtonSize::Default, 36.0),
+            (ButtonSize::Small, 32.0),
+            (ButtonSize::Large, 40.0),
+            (ButtonSize::Icon, 36.0),
+            (ButtonSize::IconSmall, 32.0),
+            (ButtonSize::IconExtraSmall, 24.0),
+        ] {
+            let element = IconButton::new("action", Icon::Add, palette)
+                .button_size(size)
+                .render();
+            assert_eq!(element.style.height, Some(expected));
+            assert_eq!(element.style.width, Some(expected));
+        }
+    }
+
+    #[test]
+    fn search_hint_stays_inside_the_editors_single_hit_target() {
+        let palette = ComponentPalette::neutral_dark();
+        let mut tree = UiTree::new(
+            Search::new("query", "", "Buscar", palette)
+                .shortcut("Ctrl+K")
+                .width(280.0)
+                .render(),
+        );
+        let frame = tree.layout(Size::new(280.0, 36.0));
+        assert_eq!(frame.regions.len(), 1);
+        assert_eq!(frame.regions[0].id, "query");
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::Text { text, .. } if text == "Ctrl+K")));
+        assert!(tree.focus("query"));
+    }
+
+    #[test]
+    fn search_shortcut_yields_space_to_focus_and_typed_text() {
+        let palette = ComponentPalette::neutral_dark();
+        let mut tree = UiTree::new(Element::column(vec![
+            Search::new("query", "", "Buscar", palette)
+                .shortcut("Ctrl+K")
+                .width(280.0)
+                .render(),
+            Element::button("outside", "Otro"),
+        ]));
+        let has_hint = |frame: &crate::Frame| {
+            frame.commands.iter().any(|command| {
+                matches!(
+                    command, DrawCommand::Text { text, .. } if text == "Ctrl+K"
+                )
+            })
+        };
+        assert!(has_hint(&tree.layout(Size::new(280.0, 72.0))));
+        assert!(tree.focus("query"));
+        assert!(!has_hint(&tree.layout(Size::new(280.0, 72.0))));
+        tree.handle_event(UiEvent::Text("Rust".to_owned()));
+        assert!(tree.focus("outside"));
+        assert!(!has_hint(&tree.layout(Size::new(280.0, 72.0))));
+        tree.set_input_value("query", "");
+        assert!(has_hint(&tree.layout(Size::new(280.0, 72.0))));
+    }
+
+    #[test]
+    fn shared_text_editors_disable_without_leaving_input_targets() {
+        let palette = ComponentPalette::neutral_dark();
+        let enabled = UiTree::new(Element::column(vec![
+            TextField::new("name", "", "Nombre", palette).render(),
+            TextArea::new("description", "", "Descripción", palette)
+                .height(72.0)
+                .render(),
+        ]))
+        .layout(Size::new(320.0, 120.0));
+        assert!(enabled.regions.iter().any(|region| region.id == "name"));
+        assert!(enabled
+            .regions
+            .iter()
+            .any(|region| region.id == "description"));
+
+        let disabled = UiTree::new(Element::column(vec![
+            TextField::new("name", "", "Nombre", palette)
+                .disabled()
+                .render(),
+            TextArea::new("description", "", "Descripción", palette)
+                .disabled()
+                .render(),
+        ]))
+        .layout(Size::new(320.0, 140.0));
+        assert!(disabled.regions.is_empty());
+    }
+
+    #[test]
+    fn keyboard_shortcuts_keep_the_full_sequence_in_one_capsule() {
+        let palette = ComponentPalette::neutral_dark();
+        for keys in ["Ctrl++", "Ctrl+Shift+M", "Esc", "Alt+←"] {
+            let kbd = Kbd::new(keys, palette).render();
+            assert!(matches!(&kbd.kind, ElementKind::TruncatedText(value) if value == keys));
+            let frame = UiTree::new(Element::row(vec![kbd])).layout(Size::new(180.0, 28.0));
+            assert_eq!(
+                frame
+                    .commands
+                    .iter()
+                    .filter(|command| matches!(
+                        command, DrawCommand::Text { text, .. } if text == keys
+                    ))
+                    .count(),
+                1,
+            );
+        }
+    }
+
+    #[test]
+    fn keyboard_shortcuts_share_the_tooltip_capsule_geometry() {
+        let palette = ComponentPalette::neutral_dark();
+        let kbd = Kbd::new("Ctrl+Shift+M", palette).render();
+        assert_eq!(kbd.style.padding, crate::shortcut::HORIZONTAL_PADDING);
+        assert_eq!(kbd.style.height, Some(crate::shortcut::HEIGHT));
+        assert_eq!(
+            kbd.style.background,
+            Some(crate::shortcut::cap_fill(palette.selected))
+        );
+        assert_eq!(kbd.style.foreground, palette.muted);
+        assert_eq!(kbd.style.radius, crate::shortcut::RADIUS);
+        assert_eq!(kbd.style.font_size, crate::shortcut::FONT_SIZE);
+        assert_eq!(kbd.style.font_family, FontFamily::Monospace);
+        assert_eq!(kbd.style.border, None);
+    }
+
+    #[test]
+    fn all_tabs_share_the_segmented_track() {
+        let palette = ComponentPalette::neutral_dark();
+        let tabs = Tabs::new(vec![Tab::new("files", "Archivos", 88.0)], palette).render();
+        assert_eq!(tabs.style.background, Some(palette.surface));
+        assert_eq!(tabs.style.radius, 9.0);
+        assert_eq!(tabs.style.padding, 2.0);
+        assert_eq!(tabs.style.height, Some(28.0));
+        assert_eq!(tabs.style.gap, 2.0);
+        let ElementKind::TabStrip { children, .. } = tabs.kind else {
+            panic!("Tabs must render one strip");
+        };
+        assert_eq!(children[0].style.height, Some(24.0));
+        assert_eq!(children[0].style.padding, 4.0);
+        assert_eq!(children[0].style.font_size, 11.5);
+    }
+
+    #[test]
+    fn every_tab_centers_its_label_or_icon_label_group() {
+        let palette = ComponentPalette::neutral_dark();
+        let tabs = Tabs::new(
+            vec![
+                Tab::new("all", "Todo", 120.0).active(true),
+                Tab::new("actions", "Acciones", 120.0).icon(Icon::Code),
+                Tab::new("disabled", "Archivos", 120.0).disabled(),
+            ],
+            palette,
+        )
+        .render();
+        let mut tree = UiTree::new(tabs);
+        tree.set_text_measurer(|text, _, _| text.chars().count() as f32 * 10.0);
+        let frame = tree.layout(Size::new(368.0, 28.0));
+        let text_x = |name: &str| {
+            frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Text { text, position, .. } if text == name => Some(position.x),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let icon_x = frame
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::Icon {
+                    icon: Icon::Code,
+                    rect,
+                    ..
+                } => Some(rect.x),
+                _ => None,
+            })
+            .unwrap();
+        let center = |left: f32, right: f32| (left + right) / 2.0;
+        assert!((center(text_x("Todo"), text_x("Todo") + 40.0) - 62.0).abs() < 0.1);
+        assert!((center(icon_x, text_x("Acciones") + 80.0) - 184.0).abs() < 0.1);
+        assert!((center(text_x("Archivos"), text_x("Archivos") + 80.0) - 306.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn explicit_tab_height_preserves_files_and_project_switchers() {
+        let palette = ComponentPalette::neutral_dark();
+        let tabs = Tabs::new(
+            vec![
+                Tab::new("files", "Archivos", 88.0).active(true),
+                Tab::new("projects", "Proyectos", 92.0),
+            ],
+            palette,
+        )
+        .height(32.0)
+        .render();
+        assert_eq!(tabs.style.height, Some(36.0));
+        let ElementKind::TabStrip {
+            children,
+            selection,
+            ..
+        } = tabs.kind
+        else {
+            panic!("Tabs must render one strip");
+        };
+        assert_eq!(children[0].style.height, Some(32.0));
+        assert_eq!(children[1].style.height, Some(32.0));
+        assert_eq!(selection.unwrap().selected_id, "files");
+    }
+
+    #[test]
     fn button_content_and_tooltip_share_one_action_target() {
         let palette = ComponentPalette::neutral_dark();
         let button = Button::with_content(
@@ -1187,6 +1930,75 @@ mod tests {
     }
 
     #[test]
+    fn dark_tooltips_share_one_surface_across_manual_and_button_actions() {
+        let palette = ComponentPalette {
+            surface: Color::rgb(22, 22, 22),
+            raised: Color::rgb(43, 43, 43),
+            hover: Color::rgb(52, 52, 52),
+            selected: Color::rgb(54, 54, 54),
+            border: Color::rgb(46, 46, 46),
+            text: Color::rgb(212, 212, 212),
+            muted: Color::rgb(136, 136, 136),
+            shadow: Color::rgba(0, 0, 0, 125),
+        };
+        let action_palette = ComponentPalette {
+            surface: Color::WHITE,
+            raised: Color::WHITE,
+            selected: Color::WHITE,
+            text: Color::rgb(0, 0, 0),
+            ..palette
+        };
+        let manual = Tooltip::new(
+            Element::button("manual", "Abrir"),
+            "manual",
+            "Abrir",
+            palette,
+        )
+        .render();
+        let button = Button::new("button", "Abrir", action_palette)
+            .tooltip("Abrir")
+            .render();
+        let icon_button = IconButton::new("icon", Icon::Add, action_palette)
+            .tooltip("Agregar")
+            .render();
+        let tooltip_style = |element: Element| {
+            let ElementKind::Tooltip { colors, .. } = element.kind else {
+                panic!("expected the shared tooltip");
+            };
+            colors
+        };
+        let expected = tooltip_style(manual);
+        assert_eq!(expected, tooltip_style(button));
+        assert_eq!(expected, tooltip_style(icon_button));
+        assert_eq!(expected.background, Color::rgb(27, 27, 27));
+        assert_eq!(expected.border, Color::rgb(64, 64, 64));
+        assert_eq!(expected.keycap, Color::rgb(56, 56, 56));
+        assert_eq!(expected.text, Color::rgb(212, 212, 212));
+    }
+
+    #[test]
+    fn light_tooltip_keeps_palette_colors() {
+        let palette = ComponentPalette {
+            surface: Color::rgb(250, 250, 250),
+            raised: Color::rgb(246, 246, 246),
+            hover: Color::rgb(235, 235, 235),
+            selected: Color::rgb(225, 225, 225),
+            border: Color::rgb(205, 205, 205),
+            text: Color::rgb(25, 25, 25),
+            muted: Color::rgb(95, 95, 95),
+            shadow: Color::rgba(0, 0, 0, 40),
+        };
+        let tooltip =
+            Tooltip::new(Element::button("help", "Ayuda"), "help", "Ayuda", palette).render();
+        let ElementKind::Tooltip { colors, .. } = tooltip.kind else {
+            panic!("expected the shared tooltip");
+        };
+        assert_eq!(colors.background, palette.raised);
+        assert_eq!(colors.border, palette.border);
+        assert_eq!(colors.text, palette.text);
+    }
+
+    #[test]
     fn disabled_button_with_tooltip_has_no_action() {
         let button = Button::new("save", "Guardar", ComponentPalette::neutral_dark())
             .tooltip("Guardar cambios")
@@ -1197,6 +2009,29 @@ mod tests {
             .layout(Size::new(200.0, 40.0))
             .regions
             .is_empty());
+    }
+
+    #[test]
+    fn disabled_bright_variants_keep_muted_ink_readable() {
+        let palette = ComponentPalette::neutral_dark();
+        for variant in [
+            ButtonVariant::Default,
+            ButtonVariant::Destructive,
+            ButtonVariant::Warning,
+            ButtonVariant::Success,
+        ] {
+            let element = Button::new("save", "Guardar", palette)
+                .variant(variant)
+                .disabled()
+                .render();
+            assert_eq!(element.style.background, Some(palette.raised));
+            let frame = UiTree::new(element).layout(Size::new(180.0, 36.0));
+            assert!(frame.regions.is_empty());
+            assert!(frame.commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::Text { color, .. } if *color == palette.muted
+            )));
+        }
     }
 
     #[test]
@@ -1431,12 +2266,13 @@ mod tests {
         )
         .render();
         assert_eq!(segment.style.radius, 9.0);
+        assert_eq!(segment.style.width, Some(154.0));
         let mut tree = UiTree::new(segment);
-        let frame = tree.layout(Size::new(152.0, 28.0));
+        let frame = tree.layout(Size::new(154.0, 28.0));
         assert!(frame.commands.iter().any(|command| matches!(
             command,
             DrawCommand::FillRect { rect, color, radius }
-                if *color == palette.surface && rect.width == 152.0 && rect.height == 28.0 && *radius == 9.0
+                if *color == palette.surface && rect.width == 154.0 && rect.height == 28.0 && *radius == 9.0
         )));
         assert!(tree.focus("group"));
         assert_eq!(

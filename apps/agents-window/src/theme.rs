@@ -2,7 +2,7 @@
 //!
 //! Layout and token roles are informed by ZCode's `theme-zai-dark` CSS theme
 //! (Apache-2.0). The application uses an achromatic palette for native chrome;
-//! only destructive actions have a color accent.
+//! the composer send button and reasoning-effort control carry local accents.
 
 use openide_ui::{Color, ComponentPalette};
 
@@ -11,6 +11,10 @@ pub const WINDOW: Color = Color::rgb(43, 43, 43);
 pub const SIDEBAR: Color = Color::rgb(43, 43, 43);
 pub const PANEL: Color = Color::rgb(32, 32, 32);
 pub const CARD: Color = Color::rgb(43, 43, 43);
+/// Floating action menus share the composer popover's dark surface.
+pub const MENU_SURFACE: Color = Color::rgb(30, 30, 30);
+pub const MENU_HOVER: Color = Color::rgb(48, 48, 48);
+pub const MENU_MUTED: Color = Color::rgb(158, 158, 158);
 pub const INPUT: Color = Color::rgb(43, 43, 43);
 pub const HOVER: Color = Color::rgb(34, 34, 34);
 pub const SELECTED: Color = Color::rgb(54, 54, 54);
@@ -40,6 +44,9 @@ pub const CODE_NUMBER: Color = Color::rgb(199, 182, 154);
 pub const CODE_COMMENT: Color = Color::rgb(118, 118, 118);
 pub const CODE_PUNCTUATION: Color = Color::rgb(159, 159, 159);
 pub const ICON_PRIMARY: Color = Color::rgb(224, 224, 224);
+/// Accent tones used only by the reasoning-effort control.
+pub const EFFORT_BLUE: Color = Color::rgb(80, 145, 255);
+pub const EFFORT_ULTRA: Color = Color::rgb(190, 126, 255);
 
 pub const SIDEBAR_WIDTH: f32 = 264.0;
 pub const UI_FONT_SIZE: f32 = 14.0;
@@ -88,6 +95,19 @@ pub fn component_palette() -> ComponentPalette {
     }
 }
 
+pub fn menu_palette() -> ComponentPalette {
+    ComponentPalette {
+        surface: MENU_SURFACE,
+        raised: MENU_SURFACE,
+        hover: MENU_HOVER,
+        selected: MENU_HOVER,
+        border: BORDER,
+        text: FOREGROUND,
+        muted: MENU_MUTED,
+        shadow: Color::rgba(0, 0, 0, 125),
+    }
+}
+
 pub fn segmented_palette() -> ComponentPalette {
     ComponentPalette {
         surface: SELECTED,
@@ -104,6 +124,14 @@ pub fn segmented_palette() -> ComponentPalette {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openide_ui::{Button, Component, Element, ElementKind, Tooltip, TooltipStyle};
+
+    fn tooltip_style(element: Element) -> TooltipStyle {
+        let ElementKind::Tooltip { colors, .. } = element.kind else {
+            panic!("expected a shared tooltip");
+        };
+        colors
+    }
 
     #[test]
     fn native_chrome_has_no_hue() {
@@ -113,6 +141,8 @@ mod tests {
             SIDEBAR,
             PANEL,
             CARD,
+            MENU_SURFACE,
+            MENU_HOVER,
             INPUT,
             HOVER,
             SELECTED,
@@ -137,5 +167,41 @@ mod tests {
         assert!(hover_for(BACKGROUND).r > BACKGROUND.r);
         assert!(hover_for(SIDEBAR).r < SELECTED.r);
         assert_eq!(hover_for(BRAND), BRAND);
+    }
+
+    #[test]
+    fn menu_palette_uses_one_composer_surface_without_changing_regular_controls() {
+        let menu = menu_palette();
+        assert_eq!(menu.surface, MENU_SURFACE);
+        assert_eq!(menu.raised, MENU_SURFACE);
+        assert_eq!(menu.hover, MENU_HOVER);
+        assert_ne!(component_palette().surface, menu.surface);
+        assert_ne!(component_palette().raised, menu.raised);
+    }
+
+    #[test]
+    fn native_tooltip_style_is_independent_of_action_surface_and_ink() {
+        let base = tooltip_style(
+            Tooltip::new(
+                Element::button("base", "Ayuda"),
+                "base",
+                "Ayuda",
+                component_palette(),
+            )
+            .render(),
+        );
+        for (surface, ink) in [
+            (SIDEBAR, FOREGROUND),
+            (PANEL, FOREGROUND_SUBTLE),
+            (BRAND, PRIMARY_FOREGROUND),
+            (DESTRUCTIVE, BRAND),
+        ] {
+            let action = Button::new("action", "Ayuda", action_palette(surface, ink))
+                .tooltip("Ayuda")
+                .render();
+            assert_eq!(tooltip_style(action), base);
+        }
+        assert!(base.background.r < PANEL.r);
+        assert!(base.border.r > BORDER.r);
     }
 }

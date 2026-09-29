@@ -1,18 +1,27 @@
-use std::{collections::BTreeSet, path::Path, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    sync::Arc,
+};
 
-use openide_core::{OutputStream, SessionSort};
-use openide_harness::ToolPermissions;
+use openide_core::{OutputStream, PlanSnapshot, SessionSort, TurnMode};
+use openide_harness::{
+    CommandIsolation, HostedWebSearchMode, PersistentCommandExit, PersistentCommandSessionInfo,
+    ToolPermissions,
+};
 use openide_ui::{
-    guides_for_depths, Button, ButtonVariant, Color, Component, ControlSize, DropdownList,
-    DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, MenuItem, MenuSeparator,
-    Point, Popover, PopoverPlacement, ScrollArea, SearchField, SegmentedControl, Tab, Tabs,
-    TextSpan, Tooltip, TooltipPlacement, TreeGuides, TreeRow, ICON_SIZE,
+    guides_for_depths, AlertDialog, Button, ButtonVariant, Color, Component, ControlSize,
+    DropdownList, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element,
+    Empty, FontFamily, Icon, IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search,
+    SegmentedControl, Skeleton, Tab, Tabs, TextSpan, Tooltip, TooltipPlacement, TreeGuides,
+    TreeRow, ICON_SIZE,
 };
 use serde_json::Value;
 
 use crate::{
     automation_view::{self, AutomationViewState},
     command_center::{ResultItem, Scope},
+    composer_selection::ModelRouteOption,
     composer_ui::{build_composer, ComposerProps},
     files::PreviewPage,
     git_review::{DiffStage, FileDiffDetail, GitReview, ReviewFile, ReviewLine, ReviewLineKind},
@@ -28,6 +37,9 @@ use crate::{
     theme,
     transcript::TranscriptItem,
 };
+
+mod command_center;
+pub(crate) use command_center::build_command_center;
 
 const GAP: f32 = 4.0;
 const HEADER: f32 = 48.0;
@@ -88,6 +100,14 @@ pub struct DockTabView {
 }
 
 #[derive(Clone, Debug)]
+pub struct DockRecentlyClosedView {
+    pub id: u64,
+    pub title: String,
+    pub kind: SideTab,
+    pub restorable: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct FilePreviewView {
     pub tab_id: u64,
     pub path: String,
@@ -111,10 +131,52 @@ pub struct PermissionView {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionApprovalGrantView {
+    pub tool_name: String,
+    pub key_digest: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct SubagentPermissionView {
+    pub child_session_id: String,
+    pub parent_session_id: String,
+    pub request_id: String,
+    pub tool_name: String,
+    pub arguments: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct SubagentRunView {
+    pub child_session_id: String,
+    pub parent_session_id: String,
+    pub title: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolVerificationView {
+    pub session_id: String,
+    pub call_id: String,
+    pub name: String,
+    pub arguments: String,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AbortedToolBatchView {
+    pub session_id: String,
+    pub next_call_id: String,
+    pub next_tool_name: String,
+    pub next_arguments: String,
+    pub completed_calls: usize,
+    pub remaining_calls: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComposerAttachmentView {
     /// Workspace-relative path using `/` as a display and prompt separator.
     pub path: String,
     pub label: String,
+    pub is_dir: bool,
 }
 
 #[derive(Clone)]
@@ -128,6 +190,59 @@ pub struct SessionView {
     pub unread: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SessionRecoveryView {
+    Resume,
+    Permission,
+    VerifyTool,
+    ReviewBatch,
+    InvalidJournal(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionPlanView {
+    pub snapshot: PlanSnapshot,
+    pub can_build: bool,
+}
+
+impl SessionRecoveryView {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Resume => "Reanudar turno",
+            Self::Permission => "Resolver permiso y reanudar",
+            Self::VerifyTool => "Verificar herramienta",
+            Self::ReviewBatch => "Revisar llamadas pendientes",
+            Self::InvalidJournal(_) => "Journal no verificable",
+        }
+    }
+
+    pub fn can_open(&self) -> bool {
+        !matches!(self, Self::InvalidJournal(_))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderModelStatus {
+    Checking,
+    CheckFailed,
+}
+
+/// Local, transient UI state. The browser URL contains a one-time OAuth state
+/// and must not be serialized into settings, logs, or the run journal.
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) enum McpOAuthViewPhase {
+    Discovering,
+    AwaitingBrowser { url: String },
+    Authorized,
+    Failed(String),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct McpOAuthViewStatus {
+    pub server_id: String,
+    pub phase: McpOAuthViewPhase,
+}
+
 pub struct ViewState {
     pub workspace: String,
     pub workspace_draft: String,
@@ -136,12 +251,18 @@ pub struct ViewState {
     pub prompt: String,
     pub composer_attachments: Vec<ComposerAttachmentView>,
     pub composer_add_menu_open: bool,
+    pub composer_listening: bool,
+    /// Persistent objective for the selected project and session draft.
+    pub composer_goal: Option<String>,
+    pub composer_goal_editor_open: bool,
+    pub composer_goal_draft: String,
     pub composer_project_menu_open: bool,
     /// Absolute workspace path and display name, in stable menu order.
     pub composer_project_options: Vec<(String, String)>,
     pub endpoint: String,
     pub model: String,
     pub native_provider_id: String,
+    pub hosted_web_search_mode: Option<HostedWebSearchMode>,
     pub catalog: Option<Arc<CatalogSnapshot>>,
     pub catalog_status: String,
     pub catalog_refreshing: bool,
@@ -153,11 +274,26 @@ pub struct ViewState {
     pub backend_menu_open: bool,
     pub composer_model: String,
     pub composer_model_options: Vec<(String, String)>,
+    pub composer_routes: Vec<ModelRouteOption>,
+    pub composer_provider_status: BTreeMap<String, ProviderModelStatus>,
     pub composer_model_menu_open: bool,
+    pub composer_model_list_open: bool,
+    /// Transient filter for the model list; never persisted with provider settings.
+    pub composer_model_query: String,
+    pub composer_advanced_open: bool,
     pub composer_effort: String,
     pub composer_effort_options: Vec<(String, String)>,
     pub composer_effort_menu_open: bool,
+    /// Transient slider position while dragging; persisted only after release.
+    pub composer_effort_preview: Option<f32>,
+    pub composer_effort_hovered: bool,
+    /// Last provider-reported context use for the selected native session.
+    /// Unknown usage or an unverified model limit leaves the badge hidden.
+    pub composer_context_percent: Option<u8>,
+    pub turn_mode: TurnMode,
     pub sessions: Vec<SessionView>,
+    pub session_plans: BTreeMap<String, SessionPlanView>,
+    pub session_recovery: BTreeMap<String, SessionRecoveryView>,
     pub sessions_status: Option<String>,
     pub selected_session: Option<String>,
     pub selected_session_title: Option<String>,
@@ -190,10 +326,43 @@ pub struct ViewState {
     pub native_key_available: bool,
     pub workspace_writes_enabled: bool,
     pub native_tool_permissions: ToolPermissions,
+    pub native_command_isolation: CommandIsolation,
+    pub session_approval_grants: Vec<SessionApprovalGrantView>,
+    pub(crate) native_commands: Vec<PersistentCommandSessionInfo>,
+    pub(crate) native_commands_error: Option<String>,
+    pub(crate) pending_native_command_termination: Option<String>,
+    pub(crate) native_command_terminating: Option<String>,
+    pub(crate) native_hooks: crate::native_hook_settings::HookUiState,
+    pub(crate) native_exec_rules: crate::exec_policy_settings::ExecPolicyUiState,
+    pub(crate) native_skills: crate::native_skills_settings::NativeSkillsUiState,
     pub settings_reduced_motion: bool,
     pub settings_reopen_last_workspace: bool,
     pub settings_terminal_shell: TerminalShell,
     pub settings_terminal_shell_draft: String,
+    pub(crate) mcp_servers: Vec<crate::mcp_settings::McpServerSettings>,
+    /// The saved ID being edited; `None` means the form creates a new server.
+    pub(crate) mcp_selected_id: Option<String>,
+    pub(crate) mcp_editor_open: bool,
+    pub(crate) pending_mcp_delete_id: Option<String>,
+    pub(crate) mcp_draft_id: String,
+    pub(crate) mcp_draft_http: bool,
+    pub(crate) mcp_draft_url: String,
+    /// Name of the bearer token environment variable; never the token value.
+    pub(crate) mcp_draft_http_bearer_token_env_name: String,
+    pub(crate) mcp_draft_oauth_enabled: bool,
+    pub(crate) mcp_draft_oauth_client_id: String,
+    pub(crate) mcp_draft_oauth_issuer: String,
+    /// One requested OAuth scope per line; no token or client secret.
+    pub(crate) mcp_draft_oauth_scopes: String,
+    pub(crate) mcp_oauth_status: Option<McpOAuthViewStatus>,
+    pub(crate) mcp_draft_program: String,
+    /// JSON array of literal process arguments, preserving empty strings.
+    pub(crate) mcp_draft_args: String,
+    /// Workspace-relative directory, or empty to use the workspace root.
+    pub(crate) mcp_draft_cwd: String,
+    /// Credential variable names only, one per line; values never enter ViewState.
+    pub(crate) mcp_draft_env_names: String,
+    pub(crate) mcp_load_error: Option<String>,
     pub show_settings: bool,
     pub main_page: MainPage,
     pub automations: AutomationViewState,
@@ -207,6 +376,9 @@ pub struct ViewState {
     pub command_scope: Scope,
     pub command_results: Vec<ResultItem>,
     pub command_selected_index: usize,
+    pub command_search_loading: bool,
+    pub command_search_errors: Vec<String>,
+    pub command_search_truncated: bool,
     pub show_side_pane: bool,
     pub sidebar_collapsed: bool,
     pub left_dock_width: Option<f32>,
@@ -220,6 +392,8 @@ pub struct ViewState {
     pub activity_page: usize,
     pub review_page: usize,
     pub dock_tabs: Vec<DockTabView>,
+    pub dock_recently_closed: Vec<DockRecentlyClosedView>,
+    pub dock_overview_query: String,
     pub show_dock_overview: bool,
     pub show_dock_add_menu: bool,
     pub file_preview: Option<FilePreviewView>,
@@ -229,6 +403,13 @@ pub struct ViewState {
     pub terminal_input: String,
     pub terminal_error: Option<String>,
     pub pending_permissions: Vec<PermissionView>,
+    pub pending_subagent_permissions: Vec<SubagentPermissionView>,
+    pub active_subagents: Vec<SubagentRunView>,
+    pub recoverable_subagent: Option<SubagentRunView>,
+    pub pending_tool_verification: Option<ToolVerificationView>,
+    pub pending_batch_discard: Option<AbortedToolBatchView>,
+    pub tool_verification_output: String,
+    pub tool_verification_is_error: bool,
     pub selected_tool_id: Option<String>,
     pub show_jump_to_bottom: bool,
     pub github_account: GithubAccountStatus,
@@ -311,6 +492,26 @@ fn hinted_icon_button(
         hint,
         theme::component_palette(),
     )
+    .render()
+}
+
+fn hinted_shortcut_icon_button(
+    id: impl Into<String>,
+    icon: Icon,
+    hint: &str,
+    shortcut: &str,
+    fill: Color,
+    ink: Color,
+    size: f32,
+) -> Element {
+    let id = id.into();
+    Tooltip::new(
+        icon_button(id.clone(), icon, "", fill, ink).size(Some(size), Some(size)),
+        id,
+        hint,
+        theme::component_palette(),
+    )
+    .shortcut(shortcut)
     .render()
 }
 
@@ -491,16 +692,13 @@ fn session_menu_action(
     id: String,
     title: &str,
     icon: Icon,
-    width: f32,
     destructive: bool,
-) -> Element {
-    let action = MenuItem::new(id, title, theme::component_palette())
-        .icon(icon)
-        .width(width);
+) -> DropdownMenuEntry {
+    let action = DropdownMenuItem::new(id, title).icon(icon);
     if destructive {
-        action.destructive(theme::DESTRUCTIVE).render()
+        action.destructive(theme::DESTRUCTIVE).into()
     } else {
-        action.render()
+        action.into()
     }
 }
 
@@ -509,16 +707,11 @@ struct SessionRowContext {
     selected_session: Option<String>,
     running: bool,
     session_menu_id: Option<String>,
-    renaming_session_id: Option<String>,
-    pending_archive_session_id: Option<String>,
-    pending_delete_session_id: Option<String>,
-    rename_draft: String,
     backend_options: Vec<(String, String)>,
     session_groups: SessionGroups,
     group_menu_id: Option<String>,
-    group_rename_id: Option<String>,
-    group_rename_draft: String,
-    pending_delete_group_id: Option<String>,
+    session_plans: BTreeMap<String, SessionPlanView>,
+    session_recovery: BTreeMap<String, SessionRecoveryView>,
 }
 
 impl From<&ViewState> for SessionRowContext {
@@ -527,16 +720,11 @@ impl From<&ViewState> for SessionRowContext {
             selected_session: state.selected_session.clone(),
             running: state.running,
             session_menu_id: state.session_menu_id.clone(),
-            renaming_session_id: state.renaming_session_id.clone(),
-            pending_archive_session_id: state.pending_archive_session_id.clone(),
-            pending_delete_session_id: state.pending_delete_session_id.clone(),
-            rename_draft: state.rename_draft.clone(),
             backend_options: state.backend_options.clone(),
             session_groups: state.session_groups.clone(),
             group_menu_id: state.group_menu_id.clone(),
-            group_rename_id: state.group_rename_id.clone(),
-            group_rename_draft: state.group_rename_draft.clone(),
-            pending_delete_group_id: state.pending_delete_group_id.clone(),
+            session_plans: state.session_plans.clone(),
+            session_recovery: state.session_recovery.clone(),
         }
     }
 }
@@ -552,15 +740,7 @@ fn session_row_with_context(
     width: f32,
 ) -> Element {
     let selected = state.selected_session.as_deref() == Some(session.id.as_str());
-    let editing = state.renaming_session_id.as_deref() == Some(session.id.as_str());
-    let confirming_archive = !session.archived
-        && state.pending_archive_session_id.as_deref() == Some(session.id.as_str());
-    let confirming_delete =
-        session.archived && state.pending_delete_session_id.as_deref() == Some(session.id.as_str());
-    let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str())
-        || editing
-        || confirming_archive
-        || confirming_delete;
+    let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str());
     let backend = state
         .backend_options
         .iter()
@@ -572,8 +752,12 @@ fn session_row_with_context(
         .unwrap_or("CLI");
     let row_width = (width - 18.0).max(0.0);
     let menu_width = row_width.max(246.0);
-    let menu_item_width = menu_width - 12.0;
-    let status_marker = if session.unread {
+    let recovery = state.session_recovery.get(&session.id);
+    let status_marker = if recovery.is_some() {
+        Element::icon(Icon::Refresh)
+            .foreground(theme::BRAND)
+            .size(Some(16.0), Some(32.0))
+    } else if session.unread {
         Element::column(vec![
             Element::spacer().size(None, Some(13.0)),
             Element::row(vec![
@@ -597,154 +781,86 @@ fn session_row_with_context(
         Element::spacer().size(Some(16.0), Some(32.0))
     };
     let mut actions = Vec::new();
-    if editing {
-        actions.push(
-            field("rename_title", &state.rename_draft, "Nuevo título")
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(Some(menu_item_width), Some(30.0)),
-        );
-        actions.push(
-            Element::row(vec![
-                button(
-                    format!("rename_commit:{}", session.id),
-                    "Guardar",
-                    theme::SELECTED,
-                    theme::FOREGROUND,
-                )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(Some((menu_item_width - 4.0) / 2.0), Some(26.0)),
-                button(
-                    "rename_cancel",
-                    "Cancelar",
-                    theme::PANEL,
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(Some((menu_item_width - 4.0) / 2.0), Some(26.0)),
-            ])
-            .gap(4.0),
-        );
-    } else if confirming_archive {
-        actions.push(label("¿Archivar esta tarea?", theme::FOREGROUND).font_size(12.0));
-        actions.push(
-            Element::row(vec![
-                button(
-                    format!("archive_confirm:{}", session.id),
-                    "Archivar",
-                    theme::SELECTED,
-                    theme::FOREGROUND,
-                )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(Some((menu_item_width - 4.0) / 2.0), Some(26.0)),
-                button(
-                    "archive_cancel",
-                    "Cancelar",
-                    theme::PANEL,
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(Some((menu_item_width - 4.0) / 2.0), Some(26.0)),
-            ])
-            .gap(4.0),
-        );
-    } else if confirming_delete {
-        actions.push(label("¿Eliminar esta tarea?", theme::DESTRUCTIVE).font_size(12.0));
-        actions.push(
-            Element::row(vec![
-                button(
-                    format!("delete_confirm:{}", session.id),
-                    "Eliminar",
-                    theme::DESTRUCTIVE,
-                    theme::PRIMARY_FOREGROUND,
-                )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(Some((menu_item_width - 4.0) / 2.0), Some(26.0)),
-                button(
-                    "delete_cancel",
-                    "Cancelar",
-                    theme::PANEL,
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(Some((menu_item_width - 4.0) / 2.0), Some(26.0)),
-            ])
-            .gap(4.0),
-        );
-    } else {
+    if state
+        .session_plans
+        .get(&session.id)
+        .is_some_and(|plan| plan.can_build)
+    {
         actions.push(session_menu_action(
-            format!("session_rename:{}", session.id),
-            "Renombrar",
-            Icon::Edit,
-            menu_item_width,
+            format!("session_build_plan:{}", session.id),
+            "Construir este plan",
+            Icon::ArrowRight,
             false,
         ));
-        if session.archived {
+        actions.push(DropdownMenuEntry::Separator);
+    }
+    if let Some(recovery) = recovery.filter(|recovery| recovery.can_open()) {
+        actions.push(session_menu_action(
+            format!("session_recover:{}", session.id),
+            recovery.label(),
+            Icon::Refresh,
+            false,
+        ));
+        actions.push(DropdownMenuEntry::Separator);
+    }
+    actions.push(session_menu_action(
+        format!("session_rename:{}", session.id),
+        "Renombrar",
+        Icon::Edit,
+        false,
+    ));
+    if session.archived {
+        actions.push(session_menu_action(
+            format!("session_restore:{}", session.id),
+            "Restaurar",
+            Icon::ArchiveUp,
+            false,
+        ));
+        actions.push(DropdownMenuEntry::Separator);
+        actions.push(session_menu_action(
+            format!("session_delete:{}", session.id),
+            "Eliminar…",
+            Icon::Trash,
+            true,
+        ));
+    } else {
+        actions.push(session_menu_action(
+            format!("session_pin:{}", session.id),
+            if session.pinned { "Desfijar" } else { "Fijar" },
+            Icon::Pin,
+            false,
+        ));
+        if !session.unread {
             actions.push(session_menu_action(
-                format!("session_restore:{}", session.id),
-                "Restaurar",
-                Icon::ArchiveUp,
-                menu_item_width,
+                format!("session_mark_unread:{}", session.id),
+                "Marcar no leído",
+                Icon::Unread,
                 false,
             ));
-            actions.push(MenuSeparator::new(menu_item_width, theme::TREE_GUIDE).render());
-            actions.push(session_menu_action(
-                format!("session_delete:{}", session.id),
-                "Eliminar…",
-                Icon::Trash,
-                menu_item_width,
-                true,
-            ));
-        } else {
-            actions.push(session_menu_action(
-                format!("session_pin:{}", session.id),
-                if session.pinned { "Desfijar" } else { "Fijar" },
-                Icon::Pin,
-                menu_item_width,
-                false,
-            ));
-            if !session.unread {
+        }
+        actions.push(session_menu_action(
+            format!("session_archive:{}", session.id),
+            "Archivar",
+            Icon::Archive,
+            false,
+        ));
+        if !state.session_groups.groups.is_empty() {
+            actions.push(DropdownMenuEntry::Separator);
+            if state.session_groups.group_for(&session.id).is_some() {
                 actions.push(session_menu_action(
-                    format!("session_mark_unread:{}", session.id),
-                    "Marcar no leído",
-                    Icon::Unread,
-                    menu_item_width,
+                    format!("session_group_unassign:{}", session.id),
+                    "Quitar del grupo",
+                    Icon::Hash,
                     false,
                 ));
             }
-            actions.push(session_menu_action(
-                format!("session_archive:{}", session.id),
-                "Archivar",
-                Icon::Archive,
-                menu_item_width,
-                false,
-            ));
-            if !state.session_groups.groups.is_empty() {
-                actions.push(MenuSeparator::new(menu_item_width, theme::TREE_GUIDE).render());
-                if state.session_groups.group_for(&session.id).is_some() {
-                    actions.push(session_menu_action(
-                        format!("session_group_unassign:{}", session.id),
-                        "Quitar del grupo",
-                        Icon::Hash,
-                        menu_item_width,
-                        false,
-                    ));
-                }
-                for group in &state.session_groups.groups {
-                    actions.push(session_menu_action(
-                        format!("session_group_assign:{}:{}", group.id, session.id),
-                        &format!("Mover a {}", shorten(&group.title, 20)),
-                        Icon::Hash,
-                        menu_item_width,
-                        false,
-                    ));
-                }
+            for group in &state.session_groups.groups {
+                actions.push(session_menu_action(
+                    format!("session_group_assign:{}:{}", group.id, session.id),
+                    &format!("Mover a {}", shorten(&group.title, 20)),
+                    Icon::Hash,
+                    false,
+                ));
             }
         }
     }
@@ -766,14 +882,6 @@ fn session_row_with_context(
     .padding(8.0)
     .min_size(0.0, 0.0)
     .size(Some(32.0), Some(32.0));
-    let menu_content = if actions.len() > 8 {
-        ScrollArea::new("session_menu_options", Element::column(actions).gap(1.0))
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .size(Some(menu_item_width), Some(240.0))
-    } else {
-        Element::column(actions).gap(1.0)
-    };
     let menu_button = if menu_open {
         menu_button
     } else {
@@ -785,12 +893,12 @@ fn session_row_with_context(
         )
         .render()
     };
-    let menu_button = Popover::new(
+    let menu_button = DropdownMenu::new(
         menu_button,
-        menu_content,
+        actions,
         menu_open,
         "session_menu_dismiss",
-        theme::component_palette(),
+        theme::menu_palette(),
     )
     .placement(PopoverPlacement::BottomEnd)
     .width(menu_width)
@@ -887,103 +995,46 @@ fn group_header(
     width: f32,
 ) -> Element {
     let row_width = (width - 18.0).max(0.0);
-    if state.group_rename_id.as_deref() == Some(group.id.as_str()) {
-        return Element::row(vec![
-            field(
-                "group_rename_draft",
-                &state.group_rename_draft,
-                "Nombre del grupo",
-            )
-            .font_size(12.0)
-            .min_size(0.0, 0.0)
-            .size(Some((row_width - 60.0).max(40.0)), Some(28.0)),
-            hinted_icon_button(
-                format!("session_group_rename_commit:{}", group.id),
-                Icon::Check,
-                "Guardar nombre",
-                theme::SELECTED,
-                theme::FOREGROUND,
-                28.0,
-            ),
-            hinted_icon_button(
-                "session_group_rename_cancel",
-                Icon::Close,
-                "Cancelar cambio",
-                theme::SIDEBAR,
-                theme::FOREGROUND_SUBTLE,
-                28.0,
-            ),
-        ])
-        .gap(2.0)
-        .size(Some(row_width), Some(32.0));
-    }
-    let deleting = state.pending_delete_group_id.as_deref() == Some(group.id.as_str());
-    let menu_open = state.group_menu_id.as_deref() == Some(group.id.as_str()) || deleting;
-    let mut menu_actions = if deleting {
-        vec![
-            session_menu_action(
-                format!("session_group_delete_confirm:{}", group.id),
-                "Eliminar grupo y desagrupar",
-                Icon::Trash,
-                186.0,
-                true,
-            ),
-            session_menu_action(
-                "session_group_menu_dismiss".to_owned(),
-                "Cancelar",
-                Icon::Close,
-                186.0,
-                false,
-            ),
-        ]
-    } else {
-        vec![session_menu_action(
-            format!("session_group_rename:{}", group.id),
-            "Renombrar",
-            Icon::Edit,
-            186.0,
-            false,
-        )]
-    };
-    if !deleting {
-        if index > 0 {
-            menu_actions.push(session_menu_action(
-                format!("session_group_move_up:{}", group.id),
-                "Mover arriba",
-                Icon::ArrowUp,
-                186.0,
-                false,
-            ));
-        }
-        if index + 1 < state.session_groups.groups.len() {
-            menu_actions.push(session_menu_action(
-                format!("session_group_move_down:{}", group.id),
-                "Mover abajo",
-                Icon::ArrowDown,
-                186.0,
-                false,
-            ));
-        }
+    let menu_open = state.group_menu_id.as_deref() == Some(group.id.as_str());
+    let mut menu_actions = vec![session_menu_action(
+        format!("session_group_rename:{}", group.id),
+        "Renombrar",
+        Icon::Edit,
+        false,
+    )];
+    if index > 0 {
         menu_actions.push(session_menu_action(
-            format!("session_group_delete:{}", group.id),
-            "Eliminar grupo…",
-            Icon::Trash,
-            186.0,
-            true,
+            format!("session_group_move_up:{}", group.id),
+            "Mover arriba",
+            Icon::ArrowUp,
+            false,
         ));
     }
-    let more_anchor = icon_button(
+    if index + 1 < state.session_groups.groups.len() {
+        menu_actions.push(session_menu_action(
+            format!("session_group_move_down:{}", group.id),
+            "Mover abajo",
+            Icon::ArrowDown,
+            false,
+        ));
+    }
+    menu_actions.push(DropdownMenuEntry::Separator);
+    menu_actions.push(session_menu_action(
+        format!("session_group_delete:{}", group.id),
+        "Eliminar grupo…",
+        Icon::Trash,
+        true,
+    ));
+    let more_anchor = UiIconButton::new(
         format!("session_group_menu:{}", group.id),
         Icon::More,
-        "",
-        if menu_open {
-            theme::SELECTED
-        } else {
-            theme::SIDEBAR
-        },
-        theme::FOREGROUND_SUBTLE,
+        theme::component_palette(),
     )
-    .size(Some(28.0), Some(28.0));
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Compact)
+    .width(28.0)
+    .active(menu_open)
+    .render();
     let more_anchor = if menu_open {
         more_anchor
     } else {
@@ -995,12 +1046,12 @@ fn group_header(
         )
         .render()
     };
-    let more = Popover::new(
+    let more = DropdownMenu::new(
         more_anchor,
-        Element::column(menu_actions).gap(2.0),
+        menu_actions,
         menu_open,
         "session_group_menu_dismiss",
-        theme::component_palette(),
+        theme::menu_palette(),
     )
     .placement(PopoverPlacement::BottomEnd)
     .width(202.0)
@@ -1057,7 +1108,7 @@ fn sidebar_nav_action(
                 .size(Some(16.0), Some(16.0)),
             label(title, theme::FOREGROUND).font_size(13.0),
             Element::spacer().flex(1.0),
-            label(shortcut, theme::FOREGROUND_SUBTLE).font_size(10.0),
+            Kbd::new(shortcut, theme::component_palette()).render(),
         ])
         .gap(10.0)
         .padding(8.0)
@@ -1288,9 +1339,10 @@ pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
                         .font_size(13.0)
                         .foreground(theme::FOREGROUND)
                         .flex(1.0),
-                    Element::icon(Icon::Github)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .size(Some(ICON_SIZE), Some(ICON_SIZE)),
+                    Element::panel(
+                        Element::icon(Icon::Github).foreground(theme::FOREGROUND_SUBTLE),
+                    )
+                    .size(Some(28.0), Some(28.0)),
                 ])
                 .gap(8.0)
                 .padding(4.0)
@@ -1354,7 +1406,13 @@ pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
             } else {
                 "Cuenta guardada sin verificar. Comprueba la conexión."
             });
-            let anchor = button.tooltip(hint).render();
+            let anchor = Tooltip::new(
+                button.render().padding(8.0).gap(10.0),
+                action_id,
+                hint,
+                theme::component_palette(),
+            )
+            .render();
             if many {
                 let mut options: Vec<DropdownOption> = accounts
                     .iter()
@@ -1375,7 +1433,7 @@ pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
                     options,
                     state.github_account_menu_open,
                     "github_account_menu_dismiss",
-                    theme::component_palette(),
+                    theme::menu_palette(),
                 )
                 .placement(PopoverPlacement::TopStart)
                 .width(232.0)
@@ -1424,7 +1482,7 @@ pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
                 button = button.disabled();
             }
             Tooltip::new(
-                button.render(),
+                button.render().padding(8.0).gap(10.0),
                 "github_account_connect",
                 hint,
                 theme::component_palette(),
@@ -1474,10 +1532,15 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
             .shortcut("Ctrl+B")
             .placement(TooltipPlacement::Below)
             .render(),
-            label("OpenIDE", theme::FOREGROUND).font_size(14.0),
+            // TruncatedText vertically centers its line inside the 32 px
+            // header row; Text paints at the top and sat above the toggle.
+            Element::truncated_text("OpenIDE")
+                .foreground(theme::FOREGROUND)
+                .font_family(FontFamily::Sans)
+                .font_size(14.0),
             Element::spacer().flex(1.0),
         ])
-        .gap(8.0),
+        .gap(2.0),
     )
     .padding(8.0)
     .size(None, Some(HEADER));
@@ -1597,7 +1660,7 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
         },
         state.session_sort_menu_open,
         "session_sort_dismiss",
-        theme::component_palette(),
+        theme::menu_palette(),
     )
     .width(180.0)
     .placement(PopoverPlacement::BottomEnd)
@@ -1799,28 +1862,36 @@ fn pane_empty_state(
     description: impl Into<String>,
     action: Option<(&str, &str)>,
 ) -> Element {
-    let mut content = vec![
-        Element::panel(
-            Element::icon(icon)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(20.0), Some(20.0)),
-        )
-        .padding(10.0)
-        .background(theme::CARD)
-        .radius(10.0)
-        .size(Some(40.0), Some(40.0)),
-        label(title, theme::FOREGROUND).font_size(15.0),
-        label(description, theme::FOREGROUND_SUBTLE).font_size(12.0),
-    ];
+    let mut palette = theme::component_palette();
+    palette.surface = theme::PANEL;
+    let mut empty = Empty::new(title, description, palette).icon(icon).compact();
     if let Some((id, title)) = action {
-        content.push(button(id, title, theme::SELECTED, theme::FOREGROUND).size(None, Some(30.0)));
+        empty = empty.action(id, title, ButtonVariant::Secondary);
     }
-    Element::column(content)
-        .gap(9.0)
-        .padding(20.0)
-        .background(theme::PANEL)
-        .border(theme::BORDER, 1.0)
-        .radius(11.0)
+    empty.render()
+}
+
+fn pane_loading_state(id: &str, title: &str, width: f32) -> Element {
+    let palette = theme::component_palette();
+    let block_width = (width - 64.0).clamp(80.0, 250.0);
+    Element::panel(
+        Element::column(vec![
+            label(title, theme::FOREGROUND_SUBTLE).font_size(12.0),
+            Skeleton::block(format!("{id}_body"), palette, block_width, 125.0).render(),
+            Skeleton::line(format!("{id}_line_1"), palette, block_width)
+                .height(14.0)
+                .render(),
+            Skeleton::line(format!("{id}_line_2"), palette, block_width * 0.8)
+                .height(14.0)
+                .render(),
+        ])
+        .gap(8.0),
+    )
+    .padding(16.0)
+    .background(theme::PANEL)
+    .border(theme::BORDER, 1.0)
+    .radius(10.0)
+    .size(None, Some(250.0))
 }
 
 fn page_bounds(total: usize, requested_page: usize, page_size: usize) -> (usize, usize, usize) {
@@ -1926,13 +1997,17 @@ fn file_tree_content(state: &ViewState, width: f32) -> Element {
         content.push(
             ScrollArea::uniform_list("file_tree", row_count, 28.0, move |index| {
                 if index == rows.len() {
-                    return Element::button("file_more_root", "Cargar más archivos…")
-                        .font_family(FontFamily::Sans)
-                        .font_size(12.0)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .background(theme::BACKGROUND)
-                        .hover_background(theme::SELECTED)
-                        .size(Some((width - 16.0).max(120.0)), Some(28.0));
+                    return Button::new(
+                        "file_more_root",
+                        "Cargar más archivos…",
+                        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .render()
+                    .font_family(FontFamily::Sans)
+                    .font_size(12.0)
+                    .size(Some((width - 16.0).max(120.0)), Some(28.0));
                 }
                 let entry = &rows[index];
                 let icon = Element::icon(if entry.is_dir {
@@ -1965,14 +2040,19 @@ fn file_tree_content(state: &ViewState, width: f32) -> Element {
                     .size(Some(ICON_SIZE), Some(ICON_SIZE));
                     row = row.trailing(if entry.expanded && entry.can_load_more {
                         Element::row(vec![
-                            Element::button(format!("file_more:{index}"), "Más")
-                                .font_family(FontFamily::Sans)
-                                .font_size(11.0)
-                                .foreground(theme::FOREGROUND_SUBTLE)
-                                .background(theme::BACKGROUND)
-                                .hover_background(theme::SELECTED)
-                                .radius(5.0)
-                                .size(Some(36.0), Some(22.0)),
+                            Button::new(
+                                format!("file_more:{index}"),
+                                "Más",
+                                theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
+                            )
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Compact)
+                            .render()
+                            .font_family(FontFamily::Sans)
+                            .font_size(11.0)
+                            .padding(3.0)
+                            .radius(5.0)
+                            .size(Some(36.0), Some(22.0)),
                             chevron,
                         ])
                         .gap(4.0)
@@ -2008,19 +2088,27 @@ fn json_text(value: &Value) -> String {
     }
 }
 
-fn transcript_item(item: &TranscriptItem, state: &ViewState, side_visible: bool) -> Element {
+fn transcript_item(
+    item: &TranscriptItem,
+    item_index: usize,
+    state: &ViewState,
+    side_visible: bool,
+) -> Element {
     match item {
-        TranscriptItem::User { content } => Element::panel(
-            Element::column(vec![
+        TranscriptItem::User { content, images } => {
+            let mut contents = vec![
                 eyebrow("TÚ").foreground(theme::USER),
                 label(content, theme::FOREGROUND),
-            ])
-            .gap(8.0),
-        )
-        .padding(14.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(12.0),
+            ];
+            for image in images {
+                contents.push(crate::session_surface::user_image(image));
+            }
+            Element::panel(Element::column(contents).gap(8.0))
+                .padding(14.0)
+                .background(theme::CARD)
+                .border(theme::BORDER, 1.0)
+                .radius(12.0)
+        }
         TranscriptItem::Assistant { content, streaming } => Element::panel(
             Element::column(vec![
                 eyebrow(if *streaming {
@@ -2034,6 +2122,20 @@ fn transcript_item(item: &TranscriptItem, state: &ViewState, side_visible: bool)
             .gap(8.0),
         )
         .padding(14.0),
+        TranscriptItem::WebCitation { title, url } => Element::clickable(
+            format!("web_citation_open:{item_index}"),
+            Element::column(vec![
+                eyebrow("FUENTE WEB").foreground(theme::BRAND),
+                label(shorten(title, 100), theme::FOREGROUND),
+                mono(shorten(url, 140), theme::FOREGROUND_SUBTLE).font_size(11.0),
+            ])
+            .gap(5.0)
+            .padding(10.0),
+        )
+        .background(theme::PANEL)
+        .hover_background(theme::HOVER)
+        .border(theme::BORDER, 1.0)
+        .radius(10.0),
         TranscriptItem::Tool {
             id,
             name,
@@ -2093,7 +2195,7 @@ fn transcript_item(item: &TranscriptItem, state: &ViewState, side_visible: bool)
         TranscriptItem::ProcessOutput { stream, text } => {
             let (title, ink) = match stream {
                 OutputStream::Stdout => ("SALIDA DEL PROCESO", theme::TOOL_RESULT),
-                OutputStream::Stderr => ("ERROR DEL PROCESO", theme::DESTRUCTIVE),
+                OutputStream::Stderr => ("DIAGNÓSTICOS DEL PROCESO", theme::FOREGROUND_SUBTLE),
             };
             Element::panel(
                 Element::column(vec![
@@ -2152,8 +2254,8 @@ fn timeline(state: &ViewState, side_visible: bool, compact: bool) -> Element {
             ),
         ]);
     }
-    for item in &state.transcript {
-        items.push(transcript_item(item, state, side_visible));
+    for (index, item) in state.transcript.iter().enumerate() {
+        items.push(transcript_item(item, index, state, side_visible));
     }
     ScrollArea::new(
         "transcript",
@@ -2169,13 +2271,13 @@ fn timeline(state: &ViewState, side_visible: bool, compact: bool) -> Element {
 
 fn composer(state: &ViewState, center_width: f32) -> Element {
     let compact = center_width < 470.0;
-    let card_width = (center_width - if compact { 20.0 } else { 32.0 }).clamp(0.0, 780.0);
+    let card_width = (center_width - if compact { 20.0 } else { 32.0 }).clamp(0.0, 1120.0);
     let card = build_composer(&ComposerProps::from_state(
         state,
         card_width,
         false,
         None,
-        "Pide al agente que trabaje en este proyecto…",
+        "Ask me anything",
         Some(&state.status),
     ));
     Element::row(vec![
@@ -2329,7 +2431,7 @@ fn context_content(state: &ViewState) -> Element {
         .padding(12.0);
     }
     let latest_user = state.transcript.iter().rev().find_map(|item| match item {
-        TranscriptItem::User { content } => Some(content.as_str()),
+        TranscriptItem::User { content, .. } => Some(content.as_str()),
         _ => None,
     });
     let latest_assistant = state.transcript.iter().rev().find_map(|item| match item {
@@ -2399,6 +2501,135 @@ fn activity_content(state: &ViewState) -> Element {
         })
         .or_else(|| tools.last().copied());
     let mut items = vec![eyebrow("ACTIVIDAD DE LA SESIÓN")];
+    let selected_native = state.selected_session.as_deref().is_some_and(|id| {
+        state.selected_backend == "native"
+            || !state.native_commands.is_empty()
+            || state
+                .sessions
+                .iter()
+                .any(|session| session.id == id && session.backend == "native")
+    });
+    if selected_native {
+        items.push(eyebrow(format!(
+            "PERMISOS DE SESIÓN · {}",
+            state.session_approval_grants.len()
+        )));
+        if state.session_approval_grants.is_empty() {
+            items.push(
+                label(
+                    "No hay permisos vigentes en esta tarea.",
+                    theme::FOREGROUND_SUBTLE,
+                )
+                .font_size(11.0),
+            );
+        }
+        for grant in &state.session_approval_grants {
+            items.push(
+                Element::row(vec![
+                    Element::column(vec![
+                        label(&grant.tool_name, theme::FOREGROUND).font_size(11.0),
+                        mono(shorten(&grant.key_digest, 12), theme::FOREGROUND_SUBTLE)
+                            .font_size(10.0),
+                    ])
+                    .gap(3.0)
+                    .flex(1.0),
+                    button(
+                        format!("session_approval_revoke:{}", grant.key_digest),
+                        "Revocar",
+                        theme::HOVER,
+                        theme::DESTRUCTIVE,
+                    )
+                    .font_size(10.0)
+                    .size(Some(76.0), Some(26.0)),
+                ])
+                .gap(8.0)
+                .padding(8.0)
+                .background(theme::PANEL)
+                .border(theme::BORDER, 1.0)
+                .radius(7.0),
+            );
+        }
+        items.push(Element::spacer().size(None, Some(8.0)));
+        items.push(eyebrow(format!(
+            "COMANDOS PERSISTENTES · {}",
+            state.native_commands.len()
+        )));
+        if let Some(error) = &state.native_commands_error {
+            items.push(label(error, theme::DESTRUCTIVE).font_size(11.0));
+        } else if state.native_commands.is_empty() {
+            items.push(
+                label(
+                    "No hay procesos registrados en esta tarea.",
+                    theme::FOREGROUND_SUBTLE,
+                )
+                .font_size(11.0),
+            );
+        }
+        for command in &state.native_commands {
+            let status = match &command.exit {
+                None => "En ejecución".to_owned(),
+                Some(PersistentCommandExit::Exited { code }) => {
+                    format!(
+                        "Finalizado · código {}",
+                        code.map_or_else(|| "?".into(), |code| code.to_string())
+                    )
+                }
+                Some(PersistentCommandExit::Terminated) => "Terminado".to_owned(),
+                Some(PersistentCommandExit::TimedOut) => "Tiempo agotado".to_owned(),
+                Some(PersistentCommandExit::WaitFailed(_)) => "Estado incierto".to_owned(),
+            };
+            let mut details = format!(
+                "{} · {}",
+                if command.pty { "PTY" } else { "Tuberías" },
+                status
+            );
+            if command.has_output {
+                details.push_str(" · salida pendiente");
+            }
+            let action = if command.exit.is_none()
+                && state.native_command_terminating.as_deref() != Some(command.id.as_str())
+            {
+                button(
+                    format!("native_command_terminate:{}", command.id),
+                    "Terminar",
+                    theme::HOVER,
+                    theme::DESTRUCTIVE,
+                )
+                .font_size(10.0)
+                .min_size(0.0, 0.0)
+                .size(Some(72.0), Some(26.0))
+            } else {
+                label(
+                    if state.native_command_terminating.as_deref() == Some(command.id.as_str()) {
+                        "Terminando…"
+                    } else {
+                        ""
+                    },
+                    theme::FOREGROUND_SUBTLE,
+                )
+                .font_size(10.0)
+                .size(Some(72.0), Some(26.0))
+            };
+            items.push(
+                Element::column(vec![
+                    Element::row(vec![
+                        mono(shorten(&command.id, 18), theme::FOREGROUND)
+                            .font_size(11.0)
+                            .flex(1.0),
+                        action,
+                    ])
+                    .gap(6.0),
+                    label(details, theme::FOREGROUND_SUBTLE).font_size(10.0),
+                ])
+                .gap(3.0)
+                .padding(8.0)
+                .background(theme::PANEL)
+                .border(theme::BORDER, 1.0)
+                .radius(7.0),
+            );
+        }
+        items.push(Element::spacer().size(None, Some(8.0)));
+    }
     if let Some(TranscriptItem::Tool {
         name,
         arguments,
@@ -2502,7 +2733,7 @@ fn activity_content(state: &ViewState) -> Element {
             Element::spacer().size(None, Some(8.0)),
             eyebrow(match stream {
                 OutputStream::Stdout => "SALIDA DEL PROCESO",
-                OutputStream::Stderr => "ERROR DEL PROCESO",
+                OutputStream::Stderr => "DIAGNÓSTICOS DEL PROCESO",
             }),
             mono(output, theme::FOREGROUND_SUBTLE).font_size(12.0),
         ]);
@@ -2633,12 +2864,7 @@ fn review_detail_content(detail: &ReviewDetailView, width: f32) -> Element {
         divider(),
     ];
     match &detail.content {
-        None => rows.push(pane_empty_state(
-            Icon::Refresh,
-            "Cargando diff",
-            "Leyendo los cambios de este archivo…",
-            None,
-        )),
+        None => rows.push(pane_loading_state("review_detail", "Cargando diff", width)),
         Some(Err(error)) => rows.push(pane_empty_state(
             Icon::Code,
             "No se pudo abrir el diff",
@@ -2718,14 +2944,14 @@ fn code_review_content(state: &ViewState, width: f32) -> Element {
     let mut rows = vec![Element::row(vec![
         label("Cambios de Git", theme::FOREGROUND).font_size(15.0),
         Element::spacer().flex(1.0),
-        icon_button(
+        hinted_icon_button(
             "review_refresh",
             Icon::Refresh,
-            "",
+            "Actualizar cambios de Git",
             theme::BACKGROUND,
             theme::FOREGROUND_SUBTLE,
-        )
-        .size(Some(28.0), Some(28.0)),
+            28.0,
+        ),
     ])
     .gap(5.0)];
     match &state.git_review {
@@ -2801,29 +3027,36 @@ fn code_review_content(state: &ViewState, width: f32) -> Element {
                 }
                 GithubStatus::Ready(github) => {
                     rows.push(
-                        Element::button("github_repo_open", github.repository.full_name())
-                            .font_family(FontFamily::Sans)
-                            .font_size(12.0)
-                            .foreground(theme::FOREGROUND)
-                            .background(theme::CARD)
-                            .hover_background(theme::SELECTED)
-                            .border(theme::BORDER, 1.0)
-                            .radius(6.0)
-                            .size(Some((width - 24.0).max(80.0)), Some(32.0)),
+                        Button::new(
+                            "github_repo_open",
+                            github.repository.full_name(),
+                            theme::action_palette(theme::CARD, theme::FOREGROUND),
+                        )
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Compact)
+                        .render()
+                        .font_family(FontFamily::Sans)
+                        .font_size(12.0)
+                        .background(theme::CARD)
+                        .border(theme::BORDER, 1.0)
+                        .radius(6.0)
+                        .size(Some((width - 24.0).max(80.0)), Some(32.0)),
                     );
                     for pull in github.pulls.iter().take(4) {
                         let title = shorten(&pull.title, ((width - 90.0) / 6.5).max(12.0) as usize);
                         let draft = if pull.draft { " · Borrador" } else { "" };
                         rows.push(
-                            Element::button(
+                            Button::new(
                                 format!("github_pr_open:{}", pull.number),
                                 format!("#{} {}{}", pull.number, title, draft),
+                                theme::action_palette(theme::PANEL, theme::FOREGROUND),
                             )
+                            .variant(ButtonVariant::Outline)
+                            .size(ControlSize::Compact)
+                            .render()
                             .font_family(FontFamily::Sans)
                             .font_size(11.0)
-                            .foreground(theme::FOREGROUND)
                             .background(theme::PANEL)
-                            .hover_background(theme::SELECTED)
                             .border(theme::BORDER, 1.0)
                             .radius(6.0)
                             .size(Some((width - 24.0).max(80.0)), Some(32.0)),
@@ -2955,11 +3188,10 @@ fn code_review_content(state: &ViewState, width: f32) -> Element {
                 Some(("review_refresh", "Reintentar")),
             ));
         }
-        None => rows.push(pane_empty_state(
-            Icon::Refresh,
+        None => rows.push(pane_loading_state(
+            "review_changes",
             "Cargando cambios",
-            "Consultando el estado de Git del proyecto…",
-            None,
+            width,
         )),
     }
     Element::column(rows).gap(5.0).padding(12.0)
@@ -3338,25 +3570,24 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
             )
             .font_size(11.0)
             .flex(1.0),
-            icon_button(
+            hinted_icon_button(
                 format!("dock_close:{}", preview.tab_id),
                 Icon::Close,
-                "",
+                "Cerrar archivo",
                 theme::BACKGROUND,
                 theme::FOREGROUND_SUBTLE,
-            )
-            .size(Some(26.0), Some(26.0)),
+                26.0,
+            ),
         ])
         .gap(6.0)
         .size(None, Some(28.0)),
         divider(),
     ];
     match &preview.content {
-        None => rows.push(pane_empty_state(
-            Icon::Refresh,
+        None => rows.push(pane_loading_state(
+            "file_preview",
             "Cargando archivo",
-            "Leyendo una página de este archivo…",
-            None,
+            width,
         )),
         Some(Ok(page)) => {
             let page_lines = page.end_line.saturating_sub(page.start_line);
@@ -3553,25 +3784,17 @@ fn dock_add_menu(state: &ViewState) -> Element {
         ("activity", "Actividad", Icon::History, SideTab::Activity),
         ("review", "Cambios de Git", Icon::Code, SideTab::CodeReview),
     ];
-    let menu = Element::column(
-        entries
-            .into_iter()
-            .map(|(id, title, icon, kind)| {
-                let already_open = state.dock_tabs.iter().any(|tab| tab.kind == kind);
-                let item =
-                    MenuItem::new(format!("dock_open:{id}"), title, theme::component_palette())
-                        .icon(icon)
-                        .width(212.0)
-                        .height(35.0);
-                if already_open {
-                    item.trailing("Abierta").render()
-                } else {
-                    item.render()
-                }
-            })
-            .collect(),
-    )
-    .gap(2.0);
+    let menu = entries
+        .into_iter()
+        .map(|(id, title, icon, kind)| {
+            let already_open = state.dock_tabs.iter().any(|tab| tab.kind == kind);
+            let mut item = DropdownMenuItem::new(format!("dock_open:{id}"), title).icon(icon);
+            if already_open {
+                item = item.annotation("Abierta");
+            }
+            item.into()
+        })
+        .collect();
     let anchor = if state.show_dock_add_menu {
         icon_button(
             "dock_add_tab",
@@ -3591,12 +3814,12 @@ fn dock_add_menu(state: &ViewState) -> Element {
             32.0,
         )
     };
-    Popover::new(
+    DropdownMenu::new(
         anchor,
         menu,
         state.show_dock_add_menu,
         "dock_add_dismiss",
-        theme::component_palette(),
+        theme::menu_palette(),
     )
     .placement(PopoverPlacement::BottomEnd)
     .width(224.0)
@@ -3739,18 +3962,20 @@ fn terminal_content(state: &ViewState, width: f32) -> Element {
             theme::FOREGROUND_SUBTLE,
             28.0,
         ),
-        hinted_icon_button(
+        hinted_shortcut_icon_button(
             "terminal_clear",
             Icon::Trash,
-            "Limpiar pantalla · Ctrl+L",
+            "Limpiar pantalla",
+            "Ctrl+L",
             theme::BACKGROUND,
             theme::FOREGROUND_SUBTLE,
             28.0,
         ),
-        hinted_icon_button(
+        hinted_shortcut_icon_button(
             "terminal_interrupt",
             Icon::Stop,
-            "Interrumpir · Ctrl+C",
+            "Interrumpir",
+            "Ctrl+C",
             theme::BACKGROUND,
             theme::FOREGROUND_SUBTLE,
             28.0,
@@ -3887,7 +4112,7 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
                     .active(tab.active)
             })
             .collect(),
-        theme::component_palette(),
+        theme::segmented_palette(),
     )
     .id("right_dock_tabs")
     .height(32.0)
@@ -3920,51 +4145,103 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
         });
     }
     tab_controls.push(dock_add_menu(state));
-    tab_controls.push(
-        icon_button(
-            "dock_overview_toggle",
-            Icon::Menu,
-            "",
-            if state.show_dock_overview {
-                theme::SELECTED
-            } else {
-                theme::BACKGROUND
-            },
-            theme::FOREGROUND_SUBTLE,
-        )
-        .size(Some(32.0), Some(32.0)),
-    );
-    tab_controls.push(
-        icon_button(
-            "toggle_side_pane",
-            Icon::PanelRightClose,
-            "",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-        )
-        .size(Some(32.0), Some(32.0)),
-    );
+    tab_controls.push(hinted_icon_button(
+        "dock_overview_toggle",
+        Icon::Menu,
+        if state.show_dock_overview {
+            "Cerrar vista de pestañas"
+        } else {
+            "Ver todas las pestañas"
+        },
+        if state.show_dock_overview {
+            theme::SELECTED
+        } else {
+            theme::BACKGROUND
+        },
+        theme::FOREGROUND_SUBTLE,
+        32.0,
+    ));
+    tab_controls.push(hinted_icon_button(
+        "toggle_side_pane",
+        Icon::PanelRightClose,
+        "Ocultar panel derecho",
+        theme::BACKGROUND,
+        theme::FOREGROUND_SUBTLE,
+        32.0,
+    ));
     let header = Element::panel(Element::row(tab_controls).gap(4.0))
         .padding(16.0)
         .size(None, Some(RIGHT_HEADER_HEIGHT));
-    let body = if state.dock_tabs.is_empty() {
+    let body = if state.dock_tabs.is_empty() && !state.show_dock_overview {
         dock_empty_content(width)
     } else if state.show_dock_overview {
-        let mut tabs = vec![Element::row(vec![
-            eyebrow("PESTAÑAS ABIERTAS"),
-            Element::spacer().flex(1.0),
-            button(
-                "dock_close_all",
-                "Cerrar todas",
-                theme::HOVER,
-                theme::FOREGROUND_SUBTLE,
+        let query = state.dock_overview_query.trim().to_lowercase();
+        let matches = |title: &str, kind: SideTab| {
+            let kind_name = match kind {
+                SideTab::Context => "contexto",
+                SideTab::Files => "archivos",
+                SideTab::Activity => "actividad",
+                SideTab::CodeReview => "cambios",
+                SideTab::Terminal => "terminal",
+                SideTab::FilePreview => "vista de archivo",
+            };
+            query.is_empty() || title.to_lowercase().contains(&query) || kind_name.contains(&query)
+        };
+        let filtered_tabs: Vec<_> = state
+            .dock_tabs
+            .iter()
+            .filter(|tab| matches(&tab.title, tab.kind))
+            .collect();
+        let filtered_recent: Vec<_> = state
+            .dock_recently_closed
+            .iter()
+            .filter(|tab| matches(&tab.title, tab.kind))
+            .collect();
+        let mut tabs = vec![
+            Search::new(
+                "dock_overview_query",
+                &state.dock_overview_query,
+                "Buscar pestañas…",
+                theme::component_palette(),
             )
-            .font_size(11.0)
-            .min_size(0.0, 0.0)
-            .size(Some(86.0), Some(24.0)),
-        ])
-        .size(None, Some(24.0))];
-        for tab in &state.dock_tabs {
+            .render()
+            .size(None, Some(34.0)),
+            Element::row(vec![
+                eyebrow("PESTAÑAS ABIERTAS"),
+                Element::spacer().flex(1.0),
+                if state.dock_tabs.is_empty() {
+                    Element::spacer().size(Some(86.0), Some(24.0))
+                } else {
+                    button(
+                        "dock_close_all",
+                        "Cerrar todas",
+                        theme::HOVER,
+                        theme::FOREGROUND_SUBTLE,
+                    )
+                    .font_size(11.0)
+                    .min_size(0.0, 0.0)
+                    .size(Some(86.0), Some(24.0))
+                },
+            ])
+            .size(None, Some(24.0)),
+        ];
+        if filtered_tabs.is_empty() {
+            tabs.push(
+                label(
+                    if state.dock_tabs.is_empty() {
+                        "No hay pestañas abiertas"
+                    } else {
+                        "Sin coincidencias abiertas"
+                    },
+                    theme::FOREGROUND_SUBTLE,
+                )
+                .font_size(11.0)
+                .padding(8.0),
+            );
+        }
+        let first_id = state.dock_tabs.first().map(|tab| tab.id);
+        let last_id = state.dock_tabs.last().map(|tab| tab.id);
+        for tab in filtered_tabs {
             tabs.push(
                 Element::row(vec![
                     button(
@@ -3990,23 +4267,43 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
                     .font_size(10.0)
                     .min_size(0.0, 0.0)
                     .size(Some(34.0), Some(28.0)),
-                    icon_button(
-                        format!("dock_move_up:{}", tab.id),
-                        Icon::ArrowUp,
-                        "",
-                        theme::BACKGROUND,
-                        theme::FOREGROUND_SUBTLE,
-                    )
-                    .size(Some(24.0), Some(28.0)),
-                    if tab.closable {
-                        icon_button(
-                            format!("dock_close:{}", tab.id),
-                            Icon::Close,
-                            "",
+                    if first_id == Some(tab.id) {
+                        Element::icon(Icon::ArrowUp)
+                            .foreground(theme::BORDER)
+                            .size(Some(24.0), Some(24.0))
+                    } else {
+                        hinted_icon_button(
+                            format!("dock_move_up:{}", tab.id),
+                            Icon::ArrowUp,
+                            "Subir",
                             theme::BACKGROUND,
                             theme::FOREGROUND_SUBTLE,
+                            24.0,
                         )
-                        .size(Some(28.0), Some(28.0))
+                    },
+                    if last_id == Some(tab.id) {
+                        Element::icon(Icon::ArrowDown)
+                            .foreground(theme::BORDER)
+                            .size(Some(24.0), Some(24.0))
+                    } else {
+                        hinted_icon_button(
+                            format!("dock_move_down:{}", tab.id),
+                            Icon::ArrowDown,
+                            "Bajar",
+                            theme::BACKGROUND,
+                            theme::FOREGROUND_SUBTLE,
+                            24.0,
+                        )
+                    },
+                    if tab.closable {
+                        hinted_icon_button(
+                            format!("dock_close:{}", tab.id),
+                            Icon::Close,
+                            "Cerrar pestaña",
+                            theme::BACKGROUND,
+                            theme::FOREGROUND_SUBTLE,
+                            28.0,
+                        )
                     } else {
                         Element::spacer().size(Some(28.0), Some(28.0))
                     },
@@ -4014,6 +4311,45 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
                 .gap(4.0)
                 .size(None, Some(28.0)),
             );
+        }
+        tabs.push(Element::spacer().size(None, Some(8.0)));
+        tabs.push(eyebrow("RECIENTES (MÁX. 8)"));
+        if filtered_recent.is_empty() {
+            tabs.push(
+                label(
+                    if state.dock_recently_closed.is_empty() {
+                        "No hay pestañas recientes"
+                    } else {
+                        "Sin coincidencias recientes"
+                    },
+                    theme::FOREGROUND_SUBTLE,
+                )
+                .font_size(11.0)
+                .padding(8.0),
+            );
+        }
+        for tab in filtered_recent {
+            let row = if tab.restorable {
+                Button::new(
+                    format!("dock_reopen:{}", tab.id),
+                    shorten(&tab.title, 25),
+                    theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+                )
+                .icon(Icon::History)
+                .variant(ButtonVariant::Subtle)
+                .render()
+                .font_size(12.0)
+                .min_size(0.0, 0.0)
+                .size(None, Some(28.0))
+            } else {
+                label(
+                    format!("{} · sesión cerrada", shorten(&tab.title, 25)),
+                    theme::FOREGROUND_SUBTLE,
+                )
+                .font_size(11.0)
+                .size(None, Some(28.0))
+            };
+            tabs.push(row);
         }
         tabs.push(Element::spacer().size(None, Some(8.0)));
         tabs.push(eyebrow("ABRIR PESTAÑA"));
@@ -4035,7 +4371,7 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
             }
         }
     };
-    let body = if state.dock_tabs.is_empty()
+    let body = if (state.dock_tabs.is_empty() && !state.show_dock_overview)
         || (!state.show_dock_overview
             && matches!(state.side_tab, SideTab::Files | SideTab::Terminal))
     {
@@ -4043,7 +4379,21 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
         // and keeps its command line visible below the screen.
         body.flex(1.0)
     } else {
-        ScrollArea::new("side_pane", body)
+        // Each surface keeps its own scroll offset. In particular, opening
+        // the overview must reveal its search field even after scrolling a
+        // long activity or preview pane.
+        let scroll_id = if state.show_dock_overview {
+            "side_pane_overview"
+        } else {
+            match state.side_tab {
+                SideTab::Context => "side_pane_context",
+                SideTab::Activity => "side_pane_activity",
+                SideTab::CodeReview => "side_pane_review",
+                SideTab::FilePreview => "side_pane_preview",
+                SideTab::Files | SideTab::Terminal => unreachable!(),
+            }
+        };
+        ScrollArea::new(scroll_id, body)
             .tint(theme::FOREGROUND_SUBTLE)
             .render()
             .flex(1.0)
@@ -4057,152 +4407,6 @@ fn workspace_divider() -> Element {
     Element::spacer()
         .size(Some(RIGHT_DIVIDER), None)
         .background(theme::BORDER)
-}
-
-pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Element {
-    let tab_width = ((width - 40.0) / 4.0).max(55.0);
-    let scopes = [
-        ("all", "Todo", Scope::All),
-        ("commands", "Acciones", Scope::Commands),
-        ("sessions", "Tareas", Scope::Sessions),
-        ("files", "Archivos", Scope::Files),
-    ];
-    let scope_tabs = Tabs::new(
-        scopes
-            .into_iter()
-            .map(|(id, title, scope)| {
-                Tab::new(format!("command_scope:{id}"), title, tab_width)
-                    .active(state.command_scope == scope)
-            })
-            .collect(),
-        theme::component_palette(),
-    )
-    .height(30.0)
-    .render();
-    let mut rows = Vec::new();
-    let mut section = None;
-    for (index, result) in state.command_results.iter().enumerate() {
-        if section != Some(result.section) {
-            section = Some(result.section);
-            rows.push(
-                eyebrow(match result.section {
-                    Scope::All => "RESULTADOS",
-                    Scope::Commands => "ACCIONES",
-                    Scope::Sessions => "TAREAS",
-                    Scope::Files => "ARCHIVOS",
-                })
-                .padding(6.0),
-            );
-        }
-        let icon = match result.section {
-            Scope::All | Scope::Commands => Icon::Code,
-            Scope::Sessions => Icon::Chat,
-            Scope::Files => Icon::Folder,
-        };
-        let shortcut = match &result.target {
-            crate::command_center::Target::NewTask => "Ctrl+N",
-            crate::command_center::Target::OpenSettings => "",
-            _ => "",
-        };
-        rows.push(
-            Element::clickable(
-                format!("command_result:{index}"),
-                Element::row(vec![
-                    Element::icon(icon)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .size(Some(16.0), Some(16.0)),
-                    Element::column(vec![
-                        label(shorten(&result.title, 62), theme::FOREGROUND).font_size(13.0),
-                        label(shorten(&result.subtitle, 84), theme::FOREGROUND_SUBTLE)
-                            .font_size(10.5),
-                    ])
-                    .gap(2.0)
-                    .flex(1.0),
-                    label(shortcut, theme::FOREGROUND_SUBTLE).font_size(10.0),
-                ])
-                .gap(10.0)
-                .padding(9.0)
-                .size(None, Some(48.0)),
-            )
-            .background(if state.command_selected_index == index {
-                theme::SELECTED
-            } else {
-                theme::PANEL
-            })
-            .hover_background(if state.command_selected_index == index {
-                theme::SELECTED
-            } else {
-                theme::hover_for(theme::PANEL)
-            })
-            .pressed_background(theme::SELECTED)
-            .radius(9.0),
-        );
-    }
-    if rows.is_empty() {
-        rows.push(
-            Element::column(vec![
-                Element::icon(Icon::Search)
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(Some(20.0), Some(20.0)),
-                label("No hay resultados", theme::FOREGROUND).font_size(13.0),
-                label(
-                    "Prueba otro término o cambia el filtro.",
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(11.0),
-            ])
-            .gap(7.0)
-            .padding(22.0),
-        );
-    }
-    Element::panel(
-        Element::column(vec![
-            Element::row(vec![
-                label("Buscar", theme::FOREGROUND).font_size(16.0),
-                Element::spacer().flex(1.0),
-                button(
-                    "command_close",
-                    "Esc",
-                    theme::HOVER,
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(11.0)
-                .size(Some(36.0), Some(26.0)),
-            ])
-            .padding(4.0),
-            SearchField::new(
-                "command_query",
-                &state.command_query,
-                "Buscar acciones, tareas o archivos…",
-                theme::component_palette(),
-            )
-            .render()
-            .size(None, Some(42.0)),
-            scope_tabs,
-            divider(),
-            ScrollArea::new(
-                "command_results",
-                Element::column(rows).gap(3.0).padding(8.0),
-            )
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .flex(1.0),
-            divider(),
-            label(
-                "Ctrl+K buscar · > acciones · # tareas · @ archivos",
-                theme::FOREGROUND_SUBTLE,
-            )
-            .font_size(11.0)
-            .padding(4.0),
-        ])
-        .gap(8.0),
-    )
-    .padding(12.0)
-    .background(theme::PANEL)
-    .border(theme::BORDER, 1.0)
-    .radius(16.0)
-    .shadow(Color::rgba(0, 0, 0, 155), Point::new(0.0, 16.0), 28.0, 1.0)
-    .size(Some(width), Some(height))
 }
 
 pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
@@ -4285,6 +4489,9 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
         for permission in state.pending_permissions.iter().take(3) {
             center_items.push(permission_card(permission, compact).padding(8.0));
         }
+        if let Some(cards) = crate::session_surface::related_subagent_cards(state, compact) {
+            center_items.push(cards);
+        }
         if !state.show_settings {
             center_items.push(composer(state, center_width));
         }
@@ -4362,10 +4569,198 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
             .radius(WORKSPACE_RADIUS)
             .flex(1.0),
     );
-    Element::row(docks)
+    let base = Element::row(docks)
         .gap(GAP)
         .padding(GAP)
-        .background(theme::WINDOW)
+        .background(theme::WINDOW);
+    let base = confirmation_dialog(state, base, viewport_width);
+    let base = settings_ui::mcp_editor_modal(state, base, viewport_width);
+    let base = settings_ui::hook_editor_modal(state, base, viewport_width);
+    let base = settings_ui::exec_rule_editor_modal(state, base, viewport_width);
+    let base = settings_ui::exec_rule_reset_modal(state, base, viewport_width);
+    settings_ui::native_skill_reset_modal(state, base, viewport_width)
+}
+
+fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    let width = (viewport_width - 24.0).min(440.0);
+    if let Some(id) = state.renaming_session_id.as_deref() {
+        if state.sessions.iter().any(|session| session.id == id) {
+            return AlertDialog::new(
+                base,
+                true,
+                "Renombrar tarea",
+                "Escribe un título para esta tarea.",
+                format!("rename_commit:{id}"),
+                "rename_cancel",
+                theme::component_palette(),
+            )
+            .width(width)
+            .confirm_label("Guardar")
+            .body(
+                field("rename_title", &state.rename_draft, "Nombre de la tarea")
+                    .font_size(14.0)
+                    .size(Some((width - 48.0).max(0.0)), Some(40.0)),
+            )
+            .render();
+        }
+    }
+    if let Some(id) = state.group_rename_id.as_deref() {
+        if state
+            .session_groups
+            .groups
+            .iter()
+            .any(|group| group.id == id)
+        {
+            return AlertDialog::new(
+                base,
+                true,
+                "Renombrar grupo",
+                "Escribe un nombre para este grupo.",
+                format!("session_group_rename_commit:{id}"),
+                "session_group_rename_cancel",
+                theme::component_palette(),
+            )
+            .width(width)
+            .confirm_label("Guardar")
+            .body(
+                field(
+                    "group_rename_draft",
+                    &state.group_rename_draft,
+                    "Nombre del grupo",
+                )
+                .font_size(14.0)
+                .size(Some((width - 48.0).max(0.0)), Some(40.0)),
+            )
+            .render();
+        }
+    }
+    let dialog = if let Some(id) = state.pending_native_command_termination.as_deref() {
+        state.native_commands.iter().find(|command| command.id == id && command.exit.is_none()).map(|command| {
+            (
+                "¿Terminar este comando?".to_owned(),
+                format!("Se cerrará el proceso {} y sus descendientes. La salida ya producida quedará disponible para el agente.", shorten(&command.id, 18)),
+                format!("native_command_terminate_confirm:{id}"),
+                "native_command_terminate_cancel".to_owned(),
+                "Terminar proceso".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.pending_mcp_delete_id.as_deref() {
+        state.mcp_servers.iter().find(|server| server.id == id).map(|server| {
+            let mut description = "Se quitará de la configuración de este proyecto. Podrás volver a agregarlo más adelante.".to_owned();
+            if state.settings_notice_error {
+                if let Some(error) = &state.settings_notice {
+                    description.push_str("\n\n");
+                    description.push_str(error);
+                }
+            }
+            (
+                format!("¿Eliminar el servidor MCP «{}»?", server.id),
+                description,
+                format!("mcp_delete_confirm:{id}"),
+                "mcp_delete_cancel".to_owned(),
+                "Eliminar servidor".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.marketplace.pending_uninstall_id.as_deref() {
+        state.marketplace.snapshot.items.iter().find(|item| item.id == id).map(|item| {
+            (
+                format!("¿Desinstalar «{}»?", item.name),
+                "La skill se quitará de su ubicación instalada. Podrás volver a instalarla desde Marketplace.".to_owned(),
+                format!("marketplace_uninstall_confirm:{id}"),
+                "marketplace_alert_cancel".to_owned(),
+                "Desinstalar".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.marketplace.pending_remove_source_id.as_deref() {
+        state.marketplace.snapshot.sources.iter().find(|source| source.id == id).map(|source| {
+            (
+                format!("¿Quitar el origen «{}»?", source.name),
+                "Este origen dejará de aparecer en Marketplace. Podrás volver a agregarlo más adelante.".to_owned(),
+                format!("marketplace_remove_source_confirm:{id}"),
+                "marketplace_alert_cancel".to_owned(),
+                "Quitar origen".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.automations.pending_delete_id.as_deref() {
+        state
+            .automations
+            .items
+            .iter()
+            .find(|item| item.id == id)
+            .map(|item| {
+                (
+                    format!("¿Eliminar «{}»?", item.title),
+                    "Se eliminará esta automatización y su programación. Esta acción no se puede deshacer.".to_owned(),
+                    format!("automation_delete_confirm:{id}"),
+                    "automation_delete_cancel".to_owned(),
+                    "Eliminar".to_owned(),
+                    true,
+                )
+            })
+    } else if let Some(id) = state.pending_delete_session_id.as_deref() {
+        state.sessions.iter().find(|session| session.id == id).map(|session| {
+            (
+                format!("¿Eliminar «{}»?", session.title),
+                "Se eliminará la tarea archivada, sus subagentes y su historial. Esta acción no se puede deshacer.".to_owned(),
+                format!("delete_confirm:{id}"),
+                "delete_cancel".to_owned(),
+                "Eliminar".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.pending_delete_group_id.as_deref() {
+        state.session_groups.groups.iter().find(|group| group.id == id).map(|group| {
+            (
+                format!("¿Eliminar el grupo «{}»?", group.title),
+                "Las tareas del grupo seguirán disponibles sin agrupar. Esta acción no se puede deshacer.".to_owned(),
+                format!("session_group_delete_confirm:{id}"),
+                "session_group_menu_dismiss".to_owned(),
+                "Eliminar grupo".to_owned(),
+                true,
+            )
+        })
+    } else if let Some(id) = state.pending_archive_session_id.as_deref() {
+        state
+            .sessions
+            .iter()
+            .find(|session| session.id == id)
+            .map(|session| {
+                (
+                    format!("¿Archivar «{}»?", session.title),
+                    "La tarea saldrá de la lista activa. Podrás restaurarla desde Archivadas."
+                        .to_owned(),
+                    format!("archive_confirm:{id}"),
+                    "archive_cancel".to_owned(),
+                    "Archivar".to_owned(),
+                    false,
+                )
+            })
+    } else {
+        None
+    };
+    let Some((title, description, confirm_id, cancel_id, confirm_label, destructive)) = dialog
+    else {
+        return base;
+    };
+    let mut alert = AlertDialog::new(
+        base,
+        true,
+        title,
+        description,
+        confirm_id,
+        cancel_id,
+        theme::component_palette(),
+    )
+    .width((viewport_width - 24.0).min(440.0))
+    .confirm_label(confirm_label);
+    if destructive {
+        alert = alert.destructive(theme::DESTRUCTIVE);
+    }
+    alert.render()
 }
 
 #[cfg(test)]
@@ -4375,21 +4770,58 @@ mod tests {
     use openide_ui::{DrawCommand, Key, Point, Size, UiAction, UiEvent, UiTree};
     use serde_json::json;
 
+    #[test]
+    fn activity_lists_and_can_revoke_session_approval_grants() {
+        let mut state = empty_state();
+        state.selected_session = Some("session-1".into());
+        state.selected_backend = "native".into();
+        let digest = "a".repeat(64);
+        state.session_approval_grants = vec![SessionApprovalGrantView {
+            tool_name: "run_command".into(),
+            key_digest: digest.clone(),
+        }];
+        let frame = UiTree::new(activity_content(&state)).layout(Size::new(360.0, 700.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| { region.id == format!("session_approval_revoke:{digest}") }));
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::Text { text, .. } if text == "run_command"
+        )));
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::Text { text, .. } if text == "Revocar"
+        )));
+    }
+
     fn empty_state() -> ViewState {
         ViewState {
             sessions_status: None,
+            session_plans: BTreeMap::new(),
+            session_recovery: BTreeMap::new(),
             pending_permissions: Vec::new(),
+            pending_subagent_permissions: Vec::new(),
+            active_subagents: Vec::new(),
+            recoverable_subagent: None,
+            pending_tool_verification: None,
+            pending_batch_discard: None,
+            tool_verification_output: String::new(),
+            tool_verification_is_error: false,
             workspace: "C:/project".into(),
             workspace_draft: "C:/project".into(),
             project_branch: None,
             prompt: String::new(),
             composer_attachments: Vec::new(),
             composer_add_menu_open: false,
+            composer_listening: false,
+            composer_goal: None,
+            composer_goal_editor_open: false,
+            composer_goal_draft: String::new(),
             composer_project_menu_open: false,
             composer_project_options: Vec::new(),
             endpoint: String::new(),
             model: String::new(),
             native_provider_id: "custom".into(),
+            hosted_web_search_mode: None,
             catalog: None,
             catalog_status: String::new(),
             catalog_refreshing: false,
@@ -4401,10 +4833,19 @@ mod tests {
             backend_menu_open: false,
             composer_model: "gpt-4.1".into(),
             composer_model_options: vec![("gpt-4.1".into(), "gpt-4.1".into())],
+            composer_routes: Vec::new(),
+            composer_provider_status: BTreeMap::new(),
             composer_model_menu_open: false,
+            composer_model_list_open: false,
+            composer_model_query: String::new(),
+            composer_advanced_open: false,
             composer_effort: "default".into(),
             composer_effort_options: Vec::new(),
             composer_effort_menu_open: false,
+            composer_effort_preview: None,
+            composer_effort_hovered: false,
+            composer_context_percent: None,
+            turn_mode: TurnMode::Build,
             sessions: Vec::new(),
             selected_session: None,
             selected_session_title: None,
@@ -4437,10 +4878,41 @@ mod tests {
             native_key_available: false,
             workspace_writes_enabled: false,
             native_tool_permissions: ToolPermissions::default(),
+            native_command_isolation: if cfg!(windows) {
+                CommandIsolation::WorkspaceWriteOffline
+            } else {
+                CommandIsolation::HostUnrestricted
+            },
+            session_approval_grants: Vec::new(),
+            native_commands: Vec::new(),
+            native_commands_error: None,
+            pending_native_command_termination: None,
+            native_command_terminating: None,
+            native_hooks: Default::default(),
+            native_exec_rules: Default::default(),
+            native_skills: Default::default(),
             settings_reduced_motion: false,
             settings_reopen_last_workspace: false,
             settings_terminal_shell: TerminalShell::System,
             settings_terminal_shell_draft: String::new(),
+            mcp_servers: Vec::new(),
+            mcp_selected_id: None,
+            mcp_editor_open: false,
+            pending_mcp_delete_id: None,
+            mcp_draft_id: String::new(),
+            mcp_draft_http: false,
+            mcp_draft_url: String::new(),
+            mcp_draft_http_bearer_token_env_name: String::new(),
+            mcp_draft_oauth_enabled: false,
+            mcp_draft_oauth_client_id: String::new(),
+            mcp_draft_oauth_issuer: String::new(),
+            mcp_draft_oauth_scopes: String::new(),
+            mcp_oauth_status: None,
+            mcp_draft_program: String::new(),
+            mcp_draft_args: "[]".into(),
+            mcp_draft_cwd: String::new(),
+            mcp_draft_env_names: String::new(),
+            mcp_load_error: None,
             show_settings: false,
             main_page: MainPage::Workspace,
             automations: AutomationViewState::new(
@@ -4458,6 +4930,9 @@ mod tests {
             command_scope: Scope::All,
             command_results: Vec::new(),
             command_selected_index: 0,
+            command_search_loading: false,
+            command_search_errors: Vec::new(),
+            command_search_truncated: false,
             show_side_pane: true,
             sidebar_collapsed: false,
             left_dock_width: None,
@@ -4483,6 +4958,8 @@ mod tests {
                     closable: false,
                 },
             ],
+            dock_recently_closed: Vec::new(),
+            dock_overview_query: String::new(),
             show_dock_overview: false,
             show_dock_add_menu: false,
             file_preview: None,
@@ -4503,6 +4980,7 @@ mod tests {
         let mut state = empty_state();
         state.transcript.push(TranscriptItem::User {
             content: "Primer mensaje".into(),
+            images: Vec::new(),
         });
         state.prompt = "Siguiente paso".into();
         for viewport in [620.0, 1000.0] {
@@ -4516,7 +4994,7 @@ mod tests {
                         rect,
                         color,
                         radius,
-                    } if *color == theme::SELECTED && *radius == 25.0 => Some(*rect),
+                    } if *color == Color::rgb(38, 38, 38) && *radius == 26.0 => Some(*rect),
                     _ => None,
                 })
                 .expect("shared composer card");
@@ -4524,7 +5002,7 @@ mod tests {
                 "prompt",
                 "run_toggle",
                 "composer_model_toggle",
-                "write_mode",
+                "composer_add_context",
             ] {
                 let region = frame
                     .regions
@@ -4582,6 +5060,98 @@ mod tests {
             assert!((gear.x + gear.width / 2.0 - settings.rect.x - 18.0).abs() < 1.0);
             assert!((gear.y + gear.height / 2.0 - settings.rect.y - 18.0).abs() < 1.0);
         }
+    }
+
+    #[test]
+    fn sidebar_brand_and_github_align_with_navigation_at_all_widths() {
+        let mut state = empty_state();
+        for width in [176.0, 200.0, 264.0] {
+            state.github_account = GithubAccountStatus::Disconnected;
+            let frame = UiTree::new(sidebar(&state, width)).layout(Size::new(width, 620.0));
+            let text_position = |value: &str| {
+                frame
+                    .commands
+                    .iter()
+                    .find_map(|command| match command {
+                        DrawCommand::Text { text, position, .. } if text == value => {
+                            Some(*position)
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| panic!("missing {value} at {width}"))
+            };
+            let title = text_position("OpenIDE");
+            let nav = text_position("Nueva tarea");
+            let account_label = text_position(if width < 230.0 {
+                "Conectar"
+            } else {
+                "Conectar con GitHub"
+            });
+            assert!((title.x - nav.x).abs() <= 1.0, "brand x at {width}");
+            assert!(
+                (account_label.x - nav.x).abs() <= 1.0,
+                "account label x at {width}"
+            );
+            let region = |id: &str| {
+                frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == id)
+                    .unwrap()
+                    .rect
+            };
+            let toggle = region("toggle_sidebar");
+            let account = region("github_account_connect");
+            let github = frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Icon {
+                        icon: Icon::Github,
+                        rect,
+                        ..
+                    } => Some(*rect),
+                    _ => None,
+                })
+                .expect("GitHub icon");
+            assert!(
+                (title.y + 9.0 - (toggle.y + toggle.height / 2.0)).abs() <= 1.0,
+                "brand y at {width}"
+            );
+            assert!(
+                (github.x + github.width / 2.0 - (toggle.x + toggle.width / 2.0)).abs() <= 1.0,
+                "GitHub x at {width}"
+            );
+            assert!(
+                (github.y + github.height / 2.0 - (account.y + account.height / 2.0)).abs() <= 1.0,
+                "GitHub y at {width}"
+            );
+        }
+        state.github_account =
+            GithubAccountStatus::Connected(crate::github_account::GithubIdentity {
+                login: "nihue".to_owned(),
+            });
+        let frame =
+            UiTree::new(sidebar_account_footer(&state, 176.0)).layout(Size::new(176.0, 52.0));
+        let account = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "github_account_open")
+            .unwrap()
+            .rect;
+        let github = frame
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::Icon {
+                    icon: Icon::Github,
+                    rect,
+                    ..
+                } => Some(*rect),
+                _ => None,
+            })
+            .expect("connected GitHub icon");
+        assert!((github.y + github.height / 2.0 - (account.y + account.height / 2.0)).abs() <= 1.0);
     }
 
     #[test]
@@ -4729,6 +5299,104 @@ mod tests {
             assert!(rect.y > RIGHT_HEADER_HEIGHT + 50.0);
             assert!(rect.y + rect.height < 600.0);
         }
+    }
+
+    #[test]
+    fn dock_overview_filters_open_and_recent_tabs_and_keeps_reopen_reachable() {
+        let mut state = empty_state();
+        state.show_dock_overview = true;
+        state.dock_tabs.push(DockTabView {
+            id: 3,
+            title: "Terminal".into(),
+            active: false,
+            kind: SideTab::Terminal,
+            closable: true,
+        });
+        state.dock_recently_closed = vec![
+            DockRecentlyClosedView {
+                id: 7,
+                title: "README.md".into(),
+                kind: SideTab::FilePreview,
+                restorable: true,
+            },
+            DockRecentlyClosedView {
+                id: 8,
+                title: "Terminal".into(),
+                kind: SideTab::Terminal,
+                restorable: false,
+            },
+        ];
+        state.dock_overview_query = "readme".into();
+        let filtered = UiTree::new(side_pane(&state, 340.0)).layout(Size::new(340.0, 600.0));
+        assert!(filtered
+            .regions
+            .iter()
+            .any(|region| region.id == "dock_reopen:7"));
+        assert!(!filtered
+            .regions
+            .iter()
+            .any(|region| region.id == "dock_move_down:3"));
+        assert!(!filtered
+            .regions
+            .iter()
+            .any(|region| region.id == "dock_reopen:8"));
+
+        state.dock_tabs.clear();
+        state.dock_overview_query.clear();
+        let empty_open = UiTree::new(side_pane(&state, 340.0)).layout(Size::new(340.0, 600.0));
+        assert!(empty_open
+            .regions
+            .iter()
+            .any(|region| region.id == "dock_reopen:7"));
+        assert!(empty_open
+            .regions
+            .iter()
+            .any(|region| region.id == "dock_overview_query"));
+    }
+
+    #[test]
+    fn dock_overview_search_starts_visible_after_scrolling_activity_with_twenty_tabs() {
+        let mut state = empty_state();
+        state.side_tab = SideTab::Activity;
+        for index in 0..20 {
+            state.transcript.push(TranscriptItem::Tool {
+                id: format!("call-{index}"),
+                name: "read_file".into(),
+                arguments: json!({"path": format!("src/file-{index}.rs")}),
+                output: Some(format!("result-{index}")),
+                is_error: false,
+            });
+            state.dock_tabs.push(DockTabView {
+                id: index + 10,
+                title: format!("file-{index}.rs"),
+                active: false,
+                kind: SideTab::FilePreview,
+                closable: true,
+            });
+        }
+        let viewport = Size::new(340.0, 360.0);
+        let mut tree = UiTree::new(side_pane(&state, viewport.width));
+        tree.layout(viewport);
+        for _ in 0..5 {
+            tree.handle_event(UiEvent::Scroll {
+                position: Point::new(170.0, 220.0),
+                delta_y: -120.0,
+            });
+            tree.layout(viewport);
+        }
+        assert!(tree.scroll_offset("side_pane_activity") > 0.0);
+
+        state.show_dock_overview = true;
+        tree.set_root(side_pane(&state, viewport.width));
+        let overview = tree.layout(viewport);
+        assert_eq!(tree.scroll_offset("side_pane_overview"), 0.0);
+        let search = overview
+            .regions
+            .iter()
+            .find(|region| region.id == "dock_overview_query")
+            .expect("overview search remains visible");
+        assert!(search.rect.y >= RIGHT_HEADER_HEIGHT);
+        assert!(search.rect.y + search.rect.height <= 160.0);
     }
 
     #[test]
@@ -5084,6 +5752,64 @@ mod tests {
     }
 
     #[test]
+    fn dock_icon_tooltips_keep_keyboard_actions_and_shared_hints() {
+        let mut state = empty_state();
+        let cases = [
+            (
+                side_pane(&state, 430.0),
+                "dock_overview_toggle",
+                "Ver todas las pestañas",
+            ),
+            (
+                code_review_content(&state, 430.0),
+                "review_refresh",
+                "Actualizar cambios de Git",
+            ),
+        ];
+        for (root, id, title) in cases {
+            let mut tree = UiTree::new(root);
+            let viewport = Size::new(430.0, 500.0);
+            tree.layout(viewport);
+            assert!(tree.focus(id), "{id} should remain focusable");
+            let focused = tree.layout(viewport);
+            assert!(
+                focused.commands.iter().any(|command| matches!(
+                    command,
+                    DrawCommand::Text { text, .. } if text == title
+                )),
+                "focused {id} should show its tooltip"
+            );
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false,
+                }),
+                vec![UiAction::Clicked { id: id.to_owned() }],
+            );
+        }
+
+        state.file_preview = Some(FilePreviewView {
+            tab_id: 7,
+            path: "C:/project/example.rs".into(),
+            page_index: 0,
+            content: None,
+        });
+        let mut tree = UiTree::new(file_preview_content(
+            state.file_preview.as_ref().unwrap(),
+            430.0,
+        ));
+        let viewport = Size::new(430.0, 500.0);
+        tree.layout(viewport);
+        assert!(tree.focus("dock_close:7"));
+        let focused = tree.layout(viewport);
+        assert!(focused.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Text { text, .. } if text == "Cerrar archivo"
+        )));
+    }
+
+    #[test]
     fn home_offers_right_dock_toggle_without_moving_the_composer() {
         let mut state = empty_state();
         let viewport = Size::new(1200.0, 700.0);
@@ -5362,9 +6088,11 @@ mod tests {
             (SettingsPage::Appearance, "settings_reduced_motion"),
             (SettingsPage::Agent, "write_mode"),
             (SettingsPage::Agent, "agent_tool:read_file"),
+            (SettingsPage::Agent, "command_isolation:host_unrestricted"),
             (SettingsPage::Providers, "catalog_refresh"),
             (SettingsPage::Terminal, "settings_terminal_shell:system"),
             (SettingsPage::WorkspaceSearch, "composer_add_context"),
+            (SettingsPage::Mcp, "mcp_new"),
             (SettingsPage::Skills, "open_marketplace"),
             (SettingsPage::Automations, "open_automations"),
             (SettingsPage::Data, "session_organize:recent"),
@@ -5376,6 +6104,135 @@ mod tests {
                 settings_action_reachable(&mut tree, action, 1100.0, 720.0),
                 "{page:?} missing {action}"
             );
+        }
+    }
+
+    #[test]
+    fn command_rules_have_reachable_list_and_editor_controls() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Commands;
+        state.native_exec_rules.rules = vec![openide_harness::ExecRule::new(
+            vec![
+                openide_harness::ExecPatternToken::Literal("git".into()),
+                openide_harness::ExecPatternToken::Literal("push".into()),
+            ],
+            openide_harness::ExecDecision::Ask,
+            None,
+        )
+        .unwrap()];
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            assert!(settings_action_reachable(
+                &mut tree,
+                "exec_rule_new",
+                width,
+                720.0
+            ));
+            let mut tree = UiTree::new(build_view(&state, width));
+            assert!(settings_action_reachable(
+                &mut tree,
+                "exec_rule_select:0",
+                width,
+                720.0
+            ));
+            state.native_exec_rules.editor_open = true;
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in [
+                "exec_rule_draft_pattern",
+                "exec_rule_draft_justification",
+                "exec_rule_decision:ask",
+                "exec_rule_decision:deny",
+                "exec_rule_save",
+                "exec_rule_cancel",
+            ] {
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "command rule editor missing {id} at {width}px"
+                );
+            }
+            state.native_exec_rules.editor_open = false;
+        }
+    }
+
+    #[test]
+    fn invalid_command_rules_offer_confirmed_reset() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Commands;
+        state.native_exec_rules.load_error = Some("versión no compatible".into());
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            assert!(settings_action_reachable(
+                &mut tree,
+                "exec_rule_reset",
+                width,
+                720.0
+            ));
+            state.native_exec_rules.reset_confirm_open = true;
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in ["exec_rule_reset_confirm", "exec_rule_reset_cancel"] {
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "reset modal missing {id} at {width}px"
+                );
+            }
+            state.native_exec_rules.reset_confirm_open = false;
+        }
+    }
+
+    #[test]
+    fn local_skills_have_reachable_selection_and_recovery_controls() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Skills;
+        state.native_skills.workspace = "C:/project".into();
+        let selection = openide_harness::SkillSelection {
+            name: "review".into(),
+            provenance: openide_harness::SkillProvenance {
+                origin: openide_harness::SkillOrigin::Project,
+                root: "C:/project/.agents/skills".into(),
+                skill_directory: "C:/project/.agents/skills/review".into(),
+                document: "C:/project/.agents/skills/review/SKILL.md".into(),
+                sha256_hex: "a".repeat(64),
+            },
+        };
+        state.native_skills.available =
+            vec![crate::native_skills_settings::NativeSkillCatalogEntry {
+                name: selection.name.clone(),
+                description: "Review changes".into(),
+                origin: openide_harness::SkillOrigin::Project,
+                document: selection.provenance.document.clone(),
+                selection: selection.clone(),
+            }];
+        state.native_skills.selected = vec![selection];
+        for width in [520.0, 1100.0] {
+            for id in [
+                "native_skill_refresh",
+                "native_skill_toggle:0",
+                "native_skill_remove:0",
+            ] {
+                let mut tree = UiTree::new(build_view(&state, width));
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "local skill selector missing {id} at {width}px"
+                );
+            }
+            state.native_skills.load_error = Some("archivo inválido".into());
+            let mut tree = UiTree::new(build_view(&state, width));
+            assert!(settings_action_reachable(
+                &mut tree,
+                "native_skill_reset",
+                width,
+                720.0
+            ));
+            state.native_skills.reset_confirm_open = true;
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in ["native_skill_reset_confirm", "native_skill_reset_cancel"] {
+                assert!(settings_action_reachable(&mut tree, id, width, 720.0));
+            }
+            state.native_skills.reset_confirm_open = false;
+            state.native_skills.load_error = None;
         }
     }
 
@@ -5417,6 +6274,330 @@ mod tests {
                     "{page:?} missing its heading at {width}px"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn command_isolation_choices_match_host_support_at_both_widths() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Agent;
+        for width in [520.0, 1100.0] {
+            let mut host = UiTree::new(build_view(&state, width));
+            let host_reachable = settings_action_reachable(
+                &mut host,
+                "command_isolation:host_unrestricted",
+                width,
+                720.0,
+            );
+            assert!(
+                host_reachable,
+                "host choice unreachable at {width}px, offset {}",
+                host.scroll_offset("settings_page:Agent")
+            );
+            let mut offline = UiTree::new(build_view(&state, width));
+            assert_eq!(
+                settings_action_reachable(
+                    &mut offline,
+                    "command_isolation:workspace_write_offline",
+                    width,
+                    720.0,
+                ),
+                cfg!(windows),
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_settings_keeps_list_visible_and_opens_a_centered_scrollable_editor() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Mcp;
+        state.mcp_servers = vec![crate::mcp_settings::McpServerSettings {
+            id: "filesystem".into(),
+            enabled: true,
+            program: "npx".into(),
+            args: vec!["-y".into()],
+            cwd: None,
+            credential_env_names: vec!["MCP_API_KEY".into()],
+            url: None,
+            http_bearer_token_env_name: None,
+            http_oauth: None,
+        }];
+        state.mcp_selected_id = Some("filesystem".into());
+        state.mcp_draft_id = "filesystem".into();
+        state.mcp_draft_program = "npx".into();
+        state.mcp_draft_args = "[\"-y\"]".into();
+        state.mcp_draft_env_names = "MCP_API_KEY".into();
+        for width in [520.0, 1100.0] {
+            for id in [
+                "mcp_new",
+                "mcp_select:filesystem",
+                "mcp_toggle:filesystem",
+                "mcp_delete:filesystem",
+            ] {
+                let mut tree = UiTree::new(build_view(&state, width));
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "MCP missing {id} at {width}px"
+                );
+            }
+            let closed = UiTree::new(build_view(&state, width)).layout(Size::new(width, 720.0));
+            assert!(!closed
+                .regions
+                .iter()
+                .any(|region| region.id == "mcp_draft_id"));
+
+            state.mcp_editor_open = true;
+            let mut modal_tree = UiTree::new(build_view(&state, width));
+            let modal = modal_tree.layout(Size::new(width, 720.0));
+            let card = modal
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:mcp_cancel")
+                .expect("MCP modal")
+                .rect;
+            assert!((card.x + card.width / 2.0 - width / 2.0).abs() < 1.0);
+            assert!((card.y + card.height / 2.0 - 360.0).abs() < 1.0);
+            assert_eq!(modal_tree.focused_id(), Some("mcp_draft_id"));
+            assert!(modal
+                .regions
+                .iter()
+                .any(|region| region.id == "modal_body:mcp_cancel"));
+            let save = modal
+                .regions
+                .iter()
+                .find(|region| region.id == "mcp_save")
+                .expect("fixed modal action")
+                .rect;
+            assert!(save.y >= card.y);
+            assert!(save.y + save.height <= card.y + card.height);
+            for id in [
+                "mcp_draft_id",
+                "mcp_draft_program",
+                "mcp_draft_args",
+                "mcp_draft_cwd",
+                "mcp_draft_env_names",
+                "mcp_cancel",
+            ] {
+                let mut tree = UiTree::new(build_view(&state, width));
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "MCP modal missing {id} at {width}px"
+                );
+            }
+            state.mcp_editor_open = false;
+        }
+        let frame = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 720.0));
+        assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Text { text, .. } if text == "Activado"
+        )));
+        state.mcp_servers[0].enabled = false;
+        let disabled = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 720.0));
+        assert!(disabled.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Text { text, .. } if text == "Desactivado"
+        )));
+    }
+
+    #[test]
+    fn mcp_http_editor_shows_endpoint_and_token_name_without_stdio_fields() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Mcp;
+        state.mcp_editor_open = true;
+        state.mcp_draft_http = true;
+        state.mcp_draft_url = "https://example.com/mcp".into();
+        state.mcp_draft_http_bearer_token_env_name = "MCP_HTTP_TOKEN".into();
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in [
+                "mcp_transport:stdio",
+                "mcp_transport:http",
+                "mcp_draft_url",
+                "mcp_auth:bearer",
+                "mcp_draft_http_bearer_token_env_name",
+                "mcp_save",
+            ] {
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "HTTP editor missing {id} at {width}px"
+                );
+            }
+            let frame = UiTree::new(build_view(&state, width)).layout(Size::new(width, 720.0));
+            assert!(!frame
+                .regions
+                .iter()
+                .any(|region| region.id == "mcp_draft_program"));
+            assert!(!frame
+                .regions
+                .iter()
+                .any(|region| region.id == "mcp_draft_oauth_client_id"));
+        }
+    }
+
+    #[test]
+    fn mcp_oauth_editor_and_authorization_state_are_visible() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Mcp;
+        state.mcp_editor_open = true;
+        state.mcp_draft_http = true;
+        state.mcp_draft_oauth_enabled = true;
+        state.mcp_draft_oauth_client_id = "public-client".into();
+        state.mcp_draft_oauth_issuer = "https://auth.example.test".into();
+        state.mcp_draft_oauth_scopes = "read\nwrite".into();
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in [
+                "mcp_auth:bearer",
+                "mcp_auth:oauth",
+                "mcp_draft_oauth_client_id",
+                "mcp_draft_oauth_issuer",
+                "mcp_draft_oauth_scopes",
+                "mcp_save",
+            ] {
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "OAuth editor missing {id} at {width}px"
+                );
+            }
+        }
+        state.mcp_editor_open = false;
+        state.mcp_servers = vec![crate::mcp_settings::McpServerSettings {
+            id: "remote".into(),
+            enabled: true,
+            program: String::new(),
+            args: Vec::new(),
+            cwd: None,
+            credential_env_names: Vec::new(),
+            url: Some("https://mcp.example.test/mcp".into()),
+            http_bearer_token_env_name: None,
+            http_oauth: Some(crate::mcp_settings::McpHttpOAuthSettings {
+                client_id: "public-client".into(),
+                issuer: "https://auth.example.test".into(),
+                scopes: vec!["read".into()],
+            }),
+        }];
+        state.mcp_oauth_status = Some(McpOAuthViewStatus {
+            server_id: "remote".into(),
+            phase: McpOAuthViewPhase::AwaitingBrowser {
+                url: "https://auth.example.test/authorize?state=transient".into(),
+            },
+        });
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in [
+                "mcp_oauth_authorize:remote",
+                "mcp_oauth_open",
+                "mcp_oauth_cancel",
+            ] {
+                let reachable = settings_action_reachable(&mut tree, id, width, 720.0);
+                assert_eq!(
+                    reachable,
+                    id != "mcp_oauth_authorize:remote",
+                    "{id} at {width}px"
+                );
+            }
+            let frame = UiTree::new(build_view(&state, width)).layout(Size::new(width, 720.0));
+            assert!(frame.commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::Text { text, .. } if text.contains("auth.example.test/authorize")
+            )));
+        }
+    }
+
+    #[test]
+    fn mcp_load_error_is_visible_on_settings_page() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Mcp;
+        state.mcp_load_error = Some("archivo corrupto".into());
+        let frame = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 720.0));
+        assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Text { text, .. } if text.contains("archivo corrupto")
+        )));
+    }
+
+    #[test]
+    fn native_hooks_page_and_editor_expose_bounded_host_configuration() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Hooks;
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            assert!(settings_action_reachable(
+                &mut tree, "hook_new", width, 720.0
+            ));
+        }
+        state.native_hooks.editor_open = true;
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            for id in [
+                "hook_draft_id",
+                "hook_phase:pre_tool_use",
+                "hook_phase:post_tool_use",
+                "hook_draft_tool_name",
+                "hook_draft_executable",
+                "hook_draft_args",
+                "hook_draft_cwd",
+                "hook_draft_timeout_ms",
+                "hook_draft_max_output_bytes",
+                "hook_save",
+                "hook_cancel",
+            ] {
+                assert!(
+                    settings_action_reachable(&mut tree, id, width, 720.0),
+                    "Hook editor missing {id} at {width}px"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mcp_removal_uses_a_centered_confirmation_and_escape_cancels() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Mcp;
+        state.mcp_servers = vec![crate::mcp_settings::McpServerSettings {
+            id: "filesystem".into(),
+            enabled: false,
+            program: "npx".into(),
+            args: vec![],
+            cwd: None,
+            credential_env_names: vec![],
+            url: None,
+            http_bearer_token_env_name: None,
+            http_oauth: None,
+        }];
+        state.pending_mcp_delete_id = Some("filesystem".into());
+        for width in [520.0, 1100.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            let frame = tree.layout(Size::new(width, 720.0));
+            let card = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:mcp_delete_cancel")
+                .expect("confirmation surface")
+                .rect;
+            assert!((card.x + card.width / 2.0 - width / 2.0).abs() < 1.0);
+            assert!((card.y + card.height / 2.0 - 360.0).abs() < 1.0);
+            assert!(frame
+                .regions
+                .iter()
+                .any(|region| region.id == "mcp_delete_confirm:filesystem"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Escape,
+                    shift: false,
+                    ctrl: false,
+                }),
+                vec![UiAction::Clicked {
+                    id: "mcp_delete_cancel".into()
+                }]
+            );
         }
     }
 
@@ -5522,12 +6703,16 @@ mod tests {
         ));
         for (viewport, side_by_side) in [(1300.0, true), (620.0, false)] {
             let mut tree = UiTree::new(build_view(&state, viewport));
-            assert!(settings_action_reachable(
-                &mut tree,
-                "catalog_select:openai/gpt-5.4",
-                viewport,
-                720.0
-            ));
+            assert!(
+                settings_action_reachable(
+                    &mut tree,
+                    "catalog_select:openai/gpt-5.4",
+                    viewport,
+                    720.0,
+                ),
+                "catalog model unreachable at {viewport}px, settings offset {}",
+                tree.scroll_offset("settings_page:Providers")
+            );
             let frame = tree.layout(Size::new(viewport, 720.0));
             let model = frame
                 .regions
@@ -6036,6 +7221,40 @@ mod tests {
     }
 
     #[test]
+    fn fallback_view_keeps_related_subagent_action_ids() {
+        let mut state = empty_state();
+        state.selected_session = Some("parent-1".into());
+        // Settings uses the workspace fallback branch rather than the session
+        // surface, so it must retain the same child action IDs.
+        state.show_settings = true;
+        state
+            .pending_subagent_permissions
+            .push(SubagentPermissionView {
+                child_session_id: "child-1".into(),
+                parent_session_id: "parent-1".into(),
+                request_id: "request-1".into(),
+                tool_name: "write_file".into(),
+                arguments: "{}".into(),
+            });
+        state.active_subagents.push(SubagentRunView {
+            child_session_id: "child-1".into(),
+            parent_session_id: "parent-1".into(),
+            title: "Actualizar pruebas".into(),
+        });
+        let frame = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 850.0));
+        for id in [
+            "subagent_permission_allow:child-1:request-1",
+            "subagent_permission_deny:child-1:request-1",
+            "subagent_cancel:child-1",
+        ] {
+            assert!(
+                frame.regions.iter().any(|region| region.id == id),
+                "missing {id}"
+            );
+        }
+    }
+
+    #[test]
     fn nested_file_tree_renders_continuous_guides_without_losing_row_actions() {
         let mut state = empty_state();
         state.file_rows = vec![
@@ -6236,6 +7455,45 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_native_session_has_sidebar_recovery_action() {
+        let mut state = empty_state();
+        state.sessions = vec![SessionView {
+            id: "interrupted".into(),
+            title: "Trabajo pendiente".into(),
+            project: "C:/project".into(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+        }];
+        state.session_menu_id = Some("interrupted".into());
+        for recovery in [
+            SessionRecoveryView::Resume,
+            SessionRecoveryView::Permission,
+            SessionRecoveryView::VerifyTool,
+            SessionRecoveryView::ReviewBatch,
+        ] {
+            state
+                .session_recovery
+                .insert("interrupted".into(), recovery);
+            let frame = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
+            assert!(frame
+                .regions
+                .iter()
+                .any(|region| region.id == "session_recover:interrupted"));
+        }
+        state.session_recovery.insert(
+            "interrupted".into(),
+            SessionRecoveryView::InvalidJournal("bad event".into()),
+        );
+        let frame = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "session_recover:interrupted"));
+    }
+
+    #[test]
     fn session_popover_does_not_move_sibling_rows_and_model_list_stays_in_composer() {
         let mut state = empty_state();
         state.sessions = vec![
@@ -6304,6 +7562,7 @@ mod tests {
             .composer_model_options
             .push(("gpt-6-sol".into(), "GPT-6 Sol".into()));
         state.composer_model_menu_open = true;
+        state.composer_model_list_open = true;
         let open = UiTree::new(build_view(&state, 1000.0)).layout(Size::new(1000.0, 700.0));
         let option = open
             .regions
@@ -6336,6 +7595,14 @@ mod tests {
         for id in ["rename_title", "rename_commit:old", "rename_cancel"] {
             assert!(rename.regions.iter().any(|region| region.id == id));
         }
+        let card = rename
+            .regions
+            .iter()
+            .find(|region| region.id == "popover_surface:rename_cancel")
+            .unwrap();
+        assert!((card.rect.x + card.rect.width / 2.0 - 450.0).abs() < 1.0);
+        assert!((card.rect.y + card.rect.height / 2.0 - 310.0).abs() < 1.0);
+        assert_eq!(rename.hit_test(Point::new(4.0, 4.0)), Some("rename_cancel"));
         assert!(!rename
             .regions
             .iter()
@@ -6351,6 +7618,89 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id == "session_delete:old"));
+        assert_eq!(delete.hit_test(Point::new(4.0, 4.0)), Some("delete_cancel"));
+    }
+
+    #[test]
+    fn group_rename_opens_a_centered_alert_dialog() {
+        let mut state = empty_state();
+        state.session_organization = SessionOrganization::Group;
+        state.session_groups.groups.push(SessionGroup {
+            id: "team".into(),
+            title: "Equipo".into(),
+            collapsed: false,
+        });
+        state.group_rename_id = Some("team".into());
+        state.group_rename_draft = "Equipo nuevo".into();
+        let frame = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
+        for id in [
+            "session_group_toggle:team",
+            "session_group_menu:team",
+            "group_rename_draft",
+            "session_group_rename_commit:team",
+            "session_group_rename_cancel",
+        ] {
+            assert!(
+                frame.regions.iter().any(|region| region.id == id),
+                "missing {id}"
+            );
+        }
+        let card = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "popover_surface:session_group_rename_cancel")
+            .unwrap();
+        assert!((card.rect.x + card.rect.width / 2.0 - 450.0).abs() < 1.0);
+        assert!((card.rect.y + card.rect.height / 2.0 - 310.0).abs() < 1.0);
+        assert_eq!(
+            frame.hit_test(Point::new(4.0, 4.0)),
+            Some("session_group_rename_cancel")
+        );
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "session_group_delete:team"));
+    }
+
+    #[test]
+    fn archive_and_group_removal_use_the_shared_alert_dialog() {
+        let mut state = empty_state();
+        state.sessions.push(SessionView {
+            id: "task".into(),
+            title: "Tarea".into(),
+            project: "C:/work".into(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+        });
+        state.pending_archive_session_id = Some("task".into());
+        let archive = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
+        assert!(archive
+            .regions
+            .iter()
+            .any(|region| region.id == "archive_confirm:task"));
+        assert_eq!(
+            archive.hit_test(Point::new(4.0, 4.0)),
+            Some("archive_cancel")
+        );
+
+        state.pending_archive_session_id = None;
+        state.session_groups.groups.push(SessionGroup {
+            id: "group".into(),
+            title: "Equipo".into(),
+            collapsed: false,
+        });
+        state.pending_delete_group_id = Some("group".into());
+        let group = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
+        assert!(group
+            .regions
+            .iter()
+            .any(|region| region.id == "session_group_delete_confirm:group"));
+        assert_eq!(
+            group.hit_test(Point::new(4.0, 4.0)),
+            Some("session_group_menu_dismiss")
+        );
     }
 
     #[test]
@@ -6406,6 +7756,62 @@ mod tests {
                 .count()
                 >= 2
         );
+    }
+
+    #[test]
+    fn native_command_activity_shows_state_and_confirmed_termination() {
+        let mut state = empty_state();
+        state.selected_session = Some("native-1".into());
+        state.selected_backend = "native".into();
+        state.side_tab = SideTab::Activity;
+        state.native_commands = vec![
+            PersistentCommandSessionInfo {
+                id: "running-1".into(),
+                pty: true,
+                exit: None,
+                has_output: true,
+            },
+            PersistentCommandSessionInfo {
+                id: "finished-1".into(),
+                pty: false,
+                exit: Some(PersistentCommandExit::Exited { code: Some(0) }),
+                has_output: false,
+            },
+        ];
+        let frame = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "native_command_terminate:running-1"));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "native_command_terminate:finished-1"));
+        let text = frame
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            text.contains("PTY · En ejecución · salida pendiente"),
+            "{text}"
+        );
+        assert!(text.contains("Tuberías · Finalizado · código 0"), "{text}");
+
+        state.pending_native_command_termination = Some("running-1".into());
+        let confirm = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
+        assert!(confirm
+            .regions
+            .iter()
+            .any(|region| region.id == "native_command_terminate_confirm:running-1"));
+        assert!(confirm
+            .regions
+            .iter()
+            .any(|region| region.id == "native_command_terminate_cancel"));
     }
 
     #[test]
@@ -6546,5 +7952,178 @@ mod tests {
         assert_eq!(code[0].color, theme::CODE_STRING);
         preview_source_spans("```", PreviewLanguage::Markdown, &mut state);
         assert!(!state.markdown_fence);
+    }
+
+    #[test]
+    fn command_center_distinguishes_loading_error_truncation_and_no_matches() {
+        let mut state = empty_state();
+        state.show_command_center = true;
+        state.command_query = "aguja".into();
+        let painted = |state: &ViewState| {
+            UiTree::new(build_command_center(state, 520.0, 380.0))
+                .layout(Size::new(520.0, 380.0))
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+
+        let empty = painted(&state);
+        assert!(empty.contains("No hay resultados"), "{empty}");
+        assert!(empty.contains("Sin resultados"), "{empty}");
+        assert!(empty.contains("Navegar"), "{empty}");
+        assert!(empty.contains("Abrir"), "{empty}");
+        state.command_search_loading = true;
+        let loading = painted(&state);
+        assert!(!loading.contains("Buscando"), "{loading}");
+        assert!(!loading.contains("No hay resultados"), "{loading}");
+        let mut loading_tree = UiTree::new(build_command_center(&state, 520.0, 380.0));
+        let loading_frame = loading_tree.layout(Size::new(520.0, 380.0));
+        assert!(
+            loading_tree.is_animating(),
+            "loading spinner should repaint"
+        );
+        let result_viewport = loading_frame
+            .regions
+            .iter()
+            .find(|region| {
+                region.id == "command_results" && region.kind == openide_ui::HitKind::Scroll
+            })
+            .expect("search result viewport")
+            .rect;
+        let spinner = loading_frame
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::Spinner { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .expect("centered search spinner");
+        let spinner_center_x = spinner.x + spinner.width / 2.0;
+        let spinner_center_y = spinner.y + spinner.height / 2.0;
+        assert!((spinner_center_x - result_viewport.x - result_viewport.width / 2.0).abs() < 4.0);
+        assert!((spinner_center_y - result_viewport.y - result_viewport.height / 2.0).abs() < 4.0);
+        assert!(!loading_frame.regions.iter().any(|region| {
+            region.id == "command_results" && region.kind == openide_ui::HitKind::Scrollbar
+        }));
+
+        state.command_search_loading = false;
+        state.command_search_errors = vec!["Archivos: acceso denegado".into()];
+        let failed = painted(&state);
+        assert!(
+            failed.contains("No se pudo completar la búsqueda"),
+            "{failed}"
+        );
+        assert!(!failed.contains("No hay resultados"), "{failed}");
+
+        state.command_results.push(ResultItem {
+            target: crate::command_center::Target::OpenSettings,
+            section: Scope::Commands,
+            title: "Configuración".into(),
+            subtitle: "Preferencias".into(),
+        });
+        let partial = painted(&state);
+        assert!(partial.contains("Resultados parciales"), "{partial}");
+        assert!(partial.contains("Configuración"), "{partial}");
+        assert!(partial.contains("1 resultado"), "{partial}");
+
+        state.command_search_errors.clear();
+        state.command_search_truncated = true;
+        let truncated = painted(&state);
+        assert!(truncated.contains("Se muestran los primeros resultados"));
+        assert!(truncated.contains("1+ resultados"), "{truncated}");
+    }
+
+    #[test]
+    fn command_center_uses_compact_search_and_tabs_within_modal() {
+        let state = empty_state();
+        let viewport = Size::new(560.0, 500.0);
+        let frame = UiTree::new(build_command_center(
+            &state,
+            viewport.width,
+            viewport.height,
+        ))
+        .layout(viewport);
+        let search = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "command_query")
+            .expect("search input");
+        assert!(search.rect.height <= 34.0);
+        assert!(search.rect.x >= 10.0);
+        assert!(search.rect.x + search.rect.width <= viewport.width - 10.0);
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "command_close"));
+        assert!(frame.commands.iter().any(|command| {
+            matches!(
+                command,
+                DrawCommand::Icon {
+                    icon: Icon::CloseCircle,
+                    ..
+                }
+            )
+        }));
+        for id in [
+            "command_scope:all",
+            "command_scope:commands",
+            "command_scope:sessions",
+            "command_scope:files",
+        ] {
+            let tab = frame
+                .regions
+                .iter()
+                .find(|region| region.id == id)
+                .unwrap_or_else(|| panic!("missing {id}"));
+            assert!(tab.rect.height <= 28.0);
+            assert!(tab.rect.x + tab.rect.width <= viewport.width * 0.65);
+        }
+        let text_y = |target: &str| {
+            frame.commands.iter().find_map(|command| match command {
+                DrawCommand::Text { text, position, .. } if text == target => Some(position.y),
+                _ => None,
+            })
+        };
+        let key_y = text_y("Enter").expect("footer key cap");
+        for caption in ["Sin resultados", "Navegar", "Abrir"] {
+            let caption_y = text_y(caption).expect("footer caption");
+            assert!(
+                (caption_y - key_y).abs() < 2.0,
+                "{caption} y={caption_y}, key cap y={key_y}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_result_hover_surface_stops_before_scrollbar() {
+        let mut state = empty_state();
+        state.command_results = (0..20)
+            .map(|index| ResultItem {
+                target: crate::command_center::Target::OpenSettings,
+                section: Scope::Commands,
+                title: format!("Acción {index}"),
+                subtitle: "Abrir preferencias".into(),
+            })
+            .collect();
+        let frame =
+            UiTree::new(build_command_center(&state, 560.0, 420.0)).layout(Size::new(560.0, 420.0));
+        let rail = frame
+            .regions
+            .iter()
+            .find(|region| {
+                region.id == "command_results" && region.kind == openide_ui::HitKind::Scrollbar
+            })
+            .expect("result scrollbar");
+        let row = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "command_result:0")
+            .expect("first result row");
+        assert!(row.rect.x + row.rect.width < rail.rect.x);
     }
 }

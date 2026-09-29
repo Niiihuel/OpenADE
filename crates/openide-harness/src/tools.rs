@@ -3,12 +3,19 @@ use async_trait::async_trait;
 use openide_core::ToolCall;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::fs;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::fs::{self, File, Metadata};
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+#[path = "apply_patch.rs"]
+mod apply_patch;
+#[path = "persistent_command_tools.rs"]
+mod persistent_command_tools;
+pub(crate) use persistent_command_tools::legacy_start_command_definition;
 
 const MAX_READ_BYTES: u64 = 256 * 1024;
 const MAX_LIST_ENTRIES: usize = 200;
@@ -53,6 +60,14 @@ pub struct ToolContext {
 pub trait ToolExecutor: Send + Sync {
     fn definitions(&self) -> Vec<ToolDefinition>;
 
+    /// Trusted host assertion that this implementation handles the named
+    /// built-in tool without a mutating effect and permits overlapping reads.
+    /// Composite and third-party executors stay exclusive until they opt in
+    /// with equivalent implementation-level evidence.
+    fn certifies_parallel_read(&self, _name: &str) -> bool {
+        false
+    }
+
     async fn execute(
         &self,
         call: &ToolCall,
@@ -87,7 +102,7 @@ impl LocalTool {
             "read_file" => Some(Self::ReadFile),
             "list_files" => Some(Self::ListFiles),
             "search_files" => Some(Self::SearchFiles),
-            "write_file" => Some(Self::WriteFile),
+            "write_file" | "apply_patch" => Some(Self::WriteFile),
             "run_command" => Some(Self::RunCommand),
             _ => None,
         }
@@ -143,6 +158,8 @@ impl ToolPermissions {
 #[derive(Default)]
 pub struct LocalTools {
     permissions: ToolPermissions,
+    command_isolation: crate::CommandIsolation,
+    persistent_commands: Option<Arc<crate::PersistentCommandManager>>,
 }
 
 impl LocalTools {
@@ -164,6 +181,37 @@ impl LocalTools {
         self.permissions
     }
 
+    /// Choose command isolation from trusted host settings, never tool arguments.
+    pub fn with_command_isolation(mut self, isolation: crate::CommandIsolation) -> Self {
+        self.command_isolation = isolation;
+        self
+    }
+
+    pub fn command_isolation(&self) -> crate::CommandIsolation {
+        self.command_isolation
+    }
+
+    /// Attach a manager owned by this native session. This does not enable
+    /// persistent tools unless run_command is allowed and the manager's
+    /// isolation matches this tool executor.
+    pub fn with_persistent_commands(
+        mut self,
+        manager: Arc<crate::PersistentCommandManager>,
+    ) -> Self {
+        self.persistent_commands = Some(manager);
+        self
+    }
+
+    fn persistent_commands_enabled(&self) -> bool {
+        self.permissions.run_command
+            && (self.command_isolation == crate::CommandIsolation::HostUnrestricted
+                || cfg!(windows))
+            && self
+                .persistent_commands
+                .as_ref()
+                .is_some_and(|manager| manager.isolation() == self.command_isolation)
+    }
+
     /// Compatibility shorthand for the current UI: controls write_file and run_command together.
     pub fn with_write_access(mut self, enabled: bool) -> Self {
         self.permissions.write_file = enabled;
@@ -174,6 +222,13 @@ impl LocalTools {
 
 #[async_trait]
 impl ToolExecutor for LocalTools {
+    fn certifies_parallel_read(&self, name: &str) -> bool {
+        matches!(
+            LocalTool::from_name(name),
+            Some(LocalTool::ReadFile | LocalTool::ListFiles | LocalTool::SearchFiles)
+        ) && LocalTool::from_name(name).is_some_and(|tool| self.permissions.allows(tool))
+    }
+
     fn definitions(&self) -> Vec<ToolDefinition> {
         let mut tools = vec![
             ToolDefinition {
@@ -201,7 +256,7 @@ impl ToolExecutor for LocalTools {
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "pattern": {"type": "string"},
+                        "pattern": {"type": "string", "maxLength": 16384},
                         "path": {"type": "string"}
                     },
                     "required": ["pattern"],
@@ -223,12 +278,27 @@ impl ToolExecutor for LocalTools {
                     "additionalProperties": false
                 }),
             });
+            tools.push(ToolDefinition {
+                name: "apply_patch".into(),
+                description: "Apply a bounded, context-verified text patch to files inside the workspace. Supports Add, Delete, and Update hunks. The whole patch is validated before changes begin; Move to is not supported.".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "patch": {"type": "string", "minLength": 1, "maxLength": 262144}
+                    },
+                    "required": ["patch"],
+                    "additionalProperties": false
+                }),
+            });
         }
         if self.permissions.run_command {
             tools.push(ToolDefinition {
                 name: "run_command".into(),
-                description: "Run a command in the workspace with arguments, no implicit shell."
-                    .into(),
+                description: match self.command_isolation {
+                    crate::CommandIsolation::HostUnrestricted => "Run a command with the host user's filesystem and network rights; no implicit shell.",
+                    crate::CommandIsolation::WorkspaceWriteOffline => "Run a command inside a Windows workspace-write/offline OS sandbox; no implicit shell.",
+                }
+                .into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -244,6 +314,13 @@ impl ToolExecutor for LocalTools {
         tools.retain(|definition| {
             LocalTool::from_name(&definition.name).is_some_and(|tool| self.permissions.allows(tool))
         });
+        if self.persistent_commands_enabled() {
+            let manager = self
+                .persistent_commands
+                .as_ref()
+                .expect("enabled persistent commands have a manager");
+            tools.extend(persistent_command_tools::definitions(manager));
+        }
         tools
     }
 
@@ -255,6 +332,16 @@ impl ToolExecutor for LocalTools {
         if context.cancel.is_cancelled() {
             return Err(AgentError::Cancelled);
         }
+        if persistent_command_tools::is_persistent_tool(&call.name) {
+            if !self.persistent_commands_enabled() {
+                return Ok(ToolOutput::error(format!("disabled tool: {}", call.name)));
+            }
+            let manager = self
+                .persistent_commands
+                .as_ref()
+                .expect("enabled persistent commands have a manager");
+            return persistent_command_tools::execute(manager, call, context).await;
+        }
         let Some(tool) = LocalTool::from_name(&call.name) else {
             return Ok(ToolOutput::error(format!("unknown tool: {}", call.name)));
         };
@@ -264,8 +351,13 @@ impl ToolExecutor for LocalTools {
         match call.name.as_str() {
             "read_file" => {
                 let path = required_string(&call.arguments, "path")?;
-                let path = existing_workspace_path(&context.workspace, path)?;
-                let metadata = fs::metadata(&path).map_err(tool_io_error)?;
+                let root = context.workspace.canonicalize().map_err(tool_io_error)?;
+                reject_reparse_components(&root, path)?;
+                let path = existing_workspace_path(&root, path)?;
+                let metadata = fs::symlink_metadata(&path).map_err(tool_io_error)?;
+                if is_link_or_reparse(&metadata) {
+                    return Ok(ToolOutput::error("reading through a link is not allowed"));
+                }
                 if !metadata.is_file() {
                     return Ok(ToolOutput::error("path is not a file"));
                 }
@@ -274,7 +366,23 @@ impl ToolExecutor for LocalTools {
                         "file exceeds the {MAX_READ_BYTES} byte read limit"
                     )));
                 }
-                let text = fs::read_to_string(path).map_err(tool_io_error)?;
+                let file = open_no_follow(&path).map_err(tool_io_error)?;
+                let opened = file.metadata().map_err(tool_io_error)?;
+                if !opened.is_file() || is_link_or_reparse(&opened) {
+                    return Ok(ToolOutput::error("reading through a link is not allowed"));
+                }
+                verify_opened_file_in_workspace(&file, &root)?;
+                let mut bytes = Vec::new();
+                file.take(MAX_READ_BYTES + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(tool_io_error)?;
+                if bytes.len() as u64 > MAX_READ_BYTES {
+                    return Ok(ToolOutput::error(format!(
+                        "file exceeds the {MAX_READ_BYTES} byte read limit"
+                    )));
+                }
+                let text = String::from_utf8(bytes)
+                    .map_err(|error| AgentError::Tool(error.to_string()))?;
                 Ok(ToolOutput::success(text))
             }
             "list_files" => {
@@ -283,7 +391,9 @@ impl ToolExecutor for LocalTools {
                     .get("path")
                     .and_then(Value::as_str)
                     .unwrap_or(".");
-                let path = existing_workspace_path(&context.workspace, path)?;
+                let root = context.workspace.canonicalize().map_err(tool_io_error)?;
+                reject_reparse_components(&root, path)?;
+                let path = existing_workspace_path(&root, path)?;
                 if !path.is_dir() {
                     return Ok(ToolOutput::error("path is not a directory"));
                 }
@@ -324,7 +434,14 @@ impl ToolExecutor for LocalTools {
                 atomic_write(&path, content.as_bytes())?;
                 Ok(ToolOutput::success("file written"))
             }
-            "run_command" => crate::command::run_command(call, context).await,
+            "apply_patch" => {
+                let patch = required_string(&call.arguments, "patch")?;
+                apply_patch::apply_patch(&context.workspace, patch, &context.cancel)
+            }
+            "run_command" => {
+                crate::command::run_command_with_isolation(call, context, self.command_isolation)
+                    .await
+            }
             _ => unreachable!("all known local tools are handled above"),
         }
     }
@@ -348,6 +465,21 @@ pub(crate) fn existing_workspace_path(
         return Err(AgentError::Tool("path is outside the workspace".into()));
     }
     Ok(path)
+}
+
+fn reject_reparse_components(root: &Path, requested: &str) -> Result<(), AgentError> {
+    validate_relative_path(requested)?;
+    let mut path = root.to_path_buf();
+    for component in Path::new(requested).components() {
+        path.push(component);
+        let metadata = fs::symlink_metadata(&path).map_err(tool_io_error)?;
+        if is_link_or_reparse(&metadata) {
+            return Err(AgentError::Tool(
+                "reading through a link or reparse point is not allowed".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn writable_workspace_path(workspace: &Path, requested: &str) -> Result<PathBuf, AgentError> {
@@ -422,6 +554,70 @@ fn tool_io_error(error: std::io::Error) -> AgentError {
     AgentError::Tool(error.to_string())
 }
 
+fn open_no_follow(path: &Path) -> std::io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    options.open(path)
+}
+
+fn is_link_or_reparse(metadata: &Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+#[cfg(windows)]
+fn verify_opened_file_in_workspace(file: &File, root: &Path) -> Result<(), AgentError> {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
+
+    let handle = file.as_raw_handle();
+    let needed = unsafe { GetFinalPathNameByHandleW(handle, std::ptr::null_mut(), 0, 0) };
+    if needed == 0 || needed > 32_768 {
+        return Err(AgentError::Tool(
+            "cannot verify opened file location".into(),
+        ));
+    }
+    let mut buffer = vec![0u16; needed as usize + 1];
+    let written =
+        unsafe { GetFinalPathNameByHandleW(handle, buffer.as_mut_ptr(), buffer.len() as u32, 0) };
+    if written == 0 || written as usize >= buffer.len() {
+        return Err(AgentError::Tool(
+            "cannot verify opened file location".into(),
+        ));
+    }
+    let opened = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..written as usize]));
+    if !opened.starts_with(root) {
+        return Err(AgentError::Tool("path is outside the workspace".into()));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn verify_opened_file_in_workspace(_file: &File, _workspace: &Path) -> Result<(), AgentError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,6 +625,10 @@ mod tests {
     #[test]
     fn default_and_compatibility_permissions() {
         let defaults = LocalTools::new();
+        assert_eq!(
+            defaults.command_isolation(),
+            crate::CommandIsolation::HostUnrestricted
+        );
         let names = defaults
             .definitions()
             .into_iter()
@@ -438,7 +638,71 @@ mod tests {
         let expanded = LocalTools::new().with_write_access(true);
         assert!(expanded.permissions().allows(LocalTool::WriteFile));
         assert!(expanded.permissions().allows(LocalTool::RunCommand));
-        assert_eq!(expanded.definitions().len(), 5);
+        assert_eq!(expanded.definitions().len(), 6);
+        assert!(expanded
+            .definitions()
+            .iter()
+            .any(|tool| tool.name == "apply_patch"));
+        assert_eq!(
+            LocalTool::from_name("apply_patch"),
+            Some(LocalTool::WriteFile)
+        );
+    }
+
+    #[test]
+    fn only_enabled_builtin_reads_certify_parallel_execution() {
+        let defaults = LocalTools::new();
+        for name in ["read_file", "list_files", "search_files"] {
+            assert!(defaults.certifies_parallel_read(name));
+        }
+        for name in [
+            "write_file",
+            "apply_patch",
+            "run_command",
+            "mcp__server__read",
+            "unknown",
+        ] {
+            assert!(!defaults.certifies_parallel_read(name));
+        }
+        let disabled = defaults.with_tool_permission(LocalTool::ReadFile, false);
+        assert!(!disabled.certifies_parallel_read("read_file"));
+        assert!(disabled.certifies_parallel_read("list_files"));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn command_isolation_choice_reaches_executor() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let probe = crate::command::build_sandbox_probe(&workspace);
+        let outside = dir.path().join("outside.txt");
+        let tools = LocalTools::new()
+            .with_tool_permission(LocalTool::RunCommand, true)
+            .with_command_isolation(crate::CommandIsolation::WorkspaceWriteOffline);
+        assert!(tools
+            .definitions()
+            .iter()
+            .any(|definition| definition.name == "run_command"
+                && definition.description.contains("offline OS sandbox")));
+        let call = ToolCall {
+            id: "sandbox-dispatch".into(),
+            name: "run_command".into(),
+            arguments: json!({"command":probe,"args":["--write",outside]}),
+        };
+        let output = tools
+            .execute(
+                &call,
+                &ToolContext {
+                    workspace,
+                    cancel: CancellationToken::new(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(!output.is_error, "{}", output.content);
+        assert!(output.content.contains("write=Err("), "{}", output.content);
+        assert!(!dir.path().join("outside.txt").exists());
     }
 
     #[tokio::test]
@@ -453,7 +717,10 @@ mod tests {
             .into_iter()
             .map(|definition| definition.name)
             .collect::<Vec<_>>();
-        assert_eq!(names, vec!["list_files", "search_files", "write_file"]);
+        assert_eq!(
+            names,
+            vec!["list_files", "search_files", "write_file", "apply_patch"]
+        );
         let context = ToolContext {
             workspace: dir.path().to_path_buf(),
             cancel: CancellationToken::new(),
@@ -519,6 +786,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_file_rejects_oversized_content() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("huge.txt"),
+            vec![b'x'; MAX_READ_BYTES as usize + 1],
+        )
+        .unwrap();
+        let output = LocalTools::new()
+            .execute(
+                &ToolCall {
+                    id: "large-read".into(),
+                    name: "read_file".into(),
+                    arguments: json!({"path":"huge.txt"}),
+                },
+                &ToolContext {
+                    workspace: dir.path().to_path_buf(),
+                    cancel: CancellationToken::new(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(output.is_error);
+        assert!(output.content.contains("read limit"));
+    }
+
+    #[tokio::test]
+    async fn read_and_list_reject_linked_workspace_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("real.txt"), "inside").unwrap();
+        fs::create_dir(dir.path().join("real-dir")).unwrap();
+        #[cfg(windows)]
+        let linked_file = std::os::windows::fs::symlink_file(
+            dir.path().join("real.txt"),
+            dir.path().join("linked.txt"),
+        );
+        #[cfg(unix)]
+        let linked_file =
+            std::os::unix::fs::symlink(dir.path().join("real.txt"), dir.path().join("linked.txt"));
+        #[cfg(windows)]
+        let linked_dir = std::os::windows::fs::symlink_dir(
+            dir.path().join("real-dir"),
+            dir.path().join("linked-dir"),
+        );
+        #[cfg(unix)]
+        let linked_dir =
+            std::os::unix::fs::symlink(dir.path().join("real-dir"), dir.path().join("linked-dir"));
+        if linked_file.is_err() || linked_dir.is_err() {
+            return;
+        }
+        let context = ToolContext {
+            workspace: dir.path().to_path_buf(),
+            cancel: CancellationToken::new(),
+        };
+        for (name, path) in [("read_file", "linked.txt"), ("list_files", "linked-dir")] {
+            let result = LocalTools::new()
+                .execute(
+                    &ToolCall {
+                        id: path.into(),
+                        name: name.into(),
+                        arguments: json!({"path":path}),
+                    },
+                    &context,
+                )
+                .await;
+            assert!(result.is_err(), "{name} unexpectedly followed {path}");
+        }
+    }
+
+    #[tokio::test]
     async fn write_mode_replaces_file_and_rejects_parent_paths() {
         let dir = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
@@ -549,6 +885,37 @@ mod tests {
         assert_eq!(
             fs::read_to_string(outside.path().join("private.txt")).unwrap(),
             "private"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_patch_dispatch_uses_write_permission() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("notes.txt"), "old\n").unwrap();
+        let context = ToolContext {
+            workspace: dir.path().to_path_buf(),
+            cancel: CancellationToken::new(),
+        };
+        let call = ToolCall {
+            id: "patch-1".into(),
+            name: "apply_patch".into(),
+            arguments: json!({"patch":"*** Begin Patch\n*** Update File: notes.txt\n@@\n-old\n+new\n*** End Patch"}),
+        };
+        let disabled = LocalTools::new().execute(&call, &context).await.unwrap();
+        assert!(disabled.is_error);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("notes.txt")).unwrap(),
+            "old\n"
+        );
+        let enabled = LocalTools::new()
+            .with_tool_permission(LocalTool::WriteFile, true)
+            .execute(&call, &context)
+            .await
+            .unwrap();
+        assert!(!enabled.is_error);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("notes.txt")).unwrap(),
+            "new\n"
         );
     }
 

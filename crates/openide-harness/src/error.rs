@@ -10,6 +10,8 @@ pub enum AgentError {
     Model(String),
     #[error("tool failed: {0}")]
     Tool(String),
+    #[error("tool effect is uncertain: {0}")]
+    EffectUncertain(String),
     #[error("agent limit reached: {0}")]
     Limit(String),
     #[error("runtime failed: {0}")]
