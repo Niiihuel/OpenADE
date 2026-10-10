@@ -35,7 +35,29 @@ fn label(value: impl Into<String>, color: openide_ui::Color) -> Element {
         .font_size(12.0)
         .foreground(color)
 }
-fn path_items(id: &str, path: &str, dirty: bool, width: f32) -> Vec<BreadcrumbItem> {
+pub(crate) fn path_breadcrumb(id: &str, path: &str, dirty: bool, width: f32) -> Element {
+    path_breadcrumb_with_height(id, path, dirty, width, BREADCRUMB_HEIGHT)
+}
+
+/// A passive path: where the document is, with nothing to activate.
+pub(crate) fn path_breadcrumb_with_height(
+    id: &str,
+    path: &str,
+    dirty: bool,
+    width: f32,
+    height: f32,
+) -> Element {
+    Breadcrumb::from_path(id, path, theme::component_palette())
+        .dirty(dirty)
+        .width(width)
+        .height(height)
+        .render()
+}
+
+// The hand-built path `Breadcrumb::from_path` replaced, kept for the parity
+// test until S18.
+#[cfg(test)]
+fn legacy_path_items(id: &str, path: &str, dirty: bool, width: f32) -> Vec<BreadcrumbItem> {
     let file_path = Path::new(path);
     let filename = file_path.file_name().unwrap_or_default().to_string_lossy();
     let interactive = id.starts_with("code_editor_path:");
@@ -71,18 +93,9 @@ fn path_items(id: &str, path: &str, dirty: bool, width: f32) -> Vec<BreadcrumbIt
     items
 }
 
-pub(crate) fn path_breadcrumb(id: &str, path: &str, dirty: bool, width: f32) -> Element {
-    path_breadcrumb_with_height(id, path, dirty, width, BREADCRUMB_HEIGHT)
-}
-
-pub(crate) fn path_breadcrumb_with_height(
-    id: &str,
-    path: &str,
-    dirty: bool,
-    width: f32,
-    height: f32,
-) -> Element {
-    let items = path_items(id, path, dirty, width);
+#[cfg(test)]
+fn legacy_path_breadcrumb(id: &str, path: &str, dirty: bool, width: f32, height: f32) -> Element {
+    let items = legacy_path_items(id, path, dirty, width);
     Breadcrumb::new(id, items, theme::component_palette())
         .width(width)
         .height(height)
@@ -96,8 +109,62 @@ fn editor_breadcrumb(
     width: f32,
     height: f32,
 ) -> Element {
+    // The editor's own path is navigable: folders open, the file copies its path.
+    let path = view.path.clone();
+    symbol_items(view, workbench, width)
+        .into_iter()
+        .fold(
+            Breadcrumb::from_path(
+                format!("code_editor_path:{}", view.tab_id),
+                &view.path,
+                theme::component_palette(),
+            )
+            .dirty(dirty)
+            .segment_action(move |segment| {
+                Some(if segment == path {
+                    "editor_copy_relative".into()
+                } else {
+                    format!("editor_folder:{segment}")
+                })
+            }),
+            Breadcrumb::item,
+        )
+        .width(width)
+        .height(height)
+        .overflow_open(workbench.breadcrumb_open)
+        .render()
+}
+
+#[cfg(test)]
+fn legacy_editor_breadcrumb(
+    view: &CodeEditorView,
+    workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
+    dirty: bool,
+    width: f32,
+    height: f32,
+) -> Element {
     let id = format!("code_editor_path:{}", view.tab_id);
-    let mut items = path_items(&id, &view.path, dirty, width);
+    let mut items = legacy_path_items(&id, &view.path, dirty, width);
+    items.extend(symbol_items(view, workbench, width));
+    Breadcrumb::new(id, items, theme::component_palette())
+        .width(width)
+        .height(height)
+        .overflow_open(workbench.breadcrumb_open)
+        .render()
+}
+
+/// The symbols around the caret, when the analysis is current and they fit
+/// after the path.
+fn symbol_items(
+    view: &CodeEditorView,
+    workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
+    width: f32,
+) -> Vec<BreadcrumbItem> {
+    let has_folders = Path::new(&view.path)
+        .parent()
+        .into_iter()
+        .flat_map(Path::components)
+        .any(|part| matches!(part, std::path::Component::Normal(_)));
     if let (Some(snapshot), Some(analysis)) = (
         view.controller.as_ref().and_then(|c| c.snapshot().ok()),
         workbench.analysis.as_ref(),
@@ -129,7 +196,7 @@ fn editor_breadcrumb(
             let budget = (width
                 - filename.chars().count() as f32 * 10.0
                 - 28.0
-                - if items.len() > 1 {
+                - if has_folders {
                     root as f32 * 10.0 + 18.0
                 } else {
                     0.0
@@ -149,21 +216,18 @@ fn editor_breadcrumb(
                 .sum::<f32>()
                 <= budget
             {
-                for (index, symbol) in chain {
-                    items.push(
+                return chain
+                    .into_iter()
+                    .map(|(index, symbol)| {
                         BreadcrumbItem::new(&symbol.name)
                             .action(format!("editor_symbol:{index}"))
-                            .tooltip(format!("{} · {}", view.path, symbol.name)),
-                    );
-                }
+                            .tooltip(format!("{} · {}", view.path, symbol.name))
+                    })
+                    .collect();
             }
         }
     }
-    Breadcrumb::new(id, items, theme::component_palette())
-        .width(width)
-        .height(height)
-        .overflow_open(workbench.breadcrumb_open)
-        .render()
+    Vec::new()
 }
 
 /// Editor actions share the IDE tab row. Their identity belongs to the source
@@ -197,6 +261,46 @@ pub(crate) fn titlebar_actions(
     actions
 }
 
+/// How a host presents a document. The same controller may be inspected in
+/// Agents and IDE without being replaced.
+#[derive(Default)]
+pub(crate) struct EditorPresentation {
+    /// Debugger controls and execution decorations; only IDE exposes them
+    /// outside the dock.
+    pub debugging: bool,
+    /// The document carries its own header with its actions, as in the
+    /// Agents dock. IDE keeps the actions in its tab strip and the status in
+    /// its window footer.
+    pub dock_header: bool,
+    /// Controls of a Markdown preview shown beside the source.
+    pub preview_controls: Vec<Element>,
+}
+
+impl EditorPresentation {
+    pub(crate) fn dock(debugging: bool) -> Self {
+        Self {
+            debugging,
+            dock_header: true,
+            preview_controls: Vec::new(),
+        }
+    }
+
+    pub(crate) fn ide() -> Self {
+        Self {
+            debugging: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn beside_preview(ide: bool, preview_controls: Vec<Element>) -> Self {
+        Self {
+            debugging: ide,
+            dock_header: !ide,
+            preview_controls,
+        }
+    }
+}
+
 pub(crate) fn build(
     view: &CodeEditorView,
     workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
@@ -204,33 +308,16 @@ pub(crate) fn build(
     profile: KeymapProfile,
     vim_mode: bool,
 ) -> Element {
-    build_with_debug(view, workbench, width, true, profile, vim_mode)
-}
-
-/// The same document may be inspected in Agents and IDE without replacing its
-/// controller. Only IDE exposes debugger controls and execution decorations.
-pub(crate) fn build_with_debug(
-    view: &CodeEditorView,
-    workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
-    width: f32,
-    debugging: bool,
-    profile: KeymapProfile,
-    vim_mode: bool,
-) -> Element {
-    build_with_presentation(
+    build_with(
         view,
         workbench,
         width,
-        debugging,
-        true,
-        Vec::new(),
+        EditorPresentation::dock(true),
         profile,
         vim_mode,
     )
 }
 
-/// Both hosts own their document status outside the editor viewport: IDE in
-/// its window footer and Agents in the dock footer.
 pub(crate) fn build_ide(
     view: &CodeEditorView,
     workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
@@ -238,29 +325,13 @@ pub(crate) fn build_ide(
     profile: KeymapProfile,
     vim_mode: bool,
 ) -> Element {
-    build_with_presentation(
+    build_with(
         view,
         workbench,
         width,
-        true,
-        false,
-        Vec::new(),
+        EditorPresentation::ide(),
         profile,
         vim_mode,
-    )
-}
-
-pub(crate) fn build_with_preview(
-    view: &CodeEditorView,
-    workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
-    width: f32,
-    ide: bool,
-    controls: Vec<Element>,
-    profile: KeymapProfile,
-    vim_mode: bool,
-) -> Element {
-    build_with_presentation(
-        view, workbench, width, ide, !ide, controls, profile, vim_mode,
     )
 }
 
@@ -285,16 +356,19 @@ pub(crate) fn review_row(
     )
 }
 
-fn build_with_presentation(
+pub(crate) fn build_with(
     view: &CodeEditorView,
     workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
     width: f32,
-    debugging: bool,
-    dock_header: bool,
-    preview_controls: Vec<Element>,
+    presentation: EditorPresentation,
     profile: KeymapProfile,
     vim_mode: bool,
 ) -> Element {
+    let EditorPresentation {
+        debugging,
+        dock_header,
+        preview_controls,
+    } = presentation;
     let snapshot = view.controller.as_ref().and_then(|c| c.snapshot().ok());
     let dirty = snapshot.as_ref().is_some_and(|s| s.is_dirty());
     let review = workbench.review.as_ref().filter(|review| {
@@ -428,14 +502,9 @@ fn build_with_presentation(
         rows.push(label(notice, theme::FOREGROUND_SUBTLE).padding(8.0));
     }
     if let Some(controller) = &view.controller {
-        let language = workbench.language_override.unwrap_or_else(|| {
-            CodeLanguage::from_extension(
-                Path::new(&view.path)
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_default(),
-            )
-        });
+        let language = workbench
+            .language_override
+            .unwrap_or_else(|| CodeLanguage::from_path(&view.path));
         let mut editor = CodeEditor::new(view_id(view.tab_id), controller.clone())
             .vim_mode(vim_mode)
             .indent_style(workbench.indent)
@@ -1018,6 +1087,99 @@ mod tests {
             current < 300.0,
             "path should pack to its natural width: {current}"
         );
+    }
+
+    // `Breadcrumb::from_path` replaced the hand-built segments. Delete with
+    // the final audit (S18).
+    #[test]
+    fn path_breadcrumbs_match_their_hand_built_segments() {
+        let source = "fn prepare() {\n    let answer = 42;\n}\n";
+        let mut buffer = openide_editor::TextBuffer::new(source).unwrap();
+        buffer
+            .set_selection(openide_editor::Selection { anchor: 20, head: 20 })
+            .unwrap();
+        let controller = EditorController::new(buffer);
+        let snapshot = controller.snapshot().unwrap();
+        let analysis = openide_language::ParserEngine::default()
+            .analyze(
+                &snapshot,
+                openide_language::Language::Rust,
+                &openide_language::Cancellation::default(),
+            )
+            .unwrap();
+        assert!(!analysis.symbols.is_empty());
+        let frames = |new: Element, legacy: Element, width: f32, height: f32| {
+            let frame = |root| {
+                let (ctx, mut tree) = native_header_tree(root);
+                tree.set_reduced_motion(true);
+                let frame = tree.layout(Size::new(width.max(1.0), height));
+                // The same with every segment under the pointer.
+                let hovered = frame
+                    .regions
+                    .iter()
+                    .map(|region| {
+                        tree.handle_event(UiEvent::PointerMove(Point::new(
+                            region.rect.x + region.rect.width / 2.0,
+                            region.rect.y + region.rect.height / 2.0,
+                        )));
+                        tree.layout(Size::new(width.max(1.0), height)).commands
+                    })
+                    .collect::<Vec<_>>();
+                ctx.end_pass().textures_delta.clear();
+                (frame.commands, frame.regions, hovered)
+            };
+            (frame(new), frame(legacy))
+        };
+        for path in [
+            "apps/agents-window/src/commands.rs",
+            "/home/user/projects/app/a/very/deep/tree/of/folders/src/main.rs",
+            "Cargo.toml",
+            "notes/léeme primero.md",
+            "",
+        ] {
+            for dirty in [false, true] {
+                for width in [0.0, 60.0, 75.0, 76.0, 180.0, 360.0, 900.0] {
+                    for (id, height) in [("file_preview_path", BREADCRUMB_HEIGHT), ("code_snapshot_path:4", 26.0)] {
+                        let (new, legacy) = frames(
+                            path_breadcrumb_with_height(id, path, dirty, width, height),
+                            legacy_path_breadcrumb(id, path, dirty, width, height),
+                            width,
+                            height,
+                        );
+                        assert_eq!(new, legacy, "{id} {path:?} dirty {dirty} at {width}");
+                    }
+                    let view = CodeEditorView {
+                        tab_id: 91,
+                        path: path.into(),
+                        controller: Some(controller.clone()),
+                        loading: false,
+                        saving: false,
+                        error: None,
+                        notice: None,
+                        conflict: false,
+                        recovered: false,
+                        missing: false,
+                    };
+                    for (symbols, overflow) in [(false, false), (true, false), (true, true)] {
+                        let workbench = crate::editor_workbench_ui::EditorWorkbenchView {
+                            analysis: symbols.then(|| std::sync::Arc::new(analysis.clone())),
+                            breadcrumb_open: overflow,
+                            ..Default::default()
+                        };
+                        let (new, legacy) = frames(
+                            editor_breadcrumb(&view, &workbench, dirty, width, TOOL_SIZE),
+                            legacy_editor_breadcrumb(&view, &workbench, dirty, width, TOOL_SIZE),
+                            width,
+                            TOOL_SIZE + 240.0,
+                        );
+                        assert_eq!(
+                            new, legacy,
+                            "editor {path:?} dirty {dirty} symbols {symbols} open {overflow} at {width}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -1661,15 +1823,17 @@ mod tests {
                 ..Default::default()
             };
             let root = |state: &crate::editor_workbench_ui::EditorWorkbenchView| {
-                build_with_preview(
+                build_with(
                     &view,
                     state,
                     width,
-                    false,
-                    vec![
-                        Element::button("markdown_preview_open:91", "Vista previa")
-                            .size(Some(24.0), Some(24.0)),
-                    ],
+                    EditorPresentation::beside_preview(
+                        false,
+                        vec![
+                            Element::button("markdown_preview_open:91", "Vista previa")
+                                .size(Some(24.0), Some(24.0)),
+                        ],
+                    ),
                     KeymapProfile::default(),
                     false,
                 )

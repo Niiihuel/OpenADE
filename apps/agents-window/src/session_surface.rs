@@ -524,6 +524,8 @@ pub(crate) fn model_stream_item(
     }
 }
 
+// The palette whose secondary text is the status ink: `ToolActivity` until
+// S16, and the parity copies of the markers that now take `.ink`.
 fn marker_palette(surface: Color, ink: Color) -> openide_ui::ComponentPalette {
     let mut palette = theme::action_palette(surface, ink);
     palette.muted = ink;
@@ -602,23 +604,16 @@ pub(crate) fn activity_marker(activity: &TranscriptActivity) -> Element {
             } else {
                 theme::FOREGROUND_SUBTLE
             };
-            Marker::new(
-                id,
-                label,
-                if *status == ActivityStatus::Running {
-                    theme::component_palette()
+            Marker::new(id, label, theme::component_palette())
+                .ink(ink)
+                .icon(if *status == ActivityStatus::Completed {
+                    Icon::Check
                 } else {
-                    marker_palette(theme::BACKGROUND, ink)
-                },
-            )
-            .icon(if *status == ActivityStatus::Completed {
-                Icon::Check
-            } else {
-                Icon::Code
-            })
-            .loading(*status == ActivityStatus::Running)
-            .thinking(*status == ActivityStatus::Running && !has_text)
-            .render()
+                    Icon::Code
+                })
+                .loading(*status == ActivityStatus::Running)
+                .thinking(*status == ActivityStatus::Running && !has_text)
+                .render()
         }
         TranscriptActivity::Checkpoint {
             id,
@@ -696,7 +691,7 @@ pub(crate) fn tool_activity_marker(
                 name
             }
         ),
-        marker_palette(
+        theme::action_palette(
             if selected {
                 theme::SELECTED
             } else {
@@ -705,6 +700,7 @@ pub(crate) fn tool_activity_marker(
             ink,
         ),
     )
+    .ink(ink)
     .icon(tool_marker_icon(name))
     .loading(activity == ActivityStatus::Running)
     .action(format!("tool:{id}"))
@@ -1666,19 +1662,19 @@ fn work_group(
     } else {
         summary.clone()
     };
+    let ink = if failed > 0 {
+        theme::DESTRUCTIVE
+    } else {
+        theme::FOREGROUND_SUBTLE
+    };
     let header = Collapsible::new(
         detail_action(state, &id),
         format!("Exploración · {total}"),
         content,
-        marker_palette(
-            theme::BACKGROUND,
-            if failed > 0 {
-                theme::DESTRUCTIVE
-            } else {
-                theme::FOREGROUND_SUBTLE
-            },
-        ),
+        // The title takes the ink too, as the rows it summarizes do.
+        theme::action_palette(theme::BACKGROUND, ink),
     )
+    .ink(ink)
     .icon(Icon::Search)
     .loading(running > 0 || preparing > 0)
     .expanded(expanded)

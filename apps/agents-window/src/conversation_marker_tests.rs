@@ -600,3 +600,65 @@ fn export_chat_marker_visual_review() {
     }
     println!("{}", output.display());
 }
+
+// `Marker::ink` replaced the choice between two palettes. Delete with the
+// final audit (S18).
+#[test]
+fn the_model_marker_matches_the_one_built_from_a_status_palette() {
+    for status in [
+        ActivityStatus::Running,
+        ActivityStatus::Completed,
+        ActivityStatus::Failed,
+        ActivityStatus::Cancelled,
+        ActivityStatus::Interrupted,
+    ] {
+        for has_text in [false, true] {
+            for width in [240.0, 720.0] {
+                let frame = |marker: Element| {
+                    let mut tree = UiTree::new(marker);
+                    tree.set_reduced_motion(true);
+                    tree.layout(Size::new(width, 40.0))
+                };
+                let new = frame(activity_marker(&TranscriptActivity::Model {
+                    id: "model:1".into(),
+                    step: 1,
+                    model: "exact-model-id".into(),
+                    has_text,
+                    status,
+                }));
+                let label = new.text_layouts()[0].source.clone();
+                let failed = matches!(status, ActivityStatus::Failed | ActivityStatus::Interrupted);
+                let ink = if failed {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::FOREGROUND_SUBTLE
+                };
+                let legacy = frame(
+                    Marker::new(
+                        "model:1",
+                        label,
+                        if status == ActivityStatus::Running {
+                            theme::component_palette()
+                        } else {
+                            marker_palette(theme::BACKGROUND, ink)
+                        },
+                    )
+                    .icon(if status == ActivityStatus::Completed {
+                        Icon::Check
+                    } else {
+                        Icon::Code
+                    })
+                    .loading(status == ActivityStatus::Running)
+                    .thinking(status == ActivityStatus::Running && !has_text)
+                    .render(),
+                );
+                assert_eq!(new.commands, legacy.commands, "{status:?} {has_text} {width}");
+                assert_eq!(new.regions, legacy.regions);
+                let inked = new.commands.iter().any(|command| {
+                    matches!(command, openide_ui::DrawCommand::Text { color, .. } if *color == theme::DESTRUCTIVE)
+                });
+                assert_eq!(inked, failed, "{status:?}");
+            }
+        }
+    }
+}

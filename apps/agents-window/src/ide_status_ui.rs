@@ -126,7 +126,7 @@ fn document_status(state: &ViewState) -> Option<DocumentStatus> {
         .unwrap_or_default();
     let language = workbench
         .language_override
-        .unwrap_or_else(|| crate::editor_workbench_ui::language_for_path(&view.path));
+        .unwrap_or_else(|| CodeLanguage::from_path(&view.path));
     let mut errors = 0;
     let mut warnings = 0;
     let mut information = 0;

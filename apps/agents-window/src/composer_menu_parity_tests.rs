@@ -655,3 +655,45 @@ fn the_goal_trigger_matches_its_hand_built_body() {
         }
     }
 }
+
+// `Composer::header_strip` replaced the hand-built strip above the card.
+#[test]
+fn the_metadata_strip_matches_its_hand_built_body() {
+    for home in [false, true] {
+        for embedded_in_ide in [false, true] {
+            for width in [236.0, 320.0, 480.0, 760.0] {
+                let mut props = tests::props("", width);
+                props.home = home;
+                props.embedded_in_ide = embedded_in_ide;
+                // The card as `build_composer` configures it.
+                let card = || {
+                    let mut palette = theme::component_palette();
+                    palette.selected = PILL_SURFACE;
+                    Composer::new("prompt", props.prompt, props.placeholder, width, palette)
+                        .auto_grow(CONTROL_HEIGHT, 180.0)
+                        .compact(width < COMPACT_CONTEXT_WIDTH)
+                        .pill_controls(leading_actions(&props), trailing_actions(&props))
+                        .border_color(PILL_SURFACE)
+                        .shadow_color(Color::TRANSPARENT)
+                        .card_radius(CARD_RADIUS)
+                };
+                let new = frame(
+                    card()
+                        .header_strip(
+                            composer_metadata(&props),
+                            theme::action_palette(theme::PANEL, theme::FOREGROUND),
+                        )
+                        .render(),
+                    width,
+                );
+                let legacy = frame(
+                    Element::column(vec![legacy_composer_metadata(&props), card().render()])
+                        .size(Some(width), None),
+                    width,
+                );
+                assert_eq!(new.commands, legacy.commands, "home {home} ide {embedded_in_ide} at {width}");
+                assert_eq!(new.regions, legacy.regions, "home {home} ide {embedded_in_ide} at {width}");
+            }
+        }
+    }
+}

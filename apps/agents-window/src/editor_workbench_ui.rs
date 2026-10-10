@@ -3,10 +3,14 @@ use crate::{code_editor_ui::CodeEditorView, keymap::{KeymapProfile, ShortcutActi
 use openide_editor::{IndentStyle, SearchOptions, SearchResults};
 use openide_language::{lsp::Diagnostic, AnalysisSnapshot};
 use openide_ui::{
-    ActiveHover, Button, ButtonSize, ButtonVariant, CodeLanguage, Component, ContextMenuEntry,
-    ContextMenuItem, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element,
-    FontFamily, Icon, IconButton, PopoverPlacement, TextField, TooltipPlacement, TooltipSpec,
+    ActiveHover, Button, ButtonVariant, CodeLanguage, Color, Component, ComponentPalette,
+    ContextMenuEntry, ContextMenuItem, ControlSize, DropdownMenu, DropdownMenuEntry,
+    DropdownMenuItem, Element, FindBar, FindIds, FindLabels, FindOptions, FontFamily, Icon,
+    IconButton, PopoverPlacement, TextField, TooltipPlacement, TooltipSpec,
 };
+// Read only by the parity copy of the search bar, until S18.
+#[cfg(test)]
+use openide_ui::ButtonSize;
 use std::{ops::Range, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -385,28 +389,130 @@ fn search_visible(state: &EditorWorkbenchView) -> bool {
         && !state.settings_open
 }
 
-// Match the floating rows plus a little breathing room. This is used only
-// when revealing a caret; opening search does not reflow or scroll the code.
+// The floating bar plus a little breathing room. This is used only when
+// revealing a caret; opening search does not reflow or scroll the code.
 pub(crate) fn search_reveal_inset(state: &EditorWorkbenchView, width: f32) -> f32 {
     // Keep the scroll range stable while another transient tool covers search.
     if !state.search_open {
         return 0.0;
     }
-    48.0 + if width < 480.0 || state.replace_open {
-        32.0
-    } else {
-        0.0
-    } + if state.replace_open { 32.0 } else { 0.0 }
-        + if state.search_error.is_some() {
-            24.0
-        } else {
-            0.0
-        }
+    FindBar::height(width, state.replace_open, state.search_error.is_some()) + 4.0
 }
 
 // Like VS Code's FindWidget, this surface floats over the document. Keeping
 // it non-modal lets the user edit/select code while the search stays open.
 pub(crate) fn search_popover(
+    anchor: Element,
+    view: &CodeEditorView,
+    state: &EditorWorkbenchView,
+    width: f32,
+) -> Element {
+    // Other transient tools take priority; retain the query and highlights so
+    // dismissing them restores search without disturbing the document.
+    if !search_visible(state) {
+        return anchor;
+    }
+    let snapshot = view.controller.as_ref().and_then(|c| c.snapshot().ok());
+    let results = state.search.as_ref().filter(|results| {
+        !state.search_pending
+            && snapshot.as_ref().is_some_and(|snapshot| {
+                results.document_id == snapshot.document_id()
+                    && results.revision == snapshot.revision()
+            })
+    });
+    let has_matches = results.is_some_and(|results| !results.matches.is_empty());
+    let selected = snapshot.as_ref().map(|s| s.selection().range());
+    let current = results.and_then(|r| {
+        r.matches
+            .iter()
+            .position(|range| Some(range) == selected.as_ref())
+    });
+    let count = if state.query.is_empty() {
+        String::new()
+    } else if state.search_pending {
+        "…".into()
+    } else {
+        results.map_or("—".into(), |r| {
+            format!(
+                "{} / {}{}",
+                current.map_or(0, |n| n + 1),
+                r.matches.len(),
+                if r.truncated { "+" } else { "" }
+            )
+        })
+    };
+    FindBar::new("editor_search", &state.query, theme::component_palette())
+        // The bar is a menu surface under a lighter shadow than a menu's.
+        .surface(ComponentPalette {
+            shadow: Color::rgba(0, 0, 0, 100),
+            ..theme::menu_palette()
+        })
+        .ids(FindIds {
+            query: "editor_query".into(),
+            replacement: "editor_replacement".into(),
+            case: "editor_case".into(),
+            word: "editor_word".into(),
+            regex: "editor_regex".into(),
+            in_selection: "editor_scope".into(),
+            toggle_replace: "editor_replace_toggle".into(),
+            previous: "editor_search_prev".into(),
+            next: "editor_search_next".into(),
+            dismiss: "editor_search_close".into(),
+            replace_one: "editor_replace_one".into(),
+            replace_all: "editor_replace_all".into(),
+            count: "editor_search_count".into(),
+            error: "editor_search_error".into(),
+        })
+        .labels(FindLabels {
+            query: "Buscar en el archivo".into(),
+            replacement: "Reemplazar por".into(),
+            case: "Distinguir mayúsculas y minúsculas".into(),
+            word: "Sólo palabras completas".into(),
+            regex: "Expresión regular".into(),
+            in_selection: "Buscar dentro de la selección".into(),
+            toggle_replace: "Mostrar u ocultar reemplazo".into(),
+            toggle_replace_shortcut: "Ctrl+H".into(),
+            previous: "Coincidencia anterior".into(),
+            previous_shortcut: "Shift+Enter".into(),
+            next: "Coincidencia siguiente".into(),
+            next_shortcut: "Enter".into(),
+            dismiss: "Cerrar búsqueda".into(),
+            dismiss_shortcut: "Esc".into(),
+            replace_one: "Reemplazar coincidencia".into(),
+            replace_one_shortcut: "Enter".into(),
+            replace_all: "Reemplazar todas las coincidencias".into(),
+            count: if state.search_pending {
+                "Buscando…"
+            } else {
+                "Coincidencia actual / total"
+            }
+            .into(),
+        })
+        .replace_icons(
+            crate::provider_icons::REPLACE,
+            crate::provider_icons::REPLACE_ALL,
+        )
+        .replacement(Some(&state.replacement))
+        .replace_open(state.replace_open)
+        .options(FindOptions {
+            case: state.search_options.case_sensitive,
+            word: state.search_options.whole_word,
+            regex: state.search_options.regex,
+            in_selection: state.search_options.scope.is_some(),
+        })
+        .count_label(count)
+        .has_matches(has_matches)
+        .has_current(current.is_some())
+        .no_matches(!state.query.is_empty() && results.is_some() && !has_matches)
+        .error(state.search_error.as_deref())
+        .ink(theme::DESTRUCTIVE)
+        .width(width)
+        .attach(anchor)
+}
+
+// The hand-built bar `FindBar` replaced, kept for the parity test until S18.
+#[cfg(test)]
+fn legacy_search_popover(
     anchor: Element,
     view: &CodeEditorView,
     state: &EditorWorkbenchView,
@@ -765,7 +871,7 @@ pub(crate) fn tools(
                             "{:?}",
                             state
                                 .language_override
-                                .unwrap_or_else(|| language_for_path(&view.path))
+                                .unwrap_or_else(|| CodeLanguage::from_path(&view.path))
                         ),
                         theme::component_palette(),
                     )
@@ -929,7 +1035,7 @@ pub(crate) fn tools(
             rows.push(
                 openide_ui::CodeEditor::new("editor_conflict_disk", disk.clone())
                     .read_only(true)
-                    .language(language_for_path(&view.path))
+                    .language(CodeLanguage::from_path(&view.path))
                     .palette(theme::component_palette())
                     .height(180.0)
                     .render()
@@ -964,58 +1070,12 @@ pub(crate) fn tools(
     }
     rows
 }
-pub(crate) fn language_for_path(path: &str) -> CodeLanguage {
-    CodeLanguage::from_extension(
-        std::path::Path::new(path)
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default(),
-    )
-}
-/// Markers that comment out one line of `path`. Files without a known
-/// language fall back on what their extension conventionally uses.
-pub(crate) fn comment_markers(
-    path: &str,
-    language: Option<CodeLanguage>,
-) -> (&'static str, &'static str) {
-    language
-        .unwrap_or_else(|| language_for_path(path))
-        .comment_markers()
-        .unwrap_or_else(|| {
-            let path = std::path::Path::new(path);
-            let name = |part: Option<&std::ffi::OsStr>| {
-                part.and_then(|part| part.to_str())
-                    .unwrap_or_default()
-                    .to_ascii_lowercase()
-            };
-            match (name(path.file_stem()).as_str(), name(path.extension()).as_str()) {
-                (_, "sh" | "bash" | "zsh" | "fish" | "yaml" | "yml" | "nix" | "rb")
-                | ("makefile" | "dockerfile", _) => ("#", ""),
-                _ => ("//", ""),
-            }
-        })
-}
 #[cfg(test)]
 mod compact_menu_tests {
     use super::*;
 
-    #[test]
-    fn comment_markers_follow_the_language_then_the_extension() {
-        assert_eq!(comment_markers("src/main.rs", None), ("//", ""));
-        assert_eq!(comment_markers("tool.PY", None), ("#", ""));
-        assert_eq!(comment_markers("site.css", None), ("/*", "*/"));
-        assert_eq!(comment_markers("index.html", None), ("<!--", "-->"));
-        assert_eq!(comment_markers("README.md", None), ("<!--", "-->"));
-        assert_eq!(comment_markers("flake.nix", None), ("#", ""));
-        assert_eq!(comment_markers("ci.YML", None), ("#", ""));
-        assert_eq!(comment_markers("main.go", None), ("//", ""));
-        assert_eq!(comment_markers("build/Makefile", None), ("#", ""));
-        assert_eq!(comment_markers("Dockerfile.dev", None), ("#", ""));
-        assert_eq!(comment_markers("notes", Some(CodeLanguage::Toml)), ("#", ""));
-        assert_eq!(comment_markers("a.rs", Some(CodeLanguage::Css)), ("/*", "*/"));
-    }
     use eframe::egui;
-    use openide_editor::{Selection, TextBuffer};
+    use openide_editor::{SearchOptions, Selection, TextBuffer};
     use openide_ui::{
         CodeEditor, DrawCommand, EditorController, Frame, Key, Point, Size, UiAction, UiEvent,
         UiTree,
@@ -1333,5 +1393,158 @@ mod compact_menu_tests {
         );
         export(&tree.layout(size), size, "more-actions");
         ctx.end_pass().textures_delta.clear();
+    }
+
+    // `FindBar` replaced the hand-built search bar. Delete with the final
+    // audit (S18).
+    #[test]
+    fn the_search_bar_matches_its_hand_built_body_in_every_state() {
+        let source = "fn main() {\n    let commands = commands();\n    run(commands);\n}\n";
+        let fixture = |query: &str| {
+            let controller = EditorController::new(TextBuffer::new(source).unwrap());
+            let view = CodeEditorView {
+                tab_id: 7,
+                path: "src/main.rs".into(),
+                controller: Some(controller.clone()),
+                loading: false,
+                saving: false,
+                error: None,
+                notice: None,
+                conflict: false,
+                recovered: false,
+                missing: false,
+            };
+            let mut state = EditorWorkbenchView {
+                search_open: true,
+                query: query.into(),
+                replacement: "entries".into(),
+                ..Default::default()
+            };
+            if !query.is_empty() {
+                let results = controller
+                    .snapshot()
+                    .unwrap()
+                    .search(query, &SearchOptions::default())
+                    .unwrap();
+                if let Some(first) = results.matches.first() {
+                    controller
+                        .shared_buffer()
+                        .lock()
+                        .unwrap()
+                        .set_selection(Selection {
+                            anchor: first.start,
+                            head: first.end,
+                        })
+                        .unwrap();
+                }
+                state.search = Some(results);
+            }
+            (view, state)
+        };
+        let found = fixture("commands");
+        let mut replace = fixture("commands");
+        replace.1.replace_open = true;
+        let mut off_match = fixture("commands");
+        off_match.1.replace_open = true;
+        let controller = off_match.0.controller.as_ref().unwrap();
+        controller
+            .shared_buffer()
+            .lock()
+            .unwrap()
+            .set_selection(Selection { anchor: 0, head: 0 })
+            .unwrap();
+        let mut none = fixture("zzzz");
+        none.1.search_options = SearchOptions {
+            case_sensitive: true,
+            whole_word: true,
+            regex: true,
+            scope: Some(0..10),
+        };
+        let mut error = fixture("(commands");
+        error.1.search = None;
+        error.1.search_options.regex = true;
+        error.1.replace_open = true;
+        error.1.search_error = Some("regex parse error:\n    unclosed group".into());
+        let mut pending = fixture("commands");
+        pending.1.search_pending = true;
+        let empty = fixture("");
+        let mut covered = fixture("commands");
+        covered.1.menu_open = true;
+        let mut truncated = fixture("commands");
+        truncated.1.search.as_mut().unwrap().truncated = true;
+        for (name, (view, state)) in [
+            ("found", found),
+            ("replace", replace),
+            ("off-match", off_match),
+            ("none", none),
+            ("error", error),
+            ("pending", pending),
+            ("empty", empty),
+            ("covered", covered),
+            ("truncated", truncated),
+        ] {
+            for width in [120.0, 260.0, 352.0, 512.0, 892.0] {
+                let size = Size::new(width + 8.0, 420.0);
+                let root = |bar: fn(Element, &CodeEditorView, &EditorWorkbenchView, f32) -> Element| {
+                    Element::column(vec![
+                        bar(
+                            Element::button("header", "Encabezado").size(None, Some(30.0)),
+                            &view,
+                            &state,
+                            width,
+                        ),
+                        Element::spacer().flex(1.0),
+                    ])
+                };
+                let (new_ctx, mut new_tree) = native_tree(root(search_popover));
+                let (old_ctx, mut old_tree) = native_tree(root(legacy_search_popover));
+                let new = new_tree.layout(size);
+                let old = old_tree.layout(size);
+                assert_eq!(new.commands, old.commands, "{name} at {width}");
+                assert_eq!(new.regions, old.regions, "{name} at {width}");
+                // The same under the pointer and while pressed.
+                for region in &new.regions {
+                    let point = Point::new(
+                        region.rect.x + region.rect.width / 2.0,
+                        region.rect.y + region.rect.height / 2.0,
+                    );
+                    for event in [UiEvent::PointerMove(point), UiEvent::PointerDown(point)] {
+                        assert_eq!(
+                            new_tree.handle_event(event.clone()),
+                            old_tree.handle_event(event)
+                        );
+                        assert_eq!(
+                            new_tree.layout(size).commands,
+                            old_tree.layout(size).commands,
+                            "{name} at {width}: {}",
+                            region.id
+                        );
+                    }
+                    assert_eq!(
+                        new_tree.handle_event(UiEvent::PointerUp(point)),
+                        old_tree.handle_event(UiEvent::PointerUp(point)),
+                        "{name} at {width}: {}",
+                        region.id
+                    );
+                }
+                if name != "covered" {
+                    // The inset the editor reveals under is the bar plus 4.
+                    let bar = new
+                        .regions
+                        .iter()
+                        .filter(|region| region.id.starts_with("editor_"))
+                        .map(|region| region.rect.y)
+                        .fold(f32::INFINITY, f32::min);
+                    assert!(bar.is_finite(), "{name} at {width}");
+                    let legacy_inset = 48.0
+                        + if width < 480.0 || state.replace_open { 32.0 } else { 0.0 }
+                        + if state.replace_open { 32.0 } else { 0.0 }
+                        + if state.search_error.is_some() { 24.0 } else { 0.0 };
+                    assert_eq!(search_reveal_inset(&state, width), legacy_inset);
+                }
+                new_ctx.end_pass().textures_delta.clear();
+                old_ctx.end_pass().textures_delta.clear();
+            }
+        }
     }
 }

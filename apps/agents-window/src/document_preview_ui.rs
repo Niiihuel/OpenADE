@@ -272,27 +272,29 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Option<Elemen
             return Some(preview(view, width, height, false));
         };
         let source = |pane_width| {
-            crate::code_editor_ui::build_with_preview(
+            crate::code_editor_ui::build_with(
                 editor,
                 &state.editor_workbench,
                 pane_width,
-                crate::ide_workspace::active(state),
-                if crate::ide_workspace::active(state) {
-                    Vec::new()
-                } else {
-                    vec![IconButton::new(
-                        &format!("markdown_preview_open:{}", editor.tab_id),
-                        Icon::PanelRight,
-                        theme::component_palette(),
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Dense)
-                    .tooltip_with(
-                        TooltipSpec::new("Abrir vista previa al costado")
-                            .placement(TooltipPlacement::Below),
-                    )
-                    .render()]
-                },
+                crate::code_editor_ui::EditorPresentation::beside_preview(
+                    crate::ide_workspace::active(state),
+                    if crate::ide_workspace::active(state) {
+                        Vec::new()
+                    } else {
+                        vec![IconButton::new(
+                            &format!("markdown_preview_open:{}", editor.tab_id),
+                            Icon::PanelRight,
+                            theme::component_palette(),
+                        )
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Dense)
+                        .tooltip_with(
+                            TooltipSpec::new("Abrir vista previa al costado")
+                                .placement(TooltipPlacement::Below),
+                        )
+                        .render()]
+                    },
+                ),
                 state.keymap_profile,
                 state.vim_mode,
             )

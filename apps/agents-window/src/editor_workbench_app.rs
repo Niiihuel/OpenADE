@@ -169,7 +169,7 @@ impl AgentsWindow {
             if let Some(view) = &self.view.code_editor {
                 let language = state
                     .language_override
-                    .unwrap_or_else(|| crate::editor_workbench_ui::language_for_path(&view.path));
+                    .unwrap_or_else(|| openide_ui::CodeLanguage::from_path(&view.path));
                 let entries = prefs
                     .server_executables
                     .entry(self.view.workspace.clone())
@@ -367,7 +367,7 @@ impl AgentsWindow {
                 ..Default::default()
             };
             self.editor_services.search_key = None;
-            let language = crate::editor_workbench_ui::language_for_path(&path);
+            let language = openide_ui::CodeLanguage::from_path(&path);
             if let Some(executable) = self
                 .editor_services
                 .preferences
@@ -862,8 +862,10 @@ impl AgentsWindow {
             "move_down" => Some(EditorCommand::MoveLines { down: true }),
             "delete_lines" => Some(EditorCommand::DeleteLines),
             "comment" => active.as_ref().map(|a| {
-                let (prefix, suffix) =
-                    crate::editor_workbench_ui::comment_markers(&a.1, state.language_override);
+                let (prefix, suffix) = state
+                    .language_override
+                    .unwrap_or_else(|| openide_ui::CodeLanguage::from_path(&a.1))
+                    .comment_markers_for(&a.1);
                 EditorCommand::ToggleLineComment {
                     prefix: prefix.into(),
                     suffix: suffix.into(),

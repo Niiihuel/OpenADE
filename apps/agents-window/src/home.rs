@@ -1,7 +1,7 @@
 //! The empty-task surface. This is deliberately built from our retained UI tree
 //! primitives so it shares keyboard, focus, and icon rules with the workspace.
 
-use openide_ui::{Color, Element, FontFamily};
+use openide_ui::{Color, Component, Element, FontFamily, ScrollArea};
 
 use crate::{
     composer_ui::{build_composer_with_height, ComposerProps},
@@ -93,7 +93,9 @@ fn build_home_layout(
         // scrolling and keyboard focus instead of clipping its action row.
         Element::column(vec![
             Element::spacer().size(None, Some(48.0)),
-            Element::scroll("home_content", centered_content.min_size(0.0, height)).flex(1.0),
+            ScrollArea::new("home_content", centered_content.min_size(0.0, height))
+                .render()
+                .flex(1.0),
         ])
         .flex(1.0)
     } else {

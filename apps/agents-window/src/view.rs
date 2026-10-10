@@ -2915,11 +2915,11 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
                     if crate::ide_workspace::active(state) {
                         crate::code_editor_ui::build_ide(editor, &state.editor_workbench, width, state.keymap_profile, state.vim_mode)
                     } else {
-                        crate::code_editor_ui::build_with_debug(
+                        crate::code_editor_ui::build_with(
                             editor,
                             &state.editor_workbench,
                             width,
-                            false,
+                            crate::code_editor_ui::EditorPresentation::dock(false),
                             state.keymap_profile,
                             state.vim_mode,
                         )

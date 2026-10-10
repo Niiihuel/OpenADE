@@ -35,8 +35,11 @@ const CARD_RADIUS: f32 = 10.0;
 const CONTROL_HEIGHT: f32 = 28.0;
 const SELECTOR_HEIGHT: f32 = 28.0;
 const CONTEXT_HEIGHT: f32 = 28.0;
-const CONTEXT_STRIP_HEIGHT: f32 = 32.0;
+const CONTEXT_STRIP_HEIGHT: f32 = Composer::HEADER_STRIP_HEIGHT;
+// Read only by the parity copy of the strip and by the tests, until S18.
+#[cfg(test)]
 const CONTEXT_STRIP_INSET: f32 = 8.0;
+#[cfg(test)]
 const CONTEXT_STRIP_PADDING: f32 = 4.0;
 use crate::theme::{MUTED_INK, PILL_SURFACE, SEND_BLUE};
 
@@ -2051,7 +2054,19 @@ fn leading_actions(props: &ComposerProps<'_>) -> Element {
         .size(None, Some(CONTROL_HEIGHT))
 }
 
+/// The project, branch and goal of the next message, as wide as the strip
+/// above the card leaves them.
 fn composer_metadata(props: &ComposerProps<'_>) -> Element {
+    project_metadata(&ComposerProps {
+        width: Composer::header_strip_width(props.width),
+        ..*props
+    })
+}
+
+// The hand-built strip `Composer::header_strip` replaced, kept for the parity
+// test until S18.
+#[cfg(test)]
+fn legacy_composer_metadata(props: &ComposerProps<'_>) -> Element {
     let strip_width = (props.width - 2.0 * CONTEXT_STRIP_INSET).max(0.0);
     let inner_width = (strip_width - 2.0 * CONTEXT_STRIP_PADDING).max(0.0);
     let metadata = project_metadata(&ComposerProps {
@@ -2193,8 +2208,12 @@ pub(crate) fn build_composer_with_height(
     if props.home && (!props.prompt.is_empty() || props.expanded) {
         composer = composer.editor_action(expand_control(props));
     }
-    let composer = Element::column(vec![composer_metadata(props), composer.render()])
-        .size(Some(props.width), None);
+    let composer = composer
+        .header_strip(
+            composer_metadata(props),
+            theme::action_palette(theme::PANEL, theme::FOREGROUND),
+        )
+        .render();
     let composer = if let Some(suggestions) = props.suggestions {
         crate::composer_suggestions::popup(composer, suggestions, props.width)
     } else {

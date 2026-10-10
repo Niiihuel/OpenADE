@@ -281,7 +281,7 @@ impl AgentsWindow {
     pub(super) fn editor_language_scope(&self) -> Option<(PathBuf, Language)> {
         let editor = self.view.code_editor.as_ref().filter(|editor| !editor.loading)?;
         let language = self.view.editor_workbench.language_override
-            .unwrap_or_else(|| crate::editor_workbench_ui::language_for_path(&editor.path));
+            .unwrap_or_else(|| openide_ui::CodeLanguage::from_path(&editor.path));
         Some((PathBuf::from(&self.view.workspace), language))
     }
 
@@ -314,7 +314,7 @@ impl AgentsWindow {
             .view
             .editor_workbench
             .language_override
-            .unwrap_or_else(|| crate::editor_workbench_ui::language_for_path(&path));
+            .unwrap_or_else(|| openide_ui::CodeLanguage::from_path(&path));
         if language == Language::Plain {
             return Err("Elegí un lenguaje antes de conectar un servidor".into());
         }
@@ -392,7 +392,7 @@ impl AgentsWindow {
             .view
             .editor_workbench
             .language_override
-            .unwrap_or_else(|| crate::editor_workbench_ui::language_for_path(&path));
+            .unwrap_or_else(|| openide_ui::CodeLanguage::from_path(&path));
         let key = (snapshot.document_id(), snapshot.revision(), language);
         let mut changed = false;
         if self.editor_services.language.analyzed != Some(key) {
@@ -728,7 +728,7 @@ impl AgentsWindow {
             .view
             .editor_workbench
             .language_override
-            .unwrap_or_else(|| crate::editor_workbench_ui::language_for_path(&path));
+            .unwrap_or_else(|| openide_ui::CodeLanguage::from_path(&path));
         let absolute = PathBuf::from(&self.view.workspace).join(path);
         let position = offset_to_utf16(&snapshot, snapshot.selection().head)
             .ok_or("Posición de cursor inválida")?;
