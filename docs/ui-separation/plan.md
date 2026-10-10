@@ -1,0 +1,745 @@
+# UI separation plan: limn (framework) and openADE (application)
+
+Final plan: 21 ordered sections (S00 to S18, with S09 split in three) that separate openADE (/home/nihuel/projects/personal/openADE/apps/agents-window) from limn (/home/nihuel/projects/personal/lienzo/crates/limn). Nothing was built or run; this is a design from reading docs and source. Almost every criticism was correct and is accepted; the few rejections are listed at the end.
+
+What changed from the draft
+- **S00 added.** openADE's tree has 522 uncommitted entries (394 untracked, 105 modified, 23 deleted; checked with git status), including the limn migration itself and many target files. It must be committed, never stashed, and a pixel baseline captured before any change.
+- **Specs come from the effective style.** `ComponentPalette::interactive_surface` (limn components.rs:211-223) overwrites radius to the control token (4), hover, pressed and transition on any Button, IconButton or Clickable. So sidebar session, nav and group rows draw at radius 4 today, not 8 or 7, and a selected row hovers to 62. The draft's "converge 7 on 8" was really 4 to 8 and is dropped.
+- **Typography moved to S01.** `TextRole` has zero users outside typography.rs (grep), so changing Small from 12 to 11 and adding `Text` is free now and every later component uses it.
+- **Scheme shrunk** to the fields its derivation methods read. `Scheme::on` takes a role (`Surface::Flat | Raised | Solid`), not a colour compared by value. No component takes a `Scheme`; it only produces `ComponentPalette`s. Diff, syntax, warning, link, scrim and `theme::HOVER` (34, a separate constant still used as a fill) stay openADE constants.
+- **Sizing profiles replace per-call numbers.** New components take a const profile (`RowSizing`, `HeaderSizing`, `NoticeSizing`, and so on, following `SelectorSizing`); openADE keeps its profiles in one new file, ui_sizing.rs. Radius is a `RadiusRole` token choice.
+- **Tab strip moved up** to S04 (right after icon buttons) as a verbatim move named `TabStrip`; width heuristics stay in openADE.
+- **Cut from limn:** `IconButton::side`, `filled_when_active`, `bare`, Toolbar, NavigationRail, `Button::reveal_label`, `Composer::send`, pill Tabs, `SearchField::trigger`, Meter, IconTile, StatusDot, IconLabel, InlineStatus, `Spinner::label`, LabeledValue, `Modal::actions`, `Modal::auto_height`, `ScrollArea::jump_to_end` and `reserve_rail`, `Attachment::group` and `figure`, the `Skeleton` card and list presets, `Scheme::segmented`, and intrinsic tab measurement.
+- **Splits:** list rows into S09a/b/c; the old S16 into openide-ui shells (S16, new), Markdown (S17) and the text sweep plus audit (S18). Modal footers are migrated once, in S12.
+- **Reverse separation added** (in S02): limn's Spanish `AlertTone::label()` and its "OpenIDE" doc strings.
+
+Changes to existing public limn API (all additive unless noted)
+- `TextRole::Small` 12 to 11 (value change, no users).
+- `ButtonContent::Custom`, `ButtonSize::Mini`, `RadiusRole`: new variants or types; an exhaustive `match` outside limn would break.
+- `ActionRow::trailing` added; `suffix` kept as a forward.
+- `AlertTone::label()` returns English.
+- A disabled Button or IconButton with a tooltip keeps showing it (behaviour).
+- `Tab::new(action_id, label, width)` is unchanged.
+
+Owner decisions (default in every case: leave as is and record in the ledger)
+- Radius outliers 5, 7, 9, 10 on cards and blocks, and the status badge's 5.
+- Button-group gaps of 8 and 10 where the group default is 6; modal footer gaps of 8 and 0.
+- view.rs `button()` and labelled `icon_button()` (radius 8, padding 5, font 14) on the tab overview and workspace header.
+- One warning colour, one diff palette, one syntax palette, one link blue.
+- `session_changes_ui::diff_row` to limn CodeDiff; the document code block to limn's highlighter.
+- Half-pixel font sizes (10.5, 11.5, 12.5) and title sizes 15, 17, 19.
+
+Rejected criticisms
+- Renaming `ActionRow::suffix` outright: kept as a forward to avoid churn in about 150 call sites.
+- Folding SectionHeader into PanelHeader: it keeps count, detail and disclosure, which PanelHeader does not need.
+- Dropping MenuBar, SuggestionList and FindBar as single-use: each is domain-free and replaces a whole helper; they stay, with a neutral gallery example required.
+- A limn FileTree preset for files_panel: one use, already on TreeRow.
+
+Not verified: limn render bodies beyond the lines read (Tooltip nesting, whether a disabled Button already keeps its tooltip, AlertDialog metrics), and all call-site counts, which come from the inventories' greps.
+
+## Principles
+
+1. Pixel-neutral by default. When limn absorbs an openADE helper it adopts openADE's numbers. Any visible change is an owner decision: it is named in the section's risk, left undone by default, and recorded in the ledger.
+2. Take every visual spec from the EFFECTIVE style, after palette.interactive_surface(...) and any post-render override, never from the builder chain. interactive_surface replaces radius (control token, 4), hover (palette.hover), pressed (palette.selected) and transition on Button, IconButton and Clickable, including through Tooltip and Popover anchors.
+3. Parity test before deleting a helper: keep the old helper under #[cfg(test)], build it and the new limn call with the same inputs at two widths, and assert equal Frame draw commands (the existing legacy_model_list pattern). Delete the legacy copy in S18.
+4. Migrate behind the existing openADE function signature first (body becomes a limn call, tests green), then inline or delete the wrapper. No call site is edited twice.
+5. Numeric builders: a per-call px builder is allowed only for a dimension the host's layout owns (width, height, max_height, fixed slot width, indent). Density (padding, gap, font size, icon size, row height) comes from a const sizing profile per component (XSizing, as SelectorSizing does), with presets in limn and openADE's own consts in ONE file, apps/agents-window/src/ui_sizing.rs.
+6. Radius is a token choice: .radius(RadiusRole::Control | Surface | Card | Panel). Outliers (5, 7, 9, 10) are the only permitted post-render override (.radius(px) on the rendered root), each recorded in the ledger until the owner picks a role.
+7. One vocabulary across new components: leading / trailing (not suffix, tools, end, header_trailing), dismiss (not close), back, font sizes through TextRole or a sizing profile, ink(Color) only for a semantic status colour passed by the host, tooltip_with(TooltipSpec), dispatch_as(action), sizing(XSizing).
+8. Colours reach components only through ComponentPalette. Scheme is never a component parameter; it produces palettes. A component paints palette.surface, hovers palette.hover and presses palette.selected; the host picks the palette for the state (for example Scheme::on(Surface::Raised(SELECTED), ink) for a selected row).
+9. Follow docs/contributing.md: required args in new() with id first if interactive and palette last, controlled components, ids derived from the caller's id, radii and durations from tokens(), numeric builders validated, disabled rendered as passive elements, a gallery entry in both themes and a row in docs/components.md. A component that is only two elements in a row is left to the caller.
+10. limn takes every string, action id and domain enum from the host. No Spanish copy and no openADE id scheme moves into limn. Action ids, dispatch_as targets, hover_with ids, scroll ids and skeleton ids stay byte-identical. New limn components must not depend on Element::effort_slider or any OpenIDE-named item.
+11. Width heuristics based on character counts (tab width, status label width, menu label widths, trigger widths) stay in openADE and are passed in as widths. limn's typography.rs says a fixed average advance is not reliable.
+12. limn changes are additive within a section, because openADE consumes limn by path (crates/openide-ui/Cargo.toml). Each openADE commit message records the limn commit it builds against.
+13. One section at a time. After each: cargo test -p limn -p limn-egui -p limn-gallery in lienzo, the openADE suite compared with the red/green list from S00, and the section's screenshots diffed against the S00 baseline, including hover, pressed, active and active-hover states.
+14. Keep a ledger file in openADE (docs/limn-migration-ledger.md): every row, state, modal or button left hand-built, every retained post-render override, and every owner decision, with file and line. S18 reconciles its final grep against it.
+15. Extend an existing limn component before adding a new one. Every limn addition replaces an openADE helper or a pattern repeated 3 or more times; anything hedged in the draft was cut.
+
+## Sections
+
+### s00-baseline: Baseline: commit the tree, record test state, capture screenshots, delete dead code
+
+Size: small. Depends on: nothing.
+
+**Goal.** Create a known-good commit and a pixel baseline to diff against, then remove dead code so later diffs are smaller. No visual change.
+
+**limn changes**
+
+- None. Record the limn commit openADE builds against (d7206d9 at the time of writing).
+
+**openADE changes**
+
+- Commit the current openADE working tree as is (522 entries: 394 untracked, 105 modified, 23 deleted). Never stash: the limn migration and many target files (approval_ui.rs, browser_ui.rs, debug_ui.rs, dock_tab_ui.rs and others) are untracked. Check .gitignore and scan the untracked list for build output or secrets first.
+- Run both suites once and save the list of failing tests outside target/. Later failures are compared with this list.
+- Capture the baseline per area: run the export_*_visual_review tests and settings_ui::visual_qa frame exports (note which are #[ignore] and run them explicitly) and store the outputs outside target/. Add hover, pressed, active and active-hover captures for: an IDE titlebar toggle, an activity-bar button, a sidebar session row (idle and selected), a settings choice button, a dock tab, a terminal tab close.
+- Create docs/limn-migration-ledger.md (empty table: file, line, what stays, why, owner decision).
+- Delete dead code, in a second commit: view.rs pane_pagination, page_bounds, json_text (0 callers); the unused editor_workbench_ui::header_actions wrapper; theme::TOOL; the no-op palette override at view/command_center.rs:213; collapse files_panel_ui::build_on_surface into build; mark test-only fns #[cfg(test)] (view.rs activity_content and compact_review_line, git_panel::detail_content, terminal_dock_ui::build, session_surface::tool_line); drop unused parameters (_available_width, _width, _status, _side_visible, _turn_number, compact_navigation's two).
+- debug_ui::build with tool, row and rows: delete only after confirming ide_visual_tests.rs (which does `use crate::debug_ui::*`) does not use them; otherwise leave and note in the ledger.
+
+**openADE files:** view.rs, view/command_center.rs, theme.rs, editor_workbench_ui.rs, files_panel_ui.rs, git_panel.rs, terminal_dock_ui.rs, session_surface.rs, debug_ui.rs, settings_ui.rs, environment_ui.rs, approval_ui.rs
+
+**Risk.** Low for the code. The commit is the risk: 394 untracked entries may include files the owner did not mean to track. List them in the commit message and do not push. Removing a parameter touches test call sites (build_settings_page has about 17 test callers; do not change its signature).
+
+**Verification.** git status clean in openADE after the first commit. Both suites run; red list saved. Baseline folder exists with one capture per area listed in later sections. After the dead-code commit: suites match the red list exactly and re-exported frames are byte-identical to the baseline.
+
+### s01-primitives-text: Primitives: Separator, centering, Text roles
+
+Size: medium. Depends on: s00-baseline.
+
+**Goal.** Give limn the primitives every later section builds on, and remove the most duplicated private helpers without changing a pixel.
+
+**limn changes**
+
+- Separator (new, separator.rs). Separator::horizontal(palette), Separator::vertical(palette). Builders: .length(px) (default fills the cross axis), .margin(px) (default 0), .centered_in(px) (vertical only: wraps the line in a column of that height with flex spacers), .ink(Color) for the one TREE_GUIDE rule. Renders exactly today's element: Element::spacer().background(palette.border) sized 1 px. Replaces divider() in view.rs:762 (11 calls), settings_ui.rs:287, marketplace_view.rs:538, automation_view.rs:566; separator() in session_surface.rs:108, session_changes_ui.rs:39, environment_ui.rs:202, editor_review_ui.rs:184; rule() in composer_context_ui.rs:123; workspace_divider; about 27 inline copies. PreferencesGroup uses it internally.
+- Element::centered_y(self), centered_x(self), centered(self) in element.rs: the spacer sandwich [spacer.flex(1), self, spacer.flex(1)]. centered_y hoists the child's style.width and style.flex to the wrapper and sets the child's flex to 0 (what marketplace_view::vertically_centered and settings_parts::settings_row do). Replaces vertically_centered (18), command_center::centered (9), editor_review_ui centered/row (5), browser_ui::centered (4), debug_ui::row_icon (8) and about 40 inline sandwiches. ActionRow, Chip and Empty switch to it.
+- Element::clip_to(width, height): fixed-size, flex 0, clip_children wrapper for fixed-width content. Replaces ide_ui::lateral_viewport (5). Named clip_to because reveal_horizontal_item already exists.
+- TextRole scale: Display 18, Heading 16, Body 14, Label 13, Caption 12, Small 11 (was 12), Micro 10, Code mono 14. No current users outside typography.rs.
+- Text (new, text.rs). Text::new(value, palette). Builders: .role(TextRole) (default Caption), .muted() (palette.muted), .ink(Color) (semantic: error, warning, diff), .mono(), .truncate(), .fade(px), .line_height(px), .tooltip(id) (with .truncate(): wraps in a Tooltip carrying the full value, max width 320). No px size builder. render() returns exactly Element::text / truncated_text / faded_text with font_family, font_size and foreground, so trees are unchanged. Text::eyebrow(value, palette): Monospace Micro in palette.muted.
+- RadiusRole enum in tokens.rs (Control, Surface, Card, Panel) with fn px(self) reading tokens(). Used by every later .radius(RadiusRole) builder.
+- Gallery: a typography page and a separator example, both themes. docs/components.md rows; docs/tokens.md gains RadiusRole.
+
+**openADE changes**
+
+- Delete the 8 private divider/separator/rule helpers and replace about 27 inline 1 px BORDER spacers. Margins per site: .length(14).margin(4) only at dock_chrome.rs:262, editor_review_ui.rs:184 and terminal_dock_ui.rs:574 (the true 9 px forms). ide_ui.rs:247 is .length(16).centered_in(24) with no margin. debug_ui.rs:1084 is a bare .length(16) with no margin and no centering. git_panel.rs:396-404 keeps its own 9 px padded column and uses .length(12).centered_in(tool_size).
+- environment_git_ui.rs:345 keeps TREE_GUIDE through .ink(theme::TREE_GUIDE).
+- Delete vertically_centered, the three centered helpers and row_icon; replace inline sandwiches with centered_y / centered_x / centered.
+- ide_ui::lateral_viewport becomes Element::clip_to.
+- Add theme::text_px(value, px, ink) -> Element as the single app helper for off-scale sizes (10.5, 11.5, 12.5, 15, 17, 19 and the display sizes). Do NOT sweep the 25 private text helpers here; that is S18. New code written from S03 on uses Text or text_px only.
+- Create ui_sizing.rs (empty module with a doc comment) so later sections have one place for sizing consts.
+
+**openADE files:** view.rs, view/command_center.rs, settings_ui.rs, settings_parts.rs, marketplace_view.rs, automation_view.rs, plugins_ui.rs, session_surface.rs, session_changes_ui.rs, environment_ui.rs, environment_git_ui.rs, git_panel.rs, composer_context_ui.rs, composer_suggestions.rs, provider_usage_ui.rs, github_account_menu_ui.rs, editor_review_ui.rs, document_preview_ui.rs, dock_chrome.rs, dock_tab_ui.rs, dock_activity.rs, ide_ui.rs, ide_status_ui.rs, ide_bottom_ui.rs, browser_ui.rs, terminal_ui.rs, terminal_dock_ui.rs, debug_ui.rs, home.rs, theme.rs, ui_sizing.rs
+
+**Risk.** Low. Same spacer elements, so frames should be identical. Traps: (1) a default margin or centering on Separator::vertical would widen the IDE titlebar's right group and the debug control row by 8 px; both defaults are off. (2) settings_parts test compact_row_puts_control_below_copy asserts ElementKind at the row root; centered_y must produce a Column with the same three children. (3) git_panel.rs, dock_chrome.rs and command_center.rs reach view.rs divider through `use super::*`; fix them in the same commit.
+
+**Verification.** limn: tests for Separator (1 px, margin, centered_in), centered_y hoisting width and flex, Text returning the same Element as a hand-written chain for each role, TextRole table. openADE suite equals the S00 list. Baseline diff of a Settings page, sidebar, command palette, dock header, IDE titlebar and debug sidebar: zero pixels. grep: no fn divider, fn separator, fn rule, fn vertically_centered left in apps/agents-window/src.
+
+### s02-theme-scheme: Theme: role-based Scheme in limn, openADE palettes derived from one const, neutral limn copy
+
+Size: medium. Depends on: s00-baseline.
+
+**Goal.** Move the palette conventions (surface ladder roles, per-surface hover step, menu, control-on-card) into limn and reduce openADE's palette functions to forwards over one Scheme value, with zero colour change on screen. Remove openADE-specific copy from limn.
+
+**limn changes**
+
+- Scheme (new, scheme.rs): a Copy struct of pub Color fields, const-constructible, containing only what its methods read: canvas, panel, raised, hover, selected, border, text, muted, muted_on_raised, menu, menu_hover, menu_muted, shadow, control: ControlColors { surface, hover, pressed, border, text }. No danger, success, warning, link, scrim, diff or syntax fields: no limn component reads them in this plan.
+- Scheme::palette() -> ComponentPalette { surface: canvas, raised, hover, selected, border, text, muted, shadow }.
+- Scheme::menu() -> { surface: menu, raised: menu, hover: menu_hover, selected: menu_hover, border, text, muted: menu_muted, shadow }.
+- Scheme::card() -> palette() with surface = raised and muted = muted_on_raised.
+- Scheme::on_raised() -> { surface: control.surface, raised: control.surface, hover: control.hover, selected: control.pressed, border: control.border, text: control.text, muted, shadow }.
+- enum Surface { Flat(Color), Raised(Color), Solid(Color) } and Scheme::on(surface, ink) -> ComponentPalette. surface = raised = the colour. Flat: hover = self.hover, selected = self.selected. Raised: hover = self.step(colour), selected = self.selected. Solid: hover = selected = the colour. border, muted, shadow from the scheme; text = ink. The role is given by the caller; limn never compares colour values.
+- Scheme::step(color) -> Color: 8 per channel toward the ink (lighter when the scheme is dark, darker when light), saturating, alpha kept. Reuses the existing lighter / darker helpers. On openADE's dark scheme this equals theme::hover_for.
+- Theme::scheme(&self) -> Scheme, filled by derivation from the theme's surface levels, outline() and text inks. Theme::palette() stays; Theme::scheme().palette() == Theme::palette().
+- No component takes a Scheme. No Scheme::segmented (its only consumer would override it).
+- Icon::filled(self) -> Icon: the outline-to-solid mapping from theme::filled_icon (7 uses).
+- SkeletonGroup::rows(id, palette, count) with .row_height(px), .icon(bool), .fractions(&[f32]) (default [0.46, 0.62, 0.38, 0.54]); render() -> Element column. Skeleton::line / block / circle stay the only Self constructors. Replaces theme::skeleton_rows (4 uses).
+- Neutral copy: AlertTone::label() returns English ("Notice", "Information", "Done", "Warning", "Error"); lib.rs line 1 and the preferences.rs:291 sample string stop naming OpenIDE. Update the alert.rs tests that read tone.label().
+- Docs: 'A scheme of explicit roles' in docs/theming.md; gallery page listing the roles in dark and light.
+
+**openADE changes**
+
+- theme.rs: add `pub const SCHEME: Scheme` with today's values: canvas 22, panel 32, raised 43, hover 43 (INPUT), selected 54, border 46, text 212, muted 136, muted_on_raised 160, menu 30, menu_hover 48, menu_muted 158, shadow rgba(0,0,0,125), control 55/66/76/78/235.
+- Keep every named constant. BACKGROUND, PANEL, CARD, SIDEBAR, WINDOW, INPUT, SELECTED, BORDER, FOREGROUND and the menu trio become aliases of SCHEME fields. HOVER stays a standalone rgb(34,34,34) constant: it is still a fill in dock_tab_ui.rs:116 and view.rs:2324, :2350, :3187, and no Scheme field holds 34. BRAND, DESTRUCTIVE, LINK, DIFF_*, CODE_*, TREE_GUIDE, USER and the rest stay as they are.
+- component_palette(), menu_palette(), hover_for() become forwards to SCHEME.palette(), .menu(), Scheme::step. action_palette(surface, ink) keeps its equality match on openADE's side and maps to a role: TRANSPARENT | BACKGROUND | PANEL -> Surface::Flat; BRAND | DESTRUCTIVE -> Surface::Solid; anything else -> Surface::Raised; then SCHEME.on(..).
+- segmented_palette() stays in openADE unchanged (hover 63).
+- Delete interactive_palette() (field-for-field equal to component_palette()). Callers: approval_ui.rs, automation_view.rs, browser_ui.rs, composer_permissions_ui.rs, file_activity_ui.rs, marketplace_view.rs, search_activity_ui.rs, terminal_dock_ui.rs, view.rs, and the tests code_line_alignment_visual_tests.rs and file_activity_visual_tests.rs. interactive_surface(el) stays for now as component_palette().interactive_surface(el).
+- Move settings_ui::control_palette (88 uses) to theme::control_palette() = SCHEME.on_raised(), keeping a `pub(crate) use` in settings_ui so environment_ui.rs:906, provider_usage_ui.rs:357 and the test at provider_usage_ui.rs:1917 compile. Move settings_parts::card_palette to theme::card_palette() = SCHEME.card().
+- Collapse the copies of 'menu with hover 43 / selected 54' into theme::selector_palette() = ComponentPalette { hover: SCHEME.hover, selected: SCHEME.selected, ..SCHEME.menu() }: composer_ui.rs:798, composer_permissions_ui.rs:177, app.rs:6135. Delete the six SELECTOR_* aliases at composer_ui.rs:44-49. environment_selectors_ui.rs:14 stays plain menu_palette (hover 48).
+- Name local literals as theme constants, values unchanged: WARNING (224,179,106) and TRACK (66) from provider_usage_ui.rs:25-26; CONTEXT_WARNING (225,169,65) from composer_context_ui.rs:119; PILL_SURFACE, MUTED_INK, SEND_BLUE from composer_ui.rs:41-43; TERMINAL_SELECTION (61,76,96); ACTIVE_PANE_INDICATOR; INVERSE_SURFACE (246) and INVERSE_INK (32); EMPHASIS_INK (194). Move sidebar_chrome::palette() into theme.rs.
+- crates/openide-ui: hoist the non-test literals in context.rs (:28-29, :547-548) and file_activity.rs (:16-17) into named consts at the top of each file, values unchanged. They become builder arguments in S16.
+- Replace filled_icon and skeleton_rows with the limn versions (ide_ui.rs, settings_ui.rs, settings_ui/mcp_inspection.rs, settings_ui/providers.rs, view/command_center.rs).
+- Check for any limn Alert created with an empty title: its default title would turn English. feedback_banner always passes one; fix any other site by passing the Spanish title.
+
+**openADE files:** theme.rs, settings_ui.rs, settings_parts.rs, settings_ui/providers.rs, settings_ui/mcp_inspection.rs, provider_usage_ui.rs, environment_ui.rs, composer_ui.rs, composer_permissions_ui.rs, composer_context_ui.rs, environment_selectors_ui.rs, app.rs, sidebar_chrome.rs, session_surface.rs, terminal_ui.rs, terminal_dock_ui.rs, rich_text.rs, view.rs, view/command_center.rs, ide_ui.rs, marketplace_view.rs, automation_view.rs, approval_ui.rs, browser_ui.rs, file_activity_ui.rs, search_activity_ui.rs, code_line_alignment_visual_tests.rs, file_activity_visual_tests.rs, ../../crates/openide-ui/src/context.rs, ../../crates/openide-ui/src/file_activity.rs
+
+**Risk.** Low to medium. Every palette resolves to the same eight values. Held still on purpose: segmented hover 63; the two warning values stay two constants; HOVER 34 is not aliased. Scheme is new public API: plain value, no global setter. Scheme::step on a light theme darkens, which openADE never exercises; the limn tests cover it. An Alert with an empty title would change language.
+
+**Verification.** limn tests: Scheme::on for Flat, Raised and Solid; step moves toward the ink in dark and light and never equals the surface (except at saturation); Theme::scheme().palette() == Theme::palette() for both gallery themes; SkeletonGroup::rows widths. openADE: one new test asserting each palette function (component, menu, control, card, selector, segmented, action_palette for 22, 32, 43, 54, 246, BRAND, DESTRUCTIVE, TRANSPARENT) returns the literals copied from today's code, plus HOVER == rgb(34,34,34). Suite equals the S00 list. Baseline diff of sidebar, Settings, a dropdown, the composer and an Alert: zero pixels.
+
+### s03-tool-icon-buttons: Toolbar icon buttons: one limn IconButton instead of the helper family
+
+Size: large. Depends on: s01-primitives-text, s02-theme-scheme.
+
+**Goal.** Delete every 'ghost icon button + tooltip' helper in openADE. limn IconButton already has tooltip, shortcut, placement, size, active and enabled; add the few missing options.
+
+**limn changes**
+
+- TooltipSpec (new, small): TooltipSpec::new(title) with .description(text), .shortcut(text), .placement(TooltipPlacement), .palette(ComponentPalette), .max_width(px), .suppressed(bool). Button::tooltip_with(spec) and IconButton::tooltip_with(spec). The existing .tooltip(title), .tooltip_shortcut and .tooltip_placement stay as shorthands. No other tooltip builders are added.
+- TooltipSpec::palette is required by design: the built-in tooltip is Tooltip::new(element, id, title, self.palette) (components.rs:801-808) and tooltip_style reads palette.border, muted and shadow. For an action_palette button these equal component_palette, so no override is needed. For a button on menu_palette (muted 158) or control_palette (border 78), openADE passes .palette(component_palette()) to keep today's tooltip surface.
+- Tooltip on a disabled button: a disabled Button or IconButton with a tooltip renders its passive element (no hit region, not focusable) still wrapped in the Tooltip. Verify the current behaviour first; change only if it drops the tooltip. Replaces the external Tooltip wrapping in editor_review_ui::button and arrow, search_popover's icon closure and document_preview_ui::action_tool.
+- Button::dispatch_as(action_id) and IconButton::dispatch_as: the widget id stays, the reported action differs. Replaces .render().dispatch_as(..) in sidebar_chrome::tool, terminal_dock_ui::tool and the ide_ui tool helpers.
+- Button::active_hover(ActiveHover::Lift | Palette), mirrored on IconButton. Lift (default) is today's limn: active hovers to lighter(selected, 10). Palette keeps hover = palette.hover and pressed = palette.selected while active, which is what openADE draws today because its toggles are wrapped in interactive_surface (ide_ui.rs:63-72).
+- Icon-only buttons need no new size builder: ControlSize::button_sizing uses horizontal padding (height - 16) / 2, so Dense, Compact and Regular are 24, 28 and 32 squares with the 16 px icon centered and the control radius. Add a test that pins this.
+- Icon::Minus (Bootstrap 'dash'). Replaces the 18 px text glyph in document_preview_ui::preview_header and the '−' text Button in git_panel unstage.
+- Verify and pin by test: a Ghost IconButton with palette P hovers P.hover, presses P.selected, radius = control token, transition = hover_ms; that is identical to interactive_surface(P). Then the wrapper is redundant for non-active buttons.
+
+**openADE changes**
+
+- Delete, replacing each call with IconButton::new(id, icon, palette).variant(Ghost).size(ControlSize::Dense | Compact | Regular) plus .tooltip_with(..) and an explicit placement on every call (Below in ide_ui, sidebar_chrome, browser, environment, files, preview; Above in debug and status; Right in the activity rail): ide_ui.rs tool, tool_on_surface, tool_on_surface_shortcut (12); sidebar_chrome::tool (2 plus forwards); ide_activity_ui::tool (7); environment_ui::icon_control (6) and close_control; environment_git_ui::git_tool (3, with its 2 px top spacer); files_panel_ui::tool (1); file_activity_ui::icon_action and icon_action_alias (2); browser_ui::action (4); terminal_ui::tool (2); terminal_dock_ui::tool (7); debug_ui sized_tool and surface_tool (keep a thin fn for the id and F-key mapping); document_preview_ui tool and action_tool (11); editor_review_ui::arrow (4); project_actions_ui::icon_action (2); automation_view::icon_action (4); composer_context_ui::close (2); the icon_action closures in editor_workbench_ui and search_popover.
+- Active toggles (IDE titlebar and activity bar, settings nav, terminal toggle) pass .active(state).active_hover(ActiveHover::Palette) and swap the icon with Icon::filled() at the call site.
+- view.rs icon_button (17), hinted_icon_button (14) and hinted_shortcut_icon_button (2) encode variant and state in the fill argument. Translate each call by hand: fill TRANSPARENT or equal to the parent surface -> Ghost; fill SELECTED -> .active(true); fill BRAND or DESTRUCTIVE -> Solid; any other fill (BACKGROUND on the PANEL pager bar at view.rs:2874/2886 and on tab-overview rows at :3248/:3262/:3272, git_panel.rs:432/441) -> Subtle with theme::action_palette(fill, ink). Then delete the icon-only paths. The labelled icon_button calls (74x32, 96x32, width x 38; padding 5, font 14) stay until the owner decides; ledger.
+- The two tab close buttons keep their own inks: dock close uses FOREGROUND_SUBTLE (136) and terminal close uses component_palette text (212). No unification.
+- composer_permissions_ui.rs:255 stops matching ElementKind::IconButton to patch padding; it uses .size(ControlSize::Compact).
+- The 20 px agent-tab close (ide_ui::agent_tab) keeps one post-render size override; ledger.
+- Remove theme::interactive_surface(...) around the migrated icon buttons.
+
+**openADE files:** view.rs, ide_ui.rs, ide_activity_ui.rs, ide_search_ui.rs, ide_menu_ui.rs, sidebar_chrome.rs, environment_ui.rs, environment_git_ui.rs, files_panel_ui.rs, git_panel.rs, file_activity_ui.rs, search_activity_ui.rs, browser_ui.rs, terminal_ui.rs, terminal_dock_ui.rs, debug_ui.rs, document_preview_ui.rs, editor_review_ui.rs, editor_workbench_ui.rs, code_editor_ui.rs, project_actions_ui.rs, automation_view.rs, marketplace_view.rs, composer_context_ui.rs, composer_permissions_ui.rs, dock_chrome.rs, notifications_ui.rs, provider_usage_ui.rs
+
+**Risk.** Medium. Tests pin 24x24 and 32x32 targets, 16x16 icons, tooltip strings, 'disabled means no hit region', exact SELECTED fill on active toggles and hover colours (hover_surface_tests.rs). Hazards: (1) the built-in tooltip may nest elements differently from Tooltip::new(button); tests that walk ElementKind may break at identical pixels. (2) Without ActiveHover::Palette an active toggle would brighten to 64 on hover where it darkens to 51 or 43 today. (3) hinted_icon_button translated mechanically to Ghost loses the idle square and the active state. (4) ButtonSize::IconSmall helpers pass radius through interactive_surface today (4); ControlSize gives the same 4, confirm by parity test. (5) view.rs helpers are used by child modules through `use super::*`.
+
+**Verification.** limn tests: TooltipSpec fields reach the tooltip; tooltip on disabled; dispatch_as; ActiveHover both modes; icon-only squares at Dense, Compact and Regular; Ghost hover equals interactive_surface. Gallery entries. openADE: parity tests for ide_ui::tool_on_surface_shortcut (idle and active), sidebar_chrome::tool and debug surface_tool. Suite with attention to hover_surface_tests.rs, ide_ui tests, terminal_dock_ui_tests.rs, debug_ui tests, browser_ui_tests.rs, dock_chrome tests. Baseline diff of IDE titlebar and activity bar, dock header, terminal header, browser toolbar, debug sidebar, environment card header, in idle, hover, active and active-hover.
+
+### s04-tab-strip: Tab strip: move dock_tab_ui presentation to limn
+
+Size: medium. Depends on: s01-primitives-text, s03-tool-icon-buttons.
+
+**Goal.** Move dock_tab_ui.rs, already a domain-free tab-strip framework, to limn verbatim as TabStrip, before headers and toolbars build on its constants.
+
+**limn changes**
+
+- TabStrip (new, tab_strip.rs), the folder-tab strip. TabItem { id, extent_id, title, tooltip, icon, active, width, close: Option<Element>, tooltip_placement }. The close slot stays a caller-built Element, as RoundedTab has today, so each strip keeps its own close button and ink. The active state lives only in TabItem.active.
+- TabStrip::new(scroll_id, items, palette) with .reveal(id). Widths come from the items; limn computes the sum, the separators and the reveal target. No width heuristic in limn.
+- Palette roles, documented on the type: palette.surface = active tab and body (openADE BACKGROUND), palette.raised = strip background (PANEL), palette.hover = inactive hover (HOVER 34), palette.border = hairlines, palette.text and palette.muted = active and inactive ink.
+- Spec, copied from dock_tab_ui.rs. Tab = width x 28: a content row of 24 (gap 6, left 8, right 2; icon 16x24; title faded 14, Sans Label 13; close slot 24x24) over a 4 px connection, empty when active, otherwise a 1 px baseline. Fill: active surface, inactive transparent; hover: inactive palette.hover, active unchanged; pressed surface; transition hover_ms; top corners RadiusRole::Card (8). Separators 1x14 at the right edge, 5 from the top, omitted beside the active tab and after the last. Scroll viewport with a horizontal edge fade of 16 in the strip colour. Two nested tooltips (tab and extent).
+- TabStrip::header(leading, trailing, width, palette) with .side_inset(px) (default 6) and .gap(px) (default 8): the 32 px bar with the bottom hairline under-layer and the trailing slot vertically centered. Both are layout dimensions the host owns (document_preview passes 2 and 2).
+- TabStrip::surface(id, content, active, width, palette) for label-only or icon-only tabs (ide_bottom_ui sections) and TabStrip::align(tabs) for the 4 px top spacer.
+- Public constants: TabStrip::HEADER_HEIGHT 32, TAB_HEIGHT 28, TOOL_SIZE 24, CLOSE_SIZE 24, HEADER_SIDE_INSET 6.
+- Gallery: a strip with file names of mixed length, 1, 3 and 12 tabs, both themes.
+
+**openADE changes**
+
+- theme.rs: add tab_strip_palette() = ComponentPalette { surface: BACKGROUND, raised: PANEL, hover: HOVER, ..component_palette() }.
+- Delete the presentation in dock_tab_ui.rs: rounded_tab, tab_surface, align_tabs, header, scrolling_tabs (about 200 lines). Keep the file as a shim: `pub(crate) use` of the TabStrip constants under their current names so the roughly 20 files that read HEADER_HEIGHT and TOOL_SIZE compile unchanged; keep tab_width(title, available) and give it a max parameter (208 default) so the inline copy at dock_chrome.rs:231 (clamp to 360) goes away. Move file_action to dock_chrome.rs.
+- dock_chrome.rs tab, editor_tab and header; terminal_dock_ui.rs terminal_tab and session_tabs; ide_bottom_ui.rs sections; document_preview_ui.rs secondary: build TabItem and call TabStrip. The dock toolbar stays a hand row inside the header's trailing slot, with Separator from S01.
+- Port the dock_tab_ui geometry assertions that are about the strip itself into limn tests.
+
+**openADE files:** dock_tab_ui.rs, dock_chrome.rs, terminal_dock_ui.rs, ide_bottom_ui.rs, document_preview_ui.rs, dock_file_actions_app.rs, theme.rs
+
+**Risk.** High for its size. About 25 geometry tests: dock_chrome.rs tests (14: exact rects, gaps, fades, reveal, pixel colours against STRIP_BACKGROUND), tab_bar_visual_tests.rs, hover_surface_tests.rs:192, dock_visual_tests.rs:1213, terminal_dock_ui_tests.rs, document_preview_visual_tests.rs, dock_problems_tests.rs, ide_bottom_ui tests. Safe only if limn renders the SAME element tree: move the code verbatim, swap theme:: constants for palette fields, do not restructure. HEADER_HEIGHT and TOOL_SIZE are app-wide layout numbers (94 and 89 grep hits) and must stay reachable through the shim. Using palette.raised for the strip is a documented role stretch.
+
+**Verification.** limn tests: separator placement, baseline, active connection, reveal, header hairline under-layer. openADE suite must pass with no test edits other than import paths. Baseline diff: right dock with 1, 3 and 12 tabs, terminal dock, IDE bottom panel narrow and wide, markdown preview group; hover an inactive tab (fill 34).
+
+### s05-text-buttons-groups: Text buttons, primary actions and responsive button groups
+
+Size: medium. Depends on: s02-theme-scheme, s03-tool-icon-buttons.
+
+**Goal.** Stop wrapping and restyling limn Button in openADE: one palette-binding shorthand per role, a limn ButtonGroup for the row-or-column switch, and named options in place of post-render overrides.
+
+**limn changes**
+
+- ButtonGroup (new). ButtonGroup::new(buttons: Vec<Element>). Builders: .stacked(bool) (column in place of row), .align_end() (leading flex spacer; when stacked the buttons fill the width), .leading(Element) (kept at the left before the spacer), .reverse_when_stacked(bool) (primary first). Gap is fixed at 6 in both directions. Replaces settings_ui::choice_group (6) and the hand-written row/column switches whose gaps are already 6.
+- ButtonSize::Mini { height 22, font 11, horizontal padding 3 }. Replaces the post-render overrides at files_panel_ui.rs:226 (36x22, font 11, padding 3) and the Compact-at-font-11 buttons at git_panel.rs:260, :278, project_actions_ui.rs:235 and dock_activity Revoke only where a parity test shows equal frames; the rest go to the ledger.
+- Button::ink(Color), pairing with the existing hover_ink / pressed_ink: a semantic label ink without post-render .foreground(). Used for the destructive ghost at code_editor_ui.rs:567 and dock_activity Revoke.
+- Button::gap(px): opt-in icon-to-label gap. The Dense default does not change. Used by github_account_menu_ui::connection_button (8).
+- ButtonContent::Custom { leading: Element, label: String }, through the existing Button::with_content. Replaces the hand-built connected trigger in github_account_menu_ui::build (avatar 20 as leading, 13 px label, trailing ChevronDown) if a parity test passes; otherwise ledger.
+- Button::radius(RadiusRole), default Control.
+
+**openADE changes**
+
+- Settings outline buttons: collapse action_button (27), mcp_action_button (24), mcp_action_button_loading (4), choice_button (7), isolation_choice (1), memory::guarded_action (4) and about 12 inline copies into one app helper `fn outline(id, label) -> Button` bound to theme::control_palette(), Outline, Compact. Callers chain .icon(), .enabled(), .loading(), .active(). Choice buttons pass .active_hover(ActiveHover::Palette) if they are wrapped in interactive_surface today (check the effective style). Keep the settings_page to settings_link id rewrite.
+- Delete pure wrappers and call Button or TextField directly: plugins_ui::button (10), automation_view::action (10) and field (2), native_command_control_ui::action (12), native_command_history_ui::button (5), dock_activity::compact_action (5), environment_git_ui::action (4) and compact_action (2), editor_workbench_ui action, action_with_shortcut (12) and field (2).
+- Remove theme::interactive_surface(...) around limn Buttons where S03's test shows the hover is identical; buttons that are .active() pass ActiveHover::Palette. Keep it for bare Element::clickable rows.
+- Primary actions: theme::primary(id, label) = Button Solid with action_palette(BRAND, PRIMARY_FOREGROUND), 12 uses. Automations keep ButtonVariant::Default.
+- ButtonGroup at the NON-modal sites whose gaps are already 6: settings choice_group callers, rules_preview.rs:21, composer_context_ui.rs:243, approval-style inline rows. Modal footers are NOT touched here; S12 does them once.
+- Sites with gap 8 or 10 (about 5 settings row/column switches at 8/6, session_surface.rs:2798 at 10/8) stay hand-written; ledger with the recommendation to converge on 6.
+- view.rs button() (10 calls, 7 in dock_chrome.rs) stays: it forces radius 8 (not overwritten by interactive_surface), padding 5 and font 14, which no limn size reproduces. Ledger as an owner decision ('tab overview and workspace header buttons adopt limn sizes: radius 8 to 4, font 14 to 12 or 13').
+- terminal_ui.rs fixed button sizes (110/88/164/48 x 32) keep .width().
+
+**openADE files:** settings_ui.rs, settings_ui/memory.rs, settings_ui/external_agents.rs, settings_ui/rules_preview.rs, settings_ui/providers.rs, plugins_ui.rs, automation_view.rs, marketplace_view.rs, native_command_control_ui.rs, native_command_history_ui.rs, native_command_output_ui.rs, session_surface.rs, dock_activity.rs, environment_git_ui.rs, environment_ui.rs, project_actions_ui.rs, git_panel.rs, files_panel_ui.rs, editor_workbench_ui.rs, code_editor_ui.rs, composer_context_ui.rs, github_account_menu_ui.rs, theme.rs
+
+**Risk.** Medium. No convergence is done, so nothing should move. Tests pin page-action height at or below 28.5 (plugins_ui_tests), equal button sizes across provider cards and the 88 x Compact install button. The active-hover hazard from S03 applies to settings choice buttons and the automation weekday and backend buttons. ButtonSize::Mini and ButtonContent::Custom are new enum variants.
+
+**Verification.** limn tests: ButtonGroup row, stacked, align_end, reverse; Mini metrics; ink; gap; Custom content keeps hover and focus. Gallery page. openADE: parity tests for settings action_button and dock_activity::compact_action. Suite with native_settings_choice_app_tests.rs, plugins_ui_tests.rs, provider_usage tests. Baseline diff: a Settings page with buttons at 360 and 900 wide, the native command control modal body, the files panel 'Más' button, the GitHub footer.
+
+### s06-settings-rows: Settings rows: ActionRow absorbs settings_row, page_note and value_badge
+
+Size: medium. Depends on: s01-primitives-text, s02-theme-scheme.
+
+**Goal.** Make limn ActionRow the only settings row (about 150 call sites) by teaching it openADE's row behaviour through behaviour builders and a sizing profile. ActionRow stays the settings row; ListRow (S09) is the list row.
+
+**limn changes**
+
+- ActionRowSizing (const profile): { gap, copy_gap, icon_column, min_height, min_height_with_subtitle }. ActionRowSizing::DEFAULT = today's limn { 10, 4, 20, 36, 54 }. ActionRow::sizing(profile).
+- ActionRow::wrap_title(bool): the title wraps (Element::text) and does not truncate.
+- ActionRow::stacked(bool): places the trailing element under the copy in a column with gap 8. Built-in rule from settings_row: a trailing element with a fixed width of 64 or less (a Switch is 36x20) stays inline. In row mode the trailing element keeps its own style.width and style.flex, hoisted to the centering wrapper, with the child's flex set to 0.
+- ActionRow::align_top(bool): the copy column and the icon are top-aligned and not centered. settings_row top-aligns its copy today (copy.flex(1.0) with no centering wrapper), and page_note top-aligns its icon.
+- ActionRow::icon_muted(bool): icon in palette.muted.
+- ActionRow::value(text): a trailing read-only value as Sans Caption 12 in palette.muted, no surface. Replaces settings_ui::value_badge (16), providers.rs value() (10) and the 'label + chevron' text in overview().
+- ActionRow::trailing(Element): the slot name used everywhere else; suffix() stays as a forward.
+- Chip::outline(): border only, no fill. Replaces the selected: TRANSPARENT palette override at provider_usage_ui.rs:51.
+- Empty::framed(): wraps the blank slate in a panel with palette.surface, a 1 px palette.border and RadiusRole::Card. Replaces the panel wrapper in settings_parts::empty_state_with_icon.
+- No subtitle_mono, no suffix_gap or copy_gap builders, no Chip::icon (its only caller would be status_badge, which stays).
+
+**openADE changes**
+
+- ui_sizing.rs: SETTINGS_ROW = { gap 16, copy_gap 4, icon_column 20, min_height 34, min_height_with_subtitle 34 } (settings_row's minimum is 34 border-box; its 54 is natural height); NOTE_ROW = { gap 10, copy_gap 5, icon_column 16, min 0, 0 }.
+- settings_parts::settings_row body becomes ActionRow::new(title, theme::card_palette()).subtitle(desc).wrap_title(true).align_top(true).sizing(SETTINGS_ROW).trailing(control).stacked(compact).render(). Keep the function name (72 call sites; used by notifications_ui.rs, view.rs, plugins_ui.rs, provider_usage_ui.rs). The trailing control stays vertically centered, as today.
+- settings_ui::page_note (41) becomes ActionRow with .icon().icon_muted(true).align_top(true).wrap_title(true).sizing(NOTE_ROW).
+- value_badge is deleted in favour of .value() on rows using card_palette (muted 160). providers.rs value() rows keep ActionRow::new(label, control_palette()).value(..): control_palette's muted is 136 and its text 235, which is what they draw today. Delete providers.rs `group` alias (11).
+- shortcut_row (1 use): its Kbd is a direct row child, not centered, with gap 12 and min 38. Try ActionRow with a SHORTCUT_ROW profile under a parity test; if frames differ, leave it and add to the ledger.
+- status_badge stays hand-built: a test finds it by StrokeRect radius 5.0 at height 22, and 5 is not a token. Ledger (owner: radius 5 to 4).
+- provider_usage_ui::plan_badge becomes Chip::outline().height(20) with a palette whose text is SETTINGS_FOREGROUND_SUBTLE. marketplace_view::capsule (2) is deleted in favour of Chip.
+- empty_state and empty_state_with_icon become Empty::framed() with the card palette. error_state (2) is deleted; callers use Alert. state_panel is folded into loading_state.
+- settings_ui/providers.rs overview(): remove the manual per-row CornerRadii only if the raster tests (provider_row_hover_press_and_focus_follow_filtered_group_corners and the seam tests) pass without it; otherwise leave.
+- Dedupe in openADE, not limn: one switch_row(id, title, desc, on, enabled) for tool_setting (5), external_agents::tool_row (4) and about 8 inline rows; one entity_row(title, status, details, actions) for the four copies at settings_ui.rs:1037, :1502, :1656, :1864.
+- CARD_RADIUS becomes RadiusRole::Card.px(). Delete TITLE_SIZE, LABEL_SIZE, DETAIL_SIZE, ROW_PADDING where unused.
+- The github_page trick settings_row(..).padding(0.0).flex(1.0) at settings_ui.rs:1201 keeps working because the wrapper still returns a padded element.
+
+**openADE files:** settings_parts.rs, settings_ui.rs, settings_ui/providers.rs, settings_ui/external_agents.rs, settings_ui/memory.rs, settings_ui/subagents.rs, settings_ui/mcp_inspection.rs, settings_ui/activity_charts.rs, notifications_ui.rs, plugins_ui.rs, provider_usage_ui.rs, marketplace_view.rs, view.rs, ui_sizing.rs
+
+**Risk.** Medium. Differences that would move pixels if missed: ActionRow centers the copy (settings_row does not); ActionRow forces 54 with a subtitle (settings_row's minimum is 34, and stacked rows and rows with an empty description must not grow); ActionRow's icon column is 20 wide in palette.text (page_note is 16 in muted); page_note's title wraps. Pinned by settings_parts tests: root is Column or Row for compact and wide; Switch is (36,20), centered within 0.01, right edge at or inside width - 10. mcp_inspection's unpadded rows are left as they are.
+
+**Verification.** limn tests for each new ActionRow builder at 220, 360 and 900 widths, the sizing profile, Chip::outline, Empty::framed; gallery preferences page shows stacked, value and note rows. openADE: parity tests for settings_row (wide, compact, Switch control, 260-wide control, empty description) and page_note. Suite with settings_parts tests, settings_ui tests, agent_tests.rs, hover_surface_tests.rs, visual_qa export_settings_density_visual_review. Baseline diff of General, Agent, MCP and Providers pages at 360 and 900.
+
+### s07-page-shells: Page shells: PageHeader, PageColumn, CardGrid, SectionHeader
+
+Size: medium. Depends on: s01-primitives-text, s06-settings-rows.
+
+**Goal.** One limn implementation of the centered page (gutter, max width, reserved rail), the page heading, the section heading with count or disclosure, and the two-column card grid shared by Settings, Marketplace, Automations and the usage page.
+
+**limn changes**
+
+- PageHeader (new). PageHeader::new(title, palette) with .description(text), .leading(Element), .trailing(Element), .stacked(bool), .sizing(PageHeaderSizing). PageHeaderSizing { title_size, description_size, copy_gap, row_gap, stacked_gap, min_height }; DEFAULT from settings_parts::section_header: title 18, description 11, copy gap 4, row gap 12 with the trailing element vertically centered at its own width, stacked gap 8. Replaces section_header, usage_page's intro, marketplace catalog_surface's header, automation list_page's heading and history_page's title.
+- PageColumn (new). PageColumn::new(scroll_id, children, palette) with .max_width(px) (default 960), .gutter(narrow, wide, breakpoint) (default 14 / 28 at 640), .gap(px) (section gap, default 10), .reserve_rail(bool) (14 px reserved rail tinted palette.muted), .min_width(px). All are layout dimensions the host owns. PageColumn::content_width(available, ..) -> f32 so hosts compute `compact` from the same number. Renders a ScrollArea around [spacer.flex, column at content width, spacer.flex] with padding = gutter. Replaces the scaffolds in build_settings_page, marketplace catalog_surface and ide_item_detail, build_automations, and the reading-column rows in session_surface (max 780, gutter 16 / 24 at 470).
+- CardGrid (new). CardGrid::new(items: Vec<Element>, width) with .columns(n) (default 2) and .breakpoint(px). Gap fixed at 8. CardGrid::item_width(width, ..). Below the breakpoint a single column; an odd last row is padded with a spacer. Replaces marketplace item_grid (740) and automation cards_grid (690).
+- SectionHeader (new). SectionHeader::new(title, palette) with .count(n) (a Chip, 22 high, vertically centered), .detail(text) (muted, right-aligned), .trailing(Element), .disclosure(Option<bool>) (leading chevron right or down), .action(id) (the whole row is a click target), .sizing(SectionSizing). SectionSizing { height, padding, gap, title_role, title_muted, detail_role }; presets: TITLE (marketplace: title 15 through the profile, height 28, gap 8, count chip), LABEL (environment: muted Small 11, height 25, padding 4, gap 6), LIST (title Body 14 + muted Small counter, height 28). It is the single owner of the chevron + title + count row: TreeRow headers (S09b), DropdownMenuSection (S13) and the debug section rows (S09c) render through it.
+
+**openADE changes**
+
+- build_settings_page keeps the routing and calls PageColumn with its numbers: gutter 12 / 20 at 600, max 960, gap 12, compact below 640, scroll id 'settings_page:{page:?}'.
+- marketplace catalog_surface (reserve_rail true) and build_automations (false) use PageColumn. Delete the MAX_WIDTH 'keep in sync' comment and the duplicated gutter rule.
+- session_surface timeline, composer and recovery pages use PageColumn. Collapse the two identical recovery-page blocks.
+- ui_sizing.rs: MARKETPLACE_HEADER (title 20, description 11, copy gap 2, row height 40; the 18-when-narrow case passes a second const), AUTOMATIONS_HEADER (22, 12, 2).
+- Delete settings_parts::section_header, marketplace section_heading (2) and title(), environment_ui::section_heading (7), automation section_label (5), item_grid and cards_grid. SectionHeader also takes over the git_panel change_row Section arm, project_actions 'Sugeridas', dock_activity title rows (2) and the notifications list header where a parity test passes.
+- The usage_page grid (700, gap 12) stays hand-written; ledger (gap 12 to 8).
+
+**openADE files:** settings_ui.rs, settings_parts.rs, provider_usage_ui.rs, marketplace_view.rs, automation_view.rs, session_surface.rs, environment_ui.rs, git_panel.rs, project_actions_ui.rs, dock_activity.rs, notifications_ui.rs, ui_sizing.rs
+
+**Risk.** Medium. Tests: marketplace_counts_are_round_and_belong_to_their_heading (circle 22x22 at y=3, 8 px after the text, no hit regions); marketplace_centers_dock_with_room_for_the_reserved_scroll_rail; painted_header_title reads DrawCommand::Text 'Marketplace', so the title stays a truncated-text paint; automation compact_page_keeps_controls_inside_the_center_dock; session_surface reading-column width tests; 13 view.rs tests of build_settings_page. No title size is unified.
+
+**Verification.** limn tests: content_width arithmetic, grid breakpoints, SectionHeader with count, detail and disclosure; gallery page. openADE: parity tests for section_header, marketplace section_heading and environment section_heading. Suite. Baseline diff at 360, 640 and 1200 of Settings, Marketplace, Automations and a session transcript.
+
+### s08-state-panels: State panels: Empty variants and the inline Notice
+
+Size: medium. Depends on: s01-primitives-text, s05-text-buttons-groups, s06-settings-rows.
+
+**Goal.** Empty, loading and inline-notice states come from limn Empty and a new Notice, keeping today's two looks (centered blank slate, left-aligned notice). States that need more than a sizing profile stay local.
+
+**limn changes**
+
+- Empty::loading(id): a Spinner (size 20, palette.muted) in place of the icon. Empty keeps new, icon, action, action_element, width, height, compact, framed (S06). No size or gap builders.
+- Notice (new, notice.rs): the left-aligned inline notice. Notice::new(title, palette) with .icon(Icon), .description(text), .action(id, label), .trailing(Element), .framed() (palette.surface fill, RadiusRole::Card), .ink(Color) (semantic: an error line), .tooltip(id), .sizing(NoticeSizing). NoticeSizing { icon_size, title_role, description_role, gap, copy_gap, padding, height: Option }. Presets: NoticeSizing::COMPACT from ide_bottom_ui::problem_status (icon 16 muted, title Caption 12, description Small 11, gap 8, copy gap 2, padding 8) and NoticeSizing::REGULAR from marketplace empty_catalog and ide_ui::agent_home (icon 20 or 24 by profile, title Body 14, description Caption 12, gap 12, padding 16). Replaces problem_status (3), the agent_home hint, the terminal placeholder, the native_command_history empty row, the marketplace empty_catalog banner (with .framed()), and the framed single-line bars: the composer pending-selection notice (composer_ui.rs:2329), the terminal exit/error bar (terminal_ui.rs:231) and the external-CLI fallback (composer_ui.rs:2241).
+- One-line status text uses Text from S01 (Text::new(..).role(Small).muted() or .ink(danger), with .truncate().tooltip(id) where the full message matters). No InlineStatus component.
+- No Skeleton presets beyond SkeletonGroup::rows (S02); no Spinner::label.
+
+**openADE changes**
+
+- Notice: ide_bottom_ui::problem_status (3), ide_ui::agent_home hint, ide_activity_ui extensions empty block, ide_search_ui no-results, terminal_ui placeholder, debug_ui unconfigured block, native_command_history empty row, files_panel empty state, marketplace empty_catalog (COMPACT/REGULAR + framed so it does not change), composer pending notice, terminal exit bar. Each needs a parity test; any state that does not match with a preset or one openADE const in ui_sizing.rs stays local and goes to the ledger.
+- Empty: centered one-line hints (git_panel content, terminal_dock clipped_panel, document_preview loading) as Empty with title only if frames match. view.rs pane_empty_state (7) stays a 5-line preset over Empty with a named theme palette (surface = PANEL).
+- browser_ui::state_surface stays local (title 15, description 12, gap 10, a 36x36 icon tile, Compact buttons: more than one profile's worth of difference from Empty.compact); ledger. Its spinner branch may use Empty::loading only if frames match.
+- environment_git_ui::notices keeps the selection logic and returns Text elements. Do NOT swap these to Alert.
+- The 7 one-line muted hints in view.rs (:1543, :2846, :3198, :3338) become Text.
+- pane_loading_state, settings loading_state, generation_placeholder and the github/provider progress lines stay hand-composed on Skeleton and Spinner (already limn).
+- session_surface empty transcript (title 17, left-aligned, no icon) stays; ledger.
+
+**openADE files:** ide_bottom_ui.rs, ide_ui.rs, ide_activity_ui.rs, ide_search_ui.rs, terminal_ui.rs, terminal_dock_ui.rs, debug_ui.rs, marketplace_view.rs, native_command_history_ui.rs, files_panel_ui.rs, document_preview_ui.rs, view.rs, git_panel.rs, environment_git_ui.rs, composer_ui.rs, project_actions_ui.rs, ui_sizing.rs
+
+**Risk.** Medium. A default Empty or Notice would change the look, so every replacement goes through a parity test. Tests: empty_catalog_has_one_add_source_action and empty_catalog_stays_beneath_filters; the ide_ui animated_lateral_viewports test, which compares hint text rects; the native_command_history compact empty modal test; ide_bottom problems tests (height 51). The terminal notice bar is radius 8, height 40, PANEL: Notice.framed must take the fill from the palette passed.
+
+**Verification.** limn tests: Notice presets at narrow width, framed, with action and trailing; Empty::loading. Gallery states page in both themes. openADE: parity tests named above. Suite. Baseline diff: problems panel, terminal starting and exited, debug sidebar unconfigured, marketplace with no results, files panel empty, composer with a pending selection.
+
+### s09a-list-row-core: List rows 1: ListRow and DiffStat, adopted by simple rows
+
+Size: large. Depends on: s01-primitives-text, s02-theme-scheme, s03-tool-icon-buttons.
+
+**Goal.** Add limn ListRow with a const sizing profile and DiffStat, and adopt them in the non-virtualized, lightly tested rows.
+
+**limn changes**
+
+- RowSizing (const profile): { height, two_line_height, padding, gap, icon_size, leading_width, title_size, subtitle_size, copy_gap, meta_size }. Presets: RowSizing::COMPACT (28 / 40, padding 4, gap 8, icon 16, title 12, subtitle 11, copy gap 2) and RowSizing::DENSE (24, for debugger-style lists).
+- ListRow (new, list_row.rs). ListRow::new(id, title, palette). Content and state builders only: .icon(Icon), .icon_ink(Color), .leading(Element), .subtitle(text), .subtitle_mono(bool), .meta(text), .meta_mono(bool), .meta_width(px), .trailing(Element), .trailing_actions(Vec<Element>) (independent hit targets drawn without their own hover fill, under ONE hover surface shared with the row), .trailing_on_hover(bool), .disclosure(Option<bool>), .selected_check(bool), .enabled(bool) (false renders a passive panel, no hit region), .title_ink(Color) (semantic: unread, error), .title_fade(bool), .indent(px), .width(px), .hover(RowHover::Fill | Underline), .radius(RadiusRole) (default Control), .tooltip_with(TooltipSpec), .dispatch_as(action), .sizing(RowSizing). No .action(bool), no .chevron(), no per-call height, padding, gap or font builders.
+- Painting rule: background palette.surface, hover palette.hover, pressed palette.selected, transition hover_ms. This is the interactive_surface rule, so effective styles match. The host picks the palette for the state: Scheme::on(Surface::Raised(SELECTED), ink) for a selected sidebar row (hover 62), Surface::Solid(SELECTED) where a selected row must not change on hover (command palette).
+- ListRow must build no wrapper elements beyond what the hand-built rows have, so virtualized lists and draw-command ceilings hold (S09c).
+- DiffStat (new). DiffStat::new(additions, deletions, palette) with .inks(added, removed) (the host passes theme DIFF_ADDED / DIFF_REMOVED), .mono(bool), .role(TextRole). Renders '+N' and '−M' (U+2212), gap 5. Replaces environment_ui::counts (2) and the inline copies in chat_diff_ui, session_changes_ui, git_panel and environment_git_ui (9). Shared with FileActivity in S16.
+- Tooltip::for_path(content, id, path, palette): title = file name, description = parent directory, max width 320. Replaces files_panel_ui::path_tooltip and the hand-built copy in git_panel change_row.
+
+**openADE changes**
+
+- ui_sizing.rs: one RowSizing const per density this section uses: ENV_ACTION (32 / 48, padding 6, gap 4, title 12.5, subtitle 10.5), ENV_SOURCE (48, padding 5, gap 5, leading 30), ENV_COMPACT (28, padding 4, gap 8), ENV_SELECTOR (44, padding 4, gap 6), PROJECT_ACTION (42, padding 5, gap 7, mono subtitle 10), COMMAND_RESULT (30, title 13, subtitle 12, gap 8), SEARCH_RESULT (padding 8, icon 14, gap 8), NOTIFICATION, SOURCE_CARD_ROW.
+- environment_ui.rs: selector_trigger, action_row (2), source_row (4), compact_row (5), trailing_icon and line are deleted in favour of ListRow with theme::action_palette(CARD, FOREGROUND).
+- project_actions_ui.rs action_row and the preset row; search_activity_ui::result_row (2, RowHover::Underline) and the session_surface WebCitation row; notifications_ui::row; view/command_center.rs result_row (RadiusRole::Surface: its radius 6 is real, it is not passed through interactive_surface; palette Solid(SELECTED) when selected, hover INPUT otherwise; drop the chars*7.8 width estimate only if the parity test still passes, else keep it).
+- marketplace source_list rows, the plugins card header, github_account_menu_ui menu_header, provider_usage_ui sidebar_card anchor and popup_account header: ListRow where a parity test passes; otherwise ledger.
+- Delete environment_ui::counts and the inline diff stats in favour of DiffStat.
+- environment_selectors_ui project and worktree rows and the composer selector rows are NOT done here; they are menu rows in S13.
+
+**openADE files:** environment_ui.rs, environment_git_ui.rs, project_actions_ui.rs, search_activity_ui.rs, session_surface.rs, session_changes_ui.rs, chat_diff_ui.rs, git_panel.rs, files_panel_ui.rs, notifications_ui.rs, view/command_center.rs, marketplace_view.rs, plugins_ui.rs, github_account_menu_ui.rs, provider_usage_ui.rs, ui_sizing.rs
+
+**Risk.** Medium. The component is new and wide in use, but this section touches only rows with few geometry tests. hover_surface_tests.rs pins the sidebar usage row hitbox and hover. command_center_visual_tests.rs pins the result row. Action ids double as tooltip ids. If a row cannot match within its tests, leave it hand-built and list it.
+
+**Verification.** limn tests: one-line, two-line, disabled is passive, trailing_on_hover, trailing_actions share one hover surface, exact heights from the profile, narrow width, both hover modes; DiffStat; for_path. Gallery list page with the limn presets in both themes. openADE: parity test per replaced helper. Suite with command_center_visual_tests.rs, hover_surface_tests.rs, environment tests. Baseline diff: environment card, command palette, project actions, notifications popover, a search result card; hover and selected states.
+
+### s09b-sidebar-session-rows: List rows 2: sidebar, navigation, session and change rows
+
+Size: large. Depends on: s09a-list-row-core, s07-page-shells.
+
+**Goal.** Move the sidebar and session rows onto ListRow and TreeRow, using effective styles, with no change of radius or hover.
+
+**limn changes**
+
+- TreeRow::count(n) and TreeRow::disclosure(collapsed), rendered through SectionHeader's count and chevron parts, plus TreeRow::trailing_actions if not already expressible through its trailing slot. So view.rs project_header and group_header share TreeRow (count Sans Micro 10 muted, chevron in a 16 px slot, gap 6).
+
+**openADE changes**
+
+- ui_sizing.rs: SIDEBAR_TASK (28, gap 4, leading 24, title 12), SIDEBAR_NAV (28, title 13, gap 8; left inset 4, right inset 8 expressed by the profile's padding and the trailing slot), SETTINGS_NAV (28, title 12), CHANGE_ROW (28, meta mono 11), CHANGES_FILE (38, padding 8, gap 6), AGENT_LIST (26, padding 4, gap 8, icon 14), EXTENSION (42, padding 5, gap 7, subtitle 10), SEARCH_PANEL (42, padding 4).
+- view.rs session_row_with_context: ListRow with RadiusRole::Control (effective radius is 4 after interactive_surface, although the source says 8), palette action_palette(SELECTED or SIDEBAR), title_fade, the More button in trailing_actions with trailing_on_hover. The marker choice (unread dot, recovery, running, pinned, CLI icon) and the menu entries stay in openADE.
+- view.rs sidebar_nav_action (4): ListRow, RadiusRole::Control, trailing Kbd.
+- settings_ui::nav_item: its radius 6 is real (set after render, no interactive_surface). ListRow with RadiusRole::Surface and the settings nav palette if a parity test passes; otherwise it stays an IconButton and goes to the ledger. The nav group heading `section` becomes SectionHeader.
+- group_header and project_header on TreeRow. No convergence: both draw at the control radius today.
+- session_changes_ui file row; git_panel change_row File arm (shared hover over the open and stage targets through trailing_actions; keep the status letter mapping and ids; the unstage glyph becomes Icon::Minus only if frames match); ide_ui agent_list row closure; ide_activity_ui extension row; ide_search_ui result row.
+- Tab overview (view.rs:3143-3326) and dock_open_actions (view.rs:2921, six 38 px rows): move the overview into its own module. Rebuild its rows on ListRow with trailing actions only if frames match; otherwise leave on view::button and list in the ledger with the owner decision from S05.
+- Use real disabled IconButtons in place of the BORDER-tinted icon stand-ins only if frames match; otherwise ledger.
+
+**openADE files:** view.rs, settings_ui.rs, session_changes_ui.rs, git_panel.rs, ide_ui.rs, ide_activity_ui.rs, ide_search_ui.rs, ui_sizing.rs
+
+**Risk.** High. view.rs has about 90 tests with numeric rect assertions (sidebar 12 calls, session_row 9, nav 2, project_header 1). hover_surface_tests.rs pins the shared hover of the change row. git_panel has a 10,000-row virtualization test. The trap this section exists to avoid: copying .radius(8.0) / .radius(7.0) from source would round every sidebar row from 4 to 8. Rounder rows are an owner decision, not part of this plan.
+
+**Verification.** limn tests for TreeRow count and disclosure. openADE: parity tests for session_row (idle, selected, unread, menu open), sidebar_nav_action (idle, selected), group_header, project_header, change_row. Suite with view.rs sidebar tests, hover_surface_tests.rs, git_panel tests and git_panel_visual_tests.rs, session_changes_ui tests, ide_activity_ui tests. Baseline diff: sidebar with sessions and groups, settings sidebar, changes navigator, extensions sidebar, IDE task list; idle, hover, selected and selected-hover.
+
+### s09c-virtualized-rows: List rows 3: virtualized and benchmarked rows
+
+Size: medium. Depends on: s09a-list-row-core, s07-page-shells.
+
+**Goal.** Adopt ListRow and SectionHeader in the rows that live in uniform lists with draw-command ceilings or frame-equality tests, under an explicit stay-or-go rule.
+
+**limn changes**
+
+- None expected. If a ceiling fails because ListRow adds an element, fix ListRow in limn (fewer wrappers); do not add a variant.
+
+**openADE changes**
+
+- Rule for this section: a row whose frame-equality, draw-command-count or exact-height test fails stays hand-built and is added to the ledger. Do not edit a ceiling or a frozen legacy copy to make it pass.
+- debug_ui row_on_surface and sidebar_row on ListRow with RowSizing::DENSE (24 exact); the Row and SidebarRow enums and per-kind mapping stay. Section rows (debug_ui.rs:343, :469, :1217) become SectionHeader with .disclosure and .count. Delete debug_ui::label and row_icon when unused. FrameLocation stays a separate virtual row.
+- ide_bottom_ui problems file row and diagnostic rows (26, padding 5, gap 6, icon 14).
+- dock_activity tool rows (38, padding 7, gap 8) and the process first line.
+- settings_ui/providers.rs model_list row: it has a frozen legacy_model_list frame-equality test and a 635-model benchmark. Swap only if frames are identical; the 0.5 px full border is part of the frame.
+- session_surface related_subagent_cards has a legacy frame-equality copy at session_surface.rs:5176; untouched here.
+- files_panel_ui tree rows stay on TreeRow as composed today; only the 'Más' button uses ButtonSize::Mini (S05).
+
+**openADE files:** debug_ui.rs, ide_bottom_ui.rs, dock_activity.rs, settings_ui/providers.rs, files_panel_ui.rs, ui_sizing.rs
+
+**Risk.** High per row, low for the section, because the fallback is to leave the row. Tests: debug sidebar tools 24x24 and draw-command ceilings, debug_visual_tests.rs at 240/320/420, ide_bottom problems geometry, prepared_model_list_draw_and_interaction_frames_equal_previous_rendering, dock_activity tests.
+
+**Verification.** openADE suite with debug_ui tests, debug_visual_tests.rs, dock_problems_tests.rs, ide_bottom_ui tests, providers tests and benchmark. Baseline diff: debug sidebar with threads, frames, variables and breakpoints; problems panel; dock Activity; provider model list. The ledger lists every row left hand-built with the failing test's name.
+
+### s10-panel-headers-pagers: Panel headers, sidebar panels and pagers
+
+Size: large. Depends on: s01-primitives-text, s03-tool-icon-buttons, s04-tab-strip, s09b-sidebar-session-rows.
+
+**Goal.** Move sidebar_chrome and the hand-built header rows into limn so height, inset, gap and tool alignment are decided once. One header component, one vocabulary.
+
+**limn changes**
+
+- PanelHeader (new). PanelHeader::new(title, palette) with .leading(Element) (replaces the title: tabs, breadcrumb, a field), .back(id, tooltip), .trailing(Vec<Element>) (vertically centered by the component), .dismiss(id, tooltip), .meta(text) (muted counter), .title_fade(bool), .width(px), .sizing(HeaderSizing). HeaderSizing { height, padding, gap, title_role }. Presets from openADE: SIDEBAR (26, padding 0, gap 2, Caption 12 title, flex 1) from sidebar_chrome::header and title (12 + 6 calls); PANE (32, padding 4, gap 4); CARD (28, padding 2, gap 4, Body 14 title); POPOVER (24, gap 6, Caption 12 title).
+- SidebarPanel (new). SidebarPanel::new(children, palette) with .size(w, h). Inset 6, gap 6, background palette.surface. Replaces sidebar_chrome::panel (4), the main sidebar's hand-repeated padding 6 and the settings sidebar frame.
+- Pager (new). Pager::new(label, palette) with .previous(id, enabled), .next(id, enabled), .tooltips(prev, next), .shortcuts(prev, next), .label_width(px). Tooltip ids derive from the two ids. Spec: IconButton Ghost Dense 24 + centered Sans Small 11 muted label of fixed width (40 hunks, 48 files, 52 PDF pages) + IconButton, gap 4; tooltips still show when disabled. Replaces editor_review_ui arrow + counter + arrow (2 groups), document_preview PDF paging, marketplace pagination_controls (2) and the inline pager in view.rs file_preview_content.
+- No Toolbar component. Rows of tools are PanelHeader's trailing slot with Separator elements in the vector; hiding at narrow widths is the host's choice of what to pass.
+- No ScrollArea builders: .top_fade and the reserved appearance already exist.
+
+**openADE changes**
+
+- Delete sidebar_chrome::header, title, tool, search and panel. Keep INSET, GAP, HEADER_HEIGHT, NAV_ROW_HEIGHT and TOOL_SIZE as constants in sidebar_chrome.rs so the roughly 20 files that read them compile. sidebar_chrome::search callers call SearchField directly (Compact is already 28).
+- PanelHeader: git_panel navigator; debug_ui build_sidebar; ide_activity_ui git and extensions sidebars and extensions_center; ide_search_ui panel; ide_ui agent and agent_list headers; environment_ui headers (2); environment_git_ui commit_view and build headers; files_panel_ui header; session_changes_ui header; editor_workbench_ui keyed headers (3); composer_context_ui summary and details headers; provider_usage_ui popup header; ide_status_ui services popover header; notifications list header; browser_ui::navigation (leading = the address field); document_preview_ui::preview_header; terminal_dock header actions and dock_chrome toolbar stay in TabStrip::header's trailing slot.
+- session_surface::header: PanelHeader with a ui_sizing.rs profile if its tests pass ('one flat row', fixed action slots, fade at responsive widths); the composition and breakpoints stay in openADE either way.
+- view.rs workspace_header keeps its 48 height and HOVER-filled labelled buttons; untouched (ledger, with S05's owner decision). The main sidebar frame uses SidebarPanel; its organize/sort/archive toolbar stays a hand row.
+- settings_ui::build_settings_sidebar: SidebarPanel plus Separator; nav rows from S09b.
+- ide_ui::titlebar keeps its hand composition (the centered-middle width rule has one use).
+- Pager: delete editor_review_ui::arrow, counter and the pager half of its width arithmetic only where the pinned strip widths (88 / 96) still hold; marketplace pagination_controls internals. The text-button pagers in conversation_source_ui and native_command_history_ui (2) stay.
+
+**openADE files:** sidebar_chrome.rs, git_panel.rs, debug_ui.rs, ide_activity_ui.rs, ide_search_ui.rs, ide_ui.rs, ide_status_ui.rs, environment_ui.rs, environment_git_ui.rs, files_panel_ui.rs, session_surface.rs, session_changes_ui.rs, editor_workbench_ui.rs, editor_review_ui.rs, document_preview_ui.rs, composer_context_ui.rs, provider_usage_ui.rs, notifications_ui.rs, browser_ui.rs, marketplace_view.rs, settings_ui.rs, view.rs, ui_sizing.rs
+
+**Risk.** Medium to high. sidebar_chrome::header is called directly by dock_visual_tests.rs, hover_surface_tests.rs and tab_bar_visual_tests.rs; keep a thin forwarding fn if those tests cannot change in the section. session_surface header tests are strict. editor_review tests pin strip widths (88 / 96 groups, 80 / 80 decision buttons). browser TOOLBAR_HEIGHT 32 and STATUS_HEIGHT 20 are read by app.rs for the Chromium viewport. No header height is unified (48, 32, 28, 26 and 24 stay).
+
+**Verification.** limn tests: each HeaderSizing preset, trailing tools centered, title truncation, back and dismiss; Pager disabled ends keep tooltips. Gallery page. openADE: parity tests for sidebar_chrome::header + title, the environment card header and the review hunk pager. Suite with dock_visual_tests.rs, tab_bar_visual_tests.rs, hover_surface_tests.rs, agent_chrome_visual_tests.rs, editor_review_app_tests.rs, document_preview_visual_tests.rs, session_surface header tests, browser_ui_tests.rs. Baseline diff: session header, environment card, review strip, PDF preview header, marketplace pagination, browser toolbar, settings sidebar, git navigator.
+
+### s11-cards-blocks: Cards, output blocks, code blocks and progress ink
+
+Size: large. Depends on: s01-primitives-text, s02-theme-scheme, s10-panel-headers-pagers.
+
+**Goal.** One Card surface and two read-only monospace blocks in limn replace the hand-built bordered panels and scroll boxes. Progress gains the one option that lets openADE delete its hand-made meter.
+
+**limn changes**
+
+- Card (new). Card::new(content: Element, palette) with .density(CardDensity::Compact | Regular | Roomy) (padding 8 / 10 / 12, default Regular), .border(bool) (default true: 1 px palette.border), .radius(RadiusRole) (default Card), .header(Element) (a PanelHeader or Text::eyebrow), .footer(Element) (pinned under a Separator, body flex 1), .action(id) (interactive surface), .width(px). Fill is palette.raised: the host passes a palette whose raised is the fill it wants (theme card palette for CARD, a panel-card palette for PANEL, a canvas-card palette for BACKGROUND). No fill, padding-px or corner_mask builders.
+- OutputBlock (new, output_block.rs): bounded, virtualized monospace output. OutputBlock::new(id, text, palette) with .ink(Color) (semantic: stderr), .max_height(px), .height(px), .limits(OutputLimits) (const: bytes, lines, chars per line; default 48 KiB / 600 / 500 from dock_activity), .truncation_note(text) (host string), .top_fade(bool), .prompt(text) (a '$ cmd' first line in palette.text), .radius(RadiusRole) (default Control). Spec from dock_activity::output_block: padding 6, column gap 4, Monospace Small 11, line height 17, fill palette.surface (host passes a palette with surface = CODE_SURFACE, PANEL or CARD), top fade 12. Replaces output_block (5), the session_surface tool_detail_body scroll box, hook diagnostics, verification and aborted-batch args boxes, the terminal_activity tail, and the settings read-only blocks (mcp_inspection, memory goal, rules_preview report, the exec rule pattern).
+- CodeBlock (new, code_block.rs): the labelled code card of Markdown. CodeBlock::new(text, palette) with .label(text) (host-cased), .spans(Vec<TextSpan>) (pre-coloured text from the host's highlighter), .sizing(CodeBlockSizing). Shell from both renderers: padding 12, fill palette.raised, 1 px border, RadiusRole::Card, gap 8. CodeBlockSizing presets: CHAT (label Monospace Micro 10, code Monospace 12) and DOCUMENT (label Sans Small 11, code Monospace 13). Replaces rich_text::code_block and the shell of document_markdown_ui::code. No .language() builder: limn's CodeLanguage is feature-gated and would change the document preview's colours.
+- Progress::ink(Color): the fill colour for a semantic status (usage thresholds). The track stays palette.selected; the host passes a palette whose selected is its track. Check that the fill's flat end at fraction < 1 matches the hand-built two-spacer bar inside clip_children and that it shares width by flex; fix in limn if not.
+- Chip::min_width(px) and Chip::radius(RadiusRole): the count badge (44x24, RadiusRole::Control, fill from palette.selected). Replaces the badge in environment_git_ui::change_count (3).
+- No Meter, IconTile, StatusDot or LabeledValue components.
+
+**openADE changes**
+
+- theme.rs: named card palettes: panel_card_palette() (raised = PANEL), canvas_card_palette() (raised = BACKGROUND), code_palette() (surface = CODE_SURFACE), meter_palette() (selected = TRACK 66). The composer's meter track is TREE_GUIDE 72: a second named palette, not converged.
+- session_surface.rs: active_subagent_card, session_plan_card, persisted_subagent_card, hook_activity_card, tool_verification_card, aborted_batch_card, automation_read_only_card, the user bubble (border false) and the ProcessOutput panel are rebuilt on Card and OutputBlock. tool_verification_card and aborted_batch_card share one openADE helper for their common skeleton. The checklist marks stay local.
+- view.rs transcript_item cards on Card. workspace_frame and pane_loading_state stay.
+- dock_activity.rs: delete output_block; its bounding logic and tests move to limn; the Spanish note is passed through .truncation_note(). Inset cards on Card with CardDensity::Compact, border false, RadiusRole::Surface.
+- marketplace item card and skeleton card; plugins card; provider_usage account_card (footer slot); settings_ui/activity_charts card bodies; environment_git_ui comparison card; debug_ui sidebar_session card.
+- Radius outliers keep a single post-render .radius(px) on the Card or block root and go to the ledger: output_block 5, file preview code block 7, run card 9, automation card 10, source row 10, ProcessOutput 9, transcript notice 10, user card 12 where it is not Panel. template_card has no radius today; it stays at 0 by not using Card.
+- provider_usage_ui::progress and composer_context_ui::progress become Progress with .ink(usage colour) and the meter palette; the 80 / 100 thresholds stay. window_row and the popup window block keep their layout (popup_account sums hard-coded line heights).
+- approval_ui target well and the MCP OAuth URL box: OutputBlock if frames match (radius 6 = Surface).
+- marketplace detail_field (13) stays one openADE helper, rebuilt on Text.
+
+**openADE files:** session_surface.rs, view.rs, dock_activity.rs, marketplace_view.rs, automation_view.rs, plugins_ui.rs, provider_usage_ui.rs, settings_ui/activity_charts.rs, settings_ui/mcp_inspection.rs, settings_ui/memory.rs, settings_ui/rules_preview.rs, settings_ui.rs, environment_git_ui.rs, debug_ui.rs, approval_ui.rs, composer_context_ui.rs, rich_text.rs, document_markdown_ui.rs, theme.rs
+
+**Risk.** Medium. No radius is unified; outliers are overrides in the ledger. Tests: dock_activity output_block must emit fewer than 100 draw commands for 100k lines and show the 'Vista parcial' text (they move to limn with a host-supplied note); conversation_plan_visual_tests.rs; conversation_stream_visual_tests.rs; provider_usage card baseline tests and the popover height bookkeeping; the marketplace card padding 12 test; the legacy_related_subagent_cards frame-equality copy (update it only if frames are identical, else leave those cards).
+
+**Verification.** limn tests: Card slots and densities; OutputBlock virtualization and limits (moved from dock_activity); CodeBlock both presets; Progress ink and flat fill end; Chip min_width. Gallery. openADE: parity tests for card shell A (session_surface), output_block, rich_text::code_block and provider_usage progress. Suite. Baseline diff: a transcript with plan, hook and recovery cards; dock Activity with a long output; usage page and usage popover; marketplace grid; automations list; MCP inspection.
+
+### s12-forms-modals: Forms, selects and modal mechanics
+
+Size: large. Depends on: s05-text-buttons-groups, s08-state-panels.
+
+**Goal.** Remove the modal boilerplate (width math, the magic 54, hand-built footers), give limn a FormField and a Select, and stop styling raw text inputs by hand. Modal footers are migrated here, once.
+
+**limn changes**
+
+- Modal::fit_width(viewport_width, max) -> f32: (viewport - 24).min(max), with .max(min) left to the caller.
+- Modal::body_width(modal_width) -> f32: the TRUE inner width, derived from the same constants render uses (padding 14 at modal.rs:208, rail 14 at :193, border). It does not return width - 54.
+- No Modal::actions and no Modal::auto_height. Footers go through the existing Modal::footer(Element) with ButtonGroup.
+- FormField (new). FormField::new(label, control: Element, palette) with .hint(text), .hint_above(bool), .error(text, ink), .sizing(FormFieldSizing). FormFieldSizing { label_role, label_muted, hint_role, gap }; DEFAULT from the settings modals: label Caption 12 in palette.text, hint Small 11 in palette.muted, gap 7, control fills the width.
+- TextField::monospace(bool) and TextField::error(bool) (danger border from an ink passed with it). Replaces .font_family(Monospace) after render (13) and the raw Element::text_input styling where frames match.
+- Select (new). Select::new(id, current_label, options: Vec<DropdownOption>, open, dismiss_id, palette) with .menu_palette(p), .sizing(SelectorSizing), .placement(p), .width(px), .full_width(bool), .icon(Icon), .enabled(bool). Mirrors DropdownList::new. Trigger = Button Outline Compact with a trailing ChevronDown, width = sizing.min_width; list = DropdownList, BottomEnd. Controlled; the toggle id is the id passed. Replaces settings_choice_selector (8), keymap_selector, the terminal shell selector, the instructions snapshot selector, marketplace category_control and native_command_history selector.
+- Tabs::fill_width(total): equal tab widths computed from the total, knowing the track padding (2 + 2) and gap (2); overrides the items' widths. Tab::new is unchanged. No intrinsic measurement, no wrap option.
+
+**openADE changes**
+
+- ui_sizing.rs: FORM_SLACK = 54.0 - (w - Modal::body_width(w)) (about 10; assert it in a test so it cannot drift), plus FormFieldSizing consts for the variants: automation (Caption 12 muted, gap 8), project_actions (10.5 muted labels stay on text_px; ledger), marketplace source form (hint under the field, gap 8), ide_new_file (Label 13).
+- All 13 modals: width = Modal::fit_width; body width = Modal::body_width(width) - FORM_SLACK; footer = Modal::footer(ButtonGroup::new(..).align_end().stacked(narrow).reverse_when_stacked(true).render()). Files: settings hook, rule and mcp editors, skills_preview, instructions_inspection, providers details and connect, github sign-in, marketplace source and details, automation editor, plugins, ide_new_file, conversation_source, native_command_control, history and output, approval_ui. Footers whose gap is 8 or 0 today (three confirmation dialogs have no gap) keep their hand row; ledger.
+- FormField in the modal forms (about 24 fields) and the stacked editor rows inside settings groups (settings_ui.rs:559, :2455, rules_preview.rs:11), wrapped in the group's padding 10.
+- automation_view.rs: delete form_label, the `content_width - 26` compensation and the tab width arithmetic in frequency_control in favour of Tabs::fill_width. The two-row splits (3+2 filters, 2x2 frequency) stay as two Tabs calls. Weekday and backend choice buttons stay ButtonGroup-style rows of Secondary-active and Ghost buttons.
+- Select replaces the select helpers. Keep the ids ('settings_choice_toggle:{key}', 'settings_choice_dismiss') and the ViewState lookup. debug configuration_selector (height 24, radius 4, hand trigger) stays unless frames match.
+- Raw inputs to TextField only where heights and paddings are equal: view.rs field() (1). project_actions_ui::editor (32 / 34, padding 7), terminal rename (36, padding 8), browser address (24, radius 6, padding 4) and the composer goal editor stay; ledger.
+- exec_rule_reset_modal, native_skill_reset_modal and external_agents::approval_modal: switch to AlertDialog only if title size, padding, footer gap and stacking width match the hand-built Modal in a parity test; otherwise keep them on Modal. Move approval_modal out of the settings module either way.
+- code_editor_ui.rs:567 uses Button::ink from S05 for the destructive ghost.
+
+**openADE files:** settings_ui.rs, settings_ui/external_agents.rs, settings_ui/skills_preview.rs, settings_ui/instructions_inspection.rs, settings_ui/providers.rs, settings_ui/rules_preview.rs, github_account_ui.rs, marketplace_view.rs, automation_view.rs, plugins_ui.rs, ide_new_file_ui.rs, conversation_source_ui.rs, native_command_control_ui.rs, native_command_history_ui.rs, native_command_output_ui.rs, approval_ui.rs, project_actions_ui.rs, environment_git_ui.rs, terminal_dock_ui.rs, debug_ui.rs, code_editor_ui.rs, view.rs, ui_sizing.rs
+
+**Risk.** Medium to high. Tests pin modal scroll and focus behaviour (skills_preview, native_command_*, plugins_ui_tests: close and footer stay visible while the body scrolls), keyboard navigation and viewport bounds of the settings selects (native_settings_choice_app_tests.rs), the sidebar tab track of 228 px, and '{close_id}:close' focus ids. Tabs::fill_width may differ by a pixel from the hand-measured widths; keep explicit widths where a test pins the track. Body widths must stay exactly width - 54.
+
+**Verification.** limn tests: body_width equals the rendered inner width; FormField with hint and error; Select open, close and keyboard; Tabs::fill_width sums to the total. Gallery. openADE: a test that Modal::body_width(w) - FORM_SLACK == w - 54 for w in 240..860; parity tests for one settings form field and settings_choice_selector. Suite. Baseline diff of each modal at 360 and 900 viewport widths (hook, rule, MCP, skills preview, provider connect, automation editor, plugin install, new file), with a select open.
+
+### s13-menus-popovers: Menus, searchable selectors, popover panels and suggestion lists
+
+Size: large. Depends on: s03-tool-icon-buttons, s07-page-shells, s09a-list-row-core, s10-panel-headers-pagers, s12-forms-modals.
+
+**Goal.** Give DropdownMenu the slots openADE currently injects by reaching into limn's element tree, and move the selector, popover-panel and autocomplete shells into limn.
+
+**limn changes**
+
+- DropdownMenu::footer(Element): a fixed footer under a Separator, outside the scroll. Removes composer_ui.rs:1889-1912, which pattern-matches ElementKind::Popover { floating } then ElementKind::Panel to inject 'Conectar proveedor'. Also used by the project selector's browse footer and the branch selector's 'create branch'.
+- DropdownMenu state builders: .message(text) (Sans Caption 12 in palette.muted, padding 6), .loading(rows) (Skeleton blocks 16 high in 28 px rows), .error(text) (a scroll area of 104). Replace the hand-built state rows in environment_selectors_ui (8) and the model catalog.
+- MenuHeader (new struct), passed through the existing DropdownMenu::header(Element): MenuHeader::new(palette) with .title(text) or .back(id, label), .center(Element), .trailing(Element), .search(id, query, placeholder) (SearchField Compact, full inner width, gap 2, sticky). Spec: height 28, title Caption 12, padding 6; back = ArrowLeft 16 + label. Replaces model_list_header, model_list_fixed_header, the effort_panel heading and the selector headers.
+- DropdownMenuSection (new struct, impl From<DropdownMenuSection> for DropdownMenuEntry): ::new(id, label) with .icon(Icon), .count(n), .collapsed(bool). Renders through SectionHeader (height 28, padding 6, gap 6, muted). Replaces composer_ui::model_provider_section (2).
+- DropdownMenuItem gains the row slots: .description(text) (two-line item at SelectorSizing.detail_row_height 40: icon 16, label 12 over detail 11 in palette.muted, padding 6, gap 6, trailing check when selected), .detail_mono(bool), .status(text) (right-aligned 11 muted), .chevron() (navigates to a sub-view), .enabled(bool) (alongside disabled()), .tooltip_with(TooltipSpec). Replaces composer_ui::selector_row (2) and ModelPickerRow (2), the environment_selectors project and worktree rows, browser_ui::menu_action (4) and github_account_menu_ui::action (8).
+- MenuItem::trailing_action(id, icon, tooltip): a secondary 24x24 action in the bare menu row (menu_secondary_action). MenuItem is the row terminal_dock_ui::session_menu_row uses directly; if DropdownMenuItem renders through MenuItem, forward the same builder. Tests pin close at 24x24 and row height 26.
+- PopoverPanel (new): a CONTENT component passed to the existing Popover::new(anchor, content, ..); it does not re-declare placement, width or view_key. PopoverPanel::new(palette) with .header(Element) (a PanelHeader), .body(Element), .body_max_height(px), .footer(Element), .separators(bool), .density(CardDensity). Spec from the usage popup: column gap 4, hairlines, body max 320, footer 32. Replaces provider_usage_ui::popup, composer_context_ui summary and details frames, ide_status_ui services popover, the notifications list frame and the terminal rename popover.
+- SuggestionList (new). SuggestionList::new(anchor, id, items, selected_index, open, palette) with .title(text), .empty(text), .loading(bool), .hints(Vec<Element>), .note(text), .width(px), .placement(p). Items = icon + label + description with optional section starts. Spec from composer_suggestions::popup: width min(available, 352), min 160; row 42; max 7 visible; item padding 6, gap 6, icon 16; label 12 over description 11 muted; selected fill palette.hover; title 12 muted, height 28; section = hairline + 11 muted; footer = hairline + hints; reserved rail 14; TopStart, open 80 ms, close 60 ms, non-modal, virtualized. The gallery example must be a generic command or mention list.
+- Kbd::caption(text): keycap(s) + Sans Small 11 muted caption, gap 4, height 20, '/' between alternative keys. Replaces command_center::footer_hint (3) and the composer_suggestions hint closure (3).
+- No DropdownMenu::title / search / header_tool, no Button::select_trigger, no CommandPalette.
+
+**openADE changes**
+
+- composer_ui.rs: delete the ElementKind footer injection, selector_row, ModelPickerRow::render, model_provider_section, model_list_header, model_list_fixed_header and the context_control forwarders.
+- Triggers: project_control, branch_control, metadata_item and environment_selectors local_selector's trigger become plain Button (Ghost, Compact, icon, trailing ChevronDown, .ink(muted), .width(estimate)) only where a parity test passes (today: row gap 5, chevron 12 or 16). Otherwise they stay; ledger. The model/effort trigger (two labels) stays. All chars*N width estimates stay in openADE.
+- environment_selectors_ui.rs: project, branch and local selectors keep the data mapping and ids and use the DropdownMenu builders. Delete the local selector_palette alias and the SELECTOR_INK, SELECTOR_MUTED, MODEL_MENU_SCROLL_GUTTER constants. Merge the entry list duplicated with environment_ui::local_menu into one openADE builder.
+- composer_suggestions.rs: the popup (about 190 lines) becomes a SuggestionList call. Trigger parsing, ranking and the file worker stay.
+- PopoverPanel: composer_context_ui summary and details, provider_usage_ui popup (drop popup_account's hand-summed height only if body_max_height reproduces the pinned sizes), ide_status_ui services_control, notifications_ui list and popover, terminal_dock_ui session_selector rename form.
+- Delete github_account_menu_ui::action, browser_ui::menu_action and terminal_dock_ui::session_menu_row. view.rs session_menu_action stays as a local shorthand.
+- command_center.rs footer_hint becomes Kbd::caption; the inline shadow rgba(0,0,0,155) becomes a named theme constant. The command palette composition stays in openADE.
+- composer_permissions_ui: PermissionSelector is handled in S16.
+
+**openADE files:** composer_ui.rs, composer_context_ui.rs, composer_suggestions.rs, environment_selectors_ui.rs, environment_ui.rs, provider_usage_ui.rs, ide_status_ui.rs, notifications_ui.rs, terminal_dock_ui.rs, github_account_menu_ui.rs, browser_ui.rs, view/command_center.rs, view.rs, theme.rs
+
+**Risk.** High. composer_ui.rs has about 45 inline tests plus composer_layout_visual_tests.rs that pin effort pill width reservation, selector views fitting a compact viewport, rail clearance, a fixed search and header while scrolling, the square refresh target, popover motion and view keys, and selector surface colours. Many find elements by action id and assert rects, so different nesting breaks them at identical pixels. provider_usage tests pin 32 px popover actions, content height with one account and a fixed footer in short windows. Menu hover 48 (environment) against 43 (composer) stays different. Suggestion rows stay 42 where SelectorSizing has 40.
+
+**Verification.** limn tests: footer survives scrolling; two-line item metrics equal SelectorSizing; section collapse; sticky search in MenuHeader; MenuItem trailing action 24x24; PopoverPanel content-sized body; SuggestionList virtualization and selection; Kbd::caption. Gallery in both themes. openADE: parity tests for selector_row, ModelPickerRow, menu_action and the suggestion popup. Suite with composer_ui tests, composer_layout_visual_tests.rs, context_visual_tests.rs, native_context_app_tests.rs, environment_selectors tests, provider_usage tests, terminal_dock_ui_tests.rs. Baseline diff: model menu in its three views, project and branch selectors, / and @ suggestions, context popover, usage popover, notifications.
+
+### s14-ide-chrome: IDE chrome: status bar and menu bar
+
+Size: large. Depends on: s03-tool-icon-buttons, s10-panel-headers-pagers, s13-menus-popovers.
+
+**Goal.** Move the generic shells of the IDE window to limn (status bar with fit-by-priority overflow, menu bar); openADE keeps the cells, the menus, and every width heuristic.
+
+**limn changes**
+
+- StatusBarItem (new). StatusBarItem::new(id, palette) with .label(text), .icon(Icon), .count(n), .width(px) (REQUIRED: the host passes it), .priority(n), .passive(), .ink(Color), .tooltip_with(TooltipSpec), .dispatch_as(action), .menu(entries, open, dismiss_id, menu_palette) (upward, TopEnd, width 256, context style). Spec from ide_status_ui: cell height 21, padding 2, inner gap 4; icon 12x16 muted; text faded 6, Sans Small 11 muted, 16 high; hover through palette.bar_item_surface (square corners); tooltip Above.
+- StatusBar (new). StatusBar::new(leading: Vec<StatusBarItem>, trailing: Vec<StatusBarItem>, palette) with .width(px), .overflow(id, tooltip, menu_palette) (items that do not fit, lowest priority first, move into a More cell 20 wide), .top_hairline(bool), .corner_inset(px) (12 at the right so the hover clears the rounded window corner). Height 21, gap 4. limn does only the fit-by-priority arithmetic on the widths it is given; no text-width estimate lives in limn.
+- MenuBar (new). MenuBar::new(menus: Vec<(id, label, width, Vec<DropdownMenuEntry>)>, open_id: Option<&str>, dismiss_id, palette) with .menu_palette(p) and .compact(bool) (one burger button with the categories as submenus). Label widths are required per menu. Spec: row gap 2, height 24; trigger = Button Ghost, font 12, padding 4, height 24, fill palette.selected when open; menus in context style with initial focus on the first enabled item. The gallery example must be a generic File / Edit / View bar.
+- Uses Element::clip_to from S01. No NavigationRail, no SearchField::trigger, no Button::reveal_label, no SVG raster helper.
+
+**openADE changes**
+
+- ide_status_ui.rs (about 860 UI lines): delete text, control, control_tooltip and menu, plus the layout half of status_cells and footer. Keep label_width (the 3.5 / 6.5 px heuristic) and pass its results as item widths; keep scoped_entries, document_control, services_control content, branch, the choice of cells and their priorities.
+- ide_menu_ui.rs: delete menubar and width(); keep entries, command, editor_command and the MENUS width table (60/52/76/36/28/64/64), passed to MenuBar.
+- ide_ui.rs: activity_bar stays a hand column of IconButtons (S03). quick_open_button stays local. titlebar keeps its composition.
+- workspace_mode_ui.rs and ide_editor_empty.rs: merge watermark() and brand_icon() into one openADE helper. The empty-editor shortcut rows become ListRow with a trailing Kbd if frames match (title 13, height 32, gap 20); else ledger.
+- ide_workspace.rs layout constants (OUTER_INSET, TITLEBAR_HEIGHT, STATUSBAR_HEIGHT, ACTIVITY_BAR_WIDTH) stay in openADE: they are window layout. Add a test asserting STATUSBAR_HEIGHT == StatusBar's height + 1 hairline.
+
+**openADE files:** ide_status_ui.rs, ide_menu_ui.rs, ide_ui.rs, workspace_mode_ui.rs, ide_editor_empty.rs, ide_workspace.rs, ui_sizing.rs
+
+**Risk.** High. Tests pin: footer_groups_fit_without_overlap_and_dispatch_scoped_actions, document_footer_has_one_row_and_fits_native_metrics, the upward menu surface, services popover focus on rebuild, exact SELECTED fill on toggles, dock_document_status_tests.rs. Control ids ('ide_explorer_toggle', 'ide_editor_cursor', 'ide_bottom:problems') are looked up by tests and by the *_app.rs handlers. The fit breakpoints depend on the width heuristics, which is why they stay in openADE unchanged.
+
+**Verification.** limn tests: StatusBar overflow by priority at widths 200 to 1200 with given widths; MenuBar open, close, keyboard and compact. Gallery page. openADE: parity tests for one status control cell and the menubar at full and compact. Suite with ide_visual_tests.rs, dock_document_status_tests.rs, hover_surface_tests.rs. Baseline diff of the IDE window at 700, 900, 1200 and 1500 wide with a document open, a status menu open and an application menu open.
+
+### s15-composer-editor: Find bar, breadcrumb paths, composer strip and status inks
+
+Size: large. Depends on: s10-panel-headers-pagers, s13-menus-popovers.
+
+**Goal.** Move the domain-free parts of the editor pane and composer into the limn components that already own those surfaces (CodeEditor, Breadcrumb, Composer, Marker, Collapsible).
+
+**limn changes**
+
+- FindBar (new, find_bar.rs), the companion of CodeEditor. FindBar::new(id, query, palette). Builders: .replacement(Option<text>), .replace_open(bool), .options(FindOptions { case, word, regex, in_selection }), .count_label(text), .has_matches(bool), .error(Option<text>), .width(px), .labels(FindLabels { .. }) (all host strings), .ids(FindIds) (host action ids), .ink(Color) (the danger ink for zero matches and errors). FindBar::height(replace_open, options_below, error) -> f32 so the host stops hardcoding 48 / 32 / 32 / 24 in search_reveal_inset. Spec from editor_workbench_ui::search_popover: column gap 4, padding 8, width clamp 0..520, fill palette.surface (host passes the menu palette), border 1, RadiusRole::Card, shadow (0,5) blur 14; rows 28 high, gap 3; toggles 28 wide Ghost with the glyphs Aa / Ab / .*; counter Small 11, 72x28; replace row with 24 px leading and trailing spacers; error Caption 12, height 20; options move below under 480 or when replace is open; BottomEnd, non-modal, 0 ms.
+- Breadcrumb::from_path(id, path, palette) with .dirty(bool) (the ' •' suffix), .file_icon_min_width(px) (76) and .segment_action(Fn(&str) -> Option<String>) (the host decides interactivity and ids). Replaces code_editor_ui::path_items and its `id.starts_with("code_editor_path:")` coupling.
+- CodeLanguage::from_path(path), plus the extension fallbacks for comment markers (sh, yaml, nix, rb, makefile, dockerfile) inside CodeLanguage::comment_markers. Replaces editor_workbench_ui::language_for_path and comment_markers (10 uses) and the inline copy at code_editor_ui.rs:429.
+- Composer::header_strip(Element): a slot above the card. Height 32 (2 + 28 + 2), inset 8 from each side, inner horizontal padding 4, fill palette.surface of a palette passed with it or the composer's raised role (decide by parity), top corners = the composer card radius. Replaces composer_ui::composer_metadata.
+- Marker::ink(Color) and Collapsible::ink(Color): the status colour for secondary text. Replaces session_surface::marker_palette (4) and the `palette.muted = DESTRUCTIVE` mutations on these two (the ToolActivity and FileActivity ones are S16).
+
+**openADE changes**
+
+- editor_workbench_ui.rs: delete search_popover (about 260 lines) and the constants in search_reveal_inset (use FindBar::height); keep search_visible. Delete language_for_path and comment_markers.
+- code_editor_ui.rs: path_items, path_breadcrumb and path_breadcrumb_with_height become Breadcrumb::from_path with an explicit action closure. Collapse build / build_with_debug / build_ide / build_with_preview into one function taking an options struct; keep `build` and `build_ide` as names (tests call them 30 times).
+- composer_ui.rs: delete composer_metadata in favour of Composer::header_strip. expand_control, send_control, microphone_control and attachment_rows stay; their literal colours were named in S02.
+- session_surface.rs: delete marker_palette for Marker and Collapsible call sites. jump_to_bottom_control stays, using theme INVERSE_SURFACE / INVERSE_INK.
+- home.rs swaps Element::scroll for ScrollArea if frames match.
+- session_changes_ui::diff_row to limn CodeDiff is an owner decision (syntax highlighting appears, hunk-row backgrounds go); default: leave. Ledger.
+
+**openADE files:** composer_ui.rs, session_surface.rs, home.rs, editor_workbench_ui.rs, code_editor_ui.rs, code_snapshot_ui.rs, session_changes_ui.rs, document_preview_ui.rs
+
+**Risk.** Medium to high. editor_workbench_visual_tests.rs and editor_workbench_e2e_tests.rs for the find bar; code_editor_component_visual_tests.rs; conversation_marker_tests.rs for the marker ink; composer tests (strip above the card). FindBar must keep host ids such as editor_search_* byte-identical and FindBar::height must agree with its layout.
+
+**Verification.** limn tests: FindBar layout at 260, 480 and 520 wide with replace and error; FindBar::height equals the rendered height in every state; Breadcrumb::from_path; CodeLanguage::from_path; Marker and Collapsible ink. Gallery. openADE: parity tests for search_popover (4 states), path_breadcrumb (clean and dirty) and composer_metadata. Suite. Baseline diff: editor with find and replace open at two widths, breadcrumb with a dirty file, composer on home and in a session, a failed marker in a transcript.
+
+### s16-openide-ui-shells: openide-ui: rebuild the five app components' shells on limn
+
+Size: large. Depends on: s11-cards-blocks, s13-menus-popovers, s15-composer-editor.
+
+**Goal.** crates/openide-ui (five components, about 3,500 lines) holds the most used card in every transcript. Its domain types stay, but its shells are rebuilt on limn components so limn upgrades reach them, and its colour literals become arguments.
+
+**limn changes**
+
+- None planned. If a shell cannot be expressed, the fix belongs to the limn component already added (Card, Collapsible, DiffStat, SectionHeader, DropdownMenuItem); record it and add the smallest builder there.
+
+**openADE changes**
+
+- ToolActivity and FileActivity: add .ink(Color) (status colour for secondary text) and take the diff inks as arguments; their consts ADDED (105,210,145) and REMOVED (240,125,130) become defaults the app overrides or keeps (values unchanged; this is a third diff palette, an owner decision). Delete session_surface::marker_palette's remaining callers and the `palette.muted = DESTRUCTIVE` / `palette.surface = CODE_SURFACE` mutations at session_surface.rs:992, :1192 and file_activity_ui.rs:441 in favour of .ink and a named theme palette.
+- Rebuild the disclosure shell of ToolActivity and FileActivity on limn Collapsible and Card, and FileActivity's stats on DiffStat, only where the visual tests pass; otherwise leave the shell and record it. Add a body-inset option (8 top, 8 sides, 2 bottom) to the two components so the three hand-built spacer insets (session_surface.rs:1150, chat_diff_ui.rs:305, file_activity_ui.rs:445) go.
+- ContextContent and ContextRow: section headings through SectionHeader; rows through ActionRow::value or Text. The usage thresholds and series colours (context.rs:28-29, :547-548) become arguments filled from theme constants.
+- PermissionSelector: rows through DropdownMenuItem::description (S13) if the composer_permissions tests pass (row height = SelectorSizing::COMPACT.row_height, 16x16 icon, total under 170); otherwise leave.
+- ApprovalRequest: unchanged apart from Text roles; re-expressing it on Alert would change its look.
+
+**openADE files:** ../../crates/openide-ui/src/tool_activity.rs, ../../crates/openide-ui/src/file_activity.rs, ../../crates/openide-ui/src/context.rs, ../../crates/openide-ui/src/permission_selector.rs, ../../crates/openide-ui/src/approval_request.rs, session_surface.rs, file_activity_ui.rs, search_activity_ui.rs, chat_diff_ui.rs, composer_permissions_ui.rs, composer_context_ui.rs, approval_ui.rs
+
+**Risk.** Medium to high. file_activity_visual_tests.rs (210 assert lines), conversation_stream_visual_tests.rs (271), file_activity_ui skeleton rect tests, composer_permissions_ui tests and context_visual_tests.rs pin these components. I did not inventory their internal visual spec; take it from the code and from parity tests. The fallback for each component is to change only its colour arguments and ink builder and leave the shell.
+
+**Verification.** openide-ui's own tests plus the openADE suite with file_activity_visual_tests.rs, conversation_stream_visual_tests.rs, conversation_marker_tests.rs, composer_permissions_ui tests, context_visual_tests.rs, native_context_app_tests.rs. Parity test per component (old struct against rebuilt, same inputs, equal frames). Baseline diff: a transcript with read, edit, search and terminal tool cards (running, done, failed), the permissions menu, the context details popover. grep: no non-test Color::rgb literal left in crates/openide-ui/src outside named default consts.
+
+### s17-markdown: Chat Markdown renderer to limn
+
+Size: large. Depends on: s11-cards-blocks.
+
+**Goal.** Move the chat Markdown renderer (nothing agent-specific; every message goes through it) into limn with its parser, caches and tests, keeping the exact element tree.
+
+**limn changes**
+
+- Markdown (new, markdown.rs + parser). Markdown::new(source, palette) with .width(px), .colors(MarkdownColors) (mirrors Alert::colors; the default derives from the palette), .streaming(bool), .link_action_prefix(text), .labels(MarkdownLabels { code_fallback, truncated_note }) (host strings; openADE passes 'CÓDIGO' and its note), .limits(MarkdownLimits) (default 20,000 chars and 160 blocks), .plain_with_autolinks(line_height). render() returns MarkdownPreview { element, limited }. Markdown::source_page(..) for the raw-source pages.
+- MarkdownColors { text, strong, emphasis, link, code_ink, code_fill, muted, success, panel, border }: the same ten colours the cache key hashes today. openADE fills it from FOREGROUND, BRAND, EMPHASIS_INK (194), LINK, USER, SELECTED, FOREGROUND_SUBTLE, DIFF_ADDED, PANEL, BORDER.
+- Caches (64 messages / 4 MB completed, 512 KB streaming and pending) and the per-frame guard move as an ENGINE cache beside formatted_text_cache.rs and measurement_cache.rs, documented as such; the Markdown component itself stores nothing. Markdown::begin_frame(scope, width) is the guard.
+- Spec is rich_text.rs verbatim: body 14 with line height 22; headings 22 / 18 / 16 at 1.4; spacing 20 / 8 / 4 / 14; list indent 14 per depth, marker column 22, gap 3; quote = panel padding 8, radius 6, 2 px bar; code block = CodeBlock with CodeBlockSizing::CHAT; rule 1 px.
+- URL validation must not pull reqwest into limn: use the `url` crate, or take a host callback fn(&str) -> bool if adding the dependency is unwanted.
+- The moved tests travel with it. Gallery markdown page.
+
+**openADE changes**
+
+- rich_text.rs (about 1,400 non-test lines, about 600 lines of tests): the parser, render, caches and begin_markdown_frame move to limn with their tests. openADE keeps thin fns (render_markdown_at_width and the three siblings) that pass MarkdownColors, labels and the 'chat_link_open:' prefix.
+- scope_web_links, web_link_url_from_action and link_icon stay: they know the app's action scheme and walk the rendered tree.
+- composer_links keeps the detection call; its chip keeps the post-render font, radius and size overrides (font 12, radius 6, 24 high) and goes to the ledger.
+- render_user_message uses .plain_with_autolinks(21.0); the 21 against 22 line height stays.
+- document_markdown_ui.rs is NOT moved. It shares only CodeBlock (CodeBlockSizing::DOCUMENT with .spans from the view.rs lexer, done in S11).
+
+**openADE files:** rich_text.rs, session_surface.rs, conversation_source_ui.rs, composer_ui.rs, view.rs
+
+**Risk.** Medium to high. rich_text.rs tests pin reading rhythm (prose_has_reading_leading_and_distinct_paragraph_list_and_heading_spacing), list and quote wrapping, cache behaviour and link handling (rich_text_link_tests.rs). scope_web_links and suspend_truncated_tail_link walk ElementKind (Column, Row, Panel, FormattedText), and the streaming cache relies on one root child per source block: the moved renderer must keep the exact tree. limn must not depend on reqwest. The cache key must keep including the colours and a render version.
+
+**Verification.** limn: the moved Markdown tests pass unchanged apart from colour and label arguments. openADE: a parity test rendering five fixed messages (prose, lists, quote, code, links) through the old and new paths with equal frames, complete and streaming. Suite with rich_text_link_tests.rs, markdown_preview_app_tests.rs, conversation_stream_visual_tests.rs. Baseline diff of a long assistant message during streaming and when complete, and a user message with links.
+
+### s18-text-sweep-audit: Text-helper sweep and final audit
+
+Size: large. Depends on: s16-openide-ui-shells, s17-markdown, s14-ide-chrome, s09c-virtualized-rows.
+
+**Goal.** Replace the remaining per-file text helpers with Text or the single text_px helper, delete the legacy parity copies, and reconcile what is left against the ledger.
+
+**limn changes**
+
+- None. Any gap found here goes back to the component that owns it.
+
+**openADE changes**
+
+- Sweep, file by file with one commit per area, deleting each helper once its last call is gone: label (settings_parts, view, chat_diff_ui, session_changes_ui, file_activity_ui, code_editor_ui, document_preview_ui, browser_ui, plugins_ui, github_account_menu_ui, debug_ui), text (settings_ui, activity_charts, provider_usage_ui, session_surface, home, command_center, composer_context_ui, environment_ui, environment_git_ui, project_actions_ui, files_panel_ui, marketplace_view, automation_view, notifications_ui, terminal_ui, native_command_history_ui, editor_workbench_ui, ide_status_ui), mono, eyebrow, subtle, muted, note, detail, caption, line, clipped, paragraph, exact_diagnostic, sidebar_caption. On-scale sizes become Text with a role; off-scale sizes become theme::text_px.
+- Pass the SAME ink as today. Muted ink is 160 (SETTINGS_FOREGROUND_SUBTLE) in native_command_control_ui and native_command_output_ui and 136 in their sibling; pass .ink(..) and do not take palette.muted silently.
+- Move the provider_icons.rs non-brand glyphs (STEP_OVER, STEP_INTO, STEP_OUT, REPLACE, REPLACE_ALL) into an app icons module. svg_for_icon becomes Icon::custom_source() in limn if it is still needed by exporters (a one-line accessor).
+- Delete the #[cfg(test)] legacy helper copies kept for parity tests, with those tests, except legacy_model_list and legacy_related_subagent_cards, which predate this plan.
+- Final audit greps in non-test app code: `.render().font_size(`, `.render().padding(`, `.render().radius(`, `ElementKind::`, `Color::rgb(` outside theme.rs, `interactive_surface(` around limn components, private `fn label|text|mono|subtle|muted`. Each remaining hit must match a ledger row or be fixed. Hand the ledger and the owner-decision list back to the owner.
+
+**openADE files:** view.rs, session_surface.rs, settings_ui.rs, settings_parts.rs, settings_ui/activity_charts.rs, provider_usage_ui.rs, marketplace_view.rs, automation_view.rs, plugins_ui.rs, environment_ui.rs, environment_git_ui.rs, project_actions_ui.rs, files_panel_ui.rs, git_panel.rs, chat_diff_ui.rs, session_changes_ui.rs, file_activity_ui.rs, native_command_control_ui.rs, native_command_history_ui.rs, native_command_output_ui.rs, composer_context_ui.rs, approval_ui.rs, home.rs, view/command_center.rs, browser_ui.rs, terminal_ui.rs, terminal_dock_ui.rs, debug_ui.rs, dock_activity.rs, notifications_ui.rs, ide_status_ui.rs, ide_activity_ui.rs, code_editor_ui.rs, document_preview_ui.rs, editor_workbench_ui.rs, github_account_menu_ui.rs, provider_icons.rs
+
+**Risk.** Low but wide: about 40 files, mechanical. The hazards are a wrong ink (136 against 160 against 158) and wrap against truncate (Element::text against truncated_text): Text must be told which. A test asserts sans copy in the command history modal.
+
+**Verification.** openADE suite equals the S00 red list. Full-app baseline diff of every area captured in S00: zero pixels outside the changes the owner approved during the plan. The audit greps return only ledger rows. cargo test -p limn -p limn-egui -p limn-gallery green; the gallery shows every component added by this plan in dark and light, and with square corners (Radius::SQUARE).
+
+## Stays in openADE
+
+- All routing and state mapping: build_view, build_view_sized, build_window_view, workspace_modals, dock_layout and the three-dock arrangement with its layout constants, build_settings_page routing and every *_page builder, ide_ui::build, explorer and agent, session_surface::build_session_*, message and transcript_item dispatchers, timeline, composer placement, home::build_home_layout, cli_entry.
+- Every action id scheme and the handlers that parse it (session:{id}, dock_tab:{id}, dock_file_action:{json}, settings_page / settings_link rewrite, editor_review:{op}:{token}, chat_link_open:, debug_control:{json}, native_command_*, notification_*, environment_*, composer_project_* / composer_branch_*, catalog_*, provider_*, github_account_*).
+- All user-facing strings (Spanish) and settings_parts::feedback_banner (23 uses), a one-line localization of limn Alert.
+- Every character-count width heuristic and the numbers that depend on it: dock_tab_ui::tab_width (68 + chars*7.8), ide_status_ui::label_width (3.5 / 6.5 px), the ide_menu_ui MENUS width table, composer trigger widths (chars*7 to 8.5), git_panel detail_view and editor_review width budgeting, editor_breadcrumb's symbol estimate.
+- ui_sizing.rs: openADE's const sizing profiles (RowSizing, HeaderSizing, ActionRowSizing, NoticeSizing, PageHeaderSizing, FormFieldSizing) and FORM_SLACK. theme::text_px for off-scale font sizes.
+- theme.rs constants that no limn component reads: HOVER (34), BRAND, PRIMARY_FOREGROUND, DESTRUCTIVE, LINK, DIFF_* (five), CODE_* (seven), TREE_GUIDE, ICON_PRIMARY, WARNING and CONTEXT_WARNING, TRACK, EFFORT_BLUE and EFFORT_ULTRA with effort_tone, SEND_BLUE and the composer pill greys, USER / ASSISTANT / TOOL_RESULT, INVERSE_SURFACE and INVERSE_INK, EMPHASIS_INK, the heatmap ramp, TASK_BAR_COLOR, token series colours, provider icon plates, the terminal ANSI table and selection colour. Also segmented_palette() (hover 63), action_palette's colour-to-role match, tab_strip_palette and the named card, code and meter palettes.
+- The named surface constants WINDOW, SIDEBAR, CARD and INPUT (all 43) as aliases of Scheme fields; they mean different things at 173 call sites.
+- Menu catalogues: editor_workbench_ui context_actions, more_actions, file_actions and menu_entries; ide_menu_ui entries, command and editor_command; ide_status_ui scoped_entries; session menu entries; dock add menu and all_tabs_menu; terminal profiles_menu and actions_menu; github account menu entries; browser more_menu.
+- Domain mappings to icon, text or tone: CapabilityStatus to badge (status_badge itself stays hand-built at radius 5), diagnostic_style, debug sidebar_status, git status letter and colour, approval_ui::summary, task_icon, dock_chrome::icon and resource_icon, notifications bell_icon and age, provider status and headline selection, usage thresholds (80 / 100) and usage_color.
+- provider_icons.rs brand marks (icon_for_provider, icon_for_agent_cli), CONTEXT_RING, the brand SVG watermark and brand_icon (merged into one app helper).
+- openide-ui's five components as domain types (ApprovalRequest, ContextMeter with ContextContent and ContextRow, FileActivity, PermissionSelector, ToolActivity). S16 rebuilds their shells on limn and turns their colours into arguments; the types do not move to limn.
+- Composer orchestration: ComposerProps::from_state, project_metadata width budget and breakpoints (490 / 640 / 650 / 380 / 260), add_context_control and the goal editor, model_effort_entries, model_route_tooltip, the model/effort trigger, trailing_actions and leading_actions, policy_controls, send_control, microphone_control, expand_control, attachment_rows layout, composer_suggestions trigger parsing, ranking and file worker.
+- Session cards' content and logic: session_plan_card with its 14 px checklist marks, subagent cards, recovery, verification and aborted-batch forms, hook card, automation_read_only_card, work_group, tool_line_with_output, terminal_activity state mapping, host_activity_markers, related_subagent_cards, user_image and tool thumbnails, jump_to_bottom_control and its two overlay placements, the empty-transcript text.
+- Settings content: switch_row and entity_row (app helpers), capability_page, compact_navigation, navigation_groups filtering, navigation_search, build_settings_sidebar composition, nav_item's SettingsPage to icon and title mapping, the settings choice buttons as separate outline buttons, shortcut_row if its parity test fails, mcp_inspection's unpadded rows.
+- Marketplace, Automations and Plugins compositions: item_card_content, detail_field, detail_body, detail_footer, source_list, explore_status, update_status, tab_strip with its hand-measured tab widths, search_controls, automation_card and its status badge, template_card (no radius), schedule_editor, editor_agent_step, editor_modal_body, history_page, plugin page and modal, manifest_fields, the usage_page grid (gap 12).
+- Providers and account: account_card content, popup_account content and line-height bookkeeping, window_row, sidebar_card data, usage_page, overview, model_list data and its frozen legacy_model_list copy, output_settings, details_modal, connect_modal with its height table, catalog_status, provider_mark and the other icon tiles, the GitHub sign-in state machine with its copyable code box and progress lines, avatar adapter, contribution_scale, calendar_chart, tasks_card content.
+- Terminal: terminal_color, terminal_row, terminal_screen, build_pane state logic, build_panes split and the active-pane indicator, header_tooltip_placement, the legacy side-tab path, the fixed button widths, the rename form's raw input.
+- Debugger: the Row and SidebarRow enums and per-kind mapping, configuration lock rules and the configuration_selector trigger, the F-key shortcut mapping, build_console line assembly, FrameLocation as a second virtual row.
+- Browser: build, state_surface (its own centered state), state copy and mode logic, status text selection, the address input, TOOLBAR_HEIGHT and STATUS_HEIGHT as read by app.rs.
+- IDE shell: titlebar composition and its centered-middle width rule, activity_bar (a column of limn IconButtons), quick_open_button, agent_tab and agent_tabs (pill tabs with a 20 px close), compact_panel, workspace_mode_ui::render and its host-driven reveal, ide_workspace.rs layout constants.
+- Editor and documents: code_editor_ui build composition and confirmation dialogs, editor_breadcrumb symbol chain, titlebar_actions, the review decision strip and its width budgeting, code_snapshot_ui::build, document_preview_ui mode / split / secondary logic and its zoom canvas, document_markdown_ui (document-density renderer over openide_preview's AST) with the view.rs preview lexer, image_to_raster, heading_action, session_changes_ui::diff_row.
+- Git, environment and files: environment_ui::layout numbers, build compositions, sources, local_menu entries, commit_view and build content, notices selection logic, github_footer, navigator_body content, change list data, branch_context and the ahead/behind icon+count pairs (icon plus Text, composed in place), files_panel data mapping and its TreeRow composition.
+- view.rs leftovers: button() and the labelled icon_button() (radius 8, padding 5, font 14) until the owner decides; workspace_header (48 high, HOVER fills); workspace_frame; pane_empty_state and pane_loading_state presets; the tab overview and dock_open_actions if their parity tests fail; file_preview_content with its lexer; shorten(); session_menu_action; sidebar_account_footer; sidebar_reopen_control; the legacy center timeline.
+- The command palette composition (build_command_center): one use; rebuilt from ListRow, SearchField, SegmentedControl and Kbd::caption.
+- The text-button pagers in conversation_source_ui and native_command_history_ui (2 uses), and the two-row Tabs splits in automation_view.
+- settings_ui::visual_qa (test-only SVG export harness, referenced about 125 times by tests). Do not move or rename the settings module.
+- docs/limn-migration-ledger.md: every row, state, modal or button left hand-built, every retained post-render override, and every owner decision.
+
+## Out of scope
+
+- Rewiring limn's own hardcoded semantic colours to roles: Alert tone accents in alert.rs, the Button Success / Warning / Destructive variants, the dark link (68,147,248) in ComponentPalette::link, the modal scrim, diff colours in code_editor_review.rs and syntax colours in code_syntax.rs stay literals. Scheme gains a field only in the commit that makes a limn component read it. Owner decisions needed first: one warning value (openADE has three, limn a fourth), one diff palette (theme.rs, openide-ui/file_activity.rs, limn), one syntax palette (two), one link blue.
+- Every visual unification. None is done: row radius (effective 4, with 6 on the command palette and settings nav); rounder sidebar rows; card radius 5 / 7 / 8 / 9 / 10 / 12; status badge radius 5; header heights 48 / 32 / 28 / 26 / 24; page title 18 / 20 / 22; muted ink 136 / 160 / 158 / 117; menu hover 43 / 48; rule colour BORDER / TREE_GUIDE; meter track 66 / 72; button-group and modal-footer gaps 0 / 6 / 8 / 10; the two tab close inks (136 dock, 212 terminal); destructive confirmations using Outline or Solid-BRAND; padding the mcp_inspection rows; marketplace empty_catalog to the centered Empty; the automation status badge to Chip; scope and choice buttons to SegmentedControl; view.rs button() to limn sizes; half-pixel font sizes. Each is in the ledger for the owner.
+- Changing limn defaults to openADE's values where that would alter the gallery or other openADE screens: the Dense button icon gap stays 6 (Button::gap is opt-in), ActionRowSizing::DEFAULT stays 10 / 4 / 20 / 36 / 54, the active-button hover stays Lift by default.
+- Replacing width heuristics with real text measurement, intrinsic tab widths, and Breadcrumb natural-width trailing items. The heuristics stay in openADE so the pinned fit tests keep passing.
+- A limn split-pane or dock-layout component for the resizable three-dock window (tied to animation state and about 60 test call sites).
+- Unifying the two Markdown renderers (chat and document). Only the chat renderer moves; they share CodeBlock's shell.
+- Switching the document code block and file_preview_content to limn's highlighter (changes the preview's syntax colours), and session_changes_ui::diff_row to CodeDiff (adds highlighting, drops hunk-row backgrounds).
+- Renaming Element::effort_slider and effort_ultra_available to a generic stepped slider. It touches the engine and the egui backend; recorded for the owner as the one openADE concept left inside limn. New limn components must not depend on it.
+- Moving openide-ui's ToolActivity, FileActivity, ContextContent or PermissionSelector into limn under neutral names. S16 only rebuilds their shells on limn.
+- Components cut from the draft as single-use or two-elements-in-a-row: Toolbar, NavigationRail, SearchField::trigger, Button::reveal_label, Composer::send, Composer::expandable, pill Tabs with close, Meter, IconTile, StatusDot, IconLabel, InlineStatus, Spinner::label, LabeledValue, Modal::actions, Modal::auto_height, AlertDialog::tertiary_action, ScrollArea::jump_to_end and reserve_rail, Attachment::group and figure, Skeleton card / list_item / lines presets, Scheme::segmented, Button::select_trigger, IconButton::side / filled_when_active / bare, Chip::icon, CodeBlock::language, a CommandPalette, a FileTree preset, Switch::tooltip (two hand-wrapped Tooltip::new calls stay; Tooltip is the limn component).
+- Making font sizes, spacing or icon size themable tokens. docs/theming.md lists them as not themable; this plan fixes the TextRole scale and uses const sizing profiles.
+- Retiring the legacy terminal side-tab path (terminal_ui::build and build_snapshot, reachable from view.rs:3073), the legacy center timeline in view.rs, and debug_ui::build if tests still use it. Product decisions.
+- A light theme for openADE, or any change to Tokens values (radius, motion).
+- Changing the Spanish dialect mix in copy, and the literal status-string comparisons such as `status != "Catálogo cargado"`.
+- The user's toast request (larger toast, centered close hover). It is already done in limn commit d7206d9; later sections only need notifications_ui's toast-rect test (x > 400, y > 380, right edge <= 788, bottom <= 464 in an 800x500 window) to keep passing.
+- Pushing commits or opening pull requests in either repo. S00 commits locally only.
