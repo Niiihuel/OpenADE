@@ -1,7 +1,7 @@
 //! The last explicit, temporary MCP review. Received schemas stay complete in
 //! a bounded scroll area; no action dispatches an advertised MCP tool.
 
-use super::{mcp_action_button_loading, page_note, subtle, text};
+use super::{outline, page_note, subtle, text};
 use crate::mcp_inspection::{McpInspectionPhase, McpInspectionUiState};
 use crate::{settings_parts, theme};
 use openide_ui::{Component, Element, FontFamily, Icon, ScrollArea, SkeletonGroup};
@@ -43,13 +43,13 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
         );
     }
     if state.is_busy() {
-        rows.push(mcp_action_button_loading(
-            "mcp_inspection_cancel",
-            "Cancelar inspección",
-            Icon::Close,
-            state.phase == McpInspectionPhase::Running,
-            state.phase == McpInspectionPhase::Cancelling,
-        ));
+        rows.push(
+            outline("mcp_inspection_cancel", "Cancelar inspección")
+                .icon(Icon::Close)
+                .enabled(state.phase == McpInspectionPhase::Running)
+                .loading(state.phase == McpInspectionPhase::Cancelling)
+                .render(),
+        );
     }
     if let Some(snapshot) = &state.snapshot {
         rows.push(text(

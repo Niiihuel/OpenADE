@@ -6,9 +6,9 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ContextContent, ContextMeter, ContextRow, ControlSize,
-    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Separator,
-    Tooltip, TooltipPlacement, TooltipSpec,
+    Button, ButtonGroup, ButtonVariant, Color, Component, ContextContent, ContextMeter, ContextRow,
+    ControlSize, Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea,
+    Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::path::Path;
 
@@ -234,7 +234,15 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         ));
     }
     let action = props.context_compaction;
-    let mut footer = Vec::new();
+    let mut footer = ButtonGroup::new(vec![Button::new(
+        "composer_context_details_toggle",
+        "Detalles",
+        theme::menu_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Compact)
+    .render()])
+    .align_end();
     if let Some(session_id) = action.session_id {
         let id = format!("composer_context_compact:{session_id}");
         let button = Button::new(
@@ -252,21 +260,10 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         .loading(action.busy)
         .enabled(action.unavailable.is_none() && !action.busy)
         .render();
-        footer.push(Tooltip::new(button, id, "Compactar conversación", theme::menu_palette())
+        footer = footer.leading(Tooltip::new(button, id, "Compactar conversación", theme::menu_palette())
             .description(action.unavailable.unwrap_or("Resume mensajes anteriores y conserva la conversación. El historial guardado no se elimina."))
             .render());
     }
-    footer.push(Element::spacer().flex(1.0));
-    footer.push(
-        Button::new(
-            "composer_context_details_toggle",
-            "Detalles",
-            theme::menu_palette(),
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Compact)
-        .render(),
-    );
     Element::column(vec![
         header,
         ScrollArea::new(
@@ -277,7 +274,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         .max_height(180.0)
         .flex(1.0),
         Separator::horizontal(theme::component_palette()).render(),
-        Element::row(footer).gap(6.0).size(None, Some(28.0)),
+        footer.render().size(None, Some(28.0)),
     ])
     .gap(8.0)
     .padding(10.0)

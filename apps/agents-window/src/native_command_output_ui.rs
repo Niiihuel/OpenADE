@@ -182,8 +182,6 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     .size(ControlSize::Compact)
     .enabled(!local.loading)
     .render();
-    let close = theme::interactive_surface(close);
-    let refresh = theme::interactive_surface(refresh);
     let footer = if width < 400.0 {
         Element::column(vec![refresh, close]).gap(6.0)
     } else {

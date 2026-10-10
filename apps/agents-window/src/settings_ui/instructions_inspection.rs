@@ -67,14 +67,11 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 .selected(candidate.sequence == snapshot.sequence)
             })
             .collect();
-        let trigger = Button::new(
+        let trigger = outline(
             "settings_native_instructions_selector_toggle",
             format!("Copia del evento {}", snapshot.sequence),
-            control_palette(),
         )
         .trailing_icon(Icon::ChevronDown)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
         .width(body_width)
         .render();
         fields.push(
@@ -111,14 +108,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         fields.push(subtle("Esta conversación todavía no tiene eventos SystemInstructionsCommitted. El journal puede ser anterior a esa capacidad o no haber iniciado una solicitud de modelo. No se inventa una copia a partir de los archivos actuales."));
     }
     fields.push(subtle("Esta consulta muestra copias privadas validadas del journal. Conserva el texto leído al abrir; un turno activo puede registrar eventos después. Cerrar y volver a abrir consulta el journal de nuevo. No carga AGENTS.md ni cambia instrucciones, herramientas o recuperación."));
-    let close = Button::new(
-        "settings_native_instructions_dismiss",
-        "Cerrar",
-        control_palette(),
-    )
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .render();
+    let close = outline("settings_native_instructions_dismiss", "Cerrar").render();
     Modal::new(
         base,
         true,

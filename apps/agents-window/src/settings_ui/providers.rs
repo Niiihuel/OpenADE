@@ -1,6 +1,6 @@
 //! Provider preferences: boxed lists, explicit connection flows, exact model data.
 
-use super::{control_palette, subtle, text};
+use super::{control_palette, outline, subtle, text};
 use crate::{
     model_catalog::ModelInfo,
     provider_connections::{self, ConnectPhase},
@@ -77,10 +77,8 @@ fn group(title: &str, rows: Vec<Element>) -> Element {
     crate::settings_parts::settings_group(title, rows)
 }
 fn refresh(state: &ViewState) -> Element {
-    Button::new("catalog_refresh", "Actualizar modelos", control_palette())
+    outline("catalog_refresh", "Actualizar modelos")
         .icon(Icon::Refresh)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
         .loading(state.catalog_refreshing)
         .render()
 }
@@ -451,16 +449,10 @@ fn model_list(state: &ViewState, id: &str, width: f32) -> Element {
                     .centered_x()
                     .size(Some(64.0), Some(ControlSize::Compact.height()))
             } else {
-                Button::new(
-                    format!("catalog_select:{provider}/{}", m.id),
-                    "Usar",
-                    control_palette(),
-                )
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Compact)
-                .width(64.0)
-                .enabled(*available && !running)
-                .render()
+                outline(format!("catalog_select:{provider}/{}", m.id), "Usar")
+                    .width(64.0)
+                    .enabled(*available && !running)
+                    .render()
             };
             let controls = Element::row(vec![info, select]).gap(6.0);
             let content = if width < 440.0 {
@@ -569,17 +561,14 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
                 .subtitle(status(state, id))
                 .icon(icon_for_provider(id))
                 .suffix(
-                    Button::new(
+                    outline(
                         format!("provider_connect:{id}"),
                         if is_connected {
                             "Reconectar"
                         } else {
                             "Conectar"
                         },
-                        control_palette(),
                     )
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Compact)
                     .width(96.0)
                     .enabled(!state.running)
                     .render(),
@@ -593,17 +582,10 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
     if id == "codex" && is_connected && !state.provider_usage.contains_key(id) {
         sections.push(group(
             "Plan de ChatGPT",
-            vec![
-                ActionRow::new("Uso de tu plan", control_palette())
-                    .subtitle("Esta conexión usa los límites de tu cuenta de ChatGPT.")
-                    .suffix(
-                        Button::new("provider_usage", "Ver uso", control_palette())
-                            .variant(ButtonVariant::Outline)
-                            .size(ControlSize::Compact)
-                            .render(),
-                    )
-                    .render(),
-            ],
+            vec![ActionRow::new("Uso de tu plan", control_palette())
+                .subtitle("Esta conexión usa los límites de tu cuenta de ChatGPT.")
+                .suffix(outline("provider_usage", "Ver uso").render())
+                .render()],
         ));
     }
     let search = SearchField::new(
@@ -615,20 +597,12 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
     .size(ControlSize::Compact)
     .render();
     let filters = Element::row(vec![
-        Button::new("catalog_models_filter:all", "Todos", control_palette())
-            .size(ControlSize::Compact)
-            .variant(ButtonVariant::Outline)
+        outline("catalog_models_filter:all", "Todos")
             .active(state.catalog_models_filter == CatalogModelsFilter::All)
             .render(),
-        Button::new(
-            "catalog_models_filter:agent_ready",
-            "Con herramientas",
-            control_palette(),
-        )
-        .size(ControlSize::Compact)
-        .variant(ButtonVariant::Outline)
-        .active(state.catalog_models_filter == CatalogModelsFilter::AgentReady)
-        .render(),
+        outline("catalog_models_filter:agent_ready", "Con herramientas")
+            .active(state.catalog_models_filter == CatalogModelsFilter::AgentReady)
+            .render(),
     ])
     .gap(6.0);
     sections.push(group(
@@ -671,16 +645,10 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
                 ActionRow::new("Desconectar", control_palette())
                     .subtitle("Quita esta conexión de OpenIDE.")
                     .suffix(
-                        Button::new(
-                            format!("provider_disconnect:{id}"),
-                            "Desconectar",
-                            control_palette(),
-                        )
-                        .variant(ButtonVariant::Outline)
-                        .size(ControlSize::Compact)
-                        .width(96.0)
-                        .enabled(!state.running)
-                        .render(),
+                        outline(format!("provider_disconnect:{id}"), "Desconectar")
+                            .width(96.0)
+                            .enabled(!state.running)
+                            .render(),
                     )
                     .render(),
             ],
@@ -728,16 +696,10 @@ pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
         let buttons = ["max_completion_tokens", "max_tokens"]
             .into_iter()
             .map(|parameter| {
-                Button::new(
-                    format!("native_output_limit_field:{parameter}"),
-                    parameter,
-                    control_palette(),
-                )
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Compact)
-                .active(state.native_output_limit_field == parameter)
-                .enabled(editable)
-                .render()
+                outline(format!("native_output_limit_field:{parameter}"), parameter)
+                    .active(state.native_output_limit_field == parameter)
+                    .enabled(editable)
+                    .render()
             })
             .collect();
         controls.push(if compact {
@@ -771,15 +733,9 @@ pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
             && !state.native_output_limit_field.is_empty(),
     )
     .render();
-    let reset = Button::new(
-        "native_output_limit_reset",
-        "Usar política automática",
-        control_palette(),
-    )
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .enabled(editable)
-    .render();
+    let reset = outline("native_output_limit_reset", "Usar política automática")
+        .enabled(editable)
+        .render();
     controls.push(if compact {
         Element::column(vec![save, reset]).gap(8.0)
     } else {
@@ -935,17 +891,10 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
     if id == "codex" {
         groups.push(group(
             "Uso",
-            vec![
-                ActionRow::new("Plan de ChatGPT", control_palette())
-                    .subtitle("Consulta el consumo y los límites de tu cuenta.")
-                    .suffix(
-                        Button::new("provider_usage", "Ver uso", control_palette())
-                            .variant(ButtonVariant::Outline)
-                            .size(ControlSize::Compact)
-                            .render(),
-                    )
-                    .render(),
-            ],
+            vec![ActionRow::new("Plan de ChatGPT", control_palette())
+                .subtitle("Consulta el consumo y los límites de tu cuenta.")
+                .suffix(outline("provider_usage", "Ver uso").render())
+                .render()],
         ));
     } else {
         groups.push(group(
@@ -987,10 +936,7 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
     .footer(
         Element::row(vec![
             Element::spacer().flex(1.0),
-            Button::new("catalog_model_details_dismiss", "Cerrar", control_palette())
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Compact)
-                .render(),
+            outline("catalog_model_details_dismiss", "Cerrar").render(),
             use_model,
         ])
         .gap(8.0),
@@ -1028,12 +974,7 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         body.push(subtle(
             "OpenIDE usa el plan y los límites de tu cuenta de ChatGPT para estos modelos.",
         ));
-        body.push(
-            Button::new("provider_usage", "Ver uso del plan", control_palette())
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Compact)
-                .render(),
-        );
+        body.push(outline("provider_usage", "Ver uso del plan").render());
     } else if entry {
         if id == "opencode" {
             body.push(group(
@@ -1102,12 +1043,7 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
             .padding(10.0),
         );
         if connect.phase == ConnectPhase::Browser {
-            body.push(
-                Button::new("provider_browser", "Abrir navegador", control_palette())
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Compact)
-                    .render(),
-            );
+            body.push(outline("provider_browser", "Abrir navegador").render());
         }
     }
     let mut footer = vec![
@@ -1494,16 +1430,10 @@ mod tests {
                     ])
                     .size(Some(64.0), Some(ControlSize::Compact.height()))
                 } else {
-                    Button::new(
-                        format!("catalog_select:{provider}/{}", m.id),
-                        "Usar",
-                        control_palette(),
-                    )
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Compact)
-                    .width(64.0)
-                    .enabled(available[index] && !running)
-                    .render()
+                    outline(format!("catalog_select:{provider}/{}", m.id), "Usar")
+                        .width(64.0)
+                        .enabled(available[index] && !running)
+                        .render()
                 };
                 let controls = Element::row(vec![info, select]).gap(6.0);
                 let content = if width < 440.0 {

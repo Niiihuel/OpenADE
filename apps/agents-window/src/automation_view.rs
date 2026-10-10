@@ -564,27 +564,6 @@ fn muted(value: impl Into<String>) -> Element {
     text(value, 12.0, theme::FOREGROUND_SUBTLE)
 }
 
-fn action(
-    id: impl Into<String>,
-    title: impl Into<String>,
-    icon: Option<Icon>,
-    variant: ButtonVariant,
-) -> Element {
-    let mut button = Button::new(id, title, theme::component_palette())
-        .variant(variant)
-        .size(ControlSize::Regular);
-    if let Some(icon) = icon {
-        button = button.icon(icon);
-    }
-    button.render()
-}
-
-fn field(id: &str, value: &str, placeholder: &str) -> Element {
-    TextField::new(id, value, placeholder, theme::component_palette())
-        .size(ControlSize::Regular)
-        .render()
-}
-
 fn section_label(value: &str) -> Element {
     text(value, 13.0, theme::FOREGROUND)
 }
@@ -786,24 +765,20 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     } else if content_width < 440.0 {
         Element::column(vec![
             heading,
-            action(
-                "automation_new",
-                "Nueva tarea",
-                Some(Icon::Add),
-                ButtonVariant::Default,
-            ),
+            Button::new("automation_new", "Nueva tarea", theme::component_palette())
+                .icon(Icon::Add)
+                .size(ControlSize::Regular)
+                .render(),
         ])
         .gap(8.0)
     } else {
         Element::row(vec![
             heading,
             Element::spacer().flex(1.0),
-            action(
-                "automation_new",
-                "Nueva tarea",
-                Some(Icon::Add),
-                ButtonVariant::Default,
-            ),
+            Button::new("automation_new", "Nueva tarea", theme::component_palette())
+                .icon(Icon::Add)
+                .size(ControlSize::Regular)
+                .render(),
         ])
         .gap(8.0)
     };
@@ -982,7 +957,14 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
         }
         AutomationFrequency::EveryMinutes => rows.extend([
             form_label("Cada cuántos minutos"),
-            field("automation_interval", &form.interval_minutes, "60"),
+            TextField::new(
+                "automation_interval",
+                &form.interval_minutes,
+                "60",
+                theme::component_palette(),
+            )
+            .size(ControlSize::Regular)
+            .render(),
         ]),
         AutomationFrequency::Daily => rows.extend([
             form_label("Hora local"),
@@ -1072,12 +1054,16 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
             .map(|settings| format!("{} · {}", settings.provider_id, settings.model_id))
             .unwrap_or_else(|| "Configuración nativa actual".to_owned());
         backend_rows.push(muted(format!("Modelo de esta tarea: {selected}")));
-        backend_rows.push(action(
-            "automation_native_current",
-            "Usar modelo actual de Settings",
-            None,
-            ButtonVariant::Ghost,
-        ));
+        backend_rows.push(
+            Button::new(
+                "automation_native_current",
+                "Usar modelo actual de Settings",
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Regular)
+            .render(),
+        );
     } else {
         backend_rows.push(muted("Se usa la CLI detectada en PATH para este equipo."));
     }
@@ -1102,7 +1088,14 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
         AutomationEditorStep::Content => Element::column(vec![
             section_label("¿Qué hará esta tarea?"),
             form_label("Título"),
-            field("automation_title", &state.form.title, "Ej. Resumen diario"),
+            TextField::new(
+                "automation_title",
+                &state.form.title,
+                "Ej. Resumen diario",
+                theme::component_palette(),
+            )
+            .size(ControlSize::Regular)
+            .render(),
             form_label("Instrucciones"),
             TextArea::new(
                 "automation_prompt",
@@ -1146,38 +1139,47 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
 pub fn editor_modal_footer(state: &AutomationViewState) -> Element {
     let mut controls = vec![Element::spacer().flex(1.0)];
     if state.editor_step == AutomationEditorStep::Content {
-        controls.push(action(
-            "automation_cancel",
-            "Cancelar",
-            None,
-            ButtonVariant::Ghost,
-        ));
+        controls.push(
+            Button::new("automation_cancel", "Cancelar", theme::component_palette())
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Regular)
+                .render(),
+        );
     } else {
-        controls.push(action(
-            "automation_previous",
-            "Anterior",
-            Some(Icon::ArrowLeft),
-            ButtonVariant::Ghost,
-        ));
+        controls.push(
+            Button::new(
+                "automation_previous",
+                "Anterior",
+                theme::component_palette(),
+            )
+            .icon(Icon::ArrowLeft)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Regular)
+            .render(),
+        );
     }
     if state.editor_step == AutomationEditorStep::Agent {
-        controls.push(action(
-            "automation_save",
-            if state.selected_id.is_some() {
-                "Guardar cambios"
-            } else {
-                "Crear tarea"
-            },
-            Some(Icon::Check),
-            ButtonVariant::Default,
-        ));
+        controls.push(
+            Button::new(
+                "automation_save",
+                if state.selected_id.is_some() {
+                    "Guardar cambios"
+                } else {
+                    "Crear tarea"
+                },
+                theme::component_palette(),
+            )
+            .icon(Icon::Check)
+            .size(ControlSize::Regular)
+            .render(),
+        );
     } else {
-        controls.push(action(
-            "automation_next",
-            "Siguiente",
-            Some(Icon::ArrowRight),
-            ButtonVariant::Default,
-        ));
+        controls.push(
+            Button::new("automation_next", "Siguiente", theme::component_palette())
+                .icon(Icon::ArrowRight)
+                .size(ControlSize::Regular)
+                .render(),
+        );
     }
     Element::row(controls).gap(6.0)
 }
@@ -1185,12 +1187,11 @@ pub fn editor_modal_footer(state: &AutomationViewState) -> Element {
 fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     let Some(item) = state.selected() else {
         return vec![
-            action(
-                "automation_back",
-                "Volver",
-                Some(Icon::ArrowLeft),
-                ButtonVariant::Ghost,
-            ),
+            Button::new("automation_back", "Volver", theme::component_palette())
+                .icon(Icon::ArrowLeft)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Regular)
+                .render(),
             Empty::new(
                 "Tarea no disponible",
                 "Esta tarea ya no existe.",
@@ -1210,12 +1211,11 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
         .collect();
     runs.sort_by_key(|run| std::cmp::Reverse(run.created_at));
     let mut body = vec![
-        action(
-            "automation_back",
-            "Volver",
-            Some(Icon::ArrowLeft),
-            ButtonVariant::Ghost,
-        ),
+        Button::new("automation_back", "Volver", theme::component_palette())
+            .icon(Icon::ArrowLeft)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Regular)
+            .render(),
         Element::truncated_text(format!("Historial · {}", item.title))
             .font_family(FontFamily::Sans)
             .font_size(22.0)
@@ -1366,12 +1366,17 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
                 ));
             }
             if let Some(session_id) = &run.session_id {
-                details.push(action(
-                    format!("automation_open_session:{session_id}"),
-                    "Abrir sesión",
-                    Some(Icon::ArrowRight),
-                    ButtonVariant::Ghost,
-                ));
+                details.push(
+                    Button::new(
+                        format!("automation_open_session:{session_id}"),
+                        "Abrir sesión",
+                        theme::component_palette(),
+                    )
+                    .icon(Icon::ArrowRight)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Regular)
+                    .render(),
+                );
             }
             body.push(
                 Element::panel(Element::column(details).gap(5.0))

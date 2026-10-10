@@ -13,7 +13,7 @@ use openide_ui::{
 };
 
 /// Every frame a pointer can produce over the control, and what a click reports.
-fn states(control: Element, width: f32) -> (Vec<Frame>, Vec<UiAction>) {
+pub(crate) fn states(control: Element, width: f32) -> (Vec<Frame>, Vec<UiAction>) {
     let size = Size::new(width, 240.0);
     // Room on every side, so a hint can open where it was asked to.
     let mut tree = UiTree::new(Element::column(vec![
@@ -43,7 +43,7 @@ fn states(control: Element, width: f32) -> (Vec<Frame>, Vec<UiAction>) {
     (vec![idle, hovered, hinted, pressed], actions)
 }
 
-fn assert_same(name: &str, legacy: Element, current: Element) {
+pub(crate) fn assert_same(name: &str, legacy: Element, current: Element) {
     for width in [360.0, 900.0] {
         let (legacy_frames, legacy_actions) = states(legacy.clone(), width);
         let (frames, actions) = states(current.clone(), width);

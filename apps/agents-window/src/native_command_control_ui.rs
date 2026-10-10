@@ -11,8 +11,8 @@ use openide_core::{
 };
 use openide_harness::PersistentCommandExit;
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Marker, Modal, TextArea,
-    TextField,
+    Button, ButtonGroup, ButtonVariant, Component, ControlSize, Element, FontFamily, Marker, Modal,
+    TextArea, TextField,
 };
 use std::path::{Path, PathBuf};
 
@@ -452,14 +452,17 @@ fn history_rows(local: &NativeCommandControlUiState) -> Vec<Element> {
                     operation.request.command_id,
                     operation_state_label(local, operation)
                 )),
-                action(
+                Button::new(
                     &format!(
                         "native_command_operation_select:{}",
                         operation.request.operation_id
                     ),
                     "Ver operación registrada",
-                    true,
-                ),
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .render(),
             ])
             .gap(6.0),
         );
@@ -556,16 +559,6 @@ fn history_rows(local: &NativeCommandControlUiState) -> Vec<Element> {
     rows
 }
 
-fn action(id: &str, label: &str, enabled: bool) -> Element {
-    theme::interactive_surface(
-        Button::new(id, label, theme::component_palette())
-            .variant(ButtonVariant::Outline)
-            .size(ControlSize::Compact)
-            .enabled(enabled)
-            .render(),
-    )
-}
-
 pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     modal_on_platform(state, base, viewport_width, cfg!(windows))
 }
@@ -593,27 +586,46 @@ fn modal_on_platform(
     let width = (viewport_width - 24.0).min(820.0);
     let body_width = (width - 54.0).max(0.0);
     let allowed = state.native_tool_permissions.run_command;
-    let close = action("native_command_control_dismiss", "Cerrar vista", true);
+    let close = Button::new(
+        "native_command_control_dismiss",
+        "Cerrar vista",
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Outline)
+    .size(ControlSize::Compact)
+    .render();
     let mut body = Vec::new();
     let mut footer = vec![
         close,
-        action("native_command_control_refresh", "Actualizar estado", true),
+        Button::new(
+            "native_command_control_refresh",
+            "Actualizar estado",
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .render(),
     ];
     let mut initial_focus = "native_command_control_dismiss";
     if let Some(scope) = &local.scope {
-        body.push(action(
-            &format!(
-                "native_command_history_open:{}",
-                serde_json::to_string(&(
-                    &scope.owner_session_id,
-                    &scope.manager_generation,
-                    &scope.command_id
-                ))
-                .expect("command history identity serializes")
-            ),
-            "Ver salida guardada",
-            true,
-        ));
+        body.push(
+            Button::new(
+                &format!(
+                    "native_command_history_open:{}",
+                    serde_json::to_string(&(
+                        &scope.owner_session_id,
+                        &scope.manager_generation,
+                        &scope.command_id
+                    ))
+                    .expect("command history identity serializes")
+                ),
+                "Ver salida guardada",
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render(),
+        );
     }
     match &local.phase {
         NativeCommandControlPhase::Draft => {
@@ -726,27 +738,39 @@ fn modal_on_platform(
                     )
                     .is_ok();
                 let review_actions = vec![
-                    action(
+                    Button::new(
                         "native_command_control_prepare_input",
                         "Revisar entrada",
-                        can_input,
-                    ),
-                    action(
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Compact)
+                    .enabled(can_input)
+                    .render(),
+                    Button::new(
                         "native_command_control_prepare_eof",
                         "Revisar cierre de entrada (EOF)",
-                        can_eof,
-                    ),
-                    action(
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Compact)
+                    .enabled(can_eof)
+                    .render(),
+                    Button::new(
                         "native_command_control_prepare_terminate",
                         "Revisar terminación",
-                        can_terminate,
-                    ),
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Compact)
+                    .enabled(can_terminate)
+                    .render(),
                 ];
-                body.push(if body_width >= 620.0 {
-                    Element::row(review_actions).gap(6.0)
-                } else {
-                    Element::column(review_actions).gap(6.0)
-                });
+                body.push(
+                    ButtonGroup::new(review_actions)
+                        .stacked(body_width < 620.0)
+                        .render(),
+                );
                 if let Some(observed) = local.observed.as_ref().filter(|observed| {
                     windows
                         && observed.pty
@@ -803,14 +827,23 @@ fn modal_on_platform(
                             columns,
                             rows,
                         });
-                    body.push(action(
-                        "native_command_control_prepare_resize",
-                        "Revisar dimensiones",
-                        allowed
-                            && request.as_ref().is_some_and(|request| {
-                                validate_request(local.observed.as_ref(), request, windows).is_ok()
-                            }),
-                    ));
+                    body.push(
+                        Button::new(
+                            "native_command_control_prepare_resize",
+                            "Revisar dimensiones",
+                            theme::component_palette(),
+                        )
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Compact)
+                        .enabled(
+                            allowed
+                                && request.as_ref().is_some_and(|request| {
+                                    validate_request(local.observed.as_ref(), request, windows)
+                                        .is_ok()
+                                }),
+                        )
+                        .render(),
+                    );
                 }
             } else {
                 body.push(note("Historial durable. No hay un manager de procesos observado; reabrir esta vista no recupera comandos ni habilita controles."));
@@ -823,12 +856,27 @@ fn modal_on_platform(
             if !valid {
                 body.push(note("El ámbito, el estado o los permisos cambiaron. Esta confirmación ya no está disponible."));
             }
-            footer.push(action("native_command_control_back", "Volver", true));
-            footer.push(action(
-                "native_command_control_confirm",
-                "Confirmar operación",
-                valid,
-            ));
+            footer.push(
+                Button::new(
+                    "native_command_control_back",
+                    "Volver",
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .render(),
+            );
+            footer.push(
+                Button::new(
+                    "native_command_control_confirm",
+                    "Confirmar operación",
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .enabled(valid)
+                .render(),
+            );
             initial_focus = "native_command_control_back";
         }
         NativeCommandControlPhase::Pending {
@@ -849,17 +897,25 @@ fn modal_on_platform(
             if local.cancellation_requested {
                 body.push(note("Cancelación solicitada; esperando el resultado confirmado. El efecto todavía puede haber ocurrido."));
             }
-            footer.push(action(
-                &format!("native_command_control_cancel:{operation_id}"),
-                "Cancelar solicitud en cola",
-                !local.cancellation_requested
-                    && local.operations.iter().any(|operation| {
-                        operation.request.operation_id == *operation_id
-                            && operation.request.session_id == prepared.scope.owner_session_id
-                            && operation.request.workspace == prepared.scope.workspace
-                            && operation.state == NativeCommandOperationState::Requested
-                    }),
-            ));
+            footer.push(
+                Button::new(
+                    &format!("native_command_control_cancel:{operation_id}"),
+                    "Cancelar solicitud en cola",
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .enabled(
+                    !local.cancellation_requested
+                        && local.operations.iter().any(|operation| {
+                            operation.request.operation_id == *operation_id
+                                && operation.request.session_id == prepared.scope.owner_session_id
+                                && operation.request.workspace == prepared.scope.workspace
+                                && operation.state == NativeCommandOperationState::Requested
+                        }),
+                )
+                .render(),
+            );
         }
         NativeCommandControlPhase::OutcomeUncertain {
             prepared,
@@ -883,11 +939,17 @@ fn modal_on_platform(
         .selected_operation()
         .is_some_and(|operation| operation.state.requires_verification())
     {
-        footer.push(action(
-            "native_command_operation_resolve",
-            "Registrar verificación",
-            local.can_resolve_operation(),
-        ));
+        footer.push(
+            Button::new(
+                "native_command_operation_resolve",
+                "Registrar verificación",
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .enabled(local.can_resolve_operation())
+            .render(),
+        );
     }
     if let Some(error) = &local.error {
         body.push(

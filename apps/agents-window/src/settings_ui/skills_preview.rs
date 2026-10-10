@@ -68,26 +68,18 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     fields.push(
         text(&entry.instructions, theme::FOREGROUND, 12.0).font_family(FontFamily::Monospace),
     );
-    let close = Button::new("native_skill_preview_close", "Cerrar", control_palette())
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
+    let close = outline("native_skill_preview_close", "Cerrar")
         .width(80.0)
         .render();
-    let change = Button::new(
-        "native_skill_preview_accept",
-        action_label,
-        control_palette(),
-    )
-    .icon(Icon::Check)
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .width(160.0)
-    .enabled(
-        local.load_error.is_none()
-            && local.catalog_error.is_none()
-            && local.toggle_preview().is_ok(),
-    )
-    .render();
+    let change = outline("native_skill_preview_accept", action_label)
+        .icon(Icon::Check)
+        .width(160.0)
+        .enabled(
+            local.load_error.is_none()
+                && local.catalog_error.is_none()
+                && local.toggle_preview().is_ok(),
+        )
+        .render();
     let footer = if width < 350.0 {
         Element::column(vec![change, close]).gap(6.0)
     } else {
@@ -144,25 +136,13 @@ pub(crate) fn clear_workspace_modal(
     } else {
         360.0
     };
-    let cancel = Button::new(
-        "native_skill_clear_workspace_cancel",
-        "Cancelar",
-        control_palette(),
-    )
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .width(88.0)
-    .render();
-    let clear = Button::new(
-        "native_skill_clear_workspace_confirm",
-        "Vaciar selección",
-        control_palette(),
-    )
-    .icon(Icon::Trash)
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .width(160.0)
-    .render();
+    let cancel = outline("native_skill_clear_workspace_cancel", "Cancelar")
+        .width(88.0)
+        .render();
+    let clear = outline("native_skill_clear_workspace_confirm", "Vaciar selección")
+        .icon(Icon::Trash)
+        .width(160.0)
+        .render();
     let footer = if width < 350.0 {
         Element::column(vec![clear, cancel]).gap(6.0)
     } else {

@@ -28,15 +28,10 @@ pub(super) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     .variant(ButtonVariant::Outline)
     .size(ControlSize::Regular)
     .render();
-    let create = Button::new(
-        "ide_new_file_submit",
-        "Crear",
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
-    )
-    .variant(ButtonVariant::Solid)
-    .size(ControlSize::Regular)
-    .enabled(!draft.path.trim().is_empty() && draft.workspace == state.workspace)
-    .render();
+    let create = theme::primary("ide_new_file_submit", "Crear")
+        .size(ControlSize::Regular)
+        .enabled(!draft.path.trim().is_empty() && draft.workspace == state.workspace)
+        .render();
     Modal::new(
         base,
         true,

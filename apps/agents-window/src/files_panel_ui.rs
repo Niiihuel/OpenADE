@@ -210,12 +210,9 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                         Tooltip::new(
                             Button::new(&more, "Más", palette)
                                 .variant(ButtonVariant::Ghost)
-                                .button_size(ButtonSize::Small)
-                                .render()
-                                .font_size(11.0)
-                                .padding(3.0)
-                                .min_size(0.0, 0.0)
-                                .size(Some(36.0), Some(22.0)),
+                                .button_size(ButtonSize::Mini)
+                                .width(36.0)
+                                .render(),
                             &more,
                             "Cargar más archivos",
                             theme::component_palette(),

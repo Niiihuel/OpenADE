@@ -134,7 +134,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 settings_parts::settings_row(
                     "Reglas de ejecución",
                     "Las herramientas ofrecidas hoy solo leen. Cuando alguna ejecute comandos, las reglas que los deniegan valdrán también para las llamadas externas.",
-                    action_button("settings_page:commands", "Ver reglas", Icon::ArrowRight),
+                    outline("settings_page:commands", "Ver reglas").icon(Icon::ArrowRight).render(),
                     compact,
                 ),
             ],
@@ -230,7 +230,9 @@ pub(super) fn review_model_group(state: &ViewState, compact: bool) -> Element {
             settings_parts::settings_row(
                 "Tomar el del composer",
                 "Guarda como modelo manual el que tengas seleccionado ahora en el composer.",
-                action_button("review_model_capture", "Guardar el seleccionado", Icon::Check),
+                outline("review_model_capture", "Guardar el seleccionado")
+                    .icon(Icon::Check)
+                    .render(),
                 compact,
             ),
             page_note(
@@ -317,18 +319,10 @@ pub(crate) fn approval_modal(state: &ViewState, base: Element, viewport_width: f
     let Some(request) = &state.external_approval else {
         return base;
     };
-    let deny = Button::new("external_approval_deny", "Denegar", control_palette())
-        .variant(ButtonVariant::Outline)
+    let deny = outline("external_approval_deny", "Denegar").render();
+    let allow = theme::primary("external_approval_allow", "Permitir una vez")
         .size(ControlSize::Compact)
         .render();
-    let allow = Button::new(
-        "external_approval_allow",
-        "Permitir una vez",
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
-    )
-    .variant(ButtonVariant::Solid)
-    .size(ControlSize::Compact)
-    .render();
     Modal::new(
         base,
         true,

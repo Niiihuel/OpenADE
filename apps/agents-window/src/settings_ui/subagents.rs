@@ -64,7 +64,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             settings_parts::settings_row(
                 "Herramientas de los hijos",
                 "Los hijos nativos usan la política de herramientas configurada por OpenIDE. Cada aprobación y permiso de sesión conserva su propio alcance.",
-                action_button("settings_page:agent", "Ver permisos", Icon::ArrowRight),
+                outline("settings_page:agent", "Ver permisos").icon(Icon::ArrowRight).render(),
                 compact,
             ),
             page_note(

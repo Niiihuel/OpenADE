@@ -28,7 +28,7 @@ pub(crate) use skills_preview::modal as native_skill_preview_modal;
 use openide_core::SessionSort;
 use openide_harness::{CommandIsolation, ExecDecision, HookPhase, LocalTool, SkillOrigin};
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ControlSize, DropdownList,
+    Button, ButtonGroup, ButtonVariant, Color, Component, ControlSize, DropdownList,
     DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd, Modal,
     PopoverPlacement, ScrollArea, ScrollbarAppearance, SearchField, SelectorSizing, Separator,
     Switch, TextArea, TextField,
@@ -300,67 +300,25 @@ fn value_badge(value: impl Into<String>) -> Element {
     text(value, theme::SETTINGS_FOREGROUND_SUBTLE, 12.0)
 }
 
-fn action_button(id: &str, label: &str, icon: Icon) -> Element {
+/// The settings action: outlined and compact on the control palette.
+pub(crate) fn outline(id: impl Into<String>, label: impl Into<String>) -> Button {
     // Page links share a navigation action with the sidebar, but each
     // control must retain its own hover, color transition and keyboard focus.
-    let page = id.strip_prefix("settings_page:");
-    let widget_id = page
-        .map(|page| format!("settings_link:{page}"))
-        .unwrap_or_else(|| id.to_owned());
-    let button = Button::new(widget_id, label, control_palette())
-        .icon(icon)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .render();
-    if page.is_some() {
+    let id = id.into();
+    let link = id
+        .strip_prefix("settings_page:")
+        .map(|page| format!("settings_link:{page}"));
+    let button = Button::new(
+        link.clone().unwrap_or_else(|| id.clone()),
+        label,
+        control_palette(),
+    )
+    .variant(ButtonVariant::Outline)
+    .size(ControlSize::Compact);
+    if link.is_some() {
         button.dispatch_as(id)
     } else {
         button
-    }
-}
-
-fn mcp_action_button(id: &str, label: &str, icon: Icon, enabled: bool) -> Element {
-    mcp_action_button_loading(id, label, icon, enabled, false)
-}
-
-fn mcp_action_button_loading(
-    id: &str,
-    label: &str,
-    icon: Icon,
-    enabled: bool,
-    loading: bool,
-) -> Element {
-    Button::new(id, label, control_palette())
-        .icon(icon)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .enabled(enabled)
-        .loading(loading)
-        .render()
-}
-
-fn choice_button(id: &str, label: &str, active: bool) -> Element {
-    Button::new(id, label, control_palette())
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .active(active)
-        .render()
-}
-
-fn isolation_choice(id: &str, label: &str, active: bool, enabled: bool) -> Element {
-    Button::new(id, label, control_palette())
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .active(active)
-        .enabled(enabled)
-        .render()
-}
-
-fn choice_group(options: Vec<Element>, compact: bool) -> Element {
-    if compact {
-        Element::column(options).gap(6.0)
-    } else {
-        Element::row(options).gap(6.0)
     }
 }
 
@@ -373,16 +331,10 @@ fn settings_choice_selector(
     options: Vec<DropdownOption>,
 ) -> Element {
     let sizing = SelectorSizing::COMPACT;
-    let trigger = Button::new(
-        format!("settings_choice_toggle:{key}"),
-        label,
-        control_palette(),
-    )
-    .trailing_icon(Icon::ChevronDown)
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .width(sizing.min_width)
-    .render();
+    let trigger = outline(format!("settings_choice_toggle:{key}"), label)
+        .trailing_icon(Icon::ChevronDown)
+        .width(sizing.min_width)
+        .render();
     DropdownList::new(
         trigger,
         options,
@@ -524,7 +476,9 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
 fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let path = field("workspace", &state.workspace_draft, "Ruta del proyecto")
         .font_family(FontFamily::Monospace);
-    let open = action_button("workspace_apply", "Abrir proyecto", Icon::Folder);
+    let open = outline("workspace_apply", "Abrir proyecto")
+        .icon(Icon::Folder)
+        .render();
     let project_control = if compact {
         Element::column(vec![path, open]).gap(8.0)
     } else {
@@ -570,19 +524,25 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 settings_parts::settings_row(
                     "Apariencia",
                     "Paleta y movimiento de la interfaz.",
-                    action_button("settings_page:appearance", "Personalizar", Icon::ArrowRight),
+                    outline("settings_page:appearance", "Personalizar")
+                        .icon(Icon::ArrowRight)
+                        .render(),
                     compact,
                 ),
                 settings_parts::settings_row(
                     "Organización de tareas",
                     "Agrupación, orden e historial de la barra lateral.",
-                    action_button("settings_page:data", "Administrar datos", Icon::ArrowRight),
+                    outline("settings_page:data", "Administrar datos")
+                        .icon(Icon::ArrowRight)
+                        .render(),
                     compact,
                 ),
                 settings_parts::settings_row(
                     "Atajos de teclado",
                     "Consulta las combinaciones disponibles en OpenIDE.",
-                    action_button("settings_page:shortcuts", "Ver atajos", Icon::ArrowRight),
+                    outline("settings_page:shortcuts", "Ver atajos")
+                        .icon(Icon::ArrowRight)
+                        .render(),
                     compact,
                 ),
             ],
@@ -688,7 +648,7 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         settings_parts::settings_row(
             "Reglas de comandos",
             "Pide aprobación o bloquea comandos según las reglas guardadas. Una regla no habilita una herramienta desactivada.",
-            action_button("settings_page:commands", "Editar reglas", Icon::ArrowRight),
+            outline("settings_page:commands", "Editar reglas").icon(Icon::ArrowRight).render(),
             compact,
         ),
         page_note("Aplicación de los cambios", "Se guardan para los próximos turnos nativos. Cambiar el aislamiento o desactivar comandos revoca los procesos persistentes existentes.", Icon::Check),
@@ -711,13 +671,13 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         "No hay modelos disponibles.\nConecta un proveedor para configurar el agente nativo.".into()
     };
     let provider_action = if state.selected_backend == "native" {
-        action_button(
-            "composer_connect_provider",
-            "Conectar proveedor",
-            Icon::ArrowRight,
-        )
+        outline("composer_connect_provider", "Conectar proveedor")
+            .icon(Icon::ArrowRight)
+            .render()
     } else {
-        action_button("settings_page:providers", "Proveedores", Icon::ArrowRight)
+        outline("settings_page:providers", "Proveedores")
+            .icon(Icon::ArrowRight)
+            .render()
     };
     let mut content = vec![
         settings_parts::settings_group(
@@ -733,7 +693,10 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     "Proveedor y modelo",
                     model_description,
                     Element::column(vec![
-                        mcp_action_button("settings_engine_open", "Elegir modelo", Icon::ArrowRight, !state.running && !state.background_run_selected),
+                        outline("settings_engine_open", "Elegir modelo")
+                            .icon(Icon::ArrowRight)
+                            .enabled(!state.running && !state.background_run_selected)
+                            .render(),
                         provider_action,
                     ]).gap(8.0),
                     compact,
@@ -813,9 +776,9 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
             ],
         ),
         settings_parts::settings_group("Capacidades conectadas", vec![
-            settings_parts::settings_row("Subagentes", "Estado, permisos, instrucciones pendientes y recuperación de los agentes delegados.", action_button("settings_page:subagents", "Ver subagentes", SettingsPage::Subagents.icon()), compact),
-            settings_parts::settings_row("Contexto y objetivos", "Historial, compactación, instrucciones y objetivo guardado de la conversación.", action_button("settings_page:memory", "Ver contexto", Icon::History), compact),
-            settings_parts::settings_row("Herramientas e instrucciones externas", "Configura los servidores MCP, skills y hooks desde sus secciones.", action_button("settings_page:mcp", "Ver MCP", SettingsPage::Mcp.icon()), compact),
+            settings_parts::settings_row("Subagentes", "Estado, permisos, instrucciones pendientes y recuperación de los agentes delegados.", outline("settings_page:subagents", "Ver subagentes").icon(SettingsPage::Subagents.icon()).render(), compact),
+            settings_parts::settings_row("Contexto y objetivos", "Historial, compactación, instrucciones y objetivo guardado de la conversación.", outline("settings_page:memory", "Ver contexto").icon(Icon::History).render(), compact),
+            settings_parts::settings_row("Herramientas e instrucciones externas", "Configura los servidores MCP, skills y hooks desde sus secciones.", outline("settings_page:mcp", "Ver MCP").icon(SettingsPage::Mcp.icon()).render(), compact),
         ]),
     ]);
     if let Some(error) = &state.native_provider_registry_error {
@@ -922,7 +885,7 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
     }
     if local.load_error.is_some() {
         content.push(settings_parts::settings_group("Recuperar configuración", vec![
-            settings_parts::settings_row("Restablecer selección", "Reemplaza el archivo inválido y borra las selecciones de todos los proyectos después de confirmar.", action_button("native_skill_reset", "Restablecer", Icon::Trash), compact),
+            settings_parts::settings_row("Restablecer selección", "Reemplaza el archivo inválido y borra las selecciones de todos los proyectos después de confirmar.", outline("native_skill_reset", "Restablecer").icon(Icon::Trash).render(), compact),
         ]));
     }
     content.extend(external_agents::plugin_skills_group(state, compact));
@@ -938,7 +901,9 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
             settings_parts::settings_row(
                 "Explorar y administrar",
                 "Busca skills, agrega fuentes y administra instalaciones.",
-                action_button("open_marketplace", "Abrir Marketplace", Icon::ArrowRight),
+                outline("open_marketplace", "Abrir Marketplace")
+                    .icon(Icon::ArrowRight)
+                    .render(),
                 compact,
             ),
         ],
@@ -955,7 +920,10 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
     selected_rows.push(settings_parts::settings_row(
         "Vaciar selección del proyecto",
         "Quita todas las selecciones locales de este proyecto después de confirmar. Conserva los documentos y las selecciones de otros proyectos; permite recuperar varias skills cambiadas o ausentes sin aceptar contenido nuevo.",
-        mcp_action_button("native_skill_clear_workspace", "Vaciar selección", Icon::Trash, local.load_error.is_none() && !local.selected.is_empty()),
+        outline("native_skill_clear_workspace", "Vaciar selección")
+            .icon(Icon::Trash)
+            .enabled(local.load_error.is_none() && !local.selected.is_empty())
+            .render(),
         compact,
     ));
     for (index, selection) in local.selected.iter().enumerate() {
@@ -975,10 +943,16 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
             } else {
                 "El documento cambió, desapareció o el catálogo no está disponible."
             },
-            choice_group(vec![
-                mcp_action_button(&format!("native_skill_preview_selected:{index}"), "Revisar", Icon::History, can_review),
-                mcp_action_button(&format!("native_skill_remove:{index}"), "Quitar", Icon::Close, editable),
-            ], compact),
+            ButtonGroup::new(vec![
+                outline(format!("native_skill_preview_selected:{index}"), "Revisar")
+                    .icon(Icon::History)
+                    .enabled(can_review)
+                    .render(),
+                outline(format!("native_skill_remove:{index}"), "Quitar")
+                    .icon(Icon::Close)
+                    .enabled(editable)
+                    .render(),
+            ]).stacked(compact).render(),
             compact,
         ));
     }
@@ -989,12 +963,10 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut catalog_rows = vec![settings_parts::settings_row(
         "Documentos disponibles",
         "Cada documento se verifica de nuevo antes de un turno. Estar en esta lista no lo activa.",
-        mcp_action_button(
-            "native_skill_refresh",
-            "Actualizar",
-            Icon::Refresh,
-            local.load_error.is_none(),
-        ),
+        outline("native_skill_refresh", "Actualizar")
+            .icon(Icon::Refresh)
+            .enabled(local.load_error.is_none())
+            .render(),
         compact,
     )];
     if local.available.is_empty() {
@@ -1025,23 +997,18 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
             subtle(entry.document.display().to_string()).font_family(FontFamily::Monospace),
         ])
         .gap(5.0);
-        let action = choice_group(
-            vec![
-                mcp_action_button(
-                    &format!("native_skill_preview:{index}"),
-                    "Revisar",
-                    Icon::History,
-                    editable,
-                ),
-                mcp_action_button(
-                    &format!("native_skill_toggle:{index}"),
-                    label,
-                    Icon::Check,
-                    editable,
-                ),
-            ],
-            compact,
-        );
+        let action = ButtonGroup::new(vec![
+            outline(format!("native_skill_preview:{index}"), "Revisar")
+                .icon(Icon::History)
+                .enabled(editable)
+                .render(),
+            outline(format!("native_skill_toggle:{index}"), label)
+                .icon(Icon::Check)
+                .enabled(editable)
+                .render(),
+        ])
+        .stacked(compact)
+        .render();
         catalog_rows.push(if compact {
             Element::column(vec![copy, action])
                 .gap(10.0)
@@ -1084,11 +1051,9 @@ fn automations_page(state: &ViewState, compact: bool) -> Vec<Element> {
             settings_parts::settings_row(
                 "Administrar tareas",
                 "Crea, edita, pausa y ejecuta tareas. Consulta su historial.",
-                action_button(
-                    "open_automations",
-                    "Abrir automatizaciones",
-                    Icon::ArrowRight,
-                ),
+                outline("open_automations", "Abrir automatizaciones")
+                    .icon(Icon::ArrowRight)
+                    .render(),
                 compact,
             ),
             settings_parts::settings_row(
@@ -1165,14 +1130,8 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
             state.github_account,
             GithubAccountStatus::Checking | GithubAccountStatus::Verifying(_)
         );
-    let connection_action = |id: &str, title: &str, icon: Icon| {
-        Button::new(id, title, control_palette())
-            .icon(icon)
-            .variant(ButtonVariant::Outline)
-            .size(ControlSize::Compact)
-            .enabled(!busy)
-            .render()
-    };
+    let connection_action =
+        |id: &str, title: &str, icon: Icon| outline(id, title).icon(icon).enabled(!busy).render();
     let account = match &state.github_account {
         GithubAccountStatus::Connected(identity) => {
             settings_parts::settings_card(vec![Element::row(vec![
@@ -1182,7 +1141,9 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
                 settings_parts::settings_row(
                     format!("@{}", identity.login),
                     if state.github_account_refreshing { "Actualizando conexión…" } else { "Cuenta verificada · GitHub" },
-                    action_button("github_account_open:settings", "Ver perfil", Icon::ArrowRight)
+                    outline("github_account_open:settings", "Ver perfil")
+                        .icon(Icon::ArrowRight)
+                        .render()
                         .dispatch_as("github_account_open"),
                     compact,
                 )
@@ -1250,11 +1211,9 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
         management.push(settings_parts::settings_row(
             "Desconectar de OpenIDE",
             "Conserva tus credenciales de GitHub CLI y las demás aplicaciones.",
-            action_button(
-                "github_account_disconnect",
-                "Desconectar",
-                Icon::CloseCircle,
-            ),
+            outline("github_account_disconnect", "Desconectar")
+                .icon(Icon::CloseCircle)
+                .render(),
             compact,
         ));
     }
@@ -1273,11 +1232,9 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
             settings_parts::settings_row(
                 "Proveedores de modelos",
                 "Las conexiones del agente se configuran por separado.",
-                action_button(
-                    "settings_page:providers",
-                    "Ver conexiones",
-                    Icon::ArrowRight,
-                ),
+                outline("settings_page:providers", "Ver conexiones")
+                    .icon(Icon::ArrowRight)
+                    .render(),
                 compact,
             ),
         ],
@@ -1320,16 +1277,10 @@ fn shortcut_row(description: &str, keys: &str) -> Element {
 
 fn keymap_selector(state: &ViewState) -> Element {
     let sizing = SelectorSizing::COMPACT;
-    let trigger = Button::new(
-        "settings_keymap_toggle",
-        state.keymap_profile.label(),
-        control_palette(),
-    )
-    .trailing_icon(Icon::ChevronDown)
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .width(sizing.min_width)
-    .render();
+    let trigger = outline("settings_keymap_toggle", state.keymap_profile.label())
+        .trailing_icon(Icon::ChevronDown)
+        .width(sizing.min_width)
+        .render();
     let options = KeymapProfile::ALL
         .iter()
         .copied()
@@ -1400,7 +1351,7 @@ fn capability_page(
     needed: &str,
     related: Option<(&str, &str, Icon)>,
 ) -> Vec<Element> {
-    let related = related.map(|(id, label, icon)| action_button(id, label, icon));
+    let related = related.map(|(id, label, icon)| outline(id, label).icon(icon).render());
     vec![
         settings_parts::empty_state(title, current, related),
         settings_parts::settings_group(
@@ -1425,7 +1376,10 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut servers = vec![settings_parts::settings_row(
         "Servidores guardados",
         format!("{} configurados en este equipo", state.mcp_servers.len()),
-        mcp_action_button("mcp_new", "Nuevo servidor", Icon::Add, editable),
+        outline("mcp_new", "Nuevo servidor")
+            .icon(Icon::Add)
+            .enabled(editable)
+            .render(),
         compact,
     )];
     if state.mcp_servers.is_empty() {
@@ -1452,32 +1406,27 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 .scope
                 .as_ref()
                 .is_some_and(|scope| scope.server.id == server.id);
-        let inspection = mcp_action_button_loading(
+        let inspection = outline(
             &format!("mcp_inspect:{}", server.id),
             "Inspeccionar herramientas",
-            SettingsPage::Mcp.icon(),
-            editable && server.enabled && !state.running && !state.mcp_inspection.is_busy(),
-            inspection_busy,
-        );
+        )
+        .icon(SettingsPage::Mcp.icon())
+        .enabled(editable && server.enabled && !state.running && !state.mcp_inspection.is_busy())
+        .loading(inspection_busy)
+        .render();
         let controls = vec![
-            mcp_action_button(
-                &format!("mcp_select:{}", server.id),
-                "Editar",
-                Icon::Settings,
-                editable,
-            ),
-            mcp_action_button(
-                &format!("mcp_toggle:{}", server.id),
-                toggle_label,
-                Icon::Check,
-                editable,
-            ),
-            mcp_action_button(
-                &format!("mcp_delete:{}", server.id),
-                "Eliminar",
-                Icon::Trash,
-                editable,
-            ),
+            outline(format!("mcp_select:{}", server.id), "Editar")
+                .icon(Icon::Settings)
+                .enabled(editable)
+                .render(),
+            outline(format!("mcp_toggle:{}", server.id), toggle_label)
+                .icon(Icon::Check)
+                .enabled(editable)
+                .render(),
+            outline(format!("mcp_delete:{}", server.id), "Eliminar")
+                .icon(Icon::Trash)
+                .enabled(editable)
+                .render(),
         ];
         let mut oauth_controls = Vec::new();
         let mut server_content = vec![
@@ -1508,13 +1457,13 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                         McpOAuthViewPhase::Discovering | McpOAuthViewPhase::AwaitingBrowser { .. }
                     )
             });
-            oauth_controls.push(mcp_action_button_loading(
-                &format!("mcp_oauth_authorize:{}", server.id),
-                "Autorizar",
-                Icon::ArrowRight,
-                editable && cfg!(windows) && !oauth_busy,
-                oauth_busy,
-            ));
+            oauth_controls.push(
+                outline(format!("mcp_oauth_authorize:{}", server.id), "Autorizar")
+                    .icon(Icon::ArrowRight)
+                    .enabled(editable && cfg!(windows) && !oauth_busy)
+                    .loading(oauth_busy)
+                    .render(),
+            );
             if !cfg!(windows) {
                 server_content.push(subtle("OAuth MCP requiere Credential Manager en Windows."));
             }
@@ -1526,9 +1475,11 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 match &status.phase {
                     McpOAuthViewPhase::Discovering => {
                         server_content.push(subtle("Buscando el servidor de autorización"));
-                        oauth_controls.push(mcp_action_button(
-                            "mcp_oauth_cancel", "Cancelar", Icon::Close, true,
-                        ));
+                        oauth_controls.push(
+                            outline("mcp_oauth_cancel", "Cancelar")
+                                .icon(Icon::Close)
+                                .render(),
+                        );
                     }
                     McpOAuthViewPhase::AwaitingBrowser { url } => {
                         server_content.push(subtle("Esperando autorización en el navegador. La URL es temporal:"));
@@ -1542,12 +1493,16 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                             .border(theme::BORDER, 1.0)
                             .radius(6.0),
                         );
-                        oauth_controls.push(mcp_action_button(
-                            "mcp_oauth_open", "Abrir autorización", Icon::ArrowRight, true,
-                        ));
-                        oauth_controls.push(mcp_action_button(
-                            "mcp_oauth_cancel", "Cancelar", Icon::Close, true,
-                        ));
+                        oauth_controls.push(
+                            outline("mcp_oauth_open", "Abrir autorización")
+                                .icon(Icon::ArrowRight)
+                                .render(),
+                        );
+                        oauth_controls.push(
+                            outline("mcp_oauth_cancel", "Cancelar")
+                                .icon(Icon::Close)
+                                .render(),
+                        );
                     }
                     McpOAuthViewPhase::Authorized => server_content.push(subtle(
                         "Autorización guardada en Credential Manager. El próximo turno usará esta credencial.",
@@ -1605,7 +1560,10 @@ fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut rows = vec![settings_parts::settings_row(
         "Hooks de comandos guardados",
         format!("{} configurados en este equipo", settings.hooks.len()),
-        mcp_action_button("hook_new", "Nuevo hook", Icon::Add, editable),
+        outline("hook_new", "Nuevo hook")
+            .icon(Icon::Add)
+            .enabled(editable)
+            .render(),
         compact,
     )];
     if settings.hooks.is_empty() {
@@ -1621,18 +1579,14 @@ fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
             HookPhase::PostToolUse => "Después de herramienta",
         };
         let controls = vec![
-            mcp_action_button(
-                &format!("hook_select:{}", hook.id),
-                "Editar",
-                Icon::Settings,
-                editable,
-            ),
-            mcp_action_button(
-                &format!("hook_delete:{}", hook.id),
-                "Eliminar",
-                Icon::Trash,
-                editable,
-            ),
+            outline(format!("hook_select:{}", hook.id), "Editar")
+                .icon(Icon::Settings)
+                .enabled(editable)
+                .render(),
+            outline(format!("hook_delete:{}", hook.id), "Eliminar")
+                .icon(Icon::Trash)
+                .enabled(editable)
+                .render(),
         ];
         rows.push(
             Element::column(vec![
@@ -1695,10 +1649,14 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
         field("hook_draft_id", &draft.draft_id, "ej. revisar-escritura")
             .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
         text("Fase", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        choice_group(vec![
-            choice_button("hook_phase:pre_tool_use", "Antes de herramienta", draft.draft_phase == HookPhase::PreToolUse),
-            choice_button("hook_phase:post_tool_use", "Después de herramienta", draft.draft_phase == HookPhase::PostToolUse),
-        ], width < 420.0),
+        ButtonGroup::new(vec![
+            outline("hook_phase:pre_tool_use", "Antes de herramienta")
+                .active(draft.draft_phase == HookPhase::PreToolUse)
+                .render(),
+            outline("hook_phase:post_tool_use", "Después de herramienta")
+                .active(draft.draft_phase == HookPhase::PostToolUse)
+                .render(),
+        ]).stacked(width < 420.0).render(),
         text("Nombre exacto de herramienta", theme::FOREGROUND, settings_parts::LABEL_SIZE),
         subtle("Por ejemplo: read_file, write_file o mcp__servidor__herramienta. Los hooks sobre lecturas quedan excluidos del modo Plan."),
         field("hook_draft_tool_name", &draft.draft_tool_name, "ej. write_file")
@@ -1722,20 +1680,15 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
             .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
         subtle("El comando recibe JSON del evento por stdin. Puede tener efectos externos; sólo configura ejecutables de confianza."),
     ]);
-    let cancel = Button::new("hook_cancel", "Cancelar", control_palette())
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .render();
-    let save = Button::new(
+    let cancel = outline("hook_cancel", "Cancelar").render();
+    let save = theme::primary(
         "hook_save",
         if editing {
             "Guardar cambios"
         } else {
             "Agregar hook"
         },
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
     )
-    .variant(ButtonVariant::Solid)
     .size(ControlSize::Compact)
     .enabled(draft.load_error.is_none())
     .render();
@@ -1787,7 +1740,9 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
             vec![settings_parts::settings_row(
                 "Restablecer reglas",
                 "Reemplaza el archivo inválido por una política vacía después de tu confirmación.",
-                action_button("exec_rule_reset", "Restablecer reglas", Icon::Trash),
+                outline("exec_rule_reset", "Restablecer reglas")
+                    .icon(Icon::Trash)
+                    .render(),
                 compact,
             )],
         ));
@@ -1795,7 +1750,10 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut rows = vec![settings_parts::settings_row(
         "Reglas de prefijo guardadas",
         format!("{} configuradas en este equipo", settings.rules.len()),
-        mcp_action_button("exec_rule_new", "Nueva regla", Icon::Add, editable),
+        outline("exec_rule_new", "Nueva regla")
+            .icon(Icon::Add)
+            .enabled(editable)
+            .render(),
         compact,
     )];
     if settings.rules.is_empty() {
@@ -1824,18 +1782,14 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
             body.push(subtle(justification));
         }
         let controls = vec![
-            mcp_action_button(
-                &format!("exec_rule_select:{index}"),
-                "Editar",
-                Icon::Settings,
-                editable,
-            ),
-            mcp_action_button(
-                &format!("exec_rule_delete:{index}"),
-                "Eliminar",
-                Icon::Trash,
-                editable,
-            ),
+            outline(format!("exec_rule_select:{index}"), "Editar")
+                .icon(Icon::Settings)
+                .enabled(editable)
+                .render(),
+            outline(format!("exec_rule_delete:{index}"), "Eliminar")
+                .icon(Icon::Trash)
+                .enabled(editable)
+                .render(),
         ];
         body.push(if compact {
             Element::column(controls).gap(6.0)
@@ -1900,21 +1854,14 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
         .height(100.0)
         .render(),
         text("Decisión", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        choice_group(
-            vec![
-                choice_button(
-                    "exec_rule_decision:ask",
-                    "Pedir aprobación",
-                    draft.draft_decision == ExecDecision::Ask,
-                ),
-                choice_button(
-                    "exec_rule_decision:deny",
-                    "Bloquear",
-                    draft.draft_decision == ExecDecision::Deny,
-                ),
-            ],
-            width < 420.0,
-        ),
+        ButtonGroup::new(vec![
+                outline("exec_rule_decision:ask", "Pedir aprobación")
+                    .active(draft.draft_decision == ExecDecision::Ask)
+                    .render(),
+                outline("exec_rule_decision:deny", "Bloquear")
+                    .active(draft.draft_decision == ExecDecision::Deny)
+                    .render(),
+            ]).stacked(width < 420.0).render(),
         text("Motivo (opcional)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
         TextArea::new(
             "exec_rule_draft_justification",
@@ -1926,20 +1873,15 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
         .height(75.0)
         .render(),
     ]);
-    let cancel = Button::new("exec_rule_cancel", "Cancelar", control_palette())
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .render();
-    let save = Button::new(
+    let cancel = outline("exec_rule_cancel", "Cancelar").render();
+    let save = theme::primary(
         "exec_rule_save",
         if editing {
             "Guardar cambios"
         } else {
             "Agregar regla"
         },
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
     )
-    .variant(ButtonVariant::Solid)
     .size(ControlSize::Compact)
     .enabled(draft.load_error.is_none())
     .render();
@@ -1987,18 +1929,10 @@ pub fn exec_rule_reset_modal(state: &ViewState, base: Element, viewport_width: f
         return base;
     }
     let width = (viewport_width - 24.0).min(480.0);
-    let cancel = Button::new("exec_rule_reset_cancel", "Cancelar", control_palette())
-        .variant(ButtonVariant::Outline)
+    let cancel = outline("exec_rule_reset_cancel", "Cancelar").render();
+    let confirm = theme::primary("exec_rule_reset_confirm", "Reemplazar archivo")
         .size(ControlSize::Compact)
         .render();
-    let confirm = Button::new(
-        "exec_rule_reset_confirm",
-        "Reemplazar archivo",
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
-    )
-    .variant(ButtonVariant::Solid)
-    .size(ControlSize::Compact)
-    .render();
     Modal::new(
         base,
         true,
@@ -2030,18 +1964,10 @@ pub fn native_skill_reset_modal(state: &ViewState, base: Element, viewport_width
         return base;
     }
     let width = (viewport_width - 24.0).min(480.0);
-    let cancel = Button::new("native_skill_reset_cancel", "Cancelar", control_palette())
-        .variant(ButtonVariant::Outline)
+    let cancel = outline("native_skill_reset_cancel", "Cancelar").render();
+    let confirm = theme::primary("native_skill_reset_confirm", "Reemplazar archivo")
         .size(ControlSize::Compact)
         .render();
-    let confirm = Button::new(
-        "native_skill_reset_confirm",
-        "Reemplazar archivo",
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
-    )
-    .variant(ButtonVariant::Solid)
-    .size(ControlSize::Compact)
-    .render();
     Modal::new(
         base,
         true,
@@ -2103,21 +2029,18 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
         theme::FOREGROUND,
         settings_parts::LABEL_SIZE,
     ));
-    fields.push(choice_group(
-        vec![
-            choice_button(
-                "mcp_transport:stdio",
-                "Proceso local (stdio)",
-                !state.mcp_draft_http,
-            ),
-            choice_button(
-                "mcp_transport:http",
-                "Streamable HTTP",
-                state.mcp_draft_http,
-            ),
-        ],
-        width < 420.0,
-    ));
+    fields.push(
+        ButtonGroup::new(vec![
+            outline("mcp_transport:stdio", "Proceso local (stdio)")
+                .active(!state.mcp_draft_http)
+                .render(),
+            outline("mcp_transport:http", "Streamable HTTP")
+                .active(state.mcp_draft_http)
+                .render(),
+        ])
+        .stacked(width < 420.0)
+        .render(),
+    );
     if state.mcp_draft_http {
         fields.extend([
             text("URL MCP", theme::FOREGROUND, settings_parts::LABEL_SIZE),
@@ -2131,22 +2054,19 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
             theme::FOREGROUND,
             settings_parts::LABEL_SIZE,
         ));
-        fields.push(choice_group(
-            vec![
-                choice_button(
-                    "mcp_auth:bearer",
-                    "Bearer por entorno o ninguna",
-                    !state.mcp_draft_oauth_enabled,
-                ),
-                isolation_choice(
-                    "mcp_auth:oauth",
-                    "OAuth 2.1",
-                    state.mcp_draft_oauth_enabled,
-                    cfg!(windows) || state.mcp_draft_oauth_enabled,
-                ),
-            ],
-            width < 420.0,
-        ));
+        fields.push(
+            ButtonGroup::new(vec![
+                outline("mcp_auth:bearer", "Bearer por entorno o ninguna")
+                    .active(!state.mcp_draft_oauth_enabled)
+                    .render(),
+                outline("mcp_auth:oauth", "OAuth 2.1")
+                    .active(state.mcp_draft_oauth_enabled)
+                    .enabled(cfg!(windows) || state.mcp_draft_oauth_enabled)
+                    .render(),
+            ])
+            .stacked(width < 420.0)
+            .render(),
+        );
         if state.mcp_draft_oauth_enabled {
             fields.extend([
                 subtle("Usá un client ID público registrado para este issuer. La autorización se inicia después de guardar; no escribas client secrets ni tokens."),
@@ -2223,20 +2143,15 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
         ]);
     }
     fields.push(subtle("Los servidores nuevos se guardan desactivados. Usa Activar en la lista cuando estén listos."));
-    let cancel = Button::new("mcp_cancel", "Cancelar", control_palette())
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .render();
-    let save = Button::new(
+    let cancel = outline("mcp_cancel", "Cancelar").render();
+    let save = theme::primary(
         "mcp_save",
         if editing {
             "Guardar cambios"
         } else {
             "Agregar servidor"
         },
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
     )
-    .variant(ButtonVariant::Solid)
     .size(ControlSize::Compact)
     .enabled(state.mcp_load_error.is_none())
     .render();
@@ -2344,16 +2259,10 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
         DropdownOption::new("settings_terminal_shell_edit", "Personalizado…")
             .selected(matches!(shell, TerminalShell::Custom(_))),
     );
-    let trigger = Button::new(
-        "settings_terminal_shell_toggle",
-        shell_name,
-        control_palette(),
-    )
-    .trailing_icon(Icon::ChevronDown)
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .width(238.0)
-    .render();
+    let trigger = outline("settings_terminal_shell_toggle", shell_name)
+        .trailing_icon(Icon::ChevronDown)
+        .width(238.0)
+        .render();
     let selector = DropdownList::new(
         trigger,
         choices,
@@ -2381,18 +2290,15 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
             "Ruta absoluta del ejecutable",
         )
         .font_family(FontFamily::Monospace);
-        let custom_button = Button::new(
+        let custom_button = outline(
             "settings_terminal_shell:custom",
             if matches!(shell, TerminalShell::Custom(_)) {
                 "Guardar"
             } else {
                 "Guardar y usar"
             },
-            control_palette(),
         )
         .icon(Icon::Check)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
         .enabled(valid_syntax)
         .render();
         let mut actions = vec![custom_button];
@@ -2451,7 +2357,7 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
                 settings_parts::settings_row(
                     "Búsqueda de archivos y contenido",
                     "Encuentra rutas y texto de la carpeta activa desde el centro de comandos.",
-                    action_button("open_command_center", "Abrir búsqueda", Icon::Search),
+                    outline("open_command_center", "Abrir búsqueda").icon(Icon::Search).render(),
                     compact,
                 ),
                 settings_parts::settings_row(
@@ -2468,7 +2374,7 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
         SettingsPage::Memory => memory::page(state, compact),
         SettingsPage::Commands => {
             let mut content = vec![settings_parts::settings_group("Centro de comandos", vec![
-                settings_parts::settings_row("Acciones, tareas y archivos", "Busca y ejecuta acciones de la aplicación con el atajo del perfil activo.", action_button("open_command_center", "Abrir acciones", Icon::Search), compact),
+                settings_parts::settings_row("Acciones, tareas y archivos", "Busca y ejecuta acciones de la aplicación con el atajo del perfil activo.", outline("open_command_center", "Abrir acciones").icon(Icon::Search).render(), compact),
                 settings_parts::settings_row(
                     "Acceso rápido",
                     "Disponible desde cualquier sección.",
@@ -2507,17 +2413,20 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
 
 fn compact_navigation(state: &ViewState) -> Element {
     let mut items = vec![Element::row(vec![
-        action_button("toggle_settings", "Volver", Icon::ArrowLeft),
+        outline("toggle_settings", "Volver")
+            .icon(Icon::ArrowLeft)
+            .render(),
         Element::spacer().flex(1.0),
-        action_button(
+        outline(
             "settings_nav_toggle",
             if state.settings_nav_open {
                 "Cerrar secciones"
             } else {
                 "Secciones"
             },
-            Icon::Menu,
-        ),
+        )
+        .icon(Icon::Menu)
+        .render(),
     ])
     .gap(8.0)];
     if state.settings_nav_open {

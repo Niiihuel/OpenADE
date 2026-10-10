@@ -243,14 +243,12 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
     match status {
         GithubStatus::Ready(github) => {
             let mut rows = vec![Tooltip::new(
-                palette.interactive_surface(
-                    Button::new("github_repo_open", github.repository.full_name(), palette)
-                        .icon(Icon::Github)
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Compact)
-                        .render()
-                        .font_size(11.0),
-                ),
+                Button::new("github_repo_open", github.repository.full_name(), palette)
+                    .icon(Icon::Github)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .render()
+                    .font_size(11.0),
                 "github_repo_open",
                 "Abrir repositorio en GitHub",
                 theme::component_palette(),
@@ -258,17 +256,15 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
             .render()];
             if let Some(pull) = github.pulls.first() {
                 rows.push(
-                    palette.interactive_surface(
-                        Button::new(
-                            format!("github_pr_open:{}", pull.number),
-                            format!("#{} {}", pull.number, shorten(&pull.title, 46)),
-                            palette,
-                        )
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Compact)
-                        .render()
-                        .font_size(11.0),
-                    ),
+                    Button::new(
+                        format!("github_pr_open:{}", pull.number),
+                        format!("#{} {}", pull.number, shorten(&pull.title, 46)),
+                        palette,
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .render()
+                    .font_size(11.0),
                 );
             }
             // Keep repository access issues visible without making them the

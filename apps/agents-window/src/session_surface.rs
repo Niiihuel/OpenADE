@@ -2005,9 +2005,8 @@ fn active_subagent_card(run: &SubagentRunView, selected_session: &str) -> Elemen
             )
             .variant(ButtonVariant::Subtle)
             .size(ControlSize::Compact)
-            .render()
-            .font_size(12.0)
-            .size(Some(170.0), Some(28.0)),
+            .width(170.0)
+            .render(),
         ])
         .gap(7.0),
     )
@@ -2025,16 +2024,13 @@ fn recoverable_subagent_card(run: &SubagentRunView) -> Element {
     )
     .tone(AlertTone::Warning)
     .action(
-        Button::new(
+        theme::primary(
             format!("subagent_resume:{}", run.child_session_id),
             "Reanudar subagente",
-            theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
         )
-        .variant(ButtonVariant::Solid)
         .size(ControlSize::Compact)
-        .render()
-        .font_size(12.0)
-        .size(Some(176.0), Some(28.0)),
+        .width(176.0)
+        .render(),
     )
     .compact(true)
     .render()
@@ -2072,16 +2068,10 @@ fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView) -> Ele
     .compact(true);
     if recovery.can_open() {
         alert = alert.action(
-            Button::new(
-                format!("session_recover:{session_id}"),
-                recovery.label(),
-                theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
-            )
-            .variant(ButtonVariant::Solid)
-            .size(ControlSize::Compact)
-            .render()
-            .font_size(12.0)
-            .size(Some(196.0), Some(28.0)),
+            theme::primary(format!("session_recover:{session_id}"), recovery.label())
+                .size(ControlSize::Compact)
+                .width(196.0)
+                .render(),
         );
     }
     alert.render()
@@ -2228,16 +2218,13 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
     content.push(Element::column(steps).gap(8.0));
     if plan.can_build {
         content.push(
-            Button::new(
+            theme::primary(
                 format!("session_build_plan:{session_id}"),
                 "Construir este plan",
-                theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
             )
-            .variant(ButtonVariant::Solid)
             .size(ControlSize::Compact)
-            .render()
-            .font_size(12.0)
-            .size(Some(180.0), Some(28.0)),
+            .width(180.0)
+            .render(),
         );
     }
     Element::panel(Element::column(content).gap(7.0))

@@ -136,26 +136,6 @@ pub(crate) fn text(value: impl Into<String>, muted: bool) -> Element {
             theme::FOREGROUND
         })
 }
-fn action(id: &str, title: &str, tip: &str, active: bool) -> Element {
-    action_with_shortcut(id, title, tip, None, active)
-}
-fn action_with_shortcut(
-    id: &str,
-    title: &str,
-    tip: &str,
-    shortcut: Option<&str>,
-    active: bool,
-) -> Element {
-    let mut button = Button::new(id, title, theme::component_palette())
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Compact)
-        .active(active)
-        .tooltip(tip);
-    if let Some(shortcut) = shortcut {
-        button = button.tooltip_shortcut(shortcut);
-    }
-    theme::interactive_surface(button.render())
-}
 fn result_row(id: &str, title: &str, tip: &str, indent: usize) -> Element {
     let row = theme::interactive_surface(
         Element::icon_button(id, openide_ui::Icon::Code, title)
@@ -172,12 +152,6 @@ fn result_row(id: &str, title: &str, tip: &str, indent: usize) -> Element {
         Element::spacer().size(Some((indent.min(5) * 12) as f32), None),
         row,
     ])
-}
-fn field(id: &str, value: &str, placeholder: &str) -> Element {
-    TextField::new(id, value, placeholder, theme::component_palette())
-        .size(ControlSize::Compact)
-        .render()
-        .flex(1.0)
 }
 pub(crate) fn context_actions(ready: bool) -> Vec<ContextMenuEntry> {
     let item = |id, title, shortcut, enabled| {
@@ -503,15 +477,14 @@ pub(crate) fn search_popover(
             .flex(1.0)
     };
     let option = |id, title, tip, active| {
-        theme::interactive_surface(
-            Button::new(id, title, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconExtraSmall)
-                .width(28.0)
-                .active(active)
-                .tooltip(tip)
-                .render(),
-        )
+        Button::new(id, title, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .button_size(ButtonSize::IconExtraSmall)
+            .width(28.0)
+            .active(active)
+            .active_hover(ActiveHover::Palette)
+            .tooltip(tip)
+            .render()
     };
     let options = Element::row(vec![
         option(
@@ -725,7 +698,7 @@ pub(crate) fn tools(
                     true,
                 )
                 .flex(1.0),
-                action(
+                Button::new(
                     if view.conflict && !view.missing {
                         "editor_conflict"
                     } else {
@@ -736,9 +709,12 @@ pub(crate) fn tools(
                     } else {
                         "Guardar como…"
                     },
-                    "Conservar y revisar tus cambios",
-                    false,
-                ),
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Conservar y revisar tus cambios")
+                .render(),
             ])
             .gap(6.0)
             .padding(8.0),
@@ -748,36 +724,42 @@ pub(crate) fn tools(
         rows.push(Element::horizontal_scroll(
             "editor_settings_scroll",
             Element::row(vec![
-                action(
+                Button::new(
                     "editor_indent_kind",
                     if matches!(state.indent, IndentStyle::Tabs(_)) {
                         "Tabs"
                     } else {
                         "Espacios"
                     },
-                    "Cambiar indentación",
-                    false,
-                ),
-                action(
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Cambiar indentación")
+                .render(),
+                Button::new(
                     "editor_indent_width",
                     &format!("{}", state.indent.width()),
-                    "Ancho de indentación: 2, 4 u 8",
-                    false,
-                ),
-                action(
-                    "editor_pairs",
-                    "Pares",
-                    "Insertar y saltar pares de delimitadores",
-                    state.auto_pairs,
-                ),
-                action(
-                    "editor_eol",
-                    "LF / CRLF",
-                    "Convertir finales de línea; se puede deshacer",
-                    false,
-                ),
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Ancho de indentación: 2, 4 u 8")
+                .render(),
+                Button::new("editor_pairs", "Pares", theme::component_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .active(state.auto_pairs)
+                    .active_hover(ActiveHover::Palette)
+                    .tooltip("Insertar y saltar pares de delimitadores")
+                    .render(),
+                Button::new("editor_eol", "LF / CRLF", theme::component_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .tooltip("Convertir finales de línea; se puede deshacer")
+                    .render(),
                 DropdownMenu::new(
-                    action(
+                    Button::new(
                         "editor_language",
                         &format!(
                             "{:?}",
@@ -785,9 +767,14 @@ pub(crate) fn tools(
                                 .language_override
                                 .unwrap_or_else(|| language_for_path(&view.path))
                         ),
-                        "Cambiar lenguaje del documento",
-                        state.language_menu_open,
-                    ),
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .active(state.language_menu_open)
+                    .active_hover(ActiveHover::Palette)
+                    .tooltip("Cambiar lenguaje del documento")
+                    .render(),
                     [
                         "auto",
                         "plain",
@@ -823,17 +810,24 @@ pub(crate) fn tools(
         ));
         rows.push(
             Element::row(vec![
-                field(
+                TextField::new(
                     "editor_server_path",
                     &state.server_path,
                     "Servidor de lenguaje (opcional)",
-                ),
-                action(
+                    theme::component_palette(),
+                )
+                .size(ControlSize::Compact)
+                .render()
+                .flex(1.0),
+                Button::new(
                     "editor_server_connect",
                     "Conectar",
-                    "Conectar o reiniciar el servidor de lenguaje",
-                    false,
-                ),
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Conectar o reiniciar el servidor de lenguaje")
+                .render(),
             ])
             .gap(4.0)
             .padding(6.0),
@@ -850,9 +844,23 @@ pub(crate) fn tools(
         rows.push(text(title, false).padding(6.0));
         rows.push(
             Element::row(vec![
-                field("editor_form_value", &state.form_value, placeholder),
-                action_with_shortcut("editor_form_apply", "Aplicar", "Confirmar", Some("Enter"), false),
-                openide_ui::DismissButton::new("editor_form_cancel", theme::component_palette()).render(),
+                TextField::new(
+                    "editor_form_value",
+                    &state.form_value,
+                    placeholder,
+                    theme::component_palette(),
+                )
+                .size(ControlSize::Compact)
+                .render()
+                .flex(1.0),
+                Button::new("editor_form_apply", "Aplicar", theme::component_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .tooltip("Confirmar")
+                    .tooltip_shortcut("Enter")
+                    .render(),
+                openide_ui::DismissButton::new("editor_form_cancel", theme::component_palette())
+                    .render(),
             ])
             .gap(4.0)
             .padding(6.0),
@@ -905,12 +913,15 @@ pub(crate) fn tools(
         rows.push(
             Element::row(vec![
                 text("Versión del disco · sólo lectura", true).flex(1.0),
-                action(
+                Button::new(
                     "editor_conflict_close",
                     "Cerrar",
-                    "Cerrar comparación",
-                    false,
-                ),
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Cerrar comparación")
+                .render(),
             ])
             .padding(6.0),
         );

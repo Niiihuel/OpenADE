@@ -48,14 +48,6 @@ fn detail(text: impl Into<String>) -> Element {
         .font_size(11.0)
         .foreground(theme::FOREGROUND_SUBTLE)
 }
-fn button(id: impl Into<String>, text: impl Into<String>, icon: Icon, enabled: bool) -> Element {
-    Button::new(id, text, theme::component_palette())
-        .icon(icon)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .enabled(enabled)
-        .render()
-}
 fn metadata(manifest: &PluginManifest) -> String {
     format!("{} · {}", manifest.publisher, manifest.version)
 }
@@ -64,19 +56,23 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     let plugins = &state.plugins;
     let ready = !plugins.busy && !plugins.load_error;
     let mut rows = vec![Element::row(vec![
-        button(
+        Button::new(
             "plugins_install_open",
             "Instalar desde carpeta",
-            Icon::Add,
-            !plugins.busy,
-        ),
+            theme::component_palette(),
+        )
+        .icon(Icon::Add)
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .enabled(!plugins.busy)
+        .render(),
         Element::spacer().flex(1.0),
-        button(
-            "plugins_refresh",
-            "Actualizar",
-            Icon::Refresh,
-            !plugins.busy,
-        ),
+        Button::new("plugins_refresh", "Actualizar", theme::component_palette())
+            .icon(Icon::Refresh)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .enabled(!plugins.busy)
+            .render(),
     ])
     .gap(6.0)];
     rows.push(detail("Las instalaciones se guardan en este equipo. Activa cada plugin para el proyecto actual; sus herramientas estarán disponibles en los próximos turnos de ejecución."));
@@ -135,26 +131,34 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             detail(&manifest.description),
         ];
         let actions = Element::row(vec![
-            button(
+            Button::new(
                 format!("plugins_details:{}", manifest.id),
                 "Detalles",
-                Icon::InfoCircle,
-                !plugins.busy,
-            ),
-            button(
+                theme::component_palette(),
+            )
+            .icon(Icon::InfoCircle)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .enabled(!plugins.busy)
+            .render(),
+            Button::new(
                 format!("plugins_toggle:{}", manifest.id),
                 if plugin.enabled {
                     "Desactivar"
                 } else {
                     "Activar"
                 },
-                if plugin.enabled {
-                    Icon::Pause
-                } else {
-                    Icon::Play
-                },
-                ready,
-            ),
+                theme::component_palette(),
+            )
+            .icon(if plugin.enabled {
+                Icon::Pause
+            } else {
+                Icon::Play
+            })
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .enabled(ready)
+            .render(),
         ])
         .gap(6.0);
         let status = detail(if plugin.enabled {
@@ -237,18 +241,22 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .size(ControlSize::Compact)
             .render(),
             Element::row(vec![
-                button(
+                Button::new(
                     "plugins_pick_folder",
                     "Elegir carpeta",
-                    Icon::Folder,
-                    !plugins.busy,
-                ),
-                button(
-                    "plugins_inspect",
-                    "Revisar",
-                    Icon::Search,
-                    !plugins.busy && !plugins.source.trim().is_empty(),
-                ),
+                    theme::component_palette(),
+                )
+                .icon(Icon::Folder)
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .enabled(!plugins.busy)
+                .render(),
+                Button::new("plugins_inspect", "Revisar", theme::component_palette())
+                    .icon(Icon::Search)
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Compact)
+                    .enabled(!plugins.busy && !plugins.source.trim().is_empty())
+                    .render(),
             ])
             .gap(6.0),
         ];
@@ -274,13 +282,25 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         }
         let footer = Element::row(vec![
             Element::spacer().flex(1.0),
-            button("plugins_dialog_close", "Cancelar", Icon::Close, true),
-            button(
+            Button::new(
+                "plugins_dialog_close",
+                "Cancelar",
+                theme::component_palette(),
+            )
+            .icon(Icon::Close)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render(),
+            Button::new(
                 "plugins_install_confirm",
                 "Instalar",
-                Icon::Add,
-                !plugins.busy && plugins.preview.is_some(),
-            ),
+                theme::component_palette(),
+            )
+            .icon(Icon::Add)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .enabled(!plugins.busy && plugins.preview.is_some())
+            .render(),
         ])
         .gap(6.0);
         (
@@ -305,14 +325,22 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             ));
         }
         let footer = Element::row(vec![
-            button(
+            Button::new(
                 format!("plugins_remove:{}", plugin.manifest.id),
                 "Desinstalar",
-                Icon::Trash,
-                !plugins.busy && !plugins.removal_blocked,
-            ),
+                theme::component_palette(),
+            )
+            .icon(Icon::Trash)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .enabled(!plugins.busy && !plugins.removal_blocked)
+            .render(),
             Element::spacer().flex(1.0),
-            button("plugins_dialog_close", "Cerrar", Icon::Close, true),
+            Button::new("plugins_dialog_close", "Cerrar", theme::component_palette())
+                .icon(Icon::Close)
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .render(),
         ])
         .gap(6.0);
         (

@@ -566,7 +566,7 @@ pub(crate) fn confirmation(state: &ViewState, base: Element, width: f32) -> Elem
     AlertDialog::new(base, true, "Hay archivos sin guardar", if state.code_editor_pending_saves { "Esperando a que termine el guardado." } else { "Podés cerrar conservando los borradores para la próxima apertura, seguir editando o descartarlos." }, "code_editor_quit_keep", "code_editor_quit_cancel", theme::component_palette())
         .width((width - 24.0).min(480.0))
         .body(Button::new("code_editor_quit_discard", "Descartar los borradores y salir", theme::component_palette())
-            .variant(ButtonVariant::Ghost).size(openide_ui::ControlSize::Compact).enabled(!state.code_editor_pending_saves).render().foreground(theme::DESTRUCTIVE))
+            .variant(ButtonVariant::Ghost).size(openide_ui::ControlSize::Compact).enabled(!state.code_editor_pending_saves).ink(theme::DESTRUCTIVE).hover_ink(theme::FOREGROUND).render())
         .confirm_enabled(!state.code_editor_pending_saves)
         .confirm_label(if state.code_editor_pending_saves { "Guardando…" } else { "Conservar y salir" })
         .cancel_label("Seguir editando").render()

@@ -4,7 +4,9 @@
 //! (Apache-2.0). The application uses an achromatic palette for native chrome;
 //! the composer send button and reasoning-effort control carry local accents.
 
-use openide_ui::{Color, ComponentPalette, ControlColors, Element, Scheme, Surface};
+use openide_ui::{
+    Button, ButtonVariant, Color, ComponentPalette, ControlColors, Element, Scheme, Surface,
+};
 
 /// Every neutral of the native chrome, by role. The palettes below are
 /// derived from it, so two of them cannot disagree about a shared color.
@@ -173,6 +175,11 @@ pub fn card_palette() -> ComponentPalette {
 /// Actions in a workspace sidebar.
 pub fn sidebar_palette() -> ComponentPalette {
     action_palette(SIDEBAR, FOREGROUND)
+}
+
+/// The one filled action of a form or notice: brand fill, primary ink.
+pub fn primary(id: impl Into<String>, label: impl Into<String>) -> Button {
+    Button::new(id, label, action_palette(BRAND, PRIMARY_FOREGROUND)).variant(ButtonVariant::Solid)
 }
 
 pub fn segmented_palette() -> ComponentPalette {

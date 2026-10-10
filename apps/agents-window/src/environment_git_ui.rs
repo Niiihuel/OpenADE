@@ -55,30 +55,6 @@ fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
         })
 }
 
-fn action(id: &str, title: &str, enabled: bool, primary: bool) -> Element {
-    let button = Button::new(id, title, theme::component_palette())
-        .variant(if primary {
-            ButtonVariant::Default
-        } else {
-            ButtonVariant::Ghost
-        })
-        .size(ControlSize::Regular)
-        .enabled(enabled)
-        .render();
-    if primary {
-        button
-    } else {
-        crate::environment_ui::interactive_surface(button)
-    }
-}
-
-fn field(id: &str, value: &str, placeholder: &str, enabled: bool) -> Element {
-    TextField::new(id, value, placeholder, theme::component_palette())
-        .size(ControlSize::Regular)
-        .enabled(enabled)
-        .render()
-}
-
 pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
     let mut rows = Vec::new();
     if let Some(busy) = &state.busy {
@@ -92,28 +68,6 @@ pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
         rows.push(text(notice, true, 11.0));
     }
     rows
-}
-
-fn compact_action(
-    id: &str,
-    title: &str,
-    icon: Icon,
-    enabled: bool,
-    primary: bool,
-    width: f32,
-) -> Element {
-    let palette = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND);
-    Button::new(id, title, palette)
-        .icon(icon)
-        .variant(if primary {
-            ButtonVariant::Default
-        } else {
-            ButtonVariant::Outline
-        })
-        .size(ControlSize::Compact)
-        .enabled(enabled)
-        .width(width)
-        .render()
 }
 
 /// A 24 px tool set 2 px down in the 28 px commit header.
@@ -334,14 +288,18 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
         if let Some(reason) = &reason {
             commit.push(text(reason, true, 11.0));
         }
-        commit.push(compact_action(
-            "environment_git_commit",
-            "Crear commit",
-            Icon::Check,
-            reason.is_none(),
-            true,
-            inner,
-        ));
+        commit.push(
+            Button::new(
+                "environment_git_commit",
+                "Crear commit",
+                theme::sidebar_palette(),
+            )
+            .icon(Icon::Check)
+            .size(ControlSize::Compact)
+            .enabled(reason.is_none())
+            .width(inner)
+            .render(),
+        );
         rows.push(Element::column(commit).gap(6.0));
         rows.push(
             Separator::horizontal(theme::component_palette())
@@ -452,18 +410,23 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
             if let Some(reason) = reason {
                 publish.push(text(reason, true, 11.0));
             }
-            publish.push(compact_action(
-                "environment_git_push",
-                if snapshot.upstream.is_some() {
-                    "Hacer push"
-                } else {
-                    "Publicar rama"
-                },
-                Icon::ArrowUp,
-                reason.is_none(),
-                false,
-                inner,
-            ));
+            publish.push(
+                Button::new(
+                    "environment_git_push",
+                    if snapshot.upstream.is_some() {
+                        "Hacer push"
+                    } else {
+                        "Publicar rama"
+                    },
+                    theme::sidebar_palette(),
+                )
+                .icon(Icon::ArrowUp)
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .enabled(reason.is_none())
+                .width(inner)
+                .render(),
+            );
         }
         rows.push(Element::column(publish).gap(6.0));
     }
@@ -625,27 +588,40 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                     .background(theme::PANEL)
                     .radius(8.0),
                 );
-                rows.push(action(
-                    "environment_git_compare_refresh",
-                    "Actualizar comparación",
-                    enabled,
-                    false,
+                rows.push(crate::environment_ui::interactive_surface(
+                    Button::new(
+                        "environment_git_compare_refresh",
+                        "Actualizar comparación",
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Regular)
+                    .enabled(enabled)
+                    .render(),
                 ));
                 if state.compare_url.is_some() {
-                    rows.push(action(
-                        "environment_git_compare_open_web",
-                        "Ver comparación en GitHub",
-                        true,
-                        false,
+                    rows.push(crate::environment_ui::interactive_surface(
+                        Button::new(
+                            "environment_git_compare_open_web",
+                            "Ver comparación en GitHub",
+                            theme::component_palette(),
+                        )
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Regular)
+                        .render(),
                     ));
                 }
             } else if !state.compare_reference.is_empty() {
-                rows.push(action(
-                    "environment_git_compare_refresh",
-                    "Comparar",
-                    enabled,
-                    true,
-                ));
+                rows.push(
+                    Button::new(
+                        "environment_git_compare_refresh",
+                        "Comparar",
+                        theme::component_palette(),
+                    )
+                    .size(ControlSize::Regular)
+                    .enabled(enabled)
+                    .render(),
+                );
             } else if snapshot
                 .branches
                 .branches
@@ -667,12 +643,17 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                 11.5,
             ));
             rows.push(text("Nombre de la rama", false, 12.0));
-            rows.push(field(
-                "environment_git_branch_name",
-                &state.branch_name,
-                "feature/mi-cambio",
-                enabled,
-            ));
+            rows.push(
+                TextField::new(
+                    "environment_git_branch_name",
+                    &state.branch_name,
+                    "feature/mi-cambio",
+                    theme::component_palette(),
+                )
+                .size(ControlSize::Regular)
+                .enabled(enabled)
+                .render(),
+            );
             if worktree {
                 if snapshot.head.is_none() {
                     rows.push(text(
@@ -682,30 +663,41 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                     ));
                 }
                 rows.push(text("Carpeta de destino", false, 12.0));
-                rows.push(field(
-                    "environment_git_worktree_path",
-                    &state.worktree_path,
-                    "/ruta/al/worktree",
-                    enabled,
-                ));
+                rows.push(
+                    TextField::new(
+                        "environment_git_worktree_path",
+                        &state.worktree_path,
+                        "/ruta/al/worktree",
+                        theme::component_palette(),
+                    )
+                    .size(ControlSize::Regular)
+                    .enabled(enabled)
+                    .render(),
+                );
             }
-            rows.push(action(
-                if worktree {
-                    "environment_git_create_worktree"
-                } else {
-                    "environment_git_create_branch"
-                },
-                if worktree {
-                    "Crear worktree"
-                } else {
-                    "Crear rama"
-                },
-                enabled
-                    && !state.branch_name.trim().is_empty()
-                    && (!worktree
-                        || (snapshot.head.is_some() && !state.worktree_path.trim().is_empty())),
-                true,
-            ));
+            rows.push(
+                Button::new(
+                    if worktree {
+                        "environment_git_create_worktree"
+                    } else {
+                        "environment_git_create_branch"
+                    },
+                    if worktree {
+                        "Crear worktree"
+                    } else {
+                        "Crear rama"
+                    },
+                    theme::component_palette(),
+                )
+                .size(ControlSize::Regular)
+                .enabled(
+                    enabled
+                        && !state.branch_name.trim().is_empty()
+                        && (!worktree
+                            || (snapshot.head.is_some() && !state.worktree_path.trim().is_empty())),
+                )
+                .render(),
+            );
         }
         EnvironmentGitPanel::Overview | EnvironmentGitPanel::Actions => {}
     }

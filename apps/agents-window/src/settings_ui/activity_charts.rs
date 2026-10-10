@@ -165,22 +165,8 @@ pub(super) fn github_card(state: &ViewState, content_width: f32) -> Element {
             error,
             Some(
                 Element::row(vec![
-                    Button::new(
-                        "github_contributions_refresh",
-                        "Reintentar",
-                        super::control_palette(),
-                    )
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Compact)
-                    .render(),
-                    Button::new(
-                        "github_account_connect",
-                        "Reconectar GitHub",
-                        super::control_palette(),
-                    )
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Compact)
-                    .render(),
+                    super::outline("github_contributions_refresh", "Reintentar").render(),
+                    super::outline("github_account_connect", "Reconectar GitHub").render(),
                 ])
                 .gap(6.0),
             ),

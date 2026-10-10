@@ -332,16 +332,6 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
     Element::column(items).gap(8.0).padding(12.0)
 }
 
-fn compact_action(id: impl Into<String>, title: &str, icon: Icon) -> Element {
-    theme::interactive_surface(
-        Button::new(id, title, theme::component_palette())
-            .icon(icon)
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Compact)
-            .render(),
-    )
-}
-
 fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
     let selected_native = state.selected_session.as_deref().is_some_and(|id| {
         state.selected_backend == "native"
@@ -360,12 +350,24 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
             label("Procesos", theme::FOREGROUND)
                 .font_size(12.0)
                 .flex(1.0),
-            compact_action("native_command_history_open", "Historial", Icon::History),
-            compact_action(
+            Button::new(
+                "native_command_history_open",
+                "Historial",
+                theme::component_palette(),
+            )
+            .icon(Icon::History)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .render(),
+            Button::new(
                 "native_command_operation_history",
                 "Operaciones",
-                Icon::Terminal,
-            ),
+                theme::component_palette(),
+            )
+            .icon(Icon::Terminal)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .render(),
         ])
         .gap(4.0)
         .size(None, Some(30.0)),
@@ -428,23 +430,35 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
                 serde_json::to_string(&(owner, &command.id)).expect("command identity serializes");
             process.push(
                 Element::row(vec![
-                    compact_action(
+                    Button::new(
                         format!("native_command_history_live:{identity}"),
                         "Guardada",
-                        Icon::History,
+                        theme::component_palette(),
                     )
+                    .icon(Icon::History)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .render()
                     .flex(1.0),
-                    compact_action(
+                    Button::new(
                         format!("native_command_output_open:{identity}"),
                         "Salida",
-                        Icon::Terminal,
+                        theme::component_palette(),
                     )
+                    .icon(Icon::Terminal)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .render()
                     .flex(1.0),
-                    compact_action(
+                    Button::new(
                         format!("native_command_control_open:{identity}"),
                         "Controlar",
-                        Icon::Settings,
+                        theme::component_palette(),
                     )
+                    .icon(Icon::Settings)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .render()
                     .flex(1.0),
                 ])
                 .gap(3.0),
@@ -475,20 +489,18 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
                         .font_size(11.0)
                         .foreground(theme::FOREGROUND)
                         .flex(1.0),
-                    theme::interactive_surface(
-                        Button::new(
-                            format!("session_approval_revoke:{}", grant.key_digest),
-                            "Revocar",
-                            theme::component_palette(),
-                        )
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Compact)
-                        .render()
-                        .padding(6.0)
-                        .font_size(11.0)
-                        .foreground(theme::DESTRUCTIVE)
-                        .size(Some(72.0), Some(32.0)),
-                    ),
+                    Button::new(
+                        format!("session_approval_revoke:{}", grant.key_digest),
+                        "Revocar",
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .ink(theme::DESTRUCTIVE)
+                    .hover_ink(theme::FOREGROUND)
+                    .render()
+                    .font_size(11.0)
+                    .size(Some(72.0), Some(32.0)),
                 ])
                 .gap(6.0)
                 .size(None, Some(32.0)),

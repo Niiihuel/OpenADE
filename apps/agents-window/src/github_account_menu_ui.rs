@@ -471,13 +471,11 @@ fn connection_button(
     if dropdown {
         button = button.trailing_icon(Icon::ChevronDown);
     }
-    Tooltip::new(
-        button.render().gap(8.0),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .render()
+    // Busy, the spinner keeps the Dense gap it always had.
+    if !loading {
+        button = button.gap(8.0);
+    }
+    Tooltip::new(button.render(), id, hint, theme::component_palette()).render()
 }
 
 pub(crate) fn build(state: &ViewState, width: f32, sidebar_width: f32) -> Element {

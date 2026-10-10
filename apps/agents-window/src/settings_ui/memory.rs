@@ -2,15 +2,6 @@
 
 use super::*;
 
-fn guarded_action(id: &str, label: &str, enabled: bool) -> Element {
-    Button::new(id, label, control_palette())
-        .icon(Icon::ArrowRight)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .enabled(enabled)
-        .render()
-}
-
 fn goal_details(goal: &openide_core::NativeGoal) -> String {
     let mut lines = vec![
         format!("Objetivo: {}", goal.objective),
@@ -90,13 +81,16 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             settings_parts::settings_row(
                 "Modelo y presupuesto",
                 "Consulta los límites y el tope de salida de la ruta seleccionada.",
-                action_button("settings_page:providers", "Ver modelo", Icon::ArrowRight),
+                outline("settings_page:providers", "Ver modelo").icon(Icon::ArrowRight).render(),
                 compact,
             ),
             settings_parts::settings_row(
                 "Compactar contexto",
                 compact_description,
-                guarded_action("settings_native_compact", "Compactar", can_operate),
+                outline("settings_native_compact", "Compactar")
+                    .icon(Icon::ArrowRight)
+                    .enabled(can_operate)
+                    .render(),
                 compact,
             ),
         ],
@@ -112,11 +106,13 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             description,
             FeedbackTone::Error,
             native.map(|session| {
-                guarded_action(
+                outline(
                     &format!("settings_session_open:{}", session.id),
                     "Ver recuperación",
-                    recovery.can_open(),
                 )
+                .icon(Icon::ArrowRight)
+                .enabled(recovery.can_open())
+                .render()
             }),
             compact,
         ));
@@ -125,12 +121,18 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         settings_parts::settings_row(
             "Copias guardadas por turno",
             "Revisa las instrucciones adicionales guardadas del proyecto, skills y objetivo. La consulta no vuelve a leer los archivos ni cambia el contexto de un turno.",
-            guarded_action(&format!("settings_native_instructions_open:{}", state.selected_session.as_deref().unwrap_or("")), "Revisar copias", native.is_some()),
+            outline(
+                &format!("settings_native_instructions_open:{}", state.selected_session.as_deref().unwrap_or("")),
+                "Revisar copias",
+            )
+            .icon(Icon::ArrowRight)
+            .enabled(native.is_some())
+            .render(),
             compact,
         ),
         page_note("Archivos e instrucciones seleccionadas", "Los nuevos turnos nativos leen AGENTS.md o AGENTS.override.md y las skills activas del proyecto. Antes de consultar al modelo, se guarda una copia exacta de esas instrucciones adicionales; el motor compone también sus propias instrucciones de modo y herramientas.", Icon::Folder),
         page_note("Continuar un turno", "Los turnos con una copia guardada usan esas instrucciones al reanudarse. Cambiar instrucciones o skills afecta los turnos nuevos; no reemplaza las instrucciones guardadas de un turno interrumpido.", Icon::History),
-        settings_parts::settings_row("Skills reutilizables", "Administra la selección de instrucciones del proyecto. Esta selección no crea recuerdos aprendidos entre conversaciones.", action_button("settings_page:skills", "Ver skills", Icon::ArrowRight), compact),
+        settings_parts::settings_row("Skills reutilizables", "Administra la selección de instrucciones del proyecto. Esta selección no crea recuerdos aprendidos entre conversaciones.", outline("settings_page:skills", "Ver skills").icon(Icon::ArrowRight).render(), compact),
     ]));
 
     let goal_scope = native.is_some_and(|session| {
@@ -148,15 +150,17 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         } else {
             "El objetivo nativo conserva criterios, estado y evidencia por conversación. Su editor permite activarlo, pausarlo o reanudarlo explícitamente."
         },
-        guarded_action(
+        outline(
             "settings_native_goal_open",
             if goal.is_some() {
                 "Ver objetivo"
             } else {
                 "Configurar objetivo"
             },
-            can_open_goal,
-        ),
+        )
+        .icon(Icon::ArrowRight)
+        .enabled(can_open_goal)
+        .render(),
         compact,
     )];
     if let Some(goal) = goal {

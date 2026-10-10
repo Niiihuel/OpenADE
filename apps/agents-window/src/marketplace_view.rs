@@ -883,16 +883,11 @@ fn source_form_footer(state: &MarketplaceViewState) -> Element {
         .size(ControlSize::Compact)
         .enabled(!state.busy)
         .render(),
-        Button::new(
-            "marketplace_source_submit",
-            "Agregar origen",
-            theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
-        )
-        .variant(ButtonVariant::Solid)
-        .size(ControlSize::Compact)
-        .enabled(!state.busy && !state.source_draft.trim().is_empty())
-        .loading(state.busy)
-        .render(),
+        theme::primary("marketplace_source_submit", "Agregar origen")
+            .size(ControlSize::Compact)
+            .enabled(!state.busy && !state.source_draft.trim().is_empty())
+            .loading(state.busy)
+            .render(),
     ])
     .gap(8.0)
 }

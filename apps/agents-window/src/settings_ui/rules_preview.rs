@@ -18,39 +18,18 @@ pub(super) fn group(state: &ViewState, compact: bool) -> Element {
             )
             .height(80.0)
             .render(),
-            if compact {
-                Element::column(vec![
-                    mcp_action_button(
-                        "exec_rule_preview_evaluate",
-                        "Evaluar reglas guardadas",
-                        Icon::Search,
-                        !preview.editor_open,
-                    ),
-                    mcp_action_button(
-                        "exec_rule_preview_clear",
-                        "Limpiar resultado",
-                        Icon::Close,
-                        preview.preview.is_some(),
-                    ),
-                ])
-                .gap(6.0)
-            } else {
-                Element::row(vec![
-                    mcp_action_button(
-                        "exec_rule_preview_evaluate",
-                        "Evaluar reglas guardadas",
-                        Icon::Search,
-                        !preview.editor_open,
-                    ),
-                    mcp_action_button(
-                        "exec_rule_preview_clear",
-                        "Limpiar resultado",
-                        Icon::Close,
-                        preview.preview.is_some(),
-                    ),
-                ])
-                .gap(6.0)
-            },
+            ButtonGroup::new(vec![
+                outline("exec_rule_preview_evaluate", "Evaluar reglas guardadas")
+                    .icon(Icon::Search)
+                    .enabled(!preview.editor_open)
+                    .render(),
+                outline("exec_rule_preview_clear", "Limpiar resultado")
+                    .icon(Icon::Close)
+                    .enabled(preview.preview.is_some())
+                    .render(),
+            ])
+            .stacked(compact)
+            .render(),
         ])
         .gap(6.0)
         .padding(10.0),

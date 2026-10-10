@@ -77,16 +77,6 @@ pub(crate) fn page_json(page: &NativeCommandOutputPage) -> String {
         .expect("durable output page JSON serializes")
 }
 
-fn button(id: impl Into<String>, label: impl Into<String>, enabled: bool) -> Element {
-    theme::interactive_surface(
-        Button::new(id, label, theme::component_palette())
-            .variant(ButtonVariant::Outline)
-            .size(ControlSize::Compact)
-            .enabled(enabled)
-            .render(),
-    )
-}
-
 fn text(value: impl Into<String>) -> Element {
     Element::text(value)
         .foreground(theme::FOREGROUND)
@@ -254,7 +244,6 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         .trailing_icon(Icon::ChevronDown)
         .width(body_width)
         .render();
-        let trigger = theme::interactive_surface(trigger);
         body.push(
             DropdownList::new(
                 trigger,
@@ -332,25 +321,31 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         body.push(note(status));
         body.push(
             Element::row(vec![
-                button(
+                Button::new(
                     "native_command_history_details_toggle",
                     if local.details_open {
                         "Ocultar detalles"
                     } else {
                         "Detalles"
                     },
-                    true,
+                    theme::component_palette(),
                 )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .render()
                 .flex(1.0),
-                button(
+                Button::new(
                     "native_command_history_exact_toggle",
                     if local.exact_data_open {
                         "Ver salida"
                     } else {
                         "Ver datos exactos"
                     },
-                    true,
+                    theme::component_palette(),
                 )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .render()
                 .flex(1.0),
             ])
             .gap(8.0),
@@ -409,22 +404,38 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         );
     }
     let paginated = !local.previous_cursors.is_empty() || local.can_next();
-    let refresh = button(
+    let refresh = Button::new(
         "native_command_history_refresh",
         "Actualizar",
-        !local.loading,
-    );
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Outline)
+    .size(ControlSize::Compact)
+    .enabled(!local.loading)
+    .render();
     let mut footer = Vec::new();
     if paginated {
         footer.push(
             Element::row(vec![
-                button(
+                Button::new(
                     "native_command_history_previous",
                     "Anterior",
-                    !local.loading && !local.previous_cursors.is_empty(),
-                ),
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .enabled(!local.loading && !local.previous_cursors.is_empty())
+                .render(),
                 note(format!("Página {}", local.previous_cursors.len() + 1)),
-                button("native_command_history_next", "Siguiente", local.can_next()),
+                Button::new(
+                    "native_command_history_next",
+                    "Siguiente",
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .enabled(local.can_next())
+                .render(),
             ])
             .gap(8.0),
         );
