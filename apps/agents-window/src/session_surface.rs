@@ -1933,7 +1933,7 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             .pending_permissions
             .iter()
             .take(3)
-            .map(|permission| permission_card(permission, state)),
+            .map(|permission| permission_card(permission, state, width < COMPACT_BREAKPOINT)),
     );
     rows.extend(related_subagent_rows(state, width < COMPACT_BREAKPOINT));
     let latest_model = state
@@ -2042,8 +2042,8 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         .bottom_fade(theme::BACKGROUND, TRANSCRIPT_BOTTOM_FADE_HEIGHT)
 }
 
-fn permission_card(permission: &PermissionView, state: &ViewState) -> Element {
-    crate::approval_ui::inline_root(permission, state)
+fn permission_card(permission: &PermissionView, state: &ViewState, compact: bool) -> Element {
+    crate::approval_ui::inline_root(permission, state, compact)
 }
 
 fn subagent_permission_card(
@@ -2051,11 +2051,7 @@ fn subagent_permission_card(
     state: &ViewState,
     compact: bool,
 ) -> Element {
-    crate::approval_ui::inline_child(
-        permission,
-        state,
-        if compact { 360.0 } else { READING_WIDTH },
-    )
+    crate::approval_ui::inline_child(permission, state, compact)
 }
 
 fn active_subagent_card(run: &SubagentRunView, selected_session: &str) -> Element {
@@ -2984,11 +2980,7 @@ fn composer(state: &ViewState, width: f32) -> Element {
 fn composer_with_height(state: &ViewState, width: f32, available_height: Option<f32>) -> Element {
     let compact = width < COMPACT_BREAKPOINT;
     let card_width = (width - 32.0).clamp(0.0, READING_WIDTH);
-    let notice = crate::approval_ui::pending_banner(state);
-    // The permission banner is a single 24px control with 8px padding; retain
-    // it above the editor and account for the inter-row gap.
-    let shell_height = available_height
-        .map(|height| (height - 32.0 - if notice.is_some() { 40.0 + 8.0 } else { 0.0 }).max(0.0));
+    let shell_height = available_height.map(|height| (height - 32.0).max(0.0));
     let shell = if let Some(origin) = selected_native_automation(state) {
         automation_read_only_card(state, origin, card_width, compact)
     } else {
@@ -3004,13 +2996,7 @@ fn composer_with_height(state: &ViewState, width: f32, available_height: Option<
             shell_height,
         )
     };
-    let mut rows = Vec::new();
-    if let Some(notice) = notice {
-        rows.push(notice);
-    }
-    rows.push(shell);
-    Element::column(rows)
-        .gap(8.0)
+    Element::column(vec![shell])
         .size(Some(card_width), None)
         .centered_x()
         .padding(16.0)
@@ -3670,7 +3656,6 @@ mod tests {
             terminal_input: String::new(),
             terminal_error: None,
             pending_permissions: vec![],
-            approval_ui: Default::default(),
             composer_pending: None,
             pending_subagent_permissions: vec![],
             active_subagents: vec![],
@@ -5362,7 +5347,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_permission_keeps_review_reachable_without_inline_grants() {
+    fn pending_permission_is_answered_in_the_transcript_without_a_composer_banner() {
         let mut state = state();
         state.pending_permissions.push(PermissionView {
             request_id: "request-1".into(),
@@ -5371,20 +5356,22 @@ mod tests {
         });
         let frame = UiTree::new(build_session_surface(&state, 520.0, true, true))
             .layout(Size::new(520.0, 780.0));
-        assert!(
-            frame
-                .regions
-                .iter()
-                .any(|region| region.id.starts_with("approval_review:")
-                    && region.id.ends_with(":banner")),
-            "review notification stays beside the composer"
-        );
-        assert!(!frame
+        let decisions: Vec<_> = frame
             .regions
             .iter()
-            .any(|region| region.id.starts_with("permission_allow")
-                || region.id.starts_with("permission_deny")
-                || region.id.starts_with("approval_decide:")));
+            .filter(|region| region.id.starts_with("approval_decide:"))
+            .collect();
+        assert_eq!(decisions.len(), 3, "one card, three answers, no duplicate");
+        let transcript = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "transcript")
+            .unwrap()
+            .rect;
+        for decision in decisions {
+            assert!(decision.rect.x >= transcript.x);
+            assert!(decision.rect.x + decision.rect.width <= transcript.x + transcript.width);
+        }
     }
 
     // Frozen pre-index implementation for full render/interaction equivalence.
@@ -5586,9 +5573,9 @@ mod tests {
                             child_session_id: Some("child-1".into()),
                             request_id: "priority-request".into(),
                         }
-                        .review_action();
+                        .decision_action("allow_once");
                         for id in [
-                            format!("{review}:inline").as_str(),
+                            review.as_str(),
                             "subagent_resume:child-1",
                         ] {
                             assert!(
@@ -5652,9 +5639,9 @@ mod tests {
                 child_session_id: Some("child-1".into()),
                 request_id: "request-1".into(),
             }
-            .review_action();
+            .decision_action("allow_once");
             for id in [
-                format!("{review}:inline").as_str(),
+                review.as_str(),
                 "subagent_cancel:child-1",
             ] {
                 assert!(

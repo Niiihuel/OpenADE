@@ -630,7 +630,6 @@ pub struct ViewState {
     pub terminal_input: String,
     pub terminal_error: Option<String>,
     pub pending_permissions: Vec<PermissionView>,
-    pub approval_ui: crate::approval_ui::ApprovalUiState,
     pub composer_pending: Option<crate::composer_pending::PendingComposerSelection>,
     pub pending_subagent_permissions: Vec<SubagentPermissionView>,
     pub active_subagents: Vec<SubagentRunView>,
@@ -3108,7 +3107,6 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
             state,
             ide_ui::build(state, viewport_width, viewport_height),
             viewport_width,
-            viewport_height,
         );
     }
     let layout = dock_layout(state, viewport_width);
@@ -3233,7 +3231,7 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
         }
         for permission in state.pending_permissions.iter().take(3) {
             center_items.push(
-                crate::approval_ui::inline_root(permission, state).padding(8.0),
+                crate::approval_ui::inline_root(permission, state, compact).padding(8.0),
             );
         }
         if let Some(cards) = crate::session_surface::related_subagent_cards(state, compact) {
@@ -3385,19 +3383,14 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
         .gap(GAP)
         .padding(GAP)
         .background(theme::WINDOW);
-    workspace_modals(state, base, viewport_width, viewport_height)
+    workspace_modals(state, base, viewport_width)
 }
 
 pub(crate) fn window_mode_control(state: &ViewState) -> Element {
     ide_ui::mode_button(state)
 }
 
-fn workspace_modals(
-    state: &ViewState,
-    base: Element,
-    viewport_width: f32,
-    viewport_height: f32,
-) -> Element {
+fn workspace_modals(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let base = crate::notifications_ui::toast_layer(state, base);
     let base = confirmation_dialog(state, base, viewport_width);
     let base = crate::github_account_ui::sign_in_alert(state, base, viewport_width);
@@ -3418,7 +3411,6 @@ fn workspace_modals(
     let base = crate::conversation_source_ui::modal(state, base, viewport_width);
     let base = settings_ui::provider_model_details_modal(state, base, viewport_width);
     let base = crate::composer_permissions_ui::full_access_dialog(state, base, viewport_width);
-    let base = crate::approval_ui::modal(state, base, viewport_width, viewport_height);
     let base = crate::code_editor_ui::confirmation(state, base, viewport_width);
     ide_ui::new_file_modal(state, base, viewport_width)
 }
@@ -3708,7 +3700,6 @@ pub(crate) mod tests {
             session_plans: BTreeMap::new(),
             session_recovery: BTreeMap::new(),
             pending_permissions: Vec::new(),
-            approval_ui: Default::default(),
             composer_pending: None,
             pending_subagent_permissions: Vec::new(),
             active_subagents: Vec::new(),
@@ -8267,11 +8258,11 @@ pub(crate) mod tests {
             child_session_id: None,
             request_id: "req-1".into(),
         }
-        .review_action();
+        .decision_action("allow_once");
         for id in [
             "file_row:0",
             "dock_tab:3",
-            format!("{review}:inline").as_str(),
+            review.as_str(),
             "prompt",
         ] {
             assert!(
@@ -8302,7 +8293,7 @@ pub(crate) mod tests {
         assert!(settings_frame
             .regions
             .iter()
-            .any(|region| region.id == format!("{review}:inline")));
+            .any(|region| region.id == review));
     }
 
     #[test]
@@ -8333,9 +8324,9 @@ pub(crate) mod tests {
             child_session_id: Some("child-1".into()),
             request_id: "request-1".into(),
         }
-        .review_action();
+        .decision_action("allow_once");
         for id in [
-            format!("{review}:inline").as_str(),
+            review.as_str(),
             "subagent_cancel:child-1",
         ] {
             assert!(

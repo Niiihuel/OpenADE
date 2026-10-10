@@ -520,12 +520,7 @@ fn chat_dock_partial_and_provisional_tools_have_no_invented_result() {
             assert!(frame
                 .regions
                 .iter()
-                .any(|region| region.id.starts_with("approval_review:")));
-            assert!(!frame
-                .regions
-                .iter()
-                .any(|region| region.id.starts_with("permission_allow")
-                    || region.id.starts_with("approval_decide:")));
+                .any(|region| region.id.starts_with("approval_decide:")));
         }
         context.end_pass().textures_delta.clear();
     }

@@ -138,13 +138,7 @@ mod tests {
         tree.handle_event(UiEvent::PointerDown(position));
         assert!(tree
             .handle_event(UiEvent::PointerUp(position))
-            .contains(&UiAction::Clicked {
-                id: if id.starts_with("approval_review:") {
-                    id.strip_suffix(":inline").unwrap_or(id).into()
-                } else {
-                    id.into()
-                }
-            }));
+            .contains(&UiAction::Clicked { id: id.into() }));
     }
 
     #[test]
@@ -215,16 +209,13 @@ mod tests {
             revision: 4,
         }];
         state.subagent_sessions = vec![saved];
-        let review = format!(
-            "{}:inline",
-            crate::approval_ui::ApprovalTarget {
-                owner_session_id: "child-1".into(),
-                workspace: state.workspace.clone(),
-                child_session_id: Some("child-1".into()),
-                request_id: "request-1".into(),
-            }
-            .review_action()
-        );
+        let review = crate::approval_ui::ApprovalTarget {
+            owner_session_id: "child-1".into(),
+            workspace: state.workspace.clone(),
+            child_session_id: Some("child-1".into()),
+            request_id: "request-1".into(),
+        }
+        .decision_action("allow_once");
         for width in [360.0, 900.0] {
             for id in [
                 review.as_str(),

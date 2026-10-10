@@ -6078,7 +6078,6 @@ impl AgentsWindow {
             terminal_input: String::new(),
             terminal_error: None,
             pending_permissions: Vec::new(),
-            approval_ui: Default::default(),
             composer_pending: None,
             pending_subagent_permissions: Vec::new(),
             active_subagents: Vec::new(),
@@ -19015,7 +19014,6 @@ impl eframe::App for AgentsWindow {
             early_changed = true;
         }
         early_changed |= self.poll_pending_composer_selection();
-        early_changed |= self.sync_approval_ui();
         let (back_shortcut, forward_shortcut, escape, up, down) = ctx.input(|input| {
             (
                 input.modifiers.alt && input.key_pressed(egui::Key::ArrowLeft),
@@ -19031,7 +19029,6 @@ impl eframe::App for AgentsWindow {
         let text_menu_open = self.tree.context_menu_open() || self.command_tree.context_menu_open()
             || self.view.ide.menu_open.is_some();
         let workflow_modal_open = self.view.ide.new_file.is_some()
-            || self.view.approval_ui.selected.is_some()
             || self.view.composer_full_access_confirm.is_some()
             || self.view.automations.screen == AutomationScreen::Edit
             || self.view.pending_delete_session_id.is_some()

@@ -804,16 +804,13 @@ fn permissions_recovery_and_subagents_share_chat_without_resizing_the_composer()
                         tool_name: "read_file".into(),
                         arguments: "{\"path\":\"README.md\"}".into(),
                     });
-                    format!(
-                        "{}:inline",
-                        crate::approval_ui::ApprovalTarget {
-                            owner_session_id: OWNER.into(),
-                            workspace: state.workspace.clone(),
-                            child_session_id: None,
-                            request_id: "request-local".into(),
-                        }
-                        .review_action()
-                    )
+                    crate::approval_ui::ApprovalTarget {
+                        owner_session_id: OWNER.into(),
+                        workspace: state.workspace.clone(),
+                        child_session_id: None,
+                        request_id: "request-local".into(),
+                    }
+                    .decision_action("allow_once")
                 }
                 "recovery" => {
                     state
@@ -831,16 +828,13 @@ fn permissions_recovery_and_subagents_share_chat_without_resizing_the_composer()
                             tool_name: "read_file".into(),
                             arguments: "{\"path\":\"README.md\"}".into(),
                         });
-                    format!(
-                        "{}:inline",
-                        crate::approval_ui::ApprovalTarget {
-                            owner_session_id: OWNER.into(),
-                            workspace: state.workspace.clone(),
-                            child_session_id: Some("child-local".into()),
-                            request_id: "request-child".into(),
-                        }
-                        .review_action()
-                    )
+                    crate::approval_ui::ApprovalTarget {
+                        owner_session_id: OWNER.into(),
+                        workspace: state.workspace.clone(),
+                        child_session_id: Some("child-local".into()),
+                        request_id: "request-child".into(),
+                    }
+                    .decision_action("allow_once")
                 }
                 _ => {
                     state.active_subagents.push(SubagentRunView {
@@ -854,29 +848,7 @@ fn permissions_recovery_and_subagents_share_chat_without_resizing_the_composer()
             tree.set_root(root(&state, viewport));
             tree.scroll_to_end("transcript");
             let after = tree.layout(viewport);
-            if kind.contains("permission") {
-                assert_eq!(
-                    composer_card(&before),
-                    composer_card(&after),
-                    "notice must not move the input"
-                );
-                let banner = after
-                    .regions
-                    .iter()
-                    .find(|region| {
-                        region.id.starts_with("approval_review:") && region.id.ends_with(":banner")
-                    })
-                    .unwrap()
-                    .rect;
-                let transcript = rect(&after, "transcript");
-                assert!(
-                    transcript.y + transcript.height <= banner.y,
-                    "notice reserves space outside history"
-                );
-                assert!(banner.y + banner.height <= composer_card(&after).y);
-            } else {
-                assert_same_dock(&before, &after);
-            }
+            assert_same_dock(&before, &after);
             assert!(
                 contains(rect(&after, "transcript"), rect(&after, &action)),
                 "{kind} is in the chat viewport"

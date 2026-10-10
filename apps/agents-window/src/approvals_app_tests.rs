@@ -1,5 +1,5 @@
 use super::*;
-use openide_ui::{Key, Size, UiEvent, UiTree};
+use openide_ui::{HitKind, Point, Size, UiEvent, UiTree};
 
 fn fixture() -> (tempfile::TempDir, AgentsWindow, ApprovalTarget) {
     let root = tempfile::tempdir().unwrap();
@@ -39,66 +39,68 @@ fn click(app: &mut AgentsWindow, id: impl Into<String>) {
     );
 }
 
-#[test]
-fn review_and_escape_never_resolve_the_request_or_modify_the_journal() {
-    let (_root, mut app, target) = fixture();
-    let policy = app.agent_tool_settings;
-    let events = app
-        .store
+fn decisions(app: &AgentsWindow, target: &ApprovalTarget) -> Vec<PermissionDecision> {
+    app.store
         .as_ref()
         .unwrap()
-        .load(&target.owner_session_id)
+        .load_permission_decisions(&target.owner_session_id)
         .unwrap()
-        .unwrap()
-        .events;
-    click(&mut app, target.review_action());
-    assert_eq!(app.view.approval_ui.selected.as_ref(), Some(&target));
-    click(&mut app, "approval_details");
-    assert!(app.view.approval_ui.details_open);
-    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, 900.0, 720.0));
+        .into_iter()
+        .map(|record| record.decision)
+        .collect()
+}
+
+// Press the card's own button in the rendered window: no review step exists.
+fn press_inline(app: &mut AgentsWindow, target: &ApprovalTarget, choice: &str) {
+    let size = Size::new(900.0, 720.0);
+    let mut tree = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height));
     tree.set_reduced_motion(true);
-    tree.layout(Size::new(900.0, 720.0));
-    let actions = tree.handle_event(UiEvent::Key {
-        key: Key::Escape,
-        shift: false,
-        ctrl: false,
-    });
-    assert!(actions
+    let frame = tree.layout(size);
+    let id = target.decision_action(choice);
+    let rect = frame
+        .regions
         .iter()
-        .any(|action| matches!(action, UiAction::Clicked { id } if id == "approval_close")));
-    for action in actions {
+        .find(|region| region.id == id && region.kind == HitKind::Button)
+        .unwrap_or_else(|| panic!("missing inline {choice}"))
+        .rect;
+    let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+    tree.handle_event(UiEvent::PointerDown(point));
+    for action in tree.handle_event(UiEvent::PointerUp(point)) {
         app.apply_action(action, &egui::Context::default());
     }
-    assert!(app.view.approval_ui.selected.is_none());
-    assert!(!app.view.approval_ui.details_open);
-    assert_eq!(app.view.pending_permissions.len(), 1);
-    assert_eq!(app.agent_tool_settings, policy);
-    assert_eq!(
-        app.store
-            .as_ref()
-            .unwrap()
-            .load(&target.owner_session_id)
-            .unwrap()
-            .unwrap()
-            .events,
-        events
-    );
-    assert!(app.active_run.is_none() && app.active_resume.is_none());
 }
 
 #[test]
-fn approval_actions_reject_unreviewed_foreign_or_obsolete_requests() {
-    let (_root, mut app, target) = fixture();
-    let status = app.view.status.clone();
-    for choice in ["allow_once", "allow_session", "deny"] {
-        click(&mut app, target.decision_action(choice));
-        assert_eq!(app.view.pending_permissions.len(), 1);
-        assert_eq!(
-            app.view.status, status,
-            "no dispatch without an explicit review"
+fn inline_one_time_decisions_reach_the_existing_durable_controller() {
+    for (choice, expected) in [
+        ("allow_once", PermissionDecision::Allow),
+        ("deny", PermissionDecision::Deny),
+    ] {
+        let (_root, mut app, target) = fixture();
+        press_inline(&mut app, &target, choice);
+        assert_eq!(decisions(&app, &target), [expected]);
+        assert!(
+            app.active_run.is_none() && app.active_resume.is_none(),
+            "a decision never invents a worker or starts an operation"
         );
     }
-    for foreign in [
+}
+
+#[test]
+fn inline_session_decision_reaches_the_session_grant_path() {
+    let (_root, mut app, target) = fixture();
+    press_inline(&mut app, &target, "allow_session");
+    // The grant is saved by the worker that owns the request; without one the
+    // session path reports it and records no one-time decision.
+    assert_eq!(app.view.status, "La solicitud de permiso ya no está activa");
+    assert!(decisions(&app, &target).is_empty());
+}
+
+#[test]
+fn approval_actions_reject_foreign_obsolete_oversized_or_malformed_requests() {
+    let (_root, mut app, target) = fixture();
+    let status = app.view.status.clone();
+    let mut ignored: Vec<String> = [
         ApprovalTarget {
             owner_session_id: "other".into(),
             ..target.clone()
@@ -115,53 +117,43 @@ fn approval_actions_reject_unreviewed_foreign_or_obsolete_requests() {
             child_session_id: Some("other-child".into()),
             ..target.clone()
         },
-    ] {
-        click(&mut app, foreign.review_action());
-        assert!(app.view.approval_ui.selected.is_none());
+    ]
+    .iter()
+    .flat_map(|foreign| ["allow_once", "allow_session", "deny"].map(|choice| foreign.decision_action(choice)))
+    .collect();
+    ignored.push(target.decision_action("unrecognized"));
+    ignored.push("approval_decide:".into());
+    ignored.push("approval_decide:{not json".into());
+    ignored.push(format!(
+        "approval_decide:{}",
+        serde_json::to_string(&target).unwrap()
+    ));
+    // A valid, pending decision padded past the 16 KiB cap.
+    ignored.push(format!(
+        "{}{}",
+        target.decision_action("allow_once"),
+        " ".repeat(16 * 1024)
+    ));
+    for id in ignored {
+        click(&mut app, id.clone());
+        assert_eq!(app.view.pending_permissions.len(), 1, "{id}");
+        assert_eq!(app.view.status, status, "no dispatch for {id}");
+        assert!(decisions(&app, &target).is_empty(), "{id}");
     }
-    click(&mut app, target.review_action());
-    click(&mut app, target.decision_action("unrecognized"));
-    assert_eq!(app.view.pending_permissions.len(), 1);
-    app.view.workspace = "/different/workspace".into();
-    click(&mut app, target.decision_action("allow_once"));
-    assert_eq!(app.view.pending_permissions.len(), 1);
-    assert!(app.sync_approval_ui());
-    assert!(app.view.approval_ui.selected.is_none());
-    assert_eq!(app.view.status, status);
 }
 
 #[test]
-fn resolved_request_closes_review_and_clears_private_details() {
-    let (_root, mut app, target) = fixture();
-    click(&mut app, target.review_action());
-    click(&mut app, "approval_details");
-    app.view.pending_permissions.clear();
-    assert!(app.sync_approval_ui());
-    assert_eq!(app.view.approval_ui, Default::default());
-    assert!(!app.sync_approval_ui());
-}
-
-#[test]
-fn reviewed_one_time_decisions_reach_the_existing_durable_controller() {
-    for (choice, expected) in [
-        ("allow_once", PermissionDecision::Allow),
-        ("deny", PermissionDecision::Deny),
-    ] {
+fn decision_for_a_request_that_is_no_longer_pending_is_ignored() {
+    for choice in ["allow_once", "allow_session", "deny"] {
         let (_root, mut app, target) = fixture();
-        click(&mut app, target.review_action());
-        click(&mut app, target.decision_action(choice));
-        let records = app
-            .store
-            .as_ref()
-            .unwrap()
-            .load_permission_decisions(&target.owner_session_id)
-            .unwrap();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].request_id, target.request_id);
-        assert_eq!(records[0].decision, expected);
-        assert!(
-            app.active_run.is_none() && app.active_resume.is_none(),
-            "a review never invents a worker or starts an operation"
-        );
+        let status = app.view.status.clone();
+        let stale = target.decision_action(choice);
+        app.view.workspace = "/different/workspace".into();
+        click(&mut app, stale.clone());
+        app.view.workspace = target.workspace.clone();
+        app.view.pending_permissions.clear();
+        click(&mut app, stale);
+        assert_eq!(app.view.status, status);
+        assert!(decisions(&app, &target).is_empty());
     }
 }

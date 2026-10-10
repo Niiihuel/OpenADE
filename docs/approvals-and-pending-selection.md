@@ -7,23 +7,19 @@ permiso, la vista previa se convierte en la misma fila de actividad con estado
 «Esperando autorización», antes de recibir `ToolStarted`. Un parche que elimina
 un archivo muestra la operación propuesta, sin un editor de código vacío.
 
-`openide_ui::ApprovalRequest` presenta una operación y su destino con la acción
-«Revisar». La aplicación muestra también un aviso encima del composer, fuera del
-scroll del historial. El aviso no abre ventanas ni roba el foco al escribir.
-Desde ambas superficies se abre el mismo diálogo controlado por `ApprovalUiState`.
+`openide_ui::ApprovalRequest` presenta la operación, su destino completo y las
+tres decisiones en la misma tarjeta del historial. No hay aviso encima del
+composer ni diálogo de revisión. La tarjeta no roba el foco al escribir.
 
-El diálogo distingue permitir una vez, denegar y permitir la misma operación en
-la sesión. Esta última decisión conserva el alcance existente del harness:
-herramienta, argumentos y contexto; no equivale a autorizar todas las llamadas de
-una herramienta. Los detalles técnicos se expanden a petición y su vista está
-limitada a 16 KiB. La decisión siempre corresponde a los argumentos completos.
+Las decisiones son permitir una vez, denegar y permitir la misma operación en
+la sesión. Esta última conserva el alcance existente del harness: herramienta,
+argumentos y contexto; no equivale a autorizar todas las llamadas de una
+herramienta. La decisión siempre corresponde a los argumentos completos.
 
-Cerrar con el control `Esc` o con el teclado deja la solicitud pendiente. Enter
-sobre el cierre tampoco concede ni deniega. El host valida conversación,
-proyecto, subagente y solicitud antes de cada decisión. Cambiar de conversación
-o resolver la solicitud invalida el diálogo; no se reutilizan decisiones de una
-vista antigua. Los permisos de hijos se pueden revisar desde su sesión o desde
-la sesión padre relacionada.
+El host valida conversación, proyecto, subagente y solicitud antes de cada
+decisión. Cambiar de conversación o resolver la solicitud invalida los botones
+de una vista antigua. Los permisos de hijos se pueden responder desde su sesión
+o desde la sesión padre relacionada.
 
 ## Elección para el siguiente mensaje
 
@@ -57,8 +53,7 @@ El estado vacío es compacto y la paginación sólo aparece cuando hay otra pág
 
 `DismissButton` reutiliza `Kbd` para el cierre visible `Esc`, centra el control
 sobre su área de interacción y permite separar su identidad de la acción emitida.
-`Modal`, `AlertDialog` y el buscador lo comparten. El cierre restaura el foco; el diálogo de
-aprobación mantiene sus decisiones separadas del cierre.
+`Modal`, `AlertDialog` y el buscador lo comparten. El cierre restaura el foco.
 
 La comparación se hizo con `references/zed/crates/ui/src/components/modal.rs`,
 `references/zed/crates/command_palette/src/command_palette.rs` y
@@ -71,8 +66,9 @@ alcance de permisos de sesión a las reglas permanentes de Zed.
 
 ## Validación
 
-Las pruebas cubren estados de permiso y replay, cierre sin decisiones, solicitudes
-obsoletas o ajenas, revisión padre/hija, selector pendiente y validación antes de
-aplicar. Los escenarios visuales incluyen borrado por parche, comando y operación
-MCP a 350 y 900 píxeles, con detalles abiertos y cerrados. La suite de exportación
-`export_approval_visual_review` escribe PNG y SVG en `/tmp/openade-approval-review`.
+Las pruebas cubren estados de permiso y replay, decisiones desde la tarjeta,
+solicitudes obsoletas, ajenas, malformadas o demasiado grandes, decisión
+padre/hija, selector pendiente y validación antes de aplicar. Los escenarios
+visuales incluyen borrado por parche, comando, comando largo y operación MCP a
+360 y 900 píxeles. La suite de exportación `export_approval_visual_review`
+escribe PNG y SVG en `/tmp/openade-approval-review`.
