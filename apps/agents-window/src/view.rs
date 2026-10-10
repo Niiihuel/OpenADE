@@ -13,7 +13,7 @@ use openide_ui::{
     ActiveHover, AlertDialog, Button, ButtonVariant, Color, Component, ControlSize, DropdownList,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily,
     Icon, IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search, SegmentedControl,
-    Separator, Skeleton, Tab, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
+    Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
     TreeRow, ICON_SIZE,
 };
 use serde_json::Value;
@@ -1471,7 +1471,12 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
             .padding(6.0)
             .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
             SessionListRow::Empty(message) => {
-                Element::panel(label(*message, theme::FOREGROUND_SUBTLE))
+                Element::panel(
+                    UiText::new(*message, theme::component_palette())
+                        .role(TextRole::Body)
+                        .muted()
+                        .render(),
+                )
                     .padding(6.0)
                     .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT))
             }
@@ -2677,8 +2682,10 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
             }
             if code_rows.is_empty() {
                 code_rows.push(
-                    label("Archivo vacío", theme::FOREGROUND_SUBTLE)
-                        .font_size(11.0)
+                    UiText::new("Archivo vacío", theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render()
                         .padding(16.0),
                 );
             }
@@ -2688,7 +2695,12 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
                     1 => "Vista acotada · 1 línea larga abreviada".to_owned(),
                     count => format!("Vista acotada · {count} líneas largas abreviadas"),
                 };
-                rows.push(label(notice, theme::FOREGROUND_SUBTLE).font_size(10.0));
+                rows.push(
+                    UiText::new(notice, theme::component_palette())
+                        .role(TextRole::Micro)
+                        .muted()
+                        .render(),
+                );
             }
             rows.push(
                 Element::column(code_rows)
@@ -2881,7 +2893,9 @@ fn dock_empty_content(width: f32) -> Element {
     let content_width = (width - 48.0).clamp(150.0, 320.0);
     let content = Element::column(vec![
         label("Abrir pestaña", theme::FOREGROUND).font_size(19.0),
-        label("Elige una vista para este panel.", theme::FOREGROUND_SUBTLE).font_size(12.0),
+        UiText::new("Elige una vista para este panel.", theme::component_palette())
+            .muted()
+            .render(),
         Element::spacer().size(None, Some(8.0)),
         dock_open_actions(content_width),
     ])
@@ -3017,15 +3031,17 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
         ];
         if filtered_tabs.is_empty() {
             tabs.push(
-                label(
+                UiText::new(
                     if state.dock_tabs.is_empty() {
                         "No hay pestañas abiertas"
                     } else {
                         "Sin coincidencias abiertas"
                     },
-                    theme::FOREGROUND_SUBTLE,
+                    theme::component_palette(),
                 )
-                .font_size(11.0)
+                .role(TextRole::Small)
+                .muted()
+                .render()
                 .padding(8.0),
             );
         }
@@ -3111,15 +3127,17 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
         tabs.push(eyebrow("RECIENTES (MÁX. 8)"));
         if filtered_recent.is_empty() {
             tabs.push(
-                label(
+                UiText::new(
                     if state.dock_recently_closed.is_empty() {
                         "No hay pestañas recientes"
                     } else {
                         "Sin coincidencias recientes"
                     },
-                    theme::FOREGROUND_SUBTLE,
+                    theme::component_palette(),
                 )
-                .font_size(11.0)
+                .role(TextRole::Small)
+                .muted()
+                .render()
                 .padding(8.0),
             );
         }
@@ -3192,7 +3210,11 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
                 } else if let Some(preview) = &state.file_preview {
                     file_preview_content(preview, width)
                 } else {
-                    label("Selecciona un archivo", theme::FOREGROUND_SUBTLE).padding(12.0)
+                    UiText::new("Selecciona un archivo", theme::component_palette())
+                        .role(TextRole::Body)
+                        .muted()
+                        .render()
+                        .padding(12.0)
                 }
             }
         }

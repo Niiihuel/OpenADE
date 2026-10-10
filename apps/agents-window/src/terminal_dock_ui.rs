@@ -609,11 +609,13 @@ fn clipped_panel(state: &ViewState, header: Element, width: f32, height: f32) ->
     // so the last closing frames never push their following sibling downward.
     // A CLI task's terminal is drawn once, in the task's own surface.
     let panes = if crate::view::cli_task(state) {
-        Element::text("La terminal de esta tarea está en el panel Agente.")
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .centered()
+        openide_ui::Text::new(
+            "La terminal de esta tarea está en el panel Agente.",
+            theme::component_palette(),
+        )
+        .muted()
+        .render()
+        .centered()
             .size(Some(width), Some((content_height - HEADER_HEIGHT).max(0.0)))
     } else {
         build_panes(state, width, content_height - HEADER_HEIGHT)

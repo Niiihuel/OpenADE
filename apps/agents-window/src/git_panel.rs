@@ -539,11 +539,13 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
     }
     if ide {
         // The list of changes lives in the source control sidebar.
-        return Element::text("Elige un archivo en Control de versiones para ver sus cambios.")
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .centered();
+        return UiText::new(
+            "Elige un archivo en Control de versiones para ver sus cambios.",
+            theme::component_palette(),
+        )
+        .muted()
+        .render()
+        .centered();
     }
     navigator(state, width)
 }

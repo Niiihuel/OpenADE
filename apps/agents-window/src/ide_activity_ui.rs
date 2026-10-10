@@ -168,10 +168,9 @@ pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> 
         } else {
             "No hay skills para mostrar"
         };
-        let mut content = vec![Element::text(message)
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND_SUBTLE)];
+        let mut content = vec![UiText::new(message, theme::component_palette())
+            .muted()
+            .render()];
         if !state.ide.extensions_open {
             content.push(
                 Button::new(

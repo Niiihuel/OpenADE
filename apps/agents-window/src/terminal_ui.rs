@@ -5,7 +5,7 @@
 use openide_ui::{
     Breadcrumb, BreadcrumbItem, Button, ButtonVariant, Color, Component, ContextMenu,
     ContextMenuEntry, ContextMenuItem, ControlSize, Element, FontFamily, Icon, IconButton,
-    Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    Notice, Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -210,30 +210,7 @@ pub(crate) fn build_pane(
                 |code| format!("Proceso finalizado · código {code}"),
             )
         });
-        Some(
-            Element::row(vec![
-                Element::truncated_text(status)
-                    .font_family(FontFamily::Sans)
-                    .font_size(11.0)
-                    .foreground(if error.is_some() {
-                        theme::DESTRUCTIVE
-                    } else {
-                        theme::FOREGROUND_SUBTLE
-                    })
-                    .flex(1.0),
-                theme::interactive_surface(
-                    Button::new(&restart, "Reiniciar", theme::component_palette())
-                        .variant(ButtonVariant::Ghost)
-                        .render()
-                        .size(Some(88.0), Some(32.0)),
-                ),
-            ])
-            .gap(8.0)
-            .padding(4.0)
-            .background(theme::PANEL)
-            .radius(8.0)
-            .size(None, Some(40.0)),
-        )
+        Some(exit_notice(status, error.is_some(), &restart))
     } else if snapshot.scrollback_position > 0 {
         Some(
             Element::row(vec![
@@ -263,6 +240,56 @@ pub(crate) fn build_pane(
     } else {
         screen
     }
+}
+
+fn restart_button(id: &str) -> Element {
+    theme::interactive_surface(
+        Button::new(id, "Reiniciar", theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .render()
+            .size(Some(88.0), Some(32.0)),
+    )
+}
+
+/// The bar over a terminal that ended or failed, with the way to restart it.
+fn exit_notice(status: String, failed: bool, restart: &str) -> Element {
+    Notice::new(
+        status,
+        openide_ui::ComponentPalette {
+            surface: theme::PANEL,
+            ..theme::component_palette()
+        },
+    )
+    .ink(if failed {
+        theme::DESTRUCTIVE
+    } else {
+        theme::FOREGROUND_SUBTLE
+    })
+    .trailing(restart_button(restart))
+    .framed()
+    .sizing(crate::ui_sizing::TERMINAL_EXIT)
+    .render()
+}
+
+#[cfg(test)]
+fn legacy_exit_notice(status: String, failed: bool, restart: &str) -> Element {
+    Element::row(vec![
+        Element::truncated_text(status)
+            .font_family(FontFamily::Sans)
+            .font_size(11.0)
+            .foreground(if failed {
+                theme::DESTRUCTIVE
+            } else {
+                theme::FOREGROUND_SUBTLE
+            })
+            .flex(1.0),
+        restart_button(restart),
+    ])
+    .gap(8.0)
+    .padding(4.0)
+    .background(theme::PANEL)
+    .radius(8.0)
+    .size(None, Some(40.0))
 }
 
 /// Compatibility for the former side-tab host. The bottom dock uses
@@ -530,6 +557,20 @@ fn build_snapshot(
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
+
+    #[test]
+    fn exit_notice_matches_its_legacy_body() {
+        for (status, failed) in [
+            ("Proceso finalizado · código 1", false),
+            ("No se pudo iniciar el shell del proyecto: el ejecutable no existe", true),
+        ] {
+            crate::state_panel_parity_tests::assert_same(
+                "terminal exit",
+                legacy_exit_notice(status.into(), failed, "terminal_restart"),
+                exit_notice(status.into(), failed, "terminal_restart"),
+            );
+        }
+    }
 
     fn grid_snapshot(lines: &[&str]) -> TerminalSnapshot {
         TerminalSnapshot {

@@ -3,7 +3,7 @@
 use crate::theme;
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuItem, Element,
-    FontFamily, Icon, IconButton, Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    FontFamily, Icon, IconButton, Notice, Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::sync::Arc;
 
@@ -632,6 +632,45 @@ fn configuration_selector(
     summary
 }
 
+fn configure_button(scope: &str) -> Element {
+    Button::new(action(scope, "configure"), "Configurar programa", theme::component_palette())
+        .icon(Icon::Settings)
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Regular)
+        .enabled(!scope.is_empty())
+        .render()
+}
+
+/// What the sidebar says before any program is configured.
+fn setup_notice(scope: &str) -> Element {
+    Notice::new(
+        "Configura un programa para comenzar",
+        openide_ui::ComponentPalette {
+            muted: theme::SETTINGS_FOREGROUND_SUBTLE,
+            ..theme::component_palette()
+        },
+    )
+    .description("Elige un adaptador y un programa en .openide/debug.json. Configurar no ejecuta el programa.")
+    .action(configure_button(scope))
+    .sizing(crate::ui_sizing::DEBUG_SETUP)
+    .render()
+}
+
+#[cfg(test)]
+fn legacy_setup_notice(scope: &str) -> Element {
+    let copy = |value: &str, size: f32, color| {
+        Element::text(value)
+            .font_family(FontFamily::Sans)
+            .font_size(size)
+            .foreground(color)
+    };
+    Element::column(vec![
+        copy("Configura un programa para comenzar", 13.0, theme::FOREGROUND),
+        copy("Elige un adaptador y un programa en .openide/debug.json. Configurar no ejecuta el programa.", 12.0, theme::SETTINGS_FOREGROUND_SUBTLE),
+        configure_button(scope),
+    ]).gap(10.0).padding(8.0)
+}
+
 pub(crate) fn build(state: &DebugView, width: f32, height: f32) -> Element {
     let width = width.max(0.0);
     let inner = (width - 16.0).max(0.0);
@@ -655,22 +694,7 @@ pub(crate) fn build(state: &DebugView, width: f32, height: f32) -> Element {
         ])
         .gap(2.0)
         .size(Some(inner), Some(32.0));
-        let copy = |value: &str, size: f32, color| {
-            Element::text(value)
-                .font_family(FontFamily::Sans)
-                .font_size(size)
-                .foreground(color)
-        };
-        let body = Element::column(vec![
-            copy("Configura un programa para comenzar", 13.0, theme::FOREGROUND),
-            copy("Elige un adaptador y un programa en .openide/debug.json. Configurar no ejecuta el programa.", 12.0, theme::SETTINGS_FOREGROUND_SUBTLE),
-            Button::new(action(&state.scope, "configure"), "Configurar programa", theme::component_palette())
-                .icon(Icon::Settings)
-                .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Regular)
-                .enabled(!state.scope.is_empty())
-                .render(),
-        ]).gap(10.0).padding(8.0);
+        let body = setup_notice(&state.scope);
         return Element::column(vec![
             header,
             openide_ui::ScrollArea::new(format!("debug_setup:{}", state.scope), body)
@@ -1437,6 +1461,18 @@ pub(crate) fn build_console(state: &DebugView, width: f32, height: f32) -> Eleme
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn setup_notice_matches_its_legacy_body() {
+        for scope in ["", "proyecto"] {
+            crate::state_panel_parity_tests::assert_same(
+                "debug setup",
+                legacy_setup_notice(scope),
+                setup_notice(scope),
+            );
+        }
+    }
+
     use openide_ui::{DrawCommand, HitKind, Point, Size, UiAction, UiEvent, UiTree};
     fn fixture() -> DebugView {
         DebugView {

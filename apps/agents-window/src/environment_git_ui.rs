@@ -55,7 +55,8 @@ fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
         })
 }
 
-pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
+#[cfg(test)]
+fn legacy_notices(state: &EnvironmentGitUiState) -> Vec<Element> {
     let mut rows = Vec::new();
     if let Some(busy) = &state.busy {
         rows.push(text(busy, true, 11.0));
@@ -66,6 +67,24 @@ pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
         rows.push(text(error, false, 11.0).foreground(theme::DESTRUCTIVE));
     } else if let Some(notice) = &state.notice {
         rows.push(text(notice, true, 11.0));
+    }
+    rows
+}
+
+pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
+    let line = |value: &str| {
+        openide_ui::Text::new(value, theme::component_palette()).role(openide_ui::TextRole::Small)
+    };
+    let mut rows = Vec::new();
+    if let Some(busy) = &state.busy {
+        rows.push(line(busy).muted().render());
+    } else if state.loading {
+        rows.push(line("Actualizando repositorio…").muted().render());
+    }
+    if let Some(error) = &state.error {
+        rows.push(line(error).ink(theme::DESTRUCTIVE).render());
+    } else if let Some(notice) = &state.notice {
+        rows.push(line(notice).muted().render());
     }
     rows
 }
@@ -711,6 +730,30 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
 mod tests {
     use super::*;
     use openide_ui::{HitKind, Size, UiTree};
+
+    #[test]
+    fn notices_match_their_legacy_body() {
+        let state = |busy: Option<&str>, loading, error: Option<&str>, notice: Option<&str>| {
+            EnvironmentGitUiState {
+                busy: busy.map(Into::into),
+                loading,
+                error: error.map(Into::into),
+                notice: notice.map(Into::into),
+                ..Default::default()
+            }
+        };
+        for state in [
+            state(Some("Enviando cambios…"), false, None, None),
+            state(None, true, Some("No se pudo leer el repositorio: permiso denegado"), None),
+            state(None, false, None, Some("Rama publicada")),
+        ] {
+            crate::state_panel_parity_tests::assert_same(
+                "environment git notices",
+                Element::column(legacy_notices(&state)),
+                Element::column(notices(&state)),
+            );
+        }
+    }
 
     fn snapshot() -> GitSnapshot {
         let directory = tempfile::tempdir().unwrap();

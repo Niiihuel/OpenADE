@@ -106,6 +106,25 @@ fn diagnostic_style(severity: Option<u32>) -> (Icon, openide_ui::Color, &'static
 }
 
 fn problem_status(icon: Icon, title: &str, detail: &str, width: f32) -> Element {
+    let content = openide_ui::Notice::new(title, theme::component_palette())
+        .icon(icon)
+        .description(detail)
+        .width(width)
+        .sizing(crate::ui_sizing::PROBLEM_STATUS)
+        .render();
+    Tooltip::new(
+        content,
+        "ide_problems_status",
+        title,
+        theme::component_palette(),
+    )
+    .description(detail)
+    .placement(TooltipPlacement::Above)
+    .render()
+}
+
+#[cfg(test)]
+fn legacy_problem_status(icon: Icon, title: &str, detail: &str, width: f32) -> Element {
     let content = Element::row(vec![
         Element::icon(icon)
             .foreground(theme::FOREGROUND_SUBTLE)
@@ -455,6 +474,27 @@ mod tests {
             })
             .collect();
         state
+    }
+
+    #[test]
+    fn problem_status_matches_its_legacy_body() {
+        for width in [140.0, 420.0] {
+            crate::state_panel_parity_tests::assert_same(
+                "problem_status",
+                legacy_problem_status(
+                    Icon::History,
+                    "Diagnósticos desactualizados",
+                    "Se actualizarán para la versión actual del archivo.",
+                    width,
+                ),
+                problem_status(
+                    Icon::History,
+                    "Diagnósticos desactualizados",
+                    "Se actualizarán para la versión actual del archivo.",
+                    width,
+                ),
+            );
+        }
     }
 
     #[test]

@@ -2,7 +2,7 @@
 use crate::{theme, view::ViewState};
 use openide_ui::{
     guides_for_depths, Button, ButtonSize, ButtonVariant, Color, Component, ControlSize, Element,
-    FontFamily, Icon, IconButton, ScrollArea, Tooltip, TooltipPlacement, TooltipSpec, TreeRow,
+    FontFamily, Icon, IconButton, Notice, ScrollArea, Tooltip, TooltipPlacement, TooltipSpec, TreeRow,
 };
 use std::sync::Arc;
 
@@ -19,6 +19,60 @@ fn text(value: impl Into<String>, muted: bool) -> Element {
         } else {
             theme::FOREGROUND
         })
+}
+
+/// What the panel says in place of the tree, with the one way out.
+fn empty_state(status: &str, palette: openide_ui::ComponentPalette) -> Element {
+    Notice::new(
+        if status.starts_with("No se pudo") {
+            "No se pudieron cargar los archivos"
+        } else {
+            "Carpeta vacía"
+        },
+        theme::component_palette(),
+    )
+    .description(if status.is_empty() {
+        "Abre un proyecto para ver sus archivos."
+    } else {
+        status
+    })
+    .action(
+        Button::new("files_refresh", "Volver a cargar", palette)
+            .variant(ButtonVariant::Ghost)
+            .button_size(ButtonSize::Small)
+            .render(),
+    )
+    .sizing(crate::ui_sizing::FILES_EMPTY)
+    .render()
+}
+
+#[cfg(test)]
+fn legacy_empty_state(status: &str, palette: openide_ui::ComponentPalette) -> Element {
+    let failed = status.starts_with("No se pudo");
+    Element::column(vec![
+        text(
+            if failed {
+                "No se pudieron cargar los archivos"
+            } else {
+                "Carpeta vacía"
+            },
+            false,
+        ),
+        text(
+            if status.is_empty() {
+                "Abre un proyecto para ver sus archivos."
+            } else {
+                status
+            },
+            true,
+        ),
+        Button::new("files_refresh", "Volver a cargar", palette)
+            .variant(ButtonVariant::Ghost)
+            .button_size(ButtonSize::Small)
+            .render(),
+    ])
+    .gap(8.0)
+    .padding(12.0)
 }
 
 /// The title already identifies the file. Its parent adds location without
@@ -101,33 +155,7 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
     );
     let mut content = vec![header];
     if state.file_rows.is_empty() {
-        let failed = state.files_status.starts_with("No se pudo");
-        content.push(
-            Element::column(vec![
-                text(
-                    if failed {
-                        "No se pudieron cargar los archivos"
-                    } else {
-                        "Carpeta vacía"
-                    },
-                    false,
-                ),
-                text(
-                    if state.files_status.is_empty() {
-                        "Abre un proyecto para ver sus archivos."
-                    } else {
-                        &state.files_status
-                    },
-                    true,
-                ),
-                Button::new("files_refresh", "Volver a cargar", palette)
-                    .variant(ButtonVariant::Ghost)
-                    .button_size(ButtonSize::Small)
-                    .render(),
-            ])
-            .gap(8.0)
-            .padding(12.0),
-        );
+        content.push(empty_state(&state.files_status, palette));
     } else {
         if state.files_status.starts_with("Lista parcial")
             || state.files_status.starts_with("No se pudo")
@@ -253,6 +281,18 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_state_matches_its_legacy_body() {
+        let palette = crate::theme::sidebar_palette();
+        for status in ["", "No se pudo leer /proyecto: permiso denegado al abrir el directorio"] {
+            crate::state_panel_parity_tests::assert_same(
+                "files empty",
+                super::legacy_empty_state(status, palette),
+                super::empty_state(status, palette),
+            );
+        }
+    }
+
     use super::*;
     use crate::view::FileRowView;
     use openide_ui::{DrawCommand, Frame, Point, Rect, Size, UiAction, UiEvent, UiTree};

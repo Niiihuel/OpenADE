@@ -6,7 +6,7 @@
 
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Chip, Color, Component, ControlSize, DropdownMenu,
-    CardGrid, DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, PageColumn,
+    CardGrid, DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, Notice, PageColumn,
     PageHeader, ScrollArea, SearchField, SectionHeader, Separator, Skeleton, Switch, Tab, Tabs,
     TextField, Tooltip, TooltipPlacement, TooltipSpec,
 };
@@ -910,6 +910,58 @@ fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
 }
 
 fn empty_catalog(state: &MarketplaceViewState) -> Element {
+    let (heading, description) = if state.busy {
+        ("Cargando catálogo", "Consultando las skills disponibles…")
+    } else if !state.active_query().trim().is_empty() {
+        ("Sin resultados", "Prueba otra búsqueda o cambia el filtro.")
+    } else if state.active_tab() == MarketplaceTab::Installed {
+        (
+            "Todavía no instalaste skills",
+            "Elige una del catálogo y dónde instalarla.",
+        )
+    } else if state.snapshot.sources.is_empty() {
+        (
+            "Explora skills",
+            "Actualiza el catálogo o agrega un origen con archivos SKILL.md.",
+        )
+    } else {
+        (
+            "Sin skills disponibles",
+            "Actualiza el catálogo o revisa los orígenes.",
+        )
+    };
+    let mut notice = Notice::new(
+        heading,
+        openide_ui::ComponentPalette {
+            surface: theme::PANEL,
+            ..theme::component_palette()
+        },
+    )
+    .icon(Icon::Grid)
+    .description(description)
+    .framed();
+    if state.active_tab() == MarketplaceTab::Installed
+        && state.query.trim().is_empty()
+        && !state.busy
+    {
+        notice = notice.action(Element::row(vec![
+            Button::new(
+                "marketplace_empty_all",
+                "Explorar catálogo",
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render()
+            .dispatch_as("marketplace_tab:recommended"),
+            Element::spacer().flex(1.0),
+        ]));
+    }
+    notice.render()
+}
+
+#[cfg(test)]
+fn legacy_empty_catalog(state: &MarketplaceViewState) -> Element {
     let (heading, description) = if state.busy {
         ("Cargando catálogo", "Consultando las skills disponibles…")
     } else if !state.active_query().trim().is_empty() {
@@ -2452,6 +2504,21 @@ mod tests {
             assert!(matches_query(item, query), "{query}");
         }
         assert!(!matches_query(item, "calendar"));
+    }
+
+    #[test]
+    fn empty_catalog_matches_its_legacy_body() {
+        let mut searching = MarketplaceViewState::default();
+        searching.query = "pdf".into();
+        let mut installed = MarketplaceViewState::default();
+        installed.tab = MarketplaceTab::Installed;
+        for state in [MarketplaceViewState::default(), searching, installed] {
+            crate::state_panel_parity_tests::assert_same(
+                "empty catalog",
+                legacy_empty_catalog(&state),
+                empty_catalog(&state),
+            );
+        }
     }
 
     #[test]

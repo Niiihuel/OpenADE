@@ -72,8 +72,9 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
     let mut rows = Vec::new();
     if search.searched && !search.running && search.error.is_none() && search.hits.is_empty() {
         rows.push(
-            label("No se encontraron coincidencias.", theme::FOREGROUND_SUBTLE)
-                .font_size(12.0)
+            UiText::new("No se encontraron coincidencias.", theme::component_palette())
+                .muted()
+                .render()
                 .padding(8.0),
         );
     }
