@@ -712,6 +712,27 @@ fn export_interaction_states_visual_review() {
         ],
     );
 
+    // The agent panel's tabs beside the editor's: one design for both.
+    let mut tabs = fixture();
+    let mut second = tabs.sessions[0].clone();
+    second.id = "cli-task".into();
+    second.title = "Claude Code".into();
+    second.backend = "cli:claude".into();
+    tabs.sessions.push(second);
+    tabs.ide.agent_tabs = vec!["ide-review".into(), "cli-task".into()];
+    for size in [Size::new(1440.0, 768.0), size] {
+        export_states(
+            |size| window(&tabs, size),
+            size,
+            "ide-agent-tabs",
+            &[
+                ("tab", "session:cli-task"),
+                ("close", "ide_agent_tab_close:cli-task"),
+                ("close-active", "ide_agent_tab_close:ide-review"),
+            ],
+        );
+    }
+
     let mut agents = tests::empty_state();
     agents.selected_session = Some("selected".into());
     agents.sessions = ["idle", "selected"]

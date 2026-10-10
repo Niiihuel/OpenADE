@@ -345,67 +345,8 @@ fn task_icon(backend: &str) -> Icon {
         .map_or(Icon::Chat, crate::provider_icons::icon_for_agent_cli)
 }
 
-fn agent_tab(id: Option<&str>, title: &str, icon: Icon, active: bool, width: f32) -> Element {
-    let ink = if active {
-        theme::FOREGROUND
-    } else {
-        theme::FOREGROUND_SUBTLE
-    };
-    let label = Element::row(vec![
-        Element::icon(if active {
-            icon.filled()
-        } else {
-            icon
-        })
-        .foreground(ink)
-        .size(Some(14.0), Some(14.0))
-        .centered_y()
-        .size(Some(14.0), Some(24.0)),
-        Element::truncated_text(title)
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(ink)
-            .size(None, Some(24.0))
-            .flex(1.0),
-    ])
-    .gap(6.0)
-    .padding(4.0);
-    let mut cells = vec![match id {
-        Some(id) => theme::interactive_surface(Element::clickable(format!("session:{id}"), label))
-            .flex(1.0),
-        None => label.flex(1.0),
-    }];
-    if let Some(id) = id {
-        let close = format!("ide_agent_tab_close:{id}");
-        cells.push(
-            UiIconButton::new(
-                &close,
-                Icon::Close,
-                theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .sizing(crate::ui_sizing::TAB_CLOSE)
-            .tooltip_with(
-                TooltipSpec::new("Cerrar pestaña")
-                    .placement(TooltipPlacement::Below)
-                    .palette(theme::component_palette()),
-            )
-            .render(),
-        );
-    }
-    Element::row(cells)
-        .gap(0.0)
-        .background(if active {
-            theme::SELECTED
-        } else {
-            Color::TRANSPARENT
-        })
-        .radius(6.0)
-        .size(Some(width), Some(24.0))
-        .clip_children()
-}
-
-/// One tab per open task; a task that is not saved yet is the last one.
+/// One folder tab per open task, as the docks draw theirs; a task that is
+/// not saved yet is the last one. The tabs share `width` equally.
 fn agent_tabs(state: &ViewState, width: f32) -> Element {
     let open: Vec<_> = state
         .ide
@@ -415,29 +356,50 @@ fn agent_tabs(state: &ViewState, width: f32) -> Element {
         .collect();
     let draft = state.selected_session.is_none();
     let count = open.len() + usize::from(draft);
-    if count == 0 {
-        return Element::spacer().size(Some(width), Some(24.0));
-    }
-    let tab_width = ((width - 4.0 * (count as f32 - 1.0)) / count as f32).clamp(44.0, 168.0);
-    let mut tabs: Vec<_> = open
+    let tab_width = (width / count.max(1) as f32).clamp(44.0, 168.0);
+    let mut items: Vec<_> = open
         .into_iter()
         .map(|session| {
-            agent_tab(
-                Some(&session.id),
+            let active = state.selected_session.as_deref() == Some(session.id.as_str());
+            let icon = task_icon(&session.backend);
+            openide_ui::TabItem::new(
+                format!("session:{}", session.id),
+                format!("ide_agent_tab_extent:{}", session.id),
+                if active { icon.filled() } else { icon },
                 &session.title,
-                task_icon(&session.backend),
-                state.selected_session.as_deref() == Some(session.id.as_str()),
                 tab_width,
+            )
+            .tooltip_placement(TooltipPlacement::Below)
+            .active(active)
+            .close(
+                UiIconButton::new(
+                    format!("ide_agent_tab_close:{}", session.id),
+                    Icon::Close,
+                    theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE),
+                )
+                .variant(ButtonVariant::Ghost)
+                .sizing(crate::ui_sizing::TAB_CLOSE)
+                .tooltip_with(
+                    TooltipSpec::new("Cerrar pestaña").placement(TooltipPlacement::Below),
+                )
+                .render(),
             )
         })
         .collect();
     if draft {
-        tabs.push(agent_tab(None, "Nueva tarea", Icon::Chat, true, tab_width));
+        items.push(
+            openide_ui::TabItem::new(
+                "ide_agent_tab_draft",
+                "ide_agent_tab_extent_draft",
+                Icon::Chat.filled(),
+                "Nueva tarea",
+                tab_width,
+            )
+            .tooltip_placement(TooltipPlacement::Below)
+            .active(true),
+        );
     }
-    Element::row(tabs)
-        .gap(4.0)
-        .size(Some(width), Some(24.0))
-        .clip_children()
+    openide_ui::TabStrip::new("ide_agent_tabs", items, theme::tab_strip_palette()).render()
 }
 
 /// Starts a task with the native agent or with an installed CLI.
@@ -609,18 +571,19 @@ fn agent_list_toggle(open: bool) -> Element {
 
 fn agent(state: &ViewState, width: f32, height: f32, list_shown: bool) -> Element {
     // While the list is shown its own header carries the toggle.
-    let tools = if list_shown { 1.0 } else { 2.0 };
-    let tabs_width = (width - 8.0 - tools * (24.0 + 4.0)).max(0.0);
     let mut tools = vec![agent_new_menu(state)];
     if !list_shown {
         tools.push(agent_list_toggle(false));
     }
-    let header = openide_ui::PanelHeader::new("", theme::component_palette())
-        .leading(agent_tabs(state, tabs_width))
-        .trailing(tools)
-        .width(width)
-        .sizing(crate::ui_sizing::PANE_HEADER)
-        .render();
+    let tools_width = crate::dock_tab_ui::TOOL_SIZE * tools.len() as f32;
+    let tabs_width = (width - crate::dock_tab_ui::HEADER_SIDE_INSET * 2.0 - 8.0 - tools_width).max(0.0);
+    let header = openide_ui::TabStrip::header(
+        agent_tabs(state, tabs_width),
+        Element::row(tools).size(Some(tools_width), Some(crate::dock_tab_ui::TOOL_SIZE)),
+        width,
+        theme::tab_strip_palette(),
+    )
+    .render();
     let body_height = (height - PANE_HEADER_HEIGHT).max(0.0);
     let empty = state.selected_session.is_none()
         && state.transcript.is_empty()
@@ -1330,5 +1293,53 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn agent_tabs_are_the_folder_tabs_of_the_docks() {
+        let mut state = state();
+        state.sessions = ["a", "b"]
+            .into_iter()
+            .map(|id| SessionView {
+                id: id.into(),
+                title: format!("Tarea {id}"),
+                project: state.workspace.clone(),
+                backend: "native".into(),
+                pinned: false,
+                archived: false,
+                unread: false,
+                native_automation: None,
+            })
+            .collect();
+        state.ide.agent_tabs = vec!["a".into(), "b".into()];
+        let frame = UiTree::new(agent(&state, 420.0, 400.0, false)).layout(Size::new(420.0, 400.0));
+        // No task is selected: the draft is a third tab, without a close.
+        let tab = |id: &str| rect(&frame, id);
+        let inset = crate::dock_tab_ui::HEADER_SIDE_INSET;
+        let tool = crate::dock_tab_ui::TOOL_SIZE;
+        // They share the room left by the two tools, on the bar's baseline.
+        let width = (420.0 - inset * 2.0 - 8.0 - tool * 2.0) / 3.0;
+        for (index, id) in ["session:a", "session:b", "ide_agent_tab_draft"]
+            .into_iter()
+            .enumerate()
+        {
+            let tab = tab(id);
+            assert!((tab.x - (inset + width * index as f32)).abs() < 0.01, "{id}: {tab:?}");
+            assert!((tab.width - width).abs() < 0.01, "{id}: {tab:?}");
+            assert_eq!(tab.height, crate::dock_tab_ui::TAB_HEIGHT);
+            assert_eq!(tab.y + tab.height, PANE_HEADER_HEIGHT);
+        }
+        let close = tab("ide_agent_tab_close:a");
+        assert_eq!((close.width, close.height), (20.0, 20.0));
+        assert_eq!(
+            frame
+                .regions
+                .iter()
+                .filter(|region| region.id.starts_with("ide_agent_tab_close:"))
+                .count(),
+            2
+        );
+        let toggle = tab("ide_agent_list_toggle");
+        assert_eq!(toggle.x + toggle.width, 420.0 - inset);
     }
 }
