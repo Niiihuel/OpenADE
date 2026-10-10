@@ -8,7 +8,7 @@ use std::{
 
 use openide_ui::{
     ActiveHover, Button, ButtonVariant, Card, Chip, Color, Component, ComponentPalette, ControlSize,
-    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea,
+    Element, FontFamily, Icon, IconButton, Popover, PopoverPanel, PopoverPlacement, ScrollArea,
     Separator,
     Tooltip, TooltipPlacement, TooltipSpec,
 };
@@ -720,6 +720,49 @@ fn popup(state: &ViewState) -> Element {
         cards.push(row);
         body_height = height;
     }
+    popup_panel(state, cards, body_height)
+}
+
+fn popup_panel(state: &ViewState, cards: Vec<Element>, body_height: f32) -> Element {
+    PopoverPanel::new(theme::component_palette())
+        .header(
+            openide_ui::PanelHeader::new("", theme::menu_palette())
+                .leading(
+                    text("Cuenta y uso", 13.0, theme::FOREGROUND)
+                        .size(None, Some(18.0))
+                        .centered_y(),
+                )
+                .trailing(vec![refresh(state, true)])
+                .sizing(crate::ui_sizing::TALL_HEADER)
+                .render(),
+        )
+        .body(
+            // The accounts are summed by hand: the body has a known height
+            // before layout, which the tests of a short window pin.
+            ScrollArea::new("provider_usage_popup", Element::column(cards))
+                .tint(theme::FOREGROUND_SUBTLE)
+                .render()
+                .size(None, Some(body_height.min(POPUP_BODY_MAX_HEIGHT))),
+        )
+        .footer(
+            Button::new(
+                "usage_details",
+                "Ver uso y proveedores",
+                theme::menu_palette(),
+            )
+            .trailing_icon(Icon::ArrowRight)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Regular)
+            .render()
+            .size(None, Some(32.0)),
+        )
+        .render()
+}
+
+/// The hand-built frame that limn's `PopoverPanel` replaced, kept so the
+/// replacement stays provably identical. Delete with the final audit (S18).
+#[cfg(test)]
+fn legacy_popup_panel(state: &ViewState, cards: Vec<Element>, body_height: f32) -> Element {
     Element::column(vec![
         openide_ui::PanelHeader::new("", theme::menu_palette())
             .leading(
@@ -1124,6 +1167,39 @@ mod tests {
             })
         });
         tree
+    }
+
+    #[test]
+    fn the_popup_panel_matches_its_hand_built_frame() {
+        let state = crate::view::tests::empty_state();
+        for width in [220.0, 320.0] {
+            for (rows, height) in [(1, 700.0), (12, 700.0), (12, 260.0)] {
+                let frame = |panel: fn(&ViewState, Vec<Element>, f32) -> Element| {
+                    let cards = (0..rows)
+                        .map(|row| text(format!("Cuenta {row}"), 12.0, theme::FOREGROUND).size(None, Some(48.0)))
+                        .collect();
+                    let mut tree = UiTree::new(Element::column(vec![
+                        Element::spacer().flex(1.0),
+                        Popover::new(
+                            Element::button("trigger", "Uso").size(Some(80.0), Some(28.0)),
+                            panel(&state, cards, rows as f32 * 48.0),
+                            true,
+                            "usage_dismiss",
+                            theme::menu_palette(),
+                        )
+                        .width(width)
+                        .placement(PopoverPlacement::TopStart)
+                        .render(),
+                    ]));
+                    tree.set_reduced_motion(true);
+                    tree.layout(Size::new(360.0, height))
+                };
+                assert!(
+                    frame(popup_panel) == frame(legacy_popup_panel),
+                    "{width} {rows} {height}"
+                );
+            }
+        }
     }
 
     fn popup_tree(state: &ViewState, width: f32) -> UiTree {

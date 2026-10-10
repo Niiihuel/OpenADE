@@ -13,8 +13,9 @@ use openide_core::TurnMode;
 use openide_ui::{
     Attachment, AttachmentOrientation, Button, ButtonVariant, Color, Component,
     Composer, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    Element, ElementKind, FontFamily, Icon, IconButton, MenuMotion, PopoverPlacement,
-    SearchField, SelectorSizing, Skeleton, Tooltip, TooltipItem, TooltipPlacement,
+    DropdownMenuSection, Element, FontFamily, Icon, IconButton, MenuHeader, MenuItem,
+    MenuMotion, PopoverPlacement, SelectorSizing, Skeleton, Tooltip, TooltipItem,
+    TooltipPlacement,
 };
 
 use crate::{
@@ -370,14 +371,6 @@ fn branch_control(props: &ComposerProps<'_>, width: f32) -> Element {
     )
 }
 
-fn context_control_width(props: &ComposerProps<'_>) -> f32 {
-    crate::composer_context_ui::control_width(props)
-}
-
-fn context_control(props: &ComposerProps<'_>) -> Element {
-    crate::composer_context_ui::control(props)
-}
-
 /// Reuse the native Context panel on a recorded session without rendering an
 /// interactive composer. Automation usage belongs to its recorded route, not
 /// the provider/model currently selected in Settings.
@@ -407,13 +400,13 @@ pub(crate) fn build_native_context_control(state: &ViewState, width: f32) -> Ele
             .native_context
             .filter(|usage| usage.owner.as_deref() == Some(session.id.as_str()));
     }
-    context_control(&props)
+    crate::composer_context_ui::control(&props)
 }
 
 fn project_metadata(props: &ComposerProps<'_>) -> Element {
     const GAP: f32 = 4.0;
     const ENVIRONMENT_WIDTH: f32 = 88.0;
-    let context_width = context_control_width(props);
+    let context_width = crate::composer_context_ui::control_width(props);
     let left_width = (props.width - context_width - 6.0).max(0.0);
     let environment_width = props
         .environment
@@ -490,7 +483,7 @@ fn project_metadata(props: &ComposerProps<'_>) -> Element {
         Element::row(row)
             .gap(GAP)
             .size(Some(left_width), Some(CONTEXT_HEIGHT)),
-        context_control(props),
+        crate::composer_context_ui::control(props),
     ])
     .gap(6.0)
     .size(Some(props.width), Some(CONTEXT_HEIGHT))
@@ -787,40 +780,14 @@ fn preview_effort<'a>(props: &'a ComposerProps<'_>) -> Option<(usize, usize, &'a
     Some((index, levels.len(), levels[index].1.as_str()))
 }
 
-fn selector_row(id: &str, title: &str, value: &str, icon: Icon, width: f32) -> Element {
-    let sizing = SelectorSizing::COMPACT;
-    let body_height = sizing.detail_row_height - sizing.padding * 2.0;
-    theme::selector_palette()
-        .interactive_surface(
-            Element::clickable(
-                id,
-                Element::row(vec![
-                    Element::icon(icon)
-                        .foreground(theme::MENU_MUTED)
-                        .size(Some(sizing.icon_size), Some(body_height)),
-                    Element::column(vec![
-                        Element::truncated_text(title)
-                            .font_family(FontFamily::Sans)
-                            .font_size(sizing.label_size)
-                            .foreground(theme::FOREGROUND)
-                            .size(None, Some(body_height / 2.0)),
-                        Element::truncated_text(value)
-                            .font_family(FontFamily::Sans)
-                            .font_size(sizing.detail_size)
-                            .foreground(theme::MENU_MUTED)
-                            .size(None, Some(body_height / 2.0)),
-                    ])
-                    .flex(1.0),
-                    Element::icon(Icon::ChevronRight)
-                        .foreground(theme::MENU_MUTED)
-                        .size(Some(sizing.icon_size), Some(body_height)),
-                ])
-                .gap(sizing.gap),
-            )
-            .action_menu_item(),
-        )
-        .padding(sizing.padding)
-        .size(Some(width), Some(sizing.detail_row_height))
+/// A row of the model menu's first view: what it sets, its current value and
+/// a chevron into the view that changes it.
+fn selector_row(id: &str, title: &str, value: &str, icon: Icon) -> DropdownMenuEntry {
+    DropdownMenuItem::new(id, title)
+        .icon(icon)
+        .description(value)
+        .chevron()
+        .into()
 }
 
 fn effort_panel(props: &ComposerProps<'_>, width: f32) -> Element {
@@ -989,48 +956,8 @@ fn model_provider_heading(route: &ModelRouteOption) -> String {
     }
 }
 
-fn model_provider_section(
-    provider_id: &str,
-    label: &str,
-    count: usize,
-    collapsed: bool,
-    width: f32,
-) -> Element {
-    let palette = theme::selector_palette();
-    let sizing = SelectorSizing::CATALOG;
-    palette
-        .interactive_surface(
-            Element::clickable(
-                format!("composer_model_provider_toggle:{provider_id}"),
-                Element::row(vec![
-                    Element::icon(icon_for_provider(provider_id))
-                        .foreground(palette.muted)
-                        .size(Some(sizing.icon_size), Some(sizing.icon_size)),
-                    Element::truncated_text(label)
-                        .font_family(FontFamily::Sans)
-                        .font_size(sizing.label_size)
-                        .foreground(palette.muted)
-                        .flex(1.0),
-                    Element::text(count.to_string())
-                        .font_family(FontFamily::Sans)
-                        .font_size(sizing.detail_size)
-                        .foreground(palette.muted),
-                    Element::icon(if collapsed {
-                        Icon::ChevronRight
-                    } else {
-                        Icon::ChevronDown
-                    })
-                    .foreground(palette.muted)
-                    .size(Some(sizing.icon_size), Some(sizing.icon_size)),
-                ])
-                .gap(sizing.gap),
-            )
-            .action_menu_item(),
-        )
-        .padding(sizing.padding)
-        .size(Some(width), Some(sizing.row_height))
-}
-
+/// One model in the catalog: its name over its identifier, with the route's
+/// standing at the end of the second line.
 struct ModelPickerRow<'a> {
     action_id: &'a str,
     title: &'a str,
@@ -1044,80 +971,39 @@ struct ModelPickerRow<'a> {
 
 impl ModelPickerRow<'_> {
     fn render(self) -> Element {
-        let palette = theme::selector_palette();
         let sizing = SelectorSizing::CATALOG;
-        let body_height = sizing.row_height;
-        let row_padding = (sizing.detail_row_height - body_height) / 2.0;
         let text_width =
-            (self.width - row_padding * 2.0 - sizing.icon_size * 2.0 - sizing.gap * 2.0).max(0.0);
-        let status_width = if self.status.is_empty() {
-            0.0
-        } else {
-            (self.status.chars().count() as f32 * 5.8 + 10.0).min(text_width * 0.46)
-        };
-        let mut detail = vec![
-            Element::truncated_text(self.detail)
-                .font_family(FontFamily::Monospace)
-                .font_size(sizing.detail_size)
-                .foreground(palette.muted)
-                .flex(1.0)
-                .size(None, Some(body_height / 2.0)),
-        ];
-        if status_width > 0.0 {
-            detail.push(
-                Element::truncated_text(self.status)
-                    .font_family(FontFamily::Sans)
-                    .font_size(sizing.detail_size)
-                    .foreground(palette.muted)
-                    .size(Some(status_width), Some(body_height / 2.0)),
-            );
+            (self.width - sizing.padding * 2.0 - sizing.icon_size * 2.0 - sizing.gap * 2.0).max(0.0);
+        // The status takes what its characters need, never half of the row.
+        let status_width =
+            (self.status.chars().count() as f32 * 5.8 + 10.0).min(text_width * 0.46);
+        let mut row = MenuItem::new(self.action_id, self.title, theme::selector_palette())
+            .icon(self.icon)
+            .description(self.detail)
+            .detail_mono(true)
+            .selected(self.selected)
+            .enabled(self.enabled)
+            .width(self.width);
+        if !self.status.is_empty() && status_width > 0.0 {
+            row = row.status(self.status).status_width(status_width);
         }
-        let visual = Element::row(vec![
-            Element::icon(self.icon)
-                .foreground(if self.enabled {
-                    palette.text
-                } else {
-                    palette.muted
-                })
-                .size(Some(sizing.icon_size), Some(body_height)),
-            Element::column(vec![
-                Element::truncated_text(self.title)
-                    .font_family(FontFamily::Sans)
-                    .font_size(sizing.label_size)
-                    .foreground(if self.enabled {
-                        palette.text
-                    } else {
-                        palette.muted
-                    })
-                    .size(Some(text_width), Some(body_height / 2.0)),
-                Element::row(detail)
-                    .gap(sizing.gap)
-                    .size(Some(text_width), Some(body_height / 2.0)),
-            ])
-            .size(Some(text_width), Some(body_height)),
-            if self.selected {
-                Element::icon(Icon::Check).foreground(palette.text)
-            } else {
-                Element::spacer()
-            }
-            .size(Some(sizing.icon_size), Some(body_height)),
-        ])
-        .gap(sizing.gap)
-        .clip_children();
-        let row = if self.enabled {
-            Element::clickable(self.action_id, visual)
-                .action_menu_item()
-                .transition_ms(0)
-        } else {
-            Element::panel(visual)
-        };
-        palette
-            .interactive_surface(row)
-            .transition_ms(0)
-            .background(Color::TRANSPARENT)
-            .padding(row_padding)
-            .size(Some(self.width), Some(sizing.detail_row_height))
+        row.render()
     }
+}
+
+fn model_provider_section(
+    provider_id: &str,
+    label: &str,
+    count: usize,
+    collapsed: bool,
+    width: f32,
+) -> DropdownMenuEntry {
+    DropdownMenuSection::new(format!("composer_model_provider_toggle:{provider_id}"), label)
+        .icon(icon_for_provider(provider_id))
+        .count(count)
+        .collapsed(collapsed)
+        .width(width)
+        .into()
 }
 
 fn model_route_status(route: &ModelRouteOption) -> &'static str {
@@ -1168,50 +1054,26 @@ fn model_route_details(route: &ModelRouteOption) -> (&'static str, &'static str)
     (contract, credential)
 }
 
-fn model_list_header(width: f32) -> Element {
-    let sizing = SelectorSizing::CATALOG;
-    Element::row(vec![
-        IconButton::new(
-            "composer_model_list_toggle",
-            Icon::ArrowLeft,
-            theme::selector_palette(),
-        )
-        .label("Modelo")
-        .variant(ButtonVariant::Subtle)
-        .size(ControlSize::Compact)
-        .width((width - ControlSize::Compact.height() - sizing.gap).max(0.0))
-        .render(),
-        IconButton::new("composer_routes_refresh", Icon::Refresh, theme::selector_palette())
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Compact)
-            .tooltip("Actualizar listado de proveedores")
-            .tooltip_placement(TooltipPlacement::Below)
-            .render()
-            .size(
-                Some(ControlSize::Compact.height()),
-                Some(ControlSize::Compact.height()),
-            ),
-    ])
-    .gap(sizing.gap)
-    .size(Some(width), Some(sizing.header_height))
-}
-
 fn model_list_fixed_header(props: &ComposerProps<'_>, width: f32) -> Element {
     let mut palette = theme::selector_palette();
     palette.raised = theme::INPUT;
-    Element::column(vec![
-        model_list_header(width),
-        SearchField::new(
+    MenuHeader::new(palette)
+        .back("composer_model_list_toggle", "Modelo")
+        .trailing(
+            IconButton::new("composer_routes_refresh", Icon::Refresh, theme::selector_palette())
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Actualizar listado de proveedores")
+                .tooltip_placement(TooltipPlacement::Below)
+                .render(),
+        )
+        .search(
             "composer_model_search",
             props.model_query,
             "Buscar modelos o proveedores",
-            palette,
         )
-        .size(ControlSize::Compact)
         .width(width)
-        .render(),
-    ])
-    .gap(2.0)
+        .render()
 }
 
 fn model_menu_view_key(props: &ComposerProps<'_>) -> String {
@@ -1530,7 +1392,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                 collapsed_providers.is_some_and(|providers| providers.contains(provider_id));
             visible_models += models.len();
             if !models.is_empty() {
-                entries.push(DropdownMenuEntry::custom(model_provider_section(
+                entries.push(model_provider_section(
                     provider_id,
                     if provider_id == "codex" {
                         "Codex CLI"
@@ -1540,7 +1402,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                     models.len(),
                     collapsed,
                     inner_width,
-                )));
+                ));
             }
             for (id, title) in models.into_iter().filter(|_| !collapsed) {
                 let action_id = format!("composer_model:{id}");
@@ -1608,13 +1470,13 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                 if !entries.is_empty() {
                     entries.push(DropdownMenuEntry::Separator);
                 }
-                entries.push(DropdownMenuEntry::custom(model_provider_section(
+                entries.push(model_provider_section(
                     &provider.provider_id,
                     &model_provider_heading(provider),
                     routes.len(),
                     collapsed,
                     inner_width,
-                )));
+                ));
                 visible_models += routes.len();
                 if collapsed {
                     continue;
@@ -1678,7 +1540,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
         || !props.model_routes.is_empty()
     {
         let display = composer_model_display(props);
-        entries.push(DropdownMenuEntry::custom(selector_row(
+        entries.push(selector_row(
             "composer_model_list_toggle",
             "Modelo",
             display,
@@ -1687,12 +1549,11 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
             } else {
                 props.selected_backend
             }),
-            inner_width,
-        )));
+        ));
     }
     if has_effort {
         entries.push(DropdownMenuEntry::Separator);
-        entries.push(DropdownMenuEntry::custom(selector_row(
+        entries.push(selector_row(
             "composer_advanced_toggle",
             "Esfuerzo",
             if props.selected_effort == "default" {
@@ -1701,8 +1562,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                 props.effort_label
             },
             Icon::Brain,
-            inner_width,
-        )));
+        ));
     }
     entries
 }
@@ -1864,32 +1724,24 @@ fn model_effort_group(props: &ComposerProps<'_>, compact: bool) -> Option<Elemen
     if props.model_list_open {
         dropdown = dropdown.header(model_list_fixed_header(props, menu_width - 8.0));
     }
-    let mut menu = dropdown.render();
-    if let ElementKind::Popover { floating, .. } = &mut menu.kind {
-        if props.selected_backend == "native" && props.model_list_open {
-            if let ElementKind::Panel(content) = &mut floating.kind {
-                let body = std::mem::replace(content.as_mut(), Element::spacer());
-                **content = Element::column(vec![
-                    body.flex(1.0),
-                    Element::spacer()
-                        .background(theme::BORDER)
-                        .size(None, Some(1.0)),
-                    Button::new(
-                        "composer_connect_provider",
-                        "Conectar proveedor",
-                        theme::selector_palette(),
-                    )
-                    .icon(Icon::Add)
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .width(menu_width - 8.0)
-                    .render(),
-                ])
-                .gap(sizing.gap);
-            }
-        }
+    if props.selected_backend == "native" && props.model_list_open {
+        dropdown = dropdown.footer(connect_provider_action(menu_width - 8.0));
     }
-    Some(menu)
+    Some(dropdown.render())
+}
+
+/// The way to another provider, under the catalog however far it scrolls.
+fn connect_provider_action(width: f32) -> Element {
+    Button::new(
+        "composer_connect_provider",
+        "Conectar proveedor",
+        theme::selector_palette(),
+    )
+    .icon(Icon::Add)
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Compact)
+    .width(width)
+    .render()
 }
 
 fn send_control(props: &ComposerProps<'_>) -> Element {
@@ -2384,10 +2236,14 @@ pub(crate) fn build_composer_with_height(
 mod layout_visual_tests;
 
 #[cfg(test)]
+#[path = "composer_menu_parity_tests.rs"]
+mod menu_parity_tests;
+
+#[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::composer_selection::RouteSource;
-    use openide_ui::{DrawCommand, HitKind, Point, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{DrawCommand, ElementKind, HitKind, Point, Size, UiAction, UiEvent, UiTree};
 
     #[test]
     fn running_composer_keeps_model_permissions_and_pending_undo_accessible_at_small_widths() {
@@ -4128,20 +3984,12 @@ pub(crate) mod tests {
         let mut state = props("", 620.0);
         state.model_routes = &routes;
         state.model_list_open = true;
-        let entries = model_effort_entries(&state, SelectorSizing::CATALOG.preferred_width);
-        assert_eq!(
-            entries
-                .iter()
-                .filter(|entry| matches!(entry,
-                    DropdownMenuEntry::Custom(element)
-                        if matches!(element.as_ref(), Element { kind: ElementKind::Clickable { id, .. }, .. }
-                            if id == "composer_model_provider_toggle:codex")
-                ))
-                .count(),
-            0
-        );
         state.model_menu_open = true;
         let frame = UiTree::new(build_composer(&state)).layout(Size::new(620.0, 620.0));
+        assert!(frame
+            .regions
+            .iter()
+            .all(|region| region.id != "composer_model_provider_toggle:codex"));
         assert_eq!(
             frame
                 .commands

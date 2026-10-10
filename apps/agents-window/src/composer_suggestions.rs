@@ -7,10 +7,7 @@
 use crate::{files, native_skills_settings::NativeSkillsUiState, theme};
 use openide_core::TurnMode;
 use openide_harness::SkillSelection;
-use openide_ui::{
-    Component, Element, FontFamily, Icon, Kbd, Popover, PopoverPlacement, ScrollArea,
-    ScrollbarAppearance, SelectorSizing, Separator, TextSpan,
-};
+use openide_ui::{Component, Element, Icon, Kbd, SuggestionItem, SuggestionList};
 use std::{
     io,
     path::{Path, PathBuf},
@@ -20,8 +17,6 @@ use std::{
 
 const MAX_QUERY_CHARS: usize = 128;
 const MAX_SUGGESTIONS: usize = 32;
-const VISIBLE_SUGGESTIONS: usize = 7;
-const SUGGESTION_ROW_HEIGHT: f32 = 42.0;
 pub(crate) const SCROLL_ID: &str = "composer_suggestion_options";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -405,7 +400,8 @@ impl ComposerSuggestionsState {
 
 #[derive(Clone, Copy)]
 enum SuggestionSlot {
-    Section(&'static str),
+    // The name is read only by the parity copy of the popup, until S18.
+    Section(#[cfg_attr(not(test), allow(dead_code))] &'static str),
     Item(usize),
 }
 
@@ -595,179 +591,323 @@ pub(crate) fn popup(
     let Some(trigger) = state.trigger.as_ref() else {
         return anchor;
     };
-    let sizing = SelectorSizing::CATALOG;
-    let width = available_width.min(352.0).max(160.0);
-    let inner_width = width - sizing.padding * 2.0;
-    let mut contents = vec![Element::text(match trigger.kind {
+    let palette = theme::menu_palette();
+    // Only commands are grouped; a group starts where its name changes.
+    let sectioned = trigger.kind == ComposerTriggerKind::Command;
+    let mut previous_group = None;
+    let items = state
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let entry = SuggestionItem::new(
+                format!("composer_suggestion:{}:{index}", state.generation),
+                &item.label,
+            )
+            .icon(item.icon)
+            .description(&item.description);
+            if sectioned && previous_group != Some(item.group) {
+                previous_group = Some(item.group);
+                entry.section(item.group)
+            } else {
+                entry
+            }
+        })
+        .collect();
+    let message = if state.loading {
+        "Buscando archivos…"
+    } else if let Some(error) = state.error.as_deref() {
+        error
+    } else {
+        match trigger.kind {
+            ComposerTriggerKind::Command => "No hay comandos ni skills que coincidan.",
+            ComposerTriggerKind::File if trigger.query.is_empty() => {
+                "Escribí un nombre para buscar dentro del proyecto."
+            }
+            ComposerTriggerKind::File => "No hay archivos que coincidan.",
+        }
+    };
+    let list = SuggestionList::new(
+        anchor,
+        SCROLL_ID,
+        items,
+        state.selected,
+        true,
+        "composer_suggestion_dismiss",
+        palette,
+    )
+    .title(match trigger.kind {
         ComposerTriggerKind::Command => "Comandos y skills",
         ComposerTriggerKind::File => "Archivos del proyecto",
     })
-    .font_family(FontFamily::Sans)
-    .font_size(sizing.label_size)
-    .foreground(theme::MENU_MUTED)
-    .padding(sizing.padding)
-    .size(Some(inner_width), Some(sizing.header_height))];
-    let appearance = ScrollbarAppearance::reserved()
-        .rail_width(sizing.scrollbar_gutter)
-        .tint(theme::MENU_MUTED);
-    // Reserve the rail before rows are built so scrollbar targets cannot
-    // overlap their full-width click surface, even as overflow changes.
-    let row_width = (inner_width - sizing.scrollbar_gutter - 2.0).max(0.0);
-    if !state.items.is_empty() {
-        let slots = Arc::new(suggestion_slots(state));
-        let items = Arc::new(state.items.clone());
-        let selected = state.selected;
-        let generation = state.generation;
-        let row_count = slots.len();
-        contents.push(
-            ScrollArea::uniform_list(
-                SCROLL_ID,
-                row_count,
-                SUGGESTION_ROW_HEIGHT,
-                move |slot_index| match slots[slot_index] {
-                    SuggestionSlot::Section(group) => Element::column(vec![
-                        Separator::horizontal(theme::component_palette()).render(),
-                        Element::text(group)
-                            .font_family(FontFamily::Sans)
-                            .font_size(sizing.detail_size)
-                            .foreground(theme::MENU_MUTED)
-                            .padding(sizing.padding)
-                            .flex(1.0),
-                    ])
-                    .size(Some(row_width), Some(SUGGESTION_ROW_HEIGHT)),
-                    SuggestionSlot::Item(index) => {
-                        let item = &items[index];
-                        theme::menu_palette()
-                            .interactive_surface(Element::clickable(
-                                format!("composer_suggestion:{generation}:{index}"),
-                                Element::row(vec![
-                                    Element::icon(item.icon)
-                                        .foreground(theme::FOREGROUND)
-                                        .size(Some(sizing.icon_size), Some(30.0)),
-                                    Element::column(vec![
-                                        Element::truncated_text(&item.label)
-                                            .font_family(FontFamily::Sans)
-                                            .font_size(sizing.label_size)
-                                            .foreground(theme::FOREGROUND)
-                                            .size(None, Some(16.0)),
-                                        Element::truncated_text(&item.description)
-                                            .font_family(FontFamily::Sans)
-                                            .font_size(sizing.detail_size)
-                                            .foreground(theme::MENU_MUTED)
-                                            .size(None, Some(14.0)),
-                                    ])
-                                    .flex(1.0),
-                                ])
-                                .gap(sizing.gap)
-                                .padding(sizing.padding),
-                            ))
-                            .background(if index == selected {
-                                theme::MENU_HOVER
-                            } else {
-                                theme::MENU_SURFACE
-                            })
-                            .transition_ms(0)
-                            .size(Some(row_width), Some(SUGGESTION_ROW_HEIGHT))
-                    }
-                },
-            )
-            .appearance(appearance)
-            .render()
-            .min_size(0.0, SUGGESTION_ROW_HEIGHT)
-            .size(
-                Some(inner_width),
-                Some(row_count.min(VISIBLE_SUGGESTIONS) as f32 * SUGGESTION_ROW_HEIGHT),
-            )
-            .flex(1.0),
-        );
-    } else {
-        let message = if state.loading {
-            "Buscando archivos…"
-        } else if let Some(error) = state.error.as_deref() {
-            error
-        } else {
-            match trigger.kind {
-                ComposerTriggerKind::Command => "No hay comandos ni skills que coincidan.",
-                ComposerTriggerKind::File if trigger.query.is_empty() => {
-                    "Escribí un nombre para buscar dentro del proyecto."
-                }
-                ComposerTriggerKind::File => "No hay archivos que coincidan.",
-            }
-        };
-        contents.push(
-            ScrollArea::new(
-                SCROLL_ID,
-                Element::formatted_text(vec![TextSpan::new(
-                    message,
-                    theme::MENU_MUTED,
-                    sizing.label_size,
-                    FontFamily::Sans,
-                )])
-                .padding(8.0)
-                .size(Some(row_width), None),
-            )
-            .appearance(appearance)
-            .render()
-            .min_size(0.0, SUGGESTION_ROW_HEIGHT)
-            .size(Some(inner_width), Some(SUGGESTION_ROW_HEIGHT))
-            .flex(1.0),
-        );
-    }
-    contents.push(Separator::horizontal(theme::component_palette()).render());
-    let hint = |keys: &[&str], label: &str| {
-        let mut parts = Vec::new();
-        for (index, key) in keys.iter().enumerate() {
-            if index > 0 {
-                parts.push(
-                    Element::text("/")
-                        .font_size(11.0)
-                        .foreground(theme::MENU_MUTED),
-                );
-            }
-            parts.push(Kbd::new(*key, theme::menu_palette()).render());
-        }
-        parts.push(
-            Element::text(label)
-                .font_family(FontFamily::Sans)
-                .font_size(11.0)
-                .foreground(theme::MENU_MUTED),
-        );
-        Element::row(parts).gap(4.0).size(None, Some(20.0))
-    };
-    let hints = vec![
-        hint(&["↑↓"], "Elegir"),
-        hint(&["Enter", "Tab"], "Aceptar"),
-        hint(&["Esc"], "Cerrar"),
-    ];
-    contents.push(
-        if width < 300.0 {
-            Element::column(hints).gap(4.0)
-        } else {
-            Element::row(hints).gap(10.0)
-        }
-        .padding(4.0)
-        .size(Some(inner_width), None),
-    );
+    .empty(message)
+    .hints(vec![
+        Kbd::new("↑↓", palette).caption("Elegir").render(),
+        Kbd::new("Enter", palette)
+            .alternative("Tab")
+            .caption("Aceptar")
+            .render(),
+        Kbd::new("Esc", palette).caption("Cerrar").render(),
+    ])
+    .width(available_width)
+    // Quicker than a menu: the list follows every keystroke.
+    .animation_ms(80, 60);
     if state.truncated {
-        contents.push(
-            Element::text("Resultados limitados")
-                .font_family(FontFamily::Sans)
-                .font_size(11.0)
-                .foreground(theme::MENU_MUTED)
-                .padding(4.0),
-        );
+        list.note("Resultados limitados").render()
+    } else {
+        list.render()
     }
-    Popover::new(
-        anchor,
-        Element::column(contents).gap(2.0),
-        true,
-        "composer_suggestion_dismiss",
-        theme::menu_palette(),
-    )
-    .width(width)
-    .placement(PopoverPlacement::TopStart)
-    .animation_ms(80)
-    .close_animation_ms(60)
-    .render()
-    .popover_non_modal()
+}
+
+
+/// The hand-built popup that limn's `SuggestionList` replaced, kept so the
+/// replacement stays provably identical. Delete with the final audit (S18).
+#[cfg(test)]
+mod popup_parity_tests {
+    use super::*;
+    use openide_ui::{
+        FontFamily, Frame, Popover, PopoverPlacement, ScrollArea, ScrollbarAppearance,
+        SelectorSizing, Separator, Size, TextSpan, UiTree,
+    };
+
+    const VISIBLE_SUGGESTIONS: usize = 7;
+    const SUGGESTION_ROW_HEIGHT: f32 = 42.0;
+
+    fn legacy_popup(
+        anchor: Element,
+        state: &ComposerSuggestionsState,
+        available_width: f32,
+    ) -> Element {
+        let Some(trigger) = state.trigger.as_ref() else {
+            return anchor;
+        };
+        let sizing = SelectorSizing::CATALOG;
+        let width = available_width.min(352.0).max(160.0);
+        let inner_width = width - sizing.padding * 2.0;
+        let mut contents = vec![Element::text(match trigger.kind {
+            ComposerTriggerKind::Command => "Comandos y skills",
+            ComposerTriggerKind::File => "Archivos del proyecto",
+        })
+        .font_family(FontFamily::Sans)
+        .font_size(sizing.label_size)
+        .foreground(theme::MENU_MUTED)
+        .padding(sizing.padding)
+        .size(Some(inner_width), Some(sizing.header_height))];
+        let appearance = ScrollbarAppearance::reserved()
+            .rail_width(sizing.scrollbar_gutter)
+            .tint(theme::MENU_MUTED);
+        // Reserve the rail before rows are built so scrollbar targets cannot
+        // overlap their full-width click surface, even as overflow changes.
+        let row_width = (inner_width - sizing.scrollbar_gutter - 2.0).max(0.0);
+        if !state.items.is_empty() {
+            let slots = Arc::new(suggestion_slots(state));
+            let items = Arc::new(state.items.clone());
+            let selected = state.selected;
+            let generation = state.generation;
+            let row_count = slots.len();
+            contents.push(
+                ScrollArea::uniform_list(
+                    SCROLL_ID,
+                    row_count,
+                    SUGGESTION_ROW_HEIGHT,
+                    move |slot_index| match slots[slot_index] {
+                        SuggestionSlot::Section(group) => Element::column(vec![
+                            Separator::horizontal(theme::component_palette()).render(),
+                            Element::text(group)
+                                .font_family(FontFamily::Sans)
+                                .font_size(sizing.detail_size)
+                                .foreground(theme::MENU_MUTED)
+                                .padding(sizing.padding)
+                                .flex(1.0),
+                        ])
+                        .size(Some(row_width), Some(SUGGESTION_ROW_HEIGHT)),
+                        SuggestionSlot::Item(index) => {
+                            let item = &items[index];
+                            theme::menu_palette()
+                                .interactive_surface(Element::clickable(
+                                    format!("composer_suggestion:{generation}:{index}"),
+                                    Element::row(vec![
+                                        Element::icon(item.icon)
+                                            .foreground(theme::FOREGROUND)
+                                            .size(Some(sizing.icon_size), Some(30.0)),
+                                        Element::column(vec![
+                                            Element::truncated_text(&item.label)
+                                                .font_family(FontFamily::Sans)
+                                                .font_size(sizing.label_size)
+                                                .foreground(theme::FOREGROUND)
+                                                .size(None, Some(16.0)),
+                                            Element::truncated_text(&item.description)
+                                                .font_family(FontFamily::Sans)
+                                                .font_size(sizing.detail_size)
+                                                .foreground(theme::MENU_MUTED)
+                                                .size(None, Some(14.0)),
+                                        ])
+                                        .flex(1.0),
+                                    ])
+                                    .gap(sizing.gap)
+                                    .padding(sizing.padding),
+                                ))
+                                .background(if index == selected {
+                                    theme::MENU_HOVER
+                                } else {
+                                    theme::MENU_SURFACE
+                                })
+                                .transition_ms(0)
+                                .size(Some(row_width), Some(SUGGESTION_ROW_HEIGHT))
+                        }
+                    },
+                )
+                .appearance(appearance)
+                .render()
+                .min_size(0.0, SUGGESTION_ROW_HEIGHT)
+                .size(
+                    Some(inner_width),
+                    Some(row_count.min(VISIBLE_SUGGESTIONS) as f32 * SUGGESTION_ROW_HEIGHT),
+                )
+                .flex(1.0),
+            );
+        } else {
+            let message = if state.loading {
+                "Buscando archivos…"
+            } else if let Some(error) = state.error.as_deref() {
+                error
+            } else {
+                match trigger.kind {
+                    ComposerTriggerKind::Command => "No hay comandos ni skills que coincidan.",
+                    ComposerTriggerKind::File if trigger.query.is_empty() => {
+                        "Escribí un nombre para buscar dentro del proyecto."
+                    }
+                    ComposerTriggerKind::File => "No hay archivos que coincidan.",
+                }
+            };
+            contents.push(
+                ScrollArea::new(
+                    SCROLL_ID,
+                    Element::formatted_text(vec![TextSpan::new(
+                        message,
+                        theme::MENU_MUTED,
+                        sizing.label_size,
+                        FontFamily::Sans,
+                    )])
+                    .padding(8.0)
+                    .size(Some(row_width), None),
+                )
+                .appearance(appearance)
+                .render()
+                .min_size(0.0, SUGGESTION_ROW_HEIGHT)
+                .size(Some(inner_width), Some(SUGGESTION_ROW_HEIGHT))
+                .flex(1.0),
+            );
+        }
+        contents.push(Separator::horizontal(theme::component_palette()).render());
+        let hint = |keys: &[&str], label: &str| {
+            let mut parts = Vec::new();
+            for (index, key) in keys.iter().enumerate() {
+                if index > 0 {
+                    parts.push(
+                        Element::text("/")
+                            .font_size(11.0)
+                            .foreground(theme::MENU_MUTED),
+                    );
+                }
+                parts.push(Kbd::new(*key, theme::menu_palette()).render());
+            }
+            parts.push(
+                Element::text(label)
+                    .font_family(FontFamily::Sans)
+                    .font_size(11.0)
+                    .foreground(theme::MENU_MUTED),
+            );
+            Element::row(parts).gap(4.0).size(None, Some(20.0))
+        };
+        let hints = vec![
+            hint(&["↑↓"], "Elegir"),
+            hint(&["Enter", "Tab"], "Aceptar"),
+            hint(&["Esc"], "Cerrar"),
+        ];
+        contents.push(
+            if width < 300.0 {
+                Element::column(hints).gap(4.0)
+            } else {
+                Element::row(hints).gap(10.0)
+            }
+            .padding(4.0)
+            .size(Some(inner_width), None),
+        );
+        if state.truncated {
+            contents.push(
+                Element::text("Resultados limitados")
+                    .font_family(FontFamily::Sans)
+                    .font_size(11.0)
+                    .foreground(theme::MENU_MUTED)
+                    .padding(4.0),
+            );
+        }
+        Popover::new(
+            anchor,
+            Element::column(contents).gap(2.0),
+            true,
+            "composer_suggestion_dismiss",
+            theme::menu_palette(),
+        )
+        .width(width)
+        .placement(PopoverPlacement::TopStart)
+        .animation_ms(80)
+        .close_animation_ms(60)
+        .render()
+        .popover_non_modal()
+    }
+
+    fn frame(element: Element, width: f32) -> Frame {
+        let mut tree = UiTree::new(Element::column(vec![Element::spacer().flex(1.0), element]));
+        tree.set_reduced_motion(true);
+        tree.layout(Size::new(width, 700.0))
+    }
+
+    fn state(kind: ComposerTriggerKind, items: usize) -> ComposerSuggestionsState {
+        let mut state = ComposerSuggestionsState::default();
+        state.trigger = Some(ComposerTrigger {
+            kind,
+            query: if items == 0 { "zzz".into() } else { String::new() },
+            start: 0,
+            cursor: 1,
+            end: 1,
+        });
+        state.generation = 7;
+        state.items = (0..items)
+            .map(|index| ComposerSuggestion {
+                label: format!("/comando-{index}"),
+                description: format!("Descripción del comando número {index} con texto largo"),
+                group: if index < 2 { "Comandos" } else { "Skills" },
+                icon: Icon::Terminal,
+                action: ComposerSuggestionAction::Files,
+            })
+            .collect();
+        state.selected = items.saturating_sub(1).min(3);
+        state
+    }
+
+    #[test]
+    fn the_popup_matches_its_hand_built_body_in_every_state() {
+        let anchor = || Element::text_input("composer_input", "/", "").size(None, Some(40.0));
+        for width in [240.0, 520.0] {
+            for kind in [ComposerTriggerKind::Command, ComposerTriggerKind::File] {
+                for items in [0, 3, 20] {
+                    for (loading, error, truncated) in
+                        [(false, None, false), (true, None, true), (false, Some("Sin acceso".to_owned()), false)]
+                    {
+                        let mut state = state(kind, items);
+                        state.loading = loading;
+                        state.error = error.clone();
+                        state.truncated = truncated;
+                        assert!(
+                            frame(popup(anchor(), &state, width - 16.0), width)
+                                == frame(legacy_popup(anchor(), &state, width - 16.0), width),
+                            "{width} {kind:?} {items} {loading} {error:?} {truncated}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

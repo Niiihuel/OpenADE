@@ -40,6 +40,8 @@ pub const PANEL: Color = SCHEME.panel;
 pub const CARD: Color = SCHEME.raised;
 /// Floating action menus share the composer popover's dark surface.
 pub const MENU_SURFACE: Color = SCHEME.menu;
+// Read only by the parity copy of the suggestion popup, until S18.
+#[cfg_attr(not(test), allow(dead_code))]
 pub const MENU_HOVER: Color = SCHEME.menu_hover;
 pub const MENU_MUTED: Color = SCHEME.menu_muted;
 pub const INPUT: Color = SCHEME.hover;
@@ -55,6 +57,9 @@ pub const FOREGROUND: Color = SCHEME.text;
 pub const FOREGROUND_SUBTLE: Color = SCHEME.muted;
 /// Small supporting text in Settings stays legible on cards and controls.
 pub const SETTINGS_FOREGROUND_SUBTLE: Color = SCHEME.muted_on_raised;
+/// The shadow under the command palette, heavier than a menu's because the
+/// palette floats over the whole window.
+pub const COMMAND_PALETTE_SHADOW: Color = Color::rgba(0, 0, 0, 155);
 pub const PRIMARY_FOREGROUND: Color = Color::rgb(0, 0, 0);
 pub const USER: Color = Color::rgb(235, 235, 235);
 pub const ASSISTANT: Color = Color::rgb(212, 212, 212);

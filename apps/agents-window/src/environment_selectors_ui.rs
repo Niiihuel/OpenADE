@@ -2,18 +2,10 @@
 //! Anchors belong to their host; all choices keep the original snapshot indices.
 use crate::{composer_ui::ComposerProps, environment_ui::EnvironmentUiState, theme};
 use openide_ui::{
-    ButtonVariant, Component, ComponentPalette, ControlSize, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, ScrollArea,
-    SearchField, SelectorSizing, Skeleton, Tooltip, TooltipPlacement,
+    ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
+    Element, FontFamily, Icon, IconButton, MenuHeader, MenuItem, PopoverPlacement, ScrollArea,
+    SearchField, SelectorSizing, Skeleton, Tooltip, TooltipPlacement, TooltipSpec,
 };
-
-const MODEL_MENU_SCROLL_GUTTER: f32 = SelectorSizing::CATALOG.scrollbar_gutter;
-const SELECTOR_INK: openide_ui::Color = theme::FOREGROUND;
-const SELECTOR_MUTED: openide_ui::Color = theme::MENU_MUTED;
-
-fn selector_palette() -> ComponentPalette {
-    theme::menu_palette()
-}
 
 /// Shared project menu. The caller owns the anchor and open scope; item IDs
 /// retain their indices in the frozen project snapshot when search filters it.
@@ -50,11 +42,7 @@ fn project_selector_presentation(
     let inner_width = menu_width - 12.0;
     // Reserve the scroll rail for custom rows even in a short menu, so the
     // path and selection check keep a stable alignment as search changes.
-    let row_width = inner_width - MODEL_MENU_SCROLL_GUTTER;
-    let body_height = sizing.row_height;
-    let row_padding = (sizing.detail_row_height - body_height) / 2.0;
-    let text_width =
-        (row_width - row_padding * 2.0 - sizing.icon_size * 2.0 - sizing.gap * 2.0).max(40.0);
+    let row_width = inner_width - sizing.scrollbar_gutter;
     let query = props.project_query.trim().to_lowercase();
     let mut entries = Vec::new();
     for (index, (path, label)) in props.project_options.iter().enumerate() {
@@ -64,53 +52,21 @@ fn project_selector_presentation(
         {
             continue;
         }
-        let selected = path == props.workspace;
-        let visual = Element::row(vec![
-            Element::icon(Icon::Folder)
-                .foreground(SELECTOR_INK)
-                .size(Some(sizing.icon_size), Some(body_height)),
-            Element::column(vec![
-                Element::truncated_text(label)
-                    .font_family(FontFamily::Sans)
-                    .font_size(sizing.label_size)
-                    .foreground(SELECTOR_INK)
-                    .size(Some(text_width), Some(body_height / 2.0)),
-                Element::truncated_text(path)
-                    .font_family(FontFamily::Sans)
-                    .font_size(sizing.detail_size)
-                    .foreground(SELECTOR_MUTED)
-                    .size(Some(text_width), Some(body_height / 2.0)),
-            ])
-            .size(Some(text_width), Some(body_height)),
-            if selected {
-                Element::icon(Icon::Check).foreground(SELECTOR_INK)
-            } else {
-                Element::spacer()
-            }
-            .size(Some(sizing.icon_size), Some(body_height)),
-        ])
-        .gap(sizing.gap)
-        .clip_children();
-        let row = theme::menu_palette()
-            .interactive_surface(Element::clickable(
-                format!("composer_project_select:{index}"),
-                visual,
-            ))
-            .padding(row_padding)
-            .size(Some(row_width), Some(sizing.detail_row_height));
-        let row = row.action_menu_item().transition_ms(0).radius(4.0);
+        let id = format!("composer_project_select:{index}");
         entries.push(DropdownMenuEntry::custom(
-            Tooltip::new(
-                row,
-                format!("composer_project_select:{index}"),
-                label,
-                selector_palette(),
-            )
-            .description(path)
-            .placement(TooltipPlacement::Left)
-            .max_width(sizing.tooltip_width)
-            .render()
-            .size(Some(row_width), Some(sizing.detail_row_height)),
+            MenuItem::new(&id, label, theme::menu_palette())
+                .icon(Icon::Folder)
+                .description(path)
+                .selected(path == props.workspace)
+                .width(row_width)
+                .tooltip_with(
+                    TooltipSpec::new(label)
+                        .description(path)
+                        .placement(TooltipPlacement::Left)
+                        .max_width(sizing.tooltip_width),
+                )
+                .render()
+                .size(Some(row_width), Some(sizing.detail_row_height)),
         ));
     }
     if entries.is_empty() {
@@ -122,7 +78,7 @@ fn project_selector_presentation(
             })
             .font_family(FontFamily::Sans)
             .font_size(sizing.label_size)
-            .foreground(SELECTOR_MUTED)
+            .foreground(theme::MENU_MUTED)
             .padding(sizing.padding)
             .size(Some(row_width), None),
         ));
@@ -141,24 +97,15 @@ fn project_selector_presentation(
         theme::menu_palette(),
     )
     .header(
-        Element::column(vec![
-            Element::text("Proyectos")
-                .font_family(FontFamily::Sans)
-                .font_size(sizing.label_size)
-                .foreground(SELECTOR_INK)
-                .padding(sizing.padding)
-                .size(Some(inner_width), Some(sizing.header_height)),
-            SearchField::new(
+        MenuHeader::new(theme::menu_palette())
+            .title("Proyectos")
+            .search(
                 "composer_project_search",
                 props.project_query,
                 "Buscar proyecto o ruta",
-                selector_palette(),
             )
-            .size(ControlSize::Compact)
             .width(inner_width)
             .render(),
-        ])
-        .gap(2.0),
     )
     .inline(inline)
     .context_menu_style()
@@ -208,9 +155,9 @@ fn branch_selector_presentation(
             Element::text(text)
                 .font_family(FontFamily::Sans)
                 .font_size(sizing.label_size)
-                .foreground(SELECTOR_MUTED)
+                .foreground(theme::MENU_MUTED)
                 .padding(sizing.padding)
-                .size(Some(inner_width - MODEL_MENU_SCROLL_GUTTER), None),
+                .size(Some(inner_width - sizing.scrollbar_gutter), None),
         )
     };
     let mut entries = Vec::new();
@@ -223,7 +170,7 @@ fn branch_selector_presentation(
                 Element::panel(
                     Skeleton::block(
                         format!("composer_branch_loading:{index}"),
-                        selector_palette(),
+                        theme::menu_palette(),
                         inner_width - sizing.padding * 2.0,
                         sizing.icon_size,
                     )
@@ -241,9 +188,9 @@ fn branch_selector_presentation(
                     Element::text(error)
                         .font_family(FontFamily::Sans)
                         .font_size(sizing.label_size)
-                        .foreground(SELECTOR_MUTED)
+                        .foreground(theme::MENU_MUTED)
                         .padding(sizing.padding)
-                        .size(Some(inner_width - MODEL_MENU_SCROLL_GUTTER), None),
+                        .size(Some(inner_width - sizing.scrollbar_gutter), None),
                 )
                 .render()
                 .size(Some(inner_width), Some(104.0)),
@@ -312,16 +259,16 @@ fn branch_selector_presentation(
         }
         .into(),
     );
-    let mut search_palette = selector_palette();
+    let mut search_palette = theme::menu_palette();
     search_palette.raised = theme::INPUT;
     let header = Element::column(vec![
         Element::row(vec![
             Element::text("Cambiar rama")
                 .font_family(FontFamily::Sans)
                 .font_size(sizing.label_size)
-                .foreground(SELECTOR_INK)
+                .foreground(theme::FOREGROUND)
                 .flex(1.0),
-            IconButton::new("composer_branch_refresh", Icon::Refresh, selector_palette())
+            IconButton::new("composer_branch_refresh", Icon::Refresh, theme::menu_palette())
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Compact)
                 .enabled(!picker.loading && !picker.switching())
@@ -409,13 +356,8 @@ pub(crate) fn local_selector(
     let busy = locked || workflow.loading || workflow.busy.is_some();
     let mut entries = Vec::new();
     if workflow.loading {
-        entries.push(DropdownMenuEntry::custom(
-            Element::text("Actualizando carpetas de trabajo…")
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::MENU_MUTED)
-                .padding(6.0)
-                .size(None, None),
+        entries.push(DropdownMenuEntry::Message(
+            "Actualizando carpetas de trabajo…".into(),
         ));
     } else if let Some(snapshot) = &workflow.snapshot {
         entries.push(DropdownMenuEntry::Heading("Carpetas de trabajo".into()));
@@ -489,16 +431,13 @@ pub(crate) fn local_selector(
             ));
         }
     } else {
-        entries.push(DropdownMenuEntry::custom(
-            Element::text(if workflow.error.is_some() {
+        entries.push(DropdownMenuEntry::Message(
+            if workflow.error.is_some() {
                 "No se pudo consultar Git en esta carpeta."
             } else {
                 "Trabaja en esta carpeta local."
-            })
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::MENU_MUTED)
-            .padding(6.0),
+            }
+            .into(),
         ));
         let refresh =
             DropdownMenuItem::new("environment_git_refresh", "Actualizar").icon(Icon::Refresh);
@@ -552,14 +491,7 @@ pub(crate) fn local_selector(
         "composer_environment_dismiss",
         theme::menu_palette(),
     )
-    .header(
-        Element::text("Entorno local")
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND)
-            .padding(6.0)
-            .size(None, Some(28.0)),
-    )
+    .header(MenuHeader::new(theme::menu_palette()).title("Entorno local").render())
     .context_menu_style()
     .width(340.0)
     .max_visible_items(8)
@@ -567,6 +499,10 @@ pub(crate) fn local_selector(
     .render()
     .popover_return_focus("composer_environment_toggle")
 }
+
+#[cfg(test)]
+#[path = "environment_selectors_parity_tests.rs"]
+mod parity_tests;
 
 #[cfg(test)]
 mod tests {

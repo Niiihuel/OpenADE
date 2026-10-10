@@ -23,11 +23,6 @@ fn label(text: impl Into<String>, size: f32, muted: bool) -> Element {
         })
 }
 
-fn action(id: &str, title: &str, icon: Icon, disabled: bool) -> DropdownMenuEntry {
-    let item = DropdownMenuItem::new(id, title).icon(icon);
-    if disabled { item.disabled() } else { item }.into()
-}
-
 fn busy(state: &ViewState) -> bool {
     state.github_account_refreshing || state.github_sign_in.is_some()
 }
@@ -516,31 +511,11 @@ pub(crate) fn build(state: &ViewState, width: f32, sidebar_width: f32) -> Elemen
                 anchor,
                 Some(identity),
                 vec![
-                    action(
-                        "github_account_manage",
-                        "Administrar GitHub",
-                        Icon::Settings,
-                        false,
-                    ),
-                    action(
-                        "github_account_open",
-                        "Ver perfil en GitHub",
-                        Icon::ArrowRight,
-                        false,
-                    ),
+                    DropdownMenuItem::new("github_account_manage", "Administrar GitHub").icon(Icon::Settings).into(),
+                    DropdownMenuItem::new("github_account_open", "Ver perfil en GitHub").icon(Icon::ArrowRight).into(),
                     DropdownMenuEntry::Separator,
-                    action(
-                        "github_account_refresh",
-                        "Actualizar conexión",
-                        Icon::Refresh,
-                        busy,
-                    ),
-                    action(
-                        "github_account_connect",
-                        "Conectar otra cuenta…",
-                        Icon::Add,
-                        busy,
-                    ),
+                    DropdownMenuItem::new("github_account_refresh", "Actualizar conexión").icon(Icon::Refresh).enabled(!busy).into(),
+                    DropdownMenuItem::new("github_account_connect", "Conectar otra cuenta…").icon(Icon::Add).enabled(!busy).into(),
                     DropdownMenuEntry::Separator,
                     DropdownMenuItem::new("github_account_disconnect", "Desconectar de OpenIDE")
                         .icon(Icon::CloseCircle)
@@ -581,34 +556,14 @@ pub(crate) fn build(state: &ViewState, width: f32, sidebar_width: f32) -> Elemen
             let mut entries: Vec<_> = accounts
                 .iter()
                 .map(|login| {
-                    action(
-                        &format!("github_account_verify:{login}"),
-                        &format!("@{login}"),
-                        Icon::Github,
-                        busy(state),
-                    )
+                    DropdownMenuItem::new(format!("github_account_verify:{login}"), format!("@{login}")).icon(Icon::Github).enabled(!busy(state)).into()
                 })
                 .collect();
             entries.extend([
                 DropdownMenuEntry::Separator,
-                action(
-                    "github_account_manage",
-                    "Administrar GitHub",
-                    Icon::Settings,
-                    false,
-                ),
-                action(
-                    "github_account_refresh",
-                    "Actualizar cuentas",
-                    Icon::Refresh,
-                    busy(state),
-                ),
-                action(
-                    "github_account_connect",
-                    "Conectar otra cuenta…",
-                    Icon::Add,
-                    busy(state),
-                ),
+                DropdownMenuItem::new("github_account_manage", "Administrar GitHub").icon(Icon::Settings).into(),
+                DropdownMenuItem::new("github_account_refresh", "Actualizar cuentas").icon(Icon::Refresh).enabled(!busy(state)).into(),
+                DropdownMenuItem::new("github_account_connect", "Conectar otra cuenta…").icon(Icon::Add).enabled(!busy(state)).into(),
             ]);
             menu(state, anchor, None, entries)
         }
