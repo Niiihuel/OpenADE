@@ -176,10 +176,8 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
             )
             .icon(Icon::History)
             .variant(ButtonVariant::Subtle)
+            .sizing(crate::ui_sizing::OVERVIEW_REOPEN)
             .render()
-            .font_size(12.0)
-            .min_size(0.0, 0.0)
-            .size(None, Some(28.0))
         } else {
             UiText::new(
                 format!("{} · sesión cerrada", shorten(&tab.title, 25)),

@@ -1161,6 +1161,109 @@ fn export_session_rows_visual_review() {
     }
 }
 
+/// The c04 pieces no other export reaches, each from its production builder:
+/// the overview's closed tabs, the full-response button, the way from the
+/// chat's changes to the repository's, and the side terminal's toolbar.
+#[test]
+#[ignore = "opt-in export of the chrome converged on limn profiles"]
+fn export_converged_chrome_visual_review() {
+    use ExportInteraction::Hover;
+    let mut state = super::tests::empty_state();
+    state.dock_recently_closed = vec![
+        DockRecentlyClosedView {
+            id: 9,
+            title: "src/terminal_ui.rs".into(),
+            kind: SideTab::FilePreview,
+            restorable: true,
+        },
+        DockRecentlyClosedView {
+            id: 10,
+            title: "Sesión anterior".into(),
+            kind: SideTab::Context,
+            restorable: false,
+        },
+    ];
+    for (name, hover) in [("idle", None), ("hover", Some(Hover("dock_reopen:9")))] {
+        export_with_interaction(
+            dock_overview::content(&state, 360.0).padding(12.0),
+            360.0,
+            360.0,
+            &format!("converged-overview-reopen-{name}"),
+            hover,
+        );
+    }
+
+    for (name, hover) in [
+        ("idle", None),
+        ("hover", Some(Hover("conversation_source:draft:0:0:open"))),
+    ] {
+        export_with_interaction(
+            crate::conversation_source_ui::open_button(&state, 0).padding(12.0),
+            260.0,
+            56.0,
+            &format!("converged-source-open-{name}"),
+            hover,
+        );
+    }
+
+    state.session_changes.result = Some(Ok(std::sync::Arc::new(
+        crate::session_changes::SessionChanges {
+            session_id: "session-1".into(),
+            workspace: "/project".into(),
+            baseline: None,
+            availability: crate::session_changes::ChangesAvailability::Unavailable {
+                reason: "La conversación empezó antes de registrar una base.".into(),
+            },
+            totals: Default::default(),
+            files: Vec::new(),
+            coverage_notes: Vec::new(),
+        },
+    )));
+    for (name, hover) in [("idle", None), ("hover", Some(Hover("dock_open:review")))] {
+        export_with_interaction(
+            crate::session_changes_ui::build(&state, 360.0),
+            360.0,
+            180.0,
+            &format!("converged-session-changes-unavailable-{name}"),
+            hover,
+        );
+    }
+
+    let mut snapshot = crate::terminal::TerminalSnapshot {
+        lines: vec!["$ cargo test".into(), "test result: ok".into(), "$ ".into()],
+        styled_lines: Vec::new(),
+        cursor: (2, 2),
+        cols: 80,
+        rows: 8,
+        scrollback_position: 0,
+        running: true,
+        exit_code: None,
+        error: None,
+        revision: 1,
+        shell: "fish".into(),
+        alternate_screen: false,
+        selection: None,
+    };
+    for (name, running, scrollback, hover) in [
+        ("live", true, 0, None),
+        ("copy-hover", true, 0, Some(Hover("terminal_copy"))),
+        ("history", true, 4, Some(Hover("terminal_bottom"))),
+        ("exited", false, 0, Some(Hover("terminal_restart"))),
+    ] {
+        snapshot.running = running;
+        snapshot.exit_code = (!running).then_some(0);
+        snapshot.scrollback_position = scrollback;
+        state.terminal_snapshot = Some(snapshot.clone());
+        export_with_interaction(
+            crate::terminal_ui::build(&state, 420.0),
+            420.0,
+            260.0,
+            &format!("converged-side-terminal-{name}"),
+            hover,
+        );
+    }
+}
+
 /// The c01 pieces no other export reaches: each is the production builder,
 /// with the pointer over the control whose hint or hover the section moved.
 #[test]

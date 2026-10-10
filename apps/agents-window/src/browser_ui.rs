@@ -399,10 +399,11 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
     } else {
         "Sesión aislada · Compartida con el agente".into()
     };
-    let row = Element::truncated_text(text)
-        .font_family(FontFamily::Sans)
-        .font_size(10.5)
-        .foreground(theme::FOREGROUND_SUBTLE)
+    let row = Text::new(text, theme::component_palette())
+        .size(10.5)
+        .muted()
+        .truncate()
+        .render()
         .padding(3.0)
         .size(Some(width), Some(STATUS_HEIGHT));
     Tooltip::new(

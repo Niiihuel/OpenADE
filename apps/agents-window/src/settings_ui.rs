@@ -368,12 +368,10 @@ fn nav_item(page: SettingsPage, active: bool) -> Element {
     )
     .label(page.nav_title())
     .variant(ButtonVariant::Subtle)
-    .size(ControlSize::Compact)
+    .sizing(crate::ui_sizing::SETTINGS_NAV)
+    .radius(RadiusRole::Surface)
     .active(active)
     .render()
-    .font_size(settings_parts::LABEL_SIZE)
-    .radius(6.0)
-    .size(None, Some(crate::sidebar_chrome::NAV_ROW_HEIGHT))
 }
 
 fn project_name(workspace: &str) -> &str {
@@ -443,10 +441,8 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
     )
     .label("Volver a OpenIDE")
     .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Compact)
-    .render()
-    .font_size(settings_parts::LABEL_SIZE)
-    .size(None, Some(crate::sidebar_chrome::NAV_ROW_HEIGHT));
+    .sizing(crate::ui_sizing::SETTINGS_NAV)
+    .render();
     let navigation = ScrollArea::new(
         "settings_navigation",
         Element::column(navigation_groups(state)).gap(2.0),

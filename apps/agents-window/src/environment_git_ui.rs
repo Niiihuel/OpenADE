@@ -8,7 +8,8 @@ use crate::{
 use openide_ui::{
     Button, ButtonVariant, Card, CardDensity, Component, ControlSize, DropdownMenu,
     DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon, IconButton, PanelHeader,
-    PopoverPlacement, Separator, Text, TextArea, TextField, TextRole, Tooltip, TooltipPlacement,
+    PopoverPlacement, RadiusRole, Separator, Text, TextArea, TextField, TextRole, Tooltip,
+    TooltipPlacement,
     TooltipSpec,
 };
 
@@ -252,9 +253,9 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
             )
             .width(inner)
             .height(80.0)
+            .radius(RadiusRole::Surface)
             .enabled(enabled)
-            .render()
-            .radius(6.0),
+            .render(),
         ];
         if let Some(reason) = &reason {
             commit.push(

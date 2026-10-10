@@ -2645,10 +2645,14 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
                 }
                 code_rows.push(
                     Element::row(vec![
-                        Element::text(format!("{:>digits$}", page.start_line + index + 1))
-                            .font_family(FontFamily::Monospace)
-                            .font_size(10.5)
-                            .foreground(theme::CODE_GUTTER)
+                        UiText::new(
+                            format!("{:>digits$}", page.start_line + index + 1),
+                            theme::component_palette(),
+                        )
+                        .mono()
+                        .size(10.5)
+                        .ink(theme::CODE_GUTTER)
+                        .render()
                             .size(Some(gutter_width), Some(16.0)),
                         Separator::vertical(theme::component_palette()).render(),
                         Element::formatted_text(spans).size(Some(code_width), None),

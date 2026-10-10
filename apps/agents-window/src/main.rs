@@ -141,6 +141,8 @@ mod theme;
 mod tool_presentation;
 mod tool_result_media;
 mod transcript;
+#[cfg(test)]
+mod converge_chrome_parity_tests;
 mod ui_sizing;
 mod view;
 mod voice;

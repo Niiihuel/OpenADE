@@ -54,6 +54,28 @@ pub const GRANT_ACTION: ButtonSizing = ButtonSizing {
     ..SMALL_LABEL_BUTTON
 };
 
+/// The terminal's "Copiar": that label again, in the 32 px of its toolbar.
+pub const TERMINAL_COPY: ButtonSizing = GRANT_ACTION;
+
+/// A closed tab the overview can reopen: a Regular button's insets around a
+/// 12 px label, as tall as a tab row.
+pub const OVERVIEW_REOPEN: ButtonSizing = ButtonSizing {
+    height: 28.0,
+    font_size: 12.0,
+    icon_size: 16.0,
+    horizontal_padding: 8.0,
+    inner_spacing: 6.0,
+};
+
+/// A destination of the settings sidebar, and the way back above them.
+pub const SETTINGS_NAV: ButtonSizing = ButtonSizing {
+    height: crate::sidebar_chrome::NAV_ROW_HEIGHT,
+    font_size: crate::settings_parts::LABEL_SIZE,
+    icon_size: 16.0,
+    horizontal_padding: 6.0,
+    inner_spacing: 6.0,
+};
+
 /// The close button of a 20 px agent tab.
 pub const AGENT_TAB_CLOSE: ButtonSizing = ButtonSizing {
     height: 20.0,

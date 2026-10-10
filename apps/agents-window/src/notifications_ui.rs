@@ -3,7 +3,7 @@
 use std::time::SystemTime;
 
 use openide_ui::{
-    ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon, IconButton, ListRow,
+    ButtonVariant, Color, Component, ControlSize, Element, Icon, IconButton, ListRow,
     Popover, PopoverPlacement, Text, TextRole, TooltipPlacement, TooltipSpec,
 };
 
@@ -80,10 +80,11 @@ fn list(center: &NotificationCenter) -> Element {
     if !items.is_empty() {
         tools.push(theme::interactive_surface(Element::clickable(
             "notifications_clear",
-            Element::truncated_text("Limpiar")
-                .font_family(FontFamily::Sans)
-                .font_size(11.5)
-                .foreground(theme::FOREGROUND_SUBTLE)
+            Text::new("Limpiar", theme::component_palette())
+                .size(11.5)
+                .muted()
+                .truncate()
+                .render()
                 .padding(4.0),
         )));
     }
@@ -105,10 +106,11 @@ fn list(center: &NotificationCenter) -> Element {
     rows.extend(items.iter().take(VISIBLE).map(row));
     if items.len() > VISIBLE {
         rows.push(
-            Element::truncated_text(format!("y {} más", items.len() - VISIBLE))
-                .font_family(FontFamily::Sans)
-                .font_size(11.5)
-                .foreground(theme::FOREGROUND_SUBTLE)
+            Text::new(format!("y {} más", items.len() - VISIBLE), theme::component_palette())
+                .size(11.5)
+                .muted()
+                .truncate()
+                .render()
                 .padding(6.0),
         );
     }

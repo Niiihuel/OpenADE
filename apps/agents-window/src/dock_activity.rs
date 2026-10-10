@@ -36,10 +36,11 @@ fn tool_row(row: &ToolRow, width: f32) -> Element {
         .icon(row.icon)
         .icon_ink(row.ink)
         .trailing(
-            Element::truncated_text(row.status)
-                .font_family(FontFamily::Sans)
-                .font_size(10.5)
-                .foreground(row.ink)
+            UiText::new(row.status, theme::component_palette())
+                .size(10.5)
+                .ink(row.ink)
+                .truncate()
+                .render()
                 .size(Some((width * 0.35).min(130.0)), Some(24.0)),
         )
         .filled()

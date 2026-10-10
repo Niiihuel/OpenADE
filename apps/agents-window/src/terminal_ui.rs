@@ -424,14 +424,11 @@ fn build_snapshot(
         .render()
         .flex(1.0),
         Tooltip::new(
-            theme::interactive_surface(
-                Button::new("terminal_copy", "Copiar", theme::component_palette())
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .render()
-                    .font_size(11.0)
-                    .size(Some(48.0), Some(32.0)),
-            ),
+            Button::new("terminal_copy", "Copiar", theme::component_palette())
+                .variant(ButtonVariant::Ghost)
+                .sizing(crate::ui_sizing::TERMINAL_COPY)
+                .width(48.0)
+                .render(),
             "terminal_copy",
             "Copiar selección o salida visible",
             theme::component_palette(),
@@ -477,23 +474,19 @@ fn build_snapshot(
         "Ctrl+Shift+V · pegar".to_owned()
     };
     let action = if !snapshot.running {
-        theme::interactive_surface(
-            Button::new("terminal_restart", "Reiniciar", theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .render(),
-        )
-    } else if snapshot.scrollback_position > 0 {
-        theme::interactive_surface(
-            Button::new(
-                "terminal_bottom",
-                "Volver al prompt",
-                theme::component_palette(),
-            )
+        Button::new("terminal_restart", "Reiniciar", theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
-            .render(),
+            .render()
+    } else if snapshot.scrollback_position > 0 {
+        Button::new(
+            "terminal_bottom",
+            "Volver al prompt",
+            theme::component_palette(),
         )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .render()
     } else {
         Element::spacer().size(Some(0.0), Some(0.0))
     };

@@ -1,5 +1,5 @@
 use super::*;
-use openide_ui::{DrawCommand, FontFamily, Key, Size, UiAction, UiEvent, UiTree};
+use openide_ui::{DrawCommand, FontFamily, Icon, Key, Size, UiAction, UiEvent, UiTree};
 
 fn actions(element: Element) -> Vec<String> {
     UiTree::new(element)
@@ -22,7 +22,7 @@ fn web_destinations_reject_unsafe_schemes_and_spoofed_github_hosts() {
         "HTTPS://GITHUB.COM/a",
         "https://www.github.com/a",
     ] {
-        assert_eq!(link_icon(&web_url(url).unwrap()), Icon::Github);
+        assert_eq!(Markdown::link_icon(&Markdown::web_link(url).unwrap()), Icon::Github);
     }
     for url in [
         "https://github.com.evil.test/a",
@@ -30,7 +30,7 @@ fn web_destinations_reject_unsafe_schemes_and_spoofed_github_hosts() {
         "https://docs.github.com/a",
         "http://localhost:3000/?url=github.com",
     ] {
-        assert_eq!(link_icon(&web_url(url).unwrap()), Icon::Globe);
+        assert_eq!(Markdown::link_icon(&Markdown::web_link(url).unwrap()), Icon::Globe);
     }
     for url in [
         "file:///tmp/a",
@@ -41,7 +41,7 @@ fn web_destinations_reject_unsafe_schemes_and_spoofed_github_hosts() {
         "src/main.rs",
         "https://example.test/\nnext",
     ] {
-        assert!(web_url(url).is_none(), "{url}");
+        assert!(Markdown::web_link(url).is_none(), "{url}");
         assert!(web_link_url_from_action(&link_action("test", 0, url)).is_none());
     }
     let target = "https://example.test:8080/a?x=1#part";
@@ -84,7 +84,7 @@ fn bounded_composer_and_markdown_never_open_a_truncated_host() {
     // 20,000 characters is the default `MarkdownLimits::source_chars`.
     let prefix = "x".repeat(20_000 - " https://github.co".chars().count());
     let source = format!("{prefix} https://github.com/a/b");
-    let draft_links = composer_web_links(&source);
+    let draft_links = Markdown::web_links(&source);
     assert_eq!(draft_links.len(), 1);
     assert_eq!(draft_links[0].1.as_str(), "https://github.com/a/b");
     let preview = render_markdown_preview_at_width(&source, 400.0);
@@ -121,7 +121,7 @@ fn repeated_cached_links_receive_distinct_message_and_block_focus_targets() {
 #[test]
 fn composer_urls_keep_unicode_source_and_actions_fit_the_narrow_card() {
     let source = "ñ 👩‍💻 [repo](https://github.com/a/b), https://example.test/docs";
-    let links = composer_web_links(source);
+    let links = Markdown::web_links(source);
     let first = source
         .chars()
         .skip(links[0].0.start)

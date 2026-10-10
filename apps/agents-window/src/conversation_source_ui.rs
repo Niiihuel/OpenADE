@@ -36,17 +36,15 @@ fn source(state: &ViewState, index: usize) -> Option<&str> {
 }
 
 pub(crate) fn open_button(state: &ViewState, index: usize) -> Element {
-    theme::interactive_surface(
-        Button::new(
-            action_id(state, index, 0, "open"),
-            "Ver respuesta completa",
-            theme::component_palette(),
-        )
-        .icon(Icon::File)
-        .variant(ButtonVariant::Subtle)
-        .size(ControlSize::Regular)
-        .render(),
+    Button::new(
+        action_id(state, index, 0, "open"),
+        "Ver respuesta completa",
+        theme::component_palette(),
     )
+    .icon(Icon::File)
+    .variant(ButtonVariant::Subtle)
+    .size(ControlSize::Regular)
+    .render()
 }
 
 /// A stale navigation action cannot move another page or another session.
@@ -137,7 +135,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         if !enabled {
             button = button.disabled();
         }
-        theme::interactive_surface(button.render())
+        button.render()
     };
     let footer = Element::row(vec![
         navigation("previous", "Anterior", page.previous_byte.is_some()),

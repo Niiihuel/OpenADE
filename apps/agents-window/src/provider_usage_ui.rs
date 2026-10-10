@@ -8,7 +8,7 @@ use std::{
 
 use openide_ui::{
     ActiveHover, Button, ButtonVariant, Card, Chip, Color, Component, ComponentPalette,
-    ControlSize, Element, FontFamily, Icon, IconButton, ListRow, PageHeader, Popover, PopoverPanel, PopoverPlacement,
+    ControlSize, Element, Icon, IconButton, ListRow, PageHeader, Popover, PopoverPanel, PopoverPlacement,
     ScrollArea, Separator, Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
@@ -698,10 +698,11 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
         }
         if let Some(reset) = reset_label(window, now) {
             parts.push(
-                Element::truncated_text(reset)
-                    .font_family(FontFamily::Sans)
-                    .font_size(10.5)
-                    .foreground(theme::FOREGROUND_SUBTLE)
+                Text::new(reset, theme::component_palette())
+                    .size(10.5)
+                    .muted()
+                    .truncate()
+                    .render()
                     .size(None, Some(14.0)),
             );
             height += 18.0;
@@ -732,16 +733,17 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
         .into()
     };
     rows.push(
-        Element::truncated_text(notice)
-            .font_family(FontFamily::Sans)
-            .font_size(10.5)
-            .foreground(
+        Text::new(notice, theme::component_palette())
+            .size(10.5)
+            .ink(
                 if stale(snapshot, now) || snapshot.status == ProviderUsageStatus::NeedsSignIn {
                     theme::WARNING
                 } else {
                     theme::FOREGROUND_SUBTLE
                 },
             )
+            .truncate()
+            .render()
             .size(None, Some(16.0)),
     );
     content_height += 16.0 + 8.0 * rows.len().saturating_sub(1) as f32 + 12.0;
@@ -1062,7 +1064,7 @@ pub(crate) fn provider_card(state: &ViewState, id: &str, width: f32) -> Option<E
 mod tests {
     use super::*;
     use crate::provider_connections::ConnectionSummary;
-    use openide_ui::{DrawCommand, Frame, Key, Point, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{DrawCommand, FontFamily, Frame, Key, Point, Size, UiAction, UiEvent, UiTree};
 
     fn fixture() -> ViewState {
         let mut state = crate::view::tests::empty_state();

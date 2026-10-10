@@ -8,12 +8,11 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    ops::Range,
 };
 
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, Element, ElementKind, Icon, Markdown,
-    MarkdownColors, MarkdownLabels, MarkdownPreview, TextHighlight, Tooltip,
+    Button, ButtonVariant, Component, ControlSize, Element, ElementKind, Markdown,
+    MarkdownColors, MarkdownLabels, MarkdownPreview, RadiusRole, TextHighlight, Tooltip,
 };
 
 use crate::theme;
@@ -22,7 +21,6 @@ use crate::theme;
 #[path = "rich_text_link_tests.rs"]
 mod link_tests;
 
-const MAX_URL_BYTES: usize = 2_048;
 const LINK_ACTION_PREFIX: &str = "chat_link_open:";
 
 const COLORS: MarkdownColors = MarkdownColors {
@@ -50,29 +48,6 @@ fn markdown(source: &str) -> Markdown<'_> {
         .link_action_prefix(LINK_ACTION_PREFIX)
 }
 
-fn web_url(value: &str) -> Option<reqwest::Url> {
-    if value.len() > MAX_URL_BYTES
-        || value
-            .chars()
-            .any(|ch| ch.is_whitespace() || ch.is_control() || ch == '\\')
-    {
-        return None;
-    }
-    let url = reqwest::Url::parse(value).ok()?;
-    (matches!(url.scheme(), "http" | "https")
-        && url.host_str().is_some()
-        && url.username().is_empty()
-        && url.password().is_none())
-    .then_some(url)
-}
-
-fn link_icon(url: &reqwest::Url) -> Icon {
-    match url.host_str() {
-        Some("github.com" | "www.github.com") => Icon::Github,
-        _ => Icon::Globe,
-    }
-}
-
 fn source_hash(source: &str) -> u64 {
     let mut hash = DefaultHasher::new();
     source.hash(&mut hash);
@@ -93,7 +68,7 @@ pub(crate) fn web_link_url_from_action(action: &str) -> Option<String> {
     let mut parts = action.strip_prefix(LINK_ACTION_PREFIX)?.splitn(3, ':');
     u64::from_str_radix(parts.next()?, 16).ok()?;
     parts.next()?.parse::<usize>().ok()?;
-    Some(web_url(parts.next()?)?.to_string())
+    Markdown::web_link(parts.next()?)
 }
 
 /// Cached presentation is independent of a conversation. Give each cloned
@@ -122,19 +97,10 @@ pub(crate) fn scope_web_links(mut element: Element, scope: &str) -> Element {
     element
 }
 
-/// Character ranges refer to the unchanged editable source, including any
-/// preceding emoji or Markdown syntax.
-fn composer_web_links(source: &str) -> Vec<(Range<usize>, reqwest::Url)> {
-    Markdown::web_links(source)
-        .into_iter()
-        .filter_map(|(range, url)| Some((range, web_url(&url)?)))
-        .collect()
-}
-
 /// Compact link affordances are separate from the editor's immutable source
 /// geometry: the URL stays editable and paint-only color adds no glyph width.
 pub(crate) fn composer_links(source: &str, width: f32) -> (Vec<TextHighlight>, Option<Element>) {
-    let links = composer_web_links(source);
+    let links = Markdown::web_links(source);
     let highlights = links
         .iter()
         .map(|(range, _)| TextHighlight {
@@ -165,14 +131,12 @@ pub(crate) fn composer_links(source: &str, width: f32) -> (Vec<TextHighlight>, O
                 .map_or(url.as_str(), |(_, label)| label);
             let action = link_action("composer", index, url.as_str());
             let button = Button::new(action.clone(), label, palette)
-                .icon(link_icon(url))
+                .icon(Markdown::link_icon(url))
                 .variant(ButtonVariant::Outline)
                 .size(ControlSize::Dense)
+                .radius(RadiusRole::Surface)
                 .width(item_width)
-                .render()
-                .font_size(12.0)
-                .radius(6.0)
-                .size(Some(item_width), Some(24.0));
+                .render();
             Tooltip::new(
                 button,
                 format!("{action}:tooltip"),

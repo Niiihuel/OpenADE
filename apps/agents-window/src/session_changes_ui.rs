@@ -100,7 +100,7 @@ fn append_changes(
                 .muted()
                 .render(),
         );
-        rows.push(theme::interactive_surface(
+        rows.push(
             Button::new(
                 "dock_open:review",
                 "Ver cambios del repositorio",
@@ -109,7 +109,7 @@ fn append_changes(
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
             .render(),
-        ));
+        );
         return;
     }
     rows.push(
@@ -156,10 +156,11 @@ fn append_changes(
     if !changes.coverage_notes.is_empty() {
         rows.push(
             Tooltip::new(
-                Element::truncated_text(changes.coverage_notes.join(" · "))
-                    .font_family(FontFamily::Sans)
-                    .font_size(10.5)
-                    .foreground(theme::FOREGROUND_SUBTLE)
+                Text::new(changes.coverage_notes.join(" · "), theme::component_palette())
+                    .size(10.5)
+                    .muted()
+                    .truncate()
+                    .render()
                     .size(Some(width), Some(18.0)),
                 "session_changes_coverage",
                 "Cobertura de los cambios",
