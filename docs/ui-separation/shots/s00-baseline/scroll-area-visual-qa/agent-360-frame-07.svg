@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="520" viewBox="0 0 360 520" overflow="hidden">
+<rect x="0" y="0" width="360" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="520"/></clipPath></defs><g clip-path="url(#clip-1)">
+<rect x="12" y="-132.50858" width="322" height="386.42856" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="-132.00858" width="321" height="385.42856" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="12" y="0" width="322" height="253.91998"/></clipPath></defs><g clip-path="url(#clip-4)">
+<text x="22" y="-2.0800018" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Proveedor y modelo</text>
+<text x="22" y="17.34857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">No hay modelos disponibles.</text>
+<text x="22" y="31.491426" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conecta un proveedor para configurar el agente </text>
+<text x="22" y="45.634285" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">nativo.</text>
+<rect x="22" y="67.77714" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="68.27714" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="74" x="117" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="139.42857" y="74.06285" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Elegir modelo</text>
+<rect x="22" y="103.77714" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="104.27714" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="110" x="100" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="122.28571" y="110.06285" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Conectar proveedor</text>
+<rect x="12" y="141.77713" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="153" x="22" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+<text x="48" y="152.77713" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alcance de estos ajustes</text>
+<text x="48" y="173.2057" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Los permisos se guardan para los próximos </text>
+<text x="48" y="187.34856" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">turnos nativos. Los subagentes reciben su </text>
+<text x="48" y="201.49142" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">política al iniciar su trabajo; las </text>
+<text x="48" y="215.63428" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">automatizaciones usan su propia política </text>
+<text x="48" y="229.77713" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">guardada.</text>
+</g>
+<text x="16" y="269.91998" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Búsqueda web</text>
+<rect x="12" y="292.06284" width="322" height="132" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="292.56284" width="321" height="131" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-29" clipPathUnits="userSpaceOnUse"><rect x="12" y="292.06284" width="322" height="132"/></clipPath></defs><g clip-path="url(#clip-29)">
+<text x="22" y="302.06284" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Búsqueda web alojada</text>
+<text x="22" y="321.4914" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">El proveedor busca en la web durante el turno y </text>
+<text x="22" y="335.63425" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">puede contactar fuentes externas. Aplica a los </text>
+<text x="22" y="349.7771" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">próximos turnos; no se puede cambiar con un </text>
+<text x="22" y="363.91995" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">agente en curso.</text>
+<rect x="22" y="386.06284" width="200" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="386.56284" width="199" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="73.28571" y="392.34854" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Desactivada</text>
+<svg opacity="1" y="392" x="155" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+<text x="16" y="440.0628" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Herramientas del agente nativo</text>
+<rect x="12" y="462.20566" width="322" height="509.2857" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="462.70566" width="321" height="508.2857" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-43" clipPathUnits="userSpaceOnUse"><rect x="12" y="462.20566" width="322" height="57.794342"/></clipPath></defs><g clip-path="url(#clip-43)">
+<text x="22" y="472.20566" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Escritura y comandos</text>
+<text x="22" y="491.63422" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Escritura y comandos desactivados. Los </text>
+<text x="22" y="505.77707" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">permisos de lectura se configuran por </text>
+<text x="22" y="519.9199" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">separado.</text>
+<rect x="288" y="493.13422" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="291" y="496.13422" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+</g>
+</g>
+<defs><clipPath id="clip-52" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="520"/></clipPath></defs><g clip-path="url(#clip-52)">
+<rect x="350.5" y="55.40313" width="5" height="90.430214" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,9 356.5,9 353,5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,511 356.5,511 353,515" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+</svg>

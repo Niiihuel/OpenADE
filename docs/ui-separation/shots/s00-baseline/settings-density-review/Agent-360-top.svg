@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="840" viewBox="0 0 360 840" overflow="hidden">
+<rect x="0" y="0" width="360" height="840" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="840"/></clipPath></defs><g clip-path="url(#clip-1)">
+<rect x="12" y="12" width="68.875" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="12.5" y="12.5" width="67.875" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="18" x="18" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-left" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"/>
+</svg>
+<text x="40" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Volver</text>
+<rect x="246.6875" y="12" width="87.3125" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="247.1875" y="12.5" width="86.3125" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="18" x="253" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-list" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+</svg>
+<text x="274.6875" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Secciones</text>
+<text x="12" y="52" font-family="Ubuntu,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Agente</text>
+<text x="12" y="76.73215" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Proveedor, herramientas y permisos del agente nativo de </text>
+<text x="12" y="89.40179" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">OpenIDE.</text>
+<text x="16" y="118.07143" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Agente nativo de OpenIDE</text>
+<rect x="12" y="138.74107" width="322" height="324.3125" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="139.24107" width="321" height="323.3125" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-16" clipPathUnits="userSpaceOnUse"><rect x="12" y="138.74107" width="322" height="324.3125"/></clipPath></defs><g clip-path="url(#clip-16)">
+<text x="22" y="148.74107" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ejecución nativa</text>
+<text x="22" y="166.5625" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">OpenIDE administra el contexto, las herramientas y la </text>
+<text x="22" y="179.23215" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">recuperación de la conversación, y consulta directamente la </text>
+<text x="22" y="191.90178" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">API del proveedor.</text>
+<text x="22" y="212.57143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">OpenIDE</text>
+<rect x="12" y="236.39285" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="247.39285" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Proveedor y modelo</text>
+<text x="22" y="265.2143" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">No hay modelos disponibles.</text>
+<text x="22" y="277.88394" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conecta un proveedor para configurar el agente nativo.</text>
+<rect x="22" y="298.55356" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="299.05356" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="305" x="124" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="146.125" y="305.64285" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Elegir modelo</text>
+<rect x="22" y="334.55356" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="335.05356" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="341" x="108" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="129.65625" y="341.64285" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Conectar proveedor</text>
+<rect x="12" y="372.55356" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="384" x="22" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+<text x="48" y="383.55356" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alcance de estos ajustes</text>
+<text x="48" y="402.375" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Los permisos se guardan para los próximos turnos </text>
+<text x="48" y="415.04465" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">nativos. Los subagentes reciben su política al iniciar su </text>
+<text x="48" y="427.7143" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">trabajo; las automatizaciones usan su propia política </text>
+<text x="48" y="440.3839" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">guardada.</text>
+</g>
+<text x="16" y="479.0536" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Herramientas del agente nativo</text>
+<rect x="12" y="499.72324" width="322" height="436.45535" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="500.22324" width="321" height="435.45535" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-45" clipPathUnits="userSpaceOnUse"><rect x="12" y="499.72324" width="322" height="340.27676"/></clipPath></defs><g clip-path="url(#clip-45)">
+<text x="22" y="509.72324" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Escritura y comandos</text>
+<text x="22" y="527.5447" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Escritura y comandos desactivados. Los permisos </text>
+<text x="22" y="540.2143" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">de lectura se configuran por separado.</text>
+<rect x="288" y="521.3036" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="291" y="524.3036" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+<rect x="12" y="562.884" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="573.884" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Leer archivos</text>
+<text x="22" y="591.7054" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Leer contenido dentro del proyecto.</text>
+<rect x="288" y="579.1295" width="36" height="20" rx="10" fill="#ebebeb" fill-opacity="1"/>
+<rect x="307" y="582.1295" width="14" height="14" rx="7" fill="#373737" fill-opacity="1"/>
+<rect x="12" y="614.375" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="625.375" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Explorar carpetas</text>
+<text x="22" y="643.1964" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Listar archivos dentro del proyecto.</text>
+<rect x="288" y="630.62054" width="36" height="20" rx="10" fill="#ebebeb" fill-opacity="1"/>
+<rect x="307" y="633.62054" width="14" height="14" rx="7" fill="#373737" fill-opacity="1"/>
+<rect x="12" y="665.8661" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="676.8661" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Buscar contenido</text>
+<text x="22" y="694.6875" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Consultar texto y rutas del proyecto.</text>
+<rect x="288" y="682.11163" width="36" height="20" rx="10" fill="#ebebeb" fill-opacity="1"/>
+<rect x="307" y="685.11163" width="14" height="14" rx="7" fill="#373737" fill-opacity="1"/>
+<rect x="12" y="717.3572" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="728.3572" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Modificar archivos</text>
+<text x="22" y="746.1786" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Incluye escritura y apply_patch; requiere </text>
+<text x="22" y="758.8482" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">aprobación o una autorización vigente.</text>
+<rect x="288" y="739.93756" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="291" y="742.93756" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+<rect x="12" y="781.5179" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="792.5179" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ejecutar comandos</text>
+<text x="22" y="810.3393" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Incluye procesos persistentes y entrada a la </text>
+<text x="22" y="823.0089" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">terminal; requiere aprobación o una autorización </text>
+<text x="22" y="835.6786" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">vigente.</text>
+<rect x="288" y="810.43304" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="291" y="813.43304" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+</g>
+</g>
+<defs><clipPath id="clip-81" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="840"/></clipPath></defs><g clip-path="url(#clip-81)">
+<rect x="350.5" y="14" width="5" height="285.1175" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,9 356.5,9 353,5" fill="#888888" fill-opacity="0.09411765"/>
+<polygon points="349.5,831 356.5,831 353,835" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+</svg>

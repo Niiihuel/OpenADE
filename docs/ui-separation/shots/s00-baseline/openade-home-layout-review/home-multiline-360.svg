@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="660" viewBox="0 0 360 660" overflow="hidden">
+<rect x="0" y="0" width="360" height="660" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="48" width="360" height="612"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="111.15625" y="257.54016" font-family="Ubuntu,sans-serif" font-size="25" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Nueva tarea</text>
+<path d="M 42 313.54016 H 318 A 10 10 0 0 1 328 323.54016 V 345.54016 A 0 0 0 0 1 328 345.54016 H 32 A 0 0 0 0 1 32 345.54016 V 323.54016 A 10 10 0 0 1 42 313.54016 Z" fill="#202020" fill-opacity="1"/>
+<svg opacity="1" y="322" x="42" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg>
+<text x="63" y="322.62946" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#757575" fill-opacity="1" xml:space="preserve">openADE</text>
+<svg opacity="1" y="322" x="142" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="322" x="174" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-laptop" viewBox="0 0 16 16">
+  <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5zm-11-1A1.5 1.5 0 0 0 1 3.5V12h14V3.5A1.5 1.5 0 0 0 13.5 2zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5"/>
+</svg>
+<text x="194.5" y="321.54016" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Local</text>
+<svg opacity="1" y="324" x="238" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="322" x="266" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<circle cx="310" cy="329.54016" r="7" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1.7"/>
+<rect x="24" y="345.54016" width="312" height="104.91965" rx="10" fill="#262626" fill-opacity="1"/>
+<rect x="24.5" y="346.04016" width="311" height="103.91965" rx="9.5" fill="none" stroke="#303030" stroke-opacity="1" stroke-width="1"/>
+<rect x="32" y="353.54016" width="264" height="56.919643" rx="6" fill="#262626" fill-opacity="1"/>
+<defs><clipPath id="clip-15" clipPathUnits="userSpaceOnUse"><rect x="38" y="359.54016" width="252" height="44.919647"/></clipPath></defs><g clip-path="url(#clip-15)">
+<text x="38" y="359.54016" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisá el proyecto.</text>
+<text x="38" y="374.51337" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Explicá cómo funciona el streaming.</text>
+<text x="38" y="389.4866" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Conservá los cambios existentes.</text>
+</g>
+<rect x="300" y="353.54016" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="360" x="306" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#9e9e9e" class="bi bi-arrows-angle-expand" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707"/>
+</svg>
+<rect x="32" y="414.4598" width="28" height="28" rx="4" fill="#262626" fill-opacity="1"/>
+<svg opacity="1" y="420" x="38" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f6f6f6" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<rect x="64" y="414.4598" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="420" x="70" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-exclamation-triangle" viewBox="0 0 16 16">
+  <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.15.15 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.2.2 0 0 1-.054.06.1.1 0 0 1-.066.017H1.146a.1.1 0 0 1-.066-.017.2.2 0 0 1-.054-.06.18.18 0 0 1 .002-.183L7.884 2.073a.15.15 0 0 1 .054-.057m1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/>
+  <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+</svg>
+<rect x="146.0625" y="414.4598" width="149.9375" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="152.0625" y="421.5491" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">GPT-5.6 Luna</text>
+<text x="228.71875" y="421.5491" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Máximo</text>
+<svg opacity="1" y="422" x="278" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#9e9e9e" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="300" y="414.4598" width="28" height="28" rx="6" fill="#ffffff" fill-opacity="1"/>
+<svg opacity="1" y="420" x="306" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#262626" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+</g>
+</svg>

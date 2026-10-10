@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="900" viewBox="0 0 360 900" overflow="hidden">
+<defs><clipPath id="clip-0" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="900"/></clipPath></defs><g clip-path="url(#clip-0)">
+<rect x="19" y="12" width="68.875" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="19.5" y="12.5" width="67.875" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="18" x="25" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-left" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"/>
+</svg>
+<text x="47" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Volver</text>
+<rect x="253.6875" y="12" width="87.3125" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="254.1875" y="12.5" width="86.3125" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="18" x="260" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-list" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+</svg>
+<text x="281.6875" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Secciones</text>
+<text x="19" y="52" font-family="Ubuntu,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">GitHub</text>
+<text x="19" y="76.73215" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conexión de la cuenta y repositorio de GitHub.</text>
+<rect x="19" y="101.40179" width="322" height="86.49107" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="19.5" y="101.90179" width="321" height="85.49107" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-13" clipPathUnits="userSpaceOnUse"><rect x="19" y="101.40179" width="322" height="86.491066"/></clipPath></defs><g clip-path="url(#clip-13)">
+<rect x="29" y="128.64732" width="32" height="32" rx="16" fill="#363636" fill-opacity="1"/>
+<text x="40.546875" y="136.90732" font-family="Ubuntu,sans-serif" font-size="13.44" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">A</text>
+<text x="71" y="111.40179" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">@alice</text>
+<text x="71" y="129.22322" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuenta verificada · GitHub</text>
+<rect x="71" y="149.89285" width="260" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="71.5" y="150.39285" width="259" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="156" x="165" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="186.57813" y="156.98213" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Ver perfil</text>
+</g>
+<text x="23" y="203.89285" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conexión</text>
+<rect x="19" y="224.5625" width="322" height="274.14285" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="19.5" y="225.0625" width="321" height="273.14285" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-26" clipPathUnits="userSpaceOnUse"><rect x="19" y="224.5625" width="322" height="274.14285"/></clipPath></defs><g clip-path="url(#clip-26)">
+<text x="29" y="234.5625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Actualizar conexión</text>
+<text x="29" y="252.38393" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Comprueba de nuevo el estado de la cuenta y sus datos.</text>
+<rect x="29" y="273.05356" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="29.5" y="273.55356" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="279" x="142" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+</svg>
+<text x="163.89063" y="280.14285" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Actualizar</text>
+<rect x="19" y="311.0536" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="29" y="322.0536" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cambiar de cuenta</text>
+<text x="29" y="339.87503" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conecta otra cuenta desde el navegador.</text>
+<rect x="29" y="360.54465" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="29.5" y="361.04465" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="367" x="112" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<text x="133.64063" y="367.63394" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Conectar otra cuenta</text>
+<rect x="19" y="398.54465" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="29" y="409.54465" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Desconectar de OpenIDE</text>
+<text x="29" y="427.3661" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conserva tus credenciales de GitHub CLI y las demás </text>
+<text x="29" y="440.03574" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">aplicaciones.</text>
+<rect x="29" y="460.70535" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="29.5" y="461.20535" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="467" x="135" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-x-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+</svg>
+<text x="156.98438" y="467.79465" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Desconectar</text>
+</g>
+<rect x="19" y="510.70535" width="322" height="153.82143" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="19.5" y="511.20535" width="321" height="152.82143" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-51" clipPathUnits="userSpaceOnUse"><rect x="19" y="510.70535" width="322" height="153.82144"/></clipPath></defs><g clip-path="url(#clip-51)">
+<text x="29" y="520.7053" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cargando contribuciones…</text>
+<rect x="29" y="544.52673" width="302" height="110" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+</g>
+<text x="23" y="680.5268" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Integración del proyecto</text>
+<rect x="19" y="701.1964" width="322" height="151.6518" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="19.5" y="701.6964" width="321" height="150.6518" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-58" clipPathUnits="userSpaceOnUse"><rect x="19" y="701.1964" width="322" height="151.6518"/></clipPath></defs><g clip-path="url(#clip-58)">
+<svg opacity="1" y="711" x="29" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<text x="55" y="711.1964" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Repositorio y pull requests</text>
+<text x="55" y="730.0178" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Las consultas privadas usan la cuenta seleccionada en </text>
+<text x="55" y="742.68744" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">OpenIDE.</text>
+<rect x="19" y="765.3571" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="29" y="776.3571" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Proveedores de modelos</text>
+<text x="29" y="794.1785" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Las conexiones del agente se configuran por separado.</text>
+<rect x="29" y="814.8482" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="29.5" y="815.3482" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="821" x="128" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="149.625" y="821.9375" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Ver conexiones</text>
+</g>
+</g>
+</svg>

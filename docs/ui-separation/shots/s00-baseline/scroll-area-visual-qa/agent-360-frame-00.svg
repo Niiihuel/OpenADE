@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="520" viewBox="0 0 360 520" overflow="hidden">
+<rect x="0" y="0" width="360" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="520"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="12" y="12" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Agente</text>
+<text x="12" y="39.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Proveedor, herramientas y permisos del agente </text>
+<text x="12" y="53.285713" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">nativo de OpenIDE.</text>
+<text x="16" y="83.42857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Agente nativo de OpenIDE</text>
+<rect x="12" y="105.57143" width="322" height="386.42856" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="106.07143" width="321" height="385.42856" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="12" y="105.57143" width="322" height="386.4286"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="22" y="115.57143" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ejecución nativa</text>
+<text x="22" y="135" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">OpenIDE administra el contexto, las </text>
+<text x="22" y="149.14285" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">herramientas y la recuperación de la </text>
+<text x="22" y="163.2857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">conversación, y consulta directamente la API </text>
+<text x="22" y="177.42857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">del proveedor.</text>
+<text x="22" y="199.57143" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">OpenIDE</text>
+<rect x="12" y="225" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="236" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Proveedor y modelo</text>
+<text x="22" y="255.42857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">No hay modelos disponibles.</text>
+<text x="22" y="269.57144" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conecta un proveedor para configurar el agente </text>
+<text x="22" y="283.7143" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">nativo.</text>
+<rect x="22" y="305.85715" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="306.35715" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="312" x="117" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="139.42857" y="312.14285" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Elegir modelo</text>
+<rect x="22" y="341.85715" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="342.35715" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="348" x="100" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="122.28571" y="348.14285" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Conectar proveedor</text>
+<rect x="12" y="379.85712" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="391" x="22" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+<text x="48" y="390.85712" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alcance de estos ajustes</text>
+<text x="48" y="411.28568" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Los permisos se guardan para los próximos </text>
+<text x="48" y="425.42853" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">turnos nativos. Los subagentes reciben su </text>
+<text x="48" y="439.57138" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">política al iniciar su trabajo; las </text>
+<text x="48" y="453.71423" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">automatizaciones usan su propia política </text>
+<text x="48" y="467.85712" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">guardada.</text>
+</g>
+<text x="16" y="508" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Búsqueda web</text>
+</g>
+<defs><clipPath id="clip-39" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="520"/></clipPath></defs><g clip-path="url(#clip-39)">
+<rect x="350.5" y="14" width="5" height="90.430214" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,9 356.5,9 353,5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,511 356.5,511 353,515" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+</svg>

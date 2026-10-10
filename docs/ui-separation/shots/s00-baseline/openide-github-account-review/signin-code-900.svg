@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="900" height="520" viewBox="0 0 900 520" overflow="hidden">
+<rect x="0" y="0" width="900" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="0" width="900" height="520" rx="0" fill="#000000" fill-opacity="0.7058824"/>
+<defs><filter id="shadow-2" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="16"/></filter></defs><rect x="230" y="146.2009" width="440" height="259.5982" rx="12" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-2)"/>
+<rect x="230" y="130.2009" width="440" height="259.5982" rx="12" fill="#161616" fill-opacity="1"/>
+<rect x="230.5" y="130.7009" width="439" height="258.5982" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="244" y="144.2009" width="412" height="231.5982"/></clipPath></defs><g clip-path="url(#clip-5)">
+<text x="244" y="144.2009" font-family="Ubuntu,sans-serif" font-size="16" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Conectar con GitHub</text>
+<svg opacity="1" y="148" x="636" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="244" y="178.2009" width="412" height="159.5982"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="244" y="179.44644" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Copia este código y pégalo en GitHub para autorizar el acceso a tu cuenta.</text>
+<rect x="244" y="204.5134" width="412" height="48" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="244.5" y="205.0134" width="411" height="47" rx="5.5" fill="none" stroke="#484848" stroke-opacity="1" stroke-width="1"/>
+<text x="361.71875" y="214.5134" font-family="Hack,monospace" font-size="22" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">ABCD-1234</text>
+<rect x="598.65625" y="214.5134" width="47.34375" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<text x="604.65625" y="221.60268" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Copiar</text>
+<text x="244" y="262.5134" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">1. Abre github.com/login/device en el navegador.</text>
+<text x="244" y="276.33484" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">2. Introduce el código y autoriza OpenIDE.</text>
+<text x="244" y="300.15625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">El código es temporal y sólo se puede usar una vez.</text>
+<text x="244" y="323.97766" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">@alice seguirá conectado hasta verificar la nueva cuenta.</text>
+</g>
+<rect x="446.15625" y="347.7991" width="59.0625" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="446.65625" y="348.2991" width="58.0625" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="452.15625" y="354.8884" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cancelar</text>
+<rect x="511.21875" y="347.7991" width="144.78125" height="28" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<text x="517.21875" y="354.8884" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#161616" fill-opacity="1" xml:space="preserve">Copiar y abrir navegador</text>
+</g>
+</svg>

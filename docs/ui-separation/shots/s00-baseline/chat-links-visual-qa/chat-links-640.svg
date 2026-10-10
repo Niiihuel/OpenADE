@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="640" height="520" viewBox="0 0 640 520" overflow="hidden">
+<rect x="0" y="0" width="640" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<text x="12" y="12" font-family="Hack,monospace" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Enlaces en la respuesta</text>
+<text x="12" y="41.428574" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Encontré el cambio en </text>
+<defs><clipPath id="clip-3" clipPathUnits="userSpaceOnUse"><rect x="155.875" y="39.428574" width="20" height="22"/></clipPath></defs><g clip-path="url(#clip-3)">
+<svg opacity="1" y="42" x="156" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#78a9ff" class="bi bi-github" viewBox="0 0 16 16">
+  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/>
+</svg>
+</g>
+<text x="175.875" y="41.428574" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#78a9ff" fill-opacity="1" xml:space="preserve">GitHub</text>
+<text x="220.59375" y="41.428574" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">. La </text>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="245.09375" y="39.428574" width="20" height="22"/></clipPath></defs><g clip-path="url(#clip-8)">
+<svg opacity="1" y="42" x="245" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#78a9ff" class="bi bi-globe" viewBox="0 0 16 16">
+  <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8m7.5-6.923c-.67.204-1.335.82-1.887 1.855A8 8 0 0 0 5.145 4H7.5zM4.09 4a9.3 9.3 0 0 1 .64-1.539 7 7 0 0 1 .597-.933A7.03 7.03 0 0 0 2.255 4zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a7 7 0 0 0-.656 2.5zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5zM8.5 5v2.5h2.99a12.5 12.5 0 0 0-.337-2.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5zM5.145 12q.208.58.468 1.068c.552 1.035 1.218 1.65 1.887 1.855V12zm.182 2.472a7 7 0 0 1-.597-.933A9.3 9.3 0 0 1 4.09 12H2.255a7 7 0 0 0 3.072 2.472M3.82 11a13.7 13.7 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5zm6.853 3.472A7 7 0 0 0 13.745 12H11.91a9.3 9.3 0 0 1-.64 1.539 7 7 0 0 1-.597.933M8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855q.26-.487.468-1.068zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.7 13.7 0 0 1-.312 2.5m2.802-3.5a7 7 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7 7 0 0 0-3.072-2.472c.218.284.418.598.597.933M10.855 4a8 8 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4z"/>
+</svg>
+</g>
+<text x="265.09375" y="41.428574" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#78a9ff" fill-opacity="1" xml:space="preserve">documentación</text>
+<text x="363.34375" y="41.428574" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> explica cómo mantener el texto editable.</text>
+<text x="12" y="77.42857" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ruta local: </text>
+<rect x="81.40625" y="77.42857" width="98.71875" height="18" rx="3" fill="#363636" fill-opacity="1"/>
+<text x="84.40625" y="77.42857" font-family="Hack,monospace" font-size="14" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">src/main.rs</text>
+<text x="180.125" y="77.42857" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">. Sigo revisando…</text>
+<path d="M 30 145.42857 H 610 A 10 10 0 0 1 620 155.42857 V 177.42857 A 0 0 0 0 1 620 177.42857 H 20 A 0 0 0 0 1 20 177.42857 V 155.42857 A 10 10 0 0 1 30 145.42857 Z" fill="#202020" fill-opacity="1"/>
+<svg opacity="1" y="153" x="30" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg>
+<text x="51" y="153.7143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#757575" fill-opacity="1" xml:space="preserve">openIDE</text>
+<svg opacity="1" y="153" x="130" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="153" x="162" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<text x="182.5" y="153.7143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#757575" fill-opacity="1" xml:space="preserve">main</text>
+<svg opacity="1" y="153" x="230" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<circle cx="534" cy="161.42857" r="7" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1.7"/>
+<text x="548" y="153.42857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Contexto</text>
+<rect x="12" y="177.42857" width="616" height="104.71429" rx="10" fill="#262626" fill-opacity="1"/>
+<rect x="12.5" y="177.92857" width="615" height="103.71429" rx="9.5" fill="none" stroke="#262626" stroke-opacity="1" stroke-width="1"/>
+<rect x="20" y="185.42857" width="600" height="28.714285" rx="6" fill="#262626" fill-opacity="1"/>
+<defs><clipPath id="clip-29" clipPathUnits="userSpaceOnUse"><rect x="26" y="191.42857" width="588" height="16.714285"/></clipPath></defs><g clip-path="url(#clip-29)">
+<text x="26" y="191.42857" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisa https://github.com/zed-industries/zed y https://code.visualstudio.com/docs</text>
+<defs><clipPath id="clip-31" clipPathUnits="userSpaceOnUse"><rect x="66.84375" y="191.42857" width="224.75" height="16.714285"/></clipPath></defs><g clip-path="url(#clip-31)">
+<text x="26" y="191.42857" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#78a9ff" fill-opacity="1" xml:space="preserve">Revisa https://github.com/zed-industries/zed y https://code.visualstudio.com/docs</text>
+</g>
+<defs><clipPath id="clip-34" clipPathUnits="userSpaceOnUse"><rect x="304.0625" y="191.42857" width="206.8125" height="16.714285"/></clipPath></defs><g clip-path="url(#clip-34)">
+<text x="26" y="191.42857" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#78a9ff" fill-opacity="1" xml:space="preserve">Revisa https://github.com/zed-industries/zed y https://code.visualstudio.com/docs</text>
+</g>
+</g>
+<rect x="20" y="218.14285" width="280" height="24" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="218.64285" width="279" height="23" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="222" x="66" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#78a9ff" class="bi bi-github" viewBox="0 0 16 16">
+  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/>
+</svg>
+<text x="87.8125" y="222.42857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#78a9ff" fill-opacity="1" xml:space="preserve">github.com/zed-industries/zed</text>
+<rect x="304" y="218.14285" width="280" height="24" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="304.5" y="218.64285" width="279" height="23" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="222" x="358" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#78a9ff" class="bi bi-globe" viewBox="0 0 16 16">
+  <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8m7.5-6.923c-.67.204-1.335.82-1.887 1.855A8 8 0 0 0 5.145 4H7.5zM4.09 4a9.3 9.3 0 0 1 .64-1.539 7 7 0 0 1 .597-.933A7.03 7.03 0 0 0 2.255 4zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a7 7 0 0 0-.656 2.5zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5zM8.5 5v2.5h2.99a12.5 12.5 0 0 0-.337-2.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5zM5.145 12q.208.58.468 1.068c.552 1.035 1.218 1.65 1.887 1.855V12zm.182 2.472a7 7 0 0 1-.597-.933A9.3 9.3 0 0 1 4.09 12H2.255a7 7 0 0 0 3.072 2.472M3.82 11a13.7 13.7 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5zm6.853 3.472A7 7 0 0 0 13.745 12H11.91a9.3 9.3 0 0 1-.64 1.539 7 7 0 0 1-.597.933M8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855q.26-.487.468-1.068zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.7 13.7 0 0 1-.312 2.5m2.802-3.5a7 7 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7 7 0 0 0-3.072-2.472c.218.284.418.598.597.933M10.855 4a8 8 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4z"/>
+</svg>
+<text x="380.10938" y="222.42857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#78a9ff" fill-opacity="1" xml:space="preserve">code.visualstudio.com/docs</text>
+<rect x="20" y="246.14285" width="28" height="28" rx="4" fill="#404040" fill-opacity="1"/>
+<svg opacity="1" y="252" x="26" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f6f6f6" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<rect x="474.59375" y="246.14285" width="81.40625" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="480.59375" y="252.42857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">GPT-6 Sol</text>
+<svg opacity="1" y="254" x="538" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#9e9e9e" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="560" y="246.14285" width="28" height="28" rx="6" fill="#262626" fill-opacity="1"/>
+<rect x="560.5" y="246.64285" width="27" height="27" rx="5.5" fill="none" stroke="#444444" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="252" x="566" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f0f0f0" class="bi bi-mic" viewBox="0 0 16 16">
+  <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5"/>
+  <path d="M10 8a2 2 0 1 1-4 0V3a2 2 0 1 1 4 0zM8 0a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V3a3 3 0 0 0-3-3"/>
+</svg>
+<rect x="592" y="246.14285" width="28" height="28" rx="6" fill="#2571fb" fill-opacity="1"/>
+<svg opacity="1" y="252" x="598" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ffffff" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+</svg>

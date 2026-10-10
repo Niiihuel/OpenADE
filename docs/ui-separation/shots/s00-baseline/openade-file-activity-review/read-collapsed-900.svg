@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="900" height="420" viewBox="0 0 900 420" overflow="hidden">
+<rect x="0" y="0" width="900" height="420" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="12" y="12" width="876" height="28"/></clipPath></defs><g clip-path="url(#clip-1)">
+<defs><clipPath id="clip-2" clipPathUnits="userSpaceOnUse"><rect x="12" y="12" width="876" height="28"/></clipPath></defs><g clip-path="url(#clip-2)">
+<defs><clipPath id="clip-3" clipPathUnits="userSpaceOnUse"><rect x="12" y="12" width="876" height="28"/></clipPath></defs><g clip-path="url(#clip-3)">
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="18" y="14" width="838" height="24"/></clipPath></defs><g clip-path="url(#clip-4)">
+<svg opacity="1" y="19" x="18" height="14" width="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="#ff7043" d="m30 12-4-2V6h-4l-2-4-4 2-4-2-2 4H6v4l-4 2 2 4-2 4 4 2v4h4l2 4 4-2 4 2 2-4h4v-4l4-2-2-4ZM6 16a9.9 9.9 0 0 1 .842-4H10v8H6.842A9.9 9.9 0 0 1 6 16m10 10a9.98 9.98 0 0 1-7.978-4H16v-2h-2v-2h4c.819.819.297 2.308 1.179 3.37a1.89 1.89 0 0 0 1.46.63h3.34A9.98 9.98 0 0 1 16 26m-2-12v-2h4a1 1 0 0 1 0 2Zm11.158 6H24a2.006 2.006 0 0 1-2-2 2 2 0 0 0-2-2 3 3 0 0 0 3-3q0-.08-.004-.161A3.115 3.115 0 0 0 19.83 10H8.022a9.986 9.986 0 0 1 17.136 10"/></svg>
+<defs><clipPath id="clip-6" clipPathUnits="userSpaceOnUse"><rect x="34" y="14" width="786.53125" height="24"/></clipPath></defs><g clip-path="url(#clip-6)">
+<text x="37" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">captura.rs</text>
+</g>
+<defs><clipPath id="clip-9" clipPathUnits="userSpaceOnUse"><rect x="828.53125" y="19.665178" width="27.46875" height="12.6696415"/></clipPath></defs><g clip-path="url(#clip-9)">
+<text x="828.53125" y="19.665178" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Leído</text>
+</g>
+</g>
+<svg opacity="1" y="19" x="863" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-chevron-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+</g>
+</g>
+</svg>

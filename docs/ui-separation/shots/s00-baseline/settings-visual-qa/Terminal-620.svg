@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="620" height="900" viewBox="0 0 620 900" overflow="hidden">
+<rect x="0" y="0" width="620" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="900"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="27" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Terminal</text>
+<text x="27" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Shell y comportamiento de la terminal integrada.</text>
+<text x="31" y="77.28571" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Terminal integrada</text>
+<rect x="27" y="99.42857" width="566" height="89.57143" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="27.5" y="99.92857" width="565" height="88.57143" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-7" clipPathUnits="userSpaceOnUse"><rect x="27" y="99.42857" width="566" height="89.57143"/></clipPath></defs><g clip-path="url(#clip-7)">
+<text x="37" y="109.42857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shell predeterminado</text>
+<text x="37" y="128.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Se usará en nuevas terminales. Las abiertas conservan su shell.</text>
+<rect x="37" y="151" width="238" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="37.5" y="151.5" width="237" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="55.85714" y="157.28572" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Predeterminada del sistema</text>
+<svg opacity="1" y="157" x="240" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+</g>
+</svg>

@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="264" height="320" viewBox="0 0 264 320" overflow="hidden">
+<rect x="0" y="0" width="264" height="320" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="0.5" y="0.5" width="263" height="319" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<rect x="6" y="4" width="24" height="24" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="8" x="10" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-layout-sidebar-inset" viewBox="0 0 16 16">
+  <path d="M14 2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2z"/>
+  <path d="M3 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+</svg>
+<text x="34" y="8.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">OpenIDE</text>
+<rect x="234" y="4" width="24" height="24" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="8" x="238" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-bell" viewBox="0 0 16 16">
+  <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/>
+</svg>
+<rect x="0" y="32" width="264" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="6" y="39" width="252" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="45" x="10" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<text x="34" y="45.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Nueva tarea</text>
+<rect x="176.78125" y="44" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="180.78125" y="46.66518" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="206.28125" y="44" width="22.71875" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="210.28125" y="46.66518" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alt</text>
+<rect x="232" y="44" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="237" y="46.66518" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">N</text>
+<rect x="6" y="69" width="252" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="75" x="10" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<text x="34" y="75.51339" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Buscar</text>
+<rect x="167.90625" y="74" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="171.90625" y="76.66518" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="197.40625" y="74" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="201.40625" y="76.66518" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="232" y="74" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="237.65625" y="76.66518" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+<rect x="6" y="99" width="252" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="105" x="10" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-clock" viewBox="0 0 16 16">
+  <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+  <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+</svg>
+<text x="34" y="105.51339" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Automatizaciones</text>
+<rect x="6" y="129" width="252" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="135" x="10" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-grid" viewBox="0 0 16 16">
+  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5z"/>
+</svg>
+<text x="34" y="135.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Marketplace</text>
+<rect x="6" y="169" width="154" height="28" rx="6" fill="#363636" fill-opacity="1"/>
+<rect x="80" y="171" width="78" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="8" y="171" width="70" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="175" x="17" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-hash" viewBox="0 0 16 16">
+  <path d="M8.39 12.648a1 1 0 0 0-.015.18c0 .305.21.508.5.508.266 0 .492-.172.555-.477l.554-2.703h1.204c.421 0 .617-.234.617-.547 0-.312-.188-.53-.617-.53h-.985l.516-2.524h1.265c.43 0 .618-.227.618-.547 0-.313-.188-.524-.618-.524h-1.046l.476-2.304a1 1 0 0 0 .016-.164.51.51 0 0 0-.516-.516.54.54 0 0 0-.539.43l-.523 2.554H7.617l.477-2.304c.008-.04.015-.118.015-.164a.51.51 0 0 0-.523-.516.54.54 0 0 0-.531.43L6.53 5.484H5.414c-.43 0-.617.22-.617.532s.187.539.617.539h.906l-.515 2.523H4.609c-.421 0-.609.219-.609.531s.188.547.61.547h.976l-.516 2.492c-.008.04-.015.125-.015.18 0 .305.21.508.5.508.265 0 .492-.172.554-.477l.555-2.703h2.242zm-1-6.109h2.266l-.515 2.563H6.859l.532-2.563z"/>
+</svg>
+<text x="36.84375" y="176.37723" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Grupo</text>
+<rect x="80" y="171" width="78" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="175" x="86" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg>
+<text x="105.609375" y="176.37723" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Proyecto</text>
+<rect x="182" y="171" width="24" height="24" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="175" x="186" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-arrows-angle-contract" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M.172 15.828a.5.5 0 0 0 .707 0l4.096-4.096V14.5a.5.5 0 1 0 1 0v-3.975a.5.5 0 0 0-.5-.5H1.5a.5.5 0 0 0 0 1h2.768L.172 15.121a.5.5 0 0 0 0 .707M15.828.172a.5.5 0 0 0-.707 0l-4.096 4.096V1.5a.5.5 0 1 0-1 0v3.975a.5.5 0 0 0 .5.5H14.5a.5.5 0 0 0 0-1h-2.768L15.828.879a.5.5 0 0 0 0-.707"/>
+</svg>
+<rect x="208" y="171" width="24" height="24" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="175" x="212" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-funnel" viewBox="0 0 16 16">
+  <path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5zm1 .5v1.308l4.372 4.858A.5.5 0 0 1 7 8.5v5.306l2-.666V8.5a.5.5 0 0 1 .128-.334L13.5 3.308V2z"/>
+</svg>
+<rect x="234" y="171" width="24" height="24" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="175" x="238" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-archive" viewBox="0 0 16 16">
+  <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1v7.5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 1 12.5V5a1 1 0 0 1-1-1zm2 3v7.5A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5V5zm13-3H1v2h14zM5 7.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/>
+</svg>
+<defs><clipPath id="clip-46" clipPathUnits="userSpaceOnUse"><rect x="6" y="209" width="252" height="68"/></clipPath></defs><g clip-path="url(#clip-46)">
+<text x="12" y="215" font-family="Hack,monospace" font-size="10" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">TAREAS</text>
+<svg opacity="1" y="243" x="10" height="16" width="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.483 6H4.721a1 1 0 0 0-.949.684L2 12V5h12a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232l-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h11l2.403-5.606A1 1 0 0 0 14.483 6" fill="#90a4ae" /></svg>
+<text x="32" y="244.08928" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">openADE</text>
+<text x="208.375" y="245.24107" font-family="Ubuntu,sans-serif" font-size="10" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1</text>
+<svg opacity="1" y="243" x="220" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="6" y="265" width="238" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<defs><clipPath id="clip-53" clipPathUnits="userSpaceOnUse"><rect x="34" y="272.0893" width="182" height="4.9107056"/></clipPath></defs><g clip-path="url(#clip-53)">
+<text x="34" y="272.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisar el proyecto y la interfaz</text>
+</g>
+<rect x="220" y="267" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="271" x="224" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-three-dots" viewBox="0 0 16 16">
+  <path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3"/>
+</svg>
+</g>
+<defs><clipPath id="clip-59" clipPathUnits="userSpaceOnUse"><rect x="6" y="209" width="252" height="68"/></clipPath></defs><g clip-path="url(#clip-59)">
+<rect x="248.5" y="223" width="5" height="32.38095" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="247.5,218 254.5,218 251,214" fill="#888888" fill-opacity="0.09411765"/>
+<polygon points="247.5,268 254.5,268 251,272" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+<rect x="0" y="283" width="264" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="6" y="290" width="182" height="24" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="8" y="292" width="20" height="20" rx="10" fill="#363636" fill-opacity="1"/>
+<text x="14.9375" y="297.1625" font-family="Ubuntu,sans-serif" font-size="8.4" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">N</text>
+<text x="34" y="294.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">nihuel</text>
+<svg opacity="1" y="294" x="170" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="194" y="290" width="24" height="24" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<svg opacity="1" y="294" x="198" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-gear" viewBox="0 0 16 16">
+  <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
+  <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
+</svg>
+<rect x="234" y="290" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="294" x="238" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none">
+  <circle cx="12" cy="12" r="8.5" stroke="#d4d4d4" stroke-opacity="0.35" stroke-width="3.2"/>
+  <path d="M12 3.5a8.5 8.5 0 1 1-7.4 12.7" stroke="#d4d4d4" stroke-width="3.2" stroke-linecap="round"/>
+</svg>
+
+</svg>

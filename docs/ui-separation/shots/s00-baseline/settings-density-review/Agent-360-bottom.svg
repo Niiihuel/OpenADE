@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="840" viewBox="0 0 360 840" overflow="hidden">
+<rect x="0" y="0" width="360" height="840" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="840"/></clipPath></defs><g clip-path="url(#clip-1)">
+<rect x="12" y="-240.26785" width="322" height="477.4732" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="-239.76785" width="321" height="476.4732" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="12" y="0" width="322" height="237.20535"/></clipPath></defs><g clip-path="url(#clip-4)">
+<text x="22" y="-12.124998" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Elegí primero un proveedor.</text>
+<rect x="22" y="8.544643" width="200" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="9.044643" width="199" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="73.125" y="15.633929" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Elegir modelo</text>
+<svg opacity="1" y="15" x="155" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="12" y="46.544647" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="57.544647" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Tomar el del composer</text>
+<text x="22" y="75.36607" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Guarda como modelo manual el que tengas seleccionado </text>
+<text x="22" y="88.03571" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">ahora en el composer.</text>
+<rect x="22" y="108.70536" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="109.20536" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="115" x="97" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+<text x="119.015625" y="115.79465" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Guardar el seleccionado</text>
+<rect x="12" y="146.70535" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="158" x="22" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="48" y="157.70535" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">No cambia tu modelo de trabajo</text>
+<text x="48" y="176.52678" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">El modelo de revisión se usa solo en el turno de la </text>
+<text x="48" y="189.19643" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">revisión. Tu selección en el composer queda como </text>
+<text x="48" y="201.86606" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">estaba. Para reanudar una revisión interrumpida hay </text>
+<text x="48" y="214.5357" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">que seleccionar ese mismo modelo.</text>
+</g>
+<text x="16" y="253.20532" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Chequeo al terminar</text>
+<rect x="12" y="273.87497" width="322" height="217.9732" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="274.37497" width="321" height="216.9732" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-29" clipPathUnits="userSpaceOnUse"><rect x="12" y="273.87497" width="322" height="217.9732"/></clipPath></defs><g clip-path="url(#clip-29)">
+<text x="22" y="283.87497" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Comando de chequeo de este proyecto</text>
+<text x="22" y="301.6964" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Se ejecuta con sh en la carpeta del proyecto después de </text>
+<text x="22" y="314.36606" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">cada turno que modifique archivos o ejecute comandos. Si </text>
+<text x="22" y="327.0357" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">falla, aparece un aviso sobre el composer con la acción </text>
+<text x="22" y="339.70532" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Corregir. Dejalo vacío y presioná Enter para desactivarlo.</text>
+<rect x="22" y="360.37497" width="260" height="30.973213" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="360.87497" width="259" height="29.973213" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-37" clipPathUnits="userSpaceOnUse"><rect x="30" y="368.37497" width="244" height="14.973206"/></clipPath></defs><g clip-path="url(#clip-37)">
+<text x="30" y="368.37497" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="0.43137255" xml:space="preserve">p. ej. cargo test</text>
+</g>
+<rect x="12" y="401.34818" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="412" x="22" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="48" y="412.34818" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">No inicia turnos por su cuenta</text>
+<text x="48" y="431.16962" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">El chequeo nunca envía un mensaje ni reemplaza lo </text>
+<text x="48" y="443.83926" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">que estés escribiendo: Corregir agrega la salida del </text>
+<text x="48" y="456.5089" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">fallo a tu borrador y vos decidís enviarlo. Se detiene a </text>
+<text x="48" y="469.17853" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">los 120 segundos.</text>
+</g>
+<text x="16" y="507.84814" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Capacidades conectadas</text>
+<rect x="12" y="528.51776" width="322" height="299.48215" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="529.01776" width="321" height="298.48215" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-51" clipPathUnits="userSpaceOnUse"><rect x="12" y="528.51776" width="322" height="299.48212"/></clipPath></defs><g clip-path="url(#clip-51)">
+<text x="22" y="538.51776" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Subagentes</text>
+<text x="22" y="556.3392" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Estado, permisos, instrucciones pendientes y recuperación </text>
+<text x="22" y="569.0088" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">de los agentes delegados.</text>
+<rect x="22" y="589.67847" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="590.17847" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="596" x="120" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-people" viewBox="0 0 16 16">
+  <path d="M15 14s1 0 1-1-1-4-5-4-5 3-5 4 1 1 1 1zm-7.978-1L7 12.996c.001-.264.167-1.03.76-1.72C8.312 10.629 9.282 10 11 10c1.717 0 2.687.63 3.24 1.276.593.69.758 1.457.76 1.72l-.008.002-.014.002zM11 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4m3-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0M6.936 9.28a6 6 0 0 0-1.23-.247A7 7 0 0 0 5 9c-4 0-5 3-5 4q0 1 1 1h4.216A2.24 2.24 0 0 1 5 13c0-1.01.377-2.042 1.09-2.904.243-.294.526-.569.846-.816M4.92 10A5.5 5.5 0 0 0 4 13H1c0-.26.164-1.03.76-1.724.545-.636 1.492-1.256 3.16-1.275ZM1.5 5.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0m3-2a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/>
+</svg>
+<text x="141.84375" y="596.76776" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Ver subagentes</text>
+<rect x="12" y="627.67847" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="638.67847" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Contexto y objetivos</text>
+<text x="22" y="656.4999" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Historial, compactación, instrucciones y objetivo guardado </text>
+<text x="22" y="669.1695" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">de la conversación.</text>
+<rect x="22" y="689.8392" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="690.3392" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="696" x="127" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-clock-history" viewBox="0 0 16 16">
+  <path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z"/>
+  <path d="M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z"/>
+  <path d="M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5"/>
+</svg>
+<text x="148.9375" y="696.92847" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Ver contexto</text>
+<rect x="12" y="727.8392" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="738.8392" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Herramientas e instrucciones externas</text>
+<text x="22" y="756.6606" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Configura los servidores MCP, skills y hooks desde sus </text>
+<text x="22" y="769.3302" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">secciones.</text>
+<rect x="22" y="789.9999" width="302" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="790.4999" width="301" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="796" x="139" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-hdd-stack" viewBox="0 0 16 16">
+  <path d="M14 10a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1zM2 9a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2z"/>
+  <path d="M5 11.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M14 3a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM2 2a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+  <path d="M5 4.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"/>
+</svg>
+<text x="160.6875" y="797.0892" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Ver MCP</text>
+</g>
+</g>
+<defs><clipPath id="clip-77" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="840"/></clipPath></defs><g clip-path="url(#clip-77)">
+<rect x="350.5" y="540.8825" width="5" height="285.1175" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,9 356.5,9 353,5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,831 356.5,831 353,835" fill="#888888" fill-opacity="0.09411765"/>
+</g>
+</svg>

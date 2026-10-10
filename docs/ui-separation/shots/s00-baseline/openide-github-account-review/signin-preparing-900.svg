@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="900" height="520" viewBox="0 0 900 520" overflow="hidden">
+<rect x="0" y="0" width="900" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="0" width="900" height="520" rx="0" fill="#000000" fill-opacity="0.7058824"/>
+<defs><filter id="shadow-2" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="16"/></filter></defs><rect x="230" y="192.93304" width="440" height="166.13393" rx="12" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-2)"/>
+<rect x="230" y="176.93304" width="440" height="166.13393" rx="12" fill="#161616" fill-opacity="1"/>
+<rect x="230.5" y="177.43304" width="439" height="165.13393" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="244" y="190.93304" width="412" height="138.13391"/></clipPath></defs><g clip-path="url(#clip-5)">
+<text x="244" y="190.93304" font-family="Ubuntu,sans-serif" font-size="16" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Conectar con GitHub</text>
+<svg opacity="1" y="195" x="636" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="244" y="224.93304" width="412" height="66.13391"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="244" y="226.17859" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Preparando el acceso seguro a tu cuenta</text>
+<polyline points="252,253.20555 253.36317,253.36139 254.65599,253.82085 255.81177,254.56024 256.77084,255.54141 257.48373,256.7137 257.91367,258.01666 258.03842,259.38303 257.8516,260.7423 257.36282,262.02432 256.59732,263.163 255.59457,264.0995 254.40634,264.7855 253.09393,265.18564 251.7251,265.2793 250.37042,265.06155 249.09985,264.54373 247.97893,263.7525 247.0655,262.7287 246.40671,261.52515 246.03653,260.20398 245.97408,258.83334 246.22258,257.484 246.76921,256.22556 " fill="none" stroke="#a0a0a0" stroke-opacity="1" stroke-width="1.92" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="268" y="251.24554" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">En un momento aparecerá tu código de un solo uso.</text>
+<text x="244" y="277.24554" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">@alice seguirá conectado hasta verificar la nueva cuenta.</text>
+</g>
+<rect x="515.03125" y="301.06696" width="59.0625" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="515.53125" y="301.56696" width="58.0625" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="521.03125" y="308.15625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cancelar</text>
+<rect x="580.09375" y="301.06696" width="75.90625" height="28" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<text x="586.09375" y="308.15625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Preparando</text>
+</g>
+</svg>

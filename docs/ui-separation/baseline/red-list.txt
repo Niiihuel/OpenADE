@@ -1,0 +1,19 @@
+Test state before the UI separation (openADE f35e09b + 2cdcba0, limn d7206d9).
+
+limn (cargo test -p limn -p limn-egui -p limn-gallery): 558 passed, 0 failed, 2 ignored.
+
+openADE (cargo test -p agents-window -p openide-ui --no-fail-fast):
+agents-window 1866 passed, 4 failed, 97 ignored; openide-ui 28 passed.
+Failing:
+  app::native_anthropic_app_tests::messages_components_present_real_factory_journal_and_save_exact_policy_at_both_widths
+  app::native_effort_discovery_app_tests::native_codex_async_discovery_restores_saved_max_and_renders_effort_and_advanced_controls
+  code_line_alignment_visual_tests::native_code_rows_center_text_and_keep_selection_geometry_after_scroll
+  view::dock_visual_tests::workspace_sidebars_finish_all_corners_with_their_existing_radius
+
+Ignored exports (cargo test -p agents-window --no-fail-fast -- --ignored export_): 73 passed, 3 failed.
+Failing (their folders in shots/s00-baseline hold only what was written before the panic):
+  document_preview_visual_tests::export_document_previews_visual_review   (document_preview_visual_tests.rs:714, "horizontal pan reaches the zoomed asset")
+  view::dock_visual_tests::export_session_delete_visual_review            (dock_visual_tests.rs:1281, inset assertion)
+  view::tab_bar_visual_tests::export_tab_bar_visual_review                (tab_bar_visual_tests.rs:193, unwrap on None)
+
+Full per-test status: openade-tests.txt, openade-export-tests.txt, limn-tests.txt.

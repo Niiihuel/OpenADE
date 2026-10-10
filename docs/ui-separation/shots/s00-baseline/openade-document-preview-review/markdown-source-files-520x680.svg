@@ -1,0 +1,581 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="520" height="680" viewBox="0 0 520 680" overflow="hidden">
+<rect x="0" y="0" width="520" height="680" rx="0" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="7" y="7" width="32" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="11" x="15" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-list" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+</svg>
+<rect x="47" y="7" width="333" height="24" rx="7" fill="#202020" fill-opacity="1"/>
+<rect x="47.5" y="7.5" width="332" height="23" rx="6.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="49" y="9" width="329" height="20"/></clipPath></defs><g clip-path="url(#clip-5)">
+<svg opacity="1" y="12" x="55" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<text x="77" y="12.089286" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Buscar archivos…</text>
+<rect x="324.5" y="10" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="328.5" y="12.665178" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="354" y="10" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="359.65625" y="12.665178" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+</g>
+<defs><clipPath id="raster-13"><rect x="400" y="11" width="16" height="16" rx="0"/></clipPath></defs><image x="400" y="11" width="16" height="16" opacity="1" preserveAspectRatio="xMidYMid meet" clip-path="url(#raster-13)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAOQklEQVR4nO1bCYwb1Rn+Zzy+72Nt773OHlmuDWETELTQUgKEFoJaqKAVgrQKbVWQqFTK0UKFFCFRUbVUNLQBSoGUlnShEimQFAUaQQkhBJKQZHNudrOH9/a5vsZz9L0Zjz0ee7zeIwlS+LOj8bwZz7zv+7//f/9745BwjhsJ57h9SQCc43bOE0DBF8QsPp9XlyU8NJ3lDU5TdGpoKAhnwAg4i9bS0mJIp7k1Wr3uezqtbqlWryU5liMYhqWTyVQ/w6Q3c0zm36FQKAanyc4KATzPE35/0+1avf5ej9fXZTWbLUAQwPEc8BwHHNpYhgWapiESDh9OJZNPd3df+MLWrVszsMh2xgnw1jbcoqMMv/DX115gtdosGKwImhcIkB/bbRZYe9cdsHffftjx/vtvWI26W3fs2MHAItoZI8BXF7hJr6Ue9vpru+wOu5nHgDFQXkZA0TEHFrMJntu4Aex2G5zs748e7j0SHhgYfH3TpleePXnyyDFYBDvtBFitrivsTtfDPr//Urfb7eV4PuflAmClCvDnLJ0Bg8Ewvumlv/ja2lpx2AD+7vFjx2EkODp18MCBIzs/3v30xOjwFqSKNMzTNHCazG73dPtr655pbFnyQHNL83KTyWLGIDBwYY+BFh3z+eP4TDwxMTnxjyUtLQdWr75uBVIMoOQoEGV3OKCxocEUaA00nd/ZuSYQaL1t6Xnn+60W884TJ06wMEdbdALMTt9FdXWNGxqamh5pag5cYrFYzLg9Dzi3cbwCuKAMFiYmJ/tioen7JseHH29r67j+uutWXWaz20W1IBJYQSksaHU68Hg8VHt7u8fv813ldtfc2tTUMLJ79+4jc+nvotUBVqtnqcPluM/tqfmGr9a/lNJQgqSxnPkyYJUqSKWSMD42/l4qkVoXjY73S/dl0Tk8InB54ri8arjcdxubmqGpubkz0Nq6MRyOUa+88vJr1fZ7wQTY7b6A0+X4mcPlvMHvr2vXIc/kk5lM1vnOl8ieg+nQ1GA0HH1+YuzUevm90WXAsiwwbI4A4b6Fe+ZJyZHc2tbmvfPOO/9mtFiTz2/c8HY1/Z83AUh+dTab5+dWh2NNbW1dm8FoyGfyEg+X8zraMmicD46M7CE45kEE/j3lM4SiCMmeERTAqQIXlMaL5LS2d+hv++4tL737zvZr+vuPfj4bjjkTYLXWecwO41q3w3F7Y3Nzt8lkzg9bfNVe5yEWjSYmJyd6eCZ17/j4eKL803DcYwUwlYHnz4mffbX1nnV3//DPv/rlg1fMhqdqAlwul81kca+1OWw/aGpqvthqseaGMGVCqxTzvCDn8dFgXzgSfSg0OVIxVjkQcwDDKEKAK+QCZWhgcrCtWLnyoksv/cqVu3d/+AEshIDLL7/cODo6udZgsf0k0NLcZbM7xRjnpGRUzuvlVZCYmZkZHQ3uSsZT6yKR0VOVnmuxuM9D17fjBMgwTFXAJVXga0xmk2XV9dfesSACWlouuHhwaOz1C5Zd7HW73BZemdxUh7XSaybGx4cikfDG0ZH+x1VBO50X8rxmFbD8TehbHYgvB5a/lAM4Tj32leSYzVYwGoxfg1lMlQC73dtKaok33U6f8+D+z9n2zqXg8/oqD2dlvJ5JpWFw6NSn8UjkR9Ho1GfK55id3i70pWsR6Bv5LNfK89lGlPxz94MYBptFClCLffnQWBwmHDQ3N5pqalr8k5MDY3MmwGq1/tbtcdcTBAn1jQ0wfGowOjo0BBd2LbPjAlo+Dqt5PRwKJ0bHgy8aKP5+BF4oVx977DHyqac2LGN5fhUCdCNkswF0tzxoyQg0O8SHOGcweQIUSU8lBPA1DOokSWp0NJ0ywlwV4A0EfBSp78BTBaGQQW0Ol8ueTqdh54cfxhsa6zX1DY0mtTBgsgwMDw32huORR6dHh//V3d2tDYdnVqCOrXnyd3+4kQfCTfB8E34WD8WglcbKh8ESLxeUplQFNqNeT2i1Gh3MlQA6nDKa3Aa9BEzoJtrjIsdfV2cNh8NxNIRF2zvOt+t12iIVxOOxmZGRoY/SiehPsxnObbO51x85PvBNEAF7xK5VBi2fo4k5gKk4CpQjh0D/WNSeydAwZwKkLsq9K5GAP5otNiuTzULvof1Rp8ujb2xoNOBzY8GR4YmJibfQak4I9eRVdCkCzdfk8RIgdCz3UcUKZ/A9WUaeAxSxL8m+DDkkiCE0m1UYBaTCJheb+OZQIESj0aDaoMaeTCbSvb0Hw+lUGi1jJaLIod9Bl9WI0iaEjSCgBDFRAXjhkBdLYRQC1QKXlICfyVXBgLoCiuK7PAkYowHVwJFwCq3tJfFDfWLnibyny2ErblI/KSZBRpYEZ499qUYhCHEGOn8COBBjWwGYl5EAPK/I3KQqmPLNxCzX4wTIqRdCMuBYKRJ4kQC0xsguQAHC41W8riQBBMlVDx6K9aF6Pb41y7Gqo4AcsLCQKn1mRQI0CwkByDGs5vWSJEkoQM2CkFA/Je8CAsMUFULVbJgIEvWH0pNamC8BcoCzkSD0X5bhq3FvZbJkw6AUAiqeLiVADIV4LAyv9/QY9HodGpph7gSA3LtlvF5ok/I9IY7pVbiWqO4APw0VirTwfkDN05yCDNyneGSS3bb1P9zEVGh43nWA8HiugtcVBGHwBElUAFPmDFH5WnzrrPCCJFvWy0oSMukUMJkkv/nV1xiSovRQhc0yDHLqXhdPFM6ROQVUsdJejFv9enRfgsEKyNIlnlZu4fAUJKIR/u2t22iD0awHoroV/wo5QFYHQKnXhdZ8bsiVPER1L5tF3OU7KJXG0j6L5hVZFAKsWsJDCgmODEA0HOE+2rWLlMDPVm/OSgA2bhaviyRISZAsqeuVYCSFiDsiR5r6OZGAbFEIyIkYHx8FJp2A0eAYd/T4CVJvMEE+FS9UAVKlpep1GQE4VCiKErbKQHNtRefKt+E/FmV/msmCVpEEMQkHP98PgeZ62HP4KDs0MqrR6rRF4PGerIKDsgQgb3Ia0LDSXKCc13nZ0Ij/8IsK9IpbFUwx0EJb4ZxMCbm2JJMQFSDLAWjOAQf374WVKy+BLVve4uIzCQ2lpQr3JxZBAU6nITqTYqYMHN+h7nU5CSCA1xv0qmCKlKBoKz5XaEsmEkIOkEIArTFANDQFnZ0d8NcXN4Feb0BrHmSeSKX8q6GgLAEnT56MenyNI3hJGt+svNf5okoQK8CgN6iCKdmXPZcjR5YDGASe1tCwf99e8NU4we12Yc+jtQl9kYqU8icWmgNoJvkkTeuuRsA85b0unwyhxRKtFinAoA5G0QYgnVOEgyxX4M+xeBQO/O99uPKrV0AwOMbv/OxjggdZ5SkPL6X8qyBBlYDY9PQnJoPjfoJm/khSpEXpdfxYvFiBxulRNDmJZzLpDrFnudFCth7A59qFcxzktSmRB7w0fRbDSRpZskxW23vwENy85lvwyZ7P+EMHe4VHkGQpcSXyX6gCsI2N9L3k89XqOVZ3j8Nq66K0GiBRZ/21PhwbGbfHFVqyJMDb7U4SJasQeignVY9er9eDRxK8pscLe3HuzuSSmhjbtJDkMrlyVzhGksflK77GbDQYVq7ohje3buMGB06RGCRJiqQuhvxnJQAbGmufdbnqtk6lpn6DZt03NwVaSLRSyzrsDra1tdVyyfLlDr/fB3jz1NSIhQsCJewZpuiYRvtUKpXfktLnZLr4GG1Ohw2y6RTz98091PTkFIkMgYcS8GryXxQFSBYKBYfQ7vtWa72770TfU8jD30arurbt724XHohelM54PV7GZDZSS1rbmM6l7Vr0utrscrjA7nKibK3Pz9+xIqSNkz6j2h5vOOnihY36Wh+cOHY0886729Gaq0GYY8iH18WSv/jNeZjd7rk7y7MPIFRtvGLRQUOS+VsHlgTCFquVNBnNREughWtva3eYLWYwmk14KU0Y05We93s99I7/7mD37ttnxNUl9ryQLIXP4h4TQub2QrswESvs8fX4e6HQ1LFEdOoG9PL1JCwmASIJ3laGY58Dnr260uKjsDKDFlClcd9qd8yYDAbaZDLp3J4axu128k6X24kruc72tnTPP3vY/lOnzNWAL0eCBB7v0SL1nmw6dvXk5OSMav9ggWaxuR5FOW4dx7NNoEKA2KECiDwwnNA4cc6BckpYo6X0qVTSVAw4B64KBcjB4ygIBkc2Bwf7bq/U/wX/VngmFlpPachbSA21p1zslc4B5DUA6jylAR1atUnTaSdaVjcpr5VqOqmtmuyP99FIbGomEvn9bP1flB9Lo/d+e5w241WoLt2AtkQ14CGPR05a6bVq4CtlfzRKoRdU0T/FYtMfwyy2aL8Si8ViDJ1JvW0wmXpRN7pQUw1uL8ieKJaoIO2cnEtChJBdMzf5I+TJWDjySHC474lq+r3gHFDO8O+H0jT7DOrSNSg9WpSxLwEugK+QJ6oAjyvHTDqdiMfjuzLZ1NPT48E3qu3raSFAMpvTfQ/PEQ8hIA2kMklVVEB12R9Xlclk8jgqww/NJOLPrFze9cFcfzV6WgnAZnG5zicY4gUNpbkM5Ycq5a+e/XHdQWcyKF8mDmfZ7KvZFL0lHp+a9++GTzsBkjkc7vWgoX5Maaia+cifQStDSOZ9qKzel0wnN3gclo8GBgbm/Rthyc4YAdhcrtrVqF54QqfXLyOqkD8uEhDgZCqZPIqq6JfZLLMlGlWv6uZjZ5QAbA5HiwOo1K81JHUXWkNwkRpNkbd5YfrMAZ1OH2JY/lM6lX5+9eqv7+zp6ZnzD6GrsTNOgGT4Z3CUQX8bmkBfS+koK1oosCIWjqI3ugmKJLYhx28LhUJDcJrtrBEgNzRs1mYyetrp1HCDg4NhOIP2hSDgbNqX/3ESznH7kgA4x+3/LWNcBpijoCgAAAAASUVORK5CYII="><title>OpenIDE</title></image>
+<rect x="428" y="11" width="1" height="16" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="437" y="7" width="24" height="24" rx="4" fill="#363636" fill-opacity="1"/>
+<svg opacity="1" y="11" x="441" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-layout-sidebar-inset" viewBox="0 0 16 16">
+  <path d="M14 2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2z"/>
+  <path d="M3 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+</svg>
+<rect x="463" y="7" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="11" x="467" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-window-dock" viewBox="0 0 16 16">
+  <path d="M3.5 11a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm3.5.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm4.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5z"/>
+  <path d="M14 1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2zM2 14h12a1 1 0 0 0 1-1V5H1v8a1 1 0 0 0 1 1M2 2a1 1 0 0 0-1 1v1h14V3a1 1 0 0 0-1-1z"/>
+</svg>
+<rect x="489" y="7" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="11" x="493" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-layout-sidebar-reverse" viewBox="0 0 16 16">
+  <path d="M16 3a2 2 0 0 0-2-2H2a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2zm-5-1v12H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm1 0h2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-2z"/>
+</svg>
+<rect x="4" y="35" width="512" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="8" y="40" width="32" height="32" rx="4" fill="#363636" fill-opacity="1"/>
+<svg opacity="1" y="48" x="16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-folder-fill" viewBox="0 0 16 16">
+  <path d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z"/>
+</svg>
+<rect x="8" y="76" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="84" x="16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<rect x="8" y="112" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="120" x="16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<rect x="8" y="148" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="156" x="16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-play" viewBox="0 0 16 16">
+  <path d="M10.804 8 5 4.633v6.734zm.792-.696a.802.802 0 0 1 0 1.392l-6.363 3.692C4.713 12.69 4 12.345 4 11.692V4.308c0-.653.713-.998 1.233-.696z"/>
+</svg>
+<rect x="8" y="184" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="192" x="16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-grid" viewBox="0 0 16 16">
+  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5z"/>
+</svg>
+<rect x="8" y="618" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="626" x="16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-gear" viewBox="0 0 16 16">
+  <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
+  <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
+</svg>
+<rect x="44" y="36" width="472" height="618" rx="12" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-35" clipPathUnits="userSpaceOnUse"><rect x="44" y="36" width="472" height="618"/></clipPath></defs><g clip-path="url(#clip-35)">
+<defs><clipPath id="clip-36" clipPathUnits="userSpaceOnUse"><rect x="44" y="36" width="472" height="618"/></clipPath></defs><g clip-path="url(#clip-36)">
+<defs><clipPath id="clip-37" clipPathUnits="userSpaceOnUse"><rect x="44" y="36" width="472" height="618"/></clipPath></defs><g clip-path="url(#clip-37)">
+<defs><clipPath id="clip-38" clipPathUnits="userSpaceOnUse"><rect x="44" y="36" width="472" height="32"/></clipPath></defs><g clip-path="url(#clip-38)">
+<rect x="44" y="36" width="472" height="32" rx="0" fill="#202020" fill-opacity="1"/>
+<rect x="44" y="67" width="472" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<defs><clipPath id="clip-41" clipPathUnits="userSpaceOnUse"><rect x="50" y="40" width="380" height="28"/></clipPath></defs><g clip-path="url(#clip-41)">
+<path d="M 58 40 H 180.20001 A 8 8 0 0 1 188.20001 48 V 68 A 0 0 0 0 1 188.20001 68 H 50 A 0 0 0 0 1 50 68 V 48 A 8 8 0 0 1 58 40 Z" fill="#161616" fill-opacity="1"/>
+<svg opacity="1" y="44" x="58" height="16" width="16" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16"><path d="M0 0h24v24H0z"/><path fill="#42a5f5" d="M8 1C4.136 1 1 4.136 1 8s3.136 7 7 7 7-3.136 7-7-3.136-7-7-7m1 11H7V7.5h2zm0-6H7V4h2z"/></svg>
+<defs><clipPath id="clip-44" clipPathUnits="userSpaceOnUse"><rect x="80" y="44.513393" width="76.20001" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-44)">
+<text x="80" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">README.md</text>
+</g>
+<rect x="162.20001" y="40" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="44" x="166" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<defs><clipPath id="clip-49" clipPathUnits="userSpaceOnUse"><rect x="188.20001" y="40" width="169.4" height="28"/></clipPath></defs><g clip-path="url(#clip-49)">
+<path d="M 196.20001 40 H 349.6 A 8 8 0 0 1 357.6 48 V 68 A 0 0 0 0 1 357.6 68 H 188.20001 A 0 0 0 0 1 188.20001 68 V 48 A 8 8 0 0 1 196.20001 40 Z" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="44" x="196" height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#26a69a" d="M8.5 6h4l-4-4zM3.875 1H9.5l4 4v8.6c0 .773-.616 1.4-1.375 1.4h-8.25c-.76 0-1.375-.627-1.375-1.4V2.4c0-.777.612-1.4 1.375-1.4M4 13.6h8V8l-2.625 2.8L8 9.4zm1.25-7.7c-.76 0-1.375.627-1.375 1.4s.616 1.4 1.375 1.4c.76 0 1.375-.627 1.375-1.4S6.009 5.9 5.25 5.9"/></svg>
+<defs><clipPath id="clip-52" clipPathUnits="userSpaceOnUse"><rect x="218.20001" y="44.513393" width="107.399994" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-52)">
+<text x="218.20001" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">workspace.png</text>
+</g>
+<rect x="331.6" y="40" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="44" x="336" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<rect x="188.20001" y="67" width="169.4" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="356.6" y="45" width="1" height="14" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+</g>
+<path d="M 365.6 40 H 519 A 8 8 0 0 1 527 48 V 68 A 0 0 0 0 1 527 68 H 357.6 A 0 0 0 0 1 357.6 68 V 48 A 8 8 0 0 1 365.6 40 Z" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="44" x="366" height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ef5350" d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2m4.93 10.44c.41.9.93 1.64 1.53 2.15l.41.32c-.87.16-2.07.44-3.34.93l-.11.04.5-1.04c.45-.87.78-1.66 1.01-2.4m6.48 3.81c.18-.18.27-.41.28-.66.03-.2-.02-.39-.12-.55-.29-.47-1.04-.69-2.28-.69l-1.29.07-.87-.58c-.63-.52-1.2-1.43-1.6-2.56l.04-.14c.33-1.33.64-2.94-.02-3.6a.85.85 0 0 0-.61-.24h-.24c-.37 0-.7.39-.79.77-.37 1.33-.15 2.06.22 3.27v.01c-.25.88-.57 1.9-1.08 2.93l-.96 1.8-.89.49c-1.2.75-1.77 1.59-1.88 2.12-.04.19-.02.36.05.54l.03.05.48.31.44.11c.81 0 1.73-.95 2.97-3.07l.18-.07c1.03-.33 2.31-.56 4.03-.75 1.03.51 2.24.74 3 .74.44 0 .74-.11.91-.3m-.41-.71.09.11c-.01.1-.04.11-.09.13h-.04l-.19.02c-.46 0-1.17-.19-1.9-.51.09-.1.13-.1.23-.1 1.4 0 1.8.25 1.9.35M7.83 17c-.65 1.19-1.24 1.85-1.69 2 .05-.38.5-1.04 1.21-1.69zm3.02-6.91c-.23-.9-.24-1.63-.07-2.05l.07-.12.15.05c.17.24.19.56.09 1.1l-.03.16-.16.82z"/></svg>
+<defs><clipPath id="clip-62" clipPathUnits="userSpaceOnUse"><rect x="387.6" y="44.513393" width="28.399994" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-62)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-65" clipPathUnits="userSpaceOnUse"><rect x="416" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-65)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.96862745" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-68" clipPathUnits="userSpaceOnUse"><rect x="416.875" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-68)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.90588236" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-71" clipPathUnits="userSpaceOnUse"><rect x="417.75" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-71)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.84313726" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-74" clipPathUnits="userSpaceOnUse"><rect x="418.625" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-74)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.78039217" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-77" clipPathUnits="userSpaceOnUse"><rect x="419.5" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-77)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.7176471" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-80" clipPathUnits="userSpaceOnUse"><rect x="420.375" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-80)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.654902" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-83" clipPathUnits="userSpaceOnUse"><rect x="421.25" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-83)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.5921569" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-86" clipPathUnits="userSpaceOnUse"><rect x="422.125" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-86)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.5294118" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-89" clipPathUnits="userSpaceOnUse"><rect x="423" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-89)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.47058824" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-92" clipPathUnits="userSpaceOnUse"><rect x="423.875" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-92)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.40784314" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-95" clipPathUnits="userSpaceOnUse"><rect x="424.75" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-95)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.34509805" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-98" clipPathUnits="userSpaceOnUse"><rect x="425.625" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-98)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.28235295" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-101" clipPathUnits="userSpaceOnUse"><rect x="426.5" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-101)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.21960784" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-104" clipPathUnits="userSpaceOnUse"><rect x="427.375" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-104)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.15686275" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-107" clipPathUnits="userSpaceOnUse"><rect x="428.25" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-107)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.09411765" xml:space="preserve">workspace.pdf</text>
+</g>
+<defs><clipPath id="clip-110" clipPathUnits="userSpaceOnUse"><rect x="429.125" y="44.513393" width="0.875" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-110)">
+<text x="387.6" y="44.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.03137255" xml:space="preserve">workspace.pdf</text>
+</g>
+<rect x="357.6" y="67" width="169.4" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="414" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.03137255"/>
+<rect x="415" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.09411765"/>
+<rect x="416" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.15686275"/>
+<rect x="417" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.21960784"/>
+<rect x="418" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.28235295"/>
+<rect x="419" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.34509805"/>
+<rect x="420" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.40784314"/>
+<rect x="421" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.47058824"/>
+<rect x="422" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.5294118"/>
+<rect x="423" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.5921569"/>
+<rect x="424" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.654902"/>
+<rect x="425" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.7176471"/>
+<rect x="426" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.78039217"/>
+<rect x="427" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.84313726"/>
+<rect x="428" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.90588236"/>
+<rect x="429" y="40" width="1" height="28" rx="0" fill="#202020" fill-opacity="0.96862745"/>
+</g>
+<rect x="438" y="40" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="44" x="442" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<rect x="462" y="40" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="44" x="466" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-layout-sidebar-inset-reverse" viewBox="0 0 16 16">
+  <path d="M2 2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1zm12-1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2z"/>
+  <path d="M13 4a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1z"/>
+</svg>
+<rect x="486" y="40" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="44" x="490" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-three-dots" viewBox="0 0 16 16">
+  <path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3"/>
+</svg>
+</g>
+<defs><clipPath id="clip-138" clipPathUnits="userSpaceOnUse"><rect x="44" y="68" width="472" height="586"/></clipPath></defs><g clip-path="url(#clip-138)">
+<defs><clipPath id="clip-139" clipPathUnits="userSpaceOnUse"><rect x="50" y="68" width="460" height="22"/></clipPath></defs><g clip-path="url(#clip-139)">
+<defs><clipPath id="clip-140" clipPathUnits="userSpaceOnUse"><rect x="50" y="68" width="460" height="22"/></clipPath></defs><g clip-path="url(#clip-140)">
+<defs><clipPath id="clip-141" clipPathUnits="userSpaceOnUse"><rect x="52" y="70" width="84.03125" height="18"/></clipPath></defs><g clip-path="url(#clip-141)">
+<svg opacity="1" y="72" x="52" height="14" width="14" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16"><path d="M0 0h24v24H0z"/><path fill="#42a5f5" d="M8 1C4.136 1 1 4.136 1 8s3.136 7 7 7 7-3.136 7-7-3.136-7-7-7m1 11H7V7.5h2zm0-6H7V4h2z"/></svg>
+<defs><clipPath id="clip-143" clipPathUnits="userSpaceOnUse"><rect x="70" y="72.377235" width="66.03125" height="13.245537"/></clipPath></defs><g clip-path="url(#clip-143)">
+<text x="70" y="72.377235" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">README.md</text>
+</g>
+</g>
+</g>
+</g>
+<rect x="44" y="90" width="472" height="564" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-150" clipPathUnits="userSpaceOnUse"><rect x="44" y="90" width="472" height="564"/></clipPath></defs><g clip-path="url(#clip-150)">
+<defs><clipPath id="clip-151" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-151)">
+</g>
+<defs><clipPath id="clip-153" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-153)">
+<text x="63.84375" y="96.42634" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1</text>
+<defs><clipPath id="clip-155" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-155)">
+<text x="97.65625" y="96.42634" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve"># Un proyecto, todas sus vistas</text>
+</g>
+</g>
+<defs><clipPath id="clip-159" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-159)">
+<text x="63.84375" y="116.42634" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2</text>
+<defs><clipPath id="clip-161" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-161)">
+</g>
+</g>
+<defs><clipPath id="clip-164" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-164)">
+<text x="63.84375" y="136.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">3</text>
+<defs><clipPath id="clip-166" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-166)">
+<text x="97.65625" y="136.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">El editor y la vista previa comparten </text>
+<text x="394.53125" y="136.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#a0bfd9" fill-opacity="1" xml:space="preserve">**el m</text>
+</g>
+</g>
+<defs><clipPath id="clip-171" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-171)">
+<text x="63.84375" y="156.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">4</text>
+<defs><clipPath id="clip-173" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-173)">
+</g>
+</g>
+<defs><clipPath id="clip-176" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-176)">
+<text x="63.84375" y="176.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">5</text>
+<defs><clipPath id="clip-178" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-178)">
+<text x="97.65625" y="176.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">![Distribución del workspace]</text>
+<text x="324.21875" y="176.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">(assets/workspa</text>
+</g>
+</g>
+<defs><clipPath id="clip-183" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-183)">
+<text x="63.84375" y="196.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">6</text>
+<defs><clipPath id="clip-185" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-185)">
+</g>
+</g>
+<defs><clipPath id="clip-188" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-188)">
+<text x="63.84375" y="216.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">7</text>
+<defs><clipPath id="clip-190" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-190)">
+<text x="97.65625" y="216.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">## Recursos</text>
+</g>
+</g>
+<defs><clipPath id="clip-194" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-194)">
+<text x="63.84375" y="236.42635" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">8</text>
+<defs><clipPath id="clip-196" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-196)">
+</g>
+</g>
+<defs><clipPath id="clip-199" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-199)">
+<text x="63.84375" y="256.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">9</text>
+<defs><clipPath id="clip-201" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-201)">
+<text x="97.65625" y="256.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="105.46875" y="256.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> Archivo </text>
+<text x="175.78125" y="256.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="183.59375" y="256.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> Vista </text>
+<text x="238.28125" y="256.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+</g>
+</g>
+<defs><clipPath id="clip-209" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-209)">
+<text x="56" y="276.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">10</text>
+<defs><clipPath id="clip-211" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-211)">
+<text x="97.65625" y="276.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="105.46875" y="276.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> --- </text>
+<text x="144.53125" y="276.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="152.34375" y="276.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> --- </text>
+<text x="191.40625" y="276.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+</g>
+</g>
+<defs><clipPath id="clip-219" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-219)">
+<text x="56" y="296.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">11</text>
+<defs><clipPath id="clip-221" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-221)">
+<text x="97.65625" y="296.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="105.46875" y="296.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> README.md </text>
+<text x="191.40625" y="296.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="199.21875" y="296.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> Markdown editable </text>
+<text x="347.65625" y="296.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+</g>
+</g>
+<defs><clipPath id="clip-229" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-229)">
+<text x="56" y="316.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">12</text>
+<defs><clipPath id="clip-231" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-231)">
+<text x="97.65625" y="316.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="105.46875" y="316.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> workspace.png </text>
+<text x="222.65625" y="316.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="230.46875" y="316.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> Imagen nativa </text>
+<text x="347.65625" y="316.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+</g>
+</g>
+<defs><clipPath id="clip-239" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-239)">
+<text x="56" y="336.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">13</text>
+<defs><clipPath id="clip-241" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-241)">
+<text x="97.65625" y="336.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="105.46875" y="336.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> workspace.pdf </text>
+<text x="222.65625" y="336.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+<text x="230.46875" y="336.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> Documento PDF </text>
+<text x="347.65625" y="336.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">|</text>
+</g>
+</g>
+<defs><clipPath id="clip-249" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-249)">
+<text x="56" y="356.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">14</text>
+<defs><clipPath id="clip-251" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-251)">
+</g>
+</g>
+<defs><clipPath id="clip-254" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-254)">
+<text x="56" y="376.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">15</text>
+<defs><clipPath id="clip-256" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-256)">
+<text x="97.65625" y="376.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">-</text>
+<text x="105.46875" y="376.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> El árbol conserva el contexto del proyecto</text>
+</g>
+</g>
+<defs><clipPath id="clip-261" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-261)">
+<text x="56" y="396.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">16</text>
+<defs><clipPath id="clip-263" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-263)">
+<text x="97.65625" y="396.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">-</text>
+<text x="105.46875" y="396.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> El agente acompaña la edición del document</text>
+</g>
+</g>
+<defs><clipPath id="clip-268" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-268)">
+<text x="56" y="416.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">17</text>
+<defs><clipPath id="clip-270" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-270)">
+</g>
+</g>
+<defs><clipPath id="clip-273" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-273)">
+<text x="56" y="436.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">18</text>
+<defs><clipPath id="clip-275" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-275)">
+<text x="97.65625" y="436.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">## Validación</text>
+</g>
+</g>
+<defs><clipPath id="clip-279" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-279)">
+<text x="56" y="456.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">19</text>
+<defs><clipPath id="clip-281" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-281)">
+</g>
+</g>
+<defs><clipPath id="clip-284" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-284)">
+<text x="56" y="476.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">20</text>
+<defs><clipPath id="clip-286" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-286)">
+<text x="97.65625" y="476.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">```rust</text>
+</g>
+</g>
+<defs><clipPath id="clip-290" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-290)">
+<text x="56" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">21</text>
+<defs><clipPath id="clip-292" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-292)">
+<text x="97.65625" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">let</text>
+<text x="121.09375" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve"> workspace = </text>
+<text x="222.65625" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">Workspace</text>
+<text x="292.96875" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">::</text>
+<text x="308.59375" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">open</text>
+<text x="339.84375" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">(</text>
+<text x="347.65625" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">path</text>
+<text x="378.90625" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">)</text>
+<text x="386.71875" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">?</text>
+<text x="394.53125" y="496.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-305" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-305)">
+<text x="56" y="516.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">22</text>
+<defs><clipPath id="clip-307" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-307)">
+<text x="97.65625" y="516.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">workspace</text>
+<text x="167.96875" y="516.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">.</text>
+<text x="175.78125" y="516.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">open_file</text>
+<text x="246.09375" y="516.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">(</text>
+<text x="253.90625" y="516.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;README.md&quot;</text>
+<text x="339.84375" y="516.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">);</text>
+</g>
+</g>
+<defs><clipPath id="clip-316" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-316)">
+<text x="56" y="536.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">23</text>
+<defs><clipPath id="clip-318" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-318)">
+<text x="97.65625" y="536.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">```</text>
+</g>
+</g>
+<defs><clipPath id="clip-322" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-322)">
+<text x="56" y="556.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">24</text>
+<defs><clipPath id="clip-324" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-324)">
+</g>
+</g>
+<defs><clipPath id="clip-327" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-327)">
+<text x="56" y="576.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">25</text>
+<defs><clipPath id="clip-329" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-329)">
+<text x="97.65625" y="576.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">&gt;</text>
+<text x="105.46875" y="576.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> Los cambios de texto se reflejan en la vis</text>
+</g>
+</g>
+<defs><clipPath id="clip-334" clipPathUnits="userSpaceOnUse"><rect x="44" y="94" width="472" height="552"/></clipPath></defs><g clip-path="url(#clip-334)">
+<text x="56" y="596.42633" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">26</text>
+<defs><clipPath id="clip-336" clipPathUnits="userSpaceOnUse"><rect x="97.65625" y="94" width="338.34375" height="552"/></clipPath></defs><g clip-path="url(#clip-336)">
+</g>
+</g>
+<defs><clipPath id="clip-339" clipPathUnits="userSpaceOnUse"><rect x="436" y="94" width="72" height="552"/></clipPath></defs><g clip-path="url(#clip-339)">
+<rect x="436" y="94" width="72" height="552" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="440" y="94" width="0.75" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="441.5" y="94" width="1.5" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="443.75" y="94" width="6.75" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="451.25" y="94" width="3.75" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="455.75" y="94" width="2.25" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="458.75" y="94" width="4.5" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="440" y="98" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="442.25" y="98" width="4.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="447.5" y="98" width="0.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="449" y="98" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="451.25" y="98" width="3.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="455.75" y="98" width="4.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="461" y="98" width="6.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="468.5" y="98" width="3" height="1.4" rx="0" fill="#a0bfd9" fill-opacity="0.5686275"/>
+<rect x="440" y="102" width="10.5" height="1.4" rx="0" fill="#8fb9da" fill-opacity="0.5686275"/>
+<rect x="451.25" y="102" width="2.25" height="1.4" rx="0" fill="#8fb9da" fill-opacity="0.5686275"/>
+<rect x="454.25" y="102" width="7.5" height="1.4" rx="0" fill="#8fb9da" fill-opacity="0.5686275"/>
+<rect x="461.75" y="102" width="16.5" height="1.4" rx="0" fill="#cea37f" fill-opacity="0.5686275"/>
+<rect x="440" y="106" width="1.5" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="442.25" y="106" width="6" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="440" y="110" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="110" width="5.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="447.5" y="110" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="449" y="110" width="3.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="453.5" y="110" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="440" y="112" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="112" width="2.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="444.5" y="112" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="446" y="112" width="2.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="449" y="112" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="440" y="114" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="114" width="6.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="449" y="114" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="450.5" y="114" width="6" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="457.25" y="114" width="6" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="464" y="114" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="440" y="116" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="116" width="9.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="452" y="116" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="453.5" y="116" width="4.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="458.75" y="116" width="4.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="464" y="116" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="440" y="118" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="118" width="9.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="452" y="118" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="453.5" y="118" width="6.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="461" y="118" width="2.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="464" y="118" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="440" y="122" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="122" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="443.75" y="122" width="3.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="448.25" y="122" width="6" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="455" y="122" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="457.25" y="122" width="6" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="464" y="122" width="2.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="467" y="122" width="6.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="440" y="124" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="124" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="443.75" y="124" width="4.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="449" y="124" width="6" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="455.75" y="124" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="458" y="124" width="5.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="464" y="124" width="2.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="467" y="124" width="7.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="440" y="128" width="1.5" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="442.25" y="128" width="7.5" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="440" y="132" width="5.25" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="440" y="134" width="2.25" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="443" y="134" width="6.75" height="1.4" rx="0" fill="#cea37f" fill-opacity="0.5686275"/>
+<rect x="450.5" y="134" width="0.75" height="1.4" rx="0" fill="#cea37f" fill-opacity="0.5686275"/>
+<rect x="452" y="134" width="6.75" height="1.4" rx="0" fill="#e1c483" fill-opacity="0.5686275"/>
+<rect x="458.75" y="134" width="1.5" height="1.4" rx="0" fill="#cdcdcd" fill-opacity="0.5686275"/>
+<rect x="460.25" y="134" width="3" height="1.4" rx="0" fill="#8fb9da" fill-opacity="0.5686275"/>
+<rect x="463.25" y="134" width="0.75" height="1.4" rx="0" fill="#cdcdcd" fill-opacity="0.5686275"/>
+<rect x="464" y="134" width="3" height="1.4" rx="0" fill="#cea37f" fill-opacity="0.5686275"/>
+<rect x="440" y="136" width="6.75" height="1.4" rx="0" fill="#cea37f" fill-opacity="0.5686275"/>
+<rect x="446.75" y="136" width="0.75" height="1.4" rx="0" fill="#cdcdcd" fill-opacity="0.5686275"/>
+<rect x="447.5" y="136" width="6.75" height="1.4" rx="0" fill="#8fb9da" fill-opacity="0.5686275"/>
+<rect x="454.25" y="136" width="0.75" height="1.4" rx="0" fill="#cdcdcd" fill-opacity="0.5686275"/>
+<rect x="455" y="136" width="8.25" height="1.4" rx="0" fill="#cea37f" fill-opacity="0.5686275"/>
+<rect x="463.25" y="136" width="1.5" height="1.4" rx="0" fill="#cdcdcd" fill-opacity="0.5686275"/>
+<rect x="440" y="138" width="2.25" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="440" y="142" width="0.75" height="1.4" rx="0" fill="#b88fd8" fill-opacity="0.5686275"/>
+<rect x="441.5" y="142" width="2.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="444.5" y="142" width="5.25" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="450.5" y="142" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="452.75" y="142" width="3.75" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="457.25" y="142" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="459.5" y="142" width="6" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="466.25" y="142" width="1.5" height="1.4" rx="0" fill="#d4d4d4" fill-opacity="0.5686275"/>
+<rect x="436" y="94" width="72" height="52" rx="1" fill="#888888" fill-opacity="0.101960786"/>
+<rect x="436.5" y="94.5" width="71" height="51" rx="0.5" fill="none" stroke="#888888" stroke-opacity="0.16470589" stroke-width="1"/>
+<rect x="505" y="94" width="2" height="1.5" rx="0" fill="#d4d4d4" fill-opacity="0.627451"/>
+</g>
+<rect x="97.65625" y="647.5" width="160.47871" height="5" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+<defs><clipPath id="clip-441" clipPathUnits="userSpaceOnUse"><rect x="44" y="36" width="472" height="618"/></clipPath></defs><g clip-path="url(#clip-441)">
+<path d="M44 36 L56 36 A12 12 0 0 0 44 48 Z M516 36 L516 48 A12 12 0 0 0 504 36 Z M516 654 L504 654 A12 12 0 0 0 516 642 Z M44 654 L44 642 A12 12 0 0 0 56 654 Z " fill="#2b2b2b" fill-opacity="1"/>
+<rect x="44.5" y="36.5" width="471" height="617" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+</g>
+<rect x="4" y="654" width="512" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<defs><clipPath id="clip-446" clipPathUnits="userSpaceOnUse"><rect x="4" y="655" width="472" height="21"/></clipPath></defs><g clip-path="url(#clip-446)">
+<svg opacity="1" y="659" x="6" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<svg opacity="1" y="659" x="30" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#ffffff" class="bi bi-x-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+</svg>
+<defs><clipPath id="clip-449" clipPathUnits="userSpaceOnUse"><rect x="45" y="658.66516" width="6.21875" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-449)">
+<text x="45" y="658.66516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">0</text>
+</g>
+<svg opacity="1" y="659" x="54" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#ffffff" class="bi bi-exclamation-triangle" viewBox="0 0 16 16">
+  <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.15.15 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.2.2 0 0 1-.054.06.1.1 0 0 1-.066.017H1.146a.1.1 0 0 1-.066-.017.2.2 0 0 1-.054-.06.18.18 0 0 1 .002-.183L7.884 2.073a.15.15 0 0 1 .054-.057m1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/>
+  <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+</svg>
+<defs><clipPath id="clip-453" clipPathUnits="userSpaceOnUse"><rect x="69.21875" y="658.66516" width="6.21875" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-453)">
+<text x="69.21875" y="658.66516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">0</text>
+</g>
+<svg opacity="1" y="659" x="87" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-hdd-stack" viewBox="0 0 16 16">
+  <path d="M14 10a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1zM2 9a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2z"/>
+  <path d="M5 11.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M14 3a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM2 2a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+  <path d="M5 4.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"/>
+</svg>
+<defs><clipPath id="clip-457" clipPathUnits="userSpaceOnUse"><rect x="141.5" y="659.16516" width="56" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-457)">
+<text x="141.5" y="659.16516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Guardado</text>
+</g>
+<defs><clipPath id="clip-460" clipPathUnits="userSpaceOnUse"><rect x="205.5" y="658.66516" width="60.5" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-460)">
+<text x="205.5" y="658.66516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Ln 1, Col 1</text>
+</g>
+<defs><clipPath id="clip-463" clipPathUnits="userSpaceOnUse"><rect x="274" y="658.66516" width="66.5" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-463)">
+<text x="274" y="658.66516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Espacios: 4</text>
+</g>
+<defs><clipPath id="clip-466" clipPathUnits="userSpaceOnUse"><rect x="348.5" y="659.16516" width="36.5" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-466)">
+<text x="348.5" y="659.16516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">UTF-8</text>
+</g>
+<defs><clipPath id="clip-469" clipPathUnits="userSpaceOnUse"><rect x="393" y="658.66516" width="17" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-469)">
+<text x="393" y="658.66516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">LF</text>
+</g>
+<defs><clipPath id="clip-472" clipPathUnits="userSpaceOnUse"><rect x="418" y="658.66516" width="56" height="12.669617"/></clipPath></defs><g clip-path="url(#clip-472)">
+<text x="418" y="658.66516" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Markdown</text>
+</g>
+</g>
+<svg opacity="1" y="658" x="483" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="#ffffff" class="bi bi-bell" viewBox="0 0 16 16">
+  <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/>
+</svg>
+<defs><filter id="shadow-477" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="9"/></filter></defs><rect x="272" y="42" width="240" height="610" rx="12" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-477)"/>
+<rect x="272" y="36" width="240" height="610" rx="12" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="272.5" y="36.5" width="239" height="609" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-480" clipPathUnits="userSpaceOnUse"><rect x="278" y="42" width="228" height="598"/></clipPath></defs><g clip-path="url(#clip-480)">
+<svg opacity="1" y="46" x="278" height="16" width="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.483 6H4.721a1 1 0 0 0-.949.684L2 12V5h12a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232l-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h11l2.403-5.606A1 1 0 0 0 14.483 6" fill="#90a4ae" /></svg>
+<defs><clipPath id="clip-482" clipPathUnits="userSpaceOnUse"><rect x="300" y="47.089287" width="178" height="13.821426"/></clipPath></defs><g clip-path="url(#clip-482)">
+<text x="300" y="47.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">openADE</text>
+</g>
+<rect x="482" y="42" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="46" x="486" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<defs><clipPath id="clip-487" clipPathUnits="userSpaceOnUse"><rect x="278" y="74" width="228" height="566"/></clipPath></defs><g clip-path="url(#clip-487)">
+<svg opacity="1" y="78" x="282" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="78" x="304" height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path id="folder" fill="#fbc02d" d="M14.483 6H4.721a1 1 0 0 0-.949.684L2 12V5h12a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232l-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h11l2.403-5.606A1 1 0 0 0 14.483 6"/><path id="motive" fill="#fff9c4" d="M9.5 6a.5.5 0 0 0-.5.5v6a.5.5 0 0 0 .5.5h6a.5.5 0 0 0 .5-.5v-6a.5.5 0 0 0-.5-.5zm.5 1h5v1h-5zM7 8v6.5a.5.5 0 0 0 .5.5H14v-1H8V8zm3 1h5v1h-5zm0 2h3v1h-3z"/></svg>
+<defs><clipPath id="clip-490" clipPathUnits="userSpaceOnUse"><rect x="326" y="78.51339" width="172" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-490)">
+<text x="326" y="78.51339" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">assets</text>
+</g>
+<rect x="289" y="98" width="1" height="12" rx="0" fill="#484848" fill-opacity="1"/>
+<rect x="289" y="110" width="5" height="1" rx="0" fill="#484848" fill-opacity="1"/>
+<svg opacity="1" y="102" x="316" height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#26a69a" d="M8.5 6h4l-4-4zM3.875 1H9.5l4 4v8.6c0 .773-.616 1.4-1.375 1.4h-8.25c-.76 0-1.375-.627-1.375-1.4V2.4c0-.777.612-1.4 1.375-1.4M4 13.6h8V8l-2.625 2.8L8 9.4zm1.25-7.7c-.76 0-1.375.627-1.375 1.4s.616 1.4 1.375 1.4c.76 0 1.375-.627 1.375-1.4S6.009 5.9 5.25 5.9"/></svg>
+<defs><clipPath id="clip-496" clipPathUnits="userSpaceOnUse"><rect x="338" y="102.51339" width="160" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-496)">
+<text x="338" y="102.51339" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">workspace.png</text>
+</g>
+<svg opacity="1" y="126" x="282" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="126" x="304" height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path id="folder" fill="#0277bd" d="M14.483 6H4.721a1 1 0 0 0-.949.684L2 12V5h12a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232l-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h11l2.403-5.606A1 1 0 0 0 14.483 6"/><path id="motive" fill="#b3e5fc" d="M12 5H8.5a.5.5 0 0 0-.5.5v8a.5.5 0 0 0 .5.5h6a.5.5 0 0 0 .5-.5V8Zm0 8H9v-1h3zm2-2H9v-1h5zm-2.414-2.586V6L14 8.414Z"/></svg>
+<defs><clipPath id="clip-501" clipPathUnits="userSpaceOnUse"><rect x="326" y="126.51339" width="172" height="14.973213"/></clipPath></defs><g clip-path="url(#clip-501)">
+<text x="326" y="126.51339" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">docs</text>
+</g>
+<rect x="289" y="146" width="1" height="12" rx="0" fill="#484848" fill-opacity="1"/>
+<rect x="289" y="158" width="5" height="1" rx="0" fill="#484848" fill-opacity="1"/>
+<rect x="289" y="159" width="1" height="11" rx="0" fill="#484848" fill-opacity="1"/>
+<svg opacity="1" y="150" x="316" height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="#42a5f5" d="m14 10-4 3.5L6 10H4v12h4v-6l2 2 2-2v6h4V10zm12 6v-6h-4v6h-4l6 8 6-8z"/></svg>
+<defs><clipPath id="clip-508" clipPathUnits="userSpaceOnUse"><rect x="338" y="150.5134" width="160" height="14.973221"/></clipPath></defs><g clip-path="url(#clip-508)">
+<text x="338" y="150.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">guide.md</text>
+</g>
+<rect x="289" y="170" width="1" height="12" rx="0" fill="#484848" fill-opacity="1"/>
+<rect x="289" y="182" width="5" height="1" rx="0" fill="#484848" fill-opacity="1"/>
+<svg opacity="1" y="174" x="316" height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ef5350" d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2m4.93 10.44c.41.9.93 1.64 1.53 2.15l.41.32c-.87.16-2.07.44-3.34.93l-.11.04.5-1.04c.45-.87.78-1.66 1.01-2.4m6.48 3.81c.18-.18.27-.41.28-.66.03-.2-.02-.39-.12-.55-.29-.47-1.04-.69-2.28-.69l-1.29.07-.87-.58c-.63-.52-1.2-1.43-1.6-2.56l.04-.14c.33-1.33.64-2.94-.02-3.6a.85.85 0 0 0-.61-.24h-.24c-.37 0-.7.39-.79.77-.37 1.33-.15 2.06.22 3.27v.01c-.25.88-.57 1.9-1.08 2.93l-.96 1.8-.89.49c-1.2.75-1.77 1.59-1.88 2.12-.04.19-.02.36.05.54l.03.05.48.31.44.11c.81 0 1.73-.95 2.97-3.07l.18-.07c1.03-.33 2.31-.56 4.03-.75 1.03.51 2.24.74 3 .74.44 0 .74-.11.91-.3m-.41-.71.09.11c-.01.1-.04.11-.09.13h-.04l-.19.02c-.46 0-1.17-.19-1.9-.51.09-.1.13-.1.23-.1 1.4 0 1.8.25 1.9.35M7.83 17c-.65 1.19-1.24 1.85-1.69 2 .05-.38.5-1.04 1.21-1.69zm3.02-6.91c-.23-.9-.24-1.63-.07-2.05l.07-.12.15.05c.17.24.19.56.09 1.1l-.03.16-.16.82z"/></svg>
+<defs><clipPath id="clip-514" clipPathUnits="userSpaceOnUse"><rect x="338" y="174.5134" width="160" height="14.973221"/></clipPath></defs><g clip-path="url(#clip-514)">
+<text x="338" y="174.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">workspace.pdf</text>
+</g>
+<svg opacity="1" y="198" x="304" height="16" width="16" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16"><path d="M0 0h24v24H0z"/><path fill="#42a5f5" d="M8 1C4.136 1 1 4.136 1 8s3.136 7 7 7 7-3.136 7-7-3.136-7-7-7m1 11H7V7.5h2zm0-6H7V4h2z"/></svg>
+<defs><clipPath id="clip-518" clipPathUnits="userSpaceOnUse"><rect x="326" y="198.5134" width="172" height="14.973221"/></clipPath></defs><g clip-path="url(#clip-518)">
+<text x="326" y="198.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">README.md</text>
+</g>
+</g>
+</g>
+</svg>

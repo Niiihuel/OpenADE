@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1100" height="260" viewBox="0 0 1100 260" overflow="hidden">
+<rect x="0" y="0" width="1100" height="260" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1100" height="260"/></clipPath></defs><g clip-path="url(#clip-1)">
+<defs><clipPath id="clip-2" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1100" height="32"/></clipPath></defs><g clip-path="url(#clip-2)">
+<rect x="0" y="0" width="1100" height="32" rx="0" fill="#202020" fill-opacity="1"/>
+<rect x="0" y="31" width="1100" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<path d="M 14 4 H 66 A 8 8 0 0 1 74 12 V 32 A 0 0 0 0 1 74 32 H 6 A 0 0 0 0 1 6 32 V 12 A 8 8 0 0 1 14 4 Z" fill="#000000" fill-opacity="0"/>
+<text x="14.40625" y="8.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Terminal</text>
+<rect x="6" y="31" width="68" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<path d="M 82 4 H 148 A 8 8 0 0 1 156 12 V 32 A 0 0 0 0 1 156 32 H 74 A 0 0 0 0 1 74 32 V 12 A 8 8 0 0 1 82 4 Z" fill="#161616" fill-opacity="1"/>
+<text x="83.578125" y="8.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Problemas</text>
+<path d="M 164 4 H 204 A 8 8 0 0 1 212 12 V 32 A 0 0 0 0 1 212 32 H 156 A 0 0 0 0 1 156 32 V 12 A 8 8 0 0 1 164 4 Z" fill="#000000" fill-opacity="0"/>
+<text x="166.51563" y="8.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Salida</text>
+<rect x="156" y="31" width="56" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<path d="M 220 4 H 272 A 8 8 0 0 1 280 12 V 32 A 0 0 0 0 1 280 32 H 212 A 0 0 0 0 1 212 32 V 12 A 8 8 0 0 1 220 4 Z" fill="#000000" fill-opacity="0"/>
+<text x="222.59375" y="8.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Consola</text>
+<rect x="212" y="31" width="68" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="1070" y="4" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="8" x="1074" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+</g>
+<defs><clipPath id="clip-19" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="1100" height="228"/></clipPath></defs><g clip-path="url(#clip-19)">
+<defs><clipPath id="clip-20" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="1100" height="228"/></clipPath></defs><g clip-path="url(#clip-20)">
+<svg opacity="1" y="46" x="13" height="14" width="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="#ff7043" d="m30 12-4-2V6h-4l-2-4-4 2-4-2-2 4H6v4l-4 2 2 4-2 4 4 2v4h4l2 4 4-2 4 2 2-4h4v-4l4-2-2-4ZM6 16a9.9 9.9 0 0 1 .842-4H10v8H6.842A9.9 9.9 0 0 1 6 16m10 10a9.98 9.98 0 0 1-7.978-4H16v-2h-2v-2h4c.819.819.297 2.308 1.179 3.37a1.89 1.89 0 0 0 1.46.63h3.34A9.98 9.98 0 0 1 16 26m-2-12v-2h4a1 1 0 0 1 0 2Zm11.158 6H24a2.006 2.006 0 0 1-2-2 2 2 0 0 0-2-2 3 3 0 0 0 3-3q0-.08-.004-.161A3.115 3.115 0 0 0 19.83 10H8.022a9.986 9.986 0 0 1 17.136 10"/></svg>
+<text x="33" y="46.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">workspace.rs</text>
+<text x="1080.7813" y="45" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">0</text>
+<rect x="8" y="66" width="1084" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="75" x="16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="40" y="76.58929" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Sin problemas en este archivo</text>
+<text x="40" y="95.66518" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Los diagnósticos están actualizados.</text>
+</g>
+</g>
+</g>
+</svg>

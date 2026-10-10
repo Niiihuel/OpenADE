@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="520" viewBox="0 0 360 520" overflow="hidden">
+<rect x="0" y="0" width="360" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="0" width="264" height="520" rx="0" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="6" y="470" width="252" height="44" rx="4" fill="#363636" fill-opacity="1"/>
+<svg opacity="1" y="484" x="12" xmlns="http://www.w3.org/2000/svg" fill="#e0e0e0" fill-rule="evenodd" height="16" viewBox="0 0 24 24" width="16" preserveAspectRatio="xMidYMid meet"><title>Codex</title><path clip-rule="evenodd" d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z" /></svg>
+
+<text x="34" y="477.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cuenta y uso</text>
+<text x="34" y="493.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Codex · Ver en tu cuenta</text>
+<svg opacity="1" y="484" x="236" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-chevron-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+</svg>
+<defs><filter id="shadow-7" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="11"/></filter></defs><rect x="8" y="292" width="320" height="182" rx="6" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-7)"/>
+<rect x="8" y="283" width="320" height="182" rx="6" fill="#1e1e1e" fill-opacity="1"/>
+<rect x="8.5" y="283.5" width="319" height="181" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="14" y="296" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cuenta y uso</text>
+<rect x="290" y="289" width="32" height="32" rx="4" fill="#1e1e1e" fill-opacity="1"/>
+<svg opacity="1" y="297" x="298" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+</svg>
+<rect x="14" y="325" width="308" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<defs><clipPath id="clip-14" clipPathUnits="userSpaceOnUse"><rect x="14" y="330" width="308" height="88"/></clipPath></defs><g clip-path="url(#clip-14)">
+<svg opacity="1" y="354" x="24" xmlns="http://www.w3.org/2000/svg" fill="#e0e0e0" fill-rule="evenodd" height="16" viewBox="0 0 24 24" width="16" preserveAspectRatio="xMidYMid meet"><title>Codex</title><path clip-rule="evenodd" d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z" /></svg>
+
+<text x="52" y="336.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Codex</text>
+<text x="52" y="355.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Plan de ChatGPT</text>
+<text x="52" y="373.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">cuenta.de.ejemplo.con.nombre.largo@cor…</text>
+<rect x="284" y="336" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="344" x="292" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="20" y="397.95313" font-family="Ubuntu,sans-serif" font-size="10.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Consulta el consumo en su web</text>
+</g>
+<rect x="14" y="422" width="308" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="14" y="427" width="308" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="91.453125" y="435.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ver uso y proveedores</text>
+<svg opacity="1" y="435" x="229" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+</svg>

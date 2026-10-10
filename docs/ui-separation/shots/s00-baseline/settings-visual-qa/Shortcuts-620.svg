@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="620" height="900" viewBox="0 0 620 900" overflow="hidden">
+<rect x="0" y="0" width="620" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="900"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="20" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Atajos de teclado</text>
+<text x="20" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Atajos de navegación y paneles.</text>
+<text x="24" y="77.28571" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Perfil de teclado</text>
+<rect x="20" y="99.42857" width="566" height="89.57143" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="99.92857" width="565" height="88.57143" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-7" clipPathUnits="userSpaceOnUse"><rect x="20" y="99.42857" width="566" height="89.57143"/></clipPath></defs><g clip-path="url(#clip-7)">
+<text x="30" y="109.42857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Distribución de atajos</text>
+<text x="30" y="128.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Navegación y paneles con las combinaciones habituales de VS Code.</text>
+<rect x="30" y="151" width="200" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="30.5" y="151.5" width="199" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="95" y="157.28572" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">VS Code</text>
+<svg opacity="1" y="157" x="149" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+<text x="24" y="205" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Edición de texto</text>
+<rect x="20" y="227.14285" width="566" height="151.57143" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="227.64285" width="565" height="150.57143" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-18" clipPathUnits="userSpaceOnUse"><rect x="20" y="227.14285" width="566" height="151.57144"/></clipPath></defs><g clip-path="url(#clip-18)">
+<text x="30" y="237.14285" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Modo Vim</text>
+<text x="30" y="256.5714" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Edición modal en el editor del IDE y de agentes. Independiente del perfil de </text>
+<text x="30" y="270.71426" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">atajos.</text>
+<rect x="540" y="251" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="543" y="254" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+<rect x="20" y="294.85715" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="306" x="30" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="56" y="305.85715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Normal, Insertar y Visual</text>
+<text x="56" y="326.2857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">i para escribir · Esc para volver a Normal · h j k l para moverse · v para </text>
+<text x="56" y="340.42856" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">seleccionar · u para deshacer. Las teclas de Vim tienen prioridad dentro del </text>
+<text x="56" y="354.5714" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">editor.</text>
+</g>
+<text x="24" y="394.7143" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Navegación</text>
+<rect x="20" y="416.85715" width="566" height="194" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="417.35715" width="565" height="193" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-34" clipPathUnits="userSpaceOnUse"><rect x="20" y="416.85715" width="566" height="194.00003"/></clipPath></defs><g clip-path="url(#clip-34)">
+<text x="30" y="426.85715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Paleta de comandos</text>
+<rect x="479.4286" y="426.85715" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="483.4286" y="428.7857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="515.5715" y="426.85715" width="39.42857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="519.5715" y="428.7857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558.00006" y="426.85715" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="428.7857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+<rect x="20" y="454.85715" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="465.85715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir archivo del proyecto</text>
+<rect x="521.8572" y="465.85715" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="525.8572" y="467.7857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558.00006" y="465.85715" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="467.7857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+<rect x="20" y="493.85715" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="504.85715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Nuevo archivo en el IDE</text>
+<rect x="521.8572" y="504.85715" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="525.8572" y="506.7857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558.00006" y="504.85715" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="506.7857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">N</text>
+<rect x="20" y="532.8572" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="543.8572" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir configuración</text>
+<rect x="521.8572" y="543.8572" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="525.8572" y="545.78577" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558.00006" y="543.8572" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="545.78577" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">,</text>
+<rect x="20" y="571.8572" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="582.8572" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Duplicar líneas del editor</text>
+<rect x="434.4286" y="582.8572" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="438.4286" y="584.78577" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="470.57144" y="582.8572" width="39.42857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="474.57144" y="584.78577" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="513" y="582.8572" width="26.857143" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="517" y="584.78577" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alt</text>
+<rect x="542.8571" y="582.8572" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="546.8571" y="584.78577" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Down</text>
+</g>
+<text x="24" y="626.8572" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Paneles</text>
+<rect x="20" y="649.00006" width="566" height="428" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="649.50006" width="565" height="427" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-74" clipPathUnits="userSpaceOnUse"><rect x="20" y="649.00006" width="566" height="250.99994"/></clipPath></defs><g clip-path="url(#clip-74)">
+<text x="30" y="659.00006" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mostrar u ocultar la barra lateral</text>
+<rect x="521.8572" y="659.00006" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="525.8572" y="660.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558.00006" y="659.00006" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="660.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">B</text>
+<rect x="20" y="687.00006" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="698.00006" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mostrar u ocultar el panel inferior</text>
+<rect x="521.8572" y="698.00006" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="525.8572" y="699.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558.00006" y="698.00006" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="699.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">J</text>
+<rect x="20" y="726.00006" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="737.00006" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir o enfocar la terminal</text>
+<rect x="521.8572" y="737.00006" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="525.8572" y="738.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558.00006" y="737.00006" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="738.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">`</text>
+<rect x="20" y="765.00006" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="776.00006" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Explorador de archivos</text>
+<rect x="479.4286" y="776.00006" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="483.4286" y="777.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="515.5715" y="776.00006" width="39.42857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="519.5715" y="777.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558.00006" y="776.00006" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="777.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">E</text>
+<rect x="20" y="804.00006" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="815.00006" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Buscar en el proyecto</text>
+<rect x="479.4286" y="815.00006" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="483.4286" y="816.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="515.5715" y="815.00006" width="39.42857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="519.5715" y="816.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558.00006" y="815.00006" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="816.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">F</text>
+<rect x="20" y="843.00006" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="854.00006" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Control de versiones</text>
+<rect x="479.4286" y="854.00006" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="483.4286" y="855.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="515.5715" y="854.00006" width="39.42857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="519.5715" y="855.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558.00006" y="854.00006" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="855.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">G</text>
+<rect x="20" y="882.00006" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="893.00006" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Complementos</text>
+<rect x="479.4286" y="893.00006" width="33.142857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="483.4286" y="894.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="515.5715" y="893.00006" width="39.42857" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="519.5715" y="894.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558.00006" y="893.00006" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8572" y="894.92865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">X</text>
+</g>
+</g>
+<defs><clipPath id="clip-126" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="900"/></clipPath></defs><g clip-path="url(#clip-126)">
+<rect x="610.5" y="14" width="5" height="647.4485" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="609.5,9 616.5,9 613,5" fill="#888888" fill-opacity="0.09411765"/>
+<polygon points="609.5,891 616.5,891 613,895" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+</svg>

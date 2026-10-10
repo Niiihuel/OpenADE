@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="420" viewBox="0 0 360 420" overflow="hidden">
+<rect x="0" y="0" width="360" height="420" rx="0" fill="#161616" fill-opacity="1"/>
+<path d="M 18 311.2857 H 342 A 10 10 0 0 1 352 321.2857 V 343.2857 A 0 0 0 0 1 352 343.2857 H 8 A 0 0 0 0 1 8 343.2857 V 321.2857 A 10 10 0 0 1 18 311.2857 Z" fill="#202020" fill-opacity="1"/>
+<svg opacity="1" y="319" x="18" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg>
+<text x="39" y="319.5714" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#757575" fill-opacity="1" xml:space="preserve">nix-shell-502807-68…</text>
+<svg opacity="1" y="319" x="168" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="319" x="200" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-laptop" viewBox="0 0 16 16">
+  <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5zm-11-1A1.5 1.5 0 0 0 1 3.5V12h14V3.5A1.5 1.5 0 0 0 13.5 2zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5"/>
+</svg>
+<text x="221" y="319.2857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Local</text>
+<svg opacity="1" y="321" x="264" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="319" x="292" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<circle cx="334" cy="327.2857" r="7" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1.7"/>
+<circle cx="334" cy="327.2857" r="7" fill="none" stroke="#d4d4d4" stroke-opacity="1" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="13.194691 43.9823" transform="rotate(-90 334 327.2857)"/>
+<rect x="0" y="343.2857" width="360" height="76.71429" rx="10" fill="#262626" fill-opacity="1"/>
+<rect x="0.5" y="343.7857" width="359" height="75.71429" rx="9.5" fill="none" stroke="#262626" stroke-opacity="1" stroke-width="1"/>
+<rect x="8" y="351.2857" width="344" height="28.714285" rx="6" fill="#262626" fill-opacity="1"/>
+<defs><clipPath id="clip-13" clipPathUnits="userSpaceOnUse"><rect x="14" y="357.2857" width="332" height="16.714285"/></clipPath></defs><g clip-path="url(#clip-13)">
+<text x="14" y="357.2857" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisá el uso de contexto sin modificar los archivos.</text>
+</g>
+<rect x="8" y="384" width="28" height="28" rx="4" fill="#404040" fill-opacity="1"/>
+<svg opacity="1" y="390" x="14" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f6f6f6" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<rect x="40" y="384" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="390" x="46" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-file-earmark-text" viewBox="0 0 16 16">
+  <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1zM5 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5"/>
+  <path d="M9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5zm0 1v2A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/>
+</svg>
+<rect x="224.03125" y="384" width="95.96875" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="230.03125" y="390.2857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Sin modelos</text>
+<svg opacity="1" y="392" x="302" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#9e9e9e" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="324" y="384" width="28" height="28" rx="6" fill="#363636" fill-opacity="1"/>
+<svg opacity="1" y="390" x="330" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ffffff" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+<defs><filter id="shadow-25" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="11"/></filter></defs><rect x="28" y="17" width="320" height="300.2857" rx="6" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-25)"/>
+<rect x="28" y="8" width="320" height="300.2857" rx="6" fill="#1e1e1e" fill-opacity="1"/>
+<rect x="28.5" y="8.5" width="319" height="299.2857" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<rect x="34" y="14" width="68.875" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="20" x="40" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-left" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"/>
+</svg>
+<text x="62" y="20.285713" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Volver</text>
+<rect x="318" y="14" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="18" x="322" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<defs><clipPath id="clip-33" clipPathUnits="userSpaceOnUse"><rect x="34" y="48" width="308" height="254.2857"/></clipPath></defs><g clip-path="url(#clip-33)">
+<text x="44" y="58" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Detalles del contexto</text>
+<text x="44" y="83.42857" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">fixture-provider · context-review-model</text>
+<rect x="44" y="107.57143" width="274" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="44" y="114.57143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Última respuesta</text>
+<text x="44" y="136" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Entrada</text>
+<text x="187" y="136" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">24.0K</text>
+<text x="44" y="157.42857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Salida</text>
+<text x="187" y="157.42857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">6.0K</text>
+<text x="44" y="178.85715" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Entrada en caché</text>
+<text x="187" y="178.85715" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">12.0K</text>
+<text x="44" y="198.28572" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Ya incluida en Entrada; no se suma otra vez.</text>
+<text x="44" y="218.42856" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Razonamiento</text>
+<text x="187" y="218.42856" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">3.0K</text>
+<text x="44" y="237.85713" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Ya incluido en Salida; no se suma otra vez.</text>
+<rect x="44" y="262" width="274" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="44" y="269" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Capacidad del modelo · tokens</text>
+<text x="44" y="290.42856" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Ventana</text>
+<text x="187" y="290.42856" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">100.0K</text>
+</g>
+<defs><clipPath id="clip-53" clipPathUnits="userSpaceOnUse"><rect x="34" y="48" width="308" height="254.2857"/></clipPath></defs><g clip-path="url(#clip-53)">
+<rect x="332.5" y="62" width="5" height="63.371395" rx="2.5" fill="#ffffff" fill-opacity="0.28235295"/>
+<polygon points="331.5,57 338.5,57 335,53" fill="#ffffff" fill-opacity="0.09411765"/>
+<polygon points="331.5,293.2857 338.5,293.2857 335,297.2857" fill="#ffffff" fill-opacity="0.28235295"/>
+</g>
+</svg>

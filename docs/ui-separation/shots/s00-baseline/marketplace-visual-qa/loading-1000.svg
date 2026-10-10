@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="800" viewBox="0 0 1000 800" overflow="hidden">
+<rect x="0" y="0" width="1000" height="800" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1000" height="800"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="35" y="28" font-family="DejaVu Sans,sans-serif" font-size="20" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Marketplace</text>
+<text x="35" y="53.035713" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Skills para tu agente</text>
+<rect x="791" y="32" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<polyline points="807,41.96 808.36316,42.115837 809.656,42.57531 810.81177,43.314705 811.7709,44.295868 812.48376,45.468174 812.9137,46.771126 813.03845,48.13749 812.8516,49.496758 812.36285,50.778793 811.5973,51.91744 810.59454,52.85393 809.4064,53.539955 808.09393,53.94011 806.7251,54.03374 805.3704,53.81602 804.09985,53.298183 802.97894,52.50695 802.0655,51.48315 801.4067,50.279613 801.0365,48.95844 800.97406,47.587814 801.2226,46.238457 801.7692,44.98 " fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1.92" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="829" y="32" width="136" height="32" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="829.5" y="32.5" width="135" height="31" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="40" x="842" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<text x="863.625" y="40.513393" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Agregar origen</text>
+<rect x="35" y="78" width="234" height="28" rx="6" fill="#363636" fill-opacity="1"/>
+<rect x="133" y="80" width="60" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="37" y="80" width="94" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="44.375" y="85.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Recomendadas</text>
+<rect x="133" y="80" width="60" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="140.9375" y="85.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Explorar</text>
+<rect x="195" y="80" width="72" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="204.75" y="85.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Instaladas</text>
+<text x="737" y="86.24107" font-family="DejaVu Sans,sans-serif" font-size="10" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Instalar en</text>
+<rect x="809" y="78" width="156" height="28" rx="6" fill="#363636" fill-opacity="1"/>
+<rect x="811" y="80" width="72" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="811" y="80" width="72" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="827.1094" y="85.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Usuario</text>
+<rect x="885" y="80" width="78" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="900.6094" y="85.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Proyecto</text>
+<rect x="35" y="116" width="848" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="35.5" y="116.5" width="847" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="124" x="43" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<defs><clipPath id="clip-28" clipPathUnits="userSpaceOnUse"><rect x="67" y="124" width="808" height="12"/></clipPath></defs><g clip-path="url(#clip-28)">
+<text x="67" y="124" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">quality</text>
+</g>
+<rect x="889" y="116" width="76" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="889.5" y="116.5" width="75" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<polyline points="903,123.96 904.36316,124.11584 905.656,124.57531 906.81177,125.314705 907.7709,126.29587 908.48376,127.46818 908.9137,128.77113 909.03845,130.1375 908.8516,131.49677 908.36285,132.7788 907.5973,133.91743 906.59454,134.85393 905.4064,135.53996 904.09393,135.94011 902.7251,136.03374 901.3704,135.81602 900.09985,135.29819 898.97894,134.50694 898.0655,133.48315 897.4067,132.27962 897.0365,130.95844 896.97406,129.58781 897.2226,128.23846 897.7692,126.979996 " fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1.92" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="917" y="123.08929" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Buscar</text>
+<text x="35" y="154" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Descubre skills de la comunidad en skills.sh</text>
+<text x="35" y="175.82143" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Buscando…</text>
+<rect x="35" y="196.49107" width="930" height="56" rx="8" fill="#202020" fill-opacity="1"/>
+<rect x="47" y="208.49107" width="511.5" height="12" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="47" y="228.49107" width="906" height="12" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="35" y="260.4911" width="930" height="56" rx="8" fill="#202020" fill-opacity="1"/>
+<rect x="47" y="272.4911" width="511.5" height="12" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="47" y="292.4911" width="906" height="12" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="35" y="324.4911" width="930" height="56" rx="8" fill="#202020" fill-opacity="1"/>
+<rect x="47" y="336.4911" width="511.5" height="12" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="47" y="356.4911" width="906" height="12" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="35" y="390.4911" width="930" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+</g>
+</svg>

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="480" viewBox="0 0 360 480" overflow="hidden">
+<defs><clipPath id="clip-0" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="480"/></clipPath></defs><g clip-path="url(#clip-0)">
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="4" y="4" width="292" height="24"/></clipPath></defs><g clip-path="url(#clip-1)">
+<defs><clipPath id="clip-2" clipPathUnits="userSpaceOnUse"><rect x="4" y="4" width="292" height="24"/></clipPath></defs><g clip-path="url(#clip-2)">
+<defs><clipPath id="clip-3" clipPathUnits="userSpaceOnUse"><rect x="6" y="6" width="64" height="20"/></clipPath></defs><g clip-path="url(#clip-3)">
+<svg opacity="1" y="9" x="6" height="14" width="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="#ff7043" d="m30 12-4-2V6h-4l-2-4-4 2-4-2-2 4H6v4l-4 2 2 4-2 4 4 2v4h4l2 4 4-2 4 2 2-4h4v-4l4-2-2-4ZM6 16a9.9 9.9 0 0 1 .842-4H10v8H6.842A9.9 9.9 0 0 1 6 16m10 10a9.98 9.98 0 0 1-7.978-4H16v-2h-2v-2h4c.819.819.297 2.308 1.179 3.37a1.89 1.89 0 0 0 1.46.63h3.34A9.98 9.98 0 0 1 16 26m-2-12v-2h4a1 1 0 0 1 0 2Zm11.158 6H24a2.006 2.006 0 0 1-2-2 2 2 0 0 0-2-2 3 3 0 0 0 3-3q0-.08-.004-.161A3.115 3.115 0 0 0 19.83 10H8.022a9.986 9.986 0 0 1 17.136 10"/></svg>
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="24" y="8.607142" width="46" height="14.785714"/></clipPath></defs><g clip-path="url(#clip-5)">
+<text x="24" y="8.607142" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">main.rs</text>
+</g>
+</g>
+</g>
+</g>
+<rect x="302" y="4" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="8" x="306" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<rect x="332" y="4" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="8" x="336" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-three-dots" viewBox="0 0 16 16">
+  <path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3"/>
+</svg>
+<rect x="0" y="32" width="360" height="448" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-16" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="360" height="448"/></clipPath></defs><g clip-path="url(#clip-16)">
+<defs><clipPath id="clip-17" clipPathUnits="userSpaceOnUse"><rect x="0" y="36" width="360" height="436"/></clipPath></defs><g clip-path="url(#clip-17)">
+</g>
+<defs><clipPath id="clip-19" clipPathUnits="userSpaceOnUse"><rect x="0" y="36" width="360" height="436"/></clipPath></defs><g clip-path="url(#clip-19)">
+<text x="12.000002" y="37.642857" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1</text>
+<defs><clipPath id="clip-21" clipPathUnits="userSpaceOnUse"><rect x="45.428574" y="36" width="306.5714" height="436"/></clipPath></defs><g clip-path="url(#clip-21)">
+<text x="45.428574" y="37.642857" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">// Editor propio de OpenIDE</text>
+</g>
+</g>
+<defs><clipPath id="clip-25" clipPathUnits="userSpaceOnUse"><rect x="0" y="36" width="360" height="436"/></clipPath></defs><g clip-path="url(#clip-25)">
+<text x="12.000002" y="57.642857" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2</text>
+<defs><clipPath id="clip-27" clipPathUnits="userSpaceOnUse"><rect x="45.428574" y="36" width="306.5714" height="436"/></clipPath></defs><g clip-path="url(#clip-27)">
+<text x="45.428574" y="57.642857" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">fn main() {</text>
+</g>
+</g>
+<defs><clipPath id="clip-31" clipPathUnits="userSpaceOnUse"><rect x="0" y="36" width="360" height="436"/></clipPath></defs><g clip-path="url(#clip-31)">
+<text x="12.000002" y="77.64286" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">3</text>
+<defs><clipPath id="clip-33" clipPathUnits="userSpaceOnUse"><rect x="45.428574" y="36" width="306.5714" height="436"/></clipPath></defs><g clip-path="url(#clip-33)">
+<rect x="45.428574" y="76" width="1" height="20" rx="0" fill="#888888" fill-opacity="0.20392157"/>
+<text x="45.428574" y="77.64286" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">    let saludo = &quot;Hola, mundo 🌎&quot;;</text>
+</g>
+</g>
+<defs><clipPath id="clip-38" clipPathUnits="userSpaceOnUse"><rect x="0" y="36" width="360" height="436"/></clipPath></defs><g clip-path="url(#clip-38)">
+<text x="12.000002" y="97.64286" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">4</text>
+<defs><clipPath id="clip-40" clipPathUnits="userSpaceOnUse"><rect x="45.428574" y="36" width="306.5714" height="436"/></clipPath></defs><g clip-path="url(#clip-40)">
+<rect x="45.428574" y="96" width="1" height="20" rx="0" fill="#888888" fill-opacity="0.20392157"/>
+<text x="45.428574" y="97.64286" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">    println!(&quot;{}&quot;, saludo);</text>
+</g>
+</g>
+<defs><clipPath id="clip-45" clipPathUnits="userSpaceOnUse"><rect x="0" y="36" width="360" height="436"/></clipPath></defs><g clip-path="url(#clip-45)">
+<text x="12.000002" y="117.64286" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">5</text>
+<defs><clipPath id="clip-47" clipPathUnits="userSpaceOnUse"><rect x="45.428574" y="36" width="306.5714" height="436"/></clipPath></defs><g clip-path="url(#clip-47)">
+<text x="45.428574" y="117.64286" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">}</text>
+</g>
+</g>
+<defs><clipPath id="clip-51" clipPathUnits="userSpaceOnUse"><rect x="0" y="36" width="360" height="436"/></clipPath></defs><g clip-path="url(#clip-51)">
+<text x="12.000002" y="137.64285" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">6</text>
+<defs><clipPath id="clip-53" clipPathUnits="userSpaceOnUse"><rect x="45.428574" y="36" width="306.5714" height="436"/></clipPath></defs><g clip-path="url(#clip-53)">
+</g>
+</g>
+</g>
+</g>
+</svg>

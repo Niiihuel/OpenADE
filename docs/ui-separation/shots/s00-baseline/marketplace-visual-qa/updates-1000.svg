@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="800" viewBox="0 0 1000 800" overflow="hidden">
+<rect x="0" y="0" width="1000" height="800" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1000" height="800"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="35" y="28" font-family="DejaVu Sans,sans-serif" font-size="20" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Marketplace</text>
+<text x="35" y="53.035713" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Skills para tu agente</text>
+<rect x="791" y="32" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="40" x="799" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+</svg>
+<rect x="829" y="32" width="136" height="32" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="829.5" y="32.5" width="135" height="31" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="40" x="842" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<text x="863.625" y="40.513393" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Agregar origen</text>
+<rect x="35" y="78" width="234" height="32" rx="6" fill="#363636" fill-opacity="1"/>
+<rect x="195" y="80" width="72" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="37" y="80" width="94" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="44.375" y="87.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Recomendadas</text>
+<rect x="133" y="80" width="60" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="140.9375" y="87.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Explorar</text>
+<rect x="195" y="80" width="72" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="204.75" y="87.377235" font-family="DejaVu Sans,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Instaladas</text>
+<rect x="35" y="120" width="930" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="35.5" y="120.5" width="929" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="128" x="43" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<defs><clipPath id="clip-21" clipPathUnits="userSpaceOnUse"><rect x="67" y="128" width="890" height="12"/></clipPath></defs><g clip-path="url(#clip-21)">
+<text x="67" y="128" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="0.43137255" xml:space="preserve">Buscar skills…</text>
+</g>
+<text x="35" y="158" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Gestiona tus skills instaladas</text>
+<rect x="937" y="158" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="164" x="943" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+</svg>
+<rect x="35" y="196" width="930" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="35" y="212.3616" font-family="DejaVu Sans,sans-serif" font-size="15" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Instaladas</text>
+<rect x="111.46875" y="210" width="22" height="22" rx="11" fill="#363636" fill-opacity="1"/>
+<rect x="111.96875" y="210.5" width="21" height="21" rx="10.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="119.359375" y="214.66518" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">1</text>
+<rect x="35" y="255" width="930" height="153.82143" rx="8" fill="#202020" fill-opacity="1"/>
+<rect x="35.5" y="255.5" width="929" height="152.82143" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<rect x="47" y="267" width="32" height="32" rx="8" fill="#363636" fill-opacity="1"/>
+<svg opacity="1" y="275" x="55" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-github" viewBox="0 0 16 16">
+  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/>
+</svg>
+<text x="87" y="267" font-family="DejaVu Sans,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">quality</text>
+<text x="87" y="286.125" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">example/skills · GitHub</text>
+<rect x="925" y="269" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="275" x="931" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="47" y="307" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Skill publicada por example/skills en Skills.sh. La licencia y las instrucciones se verifican al instalar.</text>
+<text x="47" y="336.4866" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Actualización disponible</text>
+<rect x="865" y="328.8214" width="88" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="865.5" y="329.3214" width="87" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="881.8906" y="335.9107" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Actualizar</text>
+<rect x="47" y="369.8214" width="113.84375" height="22" rx="11" fill="#363636" fill-opacity="1"/>
+<rect x="47.5" y="370.3214" width="112.84375" height="21" rx="10.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="55" y="374.4866" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Instalada · Proyecto</text>
+<text x="840.28125" y="374.4866" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Activa</text>
+<rect x="879" y="370.8214" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="898" y="373.8214" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="925" y="366.8214" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="373" x="931" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-trash3" viewBox="0 0 16 16">
+  <path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/>
+</svg>
+</g>
+</svg>

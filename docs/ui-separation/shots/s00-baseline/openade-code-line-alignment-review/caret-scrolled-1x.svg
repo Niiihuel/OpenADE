@@ -1,0 +1,427 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="720" height="830" viewBox="0 0 720 830" overflow="hidden">
+<rect x="0" y="0" width="720" height="830" rx="0" fill="#161616" fill-opacity="1"/>
+<text x="16" y="16" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Editor nativo · texto centrado en filas de 20 px</text>
+<rect x="16" y="50" width="688" height="188" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-3" clipPathUnits="userSpaceOnUse"><rect x="16" y="50" width="688" height="188"/></clipPath></defs><g clip-path="url(#clip-3)">
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-4)">
+</g>
+<defs><clipPath id="clip-6" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-6)">
+<text x="35.84375" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2</text>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="51.65625" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_001</text>
+<text x="168.84375" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="39.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-21" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-21)">
+<text x="35.84375" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">3</text>
+<defs><clipPath id="clip-23" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-23)">
+<text x="51.65625" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_002</text>
+<text x="168.84375" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="59.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-36" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-36)">
+<text x="35.84375" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">4</text>
+<defs><clipPath id="clip-38" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-38)">
+<text x="51.65625" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_003</text>
+<text x="168.84375" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="79.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-51" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-51)">
+<rect x="16" y="97" width="688" height="20" rx="0" fill="#d4d4d4" fill-opacity="0.03137255"/>
+<text x="35.84375" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">5</text>
+<defs><clipPath id="clip-54" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-54)">
+<text x="51.65625" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_004</text>
+<text x="168.84375" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="99.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+<rect x="153.21875" y="97" width="1.5" height="20" rx="0" fill="#d4d4d4" fill-opacity="1"/>
+</g>
+</g>
+<defs><clipPath id="clip-68" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-68)">
+<text x="35.84375" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">6</text>
+<defs><clipPath id="clip-70" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-70)">
+<text x="51.65625" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_005</text>
+<text x="168.84375" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="119.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-83" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-83)">
+<text x="35.84375" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">7</text>
+<defs><clipPath id="clip-85" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-85)">
+<text x="51.65625" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_006</text>
+<text x="168.84375" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="139.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-98" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-98)">
+<text x="35.84375" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">8</text>
+<defs><clipPath id="clip-100" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-100)">
+<text x="51.65625" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_007</text>
+<text x="168.84375" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="159.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-113" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-113)">
+<text x="35.84375" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">9</text>
+<defs><clipPath id="clip-115" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-115)">
+<text x="51.65625" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_008</text>
+<text x="168.84375" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="179.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-128" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-128)">
+<text x="28" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">10</text>
+<defs><clipPath id="clip-130" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-130)">
+<text x="51.65625" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_009</text>
+<text x="168.84375" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="199.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><clipPath id="clip-143" clipPathUnits="userSpaceOnUse"><rect x="16" y="54" width="688" height="176"/></clipPath></defs><g clip-path="url(#clip-143)">
+<text x="28" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">11</text>
+<defs><clipPath id="clip-145" clipPathUnits="userSpaceOnUse"><rect x="51.65625" y="54" width="644.34375" height="176"/></clipPath></defs><g clip-path="url(#clip-145)">
+<text x="51.65625" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="90.71875" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="98.53125" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#8fb9da" fill-opacity="1" xml:space="preserve">VALUE_010</text>
+<text x="168.84375" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">:</text>
+<text x="176.65625" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<text x="184.46875" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">&amp;</text>
+<text x="192.28125" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#e1c483" fill-opacity="1" xml:space="preserve">str</text>
+<text x="215.71875" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> = </text>
+<text x="239.15625" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="379.78125" y="219.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cdcdcd" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<rect x="697.5" y="62.14" width="5" height="38.72" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+<text x="16" y="250" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Diferencias · números y marcadores alineados</text>
+<rect x="16" y="284" width="688" height="188" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-162" clipPathUnits="userSpaceOnUse"><rect x="16" y="284" width="688" height="188"/></clipPath></defs><g clip-path="url(#clip-162)">
+<rect x="16" y="271" width="688" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="16" y="271" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="24" y="273.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1001</text>
+<text x="106.625" y="273.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d2737a" fill-opacity="1" xml:space="preserve">−</text>
+<defs><clipPath id="clip-167" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-167)">
+<text x="122.625" y="273.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="273.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_001: &amp;str = </text>
+<text x="310.125" y="273.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="273.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="16" y="291" width="688" height="20" rx="0" fill="#488e5c" fill-opacity="0.078431375"/>
+<rect x="16" y="291" width="2" height="20" rx="0" fill="#69b987" fill-opacity="1"/>
+<text x="65.3125" y="293.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2002</text>
+<text x="106.625" y="293.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#69b987" fill-opacity="1" xml:space="preserve">+</text>
+<defs><clipPath id="clip-177" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-177)">
+<text x="122.625" y="293.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="293.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_002: &amp;str = </text>
+<text x="310.125" y="293.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="293.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<text x="24" y="313.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1003</text>
+<text x="65.3125" y="313.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2003</text>
+<text x="106.625" y="313.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<defs><clipPath id="clip-186" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-186)">
+<text x="122.625" y="313.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="313.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_003: &amp;str = </text>
+<text x="310.125" y="313.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="313.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="16" y="331" width="688" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="16" y="331" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="24" y="333.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1004</text>
+<text x="106.625" y="333.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d2737a" fill-opacity="1" xml:space="preserve">−</text>
+<defs><clipPath id="clip-196" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-196)">
+<text x="122.625" y="333.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="333.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_004: &amp;str = </text>
+<text x="310.125" y="333.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="333.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="16" y="351" width="688" height="20" rx="0" fill="#488e5c" fill-opacity="0.078431375"/>
+<rect x="16" y="351" width="2" height="20" rx="0" fill="#69b987" fill-opacity="1"/>
+<text x="65.3125" y="353.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2005</text>
+<text x="106.625" y="353.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#69b987" fill-opacity="1" xml:space="preserve">+</text>
+<defs><clipPath id="clip-206" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-206)">
+<text x="122.625" y="353.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="353.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_005: &amp;str = </text>
+<text x="310.125" y="353.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="353.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<text x="24" y="373.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1006</text>
+<text x="65.3125" y="373.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2006</text>
+<text x="106.625" y="373.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<defs><clipPath id="clip-215" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-215)">
+<text x="122.625" y="373.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="373.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_006: &amp;str = </text>
+<text x="310.125" y="373.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="373.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="16" y="391" width="688" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="16" y="391" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="24" y="393.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1007</text>
+<text x="106.625" y="393.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d2737a" fill-opacity="1" xml:space="preserve">−</text>
+<defs><clipPath id="clip-225" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-225)">
+<text x="122.625" y="393.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="393.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_007: &amp;str = </text>
+<text x="310.125" y="393.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="393.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="16" y="411" width="688" height="20" rx="0" fill="#488e5c" fill-opacity="0.078431375"/>
+<rect x="16" y="411" width="2" height="20" rx="0" fill="#69b987" fill-opacity="1"/>
+<text x="65.3125" y="413.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2008</text>
+<text x="106.625" y="413.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#69b987" fill-opacity="1" xml:space="preserve">+</text>
+<defs><clipPath id="clip-235" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-235)">
+<text x="122.625" y="413.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="413.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_008: &amp;str = </text>
+<text x="310.125" y="413.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="413.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<text x="24" y="433.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1009</text>
+<text x="65.3125" y="433.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2009</text>
+<text x="106.625" y="433.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> </text>
+<defs><clipPath id="clip-244" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-244)">
+<text x="122.625" y="433.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="433.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_009: &amp;str = </text>
+<text x="310.125" y="433.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="433.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="16" y="451" width="688" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="16" y="451" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="24" y="453.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1010</text>
+<text x="106.625" y="453.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d2737a" fill-opacity="1" xml:space="preserve">−</text>
+<defs><clipPath id="clip-254" clipPathUnits="userSpaceOnUse"><rect x="122.625" y="288" width="573.375" height="176"/></clipPath></defs><g clip-path="url(#clip-254)">
+<text x="122.625" y="453.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="161.6875" y="453.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_010: &amp;str = </text>
+<text x="310.125" y="453.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="450.75" y="453.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="697.5" y="296.14" width="5" height="38.72" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+<text x="16" y="484" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Vista previa del chat · una columna de números</text>
+<rect x="16" y="518" width="688" height="247" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="16.5" y="518.5" width="687" height="246" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-265" clipPathUnits="userSpaceOnUse"><rect x="17" y="519" width="686" height="245"/></clipPath></defs><g clip-path="url(#clip-265)">
+<defs><clipPath id="clip-266" clipPathUnits="userSpaceOnUse"><rect x="17" y="519" width="686" height="28"/></clipPath></defs><g clip-path="url(#clip-266)">
+<defs><clipPath id="clip-267" clipPathUnits="userSpaceOnUse"><rect x="17" y="519" width="686" height="28"/></clipPath></defs><g clip-path="url(#clip-267)">
+<defs><clipPath id="clip-268" clipPathUnits="userSpaceOnUse"><rect x="23" y="521" width="648" height="24"/></clipPath></defs><g clip-path="url(#clip-268)">
+<svg opacity="1" y="526" x="23" height="14" width="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="#ff7043" d="m30 12-4-2V6h-4l-2-4-4 2-4-2-2 4H6v4l-4 2 2 4-2 4 4 2v4h4l2 4 4-2 4 2 2-4h4v-4l4-2-2-4ZM6 16a9.9 9.9 0 0 1 .842-4H10v8H6.842A9.9 9.9 0 0 1 6 16m10 10a9.98 9.98 0 0 1-7.978-4H16v-2h-2v-2h4c.819.819.297 2.308 1.179 3.37a1.89 1.89 0 0 0 1.46.63h3.34A9.98 9.98 0 0 1 16 26m-2-12v-2h4a1 1 0 0 1 0 2Zm11.158 6H24a2.006 2.006 0 0 1-2-2 2 2 0 0 0-2-2 3 3 0 0 0 3-3q0-.08-.004-.161A3.115 3.115 0 0 0 19.83 10H8.022a9.986 9.986 0 0 1 17.136 10"/></svg>
+<defs><clipPath id="clip-270" clipPathUnits="userSpaceOnUse"><rect x="39" y="521" width="520" height="24"/></clipPath></defs><g clip-path="url(#clip-270)">
+<text x="42" y="525.2857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">prueba-raiz.rs</text>
+</g>
+<defs><clipPath id="clip-273" clipPathUnits="userSpaceOnUse"><rect x="567" y="525.9286" width="88" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-273)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-276" clipPathUnits="userSpaceOnUse"><rect x="655" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-276)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.96862745" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-279" clipPathUnits="userSpaceOnUse"><rect x="656" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-279)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.90588236" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-282" clipPathUnits="userSpaceOnUse"><rect x="657" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-282)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.84313726" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-285" clipPathUnits="userSpaceOnUse"><rect x="658" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-285)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.78039217" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-288" clipPathUnits="userSpaceOnUse"><rect x="659" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-288)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.7176471" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-291" clipPathUnits="userSpaceOnUse"><rect x="660" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-291)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.654902" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-294" clipPathUnits="userSpaceOnUse"><rect x="661" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-294)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.5921569" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-297" clipPathUnits="userSpaceOnUse"><rect x="662" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-297)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.5294118" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-300" clipPathUnits="userSpaceOnUse"><rect x="663" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-300)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.47058824" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-303" clipPathUnits="userSpaceOnUse"><rect x="664" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-303)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.40784314" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-306" clipPathUnits="userSpaceOnUse"><rect x="665" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-306)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.34509805" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-309" clipPathUnits="userSpaceOnUse"><rect x="666" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-309)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.28235295" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-312" clipPathUnits="userSpaceOnUse"><rect x="667" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-312)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.21960784" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-315" clipPathUnits="userSpaceOnUse"><rect x="668" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-315)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.15686275" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-318" clipPathUnits="userSpaceOnUse"><rect x="669" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-318)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.09411765" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+<defs><clipPath id="clip-321" clipPathUnits="userSpaceOnUse"><rect x="670" y="525.9286" width="1" height="14.142883"/></clipPath></defs><g clip-path="url(#clip-321)">
+<text x="567" y="525.9286" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="0.03137255" xml:space="preserve">Vista previa · contenido capturado</text>
+</g>
+</g>
+<svg opacity="1" y="526" x="678" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+</g>
+<rect x="17" y="547" width="686" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="17" y="548" width="686" height="188" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-330" clipPathUnits="userSpaceOnUse"><rect x="17" y="548" width="686" height="188"/></clipPath></defs><g clip-path="url(#clip-330)">
+<rect x="17" y="535" width="686" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="17" y="535" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="25" y="537.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1001</text>
+<defs><clipPath id="clip-334" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-334)">
+<text x="66.3125" y="537.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="537.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_001: &amp;str = </text>
+<text x="253.8125" y="537.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="537.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="17" y="555" width="686" height="20" rx="0" fill="#488e5c" fill-opacity="0.078431375"/>
+<rect x="17" y="555" width="2" height="20" rx="0" fill="#69b987" fill-opacity="1"/>
+<text x="25" y="557.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2002</text>
+<defs><clipPath id="clip-343" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-343)">
+<text x="66.3125" y="557.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="557.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_002: &amp;str = </text>
+<text x="253.8125" y="557.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="557.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<text x="25" y="577.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2003</text>
+<defs><clipPath id="clip-350" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-350)">
+<text x="66.3125" y="577.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="577.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_003: &amp;str = </text>
+<text x="253.8125" y="577.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="577.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="17" y="595" width="686" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="17" y="595" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="25" y="597.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1004</text>
+<defs><clipPath id="clip-359" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-359)">
+<text x="66.3125" y="597.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="597.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_004: &amp;str = </text>
+<text x="253.8125" y="597.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="597.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="17" y="615" width="686" height="20" rx="0" fill="#488e5c" fill-opacity="0.078431375"/>
+<rect x="17" y="615" width="2" height="20" rx="0" fill="#69b987" fill-opacity="1"/>
+<text x="25" y="617.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2005</text>
+<defs><clipPath id="clip-368" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-368)">
+<text x="66.3125" y="617.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="617.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_005: &amp;str = </text>
+<text x="253.8125" y="617.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="617.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<text x="25" y="637.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2006</text>
+<defs><clipPath id="clip-375" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-375)">
+<text x="66.3125" y="637.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="637.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_006: &amp;str = </text>
+<text x="253.8125" y="637.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="637.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="17" y="655" width="686" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="17" y="655" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="25" y="657.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1007</text>
+<defs><clipPath id="clip-384" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-384)">
+<text x="66.3125" y="657.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="657.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_007: &amp;str = </text>
+<text x="253.8125" y="657.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="657.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="17" y="675" width="686" height="20" rx="0" fill="#488e5c" fill-opacity="0.078431375"/>
+<rect x="17" y="675" width="2" height="20" rx="0" fill="#69b987" fill-opacity="1"/>
+<text x="25" y="677.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2008</text>
+<defs><clipPath id="clip-393" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-393)">
+<text x="66.3125" y="677.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="677.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_008: &amp;str = </text>
+<text x="253.8125" y="677.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="677.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<text x="25" y="697.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2009</text>
+<defs><clipPath id="clip-400" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-400)">
+<text x="66.3125" y="697.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="697.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_009: &amp;str = </text>
+<text x="253.8125" y="697.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="697.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="17" y="715" width="686" height="20" rx="0" fill="#aa4c55" fill-opacity="0.078431375"/>
+<rect x="17" y="715" width="2" height="20" rx="0" fill="#d2737a" fill-opacity="1"/>
+<text x="25" y="717.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">1010</text>
+<defs><clipPath id="clip-409" clipPathUnits="userSpaceOnUse"><rect x="66.3125" y="552" width="628.6875" height="176"/></clipPath></defs><g clip-path="url(#clip-409)">
+<text x="66.3125" y="717.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">const</text>
+<text x="105.375" y="717.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> VALUE_010: &amp;str = </text>
+<text x="253.8125" y="717.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#cea37f" fill-opacity="1" xml:space="preserve">&quot;Texto en español&quot;</text>
+<text x="394.4375" y="717.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<rect x="696.5" y="560.14" width="5" height="38.72" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+<defs><linearGradient id="gradient-417" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.09411765"/></linearGradient></defs><rect x="17" y="736" width="686" height="28" fill="url(#gradient-417)"/>
+<rect x="348" y="738" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="742" x="352" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+</g>
+</svg>

@@ -489,7 +489,11 @@ fn activity_fixture(phase: &str, width: f32) -> ViewState {
 }
 
 fn export(frame: &Frame, size: Size, name: &str) {
-    let directory = std::path::PathBuf::from("/tmp/openade-ide-workspace-review");
+    export_to("/tmp/openade-ide-workspace-review", frame, size, name);
+}
+
+fn export_to(directory: &str, frame: &Frame, size: Size, name: &str) {
+    let directory = std::path::PathBuf::from(directory);
     std::fs::create_dir_all(&directory).unwrap();
     let path = directory.join(format!("{name}-{:.0}x{:.0}.svg", size.width, size.height));
     crate::settings_ui::visual_qa::write_native_frame_svg(frame, &path, size.width, size.height)
@@ -629,4 +633,138 @@ fn export_ide_workspace_visual_review() {
             context.end_pass().textures_delta.clear();
         }
     }
+}
+
+/// Idle, hover and pressed frames of one control, found by its region id.
+fn export_states(
+    build: impl Fn(Size) -> Element,
+    size: Size,
+    scene: &str,
+    targets: &[(&str, &str)],
+) {
+    for (label, id, pressed) in std::iter::once(("idle", "", false)).chain(
+        targets
+            .iter()
+            .flat_map(|(label, id)| [(*label, *id, false), (*label, *id, true)]),
+    ) {
+        let (context, mut tree) = native_tree(build(size));
+        let now = std::time::Instant::now();
+        let mut frame = tree.layout_at(size, now);
+        let mut name = format!("{scene}-idle");
+        if !id.is_empty() {
+            let rect = frame
+                .regions
+                .iter()
+                .find(|region| region.id == id)
+                .unwrap_or_else(|| panic!("missing {id} in {scene}"))
+                .rect;
+            let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+            tree.handle_event_at(UiEvent::PointerMove(point), now);
+            if pressed {
+                tree.handle_event_at(UiEvent::PointerDown(point), now);
+            }
+            tree.layout_at(size, now);
+            frame = tree.layout_at(size, now + std::time::Duration::from_millis(700));
+            name = format!("{scene}-{label}-{}", if pressed { "pressed" } else { "hover" });
+        }
+        export_to("/tmp/openade-interaction-states-review", &frame, size, &name);
+        context.end_pass().textures_delta.clear();
+    }
+}
+
+#[test]
+#[ignore = "export idle, hover and pressed states of the controls the limn separation migrates"]
+fn export_interaction_states_visual_review() {
+    let size = Size::new(1024.0, 768.0);
+
+    let mut ide = fixture();
+    ide.ide.agent_open = false;
+    ide.terminal_tabs.push(DockTabView {
+        id: 82,
+        title: "zsh".into(),
+        full_path: Some(ide.workspace.clone()),
+        active: false,
+        kind: SideTab::Terminal,
+        closable: true,
+    });
+    let window = |state: &ViewState, size: Size| build_window_view(state, size.width, size.height);
+    export_states(
+        |size| window(&ide, size),
+        size,
+        "ide",
+        &[
+            ("titlebar-toggle-active", "ide_explorer_toggle"),
+            ("titlebar-toggle", "ide_agent_toggle"),
+            ("activity-button-active", "ide_activity:files"),
+            ("activity-button", "ide_activity:search"),
+        ],
+    );
+    export_states(
+        |size| {
+            Element::panel(crate::terminal_dock_ui::build(&ide, size.width, size.height))
+                .background(theme::BACKGROUND)
+        },
+        Size::new(760.0, 300.0),
+        "terminal",
+        &[
+            ("tab-close-active", "terminal_close:81"),
+            ("tab-close", "terminal_close:82"),
+        ],
+    );
+
+    let mut agents = tests::empty_state();
+    agents.selected_session = Some("selected".into());
+    agents.sessions = ["idle", "selected"]
+        .into_iter()
+        .map(|id| SessionView {
+            id: id.into(),
+            title: format!("Sesión {id}"),
+            project: "/project".into(),
+            backend: "native".into(),
+            pinned: false,
+            unread: false,
+            archived: false,
+            native_automation: None,
+        })
+        .collect();
+    agents.show_side_pane = true;
+    agents.side_tab = SideTab::Activity;
+    agents.dock_tabs = [("Archivos", SideTab::Files), ("Actividad", SideTab::Activity)]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (title, kind))| DockTabView {
+            full_path: None,
+            id: index as u64 + 1,
+            title: title.into(),
+            active: kind == SideTab::Activity,
+            kind,
+            closable: true,
+        })
+        .collect();
+    // Wide enough for the dock strip to show both tabs whole.
+    export_states(
+        |size| window(&agents, size),
+        Size::new(1440.0, 768.0),
+        "agents",
+        &[
+            ("session-row", "session:idle"),
+            ("session-row-selected", "session:selected"),
+            ("dock-tab", "dock_tab:1"),
+            ("dock-tab-active", "dock_tab:2"),
+        ],
+    );
+
+    let mut settings = tests::empty_state();
+    settings.show_settings = true;
+    settings.settings_page = SettingsPage::Mcp;
+    settings.mcp_editor_open = true;
+    export_states(
+        |size| window(&settings, size),
+        size,
+        "settings",
+        &[
+            ("choice-button-active", "mcp_transport:stdio"),
+            ("choice-button", "mcp_transport:http"),
+        ],
+    );
 }

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="320" height="590" viewBox="0 0 320 590" overflow="hidden">
+<rect x="0" y="0" width="320" height="590" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="0" width="320" height="590" rx="12" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="0.5" y="0.5" width="319" height="589" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-3" clipPathUnits="userSpaceOnUse"><rect x="6" y="6" width="308" height="578"/></clipPath></defs><g clip-path="url(#clip-3)">
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="6" y="6" width="308" height="578"/></clipPath></defs><g clip-path="url(#clip-4)">
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="14" y="14" width="292" height="562"/></clipPath></defs><g clip-path="url(#clip-5)">
+<rect x="14" y="16" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="20" x="18" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-left" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"/>
+</svg>
+<text x="42" y="19.642857" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Commit</text>
+<rect x="254" y="16" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="20" x="258" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+</svg>
+<rect x="282" y="16" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="20" x="286" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<svg opacity="1" y="57" x="14" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<text x="34" y="56.285713" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">codex/update-controls</text>
+<text x="14" y="90.28571" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Preparados</text>
+<rect x="262" y="86" width="44" height="24" rx="4" fill="#202020" fill-opacity="1"/>
+<text x="280.89063" y="90.92857" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#8bcfa3" fill-opacity="1" xml:space="preserve">3</text>
+<text x="14" y="116.28571" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Sin preparar</text>
+<rect x="262" y="112" width="44" height="24" rx="4" fill="#202020" fill-opacity="1"/>
+<text x="280.89063" y="116.92857" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">4</text>
+<text x="14" y="142.28572" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Nuevos</text>
+<rect x="262" y="138" width="44" height="24" rx="4" fill="#202020" fill-opacity="1"/>
+<text x="280.89063" y="142.92857" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2</text>
+<rect x="14" y="164" width="292" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="170" x="76" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-file-earmark-text" viewBox="0 0 16 16">
+  <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1zM5 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5"/>
+  <path d="M9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5zm0 1v2A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/>
+</svg>
+<text x="98.125" y="170.28572" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisar y preparar archivos</text>
+<text x="14" y="202" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mensaje del commit</text>
+<rect x="14" y="223.42857" width="292" height="80" rx="6" fill="#161616" fill-opacity="1"/>
+<rect x="14.5" y="223.92857" width="291" height="79" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-30" clipPathUnits="userSpaceOnUse"><rect x="22" y="231.42857" width="276" height="64.000015"/></clipPath></defs><g clip-path="url(#clip-30)">
+<text x="22" y="231.42857" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mejora la tarjeta de entorno y el panel </text>
+<text x="22" y="248.14285" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">derecho</text>
+</g>
+<rect x="14" y="309.4286" width="292" height="28" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<svg opacity="1" y="315" x="112" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#2b2b2b" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+<text x="134.26563" y="315.7143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#2b2b2b" fill-opacity="1" xml:space="preserve">Crear commit</text>
+<rect x="14" y="347.4286" width="292" height="1" rx="0" fill="#484848" fill-opacity="1"/>
+<text x="14" y="358.4286" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Publicar rama</text>
+<text x="14" y="381.7857" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">origin/codex/update-controls</text>
+<svg opacity="1" y="404" x="14" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+<text x="30" y="403.85718" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">2 por enviar</text>
+<svg opacity="1" y="404" x="162" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-arrow-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 1a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L7.5 13.293V1.5A.5.5 0 0 1 8 1"/>
+</svg>
+<text x="178" y="403.85718" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">0 por recibir</text>
+<text x="14" y="429.85718" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Destino remoto</text>
+<rect x="14" y="450" width="105.12" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="14.5" y="450.5" width="104.12" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="39.763126" y="456.2857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">origin</text>
+<svg opacity="1" y="456" x="77" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="125.12" y="450" width="180.88" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="125.62" y="450.5" width="179.88" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-51" clipPathUnits="userSpaceOnUse"><rect x="133.12" y="458" width="164.88" height="12"/></clipPath></defs><g clip-path="url(#clip-51)">
+<text x="133.12" y="458" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">codex/update-controls</text>
+</g>
+<rect x="14" y="484" width="292" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="14.5" y="484.5" width="291" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="490" x="119" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+<text x="140.71875" y="490.2857" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Hacer push</text>
+</g>
+</g>
+</g>
+</svg>

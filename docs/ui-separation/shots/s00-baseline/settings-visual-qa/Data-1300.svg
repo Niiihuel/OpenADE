@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1300" height="900" viewBox="0 0 1300 900" overflow="hidden">
+<rect x="0" y="0" width="1300" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1300" height="900"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="170" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Datos y sesiones</text>
+<text x="170" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Historial local y organización de tareas.</text>
+<text x="174" y="77.28571" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Historial local</text>
+<rect x="170" y="99.42857" width="960" height="109.14285" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="170.5" y="99.92857" width="959" height="108.14285" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-7" clipPathUnits="userSpaceOnUse"><rect x="170" y="99.42857" width="960" height="109.14285"/></clipPath></defs><g clip-path="url(#clip-7)">
+<text x="180" y="109.42857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Tareas visibles</text>
+<text x="180" y="128.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conversaciones, eventos y borradores guardados en este equipo.</text>
+<text x="1065.1428" y="118.5" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">0 tareas</text>
+<rect x="170" y="153" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="164" x="180" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-archive" viewBox="0 0 16 16">
+  <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1v7.5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 1 12.5V5a1 1 0 0 1-1-1zm2 3v7.5A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5V5zm13-3H1v2h14zM5 7.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"/>
+</svg>
+<text x="206" y="164" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Archivar y eliminar</text>
+<text x="206" y="184.42857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Usa el menú de cada tarea en la barra lateral. Eliminar una tarea requiere confirmación.</text>
+</g>
+<text x="174" y="224.57141" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Barra lateral</text>
+<rect x="170" y="246.71426" width="960" height="108.14285" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="170.5" y="247.21426" width="959" height="107.14285" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-19" clipPathUnits="userSpaceOnUse"><rect x="170" y="246.71426" width="960" height="108.14285"/></clipPath></defs><g clip-path="url(#clip-19)">
+<text x="180" y="256.71426" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Agrupar tareas</text>
+<text x="180" y="276.14282" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Organiza la navegación por proyecto, grupo o actividad reciente.</text>
+<rect x="920" y="259.49997" width="200" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="920.5" y="259.99997" width="199" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="981.5714" y="265.78568" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Proyecto</text>
+<svg opacity="1" y="265" x="1042" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="170" y="300.2857" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="180" y="311.2857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ordenar tareas</text>
+<text x="180" y="330.71426" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">La agrupación y el orden se conservan al reiniciar OpenIDE.</text>
+<rect x="920" y="314.0714" width="200" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="920.5" y="314.5714" width="199" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="967.8571" y="320.35712" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Actualizadas</text>
+<svg opacity="1" y="320" x="1056" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+</g>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="400" viewBox="0 0 360 400" overflow="hidden">
+<rect x="0" y="0" width="360" height="400" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="210.125" y="12" width="137.875" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="210.625" y="12.5" width="136.875" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<polyline points="221.105,20.769207 222.36346,20.22258 223.71281,19.974081 225.08344,20.03653 226.40462,20.406704 227.60815,21.065502 228.63196,21.978931 229.42319,23.099854 229.94102,24.370428 230.15874,25.725094 230.06511,27.093946 229.66495,28.406345 228.97893,29.594574 228.04243,30.597317 226.9038,31.362827 225.62175,31.851608 224.26248,32.038437 222.89612,31.913668 221.59317,31.483744 220.42087,30.77085 219.4397,29.811771 218.7003,28.655996 218.24084,27.363169 218.085,26 " fill="none" stroke="#ebebeb" stroke-opacity="1" stroke-width="1.92" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="238.125" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Actualizar modelos</text>
+<text x="16" y="56" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuenta</text>
+<rect x="12" y="76.66965" width="336" height="109" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="77.16965" width="335" height="108" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="12" y="76.66965" width="336" height="109"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="22" y="88.42411" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Administrar cuenta</text>
+<text x="22" y="106.24554" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Abre la página del proveedor en tu navegador.</text>
+<svg opacity="1" y="96" x="322" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<rect x="12" y="130.66965" width="336" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="143.42412" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Desconectar</text>
+<text x="22" y="161.24554" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Quita esta conexión de OpenIDE.</text>
+<rect x="242" y="144.66965" width="96" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="242.5" y="145.16965" width="95" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="255.98438" y="151.75893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Desconectar</text>
+</g>
+</svg>

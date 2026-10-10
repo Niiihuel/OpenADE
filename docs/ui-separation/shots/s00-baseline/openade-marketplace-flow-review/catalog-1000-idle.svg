@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="800" viewBox="0 0 1000 800" overflow="hidden">
+<rect x="0" y="0" width="1000" height="800" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1000" height="800"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="35" y="28" font-family="Ubuntu,sans-serif" font-size="20" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Marketplace</text>
+<text x="35" y="53.035713" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Skills para tu agente</text>
+<rect x="791" y="32" width="32" height="32" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="40" x="799" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+  <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+</svg>
+<rect x="829" y="32" width="136" height="32" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="829.5" y="32.5" width="135" height="31" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="40" x="842" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<text x="863.625" y="40.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Agregar origen</text>
+<rect x="35" y="78" width="234" height="28" rx="6" fill="#363636" fill-opacity="1"/>
+<rect x="133" y="80" width="60" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="37" y="80" width="94" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="44.375" y="85.377235" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Recomendadas</text>
+<rect x="133" y="80" width="60" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="140.9375" y="85.377235" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Explorar</text>
+<rect x="195" y="80" width="72" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="204.75" y="85.377235" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Instaladas</text>
+<text x="737" y="86.24107" font-family="Ubuntu,sans-serif" font-size="10" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Instalar en</text>
+<rect x="809" y="78" width="156" height="28" rx="6" fill="#363636" fill-opacity="1"/>
+<rect x="811" y="80" width="72" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="811" y="80" width="72" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="827.1094" y="85.377235" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Usuario</text>
+<rect x="885" y="80" width="78" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="900.6094" y="85.377235" font-family="Ubuntu,sans-serif" font-size="11.5" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Proyecto</text>
+<rect x="35" y="116" width="848" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="35.5" y="116.5" width="847" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="124" x="43" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-search" viewBox="0 0 16 16">
+  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+</svg>
+<defs><clipPath id="clip-28" clipPathUnits="userSpaceOnUse"><rect x="67" y="124" width="808" height="12"/></clipPath></defs><g clip-path="url(#clip-28)">
+<text x="67" y="124" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="0.43137255" xml:space="preserve">Buscar en skills.sh…</text>
+</g>
+<rect x="889" y="116" width="76" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="889.5" y="116.5" width="75" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="895" y="123.08929" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Buscar</text>
+<text x="35" y="154" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Descubre skills de la comunidad en skills.sh</text>
+<text x="35" y="175.82143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Escribí al menos 2 caracteres y presioná Enter para buscar.</text>
+<rect x="35" y="199.64285" width="930" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+</g>
+</svg>

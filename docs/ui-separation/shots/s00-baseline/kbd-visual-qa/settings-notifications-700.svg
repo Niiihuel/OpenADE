@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="700" height="420" viewBox="0 0 700 420" overflow="hidden">
+<text x="4" y="4" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Notificaciones</text>
+<rect x="0" y="26.142857" width="700" height="326.42853" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="0.5" y="26.642857" width="699" height="325.42853" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-3" clipPathUnits="userSpaceOnUse"><rect x="0" y="26.142857" width="700" height="326.42853"/></clipPath></defs><g clip-path="url(#clip-3)">
+<text x="10" y="36.142857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Turnos completados</text>
+<text x="10" y="55.571426" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuando un agente termina fuera de tu vista.</text>
+<rect x="654" y="42.92857" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="673" y="45.92857" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="79.71428" width="700" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="10" y="90.71428" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Turnos fallidos</text>
+<text x="10" y="110.14285" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuando un turno se interrumpe por un error.</text>
+<rect x="654" y="97.49999" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="673" y="100.49999" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="134.2857" width="700" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="10" y="145.2857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Permisos pendientes</text>
+<text x="10" y="164.71428" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuando un agente o una CLI externa espera tu aprobación.</text>
+<rect x="654" y="152.07141" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="673" y="155.07141" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="188.85713" width="700" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="10" y="199.85713" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Avisos en la ventana</text>
+<text x="10" y="219.2857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Una tarjeta breve en la esquina inferior derecha.</text>
+<rect x="654" y="206.64285" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="673" y="209.64285" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="243.42856" width="700" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="10" y="254.42856" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Avisos del sistema</text>
+<text x="10" y="273.85712" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Notificación del escritorio cuando OpenIDE no tiene el foco.</text>
+<rect x="654" y="261.21426" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="673" y="264.21426" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="297.99997" width="700" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="10" y="308.99997" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">No molestar</text>
+<text x="10" y="328.42853" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Los eventos se siguen listando en la campana, sin avisos.</text>
+<rect x="654" y="315.78568" width="36" height="20" rx="10" fill="#363636" fill-opacity="1"/>
+<rect x="657" y="318.78568" width="14" height="14" rx="7" fill="#d4d4d4" fill-opacity="1"/>
+</g>
+</svg>

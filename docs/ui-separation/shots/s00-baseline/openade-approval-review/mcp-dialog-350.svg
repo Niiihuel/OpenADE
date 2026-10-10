@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="350" height="850" viewBox="0 0 350 850" overflow="hidden">
+<rect x="0" y="0" width="350" height="850" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="4" y="8.513393" width="258" height="14.973214"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="4" y="8.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisar los cambios del proyecto</text>
+</g>
+<defs><clipPath id="raster-4"><rect x="270" y="8" width="16" height="16" rx="0"/></clipPath></defs><image x="270" y="8" width="16" height="16" opacity="1" preserveAspectRatio="xMidYMid meet" clip-path="url(#raster-4)" xlink:href="data:image/png;base64,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"><title>OpenIDE</title></image>
+<rect x="294" y="4" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="8" x="298" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-laptop" viewBox="0 0 16 16">
+  <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5zm-11-1A1.5 1.5 0 0 0 1 3.5V12h14V3.5A1.5 1.5 0 0 0 13.5 2zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5"/>
+</svg>
+<rect x="322" y="4" width="24" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<svg opacity="1" y="8" x="326" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-gear" viewBox="0 0 16 16">
+  <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
+  <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
+</svg>
+<rect x="0" y="32" width="350" height="630" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-10" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="350" height="630"/></clipPath></defs><g clip-path="url(#clip-10)">
+<rect x="23" y="78" width="304" height="41" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<text x="33" y="90.4375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Aplicá el cambio y comprobá el resultado.</text>
+<text x="23" y="129.9375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Preparé la operación. Está pendiente de tu </text>
+<text x="23" y="151.9375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">aprobación para continuar.</text>
+<defs><clipPath id="clip-15" clipPathUnits="userSpaceOnUse"><rect x="29" y="185" width="292" height="16"/></clipPath></defs><g clip-path="url(#clip-15)">
+<svg opacity="1" y="186" x="29" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-code-slash" viewBox="0 0 16 16">
+  <path d="M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0m6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0"/>
+</svg>
+<text x="49" y="185.5134" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Permiso pendiente · mcp__project_docs…</text>
+<svg opacity="1" y="186" x="307" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-chevron-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+<defs><clipPath id="clip-20" clipPathUnits="userSpaceOnUse"><rect x="23" y="211" width="304" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-20)">
+<text x="49" y="211" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Esperando autorización para ejecutar</text>
+</g>
+<rect x="23" y="231.66965" width="304" height="67.30803" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="23.5" y="232.16965" width="303" height="66.30803" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="257" x="33" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-grid" viewBox="0 0 16 16">
+  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5z"/>
+</svg>
+<text x="57" y="241.66965" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Aprobación pendiente</text>
+<text x="57" y="258.3393" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Usar conexión MCP</text>
+<text x="57" y="276.1607" font-family="Hack,monospace" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">project_docs · publish</text>
+<rect x="265.4375" y="251.32367" width="51.5625" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="265.9375" y="251.82367" width="50.5625" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="271.4375" y="258.41296" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisar</text>
+</g>
+<rect x="16" y="678" width="318" height="40" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="16.5" y="678.5" width="317" height="39" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="690" x="24" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-grid" viewBox="0 0 16 16">
+  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5z"/>
+</svg>
+<text x="48" y="686" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Aprobación pendiente</text>
+<rect x="278.4375" y="686" width="47.5625" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="278.9375" y="686.5" width="46.5625" height="23" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="282.4375" y="691.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisar</text>
+<path d="M 34 726 H 316 A 10 10 0 0 1 326 736 V 758 A 0 0 0 0 1 326 758 H 24 A 0 0 0 0 1 24 758 V 736 A 10 10 0 0 1 34 726 Z" fill="#202020" fill-opacity="1"/>
+<svg opacity="1" y="734" x="34" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg>
+<text x="55" y="735.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#757575" fill-opacity="1" xml:space="preserve">con espacios</text>
+<svg opacity="1" y="734" x="142" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="734" x="174" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-laptop" viewBox="0 0 16 16">
+  <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5zm-11-1A1.5 1.5 0 0 0 1 3.5V12h14V3.5A1.5 1.5 0 0 0 13.5 2zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5"/>
+</svg>
+<text x="195" y="734" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Local</text>
+<svg opacity="1" y="736" x="238" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="734" x="266" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<circle cx="308" cy="742" r="7" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1.7"/>
+<rect x="16" y="758" width="318" height="76" rx="10" fill="#262626" fill-opacity="1"/>
+<rect x="16.5" y="758.5" width="317" height="75" rx="9.5" fill="none" stroke="#262626" stroke-opacity="1" stroke-width="1"/>
+<rect x="24" y="766" width="302" height="28" rx="6" fill="#262626" fill-opacity="1"/>
+<defs><clipPath id="clip-52" clipPathUnits="userSpaceOnUse"><rect x="30" y="772" width="290" height="16"/></clipPath></defs><g clip-path="url(#clip-52)">
+<text x="30" y="772" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Conservar el resto de los archivos.</text>
+</g>
+<rect x="24" y="798" width="28" height="28" rx="4" fill="#404040" fill-opacity="1"/>
+<svg opacity="1" y="804" x="30" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f6f6f6" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<rect x="56" y="798" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="804" x="62" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-file-earmark-text" viewBox="0 0 16 16">
+  <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1zM5 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5"/>
+  <path d="M9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5zm0 1v2A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/>
+</svg>
+<rect x="198.65625" y="798" width="95.34375" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="204.65625" y="805.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">gpt-5.6-luna</text>
+<svg opacity="1" y="806" x="276" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#9e9e9e" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="298" y="798" width="28" height="28" rx="6" fill="#2571fb" fill-opacity="1"/>
+<svg opacity="1" y="804" x="304" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ffffff" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+<rect x="0" y="0" width="350" height="850" rx="0" fill="#000000" fill-opacity="0.7058824"/>
+<defs><filter id="shadow-65" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="16"/></filter></defs><rect x="12" y="291" width="326" height="300" rx="12" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-65)"/>
+<rect x="12" y="275" width="326" height="300" rx="12" fill="#161616" fill-opacity="1"/>
+<rect x="12.5" y="275.5" width="325" height="299" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-68" clipPathUnits="userSpaceOnUse"><rect x="26" y="289" width="298" height="272"/></clipPath></defs><g clip-path="url(#clip-68)">
+<text x="26" y="289" font-family="Ubuntu,sans-serif" font-size="16" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Usar conexión MCP</text>
+<svg opacity="1" y="293" x="304" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<defs><clipPath id="clip-71" clipPathUnits="userSpaceOnUse"><rect x="26" y="323" width="298" height="200"/></clipPath></defs><g clip-path="url(#clip-71)">
+<text x="26" y="324.2455" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">El agente solicita ejecutar una operación de esta </text>
+<text x="26" y="340.558" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">conexión.</text>
+<rect x="26" y="365.625" width="298" height="36.3125" rx="6" fill="#202020" fill-opacity="1"/>
+<text x="36" y="376.79016" font-family="Hack,monospace" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">project_docs · publish</text>
+<defs><clipPath id="clip-76" clipPathUnits="userSpaceOnUse"><rect x="32" y="417.9375" width="286" height="16"/></clipPath></defs><g clip-path="url(#clip-76)">
+<svg opacity="1" y="419" x="32" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-code-slash" viewBox="0 0 16 16">
+  <path d="M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0m6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0"/>
+</svg>
+<text x="52" y="418.4509" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Detalles técnicos</text>
+<svg opacity="1" y="419" x="304" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-chevron-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+</g>
+<rect x="26" y="533" width="135.59375" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="32" y="540.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Permitir en esta sesión</text>
+<rect x="173.59375" y="533" width="58.6875" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="174.09375" y="533.5" width="57.6875" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="179.59375" y="540.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Denegar</text>
+<rect x="238.28125" y="533" width="99.90625" height="28" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<text x="244.28125" y="540.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#161616" fill-opacity="1" xml:space="preserve">Permitir una vez</text>
+</g>
+</svg>

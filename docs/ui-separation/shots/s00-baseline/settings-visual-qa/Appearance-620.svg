@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="620" height="900" viewBox="0 0 620 900" overflow="hidden">
+<rect x="0" y="0" width="620" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="900"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="27" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Apariencia</text>
+<text x="27" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Tema y movimiento de la interfaz nativa.</text>
+<text x="31" y="77.28571" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Interfaz</text>
+<rect x="27" y="99.42857" width="566" height="53.571426" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="27.5" y="99.92857" width="565" height="52.571426" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-7" clipPathUnits="userSpaceOnUse"><rect x="27" y="99.42857" width="566" height="53.571426"/></clipPath></defs><g clip-path="url(#clip-7)">
+<text x="37" y="109.42857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Reducir movimiento</text>
+<text x="37" y="128.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Usa transiciones mínimas al cambiar de panel o abrir superficies.</text>
+<rect x="547" y="116.21429" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="550" y="119.21429" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+</g>
+</g>
+</svg>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1300" height="900" viewBox="0 0 1300 900" overflow="hidden">
+<rect x="0" y="0" width="1300" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1300" height="900"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="170" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Terminal</text>
+<text x="170" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Shell y comportamiento de la terminal integrada.</text>
+<text x="174" y="77.28571" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Terminal integrada</text>
+<rect x="170" y="99.42857" width="960" height="53.571426" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="170.5" y="99.92857" width="959" height="52.571426" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-7" clipPathUnits="userSpaceOnUse"><rect x="170" y="99.42857" width="960" height="53.571426"/></clipPath></defs><g clip-path="url(#clip-7)">
+<text x="180" y="109.42857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shell predeterminado</text>
+<text x="180" y="128.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Se usará en nuevas terminales. Las abiertas conservan su shell.</text>
+<rect x="882" y="112.21429" width="238" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="882.5" y="112.71429" width="237" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="900.8571" y="118.5" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Predeterminada del sistema</text>
+<svg opacity="1" y="118" x="1085" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+</g>
+<defs><filter id="shadow-16" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="11"/></filter></defs><rect x="866" y="154.2143" width="254" height="160" rx="6" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-16)"/>
+<rect x="866" y="145.2143" width="254" height="160" rx="6" fill="#1e1e1e" fill-opacity="1"/>
+<rect x="866.5" y="145.7143" width="253" height="159" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<rect x="872" y="151.2143" width="242" height="28" rx="4" fill="#303030" fill-opacity="1"/>
+<defs><clipPath id="clip-20" clipPathUnits="userSpaceOnUse"><rect x="878" y="154.2143" width="230" height="22"/></clipPath></defs><g clip-path="url(#clip-20)">
+<text x="878" y="157.50002" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Predeterminada del sistema</text>
+<svg opacity="1" y="157" x="1092" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+</g>
+<defs><clipPath id="clip-24" clipPathUnits="userSpaceOnUse"><rect x="878" y="184.2143" width="230" height="22"/></clipPath></defs><g clip-path="url(#clip-24)">
+<text x="878" y="187.50002" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Bash</text>
+</g>
+<defs><clipPath id="clip-27" clipPathUnits="userSpaceOnUse"><rect x="878" y="214.2143" width="230" height="22"/></clipPath></defs><g clip-path="url(#clip-27)">
+<text x="878" y="217.50002" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Zsh</text>
+</g>
+<defs><clipPath id="clip-30" clipPathUnits="userSpaceOnUse"><rect x="878" y="244.2143" width="230" height="22"/></clipPath></defs><g clip-path="url(#clip-30)">
+<text x="878" y="247.50002" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Fish</text>
+</g>
+<defs><clipPath id="clip-33" clipPathUnits="userSpaceOnUse"><rect x="878" y="274.2143" width="230" height="22"/></clipPath></defs><g clip-path="url(#clip-33)">
+<text x="878" y="277.5" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Personalizado…</text>
+</g>
+</svg>

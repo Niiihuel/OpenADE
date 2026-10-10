@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="840" viewBox="0 0 360 840" overflow="hidden">
+<rect x="0" y="0" width="360" height="840" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="840"/></clipPath></defs><g clip-path="url(#clip-1)">
+<rect x="12" y="12" width="68.875" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="12.5" y="12.5" width="67.875" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="18" x="18" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-left" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"/>
+</svg>
+<text x="40" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Volver</text>
+<rect x="246.6875" y="12" width="87.3125" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="247.1875" y="12.5" width="86.3125" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="18" x="253" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-list" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+</svg>
+<text x="274.6875" y="19.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Secciones</text>
+<text x="12" y="52" font-family="Ubuntu,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Atajos de teclado</text>
+<text x="12" y="76.73215" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Atajos de navegación y paneles.</text>
+<text x="16" y="105.40179" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Perfil de teclado</text>
+<rect x="12" y="126.07143" width="322" height="99.16071" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="126.57143" width="321" height="98.16071" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-15" clipPathUnits="userSpaceOnUse"><rect x="12" y="126.07143" width="322" height="99.16072"/></clipPath></defs><g clip-path="url(#clip-15)">
+<text x="22" y="136.07143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Distribución de atajos</text>
+<text x="22" y="153.89285" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Navegación y paneles con las combinaciones habituales de </text>
+<text x="22" y="166.5625" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">VS Code.</text>
+<rect x="22" y="187.23215" width="200" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="22.5" y="187.73215" width="199" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="88.421875" y="194.32143" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">VS Code</text>
+<svg opacity="1" y="193" x="140" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+<text x="16" y="241.23215" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Edición de texto</text>
+<rect x="12" y="261.9018" width="322" height="140.99106" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="262.4018" width="321" height="139.99106" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-27" clipPathUnits="userSpaceOnUse"><rect x="12" y="261.9018" width="322" height="140.99106"/></clipPath></defs><g clip-path="url(#clip-27)">
+<text x="22" y="271.9018" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Modo Vim</text>
+<text x="22" y="289.72324" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Edición modal en el editor del IDE y de agentes. </text>
+<text x="22" y="302.39288" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Independiente del perfil de atajos.</text>
+<rect x="288" y="283.48215" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="291" y="286.48215" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+<rect x="12" y="325.0625" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="336" x="22" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="48" y="336.0625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Normal, Insertar y Visual</text>
+<text x="48" y="354.88394" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">i para escribir · Esc para volver a Normal · h j k l para </text>
+<text x="48" y="367.5536" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">moverse · v para seleccionar · u para deshacer. Las </text>
+<text x="48" y="380.22324" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">teclas de Vim tienen prioridad dentro del editor.</text>
+</g>
+<text x="16" y="418.89285" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Navegación</text>
+<rect x="12" y="439.5625" width="322" height="194" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="440.0625" width="321" height="193" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-43" clipPathUnits="userSpaceOnUse"><rect x="12" y="439.5625" width="322" height="194"/></clipPath></defs><g clip-path="url(#clip-43)">
+<text x="22" y="449.5625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Paleta de comandos</text>
+<rect x="241.90625" y="449.5625" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="245.90625" y="452.2277" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="271.40625" y="449.5625" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="275.40625" y="452.2277" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="306" y="449.5625" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="311.65625" y="452.2277" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+<rect x="12" y="477.5625" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="488.5625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir archivo del proyecto</text>
+<rect x="276.5" y="488.5625" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="280.5" y="491.2277" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="306" y="488.5625" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="311.65625" y="491.2277" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+<rect x="12" y="516.5625" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="527.5625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Nuevo archivo en el IDE</text>
+<rect x="276.5" y="527.5625" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="280.5" y="530.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="306" y="527.5625" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="311" y="530.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">N</text>
+<rect x="12" y="555.5625" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="566.5625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir configuración</text>
+<rect x="276.5" y="566.5625" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="280.5" y="569.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="306" y="566.5625" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="313.64063" y="569.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">,</text>
+<rect x="12" y="594.5625" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="605.5625" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Duplicar líneas del editor</text>
+<rect x="197.125" y="605.5625" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="201.125" y="608.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="226.625" y="605.5625" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="230.625" y="608.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="261.21875" y="605.5625" width="22.71875" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="265.21875" y="608.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alt</text>
+<rect x="286.9375" y="605.5625" width="37.0625" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="290.9375" y="608.22766" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Down</text>
+</g>
+<text x="16" y="649.5625" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Paneles</text>
+<rect x="12" y="670.2321" width="322" height="428" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="12.5" y="670.7321" width="321" height="427" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-83" clipPathUnits="userSpaceOnUse"><rect x="12" y="670.2321" width="322" height="169.76788"/></clipPath></defs><g clip-path="url(#clip-83)">
+<text x="22" y="680.2321" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mostrar u ocultar la barra lateral</text>
+<rect x="276.5" y="680.2321" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="280.5" y="682.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="306" y="680.2321" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="311.46875" y="682.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">B</text>
+<rect x="12" y="708.2321" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="719.2321" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mostrar u ocultar el panel inferior</text>
+<rect x="276.5" y="719.2321" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="280.5" y="721.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="306" y="719.2321" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="312.25" y="721.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">J</text>
+<rect x="12" y="747.2321" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="758.2321" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir o enfocar la terminal</text>
+<rect x="276.5" y="758.2321" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="280.5" y="760.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="306" y="758.2321" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="312.9375" y="760.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">`</text>
+<rect x="12" y="786.2321" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="797.2321" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Explorador de archivos</text>
+<rect x="241.90625" y="797.2321" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="245.90625" y="799.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="271.40625" y="797.2321" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="275.40625" y="799.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="306" y="797.2321" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="311.85938" y="799.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">E</text>
+<rect x="12" y="825.2321" width="322" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="22" y="836.2321" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Buscar en el proyecto</text>
+<rect x="241.90625" y="836.2321" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="245.90625" y="838.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="271.40625" y="836.2321" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="275.40625" y="838.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="306" y="836.2321" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="312.04688" y="838.8973" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">F</text>
+</g>
+</g>
+<defs><clipPath id="clip-119" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="360" height="840"/></clipPath></defs><g clip-path="url(#clip-119)">
+<rect x="350.5" y="14" width="5" height="557.29956" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="349.5,9 356.5,9 353,5" fill="#888888" fill-opacity="0.09411765"/>
+<polygon points="349.5,831 356.5,831 353,835" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+</svg>

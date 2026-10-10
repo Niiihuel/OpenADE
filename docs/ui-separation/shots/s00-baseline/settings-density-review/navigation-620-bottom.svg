@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="620" height="840" viewBox="0 0 620 840" overflow="hidden">
+<rect x="0" y="0" width="620" height="840" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="840"/></clipPath></defs><g clip-path="url(#clip-1)">
+<rect x="20" y="-74.05356" width="566" height="251.29465" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="-73.55356" width="565" height="250.29465" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="20" y="0" width="566" height="177.24109"/></clipPath></defs><g clip-path="url(#clip-4)">
+<text x="30" y="9.258942" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir otra carpeta</text>
+<text x="30" y="31.08037" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">La carpeta define los archivos y el contexto del agente.</text>
+<rect x="30" y="51.750015" width="546" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="30.5" y="52.250015" width="545" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-9" clipPathUnits="userSpaceOnUse"><rect x="38" y="59.750015" width="530" height="12"/></clipPath></defs><g clip-path="url(#clip-9)">
+<text x="38" y="59.750015" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">C:/project</text>
+</g>
+<rect x="30" y="87.750015" width="546" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="30.5" y="88.250015" width="545" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="94" x="253" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg>
+<text x="274.65625" y="94.8393" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Abrir proyecto</text>
+<rect x="20" y="125.750015" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="136.75002" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Reabrir el último proyecto</text>
+<text x="30" y="154.57144" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Continúa en la última carpeta al iniciar OpenIDE.</text>
+<rect x="540" y="141.99554" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="543" y="144.99554" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+</g>
+<text x="24" y="193.24109" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Preferencias de la aplicación</text>
+<rect x="20" y="213.91074" width="566" height="261.4732" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="214.41074" width="565" height="260.4732" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-25" clipPathUnits="userSpaceOnUse"><rect x="20" y="213.91074" width="566" height="261.4732"/></clipPath></defs><g clip-path="url(#clip-25)">
+<text x="30" y="223.91074" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Apariencia</text>
+<text x="30" y="241.73216" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Paleta y movimiento de la interfaz.</text>
+<rect x="30" y="262.4018" width="546" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="30.5" y="262.9018" width="545" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="268" x="259" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="280.65625" y="269.4911" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Personalizar</text>
+<rect x="20" y="300.4018" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="311.4018" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Organización de tareas</text>
+<text x="30" y="329.22324" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Agrupación, orden e historial de la barra lateral.</text>
+<rect x="30" y="349.89285" width="546" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="30.5" y="350.39285" width="545" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="356" x="243" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="265.46875" y="356.98215" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Administrar datos</text>
+<rect x="20" y="387.89288" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="398.89288" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Atajos de teclado</text>
+<text x="30" y="416.71432" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Consulta las combinaciones disponibles en OpenIDE.</text>
+<rect x="30" y="437.38394" width="546" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="30.5" y="437.88394" width="545" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="443" x="265" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="286.875" y="444.47324" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Ver atajos</text>
+</g>
+<text x="24" y="491.3839" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Notificaciones</text>
+<rect x="20" y="512.0535" width="566" height="307.9464" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="512.5535" width="565" height="306.9464" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-50" clipPathUnits="userSpaceOnUse"><rect x="20" y="512.0535" width="566" height="307.9464"/></clipPath></defs><g clip-path="url(#clip-50)">
+<text x="30" y="522.0535" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Turnos completados</text>
+<text x="30" y="539.87494" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuando un agente termina fuera de tu vista.</text>
+<rect x="540" y="527.2991" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="559" y="530.2991" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="20" y="562.5446" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="573.5446" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Turnos fallidos</text>
+<text x="30" y="591.366" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuando un turno se interrumpe por un error.</text>
+<rect x="540" y="578.79016" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="559" y="581.79016" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="20" y="614.03564" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="625.03564" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Permisos pendientes</text>
+<text x="30" y="642.85706" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cuando un agente o una CLI externa espera tu aprobación.</text>
+<rect x="540" y="630.2812" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="559" y="633.2812" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="20" y="665.52673" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="676.52673" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Avisos en la ventana</text>
+<text x="30" y="694.34814" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Una tarjeta breve en la esquina inferior derecha.</text>
+<rect x="540" y="681.7723" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="559" y="684.7723" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="20" y="717.0178" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="728.0178" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Avisos del sistema</text>
+<text x="30" y="745.83923" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Notificación del escritorio cuando OpenIDE no tiene el foco.</text>
+<rect x="540" y="733.26337" width="36" height="20" rx="10" fill="#d4d4d4" fill-opacity="1"/>
+<rect x="559" y="736.26337" width="14" height="14" rx="7" fill="#161616" fill-opacity="1"/>
+<rect x="20" y="768.5089" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="779.5089" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">No molestar</text>
+<text x="30" y="797.3303" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Los eventos se siguen listando en la campana, sin avisos.</text>
+<rect x="540" y="784.75446" width="36" height="20" rx="10" fill="#363636" fill-opacity="1"/>
+<rect x="543" y="787.75446" width="14" height="14" rx="7" fill="#d4d4d4" fill-opacity="1"/>
+</g>
+</g>
+<defs><clipPath id="clip-82" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="840"/></clipPath></defs><g clip-path="url(#clip-82)">
+<rect x="610.5" y="465.89706" width="5" height="360.10294" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="609.5,9 616.5,9 613,5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="609.5,831 616.5,831 613,835" fill="#888888" fill-opacity="0.09411765"/>
+</g>
+</svg>

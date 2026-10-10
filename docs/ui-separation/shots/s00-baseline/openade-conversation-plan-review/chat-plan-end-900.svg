@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="900" height="900" viewBox="0 0 900 900" overflow="hidden">
+<rect x="0" y="0" width="900" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="4" y="8.513393" width="808" height="14.973214"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="4" y="8.513393" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Plan de trabajo del proyecto</text>
+</g>
+<defs><clipPath id="raster-4"><rect x="820" y="8" width="16" height="16" rx="0"/></clipPath></defs><image x="820" y="8" width="16" height="16" opacity="1" preserveAspectRatio="xMidYMid meet" clip-path="url(#raster-4)" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAOQklEQVR4nO1bCYwb1Rn+Zzy+72Nt773OHlmuDWETELTQUgKEFoJaqKAVgrQKbVWQqFTK0UKFFCFRUbVUNLQBSoGUlnShEimQFAUaQQkhBJKQZHNudrOH9/a5vsZz9L0Zjz0ee7zeIwlS+LOj8bwZz7zv+7//f/9745BwjhsJ57h9SQCc43bOE0DBF8QsPp9XlyU8NJ3lDU5TdGpoKAhnwAg4i9bS0mJIp7k1Wr3uezqtbqlWryU5liMYhqWTyVQ/w6Q3c0zm36FQKAanyc4KATzPE35/0+1avf5ej9fXZTWbLUAQwPEc8BwHHNpYhgWapiESDh9OJZNPd3df+MLWrVszsMh2xgnw1jbcoqMMv/DX115gtdosGKwImhcIkB/bbRZYe9cdsHffftjx/vtvWI26W3fs2MHAItoZI8BXF7hJr6Ue9vpru+wOu5nHgDFQXkZA0TEHFrMJntu4Aex2G5zs748e7j0SHhgYfH3TpleePXnyyDFYBDvtBFitrivsTtfDPr//Urfb7eV4PuflAmClCvDnLJ0Bg8Ewvumlv/ja2lpx2AD+7vFjx2EkODp18MCBIzs/3v30xOjwFqSKNMzTNHCazG73dPtr655pbFnyQHNL83KTyWLGIDBwYY+BFh3z+eP4TDwxMTnxjyUtLQdWr75uBVIMoOQoEGV3OKCxocEUaA00nd/ZuSYQaL1t6Xnn+60W884TJ06wMEdbdALMTt9FdXWNGxqamh5pag5cYrFYzLg9Dzi3cbwCuKAMFiYmJ/tioen7JseHH29r67j+uutWXWaz20W1IBJYQSksaHU68Hg8VHt7u8fv813ldtfc2tTUMLJ79+4jc+nvotUBVqtnqcPluM/tqfmGr9a/lNJQgqSxnPkyYJUqSKWSMD42/l4qkVoXjY73S/dl0Tk8InB54ri8arjcdxubmqGpubkz0Nq6MRyOUa+88vJr1fZ7wQTY7b6A0+X4mcPlvMHvr2vXIc/kk5lM1vnOl8ieg+nQ1GA0HH1+YuzUevm90WXAsiwwbI4A4b6Fe+ZJyZHc2tbmvfPOO/9mtFiTz2/c8HY1/Z83AUh+dTab5+dWh2NNbW1dm8FoyGfyEg+X8zraMmicD46M7CE45kEE/j3lM4SiCMmeERTAqQIXlMaL5LS2d+hv++4tL737zvZr+vuPfj4bjjkTYLXWecwO41q3w3F7Y3Nzt8lkzg9bfNVe5yEWjSYmJyd6eCZ17/j4eKL803DcYwUwlYHnz4mffbX1nnV3//DPv/rlg1fMhqdqAlwul81kca+1OWw/aGpqvthqseaGMGVCqxTzvCDn8dFgXzgSfSg0OVIxVjkQcwDDKEKAK+QCZWhgcrCtWLnyoksv/cqVu3d/+AEshIDLL7/cODo6udZgsf0k0NLcZbM7xRjnpGRUzuvlVZCYmZkZHQ3uSsZT6yKR0VOVnmuxuM9D17fjBMgwTFXAJVXga0xmk2XV9dfesSACWlouuHhwaOz1C5Zd7HW73BZemdxUh7XSaybGx4cikfDG0ZH+x1VBO50X8rxmFbD8TehbHYgvB5a/lAM4Tj32leSYzVYwGoxfg1lMlQC73dtKaok33U6f8+D+z9n2zqXg8/oqD2dlvJ5JpWFw6NSn8UjkR9Ho1GfK55id3i70pWsR6Bv5LNfK89lGlPxz94MYBptFClCLffnQWBwmHDQ3N5pqalr8k5MDY3MmwGq1/tbtcdcTBAn1jQ0wfGowOjo0BBd2LbPjAlo+Dqt5PRwKJ0bHgy8aKP5+BF4oVx977DHyqac2LGN5fhUCdCNkswF0tzxoyQg0O8SHOGcweQIUSU8lBPA1DOokSWp0NJ0ywlwV4A0EfBSp78BTBaGQQW0Ol8ueTqdh54cfxhsa6zX1DY0mtTBgsgwMDw32huORR6dHh//V3d2tDYdnVqCOrXnyd3+4kQfCTfB8E34WD8WglcbKh8ESLxeUplQFNqNeT2i1Gh3MlQA6nDKa3Aa9BEzoJtrjIsdfV2cNh8NxNIRF2zvOt+t12iIVxOOxmZGRoY/SiehPsxnObbO51x85PvBNEAF7xK5VBi2fo4k5gKk4CpQjh0D/WNSeydAwZwKkLsq9K5GAP5otNiuTzULvof1Rp8ujb2xoNOBzY8GR4YmJibfQak4I9eRVdCkCzdfk8RIgdCz3UcUKZ/A9WUaeAxSxL8m+DDkkiCE0m1UYBaTCJheb+OZQIESj0aDaoMaeTCbSvb0Hw+lUGi1jJaLIod9Bl9WI0iaEjSCgBDFRAXjhkBdLYRQC1QKXlICfyVXBgLoCiuK7PAkYowHVwJFwCq3tJfFDfWLnibyny2ErblI/KSZBRpYEZ499qUYhCHEGOn8COBBjWwGYl5EAPK/I3KQqmPLNxCzX4wTIqRdCMuBYKRJ4kQC0xsguQAHC41W8riQBBMlVDx6K9aF6Pb41y7Gqo4AcsLCQKn1mRQI0CwkByDGs5vWSJEkoQM2CkFA/Je8CAsMUFULVbJgIEvWH0pNamC8BcoCzkSD0X5bhq3FvZbJkw6AUAiqeLiVADIV4LAyv9/QY9HodGpph7gSA3LtlvF5ok/I9IY7pVbiWqO4APw0VirTwfkDN05yCDNyneGSS3bb1P9zEVGh43nWA8HiugtcVBGHwBElUAFPmDFH5WnzrrPCCJFvWy0oSMukUMJkkv/nV1xiSovRQhc0yDHLqXhdPFM6ROQVUsdJejFv9enRfgsEKyNIlnlZu4fAUJKIR/u2t22iD0awHoroV/wo5QFYHQKnXhdZ8bsiVPER1L5tF3OU7KJXG0j6L5hVZFAKsWsJDCgmODEA0HOE+2rWLlMDPVm/OSgA2bhaviyRISZAsqeuVYCSFiDsiR5r6OZGAbFEIyIkYHx8FJp2A0eAYd/T4CVJvMEE+FS9UAVKlpep1GQE4VCiKErbKQHNtRefKt+E/FmV/msmCVpEEMQkHP98PgeZ62HP4KDs0MqrR6rRF4PGerIKDsgQgb3Ia0LDSXKCc13nZ0Ij/8IsK9IpbFUwx0EJb4ZxMCbm2JJMQFSDLAWjOAQf374WVKy+BLVve4uIzCQ2lpQr3JxZBAU6nITqTYqYMHN+h7nU5CSCA1xv0qmCKlKBoKz5XaEsmEkIOkEIArTFANDQFnZ0d8NcXN4Feb0BrHmSeSKX8q6GgLAEnT56MenyNI3hJGt+svNf5okoQK8CgN6iCKdmXPZcjR5YDGASe1tCwf99e8NU4we12Yc+jtQl9kYqU8icWmgNoJvkkTeuuRsA85b0unwyhxRKtFinAoA5G0QYgnVOEgyxX4M+xeBQO/O99uPKrV0AwOMbv/OxjggdZ5SkPL6X8qyBBlYDY9PQnJoPjfoJm/khSpEXpdfxYvFiBxulRNDmJZzLpDrFnudFCth7A59qFcxzktSmRB7w0fRbDSRpZskxW23vwENy85lvwyZ7P+EMHe4VHkGQpcSXyX6gCsI2N9L3k89XqOVZ3j8Nq66K0GiBRZ/21PhwbGbfHFVqyJMDb7U4SJasQeignVY9er9eDRxK8pscLe3HuzuSSmhjbtJDkMrlyVzhGksflK77GbDQYVq7ohje3buMGB06RGCRJiqQuhvxnJQAbGmufdbnqtk6lpn6DZt03NwVaSLRSyzrsDra1tdVyyfLlDr/fB3jz1NSIhQsCJewZpuiYRvtUKpXfktLnZLr4GG1Ohw2y6RTz98091PTkFIkMgYcS8GryXxQFSBYKBYfQ7vtWa72770TfU8jD30arurbt724XHohelM54PV7GZDZSS1rbmM6l7Vr0utrscrjA7nKibK3Pz9+xIqSNkz6j2h5vOOnihY36Wh+cOHY0886729Gaq0GYY8iH18WSv/jNeZjd7rk7y7MPIFRtvGLRQUOS+VsHlgTCFquVNBnNREughWtva3eYLWYwmk14KU0Y05We93s99I7/7mD37ttnxNUl9ryQLIXP4h4TQub2QrswESvs8fX4e6HQ1LFEdOoG9PL1JCwmASIJ3laGY58Dnr260uKjsDKDFlClcd9qd8yYDAbaZDLp3J4axu128k6X24kruc72tnTPP3vY/lOnzNWAL0eCBB7v0SL1nmw6dvXk5OSMav9ggWaxuR5FOW4dx7NNoEKA2KECiDwwnNA4cc6BckpYo6X0qVTSVAw4B64KBcjB4ygIBkc2Bwf7bq/U/wX/VngmFlpPachbSA21p1zslc4B5DUA6jylAR1atUnTaSdaVjcpr5VqOqmtmuyP99FIbGomEvn9bP1flB9Lo/d+e5w241WoLt2AtkQ14CGPR05a6bVq4CtlfzRKoRdU0T/FYtMfwyy2aL8Si8ViDJ1JvW0wmXpRN7pQUw1uL8ieKJaoIO2cnEtChJBdMzf5I+TJWDjySHC474lq+r3gHFDO8O+H0jT7DOrSNSg9WpSxLwEugK+QJ6oAjyvHTDqdiMfjuzLZ1NPT48E3qu3raSFAMpvTfQ/PEQ8hIA2kMklVVEB12R9Xlclk8jgqww/NJOLPrFze9cFcfzV6WgnAZnG5zicY4gUNpbkM5Ycq5a+e/XHdQWcyKF8mDmfZ7KvZFL0lHp+a9++GTzsBkjkc7vWgoX5Maaia+cifQStDSOZ9qKzel0wnN3gclo8GBgbm/Rthyc4YAdhcrtrVqF54QqfXLyOqkD8uEhDgZCqZPIqq6JfZLLMlGlWv6uZjZ5QAbA5HiwOo1K81JHUXWkNwkRpNkbd5YfrMAZ1OH2JY/lM6lX5+9eqv7+zp6ZnzD6GrsTNOgGT4Z3CUQX8bmkBfS+koK1oosCIWjqI3ugmKJLYhx28LhUJDcJrtrBEgNzRs1mYyetrp1HCDg4NhOIP2hSDgbNqX/3ESznH7kgA4x+3/LWNcBpijoCgAAAAASUVORK5CYII="><title>OpenIDE</title></image>
+<rect x="844" y="4" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="8" x="848" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-laptop" viewBox="0 0 16 16">
+  <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5zm-11-1A1.5 1.5 0 0 0 1 3.5V12h14V3.5A1.5 1.5 0 0 0 13.5 2zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5"/>
+</svg>
+<rect x="872" y="4" width="24" height="24" rx="4" fill="#161616" fill-opacity="1"/>
+<svg opacity="1" y="8" x="876" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-gear" viewBox="0 0 16 16">
+  <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/>
+  <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/>
+</svg>
+<rect x="0" y="32" width="900" height="714.0536" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-10" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="900" height="714.0536"/></clipPath></defs><g clip-path="url(#clip-10)">
+<rect x="53" y="-537.0895" width="780" height="1259.1431" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="53.5" y="-536.5895" width="779" height="1258.1431" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="85" y="-7.4465637" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">11. Revisión detallada del área 11: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="6.3748646" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="20.196293" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="42" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="42.0177" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">12. Revisión detallada del área 12: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="55.839127" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="69.66055" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="91" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="91.481995" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">13. Revisión detallada del área 13: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="105.30342" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="119.12485" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="141" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="140.94629" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">14. Revisión detallada del área 14: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="154.76772" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="168.58914" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="190" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="190.41058" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">15. Revisión detallada del área 15: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="204.23201" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="218.05344" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="240" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="239.87488" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">16. Revisión detallada del área 16: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="253.6963" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="267.51773" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="289" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="289.33917" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">17. Revisión detallada del área 17: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="303.1606" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="316.98203" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="339" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="338.80347" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">18. Revisión detallada del área 18: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="352.6249" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="366.44632" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="388" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="388.26776" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">19. Revisión detallada del área 19: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="402.0892" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="415.9106" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="438" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="437.73206" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">20. Revisión detallada del área 20: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="451.5535" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="465.3749" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="487" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="487.19635" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">21. Revisión detallada del área 21: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="501.0178" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="514.83923" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="537" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="536.66064" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">22. Revisión detallada del área 22: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="550.48206" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="564.3035" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="586" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="586.1249" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">23. Revisión detallada del área 23: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="599.9463" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="613.76776" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<svg opacity="1" y="636" x="63" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="85" y="635.5891" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">24. Revisión detallada del área 24: comprobar los cambios existentes, mantener el borrador del usuario y documentar el </text>
+<text x="85" y="649.4105" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">comportamiento de la conversación. Verificar que las acciones finales sigan accesibles al desplazarse, incluso en una ventana angosta, </text>
+<text x="85" y="663.232" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">antes de implementar el siguiente cambio.</text>
+<rect x="63" y="684.0536" width="180" height="28" rx="4" fill="#ffffff" fill-opacity="1"/>
+<text x="69" y="691.1429" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#000000" fill-opacity="1" xml:space="preserve">Construir este plan</text>
+</g>
+<defs><clipPath id="clip-71" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="900" height="714.0536"/></clipPath></defs><g clip-path="url(#clip-71)">
+<rect x="890.5" y="552.2909" width="5" height="179.76268" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="889.5,41 896.5,41 893,37" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="889.5,737.0536 896.5,737.0536 893,741.0536" fill="#888888" fill-opacity="0.09411765"/>
+</g>
+<defs><linearGradient id="gradient-76" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#161616" stop-opacity="1"/><stop offset="1" stop-color="#161616" stop-opacity="0"/></linearGradient></defs><rect x="0" y="32" width="886" height="42" fill="url(#gradient-76)"/>
+<path d="M 78 762.0536 H 822 A 10 10 0 0 1 832 772.0536 V 794.0536 A 0 0 0 0 1 832 794.0536 H 68 A 0 0 0 0 1 68 794.0536 V 772.0536 A 10 10 0 0 1 78 762.0536 Z" fill="#202020" fill-opacity="1"/>
+<svg opacity="1" y="770" x="78" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-folder" viewBox="0 0 16 16">
+  <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139q.323-.119.684-.12h5.396z"/>
+</svg>
+<text x="99" y="771.1429" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#757575" fill-opacity="1" xml:space="preserve">openADE</text>
+<svg opacity="1" y="770" x="178" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="770" x="210" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-laptop" viewBox="0 0 16 16">
+  <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5zm-11-1A1.5 1.5 0 0 0 1 3.5V12h14V3.5A1.5 1.5 0 0 0 13.5 2zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5"/>
+</svg>
+<text x="230.5" y="770.0536" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Local</text>
+<svg opacity="1" y="772" x="274" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<svg opacity="1" y="770" x="302" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-git" viewBox="0 0 16 16">
+  <path d="M15.698 7.287 8.712.302a1.03 1.03 0 0 0-1.457 0l-1.45 1.45 1.84 1.84a1.223 1.223 0 0 1 1.55 1.56l1.773 1.774a1.224 1.224 0 0 1 1.267 2.025 1.226 1.226 0 0 1-2.002-1.334L8.58 5.963v4.353a1.226 1.226 0 1 1-1.008-.036V5.887a1.226 1.226 0 0 1-.666-1.608L5.093 2.465l-4.79 4.79a1.03 1.03 0 0 0 0 1.457l6.986 6.986a1.03 1.03 0 0 0 1.457 0l6.953-6.953a1.03 1.03 0 0 0 0-1.457"/>
+</svg>
+<text x="322.5" y="771.1429" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#757575" fill-opacity="1" xml:space="preserve">Ramas</text>
+<svg opacity="1" y="770" x="370" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<circle cx="746" cy="778.0536" r="7" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1.7"/>
+<text x="760" y="770.0536" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Contexto</text>
+<rect x="60" y="794.0536" width="780" height="89.94643" rx="10" fill="#262626" fill-opacity="1"/>
+<rect x="60.5" y="794.5536" width="779" height="88.94643" rx="9.5" fill="none" stroke="#262626" stroke-opacity="1" stroke-width="1"/>
+<rect x="68" y="802.0536" width="764" height="41.946426" rx="6" fill="#262626" fill-opacity="1"/>
+<defs><clipPath id="clip-92" clipPathUnits="userSpaceOnUse"><rect x="74" y="808.0536" width="752" height="29.946426"/></clipPath></defs><g clip-path="url(#clip-92)">
+<text x="74" y="808.0536" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Conservá mi borrador y revisá el siguiente paso.</text>
+<text x="74" y="823.0268" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Todavía no lo envíes.</text>
+</g>
+<rect x="68" y="848" width="28" height="28" rx="4" fill="#404040" fill-opacity="1"/>
+<svg opacity="1" y="854" x="74" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f6f6f6" class="bi bi-plus-lg" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+</svg>
+<rect x="100" y="848" width="120.75" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="854" x="106" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-file-earmark-text" viewBox="0 0 16 16">
+  <path d="M5.5 7a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1zM5 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5"/>
+  <path d="M9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5zm0 1v2A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/>
+</svg>
+<text x="128" y="855.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Sólo lectura</text>
+<svg opacity="1" y="854" x="199" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="672.65625" y="848" width="95.34375" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="678.65625" y="855.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">gpt-5.6-luna</text>
+<svg opacity="1" y="856" x="750" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#9e9e9e" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="772" y="848" width="28" height="28" rx="6" fill="#262626" fill-opacity="1"/>
+<rect x="772.5" y="848.5" width="27" height="27" rx="5.5" fill="none" stroke="#444444" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="854" x="778" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f0f0f0" class="bi bi-mic" viewBox="0 0 16 16">
+  <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5"/>
+  <path d="M10 8a2 2 0 1 1-4 0V3a2 2 0 1 1 4 0zM8 0a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V3a3 3 0 0 0-3-3"/>
+</svg>
+<rect x="804" y="848" width="28" height="28" rx="6" fill="#2571fb" fill-opacity="1"/>
+<svg opacity="1" y="854" x="810" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ffffff" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+</svg>

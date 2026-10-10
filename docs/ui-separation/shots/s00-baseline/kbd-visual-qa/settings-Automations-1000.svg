@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1100" viewBox="0 0 1000 1100" overflow="hidden">
+<defs><clipPath id="clip-0" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1000" height="1100"/></clipPath></defs><g clip-path="url(#clip-0)">
+<text x="27" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Automatizaciones</text>
+<text x="27" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Tareas programadas del proyecto.</text>
+<text x="31" y="77.28571" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Tareas programadas</text>
+<rect x="27" y="99.42857" width="946" height="162.71428" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="27.5" y="99.92857" width="945" height="161.71428" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-6" clipPathUnits="userSpaceOnUse"><rect x="27" y="99.42857" width="946" height="162.71428"/></clipPath></defs><g clip-path="url(#clip-6)">
+<text x="37" y="109.42857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Automatizaciones del proyecto</text>
+<text x="37" y="128.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Horarios locales y ejecuciones guardadas para esta carpeta.</text>
+<text x="812.1428" y="118.5" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">0 activas · 0 en total</text>
+<rect x="27" y="153" width="946" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="37" y="164" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Administrar tareas</text>
+<text x="37" y="183.42857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Crea, edita, pausa y ejecuta tareas. Consulta su historial.</text>
+<rect x="778.1428" y="166.7857" width="184.85715" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="778.6428" y="167.2857" width="183.85715" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="173" x="784" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="806.1428" y="173.07143" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Abrir automatizaciones</text>
+<rect x="27" y="207.57143" width="946" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="37" y="218.57143" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Historial de ejecución</text>
+<text x="37" y="238" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Ejecuciones registradas por el planificador del proyecto.</text>
+<text x="873.8571" y="227.64285" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">0 ejecuciones</text>
+</g>
+<text x="31" y="278.14285" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Planificador</text>
+<rect x="27" y="300.2857" width="946" height="110.14285" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="27.5" y="300.7857" width="945" height="109.14285" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-25" clipPathUnits="userSpaceOnUse"><rect x="27" y="300.2857" width="946" height="110.14285"/></clipPath></defs><g clip-path="url(#clip-25)">
+<svg opacity="1" y="310" x="37" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-clock" viewBox="0 0 16 16">
+  <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+  <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+</svg>
+<text x="63" y="310.2857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mientras OpenIDE esté abierto</text>
+<text x="63" y="330.71426" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">El planificador revisa horarios locales con la aplicación en ejecución. Las tareas no se ejecutan cuando está cerrada.</text>
+<rect x="27" y="354.85712" width="946" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="366" x="37" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+<text x="63" y="365.85712" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Política de ejecución</text>
+<text x="63" y="386.28568" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Las automatizaciones del agente nativo trabajan en sólo lectura y conservan su configuración de motor y modelo.</text>
+</g>
+</g>
+</svg>

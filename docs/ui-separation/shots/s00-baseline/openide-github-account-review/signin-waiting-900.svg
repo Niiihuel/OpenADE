@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="900" height="520" viewBox="0 0 900 520" overflow="hidden">
+<rect x="0" y="0" width="900" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="0" width="900" height="520" rx="0" fill="#000000" fill-opacity="0.7058824"/>
+<defs><filter id="shadow-2" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="16"/></filter></defs><rect x="230" y="136.95535" width="440" height="278.0893" rx="12" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-2)"/>
+<rect x="230" y="120.95535" width="440" height="278.0893" rx="12" fill="#161616" fill-opacity="1"/>
+<rect x="230.5" y="121.45535" width="439" height="277.0893" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="244" y="134.95535" width="412" height="250.0893"/></clipPath></defs><g clip-path="url(#clip-5)">
+<text x="244" y="134.95535" font-family="Ubuntu,sans-serif" font-size="16" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Conectar con GitHub</text>
+<svg opacity="1" y="139" x="636" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="244" y="168.95535" width="412" height="178.0893"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="244" y="170.2009" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Completa la autorización en GitHub. Esta ventana se cerrará al verificar tu </text>
+<text x="244" y="186.5134" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">cuenta.</text>
+<rect x="244" y="211.58035" width="412" height="48" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="244.5" y="212.08035" width="411" height="47" rx="5.5" fill="none" stroke="#484848" stroke-opacity="1" stroke-width="1"/>
+<text x="361.71875" y="221.58035" font-family="Hack,monospace" font-size="22" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">ABCD-1234</text>
+<rect x="598.65625" y="221.58035" width="47.34375" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<text x="604.65625" y="228.66963" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Copiar</text>
+<text x="244" y="269.58035" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">1. Abre github.com/login/device en el navegador.</text>
+<text x="244" y="283.4018" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">2. Introduce el código y autoriza OpenIDE.</text>
+<polyline points="252,309.1832 253.36317,309.33905 254.65599,309.79852 255.81177,310.5379 256.77084,311.51907 257.48373,312.69138 257.91367,313.99432 258.03842,315.3607 257.8516,316.71997 257.36282,318.00198 256.59732,319.14066 255.59457,320.07715 254.40634,320.76315 253.09393,321.1633 251.7251,321.25696 250.37042,321.0392 249.09985,320.5214 247.97893,319.73016 247.0655,318.70636 246.40671,317.5028 246.03653,316.18164 245.97408,314.811 246.22258,313.46167 246.76921,312.20322 " fill="none" stroke="#a0a0a0" stroke-opacity="1" stroke-width="1.92" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="268" y="307.2232" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Esperando tu autorización en el navegador</text>
+<text x="244" y="333.2232" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">@alice seguirá conectado hasta verificar la nueva cuenta.</text>
+</g>
+<rect x="491.3125" y="357.04465" width="59.0625" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="491.8125" y="357.54465" width="58.0625" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="497.3125" y="364.13394" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cancelar</text>
+<rect x="556.375" y="357.04465" width="99.625" height="28" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<text x="562.375" y="364.13394" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#161616" fill-opacity="1" xml:space="preserve">Abrir navegador</text>
+</g>
+</svg>

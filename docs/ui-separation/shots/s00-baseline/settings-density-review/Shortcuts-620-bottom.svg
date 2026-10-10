@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="620" height="840" viewBox="0 0 620 840" overflow="hidden">
+<rect x="0" y="0" width="620" height="840" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="840"/></clipPath></defs><g clip-path="url(#clip-1)">
+<rect x="20" y="-104.6608" width="566" height="115.65178" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="-104.1608" width="565" height="114.65178" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="20" y="0" width="566" height="10.990982"/></clipPath></defs><g clip-path="url(#clip-4)">
+<text x="56" y="-24.348299" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">i para escribir · Esc para volver a Normal · h j k l para moverse · v para seleccionar · u para deshacer. Las </text>
+<text x="56" y="-11.678657" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">teclas de Vim tienen prioridad dentro del editor.</text>
+</g>
+<text x="24" y="26.990967" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Navegación</text>
+<rect x="20" y="47.66061" width="566" height="194" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="48.16061" width="565" height="193" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-11" clipPathUnits="userSpaceOnUse"><rect x="20" y="47.66061" width="566" height="194"/></clipPath></defs><g clip-path="url(#clip-11)">
+<text x="30" y="57.66061" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Paleta de comandos</text>
+<rect x="493.90625" y="57.66061" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="60.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="57.66061" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="60.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="57.66061" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.65625" y="60.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+<rect x="20" y="85.660614" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="96.660614" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir archivo del proyecto</text>
+<rect x="528.5" y="96.660614" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="532.5" y="99.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558" y="96.660614" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.65625" y="99.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">P</text>
+<rect x="20" y="124.660614" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="135.66061" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Nuevo archivo en el IDE</text>
+<rect x="528.5" y="135.66061" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="532.5" y="138.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558" y="135.66061" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563" y="138.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">N</text>
+<rect x="20" y="163.66061" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="174.66061" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir configuración</text>
+<rect x="528.5" y="174.66061" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="532.5" y="177.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558" y="174.66061" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="565.6406" y="177.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">,</text>
+<rect x="20" y="202.66061" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="213.66061" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Duplicar líneas del editor</text>
+<rect x="449.125" y="213.66061" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="453.125" y="216.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="478.625" y="213.66061" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="482.625" y="216.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="513.21875" y="213.66061" width="22.71875" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="517.21875" y="216.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alt</text>
+<rect x="538.9375" y="213.66061" width="37.0625" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="542.9375" y="216.32579" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Down</text>
+</g>
+<text x="24" y="257.66064" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Paneles</text>
+<rect x="20" y="278.3303" width="566" height="428" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="278.8303" width="565" height="427" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-51" clipPathUnits="userSpaceOnUse"><rect x="20" y="278.3303" width="566" height="428.00003"/></clipPath></defs><g clip-path="url(#clip-51)">
+<text x="30" y="288.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mostrar u ocultar la barra lateral</text>
+<rect x="528.5" y="288.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="532.5" y="290.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558" y="288.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.46875" y="290.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">B</text>
+<rect x="20" y="316.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="327.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Mostrar u ocultar el panel inferior</text>
+<rect x="528.5" y="327.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="532.5" y="329.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558" y="327.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="564.25" y="329.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">J</text>
+<rect x="20" y="355.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="366.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Abrir o enfocar la terminal</text>
+<rect x="528.5" y="366.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="532.5" y="368.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="558" y="366.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="564.9375" y="368.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">`</text>
+<rect x="20" y="394.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="405.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Explorador de archivos</text>
+<rect x="493.90625" y="405.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="407.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="405.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="407.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="405.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.8594" y="407.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">E</text>
+<rect x="20" y="433.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="444.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Buscar en el proyecto</text>
+<rect x="493.90625" y="444.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="446.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="444.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="446.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="444.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="564.0469" y="446.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">F</text>
+<rect x="20" y="472.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="483.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Control de versiones</text>
+<rect x="493.90625" y="483.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="485.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="483.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="485.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="483.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.2969" y="485.99548" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">G</text>
+<rect x="20" y="511.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="522.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Complementos</text>
+<rect x="493.90625" y="522.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="524.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="522.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="524.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="522.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.53125" y="524.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">X</text>
+<rect x="20" y="550.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="561.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Depuración</text>
+<rect x="493.90625" y="561.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="563.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="561.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="563.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="561.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.0781" y="563.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">D</text>
+<rect x="20" y="589.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="600.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Problemas</text>
+<rect x="493.90625" y="600.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="602.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="600.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="602.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="600.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="562.2031" y="602.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">M</text>
+<rect x="20" y="628.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="639.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Salida</text>
+<rect x="493.90625" y="639.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="641.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="639.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="641.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="639.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.21875" y="641.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">U</text>
+<rect x="20" y="667.3303" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="678.3303" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Consola de depuración</text>
+<rect x="493.90625" y="678.3303" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="497.90625" y="680.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="523.40625" y="678.3303" width="31.59375" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="527.40625" y="680.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shift</text>
+<rect x="558" y="678.3303" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563.71875" y="680.9955" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Y</text>
+</g>
+<text x="24" y="722.3303" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Conversación</text>
+<rect x="20" y="742.99994" width="566" height="77" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="20.5" y="743.49994" width="565" height="76" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-137" clipPathUnits="userSpaceOnUse"><rect x="20" y="742.99994" width="566" height="77"/></clipPath></defs><g clip-path="url(#clip-137)">
+<text x="30" y="752.99994" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Nueva tarea</text>
+<rect x="502.78125" y="752.99994" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="506.78125" y="755.6651" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="532.28125" y="752.99994" width="22.71875" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="536.28125" y="755.6651" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alt</text>
+<rect x="558" y="752.99994" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="563" y="755.6651" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">N</text>
+<rect x="20" y="780.99994" width="566" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="30" y="791.99994" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Elegir modelo y esfuerzo</text>
+<rect x="502.78125" y="791.99994" width="26.5" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="506.78125" y="794.6651" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ctrl</text>
+<rect x="532.28125" y="791.99994" width="22.71875" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="536.28125" y="794.6651" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alt</text>
+<rect x="558" y="791.99994" width="18" height="18" rx="3" fill="#808080" fill-opacity="0.14117648"/>
+<text x="562.2031" y="794.6651" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">M</text>
+</g>
+</g>
+<defs><clipPath id="clip-155" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="620" height="840"/></clipPath></defs><g clip-path="url(#clip-155)">
+<rect x="610.5" y="258.49518" width="5" height="567.5048" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="609.5,9 616.5,9 613,5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="609.5,831 616.5,831 613,835" fill="#888888" fill-opacity="0.09411765"/>
+</g>
+</svg>

@@ -1,0 +1,1 @@
+Las capturas Effort sustituyen únicamente el shader animado por un bloque azul de sus dimensiones reales. Sirven para inspeccionar geometría, encabezado y texto; el efecto visual se valida en el renderizador nativo.

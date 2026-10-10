@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="700" height="460" viewBox="0 0 700 460" overflow="hidden">
+<rect x="0" y="0" width="700" height="460" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="438" width="700" height="22" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-2" clipPathUnits="userSpaceOnUse"><rect x="0" y="438" width="700" height="22"/></clipPath></defs><g clip-path="url(#clip-2)">
+<rect x="0" y="438" width="700" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="0" y="439" width="700" height="21"/></clipPath></defs><g clip-path="url(#clip-4)">
+<svg opacity="1" y="443" x="2" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#ffffff" class="bi bi-x-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+</svg>
+<defs><clipPath id="clip-6" clipPathUnits="userSpaceOnUse"><rect x="17" y="442.6652" width="6.21875" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-6)">
+<text x="17" y="442.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">0</text>
+</g>
+<svg opacity="1" y="443" x="26" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#ffffff" class="bi bi-exclamation-triangle" viewBox="0 0 16 16">
+  <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.15.15 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.2.2 0 0 1-.054.06.1.1 0 0 1-.066.017H1.146a.1.1 0 0 1-.066-.017.2.2 0 0 1-.054-.06.18.18 0 0 1 .002-.183L7.884 2.073a.15.15 0 0 1 .054-.057m1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/>
+  <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+</svg>
+<defs><clipPath id="clip-10" clipPathUnits="userSpaceOnUse"><rect x="41.21875" y="442.6652" width="6.21875" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-10)">
+<text x="41.21875" y="442.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">0</text>
+</g>
+<svg opacity="1" y="443" x="59" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#888888" class="bi bi-hdd-stack" viewBox="0 0 16 16">
+  <path d="M14 10a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1zM2 9a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2z"/>
+  <path d="M5 11.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M14 3a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM2 2a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+  <path d="M5 4.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"/>
+</svg>
+<defs><clipPath id="clip-14" clipPathUnits="userSpaceOnUse"><rect x="75" y="442.6652" width="24" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-14)">
+<text x="75" y="442.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">LSP</text>
+</g>
+<defs><clipPath id="clip-17" clipPathUnits="userSpaceOnUse"><rect x="335" y="443.1652" width="56" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-17)">
+<text x="335" y="443.1652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Guardado</text>
+</g>
+<defs><clipPath id="clip-20" clipPathUnits="userSpaceOnUse"><rect x="399" y="442.6652" width="104" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-20)">
+<text x="399" y="442.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Ln 2, Col 3 · 2 sel.</text>
+</g>
+<defs><clipPath id="clip-23" clipPathUnits="userSpaceOnUse"><rect x="511" y="442.6652" width="66.5" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-23)">
+<text x="511" y="442.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Espacios: 4</text>
+</g>
+<defs><clipPath id="clip-26" clipPathUnits="userSpaceOnUse"><rect x="585.5" y="443.1652" width="36.5" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-26)">
+<text x="585.5" y="443.1652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">UTF-8</text>
+</g>
+<defs><clipPath id="clip-29" clipPathUnits="userSpaceOnUse"><rect x="630" y="442.6652" width="30" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-29)">
+<text x="630" y="442.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">CRLF</text>
+</g>
+<defs><clipPath id="clip-32" clipPathUnits="userSpaceOnUse"><rect x="668" y="442.6652" width="30" height="12.669647"/></clipPath></defs><g clip-path="url(#clip-32)">
+<text x="668" y="442.6652" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Rust</text>
+</g>
+</g>
+</g>
+<defs><filter id="shadow-37" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="11"/></filter></defs><rect x="57" y="146.5268" width="340" height="296.4732" rx="6" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-37)"/>
+<rect x="57" y="137.5268" width="340" height="296.4732" rx="6" fill="#1e1e1e" fill-opacity="1"/>
+<rect x="57.5" y="138.0268" width="339" height="295.4732" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-40" clipPathUnits="userSpaceOnUse"><rect x="63" y="143.5268" width="328" height="284.4732"/></clipPath></defs><g clip-path="url(#clip-40)">
+<svg opacity="1" y="150" x="69" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ffffff" class="bi bi-hdd-stack" viewBox="0 0 16 16">
+  <path d="M14 10a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1zM2 9a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2z"/>
+  <path d="M5 11.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M14 3a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM2 2a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+  <path d="M5 4.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"/>
+</svg>
+<text x="91" y="154.61607" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Servicios de lenguaje</text>
+<rect x="361" y="149.5268" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="154" x="365" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<text x="69" y="181.5268" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Lenguaje</text>
+<text x="360.375" y="181.5268" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Rust</text>
+<svg opacity="1" y="204" x="69" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#9e9e9e" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="89" y="203.34822" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Servidor no disponible</text>
+<rect x="69" y="227.34822" width="316" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="69" y="236.34822" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Ejecutable del servidor · opcional</text>
+<rect x="69" y="257.01788" width="316" height="28" rx="4" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="69.75" y="257.76788" width="314.5" height="26.5" rx="3.25" fill="none" stroke="#747474" stroke-opacity="1" stroke-width="1.5"/>
+<defs><clipPath id="clip-53" clipPathUnits="userSpaceOnUse"><rect x="77" y="265.01788" width="300" height="12"/></clipPath></defs><g clip-path="url(#clip-53)">
+<text x="77" y="265.01788" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">/home/niñuel/bin/rust-analyzer</text>
+<rect x="261.5" y="265.01788" width="1.5" height="14.973214" rx="0" fill="#d4d4d4" fill-opacity="1"/>
+</g>
+<text x="69" y="293.01788" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">Dejá el campo vacío para detectar el servidor </text>
+<text x="69" y="305.68753" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#9e9e9e" fill-opacity="1" xml:space="preserve">automáticamente.</text>
+<text x="69" y="326.35715" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ff5c5c" fill-opacity="1" xml:space="preserve">No se pudo iniciar el servidor. Revisá la ruta del </text>
+<text x="69" y="340.1786" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ff5c5c" fill-opacity="1" xml:space="preserve">ejecutable.</text>
+<rect x="69" y="362" width="316" height="28" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<svg opacity="1" y="368" x="191" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#1e1e1e" class="bi bi-hdd-stack" viewBox="0 0 16 16">
+  <path d="M14 10a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1zM2 9a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2z"/>
+  <path d="M5 11.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M14 3a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM2 2a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+  <path d="M5 4.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m-2 0a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"/>
+</svg>
+<text x="213.375" y="369.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#1e1e1e" fill-opacity="1" xml:space="preserve">Conectar</text>
+<rect x="69" y="398" width="316" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="402" x="145" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-exclamation-triangle" viewBox="0 0 16 16">
+  <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.15.15 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.2.2 0 0 1-.054.06.1.1 0 0 1-.066.017H1.146a.1.1 0 0 1-.066-.017.2.2 0 0 1-.054-.06.18.18 0 0 1 .002-.183L7.884 2.073a.15.15 0 0 1 .054-.057m1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/>
+  <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+</svg>
+<text x="167.4375" y="403.0893" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ver problemas del archivo</text>
+</g>
+</svg>

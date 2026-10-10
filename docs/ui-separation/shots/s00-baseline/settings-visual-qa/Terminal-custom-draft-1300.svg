@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1300" height="900" viewBox="0 0 1300 900" overflow="hidden">
+<rect x="0" y="0" width="1300" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1300" height="900"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="170" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Terminal</text>
+<text x="170" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Shell y comportamiento de la terminal integrada.</text>
+<text x="174" y="77.28571" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Terminal integrada</text>
+<rect x="170" y="99.42857" width="960" height="170.2857" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="170.5" y="99.92857" width="959" height="169.2857" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-7" clipPathUnits="userSpaceOnUse"><rect x="170" y="99.42857" width="960" height="170.28572"/></clipPath></defs><g clip-path="url(#clip-7)">
+<text x="180" y="109.42857" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Shell predeterminado</text>
+<text x="180" y="128.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Se usará en nuevas terminales. Las abiertas conservan su shell.</text>
+<rect x="882" y="112.21429" width="238" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="882.5" y="112.71429" width="237" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="900.8571" y="118.5" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Predeterminada del sistema</text>
+<svg opacity="1" y="118" x="1085" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="170" y="153" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="180" y="164" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ejecutable personalizado</text>
+<text x="180" y="187.42857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Usa una ruta absoluta. El ejecutable se comprueba antes de guardar.</text>
+<rect x="180" y="209.57143" width="723.1428" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="180.5" y="210.07143" width="722.1428" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-19" clipPathUnits="userSpaceOnUse"><rect x="188" y="217.57143" width="707.1428" height="12"/></clipPath></defs><g clip-path="url(#clip-19)">
+<text x="188" y="217.57143" font-family="DejaVu Sans Mono,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="0.43137255" xml:space="preserve">Ruta absoluta del ejecutable</text>
+</g>
+<rect x="913.1428" y="209.57143" width="130" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="913.6428" y="210.07143" width="129" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="216" x="919" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-check-lg" viewBox="0 0 16 16">
+  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
+</svg>
+<text x="941.1428" y="215.85715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Guardar y usar</text>
+<rect x="1053.1428" y="209.57143" width="66.85715" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<text x="1059.1428" y="215.85715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Cancelar</text>
+<text x="180" y="245.57143" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Se mantiene «Predeterminada del sistema» hasta guardar una ruta válida.</text>
+</g>
+</g>
+</svg>

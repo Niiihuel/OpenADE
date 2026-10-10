@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="800" viewBox="0 0 360 800" overflow="hidden">
+<rect x="0" y="0" width="360" height="800" rx="0" fill="#161616" fill-opacity="1"/>
+<text x="20" y="20" font-family="DejaVu Sans,sans-serif" font-size="20" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Alert · dark · 360 px</text>
+<rect x="20" y="61.714287" width="320" height="77.42857" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="20.5" y="62.214287" width="319" height="76.42857" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="20" y="61.714287" width="320" height="77.42857"/></clipPath></defs><g clip-path="url(#clip-4)">
+<svg opacity="1" y="74" x="36" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="64" y="73.71429" font-family="DejaVu Sans,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Aviso</text>
+<text x="64" y="93.71429" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Los cambios se aplicarán a las </text>
+<text x="64" y="110.42857" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">próximas sesiones.</text>
+</g>
+<rect x="20" y="155.14285" width="320" height="94.14285" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="20.5" y="155.64285" width="319" height="93.14285" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-12" clipPathUnits="userSpaceOnUse"><rect x="20" y="155.14285" width="320" height="94.14285"/></clipPath></defs><g clip-path="url(#clip-12)">
+<svg opacity="1" y="167" x="36" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#78a9ff" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="64" y="167.14285" font-family="DejaVu Sans,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Información del proyecto</text>
+<text x="64" y="187.14285" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">La carpeta activa define los </text>
+<text x="64" y="203.85713" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">archivos disponibles para </text>
+<text x="64" y="220.57143" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">esta tarea.</text>
+<rect x="296" y="167.14285" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="173" x="302" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-x" viewBox="0 0 16 16">
+  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+<rect x="20" y="265.2857" width="320" height="94.14285" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="20.5" y="265.7857" width="319" height="93.14285" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-23" clipPathUnits="userSpaceOnUse"><rect x="20" y="265.2857" width="320" height="94.14285"/></clipPath></defs><g clip-path="url(#clip-23)">
+<svg opacity="1" y="277" x="36" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#6fdc8c" class="bi bi-check-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+</svg>
+<text x="64" y="277.2857" font-family="DejaVu Sans,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cambios guardados</text>
+<text x="64" y="297.2857" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Las preferencias de la </text>
+<text x="64" y="314" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">terminal se actualizaron </text>
+<text x="64" y="330.71426" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">correctamente.</text>
+<rect x="296" y="277.2857" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="283" x="302" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#d4d4d4" class="bi bi-x" viewBox="0 0 16 16">
+  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+<rect x="20" y="375.42856" width="320" height="94.14285" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="20.5" y="375.92856" width="319" height="93.14285" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-34" clipPathUnits="userSpaceOnUse"><rect x="20" y="375.42856" width="320" height="94.14285"/></clipPath></defs><g clip-path="url(#clip-34)">
+<svg opacity="1" y="387" x="36" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#f1c21b" class="bi bi-exclamation-triangle" viewBox="0 0 16 16">
+  <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.15.15 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.2.2 0 0 1-.054.06.1.1 0 0 1-.066.017H1.146a.1.1 0 0 1-.066-.017.2.2 0 0 1-.054-.06.18.18 0 0 1 .002-.183L7.884 2.073a.15.15 0 0 1 .054-.057m1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/>
+  <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+</svg>
+<text x="64" y="387.42856" font-family="DejaVu Sans,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Se requiere revisión</text>
+<text x="64" y="407.42856" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">La sesión se interrumpió antes de </text>
+<text x="64" y="424.14285" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">completar la operación. Revisa los </text>
+<text x="64" y="440.85712" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">cambios antes de continuar.</text>
+</g>
+<rect x="20" y="485.5714" width="320" height="171.57143" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="20.5" y="486.0714" width="319" height="170.57143" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-43" clipPathUnits="userSpaceOnUse"><rect x="20" y="485.5714" width="320" height="171.57143"/></clipPath></defs><g clip-path="url(#clip-43)">
+<svg opacity="1" y="498" x="36" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ff8389" class="bi bi-x-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+</svg>
+<text x="64" y="497.5714" font-family="DejaVu Sans,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#ff8389" fill-opacity="1" xml:space="preserve">No se pudo guardar</text>
+<text x="64" y="517.5714" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#da7277" fill-opacity="1" xml:space="preserve">No se pudo escribir el archivo de </text>
+<text x="64" y="534.2857" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#da7277" fill-opacity="1" xml:space="preserve">configuración. Comprueba que la </text>
+<text x="64" y="551" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#da7277" fill-opacity="1" xml:space="preserve">carpeta exista y que tengas </text>
+<text x="64" y="567.71423" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#da7277" fill-opacity="1" xml:space="preserve">permiso para modificarla; después </text>
+<text x="64" y="584.4285" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#da7277" fill-opacity="1" xml:space="preserve">vuelve a intentar.</text>
+<rect x="64" y="613.1428" width="260" height="32" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<text x="156.85715" y="620.7857" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#161616" fill-opacity="1" xml:space="preserve">Reintentar</text>
+</g>
+</svg>

@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1300" height="900" viewBox="0 0 1300 900" overflow="hidden">
+<rect x="0" y="0" width="1300" height="900" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-1" clipPathUnits="userSpaceOnUse"><rect x="0" y="0" width="1300" height="900"/></clipPath></defs><g clip-path="url(#clip-1)">
+<text x="170" y="20" font-family="DejaVu Sans,sans-serif" font-size="18" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">CLIs externas</text>
+<text x="170" y="47.142857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Herramientas de OpenIDE para Claude Code, Codex y otras CLIs.</text>
+<rect x="1056" y="29.642857" width="74" height="22" rx="5" fill="#363636" fill-opacity="1"/>
+<rect x="1056.5" y="30.142857" width="73" height="21" rx="4.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="34" x="1062" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#d4d4d4" class="bi bi-clock" viewBox="0 0 16 16">
+  <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+  <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+</svg>
+<text x="1080" y="33.571426" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Parcial</text>
+<rect x="170" y="73.28571" width="960" height="77.42857" rx="8" fill="#161616" fill-opacity="1"/>
+<rect x="170.5" y="73.78571" width="959" height="76.42857" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-10" clipPathUnits="userSpaceOnUse"><rect x="170" y="73.28571" width="960" height="77.42858"/></clipPath></defs><g clip-path="url(#clip-10)">
+<svg opacity="1" y="85" x="186" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#78a9ff" class="bi bi-info-circle" viewBox="0 0 16 16">
+  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+  <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+</svg>
+<text x="214" y="85.28571" font-family="DejaVu Sans,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Información</text>
+<text x="214" y="105.28571" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Funciona con Claude Code y Codex iniciados desde el menú de perfiles de la terminal. Navegador y subagentes todavía no </text>
+<text x="214" y="122" font-family="DejaVu Sans,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">se ofrecen: sus interruptores se guardan para cuando estén disponibles.</text>
+</g>
+<text x="174" y="166.7143" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Puente de herramientas</text>
+<rect x="170" y="188.85715" width="960" height="123.28571" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="170.5" y="189.35715" width="959" height="122.28571" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-19" clipPathUnits="userSpaceOnUse"><rect x="170" y="188.85715" width="960" height="123.285706"/></clipPath></defs><g clip-path="url(#clip-19)">
+<text x="180" y="198.85715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ofrecer herramientas de OpenIDE</text>
+<text x="180" y="218.28572" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Claude Code, Codex y otras CLIs iniciadas desde OpenIDE reciben las herramientas activadas abajo. Desactivado, ninguna llamada externa llega </text>
+<text x="180" y="232.42857" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">a OpenIDE.</text>
+<rect x="1084" y="212.7143" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="1087" y="215.7143" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+<rect x="170" y="256.57144" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<svg opacity="1" y="268" x="180" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#a0a0a0" class="bi bi-terminal" viewBox="0 0 16 16">
+  <path d="M6 9a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3A.5.5 0 0 1 6 9M3.854 4.146a.5.5 0 1 0-.708.708L4.793 6.5 3.146 8.146a.5.5 0 1 0 .708.708l2-2a.5.5 0 0 0 0-.708z"/>
+  <path d="M2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/>
+</svg>
+<text x="206" y="267.57144" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Solo CLIs iniciadas por OpenIDE</text>
+<text x="206" y="288" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Cada sesión recibe un acceso propio que deja de valer al cerrarla. Una CLI abierta por fuera de OpenIDE no puede conectarse.</text>
+</g>
+<text x="174" y="328.14288" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">CLIs detectadas</text>
+<text x="174" y="366.28574" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Herramientas ofrecidas</text>
+<rect x="170" y="388.4286" width="960" height="217.2857" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="170.5" y="388.9286" width="959" height="216.2857" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-34" clipPathUnits="userSpaceOnUse"><rect x="170" y="388.4286" width="960" height="217.2857"/></clipPath></defs><g clip-path="url(#clip-34)">
+<text x="180" y="398.4286" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Revisión de cambios</text>
+<text x="180" y="417.85715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Lee los cambios sin confirmar del proyecto como los muestra la revisión. Solo lectura; no pide aprobación.</text>
+<rect x="1084" y="405.2143" width="36" height="20" rx="10" fill="#ebebeb" fill-opacity="1"/>
+<rect x="1103" y="408.2143" width="14" height="14" rx="7" fill="#373737" fill-opacity="1"/>
+<rect x="170" y="442" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="180" y="453" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Navegador</text>
+<text x="180" y="472.42856" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Todavía no disponible. Controlará el navegador integrado que ves en el panel lateral.</text>
+<rect x="1084" y="459.7857" width="36" height="20" rx="10" fill="#ebebeb" fill-opacity="1"/>
+<rect x="1103" y="462.7857" width="14" height="14" rx="7" fill="#373737" fill-opacity="1"/>
+<rect x="170" y="496.57144" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="180" y="507.57144" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Otras conversaciones</text>
+<text x="180" y="527" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Lee conversaciones de este proyecto, nunca de otros. Su contenido puede incluir datos sensibles o instrucciones que la CLI tome como propias.</text>
+<rect x="1084" y="514.3572" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="1087" y="517.3572" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+<rect x="170" y="551.1429" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="180" y="562.1429" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Subagentes</text>
+<text x="180" y="581.5715" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Todavía no disponible. Creará subagentes de OpenIDE y esperará su resultado.</text>
+<rect x="1084" y="568.9286" width="36" height="20" rx="10" fill="#4c4c4c" fill-opacity="1"/>
+<rect x="1087" y="571.9286" width="14" height="14" rx="7" fill="#ebebeb" fill-opacity="1"/>
+</g>
+<text x="174" y="621.7143" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Permisos</text>
+<rect x="170" y="643.8572" width="960" height="136.42857" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="170.5" y="644.3572" width="959" height="135.42857" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-58" clipPathUnits="userSpaceOnUse"><rect x="170" y="643.8572" width="960" height="136.42859"/></clipPath></defs><g clip-path="url(#clip-58)">
+<text x="180" y="653.8572" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Aprobaciones</text>
+<text x="180" y="673.28577" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Seguir a la CLI: si la iniciaste en modo aceptar todo, las herramientas de OpenIDE tampoco preguntan. En cualquier </text>
+<text x="180" y="687.42865" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">otro modo, OpenIDE pide aprobación.</text>
+<rect x="920" y="663.7143" width="200" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="920.5" y="664.2143" width="199" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<text x="957.5714" y="670" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Seguir a la CLI</text>
+<svg opacity="1" y="670" x="1066" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+<rect x="170" y="711.5715" width="960" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<text x="180" y="722.5715" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Reglas de ejecución</text>
+<text x="180" y="742.00006" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">Las herramientas ofrecidas hoy solo leen. Cuando alguna ejecute comandos, las reglas que los deniegan valdrán también para las </text>
+<text x="180" y="756.14294" font-family="DejaVu Sans,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">llamadas externas.</text>
+<rect x="1017.4286" y="732.4286" width="102.57143" height="28" rx="4" fill="#373737" fill-opacity="1"/>
+<rect x="1017.9286" y="732.9286" width="101.57143" height="27" rx="3.5" fill="none" stroke="#4e4e4e" stroke-opacity="1" stroke-width="1"/>
+<svg opacity="1" y="738" x="1023" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#ebebeb" class="bi bi-arrow-right" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+</svg>
+<text x="1045.4286" y="738.7143" font-family="DejaVu Sans,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#ebebeb" fill-opacity="1" xml:space="preserve">Ver reglas</text>
+</g>
+</g>
+</svg>

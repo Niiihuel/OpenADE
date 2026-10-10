@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="520" height="640" viewBox="0 0 520 640" overflow="hidden">
+<rect x="0" y="0" width="520" height="640" rx="0" fill="#161616" fill-opacity="1"/>
+<text x="24" y="311" font-family="Hack,monospace" font-size="14" dominant-baseline="text-before-edge" fill="#ffffff" fill-opacity="1" xml:space="preserve">Más acciones</text>
+<defs><filter id="shadow-2" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="11"/></filter></defs><rect x="16" y="638" width="288" height="3" rx="6" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-2)"/>
+<rect x="16" y="629" width="288" height="3" rx="6" fill="#1e1e1e" fill-opacity="1"/>
+<rect x="16.5" y="629.5" width="287" height="2" rx="5.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+</svg>

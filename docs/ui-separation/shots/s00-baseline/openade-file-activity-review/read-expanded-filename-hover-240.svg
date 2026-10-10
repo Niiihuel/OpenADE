@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="420" viewBox="0 0 240 420" overflow="hidden">
+<rect x="0" y="0" width="240" height="420" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="12" y="12" width="216" height="141" rx="8" fill="#191919" fill-opacity="1"/>
+<rect x="12.5" y="12.5" width="215" height="140" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-3" clipPathUnits="userSpaceOnUse"><rect x="13" y="13" width="214" height="139"/></clipPath></defs><g clip-path="url(#clip-3)">
+<defs><clipPath id="clip-4" clipPathUnits="userSpaceOnUse"><rect x="13" y="13" width="214" height="28"/></clipPath></defs><g clip-path="url(#clip-4)">
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="13" y="13" width="214" height="28"/></clipPath></defs><g clip-path="url(#clip-5)">
+<defs><clipPath id="clip-6" clipPathUnits="userSpaceOnUse"><rect x="19" y="15" width="176" height="24"/></clipPath></defs><g clip-path="url(#clip-6)">
+<svg opacity="1" y="20" x="19" height="14" width="14" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="#ff7043" d="m30 12-4-2V6h-4l-2-4-4 2-4-2-2 4H6v4l-4 2 2 4-2 4 4 2v4h4l2 4 4-2 4 2 2-4h4v-4l4-2-2-4ZM6 16a9.9 9.9 0 0 1 .842-4H10v8H6.842A9.9 9.9 0 0 1 6 16m10 10a9.98 9.98 0 0 1-7.978-4H16v-2h-2v-2h4c.819.819.297 2.308 1.179 3.37a1.89 1.89 0 0 0 1.46.63h3.34A9.98 9.98 0 0 1 16 26m-2-12v-2h4a1 1 0 0 1 0 2Zm11.158 6H24a2.006 2.006 0 0 1-2-2 2 2 0 0 0-2-2 3 3 0 0 0 3-3q0-.08-.004-.161A3.115 3.115 0 0 0 19.83 10H8.022a9.986 9.986 0 0 1 17.136 10"/></svg>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="35" y="15" width="124.53125" height="24"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="38" y="20.089287" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">captura.rs</text>
+<rect x="38" y="31.910713" width="54.46875" height="1" rx="0" fill="#d4d4d4" fill-opacity="1"/>
+</g>
+<defs><clipPath id="clip-12" clipPathUnits="userSpaceOnUse"><rect x="167.53125" y="20.665178" width="27.46875" height="12.6696415"/></clipPath></defs><g clip-path="url(#clip-12)">
+<text x="167.53125" y="20.665178" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Leído</text>
+</g>
+</g>
+<svg opacity="1" y="20" x="202" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#888888" class="bi bi-chevron-down" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/>
+</svg>
+</g>
+</g>
+<rect x="13" y="41" width="214" height="1" rx="0" fill="#2e2e2e" fill-opacity="1"/>
+<rect x="21" y="50" width="198" height="72" rx="0" fill="#161616" fill-opacity="1"/>
+<defs><clipPath id="clip-21" clipPathUnits="userSpaceOnUse"><rect x="21" y="50" width="198" height="72"/></clipPath></defs><g clip-path="url(#clip-21)">
+<text x="29" y="56.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">41</text>
+<defs><clipPath id="clip-23" clipPathUnits="userSpaceOnUse"><rect x="54.65625" y="54" width="156.34375" height="60"/></clipPath></defs><g clip-path="url(#clip-23)">
+<text x="54.65625" y="56.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">let</text>
+<text x="78.09375" y="56.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> a = </text>
+<text x="117.15625" y="56.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#97c1a9" fill-opacity="1" xml:space="preserve">1</text>
+<text x="124.96875" y="56.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+<text x="29" y="76.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">42</text>
+<defs><clipPath id="clip-30" clipPathUnits="userSpaceOnUse"><rect x="54.65625" y="54" width="156.34375" height="60"/></clipPath></defs><g clip-path="url(#clip-30)">
+</g>
+<text x="29" y="96.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">43</text>
+<defs><clipPath id="clip-33" clipPathUnits="userSpaceOnUse"><rect x="54.65625" y="54" width="156.34375" height="60"/></clipPath></defs><g clip-path="url(#clip-33)">
+<text x="54.65625" y="96.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#b88fd8" fill-opacity="1" xml:space="preserve">let</text>
+<text x="78.09375" y="96.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve"> b = </text>
+<text x="117.15625" y="96.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#97c1a9" fill-opacity="1" xml:space="preserve">2</text>
+<text x="124.96875" y="96.4375" font-family="Hack,monospace" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">;</text>
+</g>
+</g>
+<defs><linearGradient id="gradient-40" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.09411765"/></linearGradient></defs><rect x="13" y="124" width="214" height="28" fill="url(#gradient-40)"/>
+<rect x="108" y="126" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="130" x="112" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-arrow-up" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/>
+</svg>
+</g>
+</svg>

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="360" height="520" viewBox="0 0 360 520" overflow="hidden">
+<rect x="0" y="0" width="360" height="520" rx="0" fill="#161616" fill-opacity="1"/>
+<rect x="0" y="0" width="360" height="520" rx="0" fill="#000000" fill-opacity="0.7058824"/>
+<defs><filter id="shadow-2" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="16"/></filter></defs><rect x="12" y="114.13394" width="336" height="323.73212" rx="12" fill="#000000" fill-opacity="0.49019608" filter="url(#shadow-2)"/>
+<rect x="12" y="98.13394" width="336" height="323.73212" rx="12" fill="#161616" fill-opacity="1"/>
+<rect x="12.5" y="98.63394" width="335" height="322.73212" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<defs><clipPath id="clip-5" clipPathUnits="userSpaceOnUse"><rect x="26" y="112.13394" width="308" height="295.73212"/></clipPath></defs><g clip-path="url(#clip-5)">
+<text x="26" y="112.13394" font-family="Ubuntu,sans-serif" font-size="16" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Conectar con GitHub</text>
+<svg opacity="1" y="116" x="314" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-x-lg" viewBox="0 0 16 16">
+  <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+</svg>
+<defs><clipPath id="clip-8" clipPathUnits="userSpaceOnUse"><rect x="26" y="146.13394" width="308" height="189.73212"/></clipPath></defs><g clip-path="url(#clip-8)">
+<text x="26" y="147.37949" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Copia este código y pégalo en GitHub para autorizar </text>
+<text x="26" y="163.69199" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">el acceso a tu cuenta.</text>
+<rect x="26" y="188.75894" width="294" height="48" rx="6" fill="#2b2b2b" fill-opacity="1"/>
+<rect x="26.5" y="189.25894" width="293" height="47" rx="5.5" fill="none" stroke="#484848" stroke-opacity="1" stroke-width="1"/>
+<text x="84.71875" y="198.75894" font-family="Hack,monospace" font-size="22" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">ABCD-1234</text>
+<rect x="262.65625" y="198.75894" width="47.34375" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<text x="268.65625" y="205.84822" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Copiar</text>
+<text x="26" y="246.75894" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">1. Abre github.com/login/device en el navegador.</text>
+<text x="26" y="260.58038" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">2. Introduce el código y autoriza OpenIDE.</text>
+<text x="26" y="284.4018" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">El código es temporal y sólo se puede usar una vez.</text>
+<text x="26" y="308.2232" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">@alice seguirá conectado hasta verificar la nueva </text>
+<text x="26" y="322.04465" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#a0a0a0" fill-opacity="1" xml:space="preserve">cuenta.</text>
+</g>
+<defs><clipPath id="clip-22" clipPathUnits="userSpaceOnUse"><rect x="26" y="146.13394" width="308" height="189.73212"/></clipPath></defs><g clip-path="url(#clip-22)">
+<rect x="325" y="160.13394" width="4" height="161.7321" rx="2" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="323.5,155.13394 330.5,155.13394 327,151.13394" fill="#888888" fill-opacity="0.09411765"/>
+<polygon points="323.5,326.86606 330.5,326.86606 327,330.86606" fill="#888888" fill-opacity="0.09411765"/>
+</g>
+<rect x="26" y="345.86606" width="308" height="28" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="26.5" y="346.36606" width="307" height="27" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="156.46875" y="352.95535" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cancelar</text>
+<rect x="26" y="379.86606" width="308" height="28" rx="4" fill="#d4d4d4" fill-opacity="1"/>
+<text x="113.609375" y="386.95535" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#161616" fill-opacity="1" xml:space="preserve">Copiar y abrir navegador</text>
+</g>
+</svg>
