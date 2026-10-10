@@ -1,6 +1,6 @@
 //! File creation is a workspace action, including before its first editor exists.
 use super::*;
-use openide_ui::Modal;
+use openide_ui::{FormField, Modal};
 
 pub(super) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let Some(draft) = state.ide.new_file.as_ref() else {
@@ -9,16 +9,19 @@ pub(super) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     if !crate::ide_workspace::active(state) {
         return base;
     }
-    let width = (viewport_width - 24.0).clamp(240.0, 440.0);
-    let body_width = (width - 54.0).max(0.0);
-    let mut body = vec![
-        label("Ruta dentro del proyecto", theme::FOREGROUND).font_size(13.0),
+    let width = Modal::fit_width(viewport_width, 440.0).max(240.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
+    // Hand-built input: 36 tall on the canvas' own fill; see the ledger.
+    let mut path = FormField::new(
+        "Ruta dentro del proyecto",
         field("ide_new_file_path", &draft.path, "src/nuevo.rs")
             .font_family(FontFamily::Monospace)
             .size(Some(body_width), Some(36.0)),
-    ];
+        theme::component_palette(),
+    )
+    .sizing(crate::ui_sizing::NEW_FILE_FIELD);
     if let Some(error) = &draft.error {
-        body.push(label(error, theme::DESTRUCTIVE).font_size(12.0));
+        path = path.error(error, theme::DESTRUCTIVE);
     }
     let cancel = Button::new(
         "ide_new_file_cancel",
@@ -41,7 +44,7 @@ pub(super) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         theme::component_palette(),
     )
     .width(width)
-    .body(Element::column(body).gap(8.0).size(Some(body_width), None))
+    .body(path.render().size(Some(body_width), None))
     .footer(Element::row(vec![Element::spacer().flex(1.0), cancel, create]).gap(8.0))
     .initial_focus("ide_new_file_path")
     .return_focus(if viewport_width - 2.0 * OUTER_INSET >= 1200.0 {

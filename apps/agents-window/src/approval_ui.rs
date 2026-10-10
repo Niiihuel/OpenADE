@@ -7,8 +7,8 @@ use crate::{
     view::{PermissionView, SubagentPermissionView, ViewState},
 };
 use openide_ui::{
-    ApprovalRequest, Button, ButtonVariant, Card, Collapsible, Component, ControlSize, Element,
-    FontFamily, Icon, Modal, RadiusRole, ScrollArea, TextSpan,
+    ApprovalRequest, Button, ButtonGroup, ButtonVariant, Card, Collapsible, Component, ControlSize, Element,
+    FontFamily, Icon, Modal, RadiusRole, ScrollArea, Text, TextRole, TextSpan,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -491,17 +491,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, width: f32, height: f32) -
             .render(),
     );
     // The lasting choice sits apart from the two answers to this request.
-    let footer = Element::row(vec![
-        Button::new(
-            target.decision_action("allow_session"),
-            "Permitir en esta sesión",
-            palette,
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Compact)
-        .tooltip("Autoriza esta misma operación, con los mismos argumentos y contexto, durante esta sesión")
-        .render(),
-        Element::spacer().flex(1.0),
+    let footer = ButtonGroup::new(vec![
         Button::new(target.decision_action("deny"), "Denegar", palette)
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
@@ -514,10 +504,22 @@ pub(crate) fn modal(state: &ViewState, base: Element, width: f32, height: f32) -
         .size(ControlSize::Compact)
         .render(),
     ])
-    .gap(6.0);
+    .leading(
+        Button::new(
+            target.decision_action("allow_session"),
+            "Permitir en esta sesión",
+            palette,
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .tooltip("Autoriza esta misma operación, con los mismos argumentos y contexto, durante esta sesión")
+        .render(),
+    )
+    .align_end()
+    .render();
     let requested_by_child = target.child_session_id.is_some();
     Modal::new(base, true, summary.title, "", "approval_close", palette)
-        .width((width - 24.0).clamp(240.0, 480.0))
+        .width(Modal::fit_width(width, 480.0).max(240.0))
         .height((height - 32.0).clamp(
             200.0,
             if state.approval_ui.details_open {
@@ -535,6 +537,36 @@ pub(crate) fn modal(state: &ViewState, base: Element, width: f32, height: f32) -
         .initial_focus("approval_close:close")
         .backdrop_dismiss(false)
         .render()
+}
+
+/// Decision dialog for one tool call from an external CLI. Dismissing it
+/// denies the call.
+pub(crate) fn external_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
+    let Some(request) = &state.external_approval else {
+        return base;
+    };
+    let deny = crate::settings_ui::outline("external_approval_deny", "Denegar").render();
+    let allow = theme::primary("external_approval_allow", "Permitir una vez")
+        .size(ControlSize::Compact)
+        .render();
+    Modal::new(
+        base,
+        true,
+        &request.title,
+        "La llamada espera tu decisión; sin respuesta se deniega.",
+        "external_approval_deny",
+        theme::component_palette(),
+    )
+    .width(Modal::fit_width(viewport_width, 480.0))
+    .body(
+        Text::new(&request.detail, theme::card_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+    )
+    .footer(Element::row(vec![Element::spacer().flex(1.0), deny, allow]))
+    .initial_focus("external_approval_deny")
+    .render()
 }
 
 #[cfg(test)]

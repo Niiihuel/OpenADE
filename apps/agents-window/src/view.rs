@@ -63,6 +63,9 @@ mod ide_search_ui;
 #[path = "ide_ui.rs"]
 mod ide_ui;
 #[cfg(test)]
+#[path = "forms_modals_visual_tests.rs"]
+mod forms_modals_visual_tests;
+#[cfg(test)]
 #[path = "ide_visual_tests.rs"]
 pub(crate) mod ide_visual_tests;
 #[cfg(test)]
@@ -3375,7 +3378,7 @@ fn workspace_modals(
     let base = settings_ui::hook_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_reset_modal(state, base, viewport_width);
-    let base = settings_ui::external_approval_modal(state, base, viewport_width);
+    let base = crate::approval_ui::external_modal(state, base, viewport_width);
     let base = settings_ui::native_skill_reset_modal(state, base, viewport_width);
     let base = settings_ui::native_skill_preview_modal(state, base, viewport_width);
     let base = crate::plugins_ui::modal(state, base, viewport_width);

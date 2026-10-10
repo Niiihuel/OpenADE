@@ -9,7 +9,7 @@ use openide_harness::{
     PersistentCommandEvent, PersistentCommandExit, PersistentCommandInspection,
     PersistentCommandStream,
 };
-use openide_ui::{Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Modal};
+use openide_ui::{Button, ButtonGroup, ButtonVariant, Component, ControlSize, Element, FontFamily, Modal};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Default)]
@@ -85,8 +85,8 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     {
         return base;
     }
-    let width = (viewport_width - 24.0).min(820.0);
-    let body_width = (width - 54.0).max(0.0);
+    let width = Modal::fit_width(viewport_width, 820.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let text = |value: String, size| {
         Element::text(value)
             .font_family(FontFamily::Sans)
@@ -182,11 +182,10 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     .size(ControlSize::Compact)
     .enabled(!local.loading)
     .render();
-    let footer = if width < 400.0 {
-        Element::column(vec![refresh, close]).gap(6.0)
-    } else {
-        Element::row(vec![Element::spacer().flex(1.0), refresh, close]).gap(6.0)
-    };
+    let footer = ButtonGroup::new(vec![refresh, close])
+        .align_end()
+        .stacked(width < 400.0)
+        .render();
     Modal::new(
         base,
         true,

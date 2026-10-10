@@ -583,8 +583,8 @@ fn modal_on_platform(
     {
         return base;
     }
-    let width = (viewport_width - 24.0).min(820.0);
-    let body_width = (width - 54.0).max(0.0);
+    let width = Modal::fit_width(viewport_width, 820.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let allowed = state.native_tool_permissions.run_command;
     let close = Button::new(
         "native_command_control_dismiss",
@@ -959,16 +959,11 @@ fn modal_on_platform(
                 .foreground(theme::DESTRUCTIVE),
         );
     }
-    let footer = if body_width < 400.0 || (footer.len() > 3 && body_width < 620.0) {
-        Element::column(footer).gap(6.0)
-    } else {
-        Element::row(
-            std::iter::once(Element::spacer().flex(1.0))
-                .chain(footer)
-                .collect(),
-        )
-        .gap(6.0)
-    };
+    let stacked = body_width < 400.0 || (footer.len() > 3 && body_width < 620.0);
+    let footer = ButtonGroup::new(footer)
+        .align_end()
+        .stacked(stacked)
+        .render();
     Modal::new(
         base,
         true,

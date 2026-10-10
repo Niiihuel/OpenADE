@@ -804,6 +804,8 @@ fn item_grid(
 }
 
 fn source_form_body(state: &MarketplaceViewState) -> Element {
+    // Hand-built: a FormField nests a column, and this card sizes itself to
+    // its body; see docs/limn-migration-ledger.md.
     let kind = state.add_source_kind.expect("source form requires a kind");
     let mut contents = vec![
         text(
@@ -1573,7 +1575,7 @@ fn catalog_surface(
     }
     let page = page.children(sections).render();
     if let Some(kind) = state.add_source_kind {
-        let modal_width = (available_width - 24.0).clamp(240.0, 460.0);
+        let modal_width = Modal::fit_width(available_width, 460.0).max(240.0);
         Modal::new(
             page,
             true,
@@ -1605,7 +1607,7 @@ fn catalog_surface(
             "marketplace_details_close",
             theme::component_palette(),
         )
-        .width((available_width - 24.0).clamp(240.0, 560.0))
+        .width(Modal::fit_width(available_width, 560.0).max(240.0))
         .height(560.0)
         .body(detail_body(state, &item, true))
         .footer(detail_footer(state, &item))

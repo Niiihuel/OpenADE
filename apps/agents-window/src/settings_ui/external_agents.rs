@@ -309,28 +309,3 @@ pub(super) fn compat_hooks_group(state: &ViewState, compact: bool) -> Vec<Elemen
     content.push(settings_parts::settings_group("Hooks de Claude Code", rows));
     content
 }
-
-/// Decision dialog for one tool call from an external CLI. Dismissing it
-/// denies the call.
-pub(crate) fn approval_modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
-    let Some(request) = &state.external_approval else {
-        return base;
-    };
-    let deny = outline("external_approval_deny", "Denegar").render();
-    let allow = theme::primary("external_approval_allow", "Permitir una vez")
-        .size(ControlSize::Compact)
-        .render();
-    Modal::new(
-        base,
-        true,
-        &request.title,
-        "La llamada espera tu decisión; sin respuesta se deniega.",
-        "external_approval_deny",
-        theme::component_palette(),
-    )
-    .width((viewport_width - 24.0).min(480.0))
-    .body(subtle(&request.detail))
-    .footer(Element::row(vec![Element::spacer().flex(1.0), deny, allow]))
-    .initial_focus("external_approval_deny")
-    .render()
-}

@@ -5,7 +5,8 @@
 //! The app's own profiles live here so a screen never restates them.
 
 use openide_ui::{
-    ActionRowSizing, HeaderSizing, NoticeSizing, PageHeaderSizing, PagerSizing, RowSizing, TextRole,
+    ActionRowSizing, FormFieldSizing, HeaderSizing, Modal, NoticeSizing, PageHeaderSizing,
+    PagerSizing, RowSizing, TextRole,
 };
 
 /// A setting: its label and supporting text beside a caller-owned control.
@@ -254,3 +255,62 @@ pub const COMMIT_HEADER: HeaderSizing = HeaderSizing {
 
 /// The review strip's pagers: the arrows touch the counter's slot.
 pub const REVIEW_PAGER: PagerSizing = PagerSizing { gap: 0.0 };
+
+/// What a modal's form leaves free beside the width limn promises its body:
+/// the forms have always been laid out 54 px narrower than their card.
+pub const FORM_SLACK: f32 = 12.0;
+
+/// The width a modal `modal_width` wide lays its form out in.
+pub fn form_width(modal_width: f32) -> f32 {
+    Modal::body_width(modal_width) - FORM_SLACK
+}
+
+/// A stacked editor inside a settings group: its lines sit 8 px apart.
+pub const GROUP_FIELD: FormFieldSizing = FormFieldSizing {
+    gap: 8.0,
+    ..FormFieldSizing::DEFAULT
+};
+
+/// The command a rule preview evaluates, tight over its actions.
+pub const RULE_PREVIEW_FIELD: FormFieldSizing = FormFieldSizing {
+    gap: 6.0,
+    ..FormFieldSizing::DEFAULT
+};
+
+/// A field of the task editor: a quiet label on its own 18 px line.
+pub const AUTOMATION_FIELD: FormFieldSizing = FormFieldSizing {
+    label_muted: true,
+    label_height: 18.0,
+    hint_role: TextRole::Caption,
+    gap: 8.0,
+    ..FormFieldSizing::DEFAULT
+};
+
+/// The same field on the schedule step, whose rows sit a pixel further apart.
+pub const AUTOMATION_SCHEDULE_FIELD: FormFieldSizing = FormFieldSizing {
+    gap: 9.0,
+    ..AUTOMATION_FIELD
+};
+
+/// The path of a new file: a 13 px label and a 12 px error.
+pub const NEW_FILE_FIELD: FormFieldSizing = FormFieldSizing {
+    label_role: TextRole::Label,
+    hint_role: TextRole::Caption,
+    gap: 8.0,
+    ..FormFieldSizing::DEFAULT
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_modal_form_stays_54_px_narrower_than_its_card() {
+        for width in 240..=860 {
+            let width = width as f32;
+            assert_eq!(form_width(width), width - 54.0);
+            assert_eq!(form_width(width + 0.5), width + 0.5 - 54.0);
+        }
+        assert_eq!(FORM_SLACK, 54.0 - (560.0 - Modal::body_width(560.0)));
+    }
+}

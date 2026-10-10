@@ -124,8 +124,8 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         return base;
     };
     let page = rich_text::markdown_source_page(content, start);
-    let width = (viewport_width - 24.0).min(860.0);
-    let body_width = (width - 54.0).max(48.0);
+    let width = Modal::fit_width(viewport_width, 860.0);
+    let body_width = crate::ui_sizing::form_width(width).max(48.0);
     let navigation = |action: &str, label: &str, enabled: bool| {
         let mut button = Button::new(
             action_id(state, index, start, action),

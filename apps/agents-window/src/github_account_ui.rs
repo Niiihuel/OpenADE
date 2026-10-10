@@ -23,7 +23,7 @@ pub fn sign_in_alert(state: &ViewState, base: Element, viewport_width: f32) -> E
     let Some(sign_in) = &state.github_sign_in else {
         return base;
     };
-    let width = (viewport_width - 24.0).min(440.0);
+    let width = Modal::fit_width(viewport_width, 440.0);
     let text = |value: &str| {
         Element::text(value)
             .font_family(FontFamily::Sans)

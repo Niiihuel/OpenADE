@@ -15,12 +15,13 @@ mod memory;
 mod providers;
 #[cfg(test)]
 mod row_parity_tests;
+#[cfg(test)]
+mod form_parity_tests;
 mod rules_preview;
 mod skills_preview;
 mod subagents;
 #[cfg(test)]
 pub(crate) mod visual_qa;
-pub(crate) use external_agents::approval_modal as external_approval_modal;
 pub(crate) use instructions_inspection::modal as native_instructions_modal;
 pub(crate) use providers::model_row_index as catalog_model_row_index;
 pub(crate) use providers::connected_model_choices;
@@ -31,10 +32,11 @@ use openide_core::SessionSort;
 use openide_harness::{CommandIsolation, ExecDecision, HookPhase, LocalTool, SkillOrigin};
 use openide_ui::{
     ActionRow, Alert, Button, ButtonGroup, ButtonVariant, Color, Component, ControlSize,
-    DropdownList, DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd,
+    DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd,
     Modal, PageColumn, PageHeader, PopoverPlacement, RadiusRole, ScrollArea, ScrollbarAppearance,
     SearchField,
     SelectorSizing, Separator, Text, TextArea, TextField,
+    FormField, Select,
 };
 
 use crate::{
@@ -43,7 +45,7 @@ use crate::{
     settings_parts::{self, CapabilityStatus, FeedbackTone},
     settings_preferences::TerminalShell,
     theme,
-    ui_sizing::NOTE_ROW,
+    ui_sizing::{GROUP_FIELD, NOTE_ROW},
     view::{self, McpOAuthViewPhase, SessionOrganization, ViewState},
 };
 
@@ -294,6 +296,19 @@ fn field(id: &str, value: &str, placeholder: &str) -> Element {
         .render()
 }
 
+fn mono_field(id: &str, value: &str, placeholder: &str) -> Element {
+    TextField::new(id, value, placeholder, control_palette())
+        .size(ControlSize::Compact)
+        .monospace(true)
+        .render()
+}
+
+/// A field of a settings form: its hints sit between the label and the
+/// control.
+fn form_field(label: &str, control: Element) -> FormField {
+    FormField::new(label, control, theme::card_palette()).hint_above(true)
+}
+
 /// Settings controls need their own visible edge above the surrounding card.
 /// Keep this local so quiet navigation and the rest of the native chrome retain
 /// their existing treatment.
@@ -329,22 +344,17 @@ fn settings_choice_selector(
     label: &str,
     options: Vec<DropdownOption>,
 ) -> Element {
-    let sizing = SelectorSizing::COMPACT;
-    let trigger = outline(format!("settings_choice_toggle:{key}"), label)
-        .trailing_icon(Icon::ChevronDown)
-        .width(sizing.min_width)
-        .render();
-    DropdownList::new(
-        trigger,
+    Select::new(
+        format!("settings_choice_toggle:{key}"),
+        label,
         options,
         state.settings_choice_menu_open.as_deref() == Some(key),
         "settings_choice_dismiss",
-        theme::menu_palette(),
+        control_palette(),
     )
-    .sizing(sizing)
-    .placement(PopoverPlacement::BottomEnd)
+    .menu_palette(theme::menu_palette())
+    .sizing(SelectorSizing::COMPACT)
     .render()
-    .size(Some(sizing.min_width), Some(ControlSize::Compact.height()))
 }
 
 fn nav_item(page: SettingsPage, active: bool) -> Element {
@@ -475,8 +485,7 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
 }
 
 fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
-    let path = field("workspace", &state.workspace_draft, "Ruta del proyecto")
-        .font_family(FontFamily::Monospace);
+    let path = mono_field("workspace", &state.workspace_draft, "Ruta del proyecto");
     let open = outline("workspace_apply", "Abrir proyecto")
         .icon(Icon::Folder)
         .render();
@@ -495,17 +504,11 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     project_name(&state.workspace),
                     compact,
                 ),
-                Element::column(vec![
-                    text(
-                        "Abrir otra carpeta",
-                        theme::FOREGROUND,
-                        settings_parts::LABEL_SIZE,
-                    ),
-                    subtle("La carpeta define los archivos y el contexto del agente."),
-                    project_control,
-                ])
-                .gap(8.0)
-                .padding(settings_parts::ROW_PADDING),
+                form_field("Abrir otra carpeta", project_control)
+                    .hint("La carpeta define los archivos y el contexto del agente.")
+                    .sizing(GROUP_FIELD)
+                    .render()
+                    .padding(settings_parts::ROW_PADDING),
                 settings_parts::switch_row(
                     "settings_reopen_last_workspace",
                     "Reabrir el último proyecto",
@@ -1268,11 +1271,6 @@ fn shortcut_row(description: &str, keys: &str) -> Element {
 }
 
 fn keymap_selector(state: &ViewState) -> Element {
-    let sizing = SelectorSizing::COMPACT;
-    let trigger = outline("settings_keymap_toggle", state.keymap_profile.label())
-        .trailing_icon(Icon::ChevronDown)
-        .width(sizing.min_width)
-        .render();
     let options = KeymapProfile::ALL
         .iter()
         .copied()
@@ -1281,17 +1279,17 @@ fn keymap_selector(state: &ViewState) -> Element {
                 .selected(profile == state.keymap_profile)
         })
         .collect();
-    DropdownList::new(
-        trigger,
+    Select::new(
+        "settings_keymap_toggle",
+        state.keymap_profile.label(),
         options,
         state.settings_keymap_menu_open,
         "settings_keymap_dismiss",
-        theme::menu_palette(),
+        control_palette(),
     )
-    .sizing(sizing)
-    .placement(PopoverPlacement::BottomEnd)
+    .menu_palette(theme::menu_palette())
+    .sizing(SelectorSizing::COMPACT)
     .render()
-    .size(Some(sizing.min_width), Some(ControlSize::Compact.height()))
 }
 
 fn shortcuts_page(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -1624,8 +1622,8 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
         return base;
     }
     let draft = &state.native_hooks;
-    let width = (viewport_width - 24.0).min(560.0);
-    let body_width = (width - 54.0).max(0.0);
+    let width = Modal::fit_width(viewport_width, 560.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let editing = draft.selected_id.is_some();
     let mut fields = Vec::new();
     if state.settings_notice_error {
@@ -1638,40 +1636,41 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
             ));
         }
     }
+    // 40 tall is these forms' own height for an input.
+    let input = |id: &str, value: &str, placeholder: &str| {
+        mono_field(id, value, placeholder).size(Some(body_width), Some(40.0))
+    };
     fields.extend([
-        text("ID del hook", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        field("hook_draft_id", &draft.draft_id, "ej. revisar-escritura")
-            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
-        text("Fase", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        ButtonGroup::new(vec![
-            outline("hook_phase:pre_tool_use", "Antes de herramienta")
-                .active(draft.draft_phase == HookPhase::PreToolUse)
-                .render(),
-            outline("hook_phase:post_tool_use", "Después de herramienta")
-                .active(draft.draft_phase == HookPhase::PostToolUse)
-                .render(),
-        ]).stacked(width < 420.0).render(),
-        text("Nombre exacto de herramienta", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        subtle("Por ejemplo: read_file, write_file o mcp__servidor__herramienta. Los hooks sobre lecturas quedan excluidos del modo Plan."),
-        field("hook_draft_tool_name", &draft.draft_tool_name, "ej. write_file")
-            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
-        text("Ejecutable", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        subtle("Ruta absoluta a un archivo existente. Se ejecuta sin shell; el agente no puede configurar esta ruta."),
-        field("hook_draft_executable", &draft.draft_executable, "C:\\tools\\hook.exe")
-            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
-        text("Argumentos (JSON)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        TextArea::new("hook_draft_args", &draft.draft_args, "[\"--check\"]", control_palette())
-            .width(body_width).height(80.0).render(),
-        text("Directorio de trabajo", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        subtle("Ruta absoluta a una carpeta existente."),
-        field("hook_draft_cwd", &draft.draft_cwd, "C:\\repo")
-            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
-        text("Límite de tiempo (ms)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        field("hook_draft_timeout_ms", &draft.draft_timeout_ms, "5000")
-            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
-        text("Límite de salida (bytes)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        field("hook_draft_max_output_bytes", &draft.draft_max_output_bytes, "4096")
-            .font_family(FontFamily::Monospace).size(Some(body_width), Some(40.0)),
+        form_field("ID del hook", input("hook_draft_id", &draft.draft_id, "ej. revisar-escritura")).render(),
+        form_field(
+            "Fase",
+            ButtonGroup::new(vec![
+                outline("hook_phase:pre_tool_use", "Antes de herramienta")
+                    .active(draft.draft_phase == HookPhase::PreToolUse)
+                    .render(),
+                outline("hook_phase:post_tool_use", "Después de herramienta")
+                    .active(draft.draft_phase == HookPhase::PostToolUse)
+                    .render(),
+            ]).stacked(width < 420.0).render(),
+        )
+        .render(),
+        form_field("Nombre exacto de herramienta", input("hook_draft_tool_name", &draft.draft_tool_name, "ej. write_file"))
+            .hint("Por ejemplo: read_file, write_file o mcp__servidor__herramienta. Los hooks sobre lecturas quedan excluidos del modo Plan.")
+            .render(),
+        form_field("Ejecutable", input("hook_draft_executable", &draft.draft_executable, "C:\\tools\\hook.exe"))
+            .hint("Ruta absoluta a un archivo existente. Se ejecuta sin shell; el agente no puede configurar esta ruta.")
+            .render(),
+        form_field(
+            "Argumentos (JSON)",
+            TextArea::new("hook_draft_args", &draft.draft_args, "[\"--check\"]", control_palette())
+                .width(body_width).height(80.0).render(),
+        )
+        .render(),
+        form_field("Directorio de trabajo", input("hook_draft_cwd", &draft.draft_cwd, "C:\\repo"))
+            .hint("Ruta absoluta a una carpeta existente.")
+            .render(),
+        form_field("Límite de tiempo (ms)", input("hook_draft_timeout_ms", &draft.draft_timeout_ms, "5000")).render(),
+        form_field("Límite de salida (bytes)", input("hook_draft_max_output_bytes", &draft.draft_max_output_bytes, "4096")).render(),
         subtle("El comando recibe JSON del evento por stdin. Puede tener efectos externos; sólo configura ejecutables de confianza."),
     ]);
     let cancel = outline("hook_cancel", "Cancelar").render();
@@ -1820,8 +1819,8 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
         return base;
     }
     let draft = &state.native_exec_rules;
-    let width = (viewport_width - 24.0).min(560.0);
-    let body_width = (width - 54.0).max(0.0);
+    let width = Modal::fit_width(viewport_width, 560.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let editing = draft.selected_index.is_some();
     let mut fields = Vec::new();
     if state.settings_notice_error {
@@ -1835,20 +1834,24 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
         }
     }
     fields.extend([
-        text("Prefijo de comando (JSON)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        subtle("La vista previa de Settings usa las reglas guardadas. Guarda esta edición para evaluar sus cambios."),
-        subtle("Ejemplo: [\"git\",[\"push\",\"reset\"]]. El primer token es el ejecutable; los siguientes son argumentos exactos."),
-        TextArea::new(
-            "exec_rule_draft_pattern",
-            &draft.draft_pattern,
-            "[\"git\",\"push\"]",
-            control_palette(),
+        form_field(
+            "Prefijo de comando (JSON)",
+            TextArea::new(
+                "exec_rule_draft_pattern",
+                &draft.draft_pattern,
+                "[\"git\",\"push\"]",
+                control_palette(),
+            )
+            .width(body_width)
+            .height(100.0)
+            .render(),
         )
-        .width(body_width)
-        .height(100.0)
+        .hint("La vista previa de Settings usa las reglas guardadas. Guarda esta edición para evaluar sus cambios.")
+        .hint("Ejemplo: [\"git\",[\"push\",\"reset\"]]. El primer token es el ejecutable; los siguientes son argumentos exactos.")
         .render(),
-        text("Decisión", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        ButtonGroup::new(vec![
+        form_field(
+            "Decisión",
+            ButtonGroup::new(vec![
                 outline("exec_rule_decision:ask", "Pedir aprobación")
                     .active(draft.draft_decision == ExecDecision::Ask)
                     .render(),
@@ -1856,15 +1859,20 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
                     .active(draft.draft_decision == ExecDecision::Deny)
                     .render(),
             ]).stacked(width < 420.0).render(),
-        text("Motivo (opcional)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-        TextArea::new(
-            "exec_rule_draft_justification",
-            &draft.draft_justification,
-            "Explicá por qué se aplica esta regla",
-            control_palette(),
         )
-        .width(body_width)
-        .height(75.0)
+        .render(),
+        form_field(
+            "Motivo (opcional)",
+            TextArea::new(
+                "exec_rule_draft_justification",
+                &draft.draft_justification,
+                "Explicá por qué se aplica esta regla",
+                control_palette(),
+            )
+            .width(body_width)
+            .height(75.0)
+            .render(),
+        )
         .render(),
     ]);
     let cancel = outline("exec_rule_cancel", "Cancelar").render();
@@ -1922,7 +1930,7 @@ pub fn exec_rule_reset_modal(state: &ViewState, base: Element, viewport_width: f
     {
         return base;
     }
-    let width = (viewport_width - 24.0).min(480.0);
+    let width = Modal::fit_width(viewport_width, 480.0);
     let cancel = outline("exec_rule_reset_cancel", "Cancelar").render();
     let confirm = theme::primary("exec_rule_reset_confirm", "Reemplazar archivo")
         .size(ControlSize::Compact)
@@ -1957,7 +1965,7 @@ pub fn native_skill_reset_modal(state: &ViewState, base: Element, viewport_width
     {
         return base;
     }
-    let width = (viewport_width - 24.0).min(480.0);
+    let width = Modal::fit_width(viewport_width, 480.0);
     let cancel = outline("native_skill_reset_cancel", "Cancelar").render();
     let confirm = theme::primary("native_skill_reset_confirm", "Reemplazar archivo")
         .size(ControlSize::Compact)
@@ -1991,10 +1999,10 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
         return base;
     }
 
-    let width = (viewport_width - 24.0).min(560.0);
+    let width = Modal::fit_width(viewport_width, 560.0);
     // The shared modal reserves a 14 px scrollbar rail beyond its 20 px
     // horizontal padding, so form controls never sit beneath the thumb.
-    let body_width = (width - 54.0).max(0.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let editing = state.mcp_selected_id.is_some();
     let mut fields = Vec::new();
     if state.settings_notice_error {
@@ -2007,132 +2015,123 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
             ));
         }
     }
+    // 40 tall is these forms' own height for an input.
+    let input = |id: &str, value: &str, placeholder: &str| {
+        mono_field(id, value, placeholder).size(Some(body_width), Some(40.0))
+    };
     fields.extend([
-        text(
-            "ID del servidor",
-            theme::FOREGROUND,
-            settings_parts::LABEL_SIZE,
-        ),
-        subtle("Minúsculas, números, guiones y guiones bajos. El ID empieza con una letra."),
-        field("mcp_draft_id", &state.mcp_draft_id, "ej. filesystem")
-            .font_family(FontFamily::Monospace)
-            .size(Some(body_width), Some(40.0)),
-    ]);
-    fields.push(text(
-        "Transporte",
-        theme::FOREGROUND,
-        settings_parts::LABEL_SIZE,
-    ));
-    fields.push(
-        ButtonGroup::new(vec![
-            outline("mcp_transport:stdio", "Proceso local (stdio)")
-                .active(!state.mcp_draft_http)
-                .render(),
-            outline("mcp_transport:http", "Streamable HTTP")
-                .active(state.mcp_draft_http)
-                .render(),
-        ])
-        .stacked(width < 420.0)
-        .render(),
-    );
-    if state.mcp_draft_http {
-        fields.extend([
-            text("URL MCP", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-            subtle("Endpoint HTTPS; HTTP sólo para localhost o loopback. Sin query, credenciales en URL ni redirecciones."),
-            field("mcp_draft_url", &state.mcp_draft_url, "https://example.com/mcp")
-                .font_family(FontFamily::Monospace)
-                .size(Some(body_width), Some(40.0)),
-        ]);
-        fields.push(text(
-            "Autenticación",
-            theme::FOREGROUND,
-            settings_parts::LABEL_SIZE,
-        ));
-        fields.push(
+        form_field("ID del servidor", input("mcp_draft_id", &state.mcp_draft_id, "ej. filesystem"))
+            .hint("Minúsculas, números, guiones y guiones bajos. El ID empieza con una letra.")
+            .render(),
+        form_field(
+            "Transporte",
             ButtonGroup::new(vec![
-                outline("mcp_auth:bearer", "Bearer por entorno o ninguna")
-                    .active(!state.mcp_draft_oauth_enabled)
+                outline("mcp_transport:stdio", "Proceso local (stdio)")
+                    .active(!state.mcp_draft_http)
                     .render(),
-                outline("mcp_auth:oauth", "OAuth 2.1")
-                    .active(state.mcp_draft_oauth_enabled)
-                    .enabled(cfg!(windows) || state.mcp_draft_oauth_enabled)
+                outline("mcp_transport:http", "Streamable HTTP")
+                    .active(state.mcp_draft_http)
                     .render(),
             ])
             .stacked(width < 420.0)
             .render(),
-        );
+        )
+        .render(),
+    ]);
+    if state.mcp_draft_http {
+        fields.extend([
+            form_field("URL MCP", input("mcp_draft_url", &state.mcp_draft_url, "https://example.com/mcp"))
+                .hint("Endpoint HTTPS; HTTP sólo para localhost o loopback. Sin query, credenciales en URL ni redirecciones.")
+                .render(),
+            form_field(
+                "Autenticación",
+                ButtonGroup::new(vec![
+                    outline("mcp_auth:bearer", "Bearer por entorno o ninguna")
+                        .active(!state.mcp_draft_oauth_enabled)
+                        .render(),
+                    outline("mcp_auth:oauth", "OAuth 2.1")
+                        .active(state.mcp_draft_oauth_enabled)
+                        .enabled(cfg!(windows) || state.mcp_draft_oauth_enabled)
+                        .render(),
+                ])
+                .stacked(width < 420.0)
+                .render(),
+            )
+            .render(),
+        ]);
         if state.mcp_draft_oauth_enabled {
             fields.extend([
                 subtle("Usá un client ID público registrado para este issuer. La autorización se inicia después de guardar; no escribas client secrets ni tokens."),
-                text("Client ID público", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-                field("mcp_draft_oauth_client_id", &state.mcp_draft_oauth_client_id, "client-id")
-                    .font_family(FontFamily::Monospace)
-                    .size(Some(body_width), Some(40.0)),
-                text("Issuer OAuth", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-                subtle("URL HTTPS exacta del servidor de autorización, sin query ni credenciales."),
-                field("mcp_draft_oauth_issuer", &state.mcp_draft_oauth_issuer, "https://auth.example.com")
-                    .font_family(FontFamily::Monospace)
-                    .size(Some(body_width), Some(40.0)),
-                text("Scopes solicitados (opcional)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-                subtle("Uno por línea. Se unen con los scopes requeridos por el servidor; no son valores secretos."),
+                form_field("Client ID público", input("mcp_draft_oauth_client_id", &state.mcp_draft_oauth_client_id, "client-id")).render(),
+                form_field("Issuer OAuth", input("mcp_draft_oauth_issuer", &state.mcp_draft_oauth_issuer, "https://auth.example.com"))
+                    .hint("URL HTTPS exacta del servidor de autorización, sin query ni credenciales.")
+                    .render(),
+                form_field(
+                    "Scopes solicitados (opcional)",
+                    TextArea::new(
+                        "mcp_draft_oauth_scopes",
+                        &state.mcp_draft_oauth_scopes,
+                        "read\nwrite",
+                        control_palette(),
+                    )
+                    .width(body_width)
+                    .height(76.0)
+                    .render(),
+                )
+                .hint("Uno por línea. Se unen con los scopes requeridos por el servidor; no son valores secretos.")
+                .render(),
+                subtle("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar."),
+            ]);
+        } else {
+            fields.push(
+                form_field(
+                    "Variable del bearer token (opcional)",
+                    input(
+                        "mcp_draft_http_bearer_token_env_name",
+                        &state.mcp_draft_http_bearer_token_env_name,
+                        "ej. MCP_HTTP_TOKEN",
+                    ),
+                )
+                .hint("Escribe sólo el nombre de la variable. El valor se lee al conectar y no se guarda. Déjalo vacío si el servidor no exige autenticación.")
+                .render(),
+            );
+        }
+        fields.push(subtle("Streamable HTTP negocia el protocolo al conectar: 2026-07-28 o las versiones compatibles de 2025. Solicitudes de entrada adicional aún no están disponibles."));
+    } else {
+        fields.extend([
+            form_field("Programa", input("mcp_draft_program", &state.mcp_draft_program, "ej. npx"))
+                .hint("Nombre del ejecutable o ruta absoluta. Se inicia sin shell.")
+                .render(),
+            form_field(
+                "Argumentos (JSON)",
                 TextArea::new(
-                    "mcp_draft_oauth_scopes",
-                    &state.mcp_draft_oauth_scopes,
-                    "read\nwrite",
+                    "mcp_draft_args",
+                    &state.mcp_draft_args,
+                    "[\"-y\", \"@modelcontextprotocol/server-filesystem\"]",
+                    control_palette(),
+                )
+                .width(body_width)
+                .height(96.0)
+                .render(),
+            )
+            .hint("Lista JSON de textos; cada elemento es un argumento literal. No escribas tokens, claves ni contraseñas aquí.")
+            .render(),
+            form_field("Directorio de trabajo", input("mcp_draft_cwd", &state.mcp_draft_cwd, "ej. tools/mcp"))
+                .hint("Ruta relativa dentro del proyecto. Se comprueba al iniciar; vacío usa la carpeta del proyecto.")
+                .render(),
+            form_field(
+                "Variables de credenciales",
+                TextArea::new(
+                    "mcp_draft_env_names",
+                    &state.mcp_draft_env_names,
+                    "ej. MCP_API_KEY",
                     control_palette(),
                 )
                 .width(body_width)
                 .height(76.0)
                 .render(),
-                subtle("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar."),
-            ]);
-        } else {
-            fields.extend([
-                text("Variable del bearer token (opcional)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-                subtle("Escribe sólo el nombre de la variable. El valor se lee al conectar y no se guarda. Déjalo vacío si el servidor no exige autenticación."),
-                field(
-                    "mcp_draft_http_bearer_token_env_name",
-                    &state.mcp_draft_http_bearer_token_env_name,
-                    "ej. MCP_HTTP_TOKEN",
-                )
-                .font_family(FontFamily::Monospace)
-                .size(Some(body_width), Some(40.0)),
-            ]);
-        }
-        fields.push(subtle("Streamable HTTP negocia el protocolo al conectar: 2026-07-28 o las versiones compatibles de 2025. Solicitudes de entrada adicional aún no están disponibles."));
-    } else {
-        fields.extend([
-            text("Programa", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-            subtle("Nombre del ejecutable o ruta absoluta. Se inicia sin shell."),
-            field("mcp_draft_program", &state.mcp_draft_program, "ej. npx")
-                .font_family(FontFamily::Monospace)
-                .size(Some(body_width), Some(40.0)),
-            text("Argumentos (JSON)", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-            subtle("Lista JSON de textos; cada elemento es un argumento literal. No escribas tokens, claves ni contraseñas aquí."),
-            TextArea::new(
-                "mcp_draft_args",
-                &state.mcp_draft_args,
-                "[\"-y\", \"@modelcontextprotocol/server-filesystem\"]",
-                control_palette(),
             )
-            .width(body_width)
-            .height(96.0)
-            .render(),
-            text("Directorio de trabajo", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-            subtle("Ruta relativa dentro del proyecto. Se comprueba al iniciar; vacío usa la carpeta del proyecto."),
-            field("mcp_draft_cwd", &state.mcp_draft_cwd, "ej. tools/mcp")
-                .font_family(FontFamily::Monospace)
-                .size(Some(body_width), Some(40.0)),
-            text("Variables de credenciales", theme::FOREGROUND, settings_parts::LABEL_SIZE),
-            subtle("Sólo nombres, uno por línea. Sus valores se leen del entorno al iniciar el servidor y no se guardan."),
-            TextArea::new(
-                "mcp_draft_env_names",
-                &state.mcp_draft_env_names,
-                "ej. MCP_API_KEY",
-                control_palette(),
-            )
-            .width(body_width)
-            .height(76.0)
+            .hint("Sólo nombres, uno por línea. Sus valores se leen del entorno al iniciar el servidor y no se guardan.")
             .render(),
         ]);
     }
@@ -2250,22 +2249,19 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
         DropdownOption::new("settings_terminal_shell_edit", "Personalizado…")
             .selected(matches!(shell, TerminalShell::Custom(_))),
     );
-    let trigger = outline("settings_terminal_shell_toggle", shell_name)
-        .trailing_icon(Icon::ChevronDown)
-        .width(238.0)
-        .render();
-    let selector = DropdownList::new(
-        trigger,
+    let selector = Select::new(
+        "settings_terminal_shell_toggle",
+        shell_name,
         choices,
         state.settings_terminal_shell_menu_open,
         "settings_terminal_shell_dismiss",
-        theme::menu_palette(),
+        control_palette(),
     )
+    .menu_palette(theme::menu_palette())
     .sizing(SelectorSizing::COMPACT)
-    .width(254.0)
-    .placement(PopoverPlacement::BottomEnd)
-    .render()
-    .size(Some(238.0), None);
+    .width(238.0)
+    .menu_width(254.0)
+    .render();
     let mut rows = vec![settings_parts::settings_row(
         "Shell predeterminado",
         "Se usará en nuevas terminales. Las abiertas conservan su shell.",
@@ -2275,12 +2271,11 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
     if state.settings_terminal_shell_editing || matches!(shell, TerminalShell::Custom(_)) {
         let draft = state.settings_terminal_shell_draft.trim();
         let valid_syntax = !draft.is_empty() && Path::new(draft).is_absolute();
-        let custom_path = field(
+        let custom_path = mono_field(
             "settings_terminal_shell_path",
             &state.settings_terminal_shell_draft,
             "Ruta absoluta del ejecutable",
-        )
-        .font_family(FontFamily::Monospace);
+        );
         let custom_button = outline(
             "settings_terminal_shell:custom",
             if matches!(shell, TerminalShell::Custom(_)) {
@@ -2312,15 +2307,10 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
             controls.extend(actions);
             Element::row(controls).gap(10.0)
         };
-        let mut editor = vec![
-            text(
-                "Ejecutable personalizado",
-                theme::FOREGROUND,
-                settings_parts::LABEL_SIZE,
-            ),
-            subtle("Usa una ruta absoluta. El ejecutable se comprueba antes de guardar."),
-            custom_control,
-        ];
+        let mut editor = vec![form_field("Ejecutable personalizado", custom_control)
+            .hint("Usa una ruta absoluta. El ejecutable se comprueba antes de guardar.")
+            .sizing(GROUP_FIELD)
+            .render()];
         match shell {
             TerminalShell::Custom(path) if path != Path::new(draft) => {
                 editor.push(subtle(format!("Ruta guardada: {}", path.display())));

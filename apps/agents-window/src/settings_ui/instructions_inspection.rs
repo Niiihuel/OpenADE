@@ -13,8 +13,8 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     {
         return base;
     }
-    let width = (viewport_width - 24.0).min(760.0);
-    let body_width = (width - 54.0).max(0.0);
+    let width = Modal::fit_width(viewport_width, 760.0);
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let owner = inspection.session_id.as_deref().expect("scope checked");
     let mut fields = vec![
         text(format!("Conversación: {owner}"), theme::FOREGROUND, 12.0)
@@ -67,25 +67,19 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 .selected(candidate.sequence == snapshot.sequence)
             })
             .collect();
-        let trigger = outline(
-            "settings_native_instructions_selector_toggle",
-            format!("Copia del evento {}", snapshot.sequence),
-        )
-        .trailing_icon(Icon::ChevronDown)
-        .width(body_width)
-        .render();
         fields.push(
-            DropdownList::new(
-                trigger,
+            Select::new(
+                "settings_native_instructions_selector_toggle",
+                format!("Copia del evento {}", snapshot.sequence),
                 options,
                 inspection.selector_open,
                 "settings_native_instructions_selector_dismiss",
-                theme::menu_palette(),
+                control_palette(),
             )
+            .menu_palette(theme::menu_palette())
             .width(body_width)
             .placement(PopoverPlacement::BottomStart)
-            .render()
-            .size(Some(body_width), None),
+            .render(),
         );
         fields.push(
             text(snapshot.identity_description(), theme::FOREGROUND, 12.0)
@@ -124,7 +118,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .gap(10.0)
             .size(Some(body_width), None),
     )
-    .footer(Element::row(vec![Element::spacer().flex(1.0), close]).gap(6.0))
+    .footer(ButtonGroup::new(vec![close]).align_end().render())
     .initial_focus("settings_native_instructions_dismiss")
     .return_focus(format!("settings_native_instructions_open:{owner}"))
     .render()

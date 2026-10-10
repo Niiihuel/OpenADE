@@ -10,8 +10,8 @@ use openide_core::{
     NativeCommandOutputStream, NativeCommandOutputSummary,
 };
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, DropdownList, DropdownOption, Element,
-    FontFamily, Icon, Modal, PopoverPlacement, Tooltip,
+    Button, ButtonVariant, Component, ControlSize, DropdownOption, Element,
+    FontFamily, Icon, Modal, PopoverPlacement, Select, Tooltip,
 };
 use std::path::{Path, PathBuf};
 
@@ -199,12 +199,15 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 })
         });
     let has_details = local.page.is_some() && (local.details_open || local.exact_data_open);
-    let width = (viewport_width - 24.0).min(if local.summaries.is_empty() {
-        480.0
-    } else {
-        560.0
-    });
-    let body_width = (width - 54.0).max(0.0);
+    let width = Modal::fit_width(
+        viewport_width,
+        if local.summaries.is_empty() {
+            480.0
+        } else {
+            560.0
+        },
+    );
+    let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let mut body = Vec::new();
     if local.summaries.len() > 1 {
         let options = local
@@ -233,29 +236,20 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .find(|summary| local.selected.as_ref() == Some(&summary.header.binding))
             .map(command_label)
             .unwrap_or_else(|| format!("{} comandos guardados", local.summaries.len()));
-        let trigger = Button::new(
-            "native_command_history_selector_toggle",
-            selected_label,
-            theme::component_palette(),
-        )
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .icon(Icon::Terminal)
-        .trailing_icon(Icon::ChevronDown)
-        .width(body_width)
-        .render();
         body.push(
-            DropdownList::new(
-                trigger,
+            Select::new(
+                "native_command_history_selector_toggle",
+                selected_label,
                 options,
                 local.selector_open,
                 "native_command_history_selector_dismiss",
-                theme::menu_palette(),
+                theme::component_palette(),
             )
+            .menu_palette(theme::menu_palette())
+            .icon(Icon::Terminal)
             .width(body_width)
             .placement(PopoverPlacement::BottomStart)
-            .render()
-            .size(Some(body_width), None),
+            .render(),
         );
     } else if let Some(summary) = local.summaries.first() {
         body.push(

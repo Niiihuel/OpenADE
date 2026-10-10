@@ -9,14 +9,18 @@ pub(super) fn group(state: &ViewState, compact: bool) -> Element {
             Icon::Terminal,
         ),
         Element::column(vec![
-            text("Argumentos (JSON)", theme::FOREGROUND, 12.0),
-            TextArea::new(
-                "exec_rule_preview_argv",
-                &preview.preview_argv,
-                "[\"git\",\"push\",\"origin\",\"main\"]",
-                control_palette(),
+            form_field(
+                "Argumentos (JSON)",
+                TextArea::new(
+                    "exec_rule_preview_argv",
+                    &preview.preview_argv,
+                    "[\"git\",\"push\",\"origin\",\"main\"]",
+                    control_palette(),
+                )
+                .height(80.0)
+                .render(),
             )
-            .height(80.0)
+            .sizing(crate::ui_sizing::RULE_PREVIEW_FIELD)
             .render(),
             ButtonGroup::new(vec![
                 outline("exec_rule_preview_evaluate", "Evaluar reglas guardadas")

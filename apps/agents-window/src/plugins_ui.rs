@@ -7,7 +7,7 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    AlertDialog, Button, ButtonVariant, Card, Component, ControlSize, Element, FontFamily, Icon, Modal,
+    AlertDialog, Button, ButtonGroup, ButtonVariant, Card, Component, ControlSize, Element, FontFamily, Icon, Modal,
     SearchField, Separator, TextField,
 };
 
@@ -219,7 +219,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         return base;
     }
     let plugins = &state.plugins;
-    let width = (viewport_width - 24.0).clamp(240.0, 600.0);
+    let width = Modal::fit_width(viewport_width, 600.0).max(240.0);
     if let Some(plugin) = &plugins.pending_remove {
         return AlertDialog::new(base, true, "Desinstalar plugin", format!("Se quitará «{}» de este equipo y se desactivará en todos los proyectos. La carpeta original se conserva.", plugin.manifest.name), "plugins_remove_confirm", "plugins_remove_cancel", theme::component_palette())
             .confirm_label("Desinstalar").confirm_enabled(!plugins.busy && !plugins.removal_blocked).destructive(theme::DESTRUCTIVE).width(width.min(440.0)).render();
@@ -275,8 +275,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 theme::FOREGROUND_SUBTLE
             }));
         }
-        let footer = Element::row(vec![
-            Element::spacer().flex(1.0),
+        let footer = ButtonGroup::new(vec![
             Button::new(
                 "plugins_dialog_close",
                 "Cancelar",
@@ -297,7 +296,8 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .enabled(!plugins.busy && plugins.preview.is_some())
             .render(),
         ])
-        .gap(6.0);
+        .align_end()
+        .render();
         (
             "Instalar plugin",
             "Revisa el paquete antes de guardarlo en OpenIDE.",
@@ -319,7 +319,16 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 "Espera a que terminen los agentes para desinstalar plugins.",
             ));
         }
-        let footer = Element::row(vec![
+        let footer = ButtonGroup::new(vec![Button::new(
+            "plugins_dialog_close",
+            "Cerrar",
+            theme::component_palette(),
+        )
+        .icon(Icon::Close)
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .render()])
+        .leading(
             Button::new(
                 format!("plugins_remove:{}", plugin.manifest.id),
                 "Desinstalar",
@@ -330,14 +339,9 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .size(ControlSize::Compact)
             .enabled(!plugins.busy && !plugins.removal_blocked)
             .render(),
-            Element::spacer().flex(1.0),
-            Button::new("plugins_dialog_close", "Cerrar", theme::component_palette())
-                .icon(Icon::Close)
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Compact)
-                .render(),
-        ])
-        .gap(6.0);
+        )
+        .align_end()
+        .render();
         (
             "Detalles del plugin",
             "Identidad y ejecución del paquete instalado.",
@@ -362,7 +366,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     .body(
         Element::column(body)
             .gap(10.0)
-            .size(Some((width - 54.0).max(0.0)), None),
+            .size(Some(crate::ui_sizing::form_width(width).max(0.0)), None),
     )
     .footer(footer)
     .initial_focus(focus)

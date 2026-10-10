@@ -4,7 +4,7 @@
 
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Card, Color, Component, ControlSize, DateTimePicker,
+    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, FormField, FormFieldSizing, Color, Component, ControlSize, DateTimePicker,
     CardGrid, Element, Empty, FontFamily, Icon, IconButton, Modal, PageColumn, SearchField,
     Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea, TextField, TextRole, TimePicker,
     Tooltip, TooltipPlacement, TooltipSpec,
@@ -18,6 +18,7 @@ use crate::{
     native_automation_result::NativeAutomationOutcome,
     native_provider::NativeProviderSettings,
     theme,
+    ui_sizing::{AUTOMATION_FIELD, AUTOMATION_SCHEDULE_FIELD},
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -570,8 +571,8 @@ fn section_label(value: &str) -> Element {
         .render()
 }
 
-fn form_label(value: &str) -> Element {
-    text(value, 12.0, theme::FOREGROUND_SUBTLE).min_size(0.0, 18.0)
+fn form_field(label: &str, control: Element, sizing: FormFieldSizing) -> FormField {
+    FormField::new(label, control, theme::component_palette()).sizing(sizing)
 }
 
 fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: bool) -> Element {
@@ -880,44 +881,43 @@ fn frequency_control(form: &AutomationForm, available_width: f32) -> Element {
         AutomationFrequency::Daily,
         AutomationFrequency::Weekly,
     ];
-    let compact = available_width < 390.0;
-    let columns = if compact { 2 } else { 4 };
-    let tab_width =
-        ((available_width - 4.0 - 2.0 * (columns - 1) as f32) / columns as f32).max(44.0);
+    // `fill_width` sets each tab's width; the one given here is replaced.
     let tabs: Vec<_> = frequencies
         .into_iter()
         .map(|frequency| {
-            Tab::new(frequency.action_id(), frequency.title(), tab_width)
+            Tab::new(frequency.action_id(), frequency.title(), 0.0)
                 .active(form.frequency == frequency)
         })
         .collect();
-    if compact {
+    let track = |id: &str, tabs: Vec<Tab>| {
+        Tabs::new(tabs, theme::segmented_palette())
+            .id(id)
+            .size(ControlSize::Compact)
+            .fill_width(available_width)
+            .render()
+    };
+    if available_width < 390.0 {
         let mut tabs = tabs.into_iter();
         Element::column(vec![
-            Tabs::new(tabs.by_ref().take(2).collect(), theme::segmented_palette())
-                .id("automation_frequency_primary")
-                .size(ControlSize::Compact)
-                .render(),
-            Tabs::new(tabs.collect(), theme::segmented_palette())
-                .id("automation_frequency_secondary")
-                .size(ControlSize::Compact)
-                .render(),
+            track("automation_frequency_primary", tabs.by_ref().take(2).collect()),
+            track("automation_frequency_secondary", tabs.collect()),
         ])
         .gap(4.0)
     } else {
-        Tabs::new(tabs, theme::segmented_palette())
-            .id("automation_frequency")
-            .size(ControlSize::Compact)
-            .render()
+        track("automation_frequency", tabs)
     }
 }
 
 fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     let form = &state.form;
-    let mut rows = vec![
-        form_label("Frecuencia"),
+    let field = |label: &str, control: Element| {
+        form_field(label, control, AUTOMATION_SCHEDULE_FIELD).render()
+    };
+    // The track has always stopped 26 px short of the form; see the ledger.
+    let mut rows = vec![field(
+        "Frecuencia",
         frequency_control(form, content_width - 26.0),
-    ];
+    )];
     match form.frequency {
         AutomationFrequency::Once => {
             let (date, time) = form.once_parts();
@@ -933,8 +933,8 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                 .render(),
             );
         }
-        AutomationFrequency::EveryMinutes => rows.extend([
-            form_label("Cada cuántos minutos"),
+        AutomationFrequency::EveryMinutes => rows.push(field(
+            "Cada cuántos minutos",
             TextField::new(
                 "automation_interval",
                 &form.interval_minutes,
@@ -943,15 +943,15 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
             )
             .size(ControlSize::Regular)
             .render(),
-        ]),
-        AutomationFrequency::Daily => rows.extend([
-            form_label("Hora local"),
+        )),
+        AutomationFrequency::Daily => rows.push(field(
+            "Hora local",
             TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
-        ]),
+        )),
         AutomationFrequency::Weekly => {
             let days = ["L", "M", "X", "J", "V", "S", "D"];
-            rows.push(form_label("Día de la semana"));
-            rows.push(
+            rows.push(field(
+                "Día de la semana",
                 Element::row(
                     days.into_iter()
                         .enumerate()
@@ -975,11 +975,11 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                         .collect(),
                 )
                 .gap(4.0),
-            );
-            rows.push(form_label("Hora local"));
-            rows.push(
+            ));
+            rows.push(field(
+                "Hora local",
                 TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
-            );
+            ));
         }
     }
     rows
@@ -1065,25 +1065,33 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
     let form = match state.editor_step {
         AutomationEditorStep::Content => Element::column(vec![
             section_label("¿Qué hará esta tarea?"),
-            form_label("Título"),
-            TextField::new(
-                "automation_title",
-                &state.form.title,
-                "Ej. Resumen diario",
-                theme::component_palette(),
+            form_field(
+                "Título",
+                TextField::new(
+                    "automation_title",
+                    &state.form.title,
+                    "Ej. Resumen diario",
+                    theme::component_palette(),
+                )
+                .size(ControlSize::Regular)
+                .render(),
+                AUTOMATION_FIELD,
             )
-            .size(ControlSize::Regular)
             .render(),
-            form_label("Instrucciones"),
-            TextArea::new(
-                "automation_prompt",
-                &state.form.prompt,
-                "Describe el resultado esperado y los límites de esta tarea…",
-                theme::component_palette(),
+            form_field(
+                "Instrucciones",
+                TextArea::new(
+                    "automation_prompt",
+                    &state.form.prompt,
+                    "Describe el resultado esperado y los límites de esta tarea…",
+                    theme::component_palette(),
+                )
+                .height(112.0)
+                .render(),
+                AUTOMATION_FIELD,
             )
-            .height(112.0)
+            .hint("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos.")
             .render(),
-            muted("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos."),
         ])
         .gap(8.0),
         AutomationEditorStep::Schedule => Element::column({
@@ -1115,7 +1123,7 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
 }
 
 pub fn editor_modal_footer(state: &AutomationViewState) -> Element {
-    let mut controls = vec![Element::spacer().flex(1.0)];
+    let mut controls = Vec::new();
     if state.editor_step == AutomationEditorStep::Content {
         controls.push(
             Button::new("automation_cancel", "Cancelar", theme::component_palette())
@@ -1159,7 +1167,7 @@ pub fn editor_modal_footer(state: &AutomationViewState) -> Element {
                 .render(),
         );
     }
-    Element::row(controls).gap(6.0)
+    ButtonGroup::new(controls).align_end().render()
 }
 
 fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
@@ -1408,7 +1416,7 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
     }
     let base = page.children(body).render();
     if state.screen == AutomationScreen::Edit {
-        let width = (width - 24.0).clamp(240.0, 560.0);
+        let width = Modal::fit_width(width, 560.0).max(240.0);
         let initial_focus = match state.editor_step {
             AutomationEditorStep::Content => "automation_title".to_owned(),
             AutomationEditorStep::Schedule => state.form.frequency.action_id().to_owned(),
@@ -1432,7 +1440,7 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
         )
         .width(width)
         .height(520.0)
-        .body(editor_modal_body(state, width - 54.0))
+        .body(editor_modal_body(state, crate::ui_sizing::form_width(width)))
         .footer(editor_modal_footer(state))
         .initial_focus(initial_focus)
         .render()
@@ -1445,6 +1453,62 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{Key, Point, Size, UiAction, UiEvent, UiTree};
+
+    // The hand-measured frequency tabs that `Tabs::fill_width` replaced.
+    // Delete with the final audit (S18).
+    fn legacy_frequency_control(form: &AutomationForm, available_width: f32) -> Element {
+        let frequencies = [
+            AutomationFrequency::Once,
+            AutomationFrequency::EveryMinutes,
+            AutomationFrequency::Daily,
+            AutomationFrequency::Weekly,
+        ];
+        let compact = available_width < 390.0;
+        let columns = if compact { 2 } else { 4 };
+        let tab_width =
+            ((available_width - 4.0 - 2.0 * (columns - 1) as f32) / columns as f32).max(44.0);
+        let tabs: Vec<_> = frequencies
+            .into_iter()
+            .map(|frequency| {
+                Tab::new(frequency.action_id(), frequency.title(), tab_width)
+                    .active(form.frequency == frequency)
+            })
+            .collect();
+        if compact {
+            let mut tabs = tabs.into_iter();
+            Element::column(vec![
+                Tabs::new(tabs.by_ref().take(2).collect(), theme::segmented_palette())
+                    .id("automation_frequency_primary")
+                    .size(ControlSize::Compact)
+                    .render(),
+                Tabs::new(tabs.collect(), theme::segmented_palette())
+                    .id("automation_frequency_secondary")
+                    .size(ControlSize::Compact)
+                    .render(),
+            ])
+            .gap(4.0)
+        } else {
+            Tabs::new(tabs, theme::segmented_palette())
+                .id("automation_frequency")
+                .size(ControlSize::Compact)
+                .render()
+        }
+    }
+
+    #[test]
+    fn frequency_tabs_match_the_hand_measured_widths() {
+        let mut form = AutomationForm::new("native");
+        form.frequency = AutomationFrequency::Weekly;
+        // The form's widths in a 360 and a 900 px window, and the two sides
+        // of the point where the tabs fold into two rows.
+        for width in [160.0, 256.0, 389.5, 390.0, 480.0] {
+            assert_eq!(
+                format!("{:?}", frequency_control(&form, width)),
+                format!("{:?}", legacy_frequency_control(&form, width)),
+                "{width}"
+            );
+        }
+    }
 
     fn state() -> AutomationViewState {
         AutomationViewState::new(

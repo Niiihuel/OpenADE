@@ -40,7 +40,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         ),
         None => ("Seleccionar", "Documento sin seleccionar"),
     };
-    let width = (viewport_width - 24.0).min(760.0);
+    let width = Modal::fit_width(viewport_width, 760.0);
     let mut fields = vec![
         text(&entry.name, theme::FOREGROUND, 12.0),
         subtle(status),
@@ -80,11 +80,11 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 && local.toggle_preview().is_ok(),
         )
         .render();
-    let footer = if width < 350.0 {
-        Element::column(vec![change, close]).gap(6.0)
-    } else {
-        Element::row(vec![Element::spacer().flex(1.0), close, change]).gap(6.0)
-    };
+    let footer = ButtonGroup::new(vec![close, change])
+        .align_end()
+        .stacked(width < 350.0)
+        .reverse_when_stacked(true)
+        .render();
     Modal::new(
         base,
         true,
@@ -98,7 +98,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     .body(
         Element::column(fields)
             .gap(10.0)
-            .size(Some((width - 54.0).max(0.0)), None),
+            .size(Some(crate::ui_sizing::form_width(width).max(0.0)), None),
     )
     .footer(footer)
     .initial_focus("native_skill_preview_close")
@@ -127,7 +127,7 @@ pub(crate) fn clear_workspace_modal(
     let Some(snapshot) = local.clear_workspace_snapshot.as_ref() else {
         return base;
     };
-    let width = (viewport_width - 24.0).min(560.0);
+    let width = Modal::fit_width(viewport_width, 560.0);
     // Reviewing multiple complete identities needs more room than a short
     // confirmation. Modal still clamps the card to the viewport and keeps
     // the cancel/confirm footer outside the scrollable body.
@@ -143,11 +143,11 @@ pub(crate) fn clear_workspace_modal(
         .icon(Icon::Trash)
         .width(160.0)
         .render();
-    let footer = if width < 350.0 {
-        Element::column(vec![clear, cancel]).gap(6.0)
-    } else {
-        Element::row(vec![Element::spacer().flex(1.0), cancel, clear]).gap(6.0)
-    };
+    let footer = ButtonGroup::new(vec![cancel, clear])
+        .align_end()
+        .stacked(width < 350.0)
+        .reverse_when_stacked(true)
+        .render();
     let mut fields = vec![
         text(
             snapshot.workspace.display().to_string(),
@@ -184,7 +184,7 @@ pub(crate) fn clear_workspace_modal(
     .body(
         Element::column(fields)
             .gap(10.0)
-            .size(Some((width - 54.0).max(0.0)), None),
+            .size(Some(crate::ui_sizing::form_width(width).max(0.0)), None),
     )
     .footer(footer)
     .initial_focus("native_skill_clear_workspace_cancel")
