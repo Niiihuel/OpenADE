@@ -7,7 +7,8 @@ use crate::{
 use openide_preview::{Document, PreviewKind};
 use openide_ui::{
     ActiveHover, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon,
-    IconButton, ScrollArea, Separator, TabItem, TabStrip, TooltipPlacement, TooltipSpec,
+    IconButton, Pager, PanelHeader, ScrollArea, Separator, TabItem, TabStrip, TooltipPlacement,
+    TooltipSpec,
 };
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -52,6 +53,32 @@ fn modes(view: &PreviewView) -> Vec<Element> {
     .collect()
 }
 
+/// Previous page, the position and next page of a PDF.
+fn pdf_pager(view: &PreviewView) -> Element {
+    Pager::new(
+        if view.pages > 0 {
+            format!("{} / {}", view.page + 1, view.pages)
+        } else {
+            "PDF".into()
+        },
+        theme::component_palette(),
+    )
+    .previous(
+        format!("{}:previous", view.chrome_action_prefix()),
+        !view.loading && view.page > 0,
+    )
+    .next(
+        format!("{}:next", view.chrome_action_prefix()),
+        !view.loading && view.page + 1 < view.pages,
+    )
+    .tooltips(
+        TooltipSpec::new("Página anterior").placement(TooltipPlacement::Below),
+        TooltipSpec::new("Página siguiente").placement(TooltipPlacement::Below),
+    )
+    .label_width(52.0)
+    .render()
+}
+
 fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
     let mut actions = if view.kind == PreviewKind::Markdown && !split {
         modes(view)
@@ -60,39 +87,7 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
     };
     let mut used = actions.len() as f32 * 28.0;
     if view.kind == PreviewKind::Pdf {
-        actions.push(
-            IconButton::new(
-                format!("{}:previous", view.chrome_action_prefix()),
-                Icon::ArrowLeft,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(!view.loading && view.page > 0)
-            .tooltip_with(TooltipSpec::new("Página anterior").placement(TooltipPlacement::Below))
-            .render(),
-        );
-        actions.push(
-            label(if view.pages > 0 {
-                format!("{} / {}", view.page + 1, view.pages)
-            } else {
-                "PDF".into()
-            })
-            .size(Some(52.0), Some(24.0))
-            .center_content(),
-        );
-        actions.push(
-            IconButton::new(
-                format!("{}:next", view.chrome_action_prefix()),
-                Icon::ArrowRight,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(!view.loading && view.page + 1 < view.pages)
-            .tooltip_with(TooltipSpec::new("Página siguiente").placement(TooltipPlacement::Below))
-            .render(),
-        );
+        actions.push(pdf_pager(view));
         used += 112.0;
     }
     if view.kind != PreviewKind::Markdown {
@@ -154,9 +149,7 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
     );
     used += 28.0;
     let path = if split {
-        label("Vista previa")
-            .size(Some((width - used - 12.0).max(0.0)), Some(24.0))
-            .flex(1.0)
+        label("Vista previa").size(Some((width - used - 12.0).max(0.0)), Some(24.0))
     } else {
         crate::code_editor_ui::path_breadcrumb(
             "document_preview_path",
@@ -164,14 +157,13 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
             false,
             (width - used - 12.0).max(0.0),
         )
-        .flex(1.0)
     };
-    let mut row = vec![path];
-    row.extend(actions);
-    Element::row(row)
-        .gap(4.0)
-        .padding(4.0)
-        .size(Some(width), Some(HEADER))
+    PanelHeader::new("", theme::component_palette())
+        .leading(path)
+        .trailing(actions)
+        .width(width)
+        .sizing(crate::ui_sizing::PANE_HEADER)
+        .render()
         .clip_children()
 }
 
@@ -435,4 +427,81 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
         .size(Some(width), Some(height))
         .background(theme::BACKGROUND)
         .clip_children()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openide_preview::Scope;
+
+    // The three siblings the header held, at its gap of 4.
+    fn legacy_pdf_pager(view: &PreviewView) -> Element {
+        Element::row(vec![
+            IconButton::new(
+                format!("{}:previous", view.chrome_action_prefix()),
+                Icon::ArrowLeft,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!view.loading && view.page > 0)
+            .tooltip_with(TooltipSpec::new("Página anterior").placement(TooltipPlacement::Below))
+            .render(),
+            label(if view.pages > 0 {
+                format!("{} / {}", view.page + 1, view.pages)
+            } else {
+                "PDF".into()
+            })
+            .size(Some(52.0), Some(24.0))
+            .center_content(),
+            IconButton::new(
+                format!("{}:next", view.chrome_action_prefix()),
+                Icon::ArrowRight,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!view.loading && view.page + 1 < view.pages)
+            .tooltip_with(TooltipSpec::new("Página siguiente").placement(TooltipPlacement::Below))
+            .render(),
+        ])
+        .gap(4.0)
+    }
+
+    #[test]
+    fn the_pdf_pager_matches_its_legacy_body() {
+        for (page, pages, loading) in [
+            (0, 0, false),
+            (0, 12, false),
+            (5, 12, false),
+            (11, 12, false),
+            (5, 12, true),
+            (998, 1000, false),
+        ] {
+            let view = PreviewView {
+                scope: Scope {
+                    workspace: "/tmp/project".into(),
+                    path: "manual.pdf".into(),
+                    tab_id: 7,
+                    generation: 1,
+                },
+                kind: PreviewKind::Pdf,
+                mode: PreviewMode::Preview,
+                document: None,
+                raster: None,
+                loading,
+                error: None,
+                page,
+                pages,
+                zoom: None,
+            };
+            // In the header both stand in a content box 24 high.
+            let boxed = |pager: Element| Element::row(vec![pager]).size(None, Some(24.0));
+            crate::state_panel_parity_tests::assert_same(
+                "pdf pager",
+                boxed(legacy_pdf_pager(&view)),
+                boxed(pdf_pager(&view)),
+            );
+        }
+    }
 }

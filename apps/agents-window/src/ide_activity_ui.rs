@@ -1,7 +1,7 @@
 //! Native sidebar presentations of services already used by the workspace.
 use super::*;
 use crate::sidebar_chrome as chrome;
-use openide_ui::TooltipPlacement;
+use openide_ui::{PanelHeader, SidebarPanel, TooltipPlacement};
 
 fn caption(text: impl Into<String>) -> Element {
     Element::truncated_text(text)
@@ -51,9 +51,8 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
     .context_menu_style()
     .placement(PopoverPlacement::BottomEnd)
     .render();
-    let header = chrome::header(
-        chrome::title("Control de versiones"),
-        vec![
+    let header = PanelHeader::new("Control de versiones", theme::sidebar_palette())
+        .trailing(vec![
             UiIconButton::new("review_refresh", Icon::Refresh, theme::sidebar_palette())
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Dense)
@@ -68,9 +67,10 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
                 .tooltip_with(TooltipSpec::new("Crear rama").placement(TooltipPlacement::Below))
                 .render(),
             more,
-        ],
-        inner,
-    );
+        ])
+        .width(inner)
+        .sizing(crate::ui_sizing::SIDEBAR_HEADER)
+        .render();
     let commit = Button::new("ide_git_commit", "Commit y publicación", crate::theme::sidebar_palette())
         .icon(Icon::Check)
         .variant(ButtonVariant::Outline)
@@ -78,15 +78,16 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
         .render()
         .dispatch_as("environment_git_open_commit")
         .size(Some(inner), Some(28.0));
-    chrome::panel(
+    SidebarPanel::new(
         vec![
             header,
             commit,
             git_panel::navigator_body(state, inner).flex(1.0),
         ],
-        width,
-        height,
+        theme::sidebar_palette(),
     )
+    .size(width, height)
+    .render()
 }
 
 /// An entry of the extensions sidebar: its name over its state or source.
@@ -208,11 +209,10 @@ pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> 
     .reveal_horizontal_item(format!("ide_marketplace_tab:{selected_tab}"))
     .horizontal_edge_fade(theme::SIDEBAR, 12.0)
     .size(Some(inner), Some(32.0));
-    chrome::panel(
+    SidebarPanel::new(
         vec![
-            chrome::header(
-                chrome::title("Complementos"),
-                vec![
+            PanelHeader::new("Complementos", theme::sidebar_palette())
+                .trailing(vec![
                     UiIconButton::new(
                         "ide_extensions_refresh",
                         Icon::Refresh,
@@ -247,9 +247,10 @@ pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> 
                         )
                         .render()
                     },
-                ],
-                inner,
-            ),
+                ])
+                .width(inner)
+                .sizing(crate::ui_sizing::SIDEBAR_HEADER)
+                .render(),
             filters,
             marketplace_view::search_controls(inventory, inner, true),
             marketplace_view::pagination_controls(total, page, true),
@@ -257,9 +258,10 @@ pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> 
                 .render()
                 .flex(1.0),
         ],
-        width,
-        height,
+        theme::sidebar_palette(),
     )
+    .size(width, height)
+    .render()
 }
 
 /// The existing catalog supplies installation scopes, source management,
@@ -271,21 +273,12 @@ pub(super) fn extensions_center(
     sidebar_controls_visible: bool,
 ) -> Element {
     Element::column(vec![
-        Element::row(vec![
-            caption("Complementos").flex(1.0),
-            UiIconButton::new(
-                "ide_extensions_close",
-                Icon::Close,
-                theme::sidebar_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(TooltipSpec::new("Volver al editor").placement(TooltipPlacement::Below))
+        PanelHeader::new("", theme::sidebar_palette())
+            .leading(caption("Complementos"))
+            .dismiss("ide_extensions_close", "Volver al editor")
+            .width(width)
+            .sizing(crate::ui_sizing::PANE_HEADER)
             .render(),
-        ])
-        .gap(4.0)
-        .padding(4.0)
-        .size(Some(width), Some(32.0)),
         match state.ide.extensions_item.as_deref() {
             Some(item) if state.marketplace.find_item(item).is_some() => {
                 marketplace_view::ide_item_detail(&state.marketplace, item, width)

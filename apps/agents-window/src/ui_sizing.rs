@@ -4,7 +4,9 @@
 //! row height) from a const profile rather than from numbers at each call.
 //! The app's own profiles live here so a screen never restates them.
 
-use openide_ui::{ActionRowSizing, NoticeSizing, PageHeaderSizing, RowSizing, TextRole};
+use openide_ui::{
+    ActionRowSizing, HeaderSizing, NoticeSizing, PageHeaderSizing, PagerSizing, RowSizing, TextRole,
+};
 
 /// A setting: its label and supporting text beside a caller-owned control.
 pub const SETTINGS_ROW: ActionRowSizing = ActionRowSizing {
@@ -197,3 +199,58 @@ pub const DOCK_TOOL: RowSizing = RowSizing {
     title_height: Some(24.0),
     ..RowSizing::COMPACT
 };
+
+/// The heading of a workspace sidebar. Its tools hang from the top of the
+/// 26 px row, a pixel above its center.
+pub const SIDEBAR_HEADER: HeaderSizing = HeaderSizing {
+    center_tools: false,
+    ..HeaderSizing::SIDEBAR
+};
+
+/// The bar over a pane. Its tools fill the 24 px between the insets, and
+/// one that sets no height of its own keeps that height.
+pub const PANE_HEADER: HeaderSizing = HeaderSizing {
+    center_tools: false,
+    ..HeaderSizing::PANE
+};
+
+/// The heading of the notifications popover, whose text action is as tall
+/// as the row.
+pub const NOTIFICATIONS_HEADER: HeaderSizing = HeaderSizing {
+    center_tools: false,
+    ..HeaderSizing::POPOVER
+};
+
+/// The files panel's heading on the IDE sidebar: tools 4 apart.
+pub const FILES_HEADER_COMPACT: HeaderSizing = HeaderSizing {
+    gap: 4.0,
+    ..SIDEBAR_HEADER
+};
+
+/// The files panel's heading in the side pane: a row as tall as its tool.
+pub const FILES_HEADER: HeaderSizing = HeaderSizing {
+    height: 24.0,
+    gap: 4.0,
+    ..HeaderSizing::SIDEBAR
+};
+
+/// A 32 px heading without an inset, its tools at the top: the project
+/// actions, the chat's changes and the usage popup.
+pub const TALL_HEADER: HeaderSizing = HeaderSizing {
+    height: 32.0,
+    gap: 6.0,
+    title_role: TextRole::Body,
+    center_tools: false,
+    ..HeaderSizing::SIDEBAR
+};
+
+/// The commit view's heading: tools centered in 28, a 13 px title.
+pub const COMMIT_HEADER: HeaderSizing = HeaderSizing {
+    height: 28.0,
+    gap: 4.0,
+    title_role: TextRole::Label,
+    ..HeaderSizing::SIDEBAR
+};
+
+/// The review strip's pagers: the arrows touch the counter's slot.
+pub const REVIEW_PAGER: PagerSizing = PagerSizing { gap: 0.0 };

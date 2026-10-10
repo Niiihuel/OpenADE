@@ -6,8 +6,8 @@ use crate::{
 use openide_editor::IndentStyle;
 use openide_ui::{
     AlertColors, AlertTone, Button, ButtonVariant, CodeLanguage, Color, Component, ControlSize,
-    DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon, IconButton,
-    Popover, PopoverPlacement, ScrollArea, Separator, TextField, Tooltip, TooltipPlacement,
+    DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon, Popover,
+    PopoverPlacement, ScrollArea, Separator, TextField, Tooltip, TooltipPlacement,
 };
 
 // Reserve only the top divider; cells fill the remaining status bar height.
@@ -436,21 +436,22 @@ fn services_control(
             .foreground(if subtle { palette.muted } else { palette.text })
     };
     let mut rows = vec![
-        Element::row(vec![
-            Element::icon(Icon::Server).size(Some(16.0), Some(16.0)),
-            Element::truncated_text("Servicios de lenguaje")
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(palette.text)
-                .flex(1.0),
-            IconButton::new(&dismiss, Icon::Close, palette)
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .render(),
-        ])
-        .foreground(palette.text)
-        .gap(6.0)
-        .size(None, Some(24.0)),
+        openide_ui::PanelHeader::new("", palette)
+            .leading(
+                Element::row(vec![
+                    Element::icon(Icon::Server).size(Some(16.0), Some(16.0)),
+                    Element::truncated_text("Servicios de lenguaje")
+                        .font_family(FontFamily::Sans)
+                        .font_size(12.0)
+                        .foreground(palette.text)
+                        .flex(1.0),
+                ])
+                .gap(6.0),
+            )
+            .dismiss(&dismiss, "")
+            .sizing(openide_ui::HeaderSizing::POPOVER)
+            .render()
+            .foreground(palette.text),
         Element::row(vec![
             prose("Lenguaje", true).flex(1.0),
             prose(status.language, false),

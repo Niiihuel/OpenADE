@@ -5,8 +5,9 @@ use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
     ButtonVariant, Component, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, ListRow, ScrollArea, SectionHeader,
-    SectionSizing, Separator, SpinnerVariant, Tooltip, TooltipPlacement, TooltipSpec,
+    DropdownMenuItem, Element, FontFamily, HeaderSizing, Icon, IconButton, ListRow, PanelHeader,
+    ScrollArea, SectionHeader, SectionSizing, Separator, SpinnerVariant, Tooltip, TooltipPlacement,
+    TooltipSpec,
 };
 
 use crate::{
@@ -721,6 +722,52 @@ fn local_menu(state: &ViewState, width: f32, locked: bool) -> Element {
     .render()
 }
 
+/// The card's heading: its title, the refresh tool and the close button.
+fn card_header(loading: bool, width: f32) -> Element {
+    let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
+    PanelHeader::new("", palette)
+        // The title wraps and can be selected, which a header's own cannot.
+        .leading(text("Entorno", false, 14.0))
+        .trailing(vec![IconButton::new(
+            "environment_git_refresh",
+            Icon::Refresh,
+            palette,
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .enabled(!loading)
+        .tooltip_with(TooltipSpec::new("Actualizar entorno").placement(TooltipPlacement::Below))
+        .render()])
+        .dismiss("environment_dismiss", "Cerrar entorno del chat")
+        .width(width)
+        .sizing(HeaderSizing::CARD)
+        .render()
+}
+
+/// The heading of the project actions: back, the title, "new" and close.
+fn actions_header(new_action: Option<bool>, width: f32) -> Element {
+    let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
+    let tools = new_action
+        .map(|enabled| {
+            IconButton::new("project_action_new", Icon::Add, palette)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .enabled(enabled)
+                .tooltip_with(TooltipSpec::new("Crear acción").placement(TooltipPlacement::Below))
+                .render()
+        })
+        .into_iter()
+        .collect();
+    PanelHeader::new("", palette)
+        .back("environment_git_back", "Volver al entorno")
+        .leading(text("Acciones del proyecto", false, 14.0))
+        .trailing(tools)
+        .dismiss("environment_dismiss", "Cerrar entorno del chat")
+        .width(width)
+        .sizing(crate::ui_sizing::TALL_HEADER)
+        .render()
+}
+
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
     use crate::environment_git_ui::EnvironmentGitPanel;
     let width = width.max(120.0);
@@ -731,49 +778,11 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
         || state.git_action_pending
         || state.composer_branches.switching();
     if workflow.panel == EnvironmentGitPanel::Actions {
-        let mut controls = vec![
-            IconButton::new(
-                "environment_git_back",
-                Icon::ArrowLeft,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(TooltipSpec::new("Volver al entorno").placement(TooltipPlacement::Below))
-            .render(),
-            text("Acciones del proyecto", false, 14.0).flex(1.0),
-        ];
-        if !state.project_actions.actions.is_empty() && !state.project_actions.editor_open {
-            controls.push(
-                IconButton::new(
-                    "project_action_new",
-                    Icon::Add,
-                    theme::action_palette(theme::CARD, theme::FOREGROUND),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .enabled(!state.project_actions.saving)
-                .tooltip_with(TooltipSpec::new("Crear acción").placement(TooltipPlacement::Below))
-                .render(),
-            );
-        }
-        controls.push(
-            IconButton::new(
-                "environment_dismiss",
-                Icon::Close,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(
-                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
-            )
-            .render(),
-        );
+        let new_action = (!state.project_actions.actions.is_empty()
+            && !state.project_actions.editor_open)
+            .then_some(!state.project_actions.saving);
         return Element::column(vec![
-            Element::row(controls)
-                .gap(6.0)
-                .size(Some(inner_width), Some(32.0)),
+            actions_header(new_action, inner_width),
             crate::project_actions_ui::build(&state.project_actions, inner_width),
         ])
         .gap(10.0)
@@ -889,33 +898,7 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
         )
     };
     let mut rows = vec![
-        Element::row(vec![
-            text("Entorno", false, 14.0).flex(1.0),
-            IconButton::new(
-                "environment_git_refresh",
-                Icon::Refresh,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(!workflow.loading)
-            .tooltip_with(TooltipSpec::new("Actualizar entorno").placement(TooltipPlacement::Below))
-            .render(),
-            IconButton::new(
-                "environment_dismiss",
-                Icon::Close,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(
-                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
-            )
-            .render(),
-        ])
-        .gap(4.0)
-        .padding(2.0)
-        .size(Some(inner_width), Some(28.0)),
+        card_header(workflow.loading, inner_width),
         group(vec![
             project,
             local_menu(state, group_width, locked),
@@ -1141,6 +1124,103 @@ mod tests {
         Element::icon(icon)
             .foreground(theme::FOREGROUND_SUBTLE)
             .size(Some(16.0), Some(20.0))
+    }
+
+    fn legacy_card_header(loading: bool, inner_width: f32) -> Element {
+        Element::row(vec![
+            text("Entorno", false, 14.0).flex(1.0),
+            IconButton::new(
+                "environment_git_refresh",
+                Icon::Refresh,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!loading)
+            .tooltip_with(TooltipSpec::new("Actualizar entorno").placement(TooltipPlacement::Below))
+            .render(),
+            IconButton::new(
+                "environment_dismiss",
+                Icon::Close,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
+            )
+            .render(),
+        ])
+        .gap(4.0)
+        .padding(2.0)
+        .size(Some(inner_width), Some(28.0))
+    }
+
+    fn legacy_actions_header(new_action: Option<bool>, inner_width: f32) -> Element {
+        let mut controls = vec![
+            IconButton::new(
+                "environment_git_back",
+                Icon::ArrowLeft,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Volver al entorno").placement(TooltipPlacement::Below))
+            .render(),
+            text("Acciones del proyecto", false, 14.0).flex(1.0),
+        ];
+        if let Some(enabled) = new_action {
+            controls.push(
+                IconButton::new(
+                    "project_action_new",
+                    Icon::Add,
+                    theme::action_palette(theme::CARD, theme::FOREGROUND),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .enabled(enabled)
+                .tooltip_with(TooltipSpec::new("Crear acción").placement(TooltipPlacement::Below))
+                .render(),
+            );
+        }
+        controls.push(
+            IconButton::new(
+                "environment_dismiss",
+                Icon::Close,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
+            )
+            .render(),
+        );
+        Element::row(controls)
+            .gap(6.0)
+            .size(Some(inner_width), Some(32.0))
+    }
+
+    #[test]
+    fn the_card_headers_match_their_legacy_bodies() {
+        use crate::state_panel_parity_tests::assert_same;
+        // 104 is the narrowest card, where "Entorno" has 44 px.
+        for width in [104.0, 236.0, 404.0] {
+            for loading in [false, true] {
+                assert_same(
+                    "environment card header",
+                    legacy_card_header(loading, width),
+                    card_header(loading, width),
+                );
+            }
+            for new_action in [None, Some(true), Some(false)] {
+                assert_same(
+                    "project actions header",
+                    legacy_actions_header(new_action, width),
+                    actions_header(new_action, width),
+                );
+            }
+        }
     }
 
     #[test]

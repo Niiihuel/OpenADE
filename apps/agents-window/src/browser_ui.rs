@@ -11,6 +11,8 @@ use crate::{theme, view::ViewState};
 pub(crate) const TOOLBAR_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 pub(crate) const STATUS_HEIGHT: f32 = 20.0;
 const NAVIGATION_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
+// The inset of `ui_sizing::PANE_HEADER`, which the toolbar is built with.
+#[cfg(test)]
 const NAVIGATION_INSET: f32 = (TOOLBAR_HEIGHT - NAVIGATION_SIZE) / 2.0;
 
 #[derive(Default)]
@@ -146,7 +148,9 @@ fn navigation(browser: &BrowserUiState, width: f32) -> Element {
     .placement(TooltipPlacement::Below)
     .render()
     .flex(1.0);
-    Element::row(vec![
+    // Back, forward and reload stand before the address, which takes the
+    // width they and the menu leave.
+    let leading = Element::row(vec![
         IconButton::new("browser_back", Icon::ArrowLeft, theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Dense)
@@ -170,11 +174,14 @@ fn navigation(browser: &BrowserUiState, width: f32) -> Element {
             .tooltip_with(TooltipSpec::new("Recargar página").placement(TooltipPlacement::Below))
             .render(),
         address,
-        more_menu(browser, width),
     ])
-    .gap(4.0)
-    .padding(NAVIGATION_INSET)
-    .size(Some(width), Some(TOOLBAR_HEIGHT))
+    .gap(4.0);
+    openide_ui::PanelHeader::new("", theme::component_palette())
+        .leading(leading)
+        .trailing(vec![more_menu(browser, width)])
+        .width(width)
+        .sizing(crate::ui_sizing::PANE_HEADER)
+        .render()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

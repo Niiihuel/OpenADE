@@ -2,17 +2,20 @@
 //! as the rest of the workspace. No file reads happen while building the UI.
 use super::*;
 use crate::sidebar_chrome as chrome;
-use openide_ui::TooltipPlacement;
+use openide_ui::{PanelHeader, SidebarPanel, TooltipPlacement};
 
 pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
     let search = &state.ide_search;
     let content_width = (width - chrome::INSET * 2.0).max(0.0);
-    let query = chrome::search(
+    let query = openide_ui::SearchField::new(
         "ide_search_query",
         &search.query,
         "Buscar en el proyecto…",
-        content_width,
-    );
+        theme::component_palette(),
+    )
+    .size(ControlSize::Compact)
+    .width(content_width)
+    .render();
     let case = Tooltip::new(
         theme::sidebar_palette()
             .interactive_surface(Element::clickable(
@@ -149,9 +152,13 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
             .padding(4.0),
         );
     }
-    chrome::panel(
+    SidebarPanel::new(
         vec![
-            chrome::header(chrome::title("Buscar"), vec![case, submit], content_width),
+            PanelHeader::new("Buscar", theme::sidebar_palette())
+                .trailing(vec![case, submit])
+                .width(content_width)
+                .sizing(crate::ui_sizing::SIDEBAR_HEADER)
+                .render(),
             query,
             label(
                 &status,
@@ -169,9 +176,10 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
             .render()
             .flex(1.0),
         ],
-        width,
-        height,
+        theme::sidebar_palette(),
     )
+    .size(width, height)
+    .render()
 }
 
 #[cfg(test)]

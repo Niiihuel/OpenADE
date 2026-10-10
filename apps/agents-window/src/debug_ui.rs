@@ -870,9 +870,8 @@ pub(crate) fn build_sidebar(state: &DebugView, width: f32, height: f32) -> Eleme
             theme::SIDEBAR,
         )
     };
-    let header = chrome::header(
-        chrome::title("Depuración"),
-        vec![
+    let header = openide_ui::PanelHeader::new("Depuración", theme::sidebar_palette())
+        .trailing(vec![
             control("reload", Icon::Refresh, "Recargar configuraciones", !active),
             control(
                 "configure",
@@ -881,9 +880,10 @@ pub(crate) fn build_sidebar(state: &DebugView, width: f32, height: f32) -> Eleme
                 !active,
             ),
             control("hide", Icon::Close, "Ocultar depuración", true),
-        ],
-        inner,
-    );
+        ])
+        .width(inner)
+        .sizing(crate::ui_sizing::SIDEBAR_HEADER)
+        .render();
     let data: Arc<[SidebarRow]> = sidebar_rows(state).into();
     let captured = state.clone();
     // Reserve the native scrollbar rail even before overflow, so section and
@@ -896,11 +896,12 @@ pub(crate) fn build_sidebar(state: &DebugView, width: f32, height: f32) -> Eleme
         move |index| sidebar_row(&captured, &data[index], row_width),
     )
     .flex(1.0);
-    chrome::panel(
+    openide_ui::SidebarPanel::new(
         vec![header, sidebar_session(state, inner), list],
-        width,
-        height.max(0.0),
+        theme::sidebar_palette(),
     )
+    .size(width, height.max(0.0))
+    .render()
 }
 
 fn session_active(status: DebugStatus) -> bool {

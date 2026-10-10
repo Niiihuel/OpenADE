@@ -165,8 +165,8 @@ fn summary(props: &ComposerProps<'_>) -> Element {
             })
             .into(),
     };
-    let header = Element::row(vec![
-        text(
+    let header = openide_ui::PanelHeader::new("", theme::menu_palette())
+        .leading(text(
             if input_only {
                 "Uso de entrada"
             } else {
@@ -174,9 +174,9 @@ fn summary(props: &ComposerProps<'_>) -> Element {
             },
             12.0,
             theme::FOREGROUND,
-        )
-        .flex(1.0),
-        IconButton::new(
+        ))
+        // The close button's hint names its key, so it is built here.
+        .trailing(vec![IconButton::new(
             "composer_context_dismiss",
             Icon::Close,
             theme::menu_palette(),
@@ -188,10 +188,9 @@ fn summary(props: &ComposerProps<'_>) -> Element {
                 .shortcut("Esc")
                 .placement(TooltipPlacement::Below),
         )
-        .render(),
-    ])
-    .gap(6.0)
-    .size(None, Some(24.0));
+        .render()])
+        .sizing(openide_ui::HeaderSizing::POPOVER)
+        .render();
     let mut content = vec![
         Element::row(vec![
             text(total, 12.0, theme::FOREGROUND).flex(1.0),

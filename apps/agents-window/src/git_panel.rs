@@ -534,23 +534,26 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
 pub(super) fn navigator(state: &ViewState, width: f32) -> Element {
     let inner_width = (width - crate::sidebar_chrome::INSET * 2.0).max(0.0);
     Element::column(vec![
-        crate::sidebar_chrome::header(
-            crate::sidebar_chrome::title(if state.git_action_pending {
+        openide_ui::PanelHeader::new(
+            if state.git_action_pending {
                 "Actualizando…"
             } else {
                 "Cambios"
-            }),
-            vec![
-                UiIconButton::new("review_refresh", Icon::Refresh, theme::sidebar_palette())
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Dense)
-                    .tooltip_with(
-                        TooltipSpec::new("Actualizar cambios").placement(TooltipPlacement::Below),
-                    )
-                    .render(),
-            ],
-            inner_width,
-        ),
+            },
+            theme::sidebar_palette(),
+        )
+        .trailing(vec![UiIconButton::new(
+            "review_refresh",
+            Icon::Refresh,
+            theme::sidebar_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(TooltipSpec::new("Actualizar cambios").placement(TooltipPlacement::Below))
+        .render()])
+        .width(inner_width)
+        .sizing(crate::ui_sizing::SIDEBAR_HEADER)
+        .render(),
         navigator_body(state, inner_width),
     ])
     .gap(crate::sidebar_chrome::GAP)

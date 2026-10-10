@@ -448,26 +448,28 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
     .tint(theme::FOREGROUND_SUBTLE)
     .render()
     .flex(1.0);
-    Element::column(vec![
-        back,
-        Separator::horizontal(theme::component_palette()).render(),
-        Element::row(vec![
-            Element::icon(Icon::Settings)
-                .foreground(theme::FOREGROUND)
-                .size(Some(16.0), Some(16.0)),
-            text("Configuración", theme::FOREGROUND, 13.0),
-        ])
-        .gap(8.0)
-        .padding(8.0),
-        navigation_search(state),
-        navigation,
-        Separator::horizontal(theme::component_palette()).render(),
-        view::sidebar_account_footer(state, width - 12.0),
-    ])
-    .gap(6.0)
-    .padding(6.0)
+    openide_ui::SidebarPanel::new(
+        vec![
+            back,
+            Separator::horizontal(theme::component_palette()).render(),
+            Element::row(vec![
+                Element::icon(Icon::Settings)
+                    .foreground(theme::FOREGROUND)
+                    .size(Some(16.0), Some(16.0)),
+                text("Configuración", theme::FOREGROUND, 13.0),
+            ])
+            .gap(8.0)
+            .padding(8.0),
+            navigation_search(state),
+            navigation,
+            Separator::horizontal(theme::component_palette()).render(),
+            view::sidebar_account_footer(state, width - 12.0),
+        ],
+        theme::sidebar_palette(),
+    )
+    .render()
+    // The panel is as tall as its window; the frame is the settings page's.
     .size(Some(width), None)
-    .background(theme::SIDEBAR)
     .border(theme::BORDER, 1.0)
     .radius(RadiusRole::Card.px())
 }

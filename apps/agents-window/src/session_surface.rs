@@ -31,6 +31,8 @@ use crate::{
 
 const READING_WIDTH: f32 = 780.0;
 const COMPACT_BREAKPOINT: f32 = 470.0;
+// The inset of `ui_sizing::PANE_HEADER`, which the header is built with.
+#[cfg(test)]
 const HEADER_PADDING: f32 = 4.0;
 const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 const HEADER_FADE_HEIGHT: f32 = 42.0;
@@ -202,6 +204,13 @@ pub(crate) fn header(
             .flex(1.0)
             .size(None, Some(HEADER_ACTION_SIZE)),
     );
+    // What stands before the title shares its row; the tools follow it.
+    let leading = if top.len() == 1 {
+        top.remove(0)
+    } else {
+        Element::row(top).gap(HEADER_GAP).flex(1.0)
+    };
+    let mut top = Vec::new();
     if cli.is_some() {
         top.push(header_action(
             "cli_task_restart",
@@ -227,9 +236,11 @@ pub(crate) fn header(
             "Abrir configuración de OpenIDE",
         ));
     }
-    Element::panel(Element::row(top).gap(HEADER_GAP))
-        .padding(HEADER_PADDING)
-        .size(None, Some(HEADER_HEIGHT))
+    openide_ui::PanelHeader::new("", theme::component_palette())
+        .leading(leading)
+        .trailing(top)
+        .sizing(crate::ui_sizing::PANE_HEADER)
+        .render()
 }
 
 fn message(

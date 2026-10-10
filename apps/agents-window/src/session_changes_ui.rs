@@ -42,14 +42,14 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
 
 fn build_content(ui: &SessionChangesUiState, width: f32) -> Element {
     let inner = (width - 24.0).max(140.0);
-    let mut rows = vec![Element::row(vec![
-        Element::faded_text("Cambios del chat", 12.0)
-            .font_family(FontFamily::Sans)
-            .foreground(theme::FOREGROUND)
-            .font_size(14.0)
-            .size(None, Some(32.0))
-            .flex(1.0),
-        Tooltip::new(
+    let title = Element::faded_text("Cambios del chat", 12.0)
+        .font_family(FontFamily::Sans)
+        .foreground(theme::FOREGROUND)
+        .font_size(14.0)
+        .size(None, Some(32.0));
+    let mut rows = vec![openide_ui::PanelHeader::new("", theme::component_palette())
+        .leading(title)
+        .trailing(vec![Tooltip::new(
             theme::interactive_surface(
                 IconButton::new(
                     "session_changes_refresh",
@@ -65,10 +65,10 @@ fn build_content(ui: &SessionChangesUiState, width: f32) -> Element {
             "Actualizar cambios del chat",
             theme::component_palette(),
         )
-        .render(),
-    ])
-    .gap(6.0)
-    .size(Some(inner), Some(32.0))];
+        .render()])
+        .width(inner)
+        .sizing(crate::ui_sizing::TALL_HEADER)
+        .render()];
     match &ui.result {
         None => rows.push(label(
             if ui.loading {

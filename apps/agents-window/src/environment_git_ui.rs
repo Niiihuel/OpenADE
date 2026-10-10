@@ -7,8 +7,8 @@ use crate::{
 };
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, Separator, TextArea,
-    TextField, Tooltip, TooltipPlacement, TooltipSpec,
+    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PanelHeader, PopoverPlacement,
+    Separator, TextArea, TextField, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -89,10 +89,30 @@ pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
     rows
 }
 
-/// A 24 px tool set 2 px down in the 28 px commit header.
-fn header_slot(control: Element) -> Element {
-    Element::column(vec![Element::spacer().size(None, Some(2.0)), control])
-        .size(Some(24.0), Some(28.0))
+/// The commit view's heading. In the sidebar the panel has no close button.
+fn commit_header(enabled: bool, sidebar: bool, width: f32) -> Element {
+    let palette = theme::sidebar_palette();
+    let header = PanelHeader::new("Commit", palette)
+        .back("environment_git_back", "Volver a los cambios")
+        .trailing(vec![IconButton::new(
+            "environment_git_refresh",
+            Icon::Refresh,
+            palette,
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .enabled(enabled)
+        .tooltip_with(TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below))
+        .render()])
+        .width(width)
+        .sizing(crate::ui_sizing::COMMIT_HEADER);
+    if sidebar {
+        header.render()
+    } else {
+        header
+            .dismiss("environment_dismiss", "Cerrar entorno")
+            .render()
+    }
 }
 
 fn branch_context(branch: &str, width: f32) -> Element {
@@ -197,50 +217,7 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
     let inner = (width - 16.0).max(0.0);
     let enabled = !locked && !state.loading && state.busy.is_none();
     let input_palette = theme::action_palette(theme::BACKGROUND, theme::FOREGROUND);
-    let mut header = vec![
-        header_slot(
-            IconButton::new(
-                "environment_git_back",
-                Icon::ArrowLeft,
-                theme::sidebar_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(
-                TooltipSpec::new("Volver a los cambios").placement(TooltipPlacement::Below),
-            )
-            .render(),
-        ),
-        Element::truncated_text("Commit")
-            .font_family(FontFamily::Sans)
-            .font_size(13.0)
-            .foreground(theme::FOREGROUND)
-            .flex(1.0),
-        header_slot(
-            IconButton::new(
-                "environment_git_refresh",
-                Icon::Refresh,
-                theme::sidebar_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(enabled)
-            .tooltip_with(
-                TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below),
-            )
-            .render(),
-        ),
-    ];
-    if !sidebar {
-        header.push(header_slot(
-            IconButton::new("environment_dismiss", Icon::Close, theme::sidebar_palette())
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .tooltip_with(TooltipSpec::new("Cerrar entorno").placement(TooltipPlacement::Below))
-                .render(),
-        ));
-    }
-    let mut rows = vec![Element::row(header).gap(4.0).size(Some(inner), Some(28.0))];
+    let mut rows = vec![commit_header(enabled, sidebar, inner)];
     rows.extend(notices(state));
     if let Some(snapshot) = &state.snapshot {
         rows.push(branch_context(&snapshot.branches.label, inner));
@@ -458,6 +435,27 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
 
 /// Sidebar navigation returns to Changes; the environment-card dismiss action
 /// has no role here because the IDE owns the sidebar's visibility controls.
+/// The heading of a Git panel inside the environment card.
+fn panel_header(title: &str, enabled: bool) -> Element {
+    let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
+    PanelHeader::new("", palette)
+        .back("environment_git_back", "Volver al entorno")
+        .leading(text(title, false, 14.0))
+        .trailing(vec![IconButton::new(
+            "environment_git_refresh",
+            Icon::Refresh,
+            palette,
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .enabled(enabled)
+        .tooltip_with(TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below))
+        .render()])
+        .dismiss("environment_dismiss", "Cerrar entorno del chat")
+        .sizing(crate::ui_sizing::TALL_HEADER)
+        .render()
+}
+
 pub(crate) fn build_sidebar(state: &EnvironmentGitUiState, width: f32, locked: bool) -> Element {
     if state.panel == EnvironmentGitPanel::Commit {
         commit_view(state, width, locked, true)
@@ -479,41 +477,7 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
         EnvironmentGitPanel::CreateWorktree => "Crear worktree",
         EnvironmentGitPanel::Actions => "Acciones",
     };
-    let mut rows = vec![Element::row(vec![
-        IconButton::new(
-            "environment_git_back",
-            Icon::ArrowLeft,
-            theme::action_palette(theme::CARD, theme::FOREGROUND),
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
-        .tooltip_with(TooltipSpec::new("Volver al entorno").placement(TooltipPlacement::Below))
-        .render(),
-        text(title, false, 14.0).flex(1.0),
-        IconButton::new(
-            "environment_git_refresh",
-            Icon::Refresh,
-            theme::action_palette(theme::CARD, theme::FOREGROUND),
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
-        .enabled(enabled)
-        .tooltip_with(TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below))
-        .render(),
-        IconButton::new(
-            "environment_dismiss",
-            Icon::Close,
-            theme::action_palette(theme::CARD, theme::FOREGROUND),
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
-        .tooltip_with(
-            TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
-        )
-        .render(),
-    ])
-    .gap(6.0)
-    .size(None, Some(32.0))];
+    let mut rows = vec![panel_header(title, enabled)];
     rows.extend(notices(state));
     if locked {
         rows.push(text(
@@ -729,6 +693,124 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 24 px tool set 2 px down in the 28 px commit header.
+    fn header_slot(control: Element) -> Element {
+        Element::column(vec![Element::spacer().size(None, Some(2.0)), control])
+            .size(Some(24.0), Some(28.0))
+    }
+
+    fn legacy_commit_header(enabled: bool, sidebar: bool, inner: f32) -> Element {
+        let mut header = vec![
+            header_slot(
+                IconButton::new(
+                    "environment_git_back",
+                    Icon::ArrowLeft,
+                    theme::sidebar_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .tooltip_with(
+                    TooltipSpec::new("Volver a los cambios").placement(TooltipPlacement::Below),
+                )
+                .render(),
+            ),
+            Element::truncated_text("Commit")
+                .font_family(FontFamily::Sans)
+                .font_size(13.0)
+                .foreground(theme::FOREGROUND)
+                .flex(1.0),
+            header_slot(
+                IconButton::new(
+                    "environment_git_refresh",
+                    Icon::Refresh,
+                    theme::sidebar_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .enabled(enabled)
+                .tooltip_with(
+                    TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below),
+                )
+                .render(),
+            ),
+        ];
+        if !sidebar {
+            header.push(header_slot(
+                IconButton::new("environment_dismiss", Icon::Close, theme::sidebar_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .tooltip_with(
+                        TooltipSpec::new("Cerrar entorno").placement(TooltipPlacement::Below),
+                    )
+                    .render(),
+            ));
+        }
+        Element::row(header).gap(4.0).size(Some(inner), Some(28.0))
+    }
+
+    fn legacy_panel_header(title: &str, enabled: bool) -> Element {
+        Element::row(vec![
+            IconButton::new(
+                "environment_git_back",
+                Icon::ArrowLeft,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Volver al entorno").placement(TooltipPlacement::Below))
+            .render(),
+            text(title, false, 14.0).flex(1.0),
+            IconButton::new(
+                "environment_git_refresh",
+                Icon::Refresh,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(enabled)
+            .tooltip_with(
+                TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below),
+            )
+            .render(),
+            IconButton::new(
+                "environment_dismiss",
+                Icon::Close,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
+            )
+            .render(),
+        ])
+        .gap(6.0)
+        .size(None, Some(32.0))
+    }
+
+    #[test]
+    fn the_git_headers_match_their_legacy_bodies() {
+        use crate::state_panel_parity_tests::assert_same;
+        for enabled in [true, false] {
+            for sidebar in [true, false] {
+                for width in [150.0, 236.0, 404.0] {
+                    assert_same(
+                        "commit header",
+                        legacy_commit_header(enabled, sidebar, width),
+                        commit_header(enabled, sidebar, width),
+                    );
+                }
+            }
+            for title in ["Git", "Crear worktree"] {
+                assert_same(
+                    "git panel header",
+                    legacy_panel_header(title, enabled),
+                    panel_header(title, enabled),
+                );
+            }
+        }
+    }
     use openide_ui::{HitKind, Size, UiTree};
 
     #[test]

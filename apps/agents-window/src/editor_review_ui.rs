@@ -5,7 +5,7 @@
 use crate::theme;
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, Separator, Tooltip,
+    DropdownMenuItem, Element, Icon, IconButton, Pager, PopoverPlacement, Separator,
     TooltipPlacement, TooltipSpec,
 };
 
@@ -171,33 +171,86 @@ fn navigation_shortcut(operation: &str) -> Option<&'static str> {
     }
 }
 
-fn counter(
+/// Arrows around "position/count" for one of the strip's two sequences;
+/// the counter's hint spells the position out.
+fn pager(
     review: &EditorReviewView,
     operation: &str,
     position: usize,
     count: usize,
     width: f32,
     kind: &str,
-) -> Element {
+) -> Pager {
     let position = if count == 0 {
         0
     } else {
         position.min(count - 1) + 1
     };
-    Tooltip::new(
-        Element::truncated_text(format!("{position}/{count}"))
-            .font_family(FontFamily::Sans)
-            .font_size(11.0)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .center_content(),
-        action(&review.token, operation),
-        format!("{kind} {position} de {count}"),
-        theme::component_palette(),
+    Pager::new(format!("{position}/{count}"), theme::component_palette())
+        .label_width(width)
+        .label_tooltip(
+            action(&review.token, operation),
+            TooltipSpec::new(format!("{kind} {position} de {count}"))
+                .placement(TooltipPlacement::Below),
+        )
+        .sizing(crate::ui_sizing::REVIEW_PAGER)
+}
+
+fn hunk_pager(review: &EditorReviewView) -> Element {
+    pager(
+        review,
+        "position",
+        review.current_hunk,
+        review.hunk_count,
+        COUNT_WIDTH,
+        "Cambio",
     )
-    .placement(TooltipPlacement::Below)
+    .previous(
+        action(&review.token, "previous"),
+        review.current_hunk > 0 && review.hunk_count > 0 && !review.busy,
+    )
+    .next(
+        action(&review.token, "next"),
+        review.current_hunk.saturating_add(1) < review.hunk_count && !review.busy,
+    )
+    .icons(Icon::ArrowUp, Icon::ArrowDown)
+    .tooltips(
+        TooltipSpec::new("Cambio anterior")
+            .shortcut(navigation_shortcut("previous").unwrap_or_default())
+            .placement(TooltipPlacement::Below),
+        TooltipSpec::new("Cambio siguiente")
+            .shortcut(navigation_shortcut("next").unwrap_or_default())
+            .placement(TooltipPlacement::Below),
+    )
     .render()
-    .centered_y()
-    .size(Some(width), Some(CONTROL))
+}
+
+fn file_pager(review: &EditorReviewView) -> Element {
+    pager(
+        review,
+        "file_position",
+        review.current_file,
+        review.file_count,
+        FILE_COUNT_WIDTH,
+        "Archivo",
+    )
+    .previous(
+        action(&review.token, "previous_file"),
+        review.can_accept && review.current_file > 0 && !review.busy,
+    )
+    .next(
+        action(&review.token, "next_file"),
+        review.can_accept
+            && review.current_file.saturating_add(1) < review.file_count
+            && !review.busy,
+    )
+    .tooltips(
+        TooltipSpec::new("Archivo anterior de esta conversación")
+            .placement(TooltipPlacement::Below),
+        TooltipSpec::new("Archivo siguiente de esta conversación")
+            .placement(TooltipPlacement::Below),
+    )
+    .render()
 }
 
 fn navigation_menu(
@@ -312,44 +365,7 @@ pub(crate) fn controls_with_menu(
     let layout = navigation(review, pane_width, extra_menu);
     let mut navigation = Vec::new();
     if layout.hunks {
-        navigation.extend([
-            IconButton::new(
-                action(&review.token, "previous"),
-                Icon::ArrowUp,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(review.current_hunk > 0 && review.hunk_count > 0 && !review.busy)
-            .tooltip_with(
-                TooltipSpec::new("Cambio anterior")
-                    .shortcut(navigation_shortcut("previous").unwrap_or_default())
-                    .placement(TooltipPlacement::Below),
-            )
-            .render(),
-            counter(
-                review,
-                "position",
-                review.current_hunk,
-                review.hunk_count,
-                COUNT_WIDTH,
-                "Cambio",
-            ),
-            IconButton::new(
-                action(&review.token, "next"),
-                Icon::ArrowDown,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(review.current_hunk.saturating_add(1) < review.hunk_count && !review.busy)
-            .tooltip_with(
-                TooltipSpec::new("Cambio siguiente")
-                    .shortcut(navigation_shortcut("next").unwrap_or_default())
-                    .placement(TooltipPlacement::Below),
-            )
-            .render(),
-        ]);
+        navigation.push(hunk_pager(review));
         navigation.push(
             Separator::vertical(theme::component_palette())
                 .length(14.0)
@@ -360,46 +376,7 @@ pub(crate) fn controls_with_menu(
         );
     }
     if layout.files {
-        navigation.extend([
-            IconButton::new(
-                action(&review.token, "previous_file"),
-                Icon::ArrowLeft,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(review.can_accept && review.current_file > 0 && !review.busy)
-            .tooltip_with(
-                TooltipSpec::new("Archivo anterior de esta conversación")
-                    .placement(TooltipPlacement::Below),
-            )
-            .render(),
-            counter(
-                review,
-                "file_position",
-                review.current_file,
-                review.file_count,
-                FILE_COUNT_WIDTH,
-                "Archivo",
-            ),
-            IconButton::new(
-                action(&review.token, "next_file"),
-                Icon::ArrowRight,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(
-                review.can_accept
-                    && review.current_file.saturating_add(1) < review.file_count
-                    && !review.busy,
-            )
-            .tooltip_with(
-                TooltipSpec::new("Archivo siguiente de esta conversación")
-                    .placement(TooltipPlacement::Below),
-            )
-            .render(),
-        ]);
+        navigation.push(file_pager(review));
         navigation.push(
             Separator::vertical(theme::component_palette())
                 .length(14.0)
@@ -439,4 +416,158 @@ pub(crate) fn controls_with_menu(
         .size(None, Some(CONTROL))
         .centered_y()
         .size(Some(controls_width), Some(HEIGHT))
+}
+
+#[cfg(test)]
+mod pager_parity_tests {
+    use super::*;
+    use openide_ui::{FontFamily, Tooltip};
+
+    fn legacy_counter(
+        review: &EditorReviewView,
+        operation: &str,
+        position: usize,
+        count: usize,
+        width: f32,
+        kind: &str,
+    ) -> Element {
+        let position = if count == 0 {
+            0
+        } else {
+            position.min(count - 1) + 1
+        };
+        Tooltip::new(
+            Element::truncated_text(format!("{position}/{count}"))
+                .font_family(FontFamily::Sans)
+                .font_size(11.0)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .center_content(),
+            action(&review.token, operation),
+            format!("{kind} {position} de {count}"),
+            theme::component_palette(),
+        )
+        .placement(TooltipPlacement::Below)
+        .render()
+        .centered_y()
+        .size(Some(width), Some(CONTROL))
+    }
+
+    fn legacy_hunk_pager(review: &EditorReviewView) -> Element {
+        Element::row(vec![
+            IconButton::new(
+                action(&review.token, "previous"),
+                Icon::ArrowUp,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(review.current_hunk > 0 && review.hunk_count > 0 && !review.busy)
+            .tooltip_with(
+                TooltipSpec::new("Cambio anterior")
+                    .shortcut(navigation_shortcut("previous").unwrap_or_default())
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
+            legacy_counter(
+                review,
+                "position",
+                review.current_hunk,
+                review.hunk_count,
+                COUNT_WIDTH,
+                "Cambio",
+            ),
+            IconButton::new(
+                action(&review.token, "next"),
+                Icon::ArrowDown,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(review.current_hunk.saturating_add(1) < review.hunk_count && !review.busy)
+            .tooltip_with(
+                TooltipSpec::new("Cambio siguiente")
+                    .shortcut(navigation_shortcut("next").unwrap_or_default())
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
+        ])
+    }
+
+    fn legacy_file_pager(review: &EditorReviewView) -> Element {
+        Element::row(vec![
+            IconButton::new(
+                action(&review.token, "previous_file"),
+                Icon::ArrowLeft,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(review.can_accept && review.current_file > 0 && !review.busy)
+            .tooltip_with(
+                TooltipSpec::new("Archivo anterior de esta conversación")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
+            legacy_counter(
+                review,
+                "file_position",
+                review.current_file,
+                review.file_count,
+                FILE_COUNT_WIDTH,
+                "Archivo",
+            ),
+            IconButton::new(
+                action(&review.token, "next_file"),
+                Icon::ArrowRight,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(
+                review.can_accept
+                    && review.current_file.saturating_add(1) < review.file_count
+                    && !review.busy,
+            )
+            .tooltip_with(
+                TooltipSpec::new("Archivo siguiente de esta conversación")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
+        ])
+    }
+
+    #[test]
+    fn the_review_pagers_match_their_legacy_bodies() {
+        for (current, count, busy, can_accept) in [
+            (0, 0, false, true),
+            (0, 3, false, true),
+            (1, 3, false, true),
+            (2, 3, false, false),
+            (1, 3, true, true),
+            (98, 120, false, true),
+        ] {
+            let review = EditorReviewView {
+                token: "token".into(),
+                hunk_count: count,
+                current_hunk: current,
+                file_count: count,
+                current_file: current,
+                busy,
+                can_accept,
+                ..EditorReviewView::default()
+            };
+            // The strip holds both in a row 24 high.
+            let boxed = |pager: Element| Element::row(vec![pager]).size(None, Some(CONTROL));
+            crate::state_panel_parity_tests::assert_same(
+                "hunk pager",
+                boxed(legacy_hunk_pager(&review)),
+                boxed(hunk_pager(&review)),
+            );
+            crate::state_panel_parity_tests::assert_same(
+                "file pager",
+                boxed(legacy_file_pager(&review)),
+                boxed(file_pager(&review)),
+            );
+        }
+    }
 }

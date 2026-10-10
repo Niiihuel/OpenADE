@@ -551,19 +551,28 @@ fn agent_list(state: &ViewState, width: f32, height: f32) -> Element {
     );
     let inset = crate::sidebar_chrome::INSET;
     let content_width = (width - inset * 2.0).max(0.0);
-    let header = Element::row(vec![
-        crate::sidebar_chrome::title("Tareas").padding(4.0),
-        agent_list_toggle(true),
-    ])
-    .gap(4.0)
-    .padding(4.0)
-    .size(Some(width), Some(PANE_HEADER_HEIGHT));
-    let search = Element::panel(crate::sidebar_chrome::search(
-        "ide_agent_list_query",
-        &state.ide.agent_list_query,
-        "Buscar tareas…",
-        content_width,
-    ))
+    // The title stands 4 further in than the header's own inset.
+    let title = UiText::new("Tareas", theme::component_palette())
+        .truncate()
+        .render()
+        .padding(4.0);
+    let header = openide_ui::PanelHeader::new("", theme::component_palette())
+        .leading(title)
+        .trailing(vec![agent_list_toggle(true)])
+        .width(width)
+        .sizing(crate::ui_sizing::PANE_HEADER)
+        .render();
+    let search = Element::panel(
+        openide_ui::SearchField::new(
+            "ide_agent_list_query",
+            &state.ide.agent_list_query,
+            "Buscar tareas…",
+            theme::component_palette(),
+        )
+        .size(ControlSize::Compact)
+        .width(content_width)
+        .render(),
+    )
     .padding(inset)
     .size(Some(width), None);
     let list_height =
@@ -613,14 +622,16 @@ fn agent(state: &ViewState, width: f32, height: f32, list_shown: bool) -> Elemen
     // While the list is shown its own header carries the toggle.
     let tools = if list_shown { 1.0 } else { 2.0 };
     let tabs_width = (width - 8.0 - tools * (24.0 + 4.0)).max(0.0);
-    let mut header = vec![agent_tabs(state, tabs_width), agent_new_menu(state)];
+    let mut tools = vec![agent_new_menu(state)];
     if !list_shown {
-        header.push(agent_list_toggle(false));
+        tools.push(agent_list_toggle(false));
     }
-    let header = Element::row(header)
-        .gap(4.0)
-        .padding(4.0)
-        .size(Some(width), Some(PANE_HEADER_HEIGHT));
+    let header = openide_ui::PanelHeader::new("", theme::component_palette())
+        .leading(agent_tabs(state, tabs_width))
+        .trailing(tools)
+        .width(width)
+        .sizing(crate::ui_sizing::PANE_HEADER)
+        .render();
     let body_height = (height - PANE_HEADER_HEIGHT).max(0.0);
     let empty = state.selected_session.is_none()
         && state.transcript.is_empty()

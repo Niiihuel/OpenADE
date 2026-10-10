@@ -141,20 +141,20 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
             TooltipSpec::new("Buscar archivos del proyecto").placement(TooltipPlacement::Below),
         )
         .render()];
-    let mut header = vec![workspace_title];
-    if compact {
-        header.push(Element::row(actions));
-    } else {
-        header.extend(actions);
-    }
-    let header = Element::row(header).gap(4.0).size(
-        Some(inner),
-        Some(if compact {
-            crate::sidebar_chrome::HEADER_HEIGHT
+    let header = openide_ui::PanelHeader::new("", palette)
+        .leading(workspace_title)
+        .trailing(if compact {
+            vec![Element::row(actions)]
         } else {
-            TOOL_SIZE
-        }),
-    );
+            actions
+        })
+        .width(inner)
+        .sizing(if compact {
+            crate::ui_sizing::FILES_HEADER_COMPACT
+        } else {
+            crate::ui_sizing::FILES_HEADER
+        })
+        .render();
     let mut content = vec![header];
     if state.file_rows.is_empty() {
         content.push(empty_state(&state.files_status, palette));

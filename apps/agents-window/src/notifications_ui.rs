@@ -96,14 +96,19 @@ fn row(item: &Notification) -> Element {
 
 fn list(center: &NotificationCenter) -> Element {
     let items = center.items();
-    let mut header = vec![text("Notificaciones", 12.0, theme::FOREGROUND).flex(1.0)];
+    let mut tools = Vec::new();
     if !items.is_empty() {
-        header.push(theme::interactive_surface(Element::clickable(
+        tools.push(theme::interactive_surface(Element::clickable(
             "notifications_clear",
             text("Limpiar", 11.5, theme::FOREGROUND_SUBTLE).padding(4.0),
         )));
     }
-    let mut rows = vec![Element::row(header).gap(6.0).size(None, Some(24.0))];
+    let mut rows = vec![
+        openide_ui::PanelHeader::new("Notificaciones", theme::menu_palette())
+            .trailing(tools)
+            .sizing(crate::ui_sizing::NOTIFICATIONS_HEADER)
+            .render(),
+    ];
     if items.is_empty() {
         rows.push(text("Sin notificaciones", 12.0, theme::FOREGROUND_SUBTLE).padding(6.0));
     }

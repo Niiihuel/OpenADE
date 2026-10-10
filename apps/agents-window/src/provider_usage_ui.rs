@@ -723,15 +723,15 @@ fn popup(state: &ViewState) -> Element {
         body_height = height;
     }
     Element::column(vec![
-        Element::row(vec![
-            text("Cuenta y uso", 13.0, theme::FOREGROUND)
-                .size(None, Some(18.0))
-                .centered_y()
-                .flex(1.0),
-            refresh(state, true),
-        ])
-        .gap(6.0)
-        .size(None, Some(32.0)),
+        openide_ui::PanelHeader::new("", theme::menu_palette())
+            .leading(
+                text("Cuenta y uso", 13.0, theme::FOREGROUND)
+                    .size(None, Some(18.0))
+                    .centered_y(),
+            )
+            .trailing(vec![refresh(state, true)])
+            .sizing(crate::ui_sizing::TALL_HEADER)
+            .render(),
         Separator::horizontal(theme::component_palette()).render(),
         ScrollArea::new("provider_usage_popup", Element::column(cards))
             .tint(theme::FOREGROUND_SUBTLE)
