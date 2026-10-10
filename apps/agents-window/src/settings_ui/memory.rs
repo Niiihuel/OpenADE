@@ -66,16 +66,16 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut content = vec![settings_parts::settings_group(
         "Contexto de la conversación",
         vec![
-            settings_parts::settings_row(
+            settings_parts::value_row(
                 "Historial y checkpoints",
                 history_description,
-                value_badge(history_value),
+                history_value,
                 compact,
             ),
-            settings_parts::settings_row(
+            settings_parts::value_row(
                 "Contexto restante estimado",
                 "Se calcula con el uso de la última respuesta y el límite verificado del modelo exacto. Después de compactar, espera una nueva respuesta para actualizarse.",
-                value_badge(context_value),
+                context_value,
                 compact,
             ),
             settings_parts::settings_row(
@@ -174,10 +174,10 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             .iter()
             .filter(|criterion| criterion.evidence.is_some())
             .count();
-        goal_rows.push(settings_parts::settings_row(
+        goal_rows.push(settings_parts::value_row(
             "Estado guardado",
             format!("Revisión {} · {evidence}/{} criterios con evidencia registrada. La evidencia ligada a un turno completado no verifica por sí sola la satisfacción del criterio.", goal.revision, goal.criteria.len()),
-            value_badge(status),
+            status,
             compact,
         ));
         goal_rows.push(

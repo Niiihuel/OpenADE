@@ -11,7 +11,7 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    ActionRow, Button, ButtonVariant, Component, ControlSize, CornerRadii, Element, FontFamily,
+    ActionRow, Button, ButtonVariant, Component, ControlSize, Element, FontFamily,
     Icon, Modal, ScrollArea, SearchField, SkeletonGroup, Spinner, TextField,
 };
 use std::{
@@ -73,9 +73,6 @@ fn status(state: &ViewState, id: &str) -> String {
         "Clave guardada".into()
     }
 }
-fn group(title: &str, rows: Vec<Element>) -> Element {
-    crate::settings_parts::settings_group(title, rows)
-}
 fn refresh(state: &ViewState) -> Element {
     outline("catalog_refresh", "Actualizar modelos")
         .icon(Icon::Refresh)
@@ -102,11 +99,9 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
                     && (query.is_empty() || name.to_lowercase().contains(&query))
             })
             .collect::<Vec<_>>();
-        let count = providers.len();
         let rows = providers
             .into_iter()
-            .enumerate()
-            .map(|(index, (id, name, description))| {
+            .map(|(id, name, description)| {
                 let subtitle = if active {
                     status(state, id)
                 } else {
@@ -115,7 +110,7 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
                 ActionRow::new(*name, control_palette())
                     .subtitle(subtitle)
                     .icon(icon_for_provider(id))
-                    .suffix(
+                    .trailing(
                         Element::row(vec![
                             subtle(if active { "Ver modelos" } else { "Conectar" }),
                             Element::icon(Icon::ChevronRight).foreground(theme::FOREGROUND_SUBTLE),
@@ -124,16 +119,10 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
                     )
                     .action(format!("catalog_browse:{id}"))
                     .render()
-                    .corner_radii(CornerRadii {
-                        top_left: if index == 0 { 8.0 } else { 0.0 },
-                        top_right: if index == 0 { 8.0 } else { 0.0 },
-                        bottom_right: if index + 1 == count { 8.0 } else { 0.0 },
-                        bottom_left: if index + 1 == count { 8.0 } else { 0.0 },
-                    })
             })
             .collect::<Vec<_>>();
         if !rows.is_empty() {
-            sections.push(group(title, rows));
+            sections.push(settings_parts::settings_group(title, rows));
         }
     }
     if sections.len() == 1 {
@@ -554,13 +543,13 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
         ])
         .gap(12.0),
     ];
-    sections.push(group(
+    sections.push(settings_parts::settings_group(
         "Conexión",
         vec![
             ActionRow::new(provider_connections::name(id), control_palette())
                 .subtitle(status(state, id))
                 .icon(icon_for_provider(id))
-                .suffix(
+                .trailing(
                     outline(
                         format!("provider_connect:{id}"),
                         if is_connected {
@@ -580,11 +569,11 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
         sections.push(output_settings(state, compact));
     }
     if id == "codex" && is_connected && !state.provider_usage.contains_key(id) {
-        sections.push(group(
+        sections.push(settings_parts::settings_group(
             "Plan de ChatGPT",
             vec![ActionRow::new("Uso de tu plan", control_palette())
                 .subtitle("Esta conexión usa los límites de tu cuenta de ChatGPT.")
-                .suffix(outline("provider_usage", "Ver uso").render())
+                .trailing(outline("provider_usage", "Ver uso").render())
                 .render()],
         ));
     }
@@ -605,7 +594,7 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
             .render(),
     ])
     .gap(6.0);
-    sections.push(group(
+    sections.push(settings_parts::settings_group(
         "Modelos",
         vec![
             catalog_status(state, id),
@@ -634,17 +623,17 @@ pub(super) fn page(state: &ViewState, compact: bool, width: f32) -> Vec<Element>
         }
     }
     if is_connected && provider_connections::supported(id) {
-        sections.push(group(
+        sections.push(settings_parts::settings_group(
             "Cuenta",
             vec![
                 ActionRow::new("Administrar cuenta", control_palette())
                     .subtitle("Abre la página del proveedor en tu navegador.")
                     .action(format!("provider_account:{id}"))
-                    .suffix(Element::icon(Icon::ArrowRight).foreground(theme::FOREGROUND_SUBTLE))
+                    .trailing(Element::icon(Icon::ArrowRight).foreground(theme::FOREGROUND_SUBTLE))
                     .render(),
                 ActionRow::new("Desconectar", control_palette())
                     .subtitle("Quita esta conexión de OpenIDE.")
-                    .suffix(
+                    .trailing(
                         outline(format!("provider_disconnect:{id}"), "Desconectar")
                             .width(96.0)
                             .enabled(!state.running)
@@ -741,16 +730,14 @@ pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
     } else {
         Element::row(vec![save, reset]).gap(8.0)
     });
-    group(
+    settings_parts::settings_group(
         "Salida de la ruta nativa activa",
         vec![Element::column(controls).gap(10.0).padding(10.0)],
     )
 }
 
-fn value(label: &str, val: impl Into<String>) -> Element {
-    ActionRow::new(label, control_palette())
-        .suffix(text(val, theme::FOREGROUND_SUBTLE, 12.0))
-        .render()
+pub(super) fn value(label: &str, val: impl Into<String>) -> Element {
+    ActionRow::new(label, control_palette()).value(val).render()
 }
 fn tokens(value: Option<u64>) -> String {
     value.map_or_else(|| "Dato no disponible".into(), |v| format!("{v} tokens"))
@@ -864,14 +851,14 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
         |value| value.max_output_tokens,
     );
     let mut groups = vec![
-        group(
+        settings_parts::settings_group(
             "Capacidades",
             vec![
                 ActionRow::new("Entradas", control_palette())
-                    .suffix(modalities(input))
+                    .trailing(modalities(input))
                     .render(),
                 ActionRow::new("Salidas", control_palette())
-                    .suffix(modalities(output))
+                    .trailing(modalities(output))
                     .render(),
                 value("Herramientas", capability(tools)),
                 value("Imágenes", capability(images)),
@@ -879,7 +866,7 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
                 value("Salida estructurada", capability(structured)),
             ],
         ),
-        group(
+        settings_parts::settings_group(
             "Límites",
             vec![
                 value("Contexto", tokens(context)),
@@ -889,15 +876,15 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
         ),
     ];
     if id == "codex" {
-        groups.push(group(
+        groups.push(settings_parts::settings_group(
             "Uso",
             vec![ActionRow::new("Plan de ChatGPT", control_palette())
                 .subtitle("Consulta el consumo y los límites de tu cuenta.")
-                .suffix(outline("provider_usage", "Ver uso").render())
+                .trailing(outline("provider_usage", "Ver uso").render())
                 .render()],
         ));
     } else {
-        groups.push(group(
+        groups.push(settings_parts::settings_group(
             "Precio por millón de tokens · USD",
             vec![
                 value("Entrada", cost(model.cost.as_ref().and_then(|c| c.input))),
@@ -977,7 +964,7 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         body.push(outline("provider_usage", "Ver uso del plan").render());
     } else if entry {
         if id == "opencode" {
-            body.push(group(
+            body.push(settings_parts::settings_group(
                 "Servicio",
                 [
                     ("zen", "Zen", "Paga por el uso de cada modelo"),
@@ -989,7 +976,7 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
                         .subtitle(subtitle)
                         .action(format!("provider_service:{service}"));
                     if connect.service == service {
-                        row.suffix(Element::icon(Icon::Check).foreground(theme::FOREGROUND))
+                        row.trailing(Element::icon(Icon::Check).foreground(theme::FOREGROUND))
                             .render()
                     } else {
                         row.render()
@@ -1979,7 +1966,7 @@ mod tests {
             Element::spacer()
                 .size(Some(101.0), Some(51.0))
                 .background(openide_ui::Color::rgba(66, 66, 66, 128))
-                .corner_radii(CornerRadii::top(12.0)),
+                .corner_radii(openide_ui::CornerRadii::top(12.0)),
         );
         let frame = tree.layout(Size::new(101.0, 51.0));
         let pixmap = raster(&frame, 101, 51);

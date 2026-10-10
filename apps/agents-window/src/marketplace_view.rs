@@ -532,10 +532,6 @@ fn title(value: &str) -> Element {
     text(value, theme::FOREGROUND, 15.0)
 }
 
-fn capsule(value: impl Into<String>) -> Element {
-    Chip::new(value, theme::component_palette()).render()
-}
-
 fn source_label(kind: SourceKind) -> &'static str {
     match kind {
         SourceKind::Local => "Carpeta local",
@@ -562,7 +558,9 @@ fn matches_query(item: &MarketplaceItem, query: &str) -> bool {
 fn section_heading(label: &str, count: usize) -> Element {
     Element::row(vec![
         title(label).centered_y(),
-        capsule(count.to_string()).centered_y(),
+        Chip::new(count.to_string(), theme::component_palette())
+            .render()
+            .centered_y(),
         Element::spacer().flex(1.0),
     ])
     .gap(8.0)
@@ -639,7 +637,11 @@ fn item_card_content(
         ));
     }
     let bottom = if let Some(scope) = item.installed_scope {
-        let badge = capsule(format!("Instalada · {}", scope_label(scope)));
+        let badge = Chip::new(
+            format!("Instalada · {}", scope_label(scope)),
+            theme::component_palette(),
+        )
+        .render();
         let toggle_id = format!("marketplace_toggle:{}", item.id);
         let toggle = Tooltip::new(
             Switch::new(&toggle_id, item.enabled, theme::component_palette())

@@ -8,19 +8,13 @@ fn tool_row(
     description: &str,
     compact: bool,
 ) -> Element {
-    settings_parts::settings_row(
+    settings_parts::switch_row(
+        format!("external_tool:{}", tool.name()),
         title,
         description,
-        Switch::new(
-            format!("external_tool:{}", tool.name()),
-            state.external_agents.allows(tool),
-            control_palette(),
-        )
-        .enabled(
-            state.external_agents.enabled()
-                && !matches!(tool, ExternalTool::Browser | ExternalTool::Subagents),
-        )
-        .render(),
+        state.external_agents.allows(tool),
+        state.external_agents.enabled()
+            && !matches!(tool, ExternalTool::Browser | ExternalTool::Subagents),
         compact,
     )
 }
@@ -41,11 +35,12 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         settings_parts::settings_group(
             "Puente de herramientas",
             vec![
-                settings_parts::settings_row(
+                settings_parts::switch_row(
+                    "external_agents_enabled",
                     "Ofrecer herramientas de OpenIDE",
                     "Claude Code, Codex y otras CLIs iniciadas desde OpenIDE reciben las herramientas activadas abajo. Desactivado, ninguna llamada externa llega a OpenIDE.",
-                    Switch::new("external_agents_enabled", settings.enabled(), control_palette())
-                        .render(),
+                    settings.enabled(),
+                    true,
                     compact,
                 ),
                 page_note(
@@ -255,10 +250,12 @@ pub(super) fn plugin_skills_group(state: &ViewState, compact: bool) -> Option<El
         Icon::InfoCircle,
     )];
     for (index, plugin) in state.plugin_skills.iter().enumerate() {
-        rows.push(settings_parts::settings_row(
+        rows.push(settings_parts::switch_row(
+            format!("plugin_skills:{index}"),
             &plugin.id,
             format!("{} skills", plugin.skill_count),
-            Switch::new(format!("plugin_skills:{index}"), plugin.enabled, control_palette()).render(),
+            plugin.enabled,
+            true,
             compact,
         ));
     }
@@ -300,12 +297,12 @@ pub(super) fn compat_hooks_group(state: &ViewState, compact: bool) -> Vec<Elemen
         } else {
             format!("Plugin {}", hook.origin)
         };
-        rows.push(settings_parts::settings_row(
+        rows.push(settings_parts::switch_row(
+            format!("compat_hook:{index}"),
             format!("{source} · {} · {scope}", hook.event),
             description,
-            Switch::new(format!("compat_hook:{index}"), hook.enabled, control_palette())
-                .enabled(hook.runs_today)
-                .render(),
+            hook.enabled,
+            hook.runs_today,
             compact,
         ));
     }

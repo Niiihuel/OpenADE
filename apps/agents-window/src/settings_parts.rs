@@ -4,19 +4,19 @@
 //! action IDs; an optional action is rendered only when it is supplied.
 
 use openide_ui::{
-    Alert, Color, Component, Element, FontFamily, Icon, PreferencesGroup, Skeleton,
+    ActionRow, Alert, Color, Component, Element, Empty, FontFamily, Icon, PreferencesGroup,
+    RadiusRole, Skeleton, Switch,
 };
 
 pub use openide_ui::AlertTone as FeedbackTone;
 
-use crate::theme;
+use crate::{theme, ui_sizing::SETTINGS_ROW};
 
 // Logical pixels shared by Settings pages and their nested resource views.
 pub const TITLE_SIZE: f32 = 18.0;
 pub const LABEL_SIZE: f32 = 12.0;
 pub const DETAIL_SIZE: f32 = 11.0;
 pub const ROW_PADDING: f32 = 10.0;
-pub const CARD_RADIUS: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CapabilityStatus {
@@ -119,6 +119,14 @@ pub fn section_header(
     }
 }
 
+fn row(title: impl Into<String>, description: impl Into<String>) -> ActionRow {
+    ActionRow::new(title, theme::card_palette())
+        .subtitle(description)
+        .wrap_title(true)
+        .align_top(true)
+        .sizing(SETTINGS_ROW)
+}
+
 /// One setting's label, supporting text and caller-owned control.
 pub fn settings_row(
     title: impl Into<String>,
@@ -126,22 +134,34 @@ pub fn settings_row(
     control: Element,
     compact: bool,
 ) -> Element {
-    let copy = Element::column(vec![
-        label(title, theme::FOREGROUND, LABEL_SIZE),
-        label(description, theme::SETTINGS_FOREGROUND_SUBTLE, DETAIL_SIZE),
-    ])
-    .gap(4.0);
-    let stack_control = compact && !control.style.width.is_some_and(|width| width <= 64.0);
-    let content = if stack_control {
-        Element::column(vec![copy, control]).gap(8.0)
-    } else {
-        // Fixed-height controls need their own vertical centering; the row
-        // stretches this wrapper to match wrapped descriptions and tall copy.
-        Element::row(vec![copy.flex(1.0), control.centered_y()])
-            .gap(16.0)
-            .min_size(0.0, 34.0)
-    };
-    content.padding(ROW_PADDING)
+    row(title, description).trailing(control).stacked(compact).render()
+}
+
+/// One read-only fact: its label, supporting text and current value.
+pub fn value_row(
+    title: impl Into<String>,
+    description: impl Into<String>,
+    value: impl Into<String>,
+    compact: bool,
+) -> Element {
+    row(title, description).value(value).stacked(compact).render()
+}
+
+/// One on/off setting, with its switch on the filled-control palette.
+pub fn switch_row(
+    id: impl Into<String>,
+    title: impl Into<String>,
+    description: impl Into<String>,
+    on: bool,
+    enabled: bool,
+    compact: bool,
+) -> Element {
+    settings_row(
+        title,
+        description,
+        Switch::new(id, on, theme::control_palette()).enabled(enabled).render(),
+        compact,
+    )
 }
 
 /// The colors of a Settings card: the card surface, a border that barely
@@ -156,32 +176,6 @@ pub fn settings_card(rows: Vec<Element>) -> Element {
 /// whatever builds its rows, shares one card.
 pub fn settings_group(title: impl Into<String>, rows: Vec<Element>) -> Element {
     PreferencesGroup::new(title, rows, theme::card_palette()).render()
-}
-
-fn state_panel(
-    icon: Icon,
-    title: impl Into<String>,
-    description: impl Into<String>,
-    accent: Color,
-    action: Option<Element>,
-) -> Element {
-    let mut children = vec![
-        Element::icon(icon)
-            .foreground(accent)
-            .size(Some(18.0), Some(18.0)),
-        label(title, theme::FOREGROUND, LABEL_SIZE),
-        label(description, theme::SETTINGS_FOREGROUND_SUBTLE, DETAIL_SIZE),
-    ];
-    if let Some(action) = action {
-        children.push(Element::spacer().size(None, Some(2.0)));
-        children.push(action);
-    }
-    Element::panel(Element::column(children).gap(8.0))
-        .padding(12.0)
-        .min_size(0.0, 88.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(CARD_RADIUS)
 }
 
 /// No items exist yet. The caller can supply a real create/import action.
@@ -201,18 +195,14 @@ pub fn empty_state_with_icon(
     action: Option<Element>,
 ) -> Element {
     // The shared blank slate, on the same card as every other settings group.
-    let mut palette = theme::component_palette();
-    palette.muted = theme::SETTINGS_FOREGROUND_SUBTLE;
-    let mut empty = openide_ui::Empty::new(title, description, palette)
+    let mut empty = Empty::new(title, description, theme::card_palette())
         .icon(icon)
-        .compact();
+        .compact()
+        .framed();
     if let Some(action) = action {
         empty = empty.action_element(action);
     }
-    Element::panel(openide_ui::Component::render(empty))
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(CARD_RADIUS)
+    empty.render()
 }
 
 /// A named in-progress operation. No fake retry or cancel action is shown.
@@ -220,12 +210,14 @@ pub fn loading_state(title: impl Into<String>, description: impl Into<String>) -
     let title = title.into();
     let palette = theme::component_palette();
     let placeholder_id = format!("settings-loading:{title}");
-    state_panel(
-        Icon::Refresh,
-        title,
-        description,
-        theme::FOREGROUND_SUBTLE,
-        Some(
+    Element::panel(
+        Element::column(vec![
+            Element::icon(Icon::Refresh)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(18.0), Some(18.0)),
+            label(title, theme::FOREGROUND, LABEL_SIZE),
+            label(description, theme::SETTINGS_FOREGROUND_SUBTLE, DETAIL_SIZE),
+            Element::spacer().size(None, Some(2.0)),
             Element::row(vec![
                 Skeleton::circle(format!("{placeholder_id}:icon"), palette, 24.0).render(),
                 Element::column(vec![
@@ -237,23 +229,14 @@ pub fn loading_state(title: impl Into<String>, description: impl Into<String>) -
                 .gap(7.0),
             ])
             .gap(12.0),
-        ),
+        ])
+        .gap(8.0),
     )
-}
-
-/// An operation that failed. A retry control appears only when supplied.
-pub fn error_state(
-    title: impl Into<String>,
-    description: impl Into<String>,
-    retry: Option<Element>,
-) -> Element {
-    let mut alert = Alert::new(title, description, theme::component_palette())
-        .tone(FeedbackTone::Error)
-        .compact(true);
-    if let Some(retry) = retry {
-        alert = alert.action(retry);
-    }
-    alert.render()
+    .padding(12.0)
+    .min_size(0.0, 88.0)
+    .background(theme::CARD)
+    .border(theme::BORDER, 1.0)
+    .radius(RadiusRole::Card.px())
 }
 
 #[cfg(test)]
@@ -287,17 +270,17 @@ mod tests {
     #[test]
     fn optional_actions_appear_only_when_the_caller_supplies_them() {
         let empty = empty_state("Vacío", "Agrega un elemento.", None);
-        let error = error_state(
-            "Error",
-            "Vuelve a intentar.",
-            Some(Element::button("retry_load", "Reintentar")),
+        let acting = empty_state(
+            "Vacío",
+            "Agrega un elemento.",
+            Some(Element::button("create_item", "Crear")),
         );
         let mut empty_ids = Vec::new();
-        let mut error_ids = Vec::new();
+        let mut acting_ids = Vec::new();
         action_ids(&empty, &mut empty_ids);
-        action_ids(&error, &mut error_ids);
+        action_ids(&acting, &mut acting_ids);
         assert!(empty_ids.is_empty());
-        assert_eq!(error_ids, vec!["retry_load".to_owned()]);
+        assert_eq!(acting_ids, vec!["create_item".to_owned()]);
     }
 
     #[test]

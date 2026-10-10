@@ -13,6 +13,8 @@ mod instructions_inspection;
 mod mcp_inspection;
 mod memory;
 mod providers;
+#[cfg(test)]
+mod row_parity_tests;
 mod rules_preview;
 mod skills_preview;
 mod subagents;
@@ -28,10 +30,10 @@ pub(crate) use skills_preview::modal as native_skill_preview_modal;
 use openide_core::SessionSort;
 use openide_harness::{CommandIsolation, ExecDecision, HookPhase, LocalTool, SkillOrigin};
 use openide_ui::{
-    Button, ButtonGroup, ButtonVariant, Color, Component, ControlSize, DropdownList,
-    DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd, Modal,
-    PopoverPlacement, ScrollArea, ScrollbarAppearance, SearchField, SelectorSizing, Separator,
-    Switch, TextArea, TextField,
+    ActionRow, Alert, Button, ButtonGroup, ButtonVariant, Color, Component, ControlSize,
+    DropdownList, DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd,
+    Modal, PopoverPlacement, RadiusRole, ScrollArea, ScrollbarAppearance, SearchField,
+    SelectorSizing, Separator, Text, TextArea, TextField,
 };
 
 use crate::{
@@ -40,6 +42,7 @@ use crate::{
     settings_parts::{self, CapabilityStatus, FeedbackTone},
     settings_preferences::TerminalShell,
     theme,
+    ui_sizing::NOTE_ROW,
     view::{self, McpOAuthViewPhase, SessionOrganization, ViewState},
 };
 
@@ -295,11 +298,6 @@ fn field(id: &str, value: &str, placeholder: &str) -> Element {
 /// their existing treatment.
 pub(crate) use crate::theme::control_palette;
 
-/// A read-only value. It is plain text so it is not mistaken for a control.
-fn value_badge(value: impl Into<String>) -> Element {
-    text(value, theme::SETTINGS_FOREGROUND_SUBTLE, 12.0)
-}
-
 /// The settings action: outlined and compact on the control palette.
 pub(crate) fn outline(id: impl Into<String>, label: impl Into<String>) -> Button {
     // Page links share a navigation action with the sidebar, but each
@@ -470,7 +468,7 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
     .size(Some(width), None)
     .background(theme::SIDEBAR)
     .border(theme::BORDER, 1.0)
-    .radius(settings_parts::CARD_RADIUS)
+    .radius(RadiusRole::Card.px())
 }
 
 fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -488,10 +486,10 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
         settings_parts::settings_group(
             "Espacio de trabajo",
             vec![
-                settings_parts::settings_row(
+                settings_parts::value_row(
                     "Proyecto activo",
                     &state.workspace,
-                    value_badge(project_name(&state.workspace)),
+                    project_name(&state.workspace),
                     compact,
                 ),
                 Element::column(vec![
@@ -505,15 +503,12 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 ])
                 .gap(8.0)
                 .padding(settings_parts::ROW_PADDING),
-                settings_parts::settings_row(
+                settings_parts::switch_row(
+                    "settings_reopen_last_workspace",
                     "Reabrir el último proyecto",
                     "Continúa en la última carpeta al iniciar OpenIDE.",
-                    Switch::new(
-                        "settings_reopen_last_workspace",
-                        state.settings_reopen_last_workspace,
-                        control_palette(),
-                    )
-                    .render(),
+                    state.settings_reopen_last_workspace,
+                    true,
                     compact,
                 ),
             ],
@@ -554,19 +549,14 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
 /// A passive note shares the row typography without presenting an unavailable
 /// preference as an editable control.
 fn page_note(title: &str, description: &str, icon: Icon) -> Element {
-    Element::row(vec![
-        Element::icon(icon)
-            .foreground(theme::SETTINGS_FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(16.0)),
-        Element::column(vec![
-            text(title, theme::FOREGROUND, settings_parts::LABEL_SIZE),
-            subtle(description),
-        ])
-        .gap(5.0)
-        .flex(1.0),
-    ])
-    .gap(10.0)
-    .padding(settings_parts::ROW_PADDING)
+    ActionRow::new(title, theme::card_palette())
+        .subtitle(description)
+        .icon(icon)
+        .icon_muted(true)
+        .align_top(true)
+        .wrap_title(true)
+        .sizing(NOTE_ROW)
+        .render()
 }
 
 fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -579,12 +569,6 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         (true, false) => "Personalizado: modificar archivos con aprobación está activo; ejecutar comandos está desactivado.",
         (false, true) => "Personalizado: ejecutar comandos con aprobación está activo; modificar archivos está desactivado.",
     };
-    let write_mode = Switch::new(
-        "write_mode",
-        state.native_tool_permissions.write_file && state.native_tool_permissions.run_command,
-        control_palette(),
-    )
-    .render();
     let isolated = state.native_command_isolation == CommandIsolation::WorkspaceWriteOffline;
     let offline_available = CommandIsolation::WorkspaceWriteOffline.is_available_on_host();
     let platform = if cfg!(target_os = "windows") {
@@ -683,10 +667,10 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         settings_parts::settings_group(
             "Agente nativo de OpenIDE",
             vec![
-                settings_parts::settings_row(
+                settings_parts::value_row(
                     "Ejecución nativa",
                     "OpenIDE administra el contexto, las herramientas y la recuperación de la conversación, y consulta directamente la API del proveedor.",
-                    value_badge("OpenIDE"),
+                    "OpenIDE",
                     compact,
                 ),
                 settings_parts::settings_row(
@@ -742,10 +726,13 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         settings_parts::settings_group(
             "Herramientas del agente nativo",
             vec![
-                settings_parts::settings_row(
+                settings_parts::switch_row(
+                    "write_mode",
                     "Escritura y comandos",
                     write_description,
-                    write_mode,
+                    state.native_tool_permissions.write_file
+                        && state.native_tool_permissions.run_command,
+                    true,
                     compact,
                 ),
                 tool_setting(state, LocalTool::ReadFile, "Leer archivos", "Leer contenido dentro del proyecto.", compact),
@@ -829,15 +816,12 @@ fn tool_setting(
     description: &str,
     compact: bool,
 ) -> Element {
-    settings_parts::settings_row(
+    settings_parts::switch_row(
+        format!("agent_tool:{}", tool.name()),
         title,
         description,
-        Switch::new(
-            format!("agent_tool:{}", tool.name()),
-            state.native_tool_permissions.allows(tool),
-            control_palette(),
-        )
-        .render(),
+        state.native_tool_permissions.allows(tool),
+        true,
         compact,
     )
 }
@@ -892,10 +876,10 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
     content.push(settings_parts::settings_group(
         "Marketplace",
         vec![
-            settings_parts::settings_row(
+            settings_parts::value_row(
                 "Skills instaladas",
                 "Instrucciones disponibles por usuario o por proyecto.",
-                value_badge(format!("{enabled} activas · {installed} instaladas")),
+                format!("{enabled} activas · {installed} instaladas"),
                 compact,
             ),
             settings_parts::settings_row(
@@ -908,10 +892,10 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
             ),
         ],
     ));
-    let mut selected_rows = vec![settings_parts::settings_row(
+    let mut selected_rows = vec![settings_parts::value_row(
         "Proyecto actual",
         &local.workspace,
-        value_badge(format!("{} seleccionadas", local.selected.len())),
+        format!("{} seleccionadas", local.selected.len()),
         compact,
     )];
     if local.selected.is_empty() {
@@ -1042,10 +1026,10 @@ fn automations_page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut content = vec![settings_parts::settings_group(
         "Tareas programadas",
         vec![
-            settings_parts::settings_row(
+            settings_parts::value_row(
                 "Automatizaciones del proyecto",
                 "Horarios locales y ejecuciones guardadas para esta carpeta.",
-                value_badge(format!("{active} activas · {total} en total")),
+                format!("{active} activas · {total} en total"),
                 compact,
             ),
             settings_parts::settings_row(
@@ -1056,10 +1040,10 @@ fn automations_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     .render(),
                 compact,
             ),
-            settings_parts::settings_row(
+            settings_parts::value_row(
                 "Historial de ejecución",
                 "Ejecuciones registradas por el planificador del proyecto.",
-                value_badge(format!("{} ejecuciones", state.automations.runs.len())),
+                format!("{} ejecuciones", state.automations.runs.len()),
                 compact,
             ),
         ],
@@ -1113,7 +1097,7 @@ fn data_page(state: &ViewState, compact: bool) -> Vec<Element> {
     );
     vec![
         settings_parts::settings_group("Historial local", vec![
-            settings_parts::settings_row("Tareas visibles", "Conversaciones, eventos y borradores guardados en este equipo.", value_badge(format!("{} tareas", state.sessions.len())), compact),
+            settings_parts::value_row("Tareas visibles", "Conversaciones, eventos y borradores guardados en este equipo.", format!("{} tareas", state.sessions.len()), compact),
             page_note("Archivar y eliminar", "Usa el menú de cada tarea en la barra lateral. Eliminar una tarea requiere confirmación.", Icon::Archive),
         ]),
         settings_parts::settings_group("Barra lateral", vec![
@@ -1180,10 +1164,13 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
                 compact,
             ),
         ]),
-        GithubAccountStatus::Unavailable(error) => settings_parts::error_state(
-            "Conexión no disponible", error,
-            Some(connection_action("github_account_connect", "Reconectar", Icon::Github)),
-        ),
+        GithubAccountStatus::Unavailable(error) => {
+            Alert::new("Conexión no disponible", error, theme::component_palette())
+                .tone(FeedbackTone::Error)
+                .compact(true)
+                .action(connection_action("github_account_connect", "Reconectar", Icon::Github))
+                .render()
+        }
     };
     let mut content = vec![account];
     if let Some(notice) = &state.github_account_notice {
@@ -1265,6 +1252,8 @@ pub fn provider_connect_modal(state: &ViewState, base: Element, viewport_width: 
     providers::connect_modal(state, base, viewport_width)
 }
 
+// Hand-built: an ActionRow centers its trailing element, and these keycaps
+// stay on the first line when the description wraps.
 fn shortcut_row(description: &str, keys: &str) -> Element {
     Element::row(vec![
         text(description, theme::FOREGROUND, settings_parts::LABEL_SIZE).flex(1.0),
@@ -1315,10 +1304,12 @@ fn shortcuts_page(state: &ViewState, compact: bool) -> Vec<Element> {
     cards.push(settings_parts::settings_group(
         "Edición de texto",
         vec![
-            settings_parts::settings_row(
+            settings_parts::switch_row(
+                "settings_vim_toggle",
                 "Modo Vim",
                 "Edición modal en el editor del IDE y de agentes. Independiente del perfil de atajos.",
-                Switch::new("settings_vim_toggle", state.vim_mode, control_palette()).render(),
+                state.vim_mode,
+                true,
                 compact,
             ),
             page_note(
@@ -1432,7 +1423,7 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
         let mut server_content = vec![
             Element::row(vec![
                 text(&server.id, theme::FOREGROUND, settings_parts::LABEL_SIZE).flex(1.0),
-                value_badge(status),
+                Text::new(status, theme::card_palette()).muted().render(),
             ])
             .gap(10.0),
             subtle(match &server.url {
@@ -1592,7 +1583,7 @@ fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
             Element::column(vec![
                 Element::row(vec![
                     text(&hook.id, theme::FOREGROUND, settings_parts::LABEL_SIZE).flex(1.0),
-                    value_badge(phase),
+                    Text::new(phase, theme::card_palette()).muted().render(),
                 ])
                 .gap(10.0),
                 subtle(format!(
@@ -1775,7 +1766,7 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
             .render()
             .size(None, Some(80.0))
             .flex(1.0),
-            value_badge(decision),
+            Text::new(decision, theme::card_palette()).muted().render(),
         ])
         .gap(8.0)];
         if let Some(justification) = rule.justification() {
@@ -2197,15 +2188,12 @@ fn appearance_page(state: &ViewState, compact: bool) -> Vec<Element> {
         settings_parts::settings_group(
             "Interfaz",
             vec![
-                settings_parts::settings_row(
+                settings_parts::switch_row(
+                    "settings_reduced_motion",
                     "Reducir movimiento",
                     "Usa transiciones mínimas al cambiar de panel o abrir superficies.",
-                    Switch::new(
-                        "settings_reduced_motion",
-                        state.settings_reduced_motion,
-                        control_palette(),
-                    )
-                    .render(),
+                    state.settings_reduced_motion,
+                    true,
                     compact,
                 ),
             ],
@@ -2404,7 +2392,7 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
         SettingsPage::Hooks => hooks_page(state, compact),
         SettingsPage::Usage => vec![
             settings_parts::settings_group("Conversación activa", vec![
-                settings_parts::settings_row("Contexto de la conversación", "Último porcentaje de contexto restante para la ruta nativa seleccionada.", value_badge(state.composer_context_percent.map(|percent| format!("{percent}% restante")).unwrap_or_else(|| "Sin medición".to_owned())), compact),
+                settings_parts::value_row("Contexto de la conversación", "Último porcentaje de contexto restante para la ruta nativa seleccionada.", state.composer_context_percent.map(|percent| format!("{percent}% restante")).unwrap_or_else(|| "Sin medición".to_owned()), compact),
             ]),
         ],
         _ => unreachable!("existing Settings page has its own renderer"),

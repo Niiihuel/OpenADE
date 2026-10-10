@@ -20,19 +20,19 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
     let mut content = vec![settings_parts::settings_group(
         "Subagentes nativos de OpenIDE",
         vec![
-            settings_parts::settings_row(
+            settings_parts::value_row(
                 "Conversación seleccionada",
                 state
                     .selected_session_title
                     .as_deref()
                     .unwrap_or("Selecciona una conversación para revisar su delegación."),
-                value_badge(format!("{} registrados · {running} en ejecución", saved.len())),
+                format!("{} registrados · {running} en ejecución", saved.len()),
                 compact,
             ),
-            settings_parts::settings_row(
+            settings_parts::value_row(
                 "Agentes conectados a esta ventana",
                 "Subagentes de esta conversación conectados a esta ventana. El estado guardado conserva también los que necesitan recuperación.",
-                value_badge(format!("{live} conectados")),
+                format!("{live} conectados"),
                 compact,
             ),
             page_note(

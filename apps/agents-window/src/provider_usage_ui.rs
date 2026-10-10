@@ -8,7 +8,8 @@ use std::{
 
 use openide_ui::{
     ActiveHover, Button, ButtonVariant, Chip, Color, Component, ComponentPalette, ControlSize,
-    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Separator,
+    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, RadiusRole, ScrollArea,
+    Separator,
     Tooltip, TooltipPlacement, TooltipSpec,
 };
 
@@ -47,11 +48,11 @@ fn plan_badge(value: &str) -> Element {
     Chip::new(
         value,
         ComponentPalette {
-            selected: Color::TRANSPARENT,
             text: theme::SETTINGS_FOREGROUND_SUBTLE,
             ..theme::component_palette()
         },
     )
+    .outline()
     .height(20.0)
     .render()
 }
@@ -471,7 +472,7 @@ fn account_card(
     .padding(10.0)
     .background(theme::CARD)
     .border(theme::BORDER, 1.0)
-    .radius(crate::settings_parts::CARD_RADIUS)
+    .radius(RadiusRole::Card.px())
 }
 
 fn refresh(state: &ViewState, compact: bool) -> Element {
@@ -1734,6 +1735,37 @@ mod tests {
         assert!(!frame.commands.iter().any(|command| matches!(command,
             DrawCommand::StrokeRect { rect, radius, .. } if *radius == 10.0 && rect.height == 20.0
         )), "missing plan must not reserve a badge");
+    }
+
+    // The transparent-fill chip that `Chip::outline` replaced. Delete with the final audit (S18).
+    fn legacy_plan_badge(value: &str) -> Element {
+        Chip::new(
+            value,
+            ComponentPalette {
+                selected: Color::TRANSPARENT,
+                text: theme::SETTINGS_FOREGROUND_SUBTLE,
+                ..theme::component_palette()
+            },
+        )
+        .height(20.0)
+        .render()
+    }
+
+    #[test]
+    fn plan_badge_matches_the_transparent_chip_it_replaced() {
+        for width in [360.0, 900.0] {
+            let frame = |badge: Element| {
+                let mut tree = UiTree::new(Element::row(vec![badge, Element::spacer().flex(1.0)]));
+                tree.set_reduced_motion(true);
+                tree.layout(Size::new(width, 32.0))
+            };
+            let mut legacy = frame(legacy_plan_badge("Plan de ChatGPT"));
+            // The old chip painted a fully transparent fill; the outline paints none.
+            legacy.commands.retain(|command| {
+                !matches!(command, DrawCommand::FillRect { color, .. } if color.a == 0)
+            });
+            assert_eq!(frame(plan_badge("Plan de ChatGPT")), legacy, "width={width}");
+        }
     }
 
     #[test]

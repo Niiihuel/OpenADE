@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use chrono::Datelike;
 use openide_ui::{
-    BarChart, Button, ButtonContent, ButtonSize, ButtonVariant, ChartAxisLabel, ChartDatum,
+    Alert, BarChart, Button, ButtonContent, ButtonSize, ButtonVariant, ChartAxisLabel, ChartDatum,
     ChartLegend, Color, Component, ControlSize, Element, FontFamily, HeatmapCell, HeatmapChart,
     HeatmapScale, Icon, Skeleton, TooltipPlacement,
 };
@@ -160,17 +160,21 @@ pub(super) fn github_card(state: &ViewState, content_width: f32) -> Element {
             .gap(10.0)
             .padding(10.0)])
         }
-        GithubContributionsStatus::Unavailable(error) => settings_parts::error_state(
+        GithubContributionsStatus::Unavailable(error) => Alert::new(
             "No se pudieron cargar las contribuciones",
             error,
-            Some(
-                Element::row(vec![
-                    super::outline("github_contributions_refresh", "Reintentar").render(),
-                    super::outline("github_account_connect", "Reconectar GitHub").render(),
-                ])
-                .gap(6.0),
-            ),
-        ),
+            theme::component_palette(),
+        )
+        .tone(settings_parts::FeedbackTone::Error)
+        .compact(true)
+        .action(
+            Element::row(vec![
+                super::outline("github_contributions_refresh", "Reintentar").render(),
+                super::outline("github_account_connect", "Reconectar GitHub").render(),
+            ])
+            .gap(6.0),
+        )
+        .render(),
     }
 }
 
