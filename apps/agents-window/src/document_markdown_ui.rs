@@ -413,40 +413,6 @@ mod tests {
     use super::*;
     use openide_ui::{DrawCommand, Size, UiTree};
 
-    // The shell of `code` as it was before limn's CodeBlock; delete with the final audit (S18).
-    fn legacy_code_shell(language: &str, spans: Vec<TextSpan>, width: f32) -> Element {
-        let mut children = Vec::new();
-        if !language.is_empty() {
-            children.push(
-                Element::text(language)
-                    .font_family(FontFamily::Sans)
-                    .font_size(11.0)
-                    .foreground(theme::FOREGROUND_SUBTLE),
-            );
-        }
-        children.push(Element::formatted_text(spans).size(Some((width - 24.0).max(0.0)), None));
-        Element::panel(Element::column(children).gap(8.0))
-            .padding(12.0)
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
-            .radius(8.0)
-            .size(Some(width), None)
-    }
-
-    #[test]
-    fn code_blocks_match_their_legacy_shell() {
-        let source = "fn main() {\n    println!(\"hola\");\n}\n";
-        for language in ["", "rust", "toml"] {
-            for width in [10.0, 220.0, 640.0] {
-                crate::icon_button_parity_tests::assert_same(
-                    &format!("document code {language:?} at {width}"),
-                    legacy_code_shell(language, code_spans(language, source), width),
-                    code(language, source, width),
-                );
-            }
-        }
-    }
-
     #[test]
     fn document_markdown_links_are_scoped_and_tables_fit_the_document() {
         let document = openide_preview::markdown::parse(

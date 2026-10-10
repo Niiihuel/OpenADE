@@ -9,11 +9,10 @@ use std::collections::HashSet;
 use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, Collapsible, Color, Component,
-    ControlSize, Element,
-    FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker, MarkerVariant, PageColumn,
-    ScrollArea,
-    Separator, TextArea, ToolActivity, Tooltip, TooltipPlacement,
+    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, Collapsible, Component,
+    ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
+    MarkerVariant, PageColumn, ScrollArea, Separator, Text, TextArea, TextRole, ToolActivity,
+    Tooltip, TooltipPlacement,
 };
 
 use crate::{
@@ -73,26 +72,14 @@ mod file_activity_visual_tests;
 #[path = "chat_dock_visual_tests.rs"]
 mod chat_dock_visual_tests;
 
-fn text(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::text(value)
-        .foreground(color)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-}
-
-fn mono(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::text(value)
-        .foreground(color)
-        .font_family(FontFamily::Monospace)
-        .font_size(size)
-}
-
 pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     let preview = image.raster.as_ref().map_or_else(
         || {
             Element::row(vec![
                 Element::icon(Icon::Paperclip).foreground(theme::FOREGROUND_SUBTLE),
-                text("Vista previa no disponible", theme::FOREGROUND_SUBTLE, 12.0),
+                Text::new("Vista previa no disponible", theme::component_palette())
+                    .muted()
+                    .render(),
             ])
             .gap(7.0)
         },
@@ -104,7 +91,10 @@ pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     );
     Element::column(vec![
         preview,
-        text(&image.alt, theme::FOREGROUND_SUBTLE, 11.0),
+        Text::new(&image.alt, theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
     ])
     .gap(5.0)
 }
@@ -318,8 +308,15 @@ fn message(
             };
             Card::new(
                 Element::column(vec![
-                    text(title, ink, 10.0),
-                    mono(ellipsis(output, 700), theme::FOREGROUND_SUBTLE, 11.0),
+                    Text::new(title, theme::component_palette())
+                        .role(TextRole::Micro)
+                        .ink(ink)
+                        .render(),
+                    Text::new(ellipsis(output, 700), theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .mono()
+                        .render(),
                 ])
                 .gap(7.0),
                 theme::panel_card_palette(),
@@ -400,11 +397,12 @@ pub(crate) fn model_stream_item(
                     "reasoning:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
                 ))];
                 if *truncated {
-                    rows.push(text(
-                        "Vista de razonamiento limitada",
-                        theme::FOREGROUND_SUBTLE,
-                        10.0,
-                    ));
+                    rows.push(
+                        Text::new("Vista de razonamiento limitada", theme::component_palette())
+                            .role(TextRole::Micro)
+                            .muted()
+                            .render(),
+                    );
                 }
                 ScrollArea::new(
                     format!(
@@ -463,20 +461,31 @@ pub(crate) fn model_stream_item(
             );
             let mut rows = Vec::new();
             if expanded {
-                rows.push(text(
-                    "Entrada provisional · todavía sin ejecutar",
-                    theme::FOREGROUND_SUBTLE,
-                    11.0,
-                ));
+                rows.push(
+                    Text::new(
+                        "Entrada provisional · todavía sin ejecutar",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+                );
                 if !arguments.is_empty() {
-                    rows.push(mono(arguments, theme::FOREGROUND_SUBTLE, 11.0));
+                    rows.push(
+                        Text::new(arguments, theme::component_palette())
+                            .role(TextRole::Small)
+                            .muted()
+                            .mono()
+                            .render(),
+                    );
                 }
                 if *truncated {
-                    rows.push(text(
-                        "Vista de argumentos limitada",
-                        theme::FOREGROUND_SUBTLE,
-                        10.0,
-                    ));
+                    rows.push(
+                        Text::new("Vista de argumentos limitada", theme::component_palette())
+                            .role(TextRole::Micro)
+                            .muted()
+                            .render(),
+                    );
                 }
             }
             let row = ToolActivity::new(
@@ -524,15 +533,6 @@ pub(crate) fn model_stream_item(
     }
 }
 
-// The palette whose secondary text is the status ink, for the parity copies
-// of the markers that now take `.ink`.
-#[cfg(test)]
-fn marker_palette(surface: Color, ink: Color) -> openide_ui::ComponentPalette {
-    let mut palette = theme::action_palette(surface, ink);
-    palette.muted = ink;
-    palette
-}
-
 /// A cited page in the transcript: its title over its address.
 fn web_citation(index: usize, title: &str, url: &str) -> Element {
     ListRow::new(
@@ -548,34 +548,6 @@ fn web_citation(index: usize, title: &str, url: &str) -> Element {
     .sizing(crate::ui_sizing::WEB_CITATION)
     .render()
     // A limn row has no outline: the hairline of this card is the app's.
-    .border(theme::BORDER, 1.0)
-}
-
-#[cfg(test)]
-fn legacy_web_citation(index: usize, title: &str, url: &str) -> Element {
-    theme::interactive_surface(Element::clickable(
-        format!("web_citation_open:{index}"),
-        Element::row(vec![
-            Element::icon(Icon::Search).foreground(theme::ICON_PRIMARY),
-            Element::column(vec![
-                Element::truncated_text(title)
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(theme::FOREGROUND)
-                    .size(None, Some(18.0)),
-                Element::truncated_text(url)
-                    .font_family(FontFamily::Monospace)
-                    .font_size(10.0)
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(None, Some(16.0)),
-            ])
-            .gap(2.0)
-            .flex(1.0),
-        ])
-        .gap(8.0)
-        .padding(9.0),
-    ))
-    .background(theme::PANEL)
     .border(theme::BORDER, 1.0)
 }
 
@@ -898,7 +870,12 @@ pub(crate) fn tool_media_elements(
     let mut rows = Vec::new();
     for (index, image) in images.iter().enumerate() {
         rows.push(image.raster.as_ref().map_or_else(
-            || text(&image.alt, theme::FOREGROUND_SUBTLE, 11.0),
+            || {
+                Text::new(&image.alt, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+            },
             |raster| {
                 Element::clickable(
                     tool_presentation::image_action(owner, tool_call_id, index, raster.sha256()),
@@ -910,10 +887,15 @@ pub(crate) fn tool_media_elements(
         ));
     }
     if !content.is_empty() {
-        rows.push(text(content, theme::FOREGROUND, 12.0));
+        rows.push(Text::new(content, theme::component_palette()).render());
     }
     for notice in notices {
-        rows.push(text(notice, theme::FOREGROUND_SUBTLE, 11.0));
+        rows.push(
+            Text::new(notice, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
     }
     rows
 }
@@ -1079,7 +1061,9 @@ fn terminal_activity(
         limited |= clipped;
         let prompt = format!("$ {command}");
         content.push(if expanded {
-            mono(prompt, theme::FOREGROUND, 12.0)
+            Text::new(prompt, theme::component_palette())
+                .mono()
+                .render()
         } else {
             Element::truncated_text(prompt.replace(['\r', '\n'], " "))
                 .font_family(FontFamily::Monospace)
@@ -1108,7 +1092,12 @@ fn terminal_activity(
             continue;
         };
         if let Some(label) = label {
-            content.push(text(label, theme::FOREGROUND_SUBTLE, 10.0));
+            content.push(
+                Text::new(label, theme::component_palette())
+                    .role(TextRole::Micro)
+                    .muted()
+                    .render(),
+            );
         }
         let (preview, clipped) = tool_presentation::terminal_tail(
             output.trim_end_matches('\n'),
@@ -1118,7 +1107,12 @@ fn terminal_activity(
         limited |= clipped;
         visible_copy.push_str(&preview);
         if expanded {
-            content.push(mono(preview, theme::FOREGROUND_SUBTLE, 12.0));
+            content.push(
+                Text::new(preview, theme::component_palette())
+                    .muted()
+                    .mono()
+                    .render(),
+            );
         } else {
             content.push(Element::column(
                 preview
@@ -1138,22 +1132,35 @@ fn terminal_activity(
     if let Some((_, status)) = &parsed {
         // These are process observations (including start/poll and remaining
         // output), not a redundant label for the tool's Completed lifecycle.
-        content.push(text(status, theme::FOREGROUND_SUBTLE, 11.0));
+        content.push(
+            Text::new(status, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
         visible_copy.push_str(status);
     }
     if partial.is_some_and(|(_, truncated)| truncated) {
-        content.push(text(
-            "Salida limitada · parte del contenido fue omitida",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        content.push(
+            Text::new(
+                "Salida limitada · parte del contenido fue omitida",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     if expanded && limited {
-        content.push(text(
-            "Vista limitada · contenido registrado en Actividad",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        content.push(
+            Text::new(
+                "Vista limitada · contenido registrado en Actividad",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     if expanded {
         if let Some(media) = media {
@@ -1322,15 +1329,26 @@ pub(crate) fn tool_detail_body(
         tool_presentation::json_preview(arguments, 3_000)
     };
     let mut body = vec![
-        text("Entrada", theme::FOREGROUND_SUBTLE, 10.0),
-        mono(args, theme::FOREGROUND_SUBTLE, 11.0),
+        Text::new("Entrada", theme::component_palette())
+            .role(TextRole::Micro)
+            .muted()
+            .render(),
+        Text::new(args, theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .mono()
+            .render(),
     ];
     if args_limited {
-        body.push(text(
-            "Entrada limitada en esta vista · completa en Actividad",
-            theme::FOREGROUND_SUBTLE,
-            10.0,
-        ));
+        body.push(
+            Text::new(
+                "Entrada limitada en esta vista · completa en Actividad",
+                theme::component_palette(),
+            )
+            .role(TextRole::Micro)
+            .muted()
+            .render(),
+        );
     }
     let media = if typed_media.is_none() {
         output
@@ -1351,10 +1369,15 @@ pub(crate) fn tool_detail_body(
             );
         }
         if !media.text.is_empty() {
-            body.push(text(&media.text, theme::FOREGROUND, 12.0));
+            body.push(Text::new(&media.text, theme::component_palette()).render());
         }
         for note in &media.notices {
-            body.push(text(*note, theme::FOREGROUND_SUBTLE, 11.0));
+            body.push(
+                Text::new(*note, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            );
         }
     }
     let terminal_result = output
@@ -1381,17 +1404,31 @@ pub(crate) fn tool_detail_body(
         if !captured && (media.is_some() || typed_media.is_some()) {
             continue;
         }
-        body.push(text(title, theme::FOREGROUND_SUBTLE, 10.0));
+        body.push(
+            Text::new(title, theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .render(),
+        );
         if !captured {
             if let Some((_, status)) = &terminal_result {
-                body.push(text(status, theme::FOREGROUND_SUBTLE, 11.0));
+                body.push(
+                    Text::new(status, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render(),
+                );
             }
         } else if partial.is_some_and(|(_, truncated)| truncated) {
-            body.push(text(
-                "Salida limitada · parte del contenido fue omitida",
-                theme::FOREGROUND_SUBTLE,
-                10.0,
-            ));
+            body.push(
+                Text::new(
+                    "Salida limitada · parte del contenido fue omitida",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Micro)
+                .muted()
+                .render(),
+            );
         }
         let (preview, limited) = if captured {
             tool_presentation::terminal_tail(content, usize::MAX, 12_000)
@@ -1411,19 +1448,22 @@ pub(crate) fn tool_detail_body(
                     "tool-result:{owner}:{id}:{}",
                     if captured { "capture" } else { "final" }
                 ),
-                mono(
+                Text::new(
                     if preview.is_empty() {
                         "Sin salida".into()
                     } else {
                         preview
                     },
-                    if *is_error {
-                        theme::DESTRUCTIVE
-                    } else {
-                        theme::FOREGROUND
-                    },
-                    11.0,
+                    theme::component_palette(),
                 )
+                .role(TextRole::Small)
+                .ink(if *is_error {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::FOREGROUND
+                })
+                .mono()
+                .render()
                 .padding(8.0),
             )
             .tint(theme::FOREGROUND_SUBTLE)
@@ -1433,27 +1473,37 @@ pub(crate) fn tool_detail_body(
             .radius(6.0),
         );
         if limited {
-            body.push(text(
-                "Vista limitada · contenido registrado en Actividad",
-                theme::FOREGROUND_SUBTLE,
-                10.0,
-            ));
+            body.push(
+                Text::new(
+                    "Vista limitada · contenido registrado en Actividad",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Micro)
+                .muted()
+                .render(),
+            );
         }
     }
     if output.is_none() && partial.is_none() {
-        body.push(text(
-            match activity {
-                ActivityStatus::Running => "Esperando resultado…",
-                ActivityStatus::WaitingPermission => "Pendiente de autorización",
-                ActivityStatus::PermissionInterrupted => "Permiso pendiente · turno interrumpido",
-                ActivityStatus::Cancelled => "Operación cancelada sin resultado",
-                ActivityStatus::Discarded => "Operación descartada sin ejecutar",
-                ActivityStatus::Failed => "La operación falló sin resultado",
-                _ => "No se recibió un resultado confirmado",
-            },
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        body.push(
+            Text::new(
+                match activity {
+                    ActivityStatus::Running => "Esperando resultado…",
+                    ActivityStatus::WaitingPermission => "Pendiente de autorización",
+                    ActivityStatus::PermissionInterrupted => {
+                        "Permiso pendiente · turno interrumpido"
+                    }
+                    ActivityStatus::Cancelled => "Operación cancelada sin resultado",
+                    ActivityStatus::Discarded => "Operación descartada sin ejecutar",
+                    ActivityStatus::Failed => "La operación falló sin resultado",
+                    _ => "No se recibió un resultado confirmado",
+                },
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     Element::column(body).gap(5.0)
 }
@@ -1749,16 +1799,19 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         })
         .collect();
     if state.transcript.is_empty() {
-        rows.push(text(
+        rows.push(theme::text_px(
             "Esta tarea aún no tiene actividad",
-            theme::FOREGROUND,
             17.0,
+            theme::FOREGROUND,
         ));
-        rows.push(text(
-            "Describe qué quieres hacer en el compositor inferior.",
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        ));
+        rows.push(
+            Text::new(
+                "Describe qué quieres hacer en el compositor inferior.",
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
+        );
     }
     while index < state.transcript.len() {
         let item = &state.transcript[index];
@@ -2014,13 +2067,19 @@ fn active_subagent_card(run: &SubagentRunView, selected_session: &str) -> Elemen
     };
     Card::new(
         Element::column(vec![
-            text(relation, theme::FOREGROUND_SUBTLE, 10.0),
-            text(&run.title, theme::FOREGROUND, 12.0),
-            mono(
+            Text::new(relation, theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .render(),
+            Text::new(&run.title, theme::component_palette()).render(),
+            Text::new(
                 format!("Sesión hija: {}", run.child_session_id),
-                theme::FOREGROUND_SUBTLE,
-                11.0,
-            ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .mono()
+            .render(),
             Button::new(
                 format!("subagent_cancel:{}", run.child_session_id),
                 "Cancelar subagente",
@@ -2166,12 +2225,17 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
         )
         .size(Some(14.0), Some(18.0))
         .center_content(),
-        text(title, theme::FOREGROUND, 12.0).centered_y().flex(1.0),
-        text(
+        Text::new(title, theme::component_palette())
+            .render()
+            .centered_y()
+            .flex(1.0),
+        Text::new(
             format!("{completed} de {}", plan.snapshot.plan.len()),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
+            theme::component_palette(),
         )
+        .role(TextRole::Small)
+        .muted()
+        .render()
         .centered_y(),
     ])
     .min_size(0.0, 18.0)
@@ -2213,15 +2277,16 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
             };
             Element::row(vec![
                 marker,
-                text(
+                Text::new(
                     format!("{}. {}", index + 1, step.step),
-                    if step.status == PlanStepStatus::InProgress {
-                        theme::FOREGROUND
-                    } else {
-                        theme::FOREGROUND_SUBTLE
-                    },
-                    12.0,
+                    theme::component_palette(),
                 )
+                .ink(if step.status == PlanStepStatus::InProgress {
+                    theme::FOREGROUND
+                } else {
+                    theme::FOREGROUND_SUBTLE
+                })
+                .render()
                 .flex(1.0),
             ])
             .gap(8.0)
@@ -2234,7 +2299,11 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
         .as_deref()
         .filter(|text| !text.trim().is_empty())
     {
-        content.push(text(explanation, theme::FOREGROUND_SUBTLE, 12.0));
+        content.push(
+            Text::new(explanation, theme::component_palette())
+                .muted()
+                .render(),
+        );
     }
     content.push(Element::column(steps).gap(8.0));
     if plan.can_build {
@@ -2276,22 +2345,23 @@ fn persisted_subagent_card(
         (&run.child_session_id, "Abrir subagente")
     };
     let mut details = vec![
-        text(&run.title, theme::FOREGROUND, 12.0),
-        text(
+        Text::new(&run.title, theme::component_palette()).render(),
+        Text::new(
             format!(
                 "{status} · Nivel {} · {} entradas pendientes",
                 run.depth, run.open_inputs
             ),
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        ),
+            theme::component_palette(),
+        )
+        .muted()
+        .render(),
     ];
     if run.cancellation_requested {
-        details.push(text(
-            "Cancelación solicitada",
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        ));
+        details.push(
+            Text::new("Cancelación solicitada", theme::component_palette())
+                .muted()
+                .render(),
+        );
     }
     let mut actions = vec![Button::new(
         format!("subagent_open:{target}"),
@@ -2382,13 +2452,19 @@ fn persisted_subagent_card(
                     openide_harness::SubagentInputStatus::Skipped => "Omitida",
                 };
                 let mut content = vec![
-                    text(
+                    Text::new(
                         format!("{status} · {:?}", input.mode),
-                        theme::FOREGROUND_SUBTLE,
-                        11.0,
-                    ),
-                    mono(&input.id, theme::FOREGROUND_SUBTLE, 11.0),
-                    text(&input.prompt, theme::FOREGROUND, 12.0),
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+                    Text::new(&input.id, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .mono()
+                        .render(),
+                    Text::new(&input.prompt, theme::component_palette()).render(),
                 ];
                 if input.status == openide_harness::SubagentInputStatus::Pending
                     && !run.cancellation_requested
@@ -2439,8 +2515,14 @@ fn persisted_subagent_card(
     if let Some(edit) = edit.filter(|edit| edit.child_session_id == run.child_session_id) {
         details.push(
             Element::column(vec![
-                text("Editar entrada pendiente", theme::FOREGROUND, 13.0),
-                mono(&edit.input_id, theme::FOREGROUND_SUBTLE, 11.0),
+                Text::new("Editar entrada pendiente", theme::component_palette())
+                    .role(TextRole::Label)
+                    .render(),
+                Text::new(&edit.input_id, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .mono()
+                    .render(),
                 TextArea::new(
                     "subagent_input_prompt",
                     &edit.prompt,
@@ -2569,22 +2651,32 @@ pub(crate) fn hook_activity_card(hook: &crate::transcript::HookActivity) -> Elem
         None => "En ejecución · resultado pendiente",
     };
     let mut details = vec![
-        text(format!("Hook: {}", hook.hook_id), theme::FOREGROUND, 13.0),
-        text(phase, theme::FOREGROUND_SUBTLE, 12.0),
-        mono(
+        Text::new(
+            format!("Hook: {}", hook.hook_id),
+            theme::component_palette(),
+        )
+        .role(TextRole::Label)
+        .render(),
+        Text::new(phase, theme::component_palette())
+            .muted()
+            .render(),
+        Text::new(
             format!("Llamada: {}", hook.tool_call_id),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
-        text(
-            status,
-            if hook.interrupted || hook.decision.as_deref() == Some("block") {
-                theme::DESTRUCTIVE
-            } else {
-                theme::FOREGROUND_SUBTLE
-            },
-            12.0,
-        ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .mono()
+        .render(),
+        Text::new(status, theme::component_palette())
+            .ink(
+                if hook.interrupted || hook.decision.as_deref() == Some("block") {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::FOREGROUND_SUBTLE
+                },
+            )
+            .render(),
     ];
     for (label, value) in [
         ("Razón", &hook.reason),
@@ -2593,14 +2685,23 @@ pub(crate) fn hook_activity_card(hook: &crate::transcript::HookActivity) -> Elem
         ("Error del hook", &hook.error),
     ] {
         if let Some(value) = value.as_ref().filter(|value| !value.is_empty()) {
-            details.push(text(label, theme::FOREGROUND_SUBTLE, 11.0));
+            details.push(
+                Text::new(label, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            );
             details.push(
                 ScrollArea::new(
                     format!(
                         "hook_diagnostic:{}:{}:{}:{label}",
                         hook.tool_call_id, hook.hook_id, hook.phase
                     ),
-                    mono(value, theme::FOREGROUND, 11.0).padding(6.0),
+                    Text::new(value, theme::component_palette())
+                        .role(TextRole::Small)
+                        .mono()
+                        .render()
+                        .padding(6.0),
                 )
                 .render()
                 .size(None, Some(90.0))
@@ -2610,7 +2711,7 @@ pub(crate) fn hook_activity_card(hook: &crate::transcript::HookActivity) -> Elem
         }
     }
     if hook.interrupted {
-        details.push(text("Verifica también el efecto de este hook fuera de OpenIDE. No se repetirá automáticamente.", theme::FOREGROUND_SUBTLE, 12.0));
+        details.push(Text::new("Verifica también el efecto de este hook fuera de OpenIDE. No se repetirá automáticamente.", theme::component_palette()).muted().render());
     }
     Card::new(Element::column(details).gap(6.0), theme::panel_card_palette())
         .density(CardDensity::Roomy)
@@ -2625,20 +2726,30 @@ fn tool_verification_card(
 ) -> Element {
     let argument_height = if compact { 66.0 } else { 96.0 };
     let mut details = vec![
-        text(
+        Text::new(
             format!("Herramienta: {}", verification.name),
-            theme::FOREGROUND,
-            12.0,
-        ),
-        mono(
+            theme::component_palette(),
+        )
+        .render(),
+        Text::new(
             format!("Llamada: {}", verification.call_id),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
-        text("Argumentos originales", theme::FOREGROUND_SUBTLE, 11.0),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .mono()
+        .render(),
+        Text::new("Argumentos originales", theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         ScrollArea::new(
             format!("tool_verification_args:{}", verification.call_id),
-            mono(&verification.arguments, theme::FOREGROUND, 11.0).padding(8.0),
+            Text::new(&verification.arguments, theme::component_palette())
+                .role(TextRole::Small)
+                .mono()
+                .render()
+                .padding(8.0),
         )
         .tint(theme::FOREGROUND_SUBTLE)
         .render()
@@ -2647,40 +2758,55 @@ fn tool_verification_card(
         .radius(8.0),
     ];
     if !verification.hooks.is_empty() {
-        details.push(text(
-            "Hooks asociados a esta llamada",
-            theme::FOREGROUND,
-            12.0,
-        ));
+        details
+            .push(Text::new("Hooks asociados a esta llamada", theme::component_palette()).render());
         details.extend(verification.hooks.iter().map(hook_activity_card));
     }
     if let Some(receipt) = &verification.goal_receipt {
-        details.push(text(
-            "Recibo de modificación del goal",
-            theme::FOREGROUND,
-            12.0,
-        ));
+        details.push(
+            Text::new(
+                "Recibo de modificación del goal",
+                theme::component_palette(),
+            )
+            .render(),
+        );
         details.push(
             ScrollArea::new(
                 format!("tool_verification_goal_receipt:{}", verification.call_id),
-                mono(receipt.description(), theme::FOREGROUND, 11.0).padding(8.0),
+                Text::new(receipt.description(), theme::component_palette())
+                    .role(TextRole::Small)
+                    .mono()
+                    .render()
+                    .padding(8.0),
             )
             .render()
             .size(None, Some(96.0)),
         );
     }
     if let Some(error) = &verification.error {
-        details.push(text("Error del ejecutor", theme::DESTRUCTIVE, 11.0));
-        details.push(mono(error, theme::FOREGROUND, 11.0));
+        details.push(
+            Text::new("Error del ejecutor", theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::DESTRUCTIVE)
+                .render(),
+        );
+        details.push(
+            Text::new(error, theme::component_palette())
+                .role(TextRole::Small)
+                .mono()
+                .render(),
+        );
     }
     details.extend([
         Separator::horizontal(theme::component_palette()).render(),
-        text("Resultado comprobado", theme::FOREGROUND, 12.0),
-        text(
+        Text::new("Resultado comprobado", theme::component_palette()).render(),
+        Text::new(
             "Escribe lo que verificaste manualmente. Esta llamada no se repetirá al reanudar.",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render(),
         TextArea::new(
             "tool_verification_output",
             output,
@@ -2691,18 +2817,19 @@ fn tool_verification_card(
         .render(),
     ]);
 
-    let classification = text(
+    let classification = Text::new(
         format!(
             "Clasificación elegida: {} (pendiente de confirmar)",
             if is_error { "Error" } else { "Éxito" }
         ),
-        if is_error {
-            theme::DESTRUCTIVE
-        } else {
-            theme::FOREGROUND
-        },
-        12.0,
-    );
+        theme::component_palette(),
+    )
+    .ink(if is_error {
+        theme::DESTRUCTIVE
+    } else {
+        theme::FOREGROUND
+    })
+    .render();
     let toggle = Button::new(
         "tool_verification_toggle_error",
         if is_error {
@@ -2764,10 +2891,13 @@ fn interruption_card(
             Element::icon(Icon::Stop)
                 .foreground(theme::DESTRUCTIVE)
                 .size(Some(16.0), Some(16.0)),
-            text(title, theme::FOREGROUND, 12.0),
+            Text::new(title, theme::component_palette()).render(),
         ])
         .gap(8.0),
-        text(reason, theme::FOREGROUND_SUBTLE, 11.0),
+        Text::new(reason, theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         Separator::horizontal(theme::component_palette()).render(),
     ];
     details.extend(rows);
@@ -2782,20 +2912,30 @@ fn interruption_card(
 fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
     let count = batch.remaining_calls;
     let details = vec![
-        text(
+        Text::new(
             format!("Próxima herramienta pendiente: {}", batch.next_tool_name),
-            theme::FOREGROUND,
-            12.0,
-        ),
-        mono(
+            theme::component_palette(),
+        )
+        .render(),
+        Text::new(
             format!("Llamada: {}", batch.next_call_id),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
-        text("Argumentos originales", theme::FOREGROUND_SUBTLE, 11.0),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .mono()
+        .render(),
+        Text::new("Argumentos originales", theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         ScrollArea::new(
             format!("aborted_batch_args:{}", batch.next_call_id),
-            mono(&batch.next_arguments, theme::FOREGROUND, 11.0).padding(8.0),
+            Text::new(&batch.next_arguments, theme::component_palette())
+                .role(TextRole::Small)
+                .mono()
+                .render()
+                .padding(8.0),
         )
         .tint(theme::FOREGROUND_SUBTLE)
         .render()
@@ -2888,37 +3028,49 @@ fn automation_read_only_card(
         .map(|value| value.format("%d/%m/%Y %H:%M:%S").to_string())
         .unwrap_or_else(|| "Fecha no disponible".into());
     let details = Element::column(vec![
-        text(
+        Text::new(
             "Automatización nativa · sólo lectura",
-            theme::FOREGROUND,
-            12.0,
-        ),
-        text(
+            theme::component_palette(),
+        )
+        .render(),
+        Text::new(
             "Esta sesión conserva el perfil original de la ejecución registrada.",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
-        mono(
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render(),
+        Text::new(
             format!("Proveedor: {}", origin.provider_id),
-            theme::FOREGROUND,
-            11.0,
-        ),
-        mono(
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .mono()
+        .render(),
+        Text::new(
             format!("Modelo: {}", origin.model_id),
-            theme::FOREGROUND,
-            11.0,
-        ),
-        mono(
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .mono()
+        .render(),
+        Text::new(
             format!("Automatización: {}", origin.automation_id),
-            theme::FOREGROUND_SUBTLE,
-            10.0,
-        ),
-        mono(
+            theme::component_palette(),
+        )
+        .role(TextRole::Micro)
+        .muted()
+        .mono()
+        .render(),
+        Text::new(
             format!("Ejecución: {}", origin.run_id),
-            theme::FOREGROUND_SUBTLE,
-            10.0,
-        ),
-        text(
+            theme::component_palette(),
+        )
+        .role(TextRole::Micro)
+        .muted()
+        .mono()
+        .render(),
+        Text::new(
             format!(
                 "{} · {when}",
                 if origin.manual {
@@ -2927,14 +3079,18 @@ fn automation_read_only_card(
                     "Programada"
                 }
             ),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
-        text(
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render(),
+        Text::new(
             "Para enviar otra instrucción, crea una tarea nativa nueva.",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render(),
     ])
     .gap(5.0)
     .padding(4.0);
@@ -2946,7 +3102,12 @@ fn automation_read_only_card(
     .render()
     .size(None, Some(if compact { 148.0 } else { 134.0 }))];
     if !state.status.trim().is_empty() {
-        rows.push(text(&state.status, theme::FOREGROUND_SUBTLE, 11.0));
+        rows.push(
+            Text::new(&state.status, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
     }
     if let Some(error) = &state.composer_error {
         rows.push(
@@ -3229,17 +3390,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_web_citation_matches_its_legacy_body() {
-        let url = "https://example.com/una/ruta/bastante/larga/index.html";
-        for title in ["limn", "Un título de página que no cabe en una columna angosta de lectura"] {
-            crate::state_panel_parity_tests::assert_same(
-                "web citation",
-                legacy_web_citation(3, title, url),
-                web_citation(3, title, url),
-            );
-        }
-    }
     use serde_json::{json, Value};
     use unicode_segmentation::UnicodeSegmentation;
 
@@ -5827,52 +5977,6 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id == "subagent_resume:child-1"));
-    }
-
-    // The recovery scaffold limn's `PageColumn` replaced. Delete with the
-    // final audit (S18).
-    fn legacy_recovery_page(scroll_id: &str, card: Element, center_width: f32) -> Element {
-        let compact = center_width < COMPACT_BREAKPOINT;
-        let card_width =
-            (center_width - if compact { 20.0 } else { 48.0 }).clamp(0.0, READING_WIDTH);
-        let recovery = Element::column(vec![
-            card.size(Some(card_width), None).centered_x(),
-            Element::spacer().size(None, Some(64.0)),
-        ])
-        .padding(if compact { 10.0 } else { 24.0 });
-        ScrollArea::new(scroll_id, recovery)
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .flex(1.0)
-            .background(theme::BACKGROUND)
-    }
-
-    #[test]
-    fn page_column_paints_what_the_recovery_pages_painted() {
-        let batch = AbortedToolBatchView {
-            session_id: "session-1".into(),
-            next_call_id: "call-9".into(),
-            next_tool_name: "write_file".into(),
-            next_arguments: "{\"path\":\"notes.txt\"}".into(),
-            completed_calls: 1,
-            remaining_calls: 2,
-        };
-        for width in [220.0, 469.0, 470.0, 800.0, 1400.0] {
-            // A short viewport makes the page overflow and show its rail.
-            for height in [160.0, 900.0] {
-                let frame = |page: Element| {
-                    let mut tree = UiTree::new(Element::column(vec![page]));
-                    tree.set_reduced_motion(true);
-                    tree.layout(Size::new(width, height))
-                };
-                let card = || aborted_batch_card(&batch, width < COMPACT_BREAKPOINT);
-                assert_eq!(
-                    frame(recovery_page("aborted_batch", card(), width)),
-                    frame(legacy_recovery_page("aborted_batch", card(), width)),
-                    "width={width} height={height}"
-                );
-            }
-        }
     }
 
     #[test]

@@ -181,24 +181,25 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
     {
         let mut detail = vec![
             Element::row(vec![
-                label(
+                UiText::new(
                     if name.is_empty() { "Herramienta" } else { name },
-                    theme::FOREGROUND,
+                    theme::component_palette(),
                 )
-                .font_size(13.0)
+                .role(TextRole::Label)
+                .render()
                 .flex(1.0),
-                label(
+                theme::text_px(
                     tool_status(output, *is_error, *activity),
+                    10.5,
                     if *is_error {
                         theme::DESTRUCTIVE
                     } else {
                         theme::FOREGROUND_SUBTLE
                     },
-                )
-                .font_size(10.5),
+                ),
             ])
             .gap(8.0),
-            eyebrow("ARGUMENTOS"),
+            UiText::eyebrow("ARGUMENTOS", theme::component_palette()).render(),
             output_block(
                 &format!("activity:{id}:arguments"),
                 &bounded_json(arguments),
@@ -209,7 +210,8 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
         ];
         let media = crate::session_surface::tool_media(state, index, id);
         if let Some(media) = media {
-            detail.push(eyebrow("CONTENIDO MULTIMEDIA"));
+            detail
+                .push(UiText::eyebrow("CONTENIDO MULTIMEDIA", theme::component_palette()).render());
             detail.extend(crate::session_surface::tool_media_elements(
                 media,
                 true,
@@ -219,7 +221,8 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
             .as_deref()
             .and_then(|output| crate::tool_result_media::preview(name, output))
         {
-            detail.push(eyebrow("CONTENIDO MULTIMEDIA"));
+            detail
+                .push(UiText::eyebrow("CONTENIDO MULTIMEDIA", theme::component_palette()).render());
             for image in &media.images {
                 detail.push(
                     Element::raster_image(image.clone())
@@ -237,11 +240,16 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
                 ));
             }
             for notice in &media.notices {
-                detail.push(label(*notice, theme::FOREGROUND_SUBTLE).font_size(11.0));
+                detail.push(
+                    UiText::new(*notice, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render(),
+                );
             }
         }
         if let Some(output) = output {
-            detail.push(eyebrow("RESULTADO FINAL"));
+            detail.push(UiText::eyebrow("RESULTADO FINAL", theme::component_palette()).render());
             detail.push(output_block(
                 &format!("activity:{id}:output"),
                 output,
@@ -257,20 +265,28 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
         if let Some((captured, truncated)) =
             crate::session_surface::tool_partial_output(state, index, id)
         {
-            detail.push(eyebrow(if output.is_some() {
-                "SALIDA CAPTURADA"
-            } else if *activity == crate::transcript::ActivityStatus::Running {
-                "SALIDA EN CURSO"
-            } else {
-                "SALIDA PARCIAL"
-            }));
+            detail.push(
+                UiText::eyebrow(
+                    if output.is_some() {
+                        "SALIDA CAPTURADA"
+                    } else if *activity == crate::transcript::ActivityStatus::Running {
+                        "SALIDA EN CURSO"
+                    } else {
+                        "SALIDA PARCIAL"
+                    },
+                    theme::component_palette(),
+                )
+                .render(),
+            );
             if truncated {
                 detail.push(
-                    label(
+                    UiText::new(
                         "Salida limitada · parte del contenido fue omitida",
-                        theme::FOREGROUND_SUBTLE,
+                        theme::component_palette(),
                     )
-                    .font_size(11.0),
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
                 );
             }
             detail.push(output_block(
@@ -282,15 +298,16 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
             ));
         } else if output.is_none() {
             detail.push(
-                label(
+                UiText::new(
                     if *activity == crate::transcript::ActivityStatus::Running {
                         "Esperando resultado…"
                     } else {
                         "Sin resultado confirmado"
                     },
-                    theme::FOREGROUND_SUBTLE,
+                    theme::component_palette(),
                 )
-                .font_size(12.0),
+                .muted()
+                .render(),
             );
         }
         items.push(inset_card(Element::column(detail).gap(8.0), width));
@@ -307,10 +324,16 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
         TranscriptItem::ProcessOutput { stream, text } => Some((stream, text)),
         _ => None,
     }) {
-        items.push(eyebrow(match stream {
-            OutputStream::Stdout => "SALIDA DEL PROCESO",
-            OutputStream::Stderr => "DIAGNÓSTICOS DEL PROCESO",
-        }));
+        items.push(
+            UiText::eyebrow(
+                match stream {
+                    OutputStream::Stdout => "SALIDA DEL PROCESO",
+                    OutputStream::Stderr => "DIAGNÓSTICOS DEL PROCESO",
+                },
+                theme::component_palette(),
+            )
+            .render(),
+        );
         items.push(output_block(
             "activity:process-output",
             output,
@@ -347,8 +370,8 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
     items.push(Separator::horizontal(theme::component_palette()).render());
     items.push(
         Element::row(vec![
-            label("Procesos", theme::FOREGROUND)
-                .font_size(12.0)
+            UiText::new("Procesos", theme::component_palette())
+                .render()
                 .flex(1.0),
             Button::new(
                 "native_command_history_open",
@@ -385,11 +408,13 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
         );
     } else if state.native_commands.is_empty() {
         items.push(
-            label(
+            UiText::new(
                 "No hay procesos registrados en esta tarea.",
-                theme::FOREGROUND_SUBTLE,
+                theme::component_palette(),
             )
-            .font_size(11.0),
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         );
     }
     for command in &state.native_commands {
@@ -418,12 +443,14 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
                 Element::icon(Icon::Terminal)
                     .foreground(theme::FOREGROUND_SUBTLE)
                     .size(Some(16.0), Some(18.0)),
-                mono(shorten(&command.id, 28), theme::FOREGROUND)
-                    .font_size(11.0)
+                UiText::new(shorten(&command.id, 28), theme::component_palette())
+                    .role(TextRole::Small)
+                    .mono()
+                    .render()
                     .flex(1.0),
             ])
             .gap(6.0),
-            label(details, theme::FOREGROUND_SUBTLE).font_size(10.5),
+            theme::text_px(details, 10.5, theme::FOREGROUND_SUBTLE),
         ];
         if let Some(owner) = state.selected_session.as_deref() {
             let identity =
@@ -467,10 +494,16 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
         items.push(inset_card(Element::column(process).gap(5.0), width));
     }
     if !state.session_approval_grants.is_empty() {
-        items.push(eyebrow(format!(
-            "PERMISOS DE SESIÓN · {}",
-            state.session_approval_grants.len()
-        )));
+        items.push(
+            UiText::eyebrow(
+                format!(
+                    "PERMISOS DE SESIÓN · {}",
+                    state.session_approval_grants.len()
+                ),
+                theme::component_palette(),
+            )
+            .render(),
+        );
         for grant in &state.session_approval_grants {
             items.push(
                 Element::row(vec![
@@ -551,186 +584,6 @@ fn bounded_json(value: &Value) -> String {
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
-
-    // `output_block` as it was before limn's OutputBlock; delete with the final audit (S18).
-    fn legacy_output_block(id: &str, source: &str, width: f32, ink: Color, max_height: f32) -> Element {
-        let mut byte_end = source.len().min(PREVIEW_BYTES);
-        while !source.is_char_boundary(byte_end) {
-            byte_end -= 1;
-        }
-        let prefix = &source[..byte_end];
-        let mut source_lines = prefix.lines();
-        let lines: Vec<String> = source_lines
-            .by_ref()
-            .take(600)
-            .map(|line| {
-                let mut chars = line.chars();
-                let mut text: String = chars.by_ref().take(500).collect();
-                if chars.next().is_some() {
-                    text.push('…');
-                }
-                if text.is_empty() {
-                    text.push(' ');
-                }
-                text
-            })
-            .collect();
-        let truncated = byte_end < source.len() || source_lines.next().is_some();
-        let count = lines.len();
-        let body = ScrollArea::uniform_list(id, count, 17.0, move |index| {
-            mono(&lines[index], ink)
-                .font_size(11.0)
-                .size(Some((width - 20.0).max(100.0)), Some(17.0))
-                .clip_children()
-        })
-        .render()
-        .top_fade(theme::CODE_SURFACE, 12.0)
-        .size(
-            Some((width - 12.0).max(120.0)),
-            Some((count.max(1) as f32 * 17.0).min(max_height)),
-        );
-        let mut children = vec![body];
-        if truncated {
-            children.push(
-                label(
-                    "Vista parcial · resultado demasiado extenso",
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(10.0),
-            );
-        }
-        Element::column(children)
-            .gap(4.0)
-            .padding(6.0)
-            .background(theme::CODE_SURFACE)
-            .radius(5.0)
-            .size(Some(width), None)
-    }
-
-    fn legacy_tool_row(row: &ToolRow, width: f32) -> Element {
-        theme::interactive_surface(
-            Element::clickable(
-                format!("tool:{}", row.id),
-                Element::row(vec![
-                    Element::icon(row.icon)
-                        .foreground(row.ink)
-                        .size(Some(16.0), Some(24.0)),
-                    Element::truncated_text(&row.title)
-                        .font_family(FontFamily::Sans)
-                        .font_size(12.0)
-                        .foreground(theme::FOREGROUND)
-                        .flex(1.0)
-                        .size(None, Some(24.0)),
-                    Element::truncated_text(row.status)
-                        .font_family(FontFamily::Sans)
-                        .font_size(10.5)
-                        .foreground(row.ink)
-                        .size(Some((width * 0.35).min(130.0)), Some(24.0)),
-                ])
-                .gap(8.0),
-            )
-            .padding(7.0)
-            .background(if row.selected {
-                theme::SELECTED
-            } else {
-                theme::BACKGROUND
-            }),
-        )
-        .hover_background(if row.selected {
-            theme::SELECTED
-        } else {
-            theme::INPUT
-        })
-        .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT))
-    }
-
-    #[test]
-    fn tool_rows_match_their_legacy_body() {
-        let long = "mcp__workspace__read_many_files_and_summarize_every_one_of_them";
-        for selected in [false, true] {
-            for (title, icon, ink) in [
-                ("Bash", Icon::History, theme::BRAND),
-                (long, Icon::WarningTriangle, theme::DESTRUCTIVE),
-            ] {
-                let row = ToolRow {
-                    id: "t1".into(),
-                    title: title.into(),
-                    status: "En ejecución",
-                    icon,
-                    ink,
-                    selected,
-                };
-                let row = std::sync::Arc::new(row);
-                // In the list, which lays its rows out wider than they ask.
-                let listed = |build: fn(&ToolRow, f32) -> Element, width: f32| {
-                    let row = row.clone();
-                    ScrollArea::uniform_list("tools", 1, ROW_HEIGHT, move |_| build(&row, width))
-                        .render()
-                        .size(Some(width), Some(ROW_HEIGHT))
-                };
-                for width in [148.0, 420.0] {
-                    let name = format!("tool row {title} selected={selected} at {width}");
-                    crate::icon_button_parity_tests::assert_same(
-                        &name,
-                        legacy_tool_row(&row, width),
-                        tool_row(&row, width),
-                    );
-                    crate::icon_button_parity_tests::assert_same(
-                        &name,
-                        listed(legacy_tool_row, width),
-                        listed(tool_row, width),
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn inset_cards_match_the_padded_columns_they_replaced() {
-        let rows = || {
-            vec![
-                label("Herramienta", theme::FOREGROUND).font_size(13.0),
-                eyebrow("ARGUMENTOS"),
-                label("Sin resultado confirmado", theme::FOREGROUND_SUBTLE).font_size(12.0),
-            ]
-        };
-        for gap in [5.0, 8.0] {
-            for width in [136.0, 336.0] {
-                crate::icon_button_parity_tests::assert_same(
-                    &format!("inset card gap {gap} at {width}"),
-                    Element::column(rows())
-                        .gap(gap)
-                        .padding(8.0)
-                        .background(theme::PANEL)
-                        .radius(6.0)
-                        .size(Some(width), None),
-                    inset_card(Element::column(rows()).gap(gap), width),
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn output_blocks_match_their_legacy_body() {
-        let long = (0..100_000)
-            .map(|n| format!("line {n}\n"))
-            .collect::<String>();
-        let wide = "á漢🙂".repeat(30_000);
-        for (source, ink, max_height) in [
-            ("", theme::FOREGROUND, 100.0),
-            ("uno\n\ntres", theme::DESTRUCTIVE, 160.0),
-            (long.as_str(), theme::FOREGROUND, 120.0),
-            (wide.as_str(), theme::FOREGROUND_SUBTLE, 200.0),
-        ] {
-            for width in [130.0, 344.0] {
-                crate::icon_button_parity_tests::assert_same(
-                    &format!("output block of {} bytes at {width}", source.len()),
-                    legacy_output_block("output", source, width, ink, max_height),
-                    output_block("output", source, width, ink, max_height),
-                );
-            }
-        }
-    }
 
     #[test]
     #[ignore = "export the Activity inspector with long output for manual visual review"]

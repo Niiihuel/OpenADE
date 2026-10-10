@@ -2,8 +2,8 @@
 use crate::{keymap::KeymapProfile, theme, view::ViewState};
 use openide_ui::{
     AlertDialog, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, CodeEditor, CodeLanguage,
-    Component, ControlSize, EditorController, Element, FontFamily, Icon, IconButton,
-    TooltipPlacement, TooltipSpec,
+    Component, ControlSize, EditorController, Element, Icon, IconButton, Text, TooltipPlacement,
+    TooltipSpec,
 };
 use std::path::Path;
 
@@ -29,12 +29,6 @@ pub(crate) struct CodeEditorView {
 pub(crate) fn view_id(tab_id: u64) -> String {
     format!("code_editor:{tab_id}")
 }
-fn label(value: impl Into<String>, color: openide_ui::Color) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-        .foreground(color)
-}
 pub(crate) fn path_breadcrumb(id: &str, path: &str, dirty: bool, width: f32) -> Element {
     path_breadcrumb_with_height(id, path, dirty, width, BREADCRUMB_HEIGHT)
 }
@@ -49,54 +43,6 @@ pub(crate) fn path_breadcrumb_with_height(
 ) -> Element {
     Breadcrumb::from_path(id, path, theme::component_palette())
         .dirty(dirty)
-        .width(width)
-        .height(height)
-        .render()
-}
-
-// The hand-built path `Breadcrumb::from_path` replaced, kept for the parity
-// test until S18.
-#[cfg(test)]
-fn legacy_path_items(id: &str, path: &str, dirty: bool, width: f32) -> Vec<BreadcrumbItem> {
-    let file_path = Path::new(path);
-    let filename = file_path.file_name().unwrap_or_default().to_string_lossy();
-    let interactive = id.starts_with("code_editor_path:");
-    let mut accumulated = std::path::PathBuf::new();
-    let mut items = file_path
-        .parent()
-        .into_iter()
-        .flat_map(Path::components)
-        .filter_map(|part| match part {
-            std::path::Component::Normal(part) => {
-                accumulated.push(part);
-                let item = BreadcrumbItem::new(part.to_string_lossy())
-                    .tooltip(accumulated.to_string_lossy());
-                Some(if interactive {
-                    item.action(format!("editor_folder:{}", accumulated.display()))
-                } else {
-                    item
-                })
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let mut file_item =
-        BreadcrumbItem::new(format!("{}{}", filename, if dirty { " •" } else { "" })).tooltip(path);
-    if width >= 76.0 {
-        file_item = file_item.icon(openide_ui::file_icon(path));
-    }
-    items.push(if interactive {
-        file_item.action("editor_copy_relative")
-    } else {
-        file_item
-    });
-    items
-}
-
-#[cfg(test)]
-fn legacy_path_breadcrumb(id: &str, path: &str, dirty: bool, width: f32, height: f32) -> Element {
-    let items = legacy_path_items(id, path, dirty, width);
-    Breadcrumb::new(id, items, theme::component_palette())
         .width(width)
         .height(height)
         .render()
@@ -129,24 +75,6 @@ fn editor_breadcrumb(
             }),
             Breadcrumb::item,
         )
-        .width(width)
-        .height(height)
-        .overflow_open(workbench.breadcrumb_open)
-        .render()
-}
-
-#[cfg(test)]
-fn legacy_editor_breadcrumb(
-    view: &CodeEditorView,
-    workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
-    dirty: bool,
-    width: f32,
-    height: f32,
-) -> Element {
-    let id = format!("code_editor_path:{}", view.tab_id);
-    let mut items = legacy_path_items(&id, &view.path, dirty, width);
-    items.extend(symbol_items(view, workbench, width));
-    Breadcrumb::new(id, items, theme::component_palette())
         .width(width)
         .height(height)
         .overflow_open(workbench.breadcrumb_open)
@@ -496,10 +424,20 @@ pub(crate) fn build_with(
     let mut rows = vec![header.size(None, Some(header_height))];
     rows.extend(crate::editor_workbench_ui::tools(view, workbench, width));
     if let Some(error) = &view.error {
-        rows.push(label(error, theme::DESTRUCTIVE).padding(8.0));
+        rows.push(
+            Text::new(error, theme::component_palette())
+                .ink(theme::DESTRUCTIVE)
+                .render()
+                .padding(8.0),
+        );
     }
     if let Some(notice) = &view.notice {
-        rows.push(label(notice, theme::FOREGROUND_SUBTLE).padding(8.0));
+        rows.push(
+            Text::new(notice, theme::component_palette())
+                .muted()
+                .render()
+                .padding(8.0),
+        );
     }
     if let Some(controller) = &view.controller {
         let language = workbench
@@ -592,14 +530,16 @@ pub(crate) fn build_with(
         );
     } else {
         rows.push(
-            label(
+            Text::new(
                 if view.loading {
                     "Abriendo archivo…"
                 } else {
                     "El archivo no está disponible para editar."
                 },
-                theme::FOREGROUND_SUBTLE,
+                theme::component_palette(),
             )
+            .muted()
+            .render()
             .padding(12.0),
         );
         rows.push(Element::spacer().flex(1.0));
@@ -644,7 +584,9 @@ pub(crate) fn confirmation(state: &ViewState, base: Element, width: f32) -> Elem
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{DrawCommand, HitKind, Icon, Key, Point, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{
+        DrawCommand, FontFamily, HitKind, Icon, Key, Point, Size, UiAction, UiEvent, UiTree,
+    };
     use std::time::{Duration, Instant};
 
     fn header_fixture(dirty: bool) -> CodeEditorView {
@@ -1087,99 +1029,6 @@ mod tests {
             current < 300.0,
             "path should pack to its natural width: {current}"
         );
-    }
-
-    // `Breadcrumb::from_path` replaced the hand-built segments. Delete with
-    // the final audit (S18).
-    #[test]
-    fn path_breadcrumbs_match_their_hand_built_segments() {
-        let source = "fn prepare() {\n    let answer = 42;\n}\n";
-        let mut buffer = openide_editor::TextBuffer::new(source).unwrap();
-        buffer
-            .set_selection(openide_editor::Selection { anchor: 20, head: 20 })
-            .unwrap();
-        let controller = EditorController::new(buffer);
-        let snapshot = controller.snapshot().unwrap();
-        let analysis = openide_language::ParserEngine::default()
-            .analyze(
-                &snapshot,
-                openide_language::Language::Rust,
-                &openide_language::Cancellation::default(),
-            )
-            .unwrap();
-        assert!(!analysis.symbols.is_empty());
-        let frames = |new: Element, legacy: Element, width: f32, height: f32| {
-            let frame = |root| {
-                let (ctx, mut tree) = native_header_tree(root);
-                tree.set_reduced_motion(true);
-                let frame = tree.layout(Size::new(width.max(1.0), height));
-                // The same with every segment under the pointer.
-                let hovered = frame
-                    .regions
-                    .iter()
-                    .map(|region| {
-                        tree.handle_event(UiEvent::PointerMove(Point::new(
-                            region.rect.x + region.rect.width / 2.0,
-                            region.rect.y + region.rect.height / 2.0,
-                        )));
-                        tree.layout(Size::new(width.max(1.0), height)).commands
-                    })
-                    .collect::<Vec<_>>();
-                ctx.end_pass().textures_delta.clear();
-                (frame.commands, frame.regions, hovered)
-            };
-            (frame(new), frame(legacy))
-        };
-        for path in [
-            "apps/agents-window/src/commands.rs",
-            "/home/user/projects/app/a/very/deep/tree/of/folders/src/main.rs",
-            "Cargo.toml",
-            "notes/léeme primero.md",
-            "",
-        ] {
-            for dirty in [false, true] {
-                for width in [0.0, 60.0, 75.0, 76.0, 180.0, 360.0, 900.0] {
-                    for (id, height) in [("file_preview_path", BREADCRUMB_HEIGHT), ("code_snapshot_path:4", 26.0)] {
-                        let (new, legacy) = frames(
-                            path_breadcrumb_with_height(id, path, dirty, width, height),
-                            legacy_path_breadcrumb(id, path, dirty, width, height),
-                            width,
-                            height,
-                        );
-                        assert_eq!(new, legacy, "{id} {path:?} dirty {dirty} at {width}");
-                    }
-                    let view = CodeEditorView {
-                        tab_id: 91,
-                        path: path.into(),
-                        controller: Some(controller.clone()),
-                        loading: false,
-                        saving: false,
-                        error: None,
-                        notice: None,
-                        conflict: false,
-                        recovered: false,
-                        missing: false,
-                    };
-                    for (symbols, overflow) in [(false, false), (true, false), (true, true)] {
-                        let workbench = crate::editor_workbench_ui::EditorWorkbenchView {
-                            analysis: symbols.then(|| std::sync::Arc::new(analysis.clone())),
-                            breadcrumb_open: overflow,
-                            ..Default::default()
-                        };
-                        let (new, legacy) = frames(
-                            editor_breadcrumb(&view, &workbench, dirty, width, TOOL_SIZE),
-                            legacy_editor_breadcrumb(&view, &workbench, dirty, width, TOOL_SIZE),
-                            width,
-                            TOOL_SIZE + 240.0,
-                        );
-                        assert_eq!(
-                            new, legacy,
-                            "editor {path:?} dirty {dirty} symbols {symbols} open {overflow} at {width}"
-                        );
-                    }
-                }
-            }
-        }
     }
 
     #[test]

@@ -12,7 +12,7 @@ use openide_core::{
 use openide_harness::PersistentCommandExit;
 use openide_ui::{
     Button, ButtonGroup, ButtonVariant, Component, ControlSize, Element, FontFamily, Marker, Modal,
-    TextArea, TextField,
+    Text, TextArea, TextField, TextRole,
 };
 use std::path::{Path, PathBuf};
 
@@ -319,7 +319,7 @@ fn request_rows(prepared: &PreparedNativeCommandControl) -> Vec<Element> {
     ];
     let text = match &prepared.request {
         NativeCommandControlRequest::SendInput { input } => {
-            rows.push(note(&format!("Entrada UTF-8 completa · {} bytes. No se añade ningún salto de línea. JSON hace visibles los caracteres de control.", input.len())));
+            rows.push(Text::new(&format!("Entrada UTF-8 completa · {} bytes. No se añade ningún salto de línea. JSON hace visibles los caracteres de control.", input.len()), theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             serde_json::to_string(input).expect("UTF-8 input serializes")
         }
         NativeCommandControlRequest::CloseInput => "Cerrar entrada (EOF). No se envían bytes ni se añade un salto de línea. El cierre impide enviar más entrada a este comando.".into(),
@@ -333,13 +333,6 @@ fn request_rows(prepared: &PreparedNativeCommandControl) -> Vec<Element> {
             .foreground(theme::FOREGROUND),
     );
     rows
-}
-
-fn note(value: &str) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(11.0)
-        .foreground(theme::SETTINGS_FOREGROUND_SUBTLE)
 }
 
 fn phase_label(phase: NativeCommandOperationPhase) -> &'static str {
@@ -396,16 +389,14 @@ fn outcome_rows(title: &str, outcome: &NativeCommandOperationOutcome) -> Vec<Ele
         }
     };
     vec![
-        note(&format!("{title}: {label}")),
-        exact_diagnostic(diagnostic),
+        Text::new(&format!("{title}: {label}"), theme::component_palette())
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        Text::new(diagnostic, theme::component_palette())
+            .mono()
+            .render(),
     ]
-}
-
-fn exact_diagnostic(value: &str) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Monospace)
-        .font_size(12.0)
-        .foreground(theme::FOREGROUND)
 }
 
 fn observed_time(milliseconds: u64) -> String {
@@ -429,9 +420,7 @@ fn history_rows(local: &NativeCommandControlUiState) -> Vec<Element> {
             .font_family(FontFamily::Sans)
             .font_size(12.0)
             .foreground(theme::FOREGROUND),
-        note(
-            "Origen: acción explícita de una persona. Estas operaciones no fabrican eventos del modelo ni reanudan procesos al abrir el historial.",
-        ),
+        Text::new("Origen: acción explícita de una persona. Estas operaciones no fabrican eventos del modelo ni reanudan procesos al abrir el historial.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
     ];
     let operations: Vec<_> = local
         .operations
@@ -442,16 +431,30 @@ fn history_rows(local: &NativeCommandControlUiState) -> Vec<Element> {
         })
         .collect();
     if operations.is_empty() {
-        rows.push(note("No hay operaciones registradas en esta conversación."));
+        rows.push(
+            Text::new(
+                "No hay operaciones registradas en esta conversación.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
     }
     for operation in operations {
         rows.push(
             Element::column(vec![
-                note(&format!(
-                    "Comando: {}\n{}",
-                    operation.request.command_id,
-                    operation_state_label(local, operation)
-                )),
+                Text::new(
+                    &format!(
+                        "Comando: {}\n{}",
+                        operation.request.command_id,
+                        operation_state_label(local, operation)
+                    ),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
                 Button::new(
                     &format!(
                         "native_command_operation_select:{}",
@@ -471,52 +474,105 @@ fn history_rows(local: &NativeCommandControlUiState) -> Vec<Element> {
         return rows;
     };
     let request = &operation.request;
-    rows.push(exact_diagnostic(&format!("Operación: {}\nConversación: {}\nComando: {}\nManager original: {}\nProyecto: {}\nRevisión: {}\nPolítica: {}\nHooks: {}", request.operation_id, request.session_id, request.command_id, request.manager_generation, request.workspace.display(), operation.revision, request.policy_digest, request.hooks_digest)));
-    rows.push(note(&format!(
-        "Solicitud registrada: {}\nÚltima actualización: {}",
-        observed_time(operation.requested_at_ms),
-        observed_time(operation.updated_at_ms)
-    )));
+    rows.push(Text::new(&format!("Operación: {}\nConversación: {}\nComando: {}\nManager original: {}\nProyecto: {}\nRevisión: {}\nPolítica: {}\nHooks: {}", request.operation_id, request.session_id, request.command_id, request.manager_generation, request.workspace.display(), operation.revision, request.policy_digest, request.hooks_digest), theme::component_palette()).mono().render());
+    rows.push(
+        Text::new(
+            &format!(
+                "Solicitud registrada: {}\nÚltima actualización: {}",
+                observed_time(operation.requested_at_ms),
+                observed_time(operation.updated_at_ms)
+            ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+        .render(),
+    );
     match &request.action {
         NativeCommandOperationAction::Stdin { input, close_after } => {
-            rows.push(note(&format!("Entrada UTF-8 registrada · {} bytes · cerrar después: {}. JSON hace visibles los caracteres de control; no se añade ningún salto de línea.", input.len(), if *close_after { "sí" } else { "no" })));
-            rows.push(exact_diagnostic(
-                &serde_json::to_string(input).expect("UTF-8 serializes"),
-            ));
+            rows.push(Text::new(&format!("Entrada UTF-8 registrada · {} bytes · cerrar después: {}. JSON hace visibles los caracteres de control; no se añade ningún salto de línea.", input.len(), if *close_after { "sí" } else { "no" }), theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+            rows.push(
+                Text::new(
+                    &serde_json::to_string(input).expect("UTF-8 serializes"),
+                    theme::component_palette(),
+                )
+                .mono()
+                .render(),
+            );
         }
         NativeCommandOperationAction::Resize {
             columns,
             rows: terminal_rows,
-        } => rows.push(note(&format!(
-            "Redimensionar PTY: {columns} columnas × {terminal_rows} filas."
-        ))),
-        NativeCommandOperationAction::Terminate => {
-            rows.push(note("Solicitud registrada: terminar el comando."))
-        }
+        } => rows.push(
+            Text::new(
+                &format!("Redimensionar PTY: {columns} columnas × {terminal_rows} filas."),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        ),
+        NativeCommandOperationAction::Terminate => rows.push(
+            Text::new(
+                "Solicitud registrada: terminar el comando.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        ),
     }
-    rows.push(note(&format!(
-        "Estado: {}",
-        operation_state_label(local, operation)
-    )));
+    rows.push(
+        Text::new(
+            &format!("Estado: {}", operation_state_label(local, operation)),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+        .render(),
+    );
     match &operation.state {
-        NativeCommandOperationState::Requested => rows.push(note(
-            "La intención durable por sí sola no confirma ni autoriza repetir un efecto.",
-        )),
+        NativeCommandOperationState::Requested => rows.push(
+            Text::new(
+                "La intención durable por sí sola no confirma ni autoriza repetir un efecto.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        ),
         NativeCommandOperationState::Started { phase, diagnostic } => {
-            rows.push(note(&format!(
-                "Última fase registrada: {}",
-                phase_label(*phase)
-            )));
-            rows.push(exact_diagnostic(diagnostic));
+            rows.push(
+                Text::new(
+                    &format!("Última fase registrada: {}", phase_label(*phase)),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            );
+            rows.push(
+                Text::new(diagnostic, theme::component_palette())
+                    .mono()
+                    .render(),
+            );
         }
         NativeCommandOperationState::Finished { outcome } => {
             rows.extend(outcome_rows("Resultado final registrado", outcome))
         }
         NativeCommandOperationState::Rejected { reason }
-        | NativeCommandOperationState::Cancelled { reason } => rows.push(exact_diagnostic(reason)),
+        | NativeCommandOperationState::Cancelled { reason } => rows.push(
+            Text::new(reason, theme::component_palette())
+                .mono()
+                .render(),
+        ),
         NativeCommandOperationState::Resolved { acknowledgment } => {
-            rows.push(note("Esta nota reconoce una verificación humana. No transforma un efecto incierto en éxito."));
-            rows.push(exact_diagnostic(acknowledgment));
+            rows.push(Text::new("Esta nota reconoce una verificación humana. No transforma un efecto incierto en éxito.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+            rows.push(
+                Text::new(acknowledgment, theme::component_palette())
+                    .mono()
+                    .render(),
+            );
         }
     }
     if let Some(outcome) = &operation.effect_result {
@@ -525,25 +581,45 @@ fn history_rows(local: &NativeCommandControlUiState) -> Vec<Element> {
             outcome,
         ));
     } else {
-        rows.push(note("No hay recibo confirmado del efecto del comando."));
+        rows.push(
+            Text::new(
+                "No hay recibo confirmado del efecto del comando.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
     }
     for diagnostic in operation.phase_diagnostics() {
-        rows.push(note(&format!(
-            "Fase · revisión {} · {}\nRegistrada: {}",
-            diagnostic.revision,
-            phase_label(diagnostic.phase),
-            observed_time(diagnostic.at_ms)
-        )));
-        rows.push(exact_diagnostic(&diagnostic.diagnostic));
+        rows.push(
+            Text::new(
+                &format!(
+                    "Fase · revisión {} · {}\nRegistrada: {}",
+                    diagnostic.revision,
+                    phase_label(diagnostic.phase),
+                    observed_time(diagnostic.at_ms)
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
+        rows.push(
+            Text::new(&diagnostic.diagnostic, theme::component_palette())
+                .mono()
+                .render(),
+        );
     }
     if operation.state.requires_verification() {
         let live =
             local.live_operation_id.as_deref() == Some(operation.request.operation_id.as_str());
-        rows.push(note(if live {
+        rows.push(Text::new(if live {
             "El actor sigue en curso. Espera su recibo antes de registrar una verificación; todavía no hay un resultado terminal."
         } else {
             "Inspecciona el estado real antes de registrar tu verificación. Resolver esta advertencia no envía bytes, termina procesos ni repite la operación."
-        }));
+        }, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         rows.push(
             TextArea::new(
                 "native_command_operation_acknowledgment",
@@ -643,9 +719,7 @@ fn modal_on_platform(
                     .foreground(theme::FOREGROUND),
                 );
                 if !allowed {
-                    body.push(note(
-                        "El permiso de ejecutar comandos está desactivado. No se envían controles.",
-                    ));
+                    body.push(Text::new("El permiso de ejecutar comandos está desactivado. No se envían controles.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
                 }
                 if let Some(observed) = &local.observed {
                     let stdin = match observed.stdin {
@@ -654,20 +728,41 @@ fn modal_on_platform(
                         NativeCommandInputState::Busy => "ocupada",
                         NativeCommandInputState::Uncertain => "estado incierto",
                     };
-                    body.push(note(&format!(
-                        "Entrada: {stdin} · límite {} bytes · {}",
-                        observed.max_stdin_bytes,
-                        if observed.pty {
-                            "PTY observada"
-                        } else {
-                            "Tuberías observadas"
-                        }
-                    )));
+                    body.push(
+                        Text::new(
+                            &format!(
+                                "Entrada: {stdin} · límite {} bytes · {}",
+                                observed.max_stdin_bytes,
+                                if observed.pty {
+                                    "PTY observada"
+                                } else {
+                                    "Tuberías observadas"
+                                }
+                            ),
+                            theme::component_palette(),
+                        )
+                        .role(TextRole::Small)
+                        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                        .render(),
+                    );
                     if observed.revoked {
-                        body.push(note("El manager fue revocado."));
+                        body.push(
+                            Text::new("El manager fue revocado.", theme::component_palette())
+                                .role(TextRole::Small)
+                                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                                .render(),
+                        );
                     }
                     if observed.stop_requested {
-                        body.push(note("La terminación ya fue solicitada."));
+                        body.push(
+                            Text::new(
+                                "La terminación ya fue solicitada.",
+                                theme::component_palette(),
+                            )
+                            .role(TextRole::Small)
+                            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                            .render(),
+                        );
                     }
                     if let Some(exit) = &observed.exit {
                         let status = match exit {
@@ -681,10 +776,15 @@ fn modal_on_platform(
                                 format!("Estado incierto al esperar proceso: {error}")
                             }
                         };
-                        body.push(note(&status));
+                        body.push(
+                            Text::new(&status, theme::component_palette())
+                                .role(TextRole::Small)
+                                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                                .render(),
+                        );
                     }
                 } else {
-                    body.push(note("Consultando el estado del comando. No se envían efectos durante esta consulta."));
+                    body.push(Text::new("Consultando el estado del comando. No se envían efectos durante esta consulta.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
                 }
                 let stdin_editable = allowed
                     && local.observed.as_ref().is_some_and(|observed| {
@@ -693,7 +793,7 @@ fn modal_on_platform(
                             && !observed.stop_requested
                             && observed.exit.is_none()
                     });
-                body.push(note("Entrada UTF-8 exacta. Un salto de línea sólo se envía si lo escribes. EOF se confirma por separado."));
+                body.push(Text::new("Entrada UTF-8 exacta. Un salto de línea sólo se envía si lo escribes. EOF se confirma por separado.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
                 body.push(
                     TextArea::new(
                         "native_command_control_input",
@@ -707,10 +807,15 @@ fn modal_on_platform(
                     .enabled(stdin_editable)
                     .render(),
                 );
-                body.push(note(&format!(
-                    "Borrador: {} bytes UTF-8",
-                    local.input.len()
-                )));
+                body.push(
+                    Text::new(
+                        &format!("Borrador: {} bytes UTF-8", local.input.len()),
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
+                );
                 if stdin_editable {
                     initial_focus = "native_command_control_input";
                 }
@@ -778,16 +883,24 @@ fn modal_on_platform(
                         && observed.terminal_size.is_some()
                 }) {
                     let dimensions = observed.terminal_size.expect("filtered");
-                    body.push(note(&format!(
-                        "PTY Windows observada: {} columnas × {} filas{}",
-                        dimensions.columns,
-                        dimensions.rows,
-                        if observed.dimensions_uncertain {
-                            " · dimensiones ahora inciertas"
-                        } else {
-                            ""
-                        }
-                    )));
+                    body.push(
+                        Text::new(
+                            &format!(
+                                "PTY Windows observada: {} columnas × {} filas{}",
+                                dimensions.columns,
+                                dimensions.rows,
+                                if observed.dimensions_uncertain {
+                                    " · dimensiones ahora inciertas"
+                                } else {
+                                    ""
+                                }
+                            ),
+                            theme::component_palette(),
+                        )
+                        .role(TextRole::Small)
+                        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                        .render(),
+                    );
                     let editable = allowed
                         && !observed.revoked
                         && !observed.stop_requested
@@ -795,7 +908,10 @@ fn modal_on_platform(
                         && !observed.dimensions_uncertain;
                     body.push(
                         Element::column(vec![
-                            note("Columnas (20–500)"),
+                            Text::new("Columnas (20–500)", theme::component_palette())
+                                .role(TextRole::Small)
+                                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                                .render(),
                             TextField::new(
                                 "native_command_control_columns",
                                 &local.columns_draft,
@@ -805,7 +921,10 @@ fn modal_on_platform(
                             .size(ControlSize::Compact)
                             .enabled(editable)
                             .render(),
-                            note("Filas (5–200)"),
+                            Text::new("Filas (5–200)", theme::component_palette())
+                                .role(TextRole::Small)
+                                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                                .render(),
                             TextField::new(
                                 "native_command_control_rows",
                                 &local.rows_draft,
@@ -846,15 +965,15 @@ fn modal_on_platform(
                     );
                 }
             } else {
-                body.push(note("Historial durable. No hay un manager de procesos observado; reabrir esta vista no recupera comandos ni habilita controles."));
+                body.push(Text::new("Historial durable. No hay un manager de procesos observado; reabrir esta vista no recupera comandos ni habilita controles.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
         }
         NativeCommandControlPhase::Confirm { prepared } => {
             body.extend(request_rows(prepared));
-            body.push(note("Confirmar envía una única solicitud al servicio. La identidad y las capacidades se vuelven a comprobar antes del efecto."));
+            body.push(Text::new("Confirmar envía una única solicitud al servicio. La identidad y las capacidades se vuelven a comprobar antes del efecto.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             let valid = allowed && local.can_confirm_on_platform(windows);
             if !valid {
-                body.push(note("El ámbito, el estado o los permisos cambiaron. Esta confirmación ya no está disponible."));
+                body.push(Text::new("El ámbito, el estado o los permisos cambiaron. Esta confirmación ya no está disponible.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
             footer.push(
                 Button::new(
@@ -893,9 +1012,9 @@ fn modal_on_platform(
                 .loading(true)
                 .render(),
             );
-            body.push(note(&format!("Operación: {operation_id}\nNo se envía otra operación mientras ésta está pendiente. Cerrar la vista no cancela el trabajo ni confirma su resultado.")));
+            body.push(Text::new(&format!("Operación: {operation_id}\nNo se envía otra operación mientras ésta está pendiente. Cerrar la vista no cancela el trabajo ni confirma su resultado."), theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             if local.cancellation_requested {
-                body.push(note("Cancelación solicitada; esperando el resultado confirmado. El efecto todavía puede haber ocurrido."));
+                body.push(Text::new("Cancelación solicitada; esperando el resultado confirmado. El efecto todavía puede haber ocurrido.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
             footer.push(
                 Button::new(
@@ -931,7 +1050,7 @@ fn modal_on_platform(
                 .font_size(12.0)
                 .foreground(theme::DESTRUCTIVE),
             );
-            body.push(note("El efecto pudo ocurrir. No se reenviará automáticamente ni se declara cancelado. Reabrir la aplicación no recupera este proceso."));
+            body.push(Text::new("El efecto pudo ocurrir. No se reenviará automáticamente ni se declara cancelado. Reabrir la aplicación no recupera este proceso.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         }
     }
     body.extend(history_rows(local));

@@ -1,10 +1,10 @@
 //! The last explicit, temporary MCP review. Received schemas stay complete in
 //! a bounded scroll area; no action dispatches an advertised MCP tool.
 
-use super::{outline, page_note, subtle, text};
+use super::{outline, page_note};
 use crate::mcp_inspection::{McpInspectionPhase, McpInspectionUiState};
 use crate::{settings_parts, theme};
-use openide_ui::{Component, Element, FontFamily, Icon, ScrollArea, SkeletonGroup};
+use openide_ui::{Component, Element, Icon, ScrollArea, SkeletonGroup, Text, TextRole};
 
 pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
     let mut rows = vec![page_note(
@@ -13,15 +13,22 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
         super::SettingsPage::Mcp.icon(),
     )];
     if let Some(scope) = &state.scope {
-        rows.push(text(
-            format!("Servidor {}", scope.server.id),
-            theme::FOREGROUND,
-            12.0,
-        ));
-        rows.push(subtle(format!(
-            "Proyecto de esta consulta: {}",
-            scope.workspace.display()
-        )));
+        rows.push(
+            Text::new(
+                format!("Servidor {}", scope.server.id),
+                theme::component_palette(),
+            )
+            .render(),
+        );
+        rows.push(
+            Text::new(
+                format!("Proyecto de esta consulta: {}", scope.workspace.display()),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
     }
     let status = match state.phase {
         McpInspectionPhase::Idle => "Sin inspección en esta ventana",
@@ -32,7 +39,13 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
         McpInspectionPhase::Cancelled => "Inspección cancelada",
         McpInspectionPhase::Discarded => "Resultado descartado por cambio del alcance guardado",
     };
-    rows.push(subtle(status).padding(settings_parts::ROW_PADDING));
+    rows.push(
+        Text::new(status, theme::component_palette())
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render()
+            .padding(settings_parts::ROW_PADDING),
+    );
     if state.phase == McpInspectionPhase::Running {
         rows.push(
             SkeletonGroup::rows("mcp_inspection_progress", theme::component_palette(), 3)
@@ -52,20 +65,30 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
         );
     }
     if let Some(snapshot) = &state.snapshot {
-        rows.push(text(
-            format!(
-                "Protocolo negociado: {}",
-                snapshot.server_info.protocol_version
-            ),
-            theme::FOREGROUND,
-            12.0,
-        ));
-        rows.push(subtle(format!(
-            "Servidor: {} · versión {} · {} herramientas recibidas",
-            snapshot.server_info.name,
-            snapshot.server_info.version,
-            snapshot.tools.len()
-        )));
+        rows.push(
+            Text::new(
+                format!(
+                    "Protocolo negociado: {}",
+                    snapshot.server_info.protocol_version
+                ),
+                theme::component_palette(),
+            )
+            .render(),
+        );
+        rows.push(
+            Text::new(
+                format!(
+                    "Servidor: {} · versión {} · {} herramientas recibidas",
+                    snapshot.server_info.name,
+                    snapshot.server_info.version,
+                    snapshot.tools.len()
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
         let observed = i64::try_from(snapshot.observed_at_unix_ms)
             .ok()
             .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
@@ -75,20 +98,34 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
                     .to_string()
             })
             .unwrap_or_else(|| "Fecha no disponible".to_owned());
-        rows.push(subtle(format!("Observado: {observed}")));
-        rows.push(subtle(format!(
-            "Huella SHA-256 de estos metadatos: {}",
-            snapshot.metadata_digest
-        )));
-        rows.push(subtle("Esta huella identifica la inspección temporal. Los catálogos congelados de turnos anteriores conservan sus propias identidades."));
+        rows.push(
+            Text::new(format!("Observado: {observed}"), theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+        );
+        rows.push(
+            Text::new(
+                format!(
+                    "Huella SHA-256 de estos metadatos: {}",
+                    snapshot.metadata_digest
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
+        rows.push(Text::new("Esta huella identifica la inspección temporal. Los catálogos congelados de turnos anteriores conservan sus propias identidades.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         if snapshot.catalog_changed {
-            rows.push(subtle("El servidor notificó un cambio de catálogo durante esta conexión. Repetí la inspección para obtener otro listado."));
+            rows.push(Text::new("El servidor notificó un cambio de catálogo durante esta conexión. Repetí la inspección para obtener otro listado.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         }
         rows.push(
             ScrollArea::new(
                 "mcp_inspection_metadata",
-                text(&snapshot.details_json, theme::FOREGROUND, 12.0)
-                    .font_family(FontFamily::Monospace)
+                Text::new(&snapshot.details_json, theme::component_palette())
+                    .mono()
+                    .render()
                     .padding(10.0),
             )
             .render()
@@ -99,18 +136,30 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
         rows.push(
             ScrollArea::new(
                 "mcp_inspection_error",
-                text(error, theme::FOREGROUND, 12.0).padding(10.0),
+                Text::new(error, theme::component_palette())
+                    .render()
+                    .padding(10.0),
             )
             .render()
             .max_height(110.0),
         );
     }
     if let Some(error) = &state.shutdown_error {
-        rows.push(subtle("No se pudo confirmar un cierre completo:"));
+        rows.push(
+            Text::new(
+                "No se pudo confirmar un cierre completo:",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
         rows.push(
             ScrollArea::new(
                 "mcp_inspection_shutdown_error",
-                text(error, theme::FOREGROUND, 12.0).padding(10.0),
+                Text::new(error, theme::component_palette())
+                    .render()
+                    .padding(10.0),
             )
             .render()
             .max_height(110.0),

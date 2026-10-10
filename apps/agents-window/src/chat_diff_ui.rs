@@ -6,7 +6,7 @@ use crate::{
 use openide_ui::Icon;
 use openide_ui::{
     Button, ButtonVariant, CodeDiff, CodeDiffLine, CodeDiffLineKind, CodeLanguage, Component,
-    ControlSize, Element, FontFamily,
+    ControlSize, Element, FontFamily, Text,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -126,12 +126,6 @@ pub(crate) fn file_action(owner: &str, tool: &str, file: usize) -> String {
         serde_json::to_string(&(owner, tool, file)).expect("file diff scope serializes")
     )
 }
-fn label(value: impl Into<String>, ink: openide_ui::Color) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-        .foreground(ink)
-}
 
 const PARTIAL_FILE_DIFF_NOTE: &str =
     "Cobertura limitada: algunos archivos de esta edición no tienen un diff completo";
@@ -191,7 +185,11 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
                     Some(crate::tool_presentation::ToolNavigationTarget::File(_))))
         });
         if let Some(error) = &entry.unavailable {
-            rows.push(label(error, theme::FOREGROUND_SUBTLE));
+            rows.push(
+                Text::new(error, theme::component_palette())
+                    .muted()
+                    .render(),
+            );
             rows.push(
                 Button::new(
                     action(owner, tool, true),
@@ -213,7 +211,7 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
             if sole_complete_snapshot && note == PARTIAL_FILE_DIFF_NOTE {
                 continue;
             }
-            rows.push(label(note, theme::FOREGROUND_SUBTLE));
+            rows.push(Text::new(note, theme::component_palette()).muted().render());
         }
         for (index, file) in entry.files.iter().enumerate() {
             if entry.files.len() > 1 {
@@ -229,8 +227,12 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
                         .font_size(12.0)
                         .foreground(theme::FOREGROUND)
                         .flex(1.0),
-                        label(format!("+{}", file.additions), theme::DIFF_ADDED),
-                        label(format!("−{}", file.deletions), theme::DIFF_REMOVED),
+                        Text::new(format!("+{}", file.additions), theme::component_palette())
+                            .ink(theme::DIFF_ADDED)
+                            .render(),
+                        Text::new(format!("−{}", file.deletions), theme::component_palette())
+                            .ink(theme::DIFF_REMOVED)
+                            .render(),
                     ])
                     .gap(8.0)
                     .size(None, Some(28.0)),
@@ -238,7 +240,11 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
             }
             if let Some(error) = &file.unavailable {
                 if !confirmed_content_only(file) || entry.files.len() > 1 {
-                    rows.push(label(error, theme::FOREGROUND_SUBTLE));
+                    rows.push(
+                        Text::new(error, theme::component_palette())
+                            .muted()
+                            .render(),
+                    );
                 }
             }
             if !file.lines.is_empty() {
@@ -257,13 +263,21 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
                         .render(),
                 );
             } else if file.unavailable.is_none() {
-                rows.push(label("Sin diferencias de texto", theme::FOREGROUND_SUBTLE));
+                rows.push(
+                    Text::new("Sin diferencias de texto", theme::component_palette())
+                        .muted()
+                        .render(),
+                );
             }
             if file.truncated {
-                rows.push(label(
-                    "Vista parcial: se alcanzó el límite de líneas del diff.",
-                    theme::FOREGROUND_SUBTLE,
-                ));
+                rows.push(
+                    Text::new(
+                        "Vista parcial: se alcanzó el límite de líneas del diff.",
+                        theme::component_palette(),
+                    )
+                    .muted()
+                    .render(),
+                );
             }
             if file.can_open && (!has_file_action || entry.files.len() > 1) {
                 rows.push(
@@ -279,26 +293,31 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
             }
         }
         if entry.files.is_empty() && entry.unavailable.is_none() {
-            rows.push(label(
-                "La edición confirmada no cambió el contenido de texto.",
-                theme::FOREGROUND_SUBTLE,
-            ));
+            rows.push(
+                Text::new(
+                    "La edición confirmada no cambió el contenido de texto.",
+                    theme::component_palette(),
+                )
+                .muted()
+                .render(),
+            );
         }
     } else if !at_capacity {
-        rows.push(label(
-            if loading {
-                "Reconstruyendo la edición confirmada…"
-            } else {
-                "Preparando la vista de la edición confirmada…"
-            },
-            theme::FOREGROUND_SUBTLE,
-        ));
+        rows.push(
+            Text::new(
+                if loading {
+                    "Reconstruyendo la edición confirmada…"
+                } else {
+                    "Preparando la vista de la edición confirmada…"
+                },
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
+        );
     }
     if at_capacity {
-        rows.push(label(
-            "Se alcanzó el límite de 16 vistas o cargas. Cierra una vista o espera a que termine la carga.",
-            theme::FOREGROUND_SUBTLE,
-        ));
+        rows.push(Text::new("Se alcanzó el límite de 16 vistas o cargas. Cierra una vista o espera a que termine la carga.", theme::component_palette()).muted().render());
     }
     // Keep the code/notes inset above and beside the body. The disclosure
     // footer supplies its own inset, so avoid a second large gap below it.
@@ -351,10 +370,7 @@ pub(crate) fn build(state: &ViewState, tool: &str) -> Element {
         .render(),
     ];
     if scoped && ui.limit_notice.as_deref() == Some(tool) {
-        content.push(label(
-            "Se alcanzó el límite de 16 vistas o cargas. Cierra una vista o espera a que termine la carga.",
-            theme::FOREGROUND_SUBTLE,
-        ));
+        content.push(Text::new("Se alcanzó el límite de 16 vistas o cargas. Cierra una vista o espera a que termine la carga.", theme::component_palette()).muted().render());
     }
     Element::column(content).gap(4.0)
 }

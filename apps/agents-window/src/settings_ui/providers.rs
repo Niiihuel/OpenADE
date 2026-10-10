@@ -1,6 +1,6 @@
 //! Provider preferences: boxed lists, explicit connection flows, exact model data.
 
-use super::{control_palette, outline, subtle, text};
+use super::{control_palette, outline};
 use crate::{
     model_catalog::ModelInfo,
     provider_connections::{self, ConnectPhase},
@@ -11,8 +11,8 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    ActionRow, Button, ButtonVariant, Component, ControlSize, Element, FontFamily,
-    Icon, Modal, ScrollArea, SearchField, SkeletonGroup, Spinner, TextField,
+    ActionRow, Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, Modal,
+    ScrollArea, SearchField, SkeletonGroup, Spinner, Text, TextField, TextRole,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -112,7 +112,13 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
                     .icon(icon_for_provider(id))
                     .trailing(
                         Element::row(vec![
-                            subtle(if active { "Ver modelos" } else { "Conectar" }),
+                            Text::new(
+                                if active { "Ver modelos" } else { "Conectar" },
+                                theme::component_palette(),
+                            )
+                            .role(TextRole::Small)
+                            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                            .render(),
                             Element::icon(Icon::ChevronRight).foreground(theme::FOREGROUND_SUBTLE),
                         ])
                         .gap(6.0),
@@ -126,11 +132,19 @@ fn overview(state: &ViewState, compact: bool) -> Vec<Element> {
         }
     }
     if sections.len() == 1 {
-        sections.push(subtle(if query.is_empty() {
-            "Conecta una cuenta para elegir sus modelos."
-        } else {
-            "No se encontraron proveedores."
-        }));
+        sections.push(
+            Text::new(
+                if query.is_empty() {
+                    "Conecta una cuenta para elegir sus modelos."
+                } else {
+                    "No se encontraron proveedores."
+                },
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
     }
     if let Some(error) = &state.native_provider_registry_error {
         sections.push(settings_parts::feedback_banner(
@@ -381,13 +395,19 @@ fn model_list(state: &ViewState, id: &str, width: f32) -> Element {
                 .render()
                 .padding(10.0);
         }
-        return subtle(if !connected(state, id) {
-            "Conecta este proveedor para consultar los modelos de tu cuenta."
-        } else if query.is_empty() {
-            "No hay modelos disponibles. Actualiza el listado para volver a consultar."
-        } else {
-            "No hay modelos que coincidan con la búsqueda."
-        })
+        return Text::new(
+            if !connected(state, id) {
+                "Conecta este proveedor para consultar los modelos de tu cuenta."
+            } else if query.is_empty() {
+                "No hay modelos disponibles. Actualiza el listado para volver a consultar."
+            } else {
+                "No hay modelos que coincidan con la búsqueda."
+            },
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+        .render()
         .padding(10.0);
     }
     let catalog = Arc::clone(state.catalog.as_ref().expect("nonempty catalog rows"));
@@ -514,7 +534,12 @@ fn catalog_status(state: &ViewState, id: &str) -> Element {
     Element::column(
         catalog_status_lines(state, id)
             .into_iter()
-            .map(|line| subtle(&line))
+            .map(|line| {
+                Text::new(&line, theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render()
+            })
             .collect(),
     )
     .gap(6.0)
@@ -657,12 +682,9 @@ fn show_output_settings(state: &ViewState) -> bool {
 pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
     let editable = !state.running && state.native_output_limit_load_error.is_none();
     let mut controls = vec![
-        subtle(format!("{} / {}", state.native_provider_id, state.model))
-            .font_family(FontFamily::Monospace),
-        text("Tope de salida por respuesta", theme::FOREGROUND, 12.0),
-        subtle(
-            "Incluye razonamiento. Se guarda para este proveedor e ID exactos; un tope bajo puede interrumpir respuestas y herramientas.",
-        ),
+        Text::new(format!("{} / {}", state.native_provider_id, state.model), theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).mono().render(),
+        Text::new("Tope de salida por respuesta", theme::component_palette()).render(),
+        Text::new("Incluye razonamiento. Se guarda para este proveedor e ID exactos; un tope bajo puede interrumpir respuestas y herramientas.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
         TextField::new(
             "native_output_limit_tokens",
             &state.native_output_limit_draft,
@@ -674,14 +696,30 @@ pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
         .render(),
     ];
     if state.native_output_limit_responses {
-        controls.push(subtle("Responses · max_output_tokens"));
+        controls.push(
+            Text::new("Responses · max_output_tokens", theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+        );
     } else if state.native_output_limit_messages {
-        controls.push(subtle("Messages · max_tokens"));
-        controls.push(subtle("Sin tope propio se solicitan hasta 4096 tokens, acotados por el máximo declarado. Es una política de la solicitud, no el límite del modelo."));
+        controls.push(
+            Text::new("Messages · max_tokens", theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+        );
+        controls.push(Text::new("Sin tope propio se solicitan hasta 4096 tokens, acotados por el máximo declarado. Es una política de la solicitud, no el límite del modelo.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     } else {
-        controls.push(subtle(
-            "Elige el parámetro documentado para esta ruta Chat Completions.",
-        ));
+        controls.push(
+            Text::new(
+                "Elige el parámetro documentado para esta ruta Chat Completions.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
         let buttons = ["max_completion_tokens", "max_tokens"]
             .into_iter()
             .map(|parameter| {
@@ -706,9 +744,15 @@ pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
         ));
     }
     if state.running {
-        controls.push(subtle(
-            "La ruta y sus límites están bloqueados mientras hay un turno en curso.",
-        ));
+        controls.push(
+            Text::new(
+                "La ruta y sus límites están bloqueados mientras hay un turno en curso.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
     }
     let save = Button::new(
         "native_output_limit_save",
@@ -749,7 +793,10 @@ fn cost(value: Option<f64>) -> String {
 }
 fn modalities(kinds: &[String]) -> Element {
     if kinds.is_empty() {
-        return subtle("Dato no disponible");
+        return Text::new("Dato no disponible", theme::component_palette())
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render();
     }
     Element::row(
         kinds
@@ -765,7 +812,10 @@ fn modalities(kinds: &[String]) -> Element {
                 };
                 Element::row(vec![
                     Element::icon(icon).foreground(theme::FOREGROUND_SUBTLE),
-                    subtle(label),
+                    Text::new(label, theme::component_palette())
+                        .role(TextRole::Small)
+                        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                        .render(),
                 ])
                 .gap(5.0)
             })
@@ -896,9 +946,7 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
             ],
         ));
     }
-    groups.push(subtle(
-        "Datos disponibles para este ID exacto. Un modelo listado no garantiza acceso a generación.",
-    ));
+    groups.push(Text::new("Datos disponibles para este ID exacto. Un modelo listado no garantiza acceso a generación.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     let selected = state.native_provider_id == id && state.model == model.id;
     let use_model = Button::new(
         "provider_details_select",
@@ -958,9 +1006,15 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         ));
     }
     if welcome {
-        body.push(subtle(
-            "OpenIDE usa el plan y los límites de tu cuenta de ChatGPT para estos modelos.",
-        ));
+        body.push(
+            Text::new(
+                "OpenIDE usa el plan y los límites de tu cuenta de ChatGPT para estos modelos.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
         body.push(outline("provider_usage", "Ver uso del plan").render());
     } else if entry {
         if id == "opencode" {
@@ -987,11 +1041,16 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         }
         if !oauth {
             if id == "zai" {
-                body.push(subtle("Usa una clave de la API general de Z.ai. Los modelos se muestran según su documentación; el acceso se comprueba al enviar una solicitud."));
+                body.push(Text::new("Usa una clave de la API general de Z.ai. Los modelos se muestran según su documentación; el acceso se comprueba al enviar una solicitud.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             } else if id == "minimax" {
-                body.push(subtle("Usa la clave de tu cuenta de MiniMax. OpenIDE consulta sus modelos disponibles antes de guardar la conexión."));
+                body.push(Text::new("Usa la clave de tu cuenta de MiniMax. OpenIDE consulta sus modelos disponibles antes de guardar la conexión.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
             }
-            body.push(subtle("Clave de API"));
+            body.push(
+                Text::new("Clave de API", theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
+            );
             body.push(
                 TextField::new("provider_api_key", "", "Pega tu clave…", control_palette())
                     .size(ControlSize::Compact)
@@ -1008,10 +1067,10 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
                 .size(ControlSize::Compact)
                 .render(),
             );
-            body.push(subtle("La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo."));
+            body.push(Text::new("La clave se guarda de forma privada en este equipo. El acceso a generación se comprueba al usar un modelo.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         } else {
-            body.push(subtle(if id == "codex" { "Selecciona tu cuenta de ChatGPT y permite el acceso a OpenIDE." }
-            else { "Autoriza una clave de OpenRouter para OpenIDE. Puedes administrarla luego desde tu cuenta." }));
+            body.push(Text::new(if id == "codex" { "Selecciona tu cuenta de ChatGPT y permite el acceso a OpenIDE." }
+            else { "Autoriza una clave de OpenRouter para OpenIDE. Puedes administrarla luego desde tu cuenta." }, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
         }
     } else {
         body.push(
@@ -1019,12 +1078,18 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
                 Spinner::new("provider_connect_progress", theme::FOREGROUND_SUBTLE)
                     .size(16.0)
                     .render(),
-                subtle(match connect.phase {
-                    ConnectPhase::Browser => "Esperando tu autorización…",
-                    ConnectPhase::Checking if id == "zai" => "Guardando la clave…",
-                    ConnectPhase::Checking => "Consultando tu cuenta y sus modelos…",
-                    _ => "Preparando la conexión…",
-                }),
+                Text::new(
+                    match connect.phase {
+                        ConnectPhase::Browser => "Esperando tu autorización…",
+                        ConnectPhase::Checking if id == "zai" => "Guardando la clave…",
+                        ConnectPhase::Checking => "Consultando tu cuenta y sus modelos…",
+                        _ => "Preparando la conexión…",
+                    },
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
             ])
             .gap(10.0)
             .padding(10.0),
@@ -1355,15 +1420,21 @@ mod tests {
             .unwrap_or_default();
         models.sort_by_key(|model| !(state.native_provider_id == id && state.model == model.id));
         if models.is_empty() {
-            return subtle(if !connected(state, id) {
-                "Conecta este proveedor para consultar los modelos de tu cuenta."
-            } else if state.catalog_refreshing {
-                "Consultando modelos…"
-            } else if query.is_empty() {
-                "No hay modelos disponibles. Actualiza el listado para volver a consultar."
-            } else {
-                "No hay modelos que coincidan con la búsqueda."
-            })
+            return Text::new(
+                if !connected(state, id) {
+                    "Conecta este proveedor para consultar los modelos de tu cuenta."
+                } else if state.catalog_refreshing {
+                    "Consultando modelos…"
+                } else if query.is_empty() {
+                    "No hay modelos disponibles. Actualiza el listado para volver a consultar."
+                } else {
+                    "No hay modelos que coincidan con la búsqueda."
+                },
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render()
             .padding(10.0);
         }
         let available = models

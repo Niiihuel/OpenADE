@@ -10,8 +10,8 @@ use openide_core::{
     NativeCommandOutputStream, NativeCommandOutputSummary,
 };
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, DropdownOption, Element,
-    FontFamily, Icon, Modal, PopoverPlacement, Select, Tooltip,
+    Button, ButtonVariant, Component, ControlSize, DropdownOption, Element, FontFamily, Icon,
+    Modal, PopoverPlacement, Select, Text, TextRole, Tooltip,
 };
 use std::path::{Path, PathBuf};
 
@@ -77,20 +77,6 @@ pub(crate) fn page_json(page: &NativeCommandOutputPage) -> String {
         .expect("durable output page JSON serializes")
 }
 
-fn text(value: impl Into<String>) -> Element {
-    Element::text(value)
-        .foreground(theme::FOREGROUND)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-}
-
-fn note(value: impl Into<String>) -> Element {
-    Element::text(value)
-        .foreground(theme::FOREGROUND_SUBTLE)
-        .font_family(FontFamily::Sans)
-        .font_size(11.0)
-}
-
 fn command_label(summary: &NativeCommandOutputSummary) -> String {
     // Keep familiar command text in the picker; full argv and immutable IDs
     // remain available in Details. Limit labels before joining large argv.
@@ -149,22 +135,44 @@ fn readable_page(page: &NativeCommandOutputPage) -> Vec<Element> {
                 base64::engine::general_purpose::STANDARD.encode(&chunk.bytes),
             ),
         };
-        body.push(note(format!(
-            "{stream} · bytes {}–{} · {encoding}",
-            chunk.start, chunk.end
-        )));
-        body.push(text(value).font_family(FontFamily::Monospace));
+        body.push(
+            Text::new(
+                format!(
+                    "{stream} · bytes {}–{} · {encoding}",
+                    chunk.start, chunk.end
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
+        body.push(Text::new(value, theme::component_palette()).mono().render());
     }
     for range in &page.omitted_ranges {
-        body.push(text(format!(
-            "Omisión · bytes {}–{} · {} bytes",
-            range.start,
-            range.end,
-            range.end.saturating_sub(range.start)
-        )));
+        body.push(
+            Text::new(
+                format!(
+                    "Omisión · bytes {}–{} · {} bytes",
+                    range.start,
+                    range.end,
+                    range.end.saturating_sub(range.start)
+                ),
+                theme::component_palette(),
+            )
+            .render(),
+        );
     }
     if page.chunks.is_empty() && page.omitted_ranges.is_empty() {
-        body.push(note("Esta página no contiene salida guardada."));
+        body.push(
+            Text::new(
+                "Esta página no contiene salida guardada.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     body
 }
@@ -275,10 +283,21 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         );
     }
     if local.loading {
-        body.push(note("Leyendo salida guardada…"));
+        body.push(
+            Text::new("Leyendo salida guardada…", theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
     }
     if let Some(error) = &local.error {
-        body.push(text(format!("No se pudo leer el historial: {error}")));
+        body.push(
+            Text::new(
+                format!("No se pudo leer el historial: {error}"),
+                theme::component_palette(),
+            )
+            .render(),
+        );
     }
     if let Some(page) = &local.page {
         let summary = &page.summary;
@@ -312,7 +331,12 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 }
             ),
         };
-        body.push(note(status));
+        body.push(
+            Text::new(status, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
         body.push(
             Element::row(vec![
                 Button::new(
@@ -345,7 +369,9 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .gap(8.0),
         );
         if local.details_open {
-            body.push(note(format!(
+            body.push(
+                Text::new(
+                    format!(
                 "{} bytes observados · {} guardados · {} omitidos\nRango: {}–{} · revisión {}",
                 summary.observed_end,
                 summary.retained_bytes,
@@ -353,30 +379,55 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 local.cursor,
                 page.next_cursor,
                 summary.revision,
-            )));
+            ),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+            );
             let header = &summary.header;
-            body.push(text(format!("Conversación: {}\nProyecto: {}\nManager: {}\nComando: {}\nAislamiento: {} · {}\nRegistrado: {} Unix ms\nArgv: {}", header.binding.session_id, header.binding.workspace.display(), header.binding.manager_generation, header.binding.command_id, header.isolation, if header.pty { "PTY" } else { "Tuberías" }, header.registered_at_ms, serde_json::to_string(&header.argv).expect("argv serializes"))).font_family(FontFamily::Monospace));
+            body.push(Text::new(format!("Conversación: {}\nProyecto: {}\nManager: {}\nComando: {}\nAislamiento: {} · {}\nRegistrado: {} Unix ms\nArgv: {}", header.binding.session_id, header.binding.workspace.display(), header.binding.manager_generation, header.binding.command_id, header.isolation, if header.pty { "PTY" } else { "Tuberías" }, header.registered_at_ms, serde_json::to_string(&header.argv).expect("argv serializes")), theme::component_palette()).mono().render());
         }
         if let Some(error) = summary
             .terminal
             .as_ref()
             .and_then(|terminal| terminal.reader_error.as_ref())
         {
-            body.push(text(format!("Error completo de captura: {error}")));
+            body.push(
+                Text::new(
+                    format!("Error completo de captura: {error}"),
+                    theme::component_palette(),
+                )
+                .render(),
+            );
         }
         if let Some(NativeCommandOutputExit::WaitFailed { error }) = summary
             .terminal
             .as_ref()
             .and_then(|terminal| terminal.exit_kind.as_ref())
         {
-            body.push(text(format!(
-                "Error completo al esperar el proceso: {error}"
-            )));
+            body.push(
+                Text::new(
+                    format!("Error completo al esperar el proceso: {error}"),
+                    theme::component_palette(),
+                )
+                .render(),
+            );
         }
         if local.exact_data_open {
-            body.push(note("Datos exactos de esta página"));
-            body.push(note("Base64 conserva bytes binarios o UTF-8 partido; los controles se muestran como datos."));
-            body.push(text(&local.page_json).font_family(FontFamily::Monospace));
+            body.push(
+                Text::new("Datos exactos de esta página", theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            );
+            body.push(Text::new("Base64 conserva bytes binarios o UTF-8 partido; los controles se muestran como datos.", theme::component_palette()).role(TextRole::Small).muted().render());
+            body.push(
+                Text::new(&local.page_json, theme::component_palette())
+                    .mono()
+                    .render(),
+            );
         } else {
             body.extend(readable_page(page));
         }
@@ -387,8 +438,18 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                     .foreground(theme::FOREGROUND_SUBTLE)
                     .size(Some(20.0), Some(20.0)),
                 Element::column(vec![
-                    text("Todavía no hay salida guardada."),
-                    note("Los comandos de esta conversación aparecerán aquí."),
+                    Text::new(
+                        "Todavía no hay salida guardada.",
+                        theme::component_palette(),
+                    )
+                    .render(),
+                    Text::new(
+                        "Los comandos de esta conversación aparecerán aquí.",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
                 ])
                 .gap(5.0)
                 .flex(1.0),
@@ -420,7 +481,13 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                 .size(ControlSize::Compact)
                 .enabled(!local.loading && !local.previous_cursors.is_empty())
                 .render(),
-                note(format!("Página {}", local.previous_cursors.len() + 1)),
+                Text::new(
+                    format!("Página {}", local.previous_cursors.len() + 1),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
                 Button::new(
                     "native_command_history_next",
                     "Siguiente",

@@ -1,8 +1,6 @@
 //! The dock's tab overview: every open tab with its controls, the tabs
 //! closed recently, and the surfaces a new tab can open.
 use super::*;
-#[cfg(test)]
-use openide_ui::ElementKind;
 
 pub(super) fn content(state: &ViewState, width: f32) -> Element {
     let query = state.dock_overview_query.trim().to_lowercase();
@@ -40,7 +38,7 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
         .render()
         .size(None, Some(34.0)),
         Element::row(vec![
-            eyebrow("PESTAÑAS ABIERTAS"),
+            UiText::eyebrow("PESTAÑAS ABIERTAS", theme::component_palette()).render(),
             Element::spacer().flex(1.0),
             if state.dock_tabs.is_empty() {
                 Element::spacer().size(Some(86.0), Some(24.0))
@@ -153,7 +151,7 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
         );
     }
     tabs.push(Element::spacer().size(None, Some(8.0)));
-    tabs.push(eyebrow("RECIENTES (MÁX. 8)"));
+    tabs.push(UiText::eyebrow("RECIENTES (MÁX. 8)", theme::component_palette()).render());
     if filtered_recent.is_empty() {
         tabs.push(
             UiText::new(
@@ -184,17 +182,19 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
             .min_size(0.0, 0.0)
             .size(None, Some(28.0))
         } else {
-            label(
+            UiText::new(
                 format!("{} · sesión cerrada", shorten(&tab.title, 25)),
-                theme::FOREGROUND_SUBTLE,
+                theme::component_palette(),
             )
-            .font_size(11.0)
+            .role(TextRole::Small)
+            .muted()
+            .render()
             .size(None, Some(28.0))
         };
         tabs.push(row);
     }
     tabs.push(Element::spacer().size(None, Some(8.0)));
-    tabs.push(eyebrow("ABRIR PESTAÑA"));
+    tabs.push(UiText::eyebrow("ABRIR PESTAÑA", theme::component_palette()).render());
     tabs.push(open_actions((width - 24.0).max(150.0)));
     Element::column(tabs).gap(5.0).padding(12.0)
 }
@@ -224,31 +224,4 @@ pub(super) fn open_actions(width: f32) -> Element {
         .collect(),
     )
     .gap(6.0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn open_rows_match_their_legacy_body() {
-        for width in [150.0, 320.0] {
-            let legacy = Element::column(vec![icon_button(
-                "dock_open:files",
-                Icon::Folder,
-                "Archivos",
-                theme::CARD,
-                theme::FOREGROUND,
-            )
-            .size(Some(width), Some(38.0))]);
-            let ElementKind::Column(mut rows) = open_actions(width).kind else {
-                panic!("the open actions are a column");
-            };
-            crate::icon_button_parity_tests::assert_same(
-                &format!("dock open row at {width}"),
-                legacy,
-                Element::column(vec![rows.remove(0)]),
-            );
-        }
-    }
 }

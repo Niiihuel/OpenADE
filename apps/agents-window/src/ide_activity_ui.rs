@@ -3,13 +3,6 @@ use super::*;
 use crate::sidebar_chrome as chrome;
 use openide_ui::{PanelHeader, SidebarPanel, TooltipPlacement};
 
-fn caption(text: impl Into<String>) -> Element {
-    Element::truncated_text(text)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-        .foreground(theme::FOREGROUND)
-}
-
 pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element {
     use crate::environment_git_ui::{self, EnvironmentGitPanel};
     let inner = (width - chrome::INSET * 2.0).max(0.0);
@@ -274,7 +267,11 @@ pub(super) fn extensions_center(
 ) -> Element {
     Element::column(vec![
         PanelHeader::new("", theme::sidebar_palette())
-            .leading(caption("Complementos"))
+            .leading(
+                UiText::new("Complementos", theme::component_palette())
+                    .truncate()
+                    .render(),
+            )
             .dismiss("ide_extensions_close", "Volver al editor")
             .width(width)
             .sizing(crate::ui_sizing::PANE_HEADER)
@@ -303,95 +300,6 @@ mod tests {
         marketplace::{MarketplaceItem, SourceKind},
     };
     use openide_ui::{Size, UiTree};
-
-    fn legacy_extension_row(
-        action: &str,
-        name: &str,
-        subtitle: &str,
-        description: &str,
-        selected: bool,
-        width: f32,
-    ) -> Element {
-        Tooltip::new(
-            theme::action_palette(theme::SIDEBAR, theme::FOREGROUND).interactive_surface(
-                Element::clickable(
-                    action,
-                    Element::row(vec![
-                        Element::icon(Icon::Grid)
-                            .foreground(theme::FOREGROUND_SUBTLE)
-                            .size(Some(16.0), Some(16.0)),
-                        Element::column(vec![
-                            caption(name),
-                            caption(subtitle)
-                                .font_size(10.0)
-                                .foreground(theme::FOREGROUND_SUBTLE),
-                        ])
-                        .gap(2.0)
-                        .flex(1.0),
-                    ])
-                    .gap(7.0)
-                    .padding(5.0),
-                )
-                .background(if selected {
-                    theme::SELECTED
-                } else {
-                    theme::SIDEBAR
-                })
-                .size(Some(width), Some(42.0))
-                .radius(4.0),
-            ),
-            action,
-            name,
-            theme::component_palette(),
-        )
-        .description(description)
-        .placement(TooltipPlacement::Right)
-        .render()
-    }
-
-    #[test]
-    fn extension_rows_match_their_legacy_body() {
-        let long = "Un complemento con un nombre que no entra en la barra lateral";
-        for width in [150.0, 248.0] {
-            for selected in [false, true] {
-                for (name, subtitle) in [("Docs", "Instalada · Activa"), (long, long)] {
-                    crate::icon_button_parity_tests::assert_same(
-                        &format!("extension {name:?} selected={selected} at {width}"),
-                        legacy_extension_row("ide_extension:x", name, subtitle, long, selected, width),
-                        extension_row("ide_extension:x", name, subtitle, long, selected, width),
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn an_extension_without_a_subtitle_keeps_its_line() {
-        for width in [150.0, 248.0] {
-            for selected in [false, true] {
-                let frame = |row: Element| UiTree::new(row).layout(Size::new(width, 200.0));
-                let (legacy, current) = (
-                    frame(legacy_extension_row("ide_extension:x", "Docs", "", "Docs", selected, width)),
-                    frame(extension_row("ide_extension:x", "Docs", "", "Docs", selected, width)),
-                );
-                assert_eq!(current.regions, legacy.regions);
-                // The only difference is the blank line's text, " " where it was "".
-                let blank_as_space = |frame: &openide_ui::Frame| {
-                    let mut commands = frame.commands.clone();
-                    for command in &mut commands {
-                        if let openide_ui::DrawCommand::Text { text, .. } = command {
-                            if text.is_empty() {
-                                *text = " ".into();
-                            }
-                        }
-                    }
-                    commands
-                };
-                assert_ne!(current.commands, legacy.commands);
-                assert_eq!(current.commands, blank_as_space(&legacy));
-            }
-        }
-    }
 
     #[test]
     fn ide_git_sidebar_keeps_file_navigation_while_the_center_has_a_diff() {

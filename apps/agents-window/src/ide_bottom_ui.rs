@@ -123,73 +123,22 @@ fn problem_status(icon: Icon, title: &str, detail: &str, width: f32) -> Element 
     .render()
 }
 
-#[cfg(test)]
-fn legacy_problem_status(icon: Icon, title: &str, detail: &str, width: f32) -> Element {
-    let content = Element::row(vec![
-        Element::icon(icon)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(16.0)),
-        Element::column(vec![
-            Element::truncated_text(title)
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::FOREGROUND)
-                .size(None, Some(17.0)),
-            Element::truncated_text(detail)
-                .font_family(FontFamily::Sans)
-                .font_size(11.0)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(None, Some(16.0)),
-        ])
-        .gap(2.0)
-        .flex(1.0),
-    ])
-    .gap(8.0)
-    .padding(8.0)
-    .size(Some(width), Some(51.0));
-    Tooltip::new(
-        content,
-        "ide_problems_status",
-        title,
-        theme::component_palette(),
-    )
-    .description(detail)
-    .placement(TooltipPlacement::Above)
-    .render()
-}
-
 /// The file the problems belong to, with how many it has.
 fn problems_file(path: &str, name: &str, count: String, width: f32) -> Element {
     ListRow::new("ide_problems_file", name, theme::component_palette())
         .leading(Element::icon(openide_ui::file_icon(path)))
         .title_ink(theme::FOREGROUND)
         .meta_element(
-            label(count, theme::FOREGROUND_SUBTLE)
-                .font_size(11.0)
+            UiText::new(count, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render()
                 .size(None, Some(16.0)),
         )
         .enabled(false)
         .sizing(crate::ui_sizing::PROBLEM_ROW)
         .render()
         .size(Some(width), Some(26.0))
-}
-
-#[cfg(test)]
-fn legacy_problems_file(path: &str, name: &str, count: String, width: f32) -> Element {
-    Element::row(vec![
-        Element::icon(openide_ui::file_icon(path)).size(Some(14.0), Some(16.0)),
-        Element::truncated_text(name)
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND)
-            .flex(1.0),
-        label(count, theme::FOREGROUND_SUBTLE)
-            .font_size(11.0)
-            .size(None, Some(16.0)),
-    ])
-    .gap(6.0)
-    .padding(5.0)
-    .size(Some(width), Some(26.0))
 }
 
 /// One problem: its severity, its message, where it is and, with room, who
@@ -225,47 +174,6 @@ fn diagnostic_row(
     )
     .render()
     .size(Some(width), Some(26.0))
-}
-
-#[cfg(test)]
-fn legacy_diagnostic_row(
-    id: &str,
-    icon: Icon,
-    accent: openide_ui::Color,
-    message: &str,
-    source: Option<&str>,
-    position: &str,
-    width: f32,
-) -> Element {
-    let mut content = vec![
-        Element::icon(icon)
-            .foreground(accent)
-            .size(Some(14.0), Some(16.0)),
-        Element::truncated_text(message.replace(['\n', '\r'], " "))
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND)
-            .flex(1.0),
-    ];
-    if let Some(source) = source {
-        content.push(
-            Element::truncated_text(source)
-                .font_family(FontFamily::Sans)
-                .font_size(11.0)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(100.0), Some(16.0)),
-        );
-    }
-    content.push(
-        Element::text(position)
-            .font_family(FontFamily::Monospace)
-            .font_size(11.0)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(position.len() as f32 * 7.0), Some(16.0)),
-    );
-    theme::interactive_surface(Element::clickable(id, Element::row(content).gap(6.0)))
-        .padding(5.0)
-        .size(Some(width), Some(26.0))
 }
 
 fn problems(state: &ViewState, width: f32, height: f32) -> Element {
@@ -397,11 +305,13 @@ fn problems(state: &ViewState, width: f32, height: f32) -> Element {
         }
         if workbench.diagnostics.len() > 80 {
             rows.push(
-                label(
+                UiText::new(
                     "Se muestran los primeros 80 problemas del archivo",
-                    theme::FOREGROUND_SUBTLE,
+                    theme::component_palette(),
                 )
-                .font_size(11.0),
+                .role(TextRole::Small)
+                .muted()
+                .render(),
             );
         }
     }
@@ -412,24 +322,37 @@ fn problems(state: &ViewState, width: f32, height: f32) -> Element {
 }
 
 fn output(state: &ViewState, width: f32, height: f32) -> Element {
-    let mut rows = vec![label("Servicios del proyecto", theme::FOREGROUND).font_size(12.0)];
+    let mut rows = vec![UiText::new("Servicios del proyecto", theme::component_palette()).render()];
     if !state.editor_workbench.language_status.is_empty() {
         rows.push(
-            label(
+            UiText::new(
                 &state.editor_workbench.language_status,
-                theme::FOREGROUND_SUBTLE,
+                theme::component_palette(),
             )
-            .font_size(12.0),
+            .muted()
+            .render(),
         );
     }
     if let Some(notice) = &state.editor_workbench.notice {
-        rows.push(label(notice, theme::FOREGROUND_SUBTLE).font_size(12.0));
+        rows.push(
+            UiText::new(notice, theme::component_palette())
+                .muted()
+                .render(),
+        );
     }
     if !state.status.is_empty() {
-        rows.push(label(&state.status, theme::FOREGROUND_SUBTLE).font_size(12.0));
+        rows.push(
+            UiText::new(&state.status, theme::component_palette())
+                .muted()
+                .render(),
+        );
     }
     if rows.len() == 1 {
-        rows.push(label("Sin mensajes de los servicios", theme::FOREGROUND_SUBTLE).font_size(12.0));
+        rows.push(
+            UiText::new("Sin mensajes de los servicios", theme::component_palette())
+                .muted()
+                .render(),
+        );
     }
     ScrollArea::new(
         "ide_service_output",
@@ -545,51 +468,6 @@ mod tests {
             })
             .collect();
         state
-    }
-
-    #[test]
-    fn problem_rows_match_their_legacy_bodies() {
-        let long = "crates/openide-ui/src/a_file_whose_name_is_longer_than_the_problems_panel.rs";
-        for width in [140.0, 420.0] {
-            for path in ["src/main.rs", long] {
-                crate::icon_button_parity_tests::assert_same(
-                    &format!("problems file {path} at {width}"),
-                    legacy_problems_file(path, path, "12".into(), width),
-                    problems_file(path, path, "12".into(), width),
-                );
-            }
-            for (severity, source) in [(Some(1), None), (Some(2), Some("rustc")), (None, None)] {
-                let (icon, accent, _) = diagnostic_style(severity);
-                for message in ["unused variable", "mismatched types:\nexpected `usize`, found `&str` in the call that builds the row"] {
-                    crate::icon_button_parity_tests::assert_same(
-                        &format!("diagnostic {severity:?} {source:?} at {width}"),
-                        legacy_diagnostic_row("row", icon, accent, message, source, "128:14", width),
-                        diagnostic_row("row", icon, accent, message, source, "128:14", width),
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn problem_status_matches_its_legacy_body() {
-        for width in [140.0, 420.0] {
-            crate::state_panel_parity_tests::assert_same(
-                "problem_status",
-                legacy_problem_status(
-                    Icon::History,
-                    "Diagnósticos desactualizados",
-                    "Se actualizarán para la versión actual del archivo.",
-                    width,
-                ),
-                problem_status(
-                    Icon::History,
-                    "Diagnósticos desactualizados",
-                    "Se actualizarán para la versión actual del archivo.",
-                    width,
-                ),
-            );
-        }
     }
 
     #[test]

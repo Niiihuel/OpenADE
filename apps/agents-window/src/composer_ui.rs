@@ -36,7 +36,7 @@ const CONTROL_HEIGHT: f32 = 28.0;
 const SELECTOR_HEIGHT: f32 = 28.0;
 const CONTEXT_HEIGHT: f32 = 28.0;
 const CONTEXT_STRIP_HEIGHT: f32 = Composer::HEADER_STRIP_HEIGHT;
-// Read only by the parity copy of the strip and by the tests, until S18.
+// Read only by the tests.
 #[cfg(test)]
 const CONTEXT_STRIP_INSET: f32 = 8.0;
 #[cfg(test)]
@@ -2063,37 +2063,6 @@ fn composer_metadata(props: &ComposerProps<'_>) -> Element {
     })
 }
 
-// The hand-built strip `Composer::header_strip` replaced, kept for the parity
-// test until S18.
-#[cfg(test)]
-fn legacy_composer_metadata(props: &ComposerProps<'_>) -> Element {
-    let strip_width = (props.width - 2.0 * CONTEXT_STRIP_INSET).max(0.0);
-    let inner_width = (strip_width - 2.0 * CONTEXT_STRIP_PADDING).max(0.0);
-    let metadata = project_metadata(&ComposerProps {
-        width: inner_width,
-        ..*props
-    });
-    let strip = Element::column(vec![
-        Element::spacer().size(None, Some(2.0)),
-        Element::row(vec![
-            Element::spacer().size(Some(CONTEXT_STRIP_PADDING), None),
-            metadata,
-            Element::spacer().size(Some(CONTEXT_STRIP_PADDING), None),
-        ])
-        .size(Some(strip_width), Some(CONTEXT_HEIGHT)),
-        Element::spacer().size(None, Some(2.0)),
-    ])
-    .background(theme::PANEL)
-    .corner_radii(openide_ui::CornerRadii::top(CARD_RADIUS))
-    .size(Some(strip_width), Some(CONTEXT_STRIP_HEIGHT));
-    Element::row(vec![
-        Element::spacer().size(Some(CONTEXT_STRIP_INSET), None),
-        strip,
-        Element::spacer().size(Some(CONTEXT_STRIP_INSET), None),
-    ])
-    .size(Some(props.width), Some(CONTEXT_STRIP_HEIGHT))
-}
-
 fn expand_control(props: &ComposerProps<'_>) -> Element {
     IconButton::new(
         "composer_expand_toggle",
@@ -2304,8 +2273,8 @@ pub(crate) fn build_composer_with_height(
 mod layout_visual_tests;
 
 #[cfg(test)]
-#[path = "composer_menu_parity_tests.rs"]
-mod menu_parity_tests;
+#[path = "composer_menu_visual_tests.rs"]
+mod menu_visual_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {

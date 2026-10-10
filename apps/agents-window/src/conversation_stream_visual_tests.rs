@@ -2,7 +2,7 @@
 
 use super::*;
 use openide_core::ModelTokenUsage;
-use openide_ui::{DrawCommand, HitKind, Key, Point, Size, UiAction, UiEvent, UiTree};
+use openide_ui::{Color, DrawCommand, HitKind, Key, Point, Size, UiAction, UiEvent, UiTree};
 use serde_json::json;
 use std::time::{Duration, Instant};
 

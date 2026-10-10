@@ -48,10 +48,13 @@ pub(super) fn group(state: &ViewState, compact: bool) -> Element {
         };
         rows.push(
             Element::column(vec![
-                text("Resultado de la revisión", theme::FOREGROUND, 12.0),
+                Text::new("Resultado de la revisión", theme::component_palette()).render(),
                 ScrollArea::new(
                     "exec_rule_preview_details",
-                    text(report, color, 12.0).font_family(FontFamily::Monospace),
+                    Text::new(report, theme::component_palette())
+                        .ink(color)
+                        .mono()
+                        .render(),
                 )
                 .render()
                 .max_height(220.0),

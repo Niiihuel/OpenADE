@@ -2,24 +2,14 @@
 use crate::{theme, view::ViewState};
 use openide_ui::{
     guides_for_depths, Button, ButtonSize, ButtonVariant, Color, Component, ControlSize, Element,
-    FontFamily, Icon, IconButton, Notice, ScrollArea, Tooltip, TooltipPlacement, TooltipSpec, TreeRow,
+    FontFamily, Icon, IconButton, Notice, ScrollArea, Text, Tooltip, TooltipPlacement, TooltipSpec,
+    TreeRow,
 };
 use std::sync::Arc;
 
 const ROW_HEIGHT: f32 = 24.0;
 const TOOL_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 const INSET: f32 = 8.0;
-
-fn text(value: impl Into<String>, muted: bool) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-        .foreground(if muted {
-            theme::FOREGROUND_SUBTLE
-        } else {
-            theme::FOREGROUND
-        })
-}
 
 /// What the panel says in place of the tree, with the one way out.
 fn empty_state(status: &str, palette: openide_ui::ComponentPalette) -> Element {
@@ -44,51 +34,6 @@ fn empty_state(status: &str, palette: openide_ui::ComponentPalette) -> Element {
     )
     .sizing(crate::ui_sizing::FILES_EMPTY)
     .render()
-}
-
-#[cfg(test)]
-fn legacy_empty_state(status: &str, palette: openide_ui::ComponentPalette) -> Element {
-    let failed = status.starts_with("No se pudo");
-    Element::column(vec![
-        text(
-            if failed {
-                "No se pudieron cargar los archivos"
-            } else {
-                "Carpeta vacía"
-            },
-            false,
-        ),
-        text(
-            if status.is_empty() {
-                "Abre un proyecto para ver sus archivos."
-            } else {
-                status
-            },
-            true,
-        ),
-        Button::new("files_refresh", "Volver a cargar", palette)
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::Small)
-            .render(),
-    ])
-    .gap(8.0)
-    .padding(12.0)
-}
-
-// What limn's `Tooltip::for_path` replaced. Delete with the final audit (S18).
-#[cfg(test)]
-fn legacy_path_tooltip(
-    content: Element,
-    id: &str,
-    name: &str,
-    path: &str,
-    placement: TooltipPlacement,
-) -> Element {
-    let mut tooltip = Tooltip::new(content, id, name, theme::component_palette());
-    if let Some(separator) = path.rfind(['/', '\\']) {
-        tooltip = tooltip.description(&path[..separator.max(1)]);
-    }
-    tooltip.placement(placement).max_width(320.0).render()
 }
 
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
@@ -162,7 +107,11 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
         if state.files_status.starts_with("Lista parcial")
             || state.files_status.starts_with("No se pudo")
         {
-            content.push(text(&state.files_status, true));
+            content.push(
+                Text::new(&state.files_status, theme::component_palette())
+                    .muted()
+                    .render(),
+            );
         }
         let rows = Arc::new(state.file_rows.clone());
         let guides = Arc::new(guides_for_depths(
@@ -284,44 +233,6 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn path_hints_match_their_legacy_body() {
-        for (name, path) in [
-            ("commands.rs", "src/commands.rs"),
-            ("Cargo.toml", "Cargo.toml"),
-            ("openADE", "/home/usuario/proyectos/openADE"),
-            ("tmp", "/tmp"),
-            ("Proyecto", "Proyecto"),
-        ] {
-            let hint = |element: Element| format!("{element:?}");
-            assert_eq!(
-                hint(
-                    Tooltip::for_path(Element::spacer(), "file", path, theme::component_palette())
-                        .placement(TooltipPlacement::Left)
-                        .render()
-                ),
-                hint(legacy_path_tooltip(
-                    Element::spacer(),
-                    "file",
-                    name,
-                    path,
-                    TooltipPlacement::Left
-                )),
-            );
-        }
-    }
-
-    #[test]
-    fn empty_state_matches_its_legacy_body() {
-        let palette = crate::theme::sidebar_palette();
-        for status in ["", "No se pudo leer /proyecto: permiso denegado al abrir el directorio"] {
-            crate::state_panel_parity_tests::assert_same(
-                "files empty",
-                super::legacy_empty_state(status, palette),
-                super::empty_state(status, palette),
-            );
-        }
-    }
 
     use super::*;
     use crate::view::FileRowView;

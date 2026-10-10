@@ -509,10 +509,6 @@ pub(crate) fn local_selector(
 }
 
 #[cfg(test)]
-#[path = "environment_selectors_parity_tests.rs"]
-mod parity_tests;
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use openide_ui::{

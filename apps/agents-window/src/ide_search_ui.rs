@@ -20,15 +20,13 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
         theme::sidebar_palette()
             .interactive_surface(Element::clickable(
                 "ide_search_case",
-                label(
-                    "Aa",
-                    if search.case_sensitive {
+                UiText::new("Aa", theme::component_palette())
+                    .ink(if search.case_sensitive {
                         theme::FOREGROUND
                     } else {
                         theme::FOREGROUND_SUBTLE
-                    },
-                )
-                .font_size(12.0),
+                    })
+                    .render(),
             ))
             .background(if search.case_sensitive {
                 theme::SELECTED
@@ -101,7 +99,10 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
                 .font_family(FontFamily::Sans)
                 .font_size(12.0)
                 .flex(1.0),
-            label(&hit.line.to_string(), theme::FOREGROUND_SUBTLE).font_size(11.0),
+            UiText::new(&hit.line.to_string(), theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
         ])
         .gap(5.0)
         .size(None, Some(17.0));
@@ -131,24 +132,28 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
     }
     if search.truncated {
         rows.push(
-            label(
+            UiText::new(
                 "Resultados limitados. Afiná el texto de búsqueda.",
-                theme::FOREGROUND_SUBTLE,
+                theme::component_palette(),
             )
-            .font_size(11.0)
+            .role(TextRole::Small)
+            .muted()
+            .render()
             .padding(4.0),
         );
     }
     if search.skipped_files > 0 {
         rows.push(
-            label(
+            UiText::new(
                 &format!(
                     "{} archivos grandes o inaccesibles omitidos.",
                     search.skipped_files
                 ),
-                theme::FOREGROUND_SUBTLE,
+                theme::component_palette(),
             )
-            .font_size(11.0)
+            .role(TextRole::Small)
+            .muted()
+            .render()
             .padding(4.0),
         );
     }
@@ -160,15 +165,14 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
                 .sizing(crate::ui_sizing::SIDEBAR_HEADER)
                 .render(),
             query,
-            label(
-                &status,
-                if search.error.is_some() {
+            UiText::new(&status, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(if search.error.is_some() {
                     theme::DESTRUCTIVE
                 } else {
                     theme::FOREGROUND_SUBTLE
-                },
-            )
-            .font_size(11.0),
+                })
+                .render(),
             ScrollArea::new(
                 format!("ide_search_results:{}", search.generation),
                 Element::column(rows).gap(1.0),

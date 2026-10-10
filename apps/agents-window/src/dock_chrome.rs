@@ -236,8 +236,9 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
     let toolbar_gap = if toolbar_width > 0.0 { 8.0 } else { 0.0 };
     let available = (width - HEADER_SIDE_INSET * 2.0 - toolbar_gap - toolbar_width).max(0.0);
     let tabs = if state.show_dock_overview {
-        label("Pestañas", theme::FOREGROUND)
-            .font_size(13.0)
+        UiText::new("Pestañas", theme::component_palette())
+            .role(TextRole::Label)
+            .render()
             .size(None, Some(RIGHT_HEADER_HEIGHT))
             .flex(1.0)
     } else {

@@ -4,20 +4,13 @@ use std::time::SystemTime;
 
 use openide_ui::{
     ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon, IconButton, ListRow,
-    Popover, PopoverPlacement, TooltipPlacement, TooltipSpec,
+    Popover, PopoverPlacement, Text, TextRole, TooltipPlacement, TooltipSpec,
 };
 
 use crate::notifications::{Notification, NotificationCenter, Severity};
 use crate::{theme, ui_sizing};
 
 const VISIBLE: usize = 8;
-
-fn text(value: impl Into<String>, size: f32, color: Color) -> Element {
-    Element::truncated_text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
 
 fn age(at: SystemTime) -> String {
     let minutes = SystemTime::now()
@@ -29,30 +22,6 @@ fn age(at: SystemTime) -> String {
         60..=1439 => format!("hace {} h", minutes / 60),
         _ => format!("hace {} d", minutes / 1440),
     }
-}
-
-#[cfg(test)]
-fn legacy_open_row(item: &Notification) -> Element {
-    let ink = match (item.severity, item.read) {
-        (Severity::Error, _) => theme::DESTRUCTIVE,
-        (_, false) => theme::FOREGROUND,
-        (_, true) => theme::FOREGROUND_SUBTLE,
-    };
-    let mut heading = vec![text(item.title.clone(), 12.0, ink).flex(1.0)];
-    if item.count > 1 {
-        heading.push(text(format!("×{}", item.count), 11.0, theme::FOREGROUND));
-    }
-    heading.push(text(age(item.at), 11.0, theme::FOREGROUND_SUBTLE));
-    let body = Element::column(vec![
-        Element::row(heading).gap(8.0),
-        text(item.detail.clone(), 11.5, theme::FOREGROUND_SUBTLE),
-    ])
-    .gap(2.0)
-    .padding(6.0);
-    theme::interactive_surface(Element::clickable(
-        format!("notification_open:{}", item.id),
-        body,
-    ))
 }
 
 /// The part of a notification that opens it.
@@ -72,10 +41,21 @@ fn open_row(item: &Notification) -> Element {
     .subtitle(if item.detail.is_empty() { " " } else { &item.detail })
     .sizing(ui_sizing::NOTIFICATION);
     if item.count > 1 {
-        row = row.meta_element(text(format!("×{}", item.count), 11.0, theme::FOREGROUND));
+        row = row.meta_element(
+            Text::new(format!("×{}", item.count), theme::component_palette())
+                .role(TextRole::Small)
+                .truncate()
+                .render(),
+        );
     }
-    row.meta_element(text(age(item.at), 11.0, theme::FOREGROUND_SUBTLE))
-        .render()
+    row.meta_element(
+        Text::new(age(item.at), theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .truncate()
+            .render(),
+    )
+    .render()
 }
 
 fn row(item: &Notification) -> Element {
@@ -100,7 +80,11 @@ fn list(center: &NotificationCenter) -> Element {
     if !items.is_empty() {
         tools.push(theme::interactive_surface(Element::clickable(
             "notifications_clear",
-            text("Limpiar", 11.5, theme::FOREGROUND_SUBTLE).padding(4.0),
+            Element::truncated_text("Limpiar")
+                .font_family(FontFamily::Sans)
+                .font_size(11.5)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .padding(4.0),
         )));
     }
     let mut rows = vec![
@@ -110,17 +94,22 @@ fn list(center: &NotificationCenter) -> Element {
             .render(),
     ];
     if items.is_empty() {
-        rows.push(text("Sin notificaciones", 12.0, theme::FOREGROUND_SUBTLE).padding(6.0));
+        rows.push(
+            Text::new("Sin notificaciones", theme::component_palette())
+                .muted()
+                .truncate()
+                .render()
+                .padding(6.0),
+        );
     }
     rows.extend(items.iter().take(VISIBLE).map(row));
     if items.len() > VISIBLE {
         rows.push(
-            text(
-                format!("y {} más", items.len() - VISIBLE),
-                11.5,
-                theme::FOREGROUND_SUBTLE,
-            )
-            .padding(6.0),
+            Element::truncated_text(format!("y {} más", items.len() - VISIBLE))
+                .font_family(FontFamily::Sans)
+                .font_size(11.5)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .padding(6.0),
         );
     }
     Element::column(rows).gap(2.0).padding(6.0)
@@ -254,7 +243,11 @@ pub(crate) fn bell(center: &NotificationCenter, surface: Color, size: f32, above
     if unread > 0 {
         trigger.insert(
             0,
-            text(unread.min(99).to_string(), 11.0, theme::FOREGROUND).size(None, Some(size)),
+            Text::new(unread.min(99).to_string(), theme::component_palette())
+                .role(TextRole::Small)
+                .truncate()
+                .render()
+                .size(None, Some(size)),
         );
     }
     popover(center, Element::row(trigger).gap(2.0), above)
@@ -297,62 +290,6 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join(" | ")
-    }
-
-    #[test]
-    fn the_open_row_matches_its_legacy_body() {
-        for (severity, read, count) in [
-            (Severity::Error, false, 1),
-            (Severity::Info, false, 3),
-            (Severity::Attention, true, 1),
-        ] {
-            let item = Notification {
-                id: 7,
-                severity,
-                title: "Permiso pendiente: run_command en una tarea de nombre largo".into(),
-                detail: "Arreglar el inicio de sesión del panel de administración".into(),
-                target: None,
-                count,
-                read,
-                at: SystemTime::now(),
-            };
-            crate::state_panel_parity_tests::assert_same(
-                "notification",
-                legacy_open_row(&item),
-                open_row(&item),
-            );
-        }
-    }
-
-    #[test]
-    fn an_empty_detail_keeps_its_line() {
-        let item = Notification {
-            id: 7,
-            severity: Severity::Info,
-            title: "Turno completado".into(),
-            detail: String::new(),
-            target: None,
-            count: 1,
-            read: false,
-            at: SystemTime::now(),
-        };
-        for width in [240.0, 900.0] {
-            let frame = |row: Element| UiTree::new(row).layout(Size::new(width, 200.0));
-            let (legacy, current) = (frame(legacy_open_row(&item)), frame(open_row(&item)));
-            assert_eq!(current.regions, legacy.regions);
-            // The blank line is a space where it was an empty string: neither paints.
-            let painted = |frame: &openide_ui::Frame| {
-                frame
-                    .commands
-                    .iter()
-                    .filter(|command| {
-                        !matches!(command, DrawCommand::Text { text, .. } if text.trim().is_empty())
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(painted(&current), painted(&legacy));
-        }
     }
 
     #[test]

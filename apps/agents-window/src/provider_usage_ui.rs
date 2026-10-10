@@ -9,7 +9,7 @@ use std::{
 use openide_ui::{
     ActiveHover, Button, ButtonVariant, Card, Chip, Color, Component, ComponentPalette,
     ControlSize, Element, FontFamily, Icon, IconButton, Popover, PopoverPanel, PopoverPlacement,
-    ScrollArea, Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    ScrollArea, Separator, Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -24,24 +24,6 @@ use crate::{
 
 const POPUP_WIDTH: f32 = 320.0;
 const POPUP_BODY_MAX_HEIGHT: f32 = 320.0;
-
-fn text(value: impl Into<String>, size: f32, color: Color) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
-
-fn line(value: impl Into<String>, size: f32, color: Color) -> Element {
-    Element::truncated_text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
-
-fn muted(value: impl Into<String>) -> Element {
-    text(value, 11.0, theme::SETTINGS_FOREGROUND_SUBTLE)
-}
 
 fn plan_badge(value: &str) -> Element {
     Chip::new(
@@ -312,18 +294,26 @@ fn window_row(window: &UsageWindow, now: u64) -> Element {
         ),
         _ => format!("{} usado", amount(window.used, window.unit)),
     };
-    let mut rows = vec![
-        Element::row(vec![
-            line(&window.label, 12.0, theme::FOREGROUND).flex(1.0),
-            line(value, 12.0, theme::FOREGROUND),
-        ])
-        .gap(8.0),
-    ];
+    let mut rows = vec![Element::row(vec![
+        Text::new(&window.label, theme::component_palette())
+            .truncate()
+            .render()
+            .flex(1.0),
+        Text::new(value, theme::component_palette())
+            .truncate()
+            .render(),
+    ])
+    .gap(8.0)];
     if let Some(track) = progress(window) {
         rows.push(track);
     }
     if let Some(reset) = reset_label(window, now) {
-        rows.push(muted(reset));
+        rows.push(
+            Text::new(reset, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+        );
     }
     Element::column(rows).gap(6.0)
 }
@@ -375,12 +365,22 @@ fn account_card(
     } else {
         theme::SETTINGS_FOREGROUND_SUBTLE
     };
-    let mut titles = vec![line(&snapshot.provider_name, 12.0, theme::FOREGROUND)];
+    let mut titles = vec![
+        Text::new(&snapshot.provider_name, theme::component_palette())
+            .truncate()
+            .render(),
+    ];
     let subtitle = snapshot
         .account
         .as_deref()
         .unwrap_or(status_label(snapshot.status));
-    titles.push(line(subtitle, 11.0, status_color));
+    titles.push(
+        Text::new(subtitle, theme::component_palette())
+            .role(TextRole::Small)
+            .ink(status_color)
+            .truncate()
+            .render(),
+    );
     let mut header = vec![
         provider_mark(&snapshot.provider_id),
         Element::column(titles).gap(4.0).flex(1.0),
@@ -402,16 +402,32 @@ fn account_card(
     let measured = !snapshot.windows.is_empty() || !snapshot.balances.is_empty();
     if measured {
         let (value, label, color) = headline(snapshot);
-        rows.push(Element::column(vec![text(value, 18.0, color), muted(label)]).gap(4.0));
+        rows.push(
+            Element::column(vec![
+                Text::new(value, theme::component_palette())
+                    .role(TextRole::Display)
+                    .ink(color)
+                    .render(),
+                Text::new(label, theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
+            ])
+            .gap(4.0),
+        );
         for balance in snapshot.balances.iter().skip(1) {
             rows.push(
                 Element::row(vec![
-                    muted(&balance.label).flex(1.0),
-                    text(
+                    Text::new(&balance.label, theme::component_palette())
+                        .role(TextRole::Small)
+                        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                        .render()
+                        .flex(1.0),
+                    Text::new(
                         format!("{:.2} {}", balance.amount, balance.currency),
-                        12.0,
-                        theme::FOREGROUND,
-                    ),
+                        theme::component_palette(),
+                    )
+                    .render(),
                 ])
                 .gap(8.0),
             );
@@ -431,10 +447,15 @@ fn account_card(
             ProviderUsageStatus::Error => "No se pudo consultar el consumo",
             ProviderUsageStatus::Ready => "El proveedor no devolvió una medición",
         };
-        rows.push(text(title, 12.0, theme::FOREGROUND));
+        rows.push(Text::new(title, theme::component_palette()).render());
     }
     if let Some(message) = &snapshot.message {
-        rows.push(text(message, 11.0, status_color));
+        rows.push(
+            Text::new(message, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(status_color)
+                .render(),
+        );
     }
     // The model count shares the same authoritative catalog as Settings and
     // the composer. A missing catalog stays absent, never a invented count.
@@ -444,10 +465,15 @@ fn account_card(
             .as_ref()
             .and_then(|catalog| catalog.providers.get(&snapshot.provider_id))
         {
-            rows.push(muted(format!(
-                "{} modelos en tu catálogo",
-                provider.models.len()
-            )));
+            rows.push(
+                Text::new(
+                    format!("{} modelos en tu catálogo", provider.models.len()),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            );
         }
     }
     if snapshot.fetched_at_ms.is_some()
@@ -456,7 +482,12 @@ fn account_card(
             ProviderUsageStatus::Loading | ProviderUsageStatus::Error
         )
     {
-        rows.push(text(updated(snapshot, now), 11.0, status_color));
+        rows.push(
+            Text::new(updated(snapshot, now), theme::component_palette())
+                .role(TextRole::Small)
+                .ink(status_color)
+                .render(),
+        );
     }
     // Keep actions independent of copy length and account state. The body
     // absorbs the extra height of its row, so every footer shares a baseline.
@@ -517,13 +548,32 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
             Icon::Settings,
         ),
     };
-    let mut identity =
-        vec![line(&snapshot.provider_name, 13.0, theme::FOREGROUND).size(None, Some(16.0))];
+    let mut identity = vec![
+        Text::new(&snapshot.provider_name, theme::component_palette())
+            .role(TextRole::Label)
+            .truncate()
+            .render()
+            .size(None, Some(16.0)),
+    ];
     if let Some(plan) = &snapshot.plan_label {
-        identity.push(line(plan, 11.0, theme::FOREGROUND_SUBTLE).size(None, Some(16.0)));
+        identity.push(
+            Text::new(plan, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .truncate()
+                .render()
+                .size(None, Some(16.0)),
+        );
     }
     if let Some(account) = &snapshot.account {
-        identity.push(line(account, 11.0, theme::FOREGROUND_SUBTLE).size(None, Some(16.0)));
+        identity.push(
+            Text::new(account, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .truncate()
+                .render()
+                .size(None, Some(16.0)),
+        );
     }
     let header_height = (identity.len() as f32 * 18.0 - 2.0).max(36.0);
     let account = snapshot
@@ -601,8 +651,16 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
         };
         rows.push(
             Element::row(vec![
-                line(&balance.label, 12.0, theme::FOREGROUND_SUBTLE).flex(1.0),
-                line(value, 13.0, theme::FOREGROUND).size(Some(112.0), Some(20.0)),
+                Text::new(&balance.label, theme::component_palette())
+                    .muted()
+                    .truncate()
+                    .render()
+                    .flex(1.0),
+                Text::new(value, theme::component_palette())
+                    .role(TextRole::Label)
+                    .truncate()
+                    .render()
+                    .size(Some(112.0), Some(20.0)),
             ])
             .gap(8.0)
             .size(None, Some(20.0)),
@@ -619,22 +677,33 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
             ),
             _ => format!("{} usado", amount(window.used, window.unit)),
         };
-        let mut parts = vec![
-            Element::row(vec![
-                line(&window.label, 12.0, theme::FOREGROUND_SUBTLE).flex(1.0),
-                line(value, 12.0, percent.map_or(theme::FOREGROUND, usage_color))
-                    .size(Some(112.0), Some(18.0)),
-            ])
-            .gap(8.0)
-            .size(None, Some(18.0)),
-        ];
+        let mut parts = vec![Element::row(vec![
+            Text::new(&window.label, theme::component_palette())
+                .muted()
+                .truncate()
+                .render()
+                .flex(1.0),
+            Text::new(value, theme::component_palette())
+                .ink(percent.map_or(theme::FOREGROUND, usage_color))
+                .truncate()
+                .render()
+                .size(Some(112.0), Some(18.0)),
+        ])
+        .gap(8.0)
+        .size(None, Some(18.0))];
         let mut height = 18.0;
         if let Some(track) = progress(window) {
             parts.push(track);
             height += 8.0;
         }
         if let Some(reset) = reset_label(window, now) {
-            parts.push(line(reset, 10.5, theme::FOREGROUND_SUBTLE).size(None, Some(14.0)));
+            parts.push(
+                Element::truncated_text(reset)
+                    .font_family(FontFamily::Sans)
+                    .font_size(10.5)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .size(None, Some(14.0)),
+            );
             height += 18.0;
         }
         rows.push(Element::column(parts).gap(4.0).size(None, Some(height)));
@@ -663,16 +732,17 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
         .into()
     };
     rows.push(
-        line(
-            notice,
-            10.5,
-            if stale(snapshot, now) || snapshot.status == ProviderUsageStatus::NeedsSignIn {
-                theme::WARNING
-            } else {
-                theme::FOREGROUND_SUBTLE
-            },
-        )
-        .size(None, Some(16.0)),
+        Element::truncated_text(notice)
+            .font_family(FontFamily::Sans)
+            .font_size(10.5)
+            .foreground(
+                if stale(snapshot, now) || snapshot.status == ProviderUsageStatus::NeedsSignIn {
+                    theme::WARNING
+                } else {
+                    theme::FOREGROUND_SUBTLE
+                },
+            )
+            .size(None, Some(16.0)),
     );
     content_height += 16.0 + 8.0 * rows.len().saturating_sub(1) as f32 + 12.0;
     (
@@ -727,7 +797,9 @@ fn popup_panel(state: &ViewState, cards: Vec<Element>, body_height: f32) -> Elem
         .header(
             openide_ui::PanelHeader::new("", theme::menu_palette())
                 .leading(
-                    text("Cuenta y uso", 13.0, theme::FOREGROUND)
+                    Text::new("Cuenta y uso", theme::component_palette())
+                        .role(TextRole::Label)
+                        .render()
                         .size(None, Some(18.0))
                         .centered_y(),
                 )
@@ -756,41 +828,6 @@ fn popup_panel(state: &ViewState, cards: Vec<Element>, body_height: f32) -> Elem
             .size(None, Some(32.0)),
         )
         .render()
-}
-
-/// The hand-built frame that limn's `PopoverPanel` replaced, kept so the
-/// replacement stays provably identical. Delete with the final audit (S18).
-#[cfg(test)]
-fn legacy_popup_panel(state: &ViewState, cards: Vec<Element>, body_height: f32) -> Element {
-    Element::column(vec![
-        openide_ui::PanelHeader::new("", theme::menu_palette())
-            .leading(
-                text("Cuenta y uso", 13.0, theme::FOREGROUND)
-                    .size(None, Some(18.0))
-                    .centered_y(),
-            )
-            .trailing(vec![refresh(state, true)])
-            .sizing(crate::ui_sizing::TALL_HEADER)
-            .render(),
-        Separator::horizontal(theme::component_palette()).render(),
-        ScrollArea::new("provider_usage_popup", Element::column(cards))
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .size(None, Some(body_height.min(POPUP_BODY_MAX_HEIGHT)))
-            .flex(1.0),
-        Separator::horizontal(theme::component_palette()).render(),
-        Button::new(
-            "usage_details",
-            "Ver uso y proveedores",
-            theme::menu_palette(),
-        )
-        .trailing_icon(Icon::ArrowRight)
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Regular)
-        .render()
-        .size(None, Some(32.0)),
-    ])
-    .gap(4.0)
 }
 
 /// Compact card for the sidebar footer. Its height stays independent of the
@@ -849,13 +886,17 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
             theme::FOREGROUND_SUBTLE,
         )
     };
-    let mut heading = vec![line("Cuenta y uso", 12.0, theme::FOREGROUND).flex(1.0)];
+    let mut heading = vec![Text::new("Cuenta y uso", theme::component_palette())
+        .truncate()
+        .render()
+        .flex(1.0)];
     if count > 1 {
-        heading.push(text(
-            format!("+{}", count - 1),
-            11.0,
-            theme::FOREGROUND_SUBTLE,
-        ));
+        heading.push(
+            Text::new(format!("+{}", count - 1), theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
     }
     let anchor = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND)
         .interactive_surface(Element::clickable(
@@ -870,7 +911,12 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
                 .size(Some(16.0), Some(summary_height)),
                 Element::column(vec![
                     Element::row(heading).gap(4.0).size(None, Some(16.0)),
-                    line(summary, 11.0, color).size(None, Some(16.0)),
+                    Text::new(summary, theme::component_palette())
+                        .role(TextRole::Small)
+                        .ink(color)
+                        .truncate()
+                        .render()
+                        .size(None, Some(16.0)),
                 ])
                 .flex(1.0),
                 Element::panel(
@@ -950,15 +996,23 @@ pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> 
         .filter(|(id, _, _)| connected(state, id))
         .count();
     let intro = Element::column(vec![
-        text("Suscripciones y consumo", 18.0, theme::FOREGROUND),
-        muted(format!(
-            "{count} {} · Información de cada cuenta",
-            if count == 1 {
-                "proveedor conectado"
-            } else {
-                "proveedores conectados"
-            }
-        )),
+        Text::new("Suscripciones y consumo", theme::component_palette())
+            .role(TextRole::Display)
+            .render(),
+        Text::new(
+            format!(
+                "{count} {} · Información de cada cuenta",
+                if count == 1 {
+                    "proveedor conectado"
+                } else {
+                    "proveedores conectados"
+                }
+            ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+        .render(),
     ])
     .gap(4.0);
     let mut cards = vec![if compact {
@@ -987,7 +1041,7 @@ pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> 
             Element::column(row)
         });
     }
-    cards.push(muted("Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción."));
+    cards.push(Text::new("Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     cards
 }
 
@@ -1166,42 +1220,6 @@ mod tests {
             })
         });
         tree
-    }
-
-    #[test]
-    fn the_popup_panel_matches_its_hand_built_frame() {
-        let state = crate::view::tests::empty_state();
-        for width in [220.0, 320.0] {
-            for (rows, height) in [(1, 700.0), (12, 700.0), (12, 260.0)] {
-                let frame = |panel: fn(&ViewState, Vec<Element>, f32) -> Element| {
-                    let cards = (0..rows)
-                        .map(|row| {
-                            text(format!("Cuenta {row}"), 12.0, theme::FOREGROUND)
-                                .size(None, Some(48.0))
-                        })
-                        .collect();
-                    let mut tree = UiTree::new(Element::column(vec![
-                        Element::spacer().flex(1.0),
-                        Popover::new(
-                            Element::button("trigger", "Uso").size(Some(80.0), Some(28.0)),
-                            panel(&state, cards, rows as f32 * 48.0),
-                            true,
-                            "usage_dismiss",
-                            theme::menu_palette(),
-                        )
-                        .width(width)
-                        .placement(PopoverPlacement::TopStart)
-                        .render(),
-                    ]));
-                    tree.set_reduced_motion(true);
-                    tree.layout(Size::new(360.0, height))
-                };
-                assert!(
-                    frame(popup_panel) == frame(legacy_popup_panel),
-                    "{width} {rows} {height}"
-                );
-            }
-        }
     }
 
     fn popup_tree(state: &ViewState, width: f32) -> UiTree {
@@ -1813,37 +1831,6 @@ mod tests {
         )), "missing plan must not reserve a badge");
     }
 
-    // The transparent-fill chip that `Chip::outline` replaced. Delete with the final audit (S18).
-    fn legacy_plan_badge(value: &str) -> Element {
-        Chip::new(
-            value,
-            ComponentPalette {
-                selected: Color::TRANSPARENT,
-                text: theme::SETTINGS_FOREGROUND_SUBTLE,
-                ..theme::component_palette()
-            },
-        )
-        .height(20.0)
-        .render()
-    }
-
-    #[test]
-    fn plan_badge_matches_the_transparent_chip_it_replaced() {
-        for width in [360.0, 900.0] {
-            let frame = |badge: Element| {
-                let mut tree = UiTree::new(Element::row(vec![badge, Element::spacer().flex(1.0)]));
-                tree.set_reduced_motion(true);
-                tree.layout(Size::new(width, 32.0))
-            };
-            let mut legacy = frame(legacy_plan_badge("Plan de ChatGPT"));
-            // The old chip painted a fully transparent fill; the outline paints none.
-            legacy.commands.retain(|command| {
-                !matches!(command, DrawCommand::FillRect { color, .. } if color.a == 0)
-            });
-            assert_eq!(frame(plan_badge("Plan de ChatGPT")), legacy, "width={width}");
-        }
-    }
-
     #[test]
     fn plan_badge_stays_passive_without_hover_or_keyboard_state() {
         let mut tree = native_tree(Element::row(vec![
@@ -2047,11 +2034,10 @@ mod tests {
         };
         for width in [360.0, 900.0] {
             let root = Element::column(vec![
-                text(
-                    "Cuenta y uso · datos de prueba",
-                    14.0,
-                    theme::SETTINGS_FOREGROUND_SUBTLE,
-                ),
+                Text::new("Cuenta y uso · datos de prueba", theme::component_palette())
+                    .role(TextRole::Body)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
                 Element::column(usage_page(&state, width - 40.0)).gap(16.0),
             ])
             .gap(24.0)

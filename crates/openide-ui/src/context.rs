@@ -548,130 +548,15 @@ impl Component for ContextContent {
 // The bodies before they moved to limn's Text and Separator, kept for the
 // parity test.
 #[cfg(test)]
-impl ContextContent {
-    fn legacy_render(self) -> Element {
-        let text = |value: String, color: Color, size: f32| {
-            Element::text(value)
-                .font_family(FontFamily::Sans)
-                .foreground(color)
-                .font_size(size)
-        };
-        let mut content = vec![
-            text(self.title, self.palette.text, 12.0),
-            text(self.description, self.palette.muted, 11.0),
-        ];
-        for (title, rows) in self.sections {
-            let mut group = vec![
-                Element::spacer()
-                    .size(None, Some(1.0))
-                    .background(self.palette.border),
-                text(title, self.palette.text, 12.0),
-            ];
-            for row in rows {
-                let mut parts = vec![Element::row(vec![
-                    text(row.label, self.palette.muted, 12.0).flex(1.0),
-                    text(row.value, self.palette.text, 12.0).flex(1.0),
-                ])
-                .gap(12.0)];
-                if let Some(description) = row.description {
-                    parts.push(text(description, self.palette.muted, 11.0));
-                }
-                group.push(Element::column(parts).gap(4.0));
-            }
-            content.push(Element::column(group).gap(6.0));
-        }
-        if let Some(footer) = self.footer {
-            content.push(text(footer, self.palette.muted, 11.0));
-        }
-        Element::column(content).gap(10.0).padding(10.0)
-    }
-}
+impl ContextContent {}
 
 #[cfg(test)]
-impl ContextMeter {
-    fn legacy_render(self) -> Element {
-        let fraction = self
-            .fraction
-            .unwrap_or_else(|| self.percent.map(|value| value as f32 / 100.0));
-        let label = fraction.map_or_else(|| "Contexto".to_owned(), percent_label);
-        let ink = usage_color(fraction, (USAGE_HIGH, USAGE_FULL), self.palette);
-        let mut content =
-            vec![Element::progress_ring(fraction, self.palette.border, ink)
-                .size(Some(16.0), Some(16.0))];
-        if !self.compact {
-            content.push(context_text(
-                label,
-                if fraction.is_some() {
-                    ink
-                } else {
-                    self.palette.muted
-                },
-                12.0,
-            ));
-        }
-        self.palette
-            .interactive_surface(Element::clickable(
-                self.id,
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    Element::row(content).gap(6.0).size(None, Some(16.0)),
-                    Element::spacer().flex(1.0),
-                ]),
-            ))
-            .padding(6.0)
-            .min_size(0.0, 28.0)
-    }
-}
+impl ContextMeter {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{DrawCommand, Key, Size, UiAction, UiEvent, UiTree};
-
-    fn same_frames(old: impl Fn() -> Element, new: impl Fn() -> Element) {
-        for width in [300.0, 660.0] {
-            let frame = |element| {
-                let mut tree = UiTree::new(Element::column(vec![element]));
-                tree.set_reduced_motion(true);
-                tree.layout(Size::new(width, 420.0))
-            };
-            let (old, new) = (frame(old()), frame(new()));
-            assert_eq!(old.commands, new.commands, "at {width}");
-            assert_eq!(format!("{:?}", old.regions), format!("{:?}", new.regions));
-        }
-    }
-
-    #[test]
-    fn details_and_meter_on_limn_text_match_the_bodies_they_replaced() {
-        let palette = ComponentPalette::neutral_dark();
-        let details = || {
-            ContextContent::new("Detalles del contexto", "Proveedor · modelo", palette)
-                .section(
-                    "Última respuesta",
-                    vec![
-                        ContextRow::new("Entrada", "24 000 tokens"),
-                        ContextRow::new("Razonamiento", "3 000 tokens")
-                            .description("Incluido en la salida reportada por el proveedor."),
-                    ],
-                )
-                .section(
-                    "Límites",
-                    vec![ContextRow::new("Ventana", "100 000 tokens")],
-                )
-                .footer("Caché y razonamiento ya están incluidos en los tokens reportados.")
-        };
-        same_frames(|| details().legacy_render(), || details().render());
-        for fraction in [None, Some(0.0), Some(0.42), Some(0.8), Some(1.0)] {
-            for compact in [false, true] {
-                let meter = || {
-                    ContextMeter::new("context", None, palette)
-                        .fraction(fraction)
-                        .compact(compact)
-                };
-                same_frames(|| meter().legacy_render(), || meter().render());
-            }
-        }
-    }
 
     #[test]
     fn the_meter_takes_its_threshold_inks_from_the_host() {

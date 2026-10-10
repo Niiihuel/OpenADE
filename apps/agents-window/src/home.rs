@@ -1,7 +1,7 @@
 //! The empty-task surface. This is deliberately built from our retained UI tree
 //! primitives so it shares keyboard, focus, and icon rules with the workspace.
 
-use openide_ui::{Color, Component, Element, FontFamily, ScrollArea};
+use openide_ui::{Component, Element, ScrollArea};
 
 use crate::{
     composer_ui::{build_composer_with_height, ComposerProps},
@@ -11,13 +11,6 @@ use crate::{
 
 const MAX_CONTENT_WIDTH: f32 = 800.0;
 const MIN_GUTTER: f32 = 24.0;
-
-fn text(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
 
 fn content_width(available: f32) -> f32 {
     (available - MIN_GUTTER * 2.0).clamp(0.0, MAX_CONTENT_WIDTH)
@@ -60,14 +53,14 @@ fn build_home_layout(
     });
     let card = build_composer_with_height(&ComposerProps { width, ..*inputs }, card_height);
 
-    let title = text(
+    let title = theme::text_px(
         if compact {
             "Nueva tarea"
         } else {
             "¿Qué tenemos en la agenda hoy?"
         },
-        theme::FOREGROUND,
         if compact { 25.0 } else { 32.0 },
+        theme::FOREGROUND,
     );
     let mut centered_title = title.centered_x();
     if available_height.is_some() {

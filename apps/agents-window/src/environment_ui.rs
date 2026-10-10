@@ -6,8 +6,8 @@ use std::{collections::HashSet, path::Path};
 use openide_ui::{
     ButtonVariant, Component, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element, FontFamily, HeaderSizing, Icon, IconButton, ListRow, PanelHeader,
-    ScrollArea, SectionHeader, SectionSizing, Separator, SpinnerVariant, Tooltip, TooltipPlacement,
-    TooltipSpec,
+    ScrollArea, SectionHeader, SectionSizing, Separator, SpinnerVariant, Text, TextRole, Tooltip,
+    TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -157,29 +157,6 @@ pub(crate) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
     .clip_children()
 }
 
-fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(if muted {
-            theme::FOREGROUND_SUBTLE
-        } else {
-            theme::FOREGROUND
-        })
-}
-
-fn line(value: impl Into<String>, muted: bool, size: f32, width: f32) -> Element {
-    Element::truncated_text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(if muted {
-            theme::FOREGROUND_SUBTLE
-        } else {
-            theme::FOREGROUND
-        })
-        .size(Some(width.max(0.0)), Some(18.0))
-}
-
 fn folder_name(workspace: &str) -> &str {
     Path::new(workspace)
         .file_name()
@@ -210,8 +187,17 @@ fn selector_trigger(
             .foreground(theme::FOREGROUND_SUBTLE)
             .size(Some(18.0), Some(36.0)),
         Element::column(vec![
-            line(label, false, 13.0, label_width),
-            line(detail, true, 11.0, label_width),
+            Text::new(label, theme::component_palette())
+                .role(TextRole::Label)
+                .truncate()
+                .render()
+                .size(Some(label_width.max(0.0)), Some(18.0)),
+            Text::new(detail, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .truncate()
+                .render()
+                .size(Some(label_width.max(0.0)), Some(18.0)),
         ])
         .size(Some(label_width), Some(36.0)),
         Element::icon(Icon::ChevronDown)
@@ -292,7 +278,12 @@ fn action_row(
     width: f32,
 ) -> Element {
     let label_width = (width - 48.0).max(0.0);
-    let mut main = vec![line(title, false, 12.5, label_width).flex(1.0)];
+    let mut main = vec![Element::truncated_text(title)
+        .font_family(FontFamily::Sans)
+        .font_size(12.5)
+        .foreground(theme::FOREGROUND)
+        .size(Some(label_width.max(0.0)), Some(18.0))
+        .flex(1.0)];
     if let Some(trailing) = trailing {
         main.push(trailing);
     }
@@ -300,7 +291,13 @@ fn action_row(
         .gap(6.0)
         .size(Some(label_width), Some(18.0))];
     if !detail.is_empty() {
-        lines.push(line(detail, true, 10.5, label_width));
+        lines.push(
+            Element::truncated_text(detail)
+                .font_family(FontFamily::Sans)
+                .font_size(10.5)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(label_width.max(0.0)), Some(18.0)),
+        );
     }
     let height = if detail.is_empty() { 32.0 } else { 48.0 };
     let row = Element::row(vec![
@@ -337,8 +334,15 @@ fn source_row(
     let mut columns = vec![
         preview.size(Some(30.0), Some(30.0)),
         Element::column(vec![
-            line(title, false, 12.0, label_width),
-            line(detail, true, 10.5, label_width),
+            Text::new(title, theme::component_palette())
+                .truncate()
+                .render()
+                .size(Some(label_width.max(0.0)), Some(18.0)),
+            Element::truncated_text(detail)
+                .font_family(FontFamily::Sans)
+                .font_size(10.5)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(label_width.max(0.0)), Some(18.0)),
         ])
         .size(Some(label_width), Some(36.0)),
     ];
@@ -437,7 +441,9 @@ fn sources(state: &ViewState, width: f32) -> Element {
     let total = state.composer_attachments.len() + image_count + file_count + citation_count;
     let mut rows = vec![section_heading("Fuentes", Some(total.to_string()), width)];
     if total == 0 {
-        rows.push(text("Sin fuentes registradas.", true, 11.5).padding(5.0));
+        rows.push(
+            theme::text_px("Sin fuentes registradas.", 11.5, theme::FOREGROUND_SUBTLE).padding(5.0),
+        );
         return Element::column(rows).gap(2.0).size(Some(width), None);
     }
     let mut omitted = 0usize;
@@ -539,10 +545,10 @@ fn sources(state: &ViewState, width: f32) -> Element {
     }
     if omitted > 0 {
         rows.push(
-            text(
+            theme::text_px(
                 format!("{omitted} fuentes fuera de esta vista resumida."),
-                true,
                 10.5,
+                theme::FOREGROUND_SUBTLE,
             )
             .padding(5.0),
         );
@@ -727,7 +733,11 @@ fn card_header(loading: bool, width: f32) -> Element {
     let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
     PanelHeader::new("", palette)
         // The title wraps and can be selected, which a header's own cannot.
-        .leading(text("Entorno", false, 14.0))
+        .leading(
+            Text::new("Entorno", theme::component_palette())
+                .role(TextRole::Body)
+                .render(),
+        )
         .trailing(vec![IconButton::new(
             "environment_git_refresh",
             Icon::Refresh,
@@ -760,7 +770,11 @@ fn actions_header(new_action: Option<bool>, width: f32) -> Element {
         .collect();
     PanelHeader::new("", palette)
         .back("environment_git_back", "Volver al entorno")
-        .leading(text("Acciones del proyecto", false, 14.0))
+        .leading(
+            Text::new("Acciones del proyecto", theme::component_palette())
+                .role(TextRole::Body)
+                .render(),
+        )
         .trailing(tools)
         .dismiss("environment_dismiss", "Cerrar entorno del chat")
         .width(width)
@@ -1018,7 +1032,7 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
                 icon,
                 title,
                 "",
-                Some(text(&status, true, 10.5)),
+                Some(theme::text_px(&status, 10.5, theme::FOREGROUND_SUBTLE)),
                 &format!("Abrir {title} de esta conversación · {status}"),
                 inner_width,
             ));
@@ -1034,255 +1048,6 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{DrawCommand, HitKind, Size, UiTree};
-
-    // The heading limn's `SectionHeader` replaced. Delete with the final
-    // audit (S18).
-    fn legacy_section_heading(title: &str, detail: Option<String>, width: f32) -> Element {
-        let mut row = vec![text(title, true, 11.0).flex(1.0)];
-        if let Some(detail) = detail {
-            row.push(text(detail, true, 10.5));
-        }
-        Element::row(row)
-            .gap(6.0)
-            .padding(4.0)
-            .size(Some(width), Some(25.0))
-    }
-
-    #[test]
-    fn section_header_paints_what_section_heading_painted() {
-        for width in [150.0, 260.0, 420.0] {
-            for detail in [None, Some("3"), Some("128")] {
-                for title in ["Fuentes", "Archivos consultados", "Control de versiones"] {
-                    let frame = |element: Element| {
-                        let mut tree = UiTree::new(Element::column(vec![
-                            element,
-                            Element::spacer().flex(1.0),
-                        ]));
-                        tree.set_reduced_motion(true);
-                        tree.layout(Size::new(width + 40.0, 300.0))
-                    };
-                    let detail = || detail.map(str::to_owned);
-                    assert_eq!(
-                        frame(section_heading(title, detail(), width)),
-                        frame(legacy_section_heading(title, detail(), width)),
-                        "{title} width={width}"
-                    );
-                }
-            }
-        }
-    }
-
-    // The rows this card built by hand before limn's `ListRow` and `DiffStat`.
-    // Delete with the final audit (S18).
-    fn legacy_counts(additions: usize, deletions: usize) -> Element {
-        Element::row(vec![
-            text(format!("+{additions}"), false, 12.0).foreground(theme::DIFF_ADDED),
-            text(format!("−{deletions}"), false, 12.0).foreground(theme::DIFF_REMOVED),
-        ])
-        .gap(5.0)
-    }
-
-    fn legacy_compact_row(
-        id: &str,
-        icon: Icon,
-        title: &str,
-        trailing: Option<Element>,
-        help: &str,
-        width: f32,
-        enabled: bool,
-    ) -> Element {
-        let mut children = vec![
-            Element::icon(icon)
-                .foreground(theme::ICON_PRIMARY)
-                .size(Some(16.0), Some(20.0)),
-            Element::truncated_text(title)
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(if enabled {
-                    theme::FOREGROUND
-                } else {
-                    theme::FOREGROUND_SUBTLE
-                })
-                .size(None, Some(20.0))
-                .flex(1.0),
-        ];
-        if let Some(trailing) = trailing {
-            children.push(trailing);
-        }
-        let visual = Element::row(children).gap(8.0).clip_children();
-        let row = interactive_surface(if enabled {
-            Element::clickable(id, visual)
-        } else {
-            Element::panel(visual)
-        })
-        .padding(4.0)
-        .size(Some(width), Some(28.0));
-        Tooltip::new(row, id, help, theme::component_palette()).render()
-    }
-
-    fn legacy_trailing_icon(icon: Icon) -> Element {
-        Element::icon(icon)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(20.0))
-    }
-
-    fn legacy_card_header(loading: bool, inner_width: f32) -> Element {
-        Element::row(vec![
-            text("Entorno", false, 14.0).flex(1.0),
-            IconButton::new(
-                "environment_git_refresh",
-                Icon::Refresh,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(!loading)
-            .tooltip_with(TooltipSpec::new("Actualizar entorno").placement(TooltipPlacement::Below))
-            .render(),
-            IconButton::new(
-                "environment_dismiss",
-                Icon::Close,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(
-                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
-            )
-            .render(),
-        ])
-        .gap(4.0)
-        .padding(2.0)
-        .size(Some(inner_width), Some(28.0))
-    }
-
-    fn legacy_actions_header(new_action: Option<bool>, inner_width: f32) -> Element {
-        let mut controls = vec![
-            IconButton::new(
-                "environment_git_back",
-                Icon::ArrowLeft,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(TooltipSpec::new("Volver al entorno").placement(TooltipPlacement::Below))
-            .render(),
-            text("Acciones del proyecto", false, 14.0).flex(1.0),
-        ];
-        if let Some(enabled) = new_action {
-            controls.push(
-                IconButton::new(
-                    "project_action_new",
-                    Icon::Add,
-                    theme::action_palette(theme::CARD, theme::FOREGROUND),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .enabled(enabled)
-                .tooltip_with(TooltipSpec::new("Crear acción").placement(TooltipPlacement::Below))
-                .render(),
-            );
-        }
-        controls.push(
-            IconButton::new(
-                "environment_dismiss",
-                Icon::Close,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(
-                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
-            )
-            .render(),
-        );
-        Element::row(controls)
-            .gap(6.0)
-            .size(Some(inner_width), Some(32.0))
-    }
-
-    #[test]
-    fn the_card_headers_match_their_legacy_bodies() {
-        use crate::state_panel_parity_tests::assert_same;
-        // 104 is the narrowest card, where "Entorno" has 44 px.
-        for width in [104.0, 236.0, 404.0] {
-            for loading in [false, true] {
-                assert_same(
-                    "environment card header",
-                    legacy_card_header(loading, width),
-                    card_header(loading, width),
-                );
-            }
-            for new_action in [None, Some(true), Some(false)] {
-                assert_same(
-                    "project actions header",
-                    legacy_actions_header(new_action, width),
-                    actions_header(new_action, width),
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn rows_paint_what_the_hand_built_rows_painted() {
-        use crate::state_panel_parity_tests::assert_same;
-        // No wider than the narrow pane of `assert_same`: a row gets its width.
-        for width in [150.0, 236.0] {
-            for enabled in [true, false] {
-                assert_same(
-                    "compact",
-                    legacy_compact_row(
-                        "branch",
-                        Icon::GitBranch,
-                        "una-rama-de-nombre-largo",
-                        Some(legacy_trailing_icon(Icon::ChevronDown)),
-                        "Cambiar rama de trabajo",
-                        width,
-                        enabled,
-                    ),
-                    compact_row(
-                        "branch",
-                        Icon::GitBranch,
-                        "una-rama-de-nombre-largo",
-                        "Cambiar rama de trabajo",
-                        width,
-                        enabled,
-                    )
-                    .trailing_icon(Icon::ChevronDown)
-                    .render(),
-                );
-            }
-            let spinner = || {
-                Element::spinner("progress", theme::FOREGROUND_SUBTLE, SpinnerVariant::Circle)
-                    .size(Some(16.0), Some(20.0))
-            };
-            for (old, new) in [
-                (Some(legacy_counts(25813, 8475)), Some(counts(25813, 8475))),
-                (Some(spinner()), Some(spinner())),
-                (None, None),
-            ] {
-                let row = compact_row("review", Icon::Code, "12 archivos", "Abrir", width, true);
-                assert_same(
-                    "compact trailing",
-                    legacy_compact_row(
-                        "review",
-                        Icon::Code,
-                        "12 archivos",
-                        old,
-                        "Abrir",
-                        width,
-                        true,
-                    ),
-                    match new {
-                        Some(trailing) => row.trailing(trailing),
-                        None => row,
-                    }
-                    .render(),
-                );
-            }
-        }
-        assert_same("counts", legacy_counts(3, 0), counts(3, 0));
-    }
 
     #[test]
     fn compact_environment_keeps_primary_actions_in_one_short_card() {

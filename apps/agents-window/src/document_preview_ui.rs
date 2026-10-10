@@ -7,18 +7,11 @@ use crate::{
 use openide_preview::{Document, PreviewKind};
 use openide_ui::{
     ActiveHover, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon,
-    IconButton, Pager, PanelHeader, ScrollArea, Separator, TabItem, TabStrip, TooltipPlacement,
-    TooltipSpec,
+    IconButton, Pager, PanelHeader, ScrollArea, Separator, TabItem, TabStrip, Text, TextRole,
+    TooltipPlacement, TooltipSpec,
 };
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
-
-fn label(value: impl Into<String>) -> Element {
-    Element::truncated_text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(11.0)
-        .foreground(theme::FOREGROUND_SUBTLE)
-}
 
 fn modes(view: &PreviewView) -> Vec<Element> {
     [
@@ -149,7 +142,12 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
     );
     used += 28.0;
     let path = if split {
-        label("Vista previa").size(Some((width - used - 12.0).max(0.0)), Some(24.0))
+        Text::new("Vista previa", theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .truncate()
+            .render()
+            .size(Some((width - used - 12.0).max(0.0)), Some(24.0))
     } else {
         crate::code_editor_ui::path_breadcrumb(
             "document_preview_path",
@@ -195,7 +193,11 @@ fn document_body(
             .clip_children();
     }
     let Some(document) = view.document.as_deref() else {
-        return label("Preparando vista previa…")
+        return Text::new("Preparando vista previa…", theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .truncate()
+            .render()
             .center_content()
             .centered_y()
             .size(Some(width), Some(height));
@@ -227,7 +229,13 @@ fn document_body(
                 .raster
                 .clone()
                 .map(Element::raster_image)
-                .unwrap_or_else(|| label("No se pudo mostrar la imagen"))
+                .unwrap_or_else(|| {
+                    Text::new("No se pudo mostrar la imagen", theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .truncate()
+                        .render()
+                })
                 .size(Some(image_width), Some(image_height));
             let row = raster
                 .centered_x()
@@ -256,7 +264,15 @@ fn preview(view: &PreviewView, width: f32, height: f32, split: bool) -> Element 
     };
     let mut rows = vec![preview_header(view, width, split)];
     if busy > 0.0 {
-        rows.push(label("Actualizando…").padding(4.0).size(None, Some(busy)));
+        rows.push(
+            Text::new("Actualizando…", theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .truncate()
+                .render()
+                .padding(4.0)
+                .size(None, Some(busy)),
+        );
     }
     rows.push(preview_body(view, width, (height - HEADER - busy).max(0.0)).flex(1.0));
     Element::column(rows)
@@ -429,81 +445,4 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
         .size(Some(width), Some(height))
         .background(theme::BACKGROUND)
         .clip_children()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use openide_preview::Scope;
-
-    // The three siblings the header held, at its gap of 4.
-    fn legacy_pdf_pager(view: &PreviewView) -> Element {
-        Element::row(vec![
-            IconButton::new(
-                format!("{}:previous", view.chrome_action_prefix()),
-                Icon::ArrowLeft,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(!view.loading && view.page > 0)
-            .tooltip_with(TooltipSpec::new("Página anterior").placement(TooltipPlacement::Below))
-            .render(),
-            label(if view.pages > 0 {
-                format!("{} / {}", view.page + 1, view.pages)
-            } else {
-                "PDF".into()
-            })
-            .size(Some(52.0), Some(24.0))
-            .center_content(),
-            IconButton::new(
-                format!("{}:next", view.chrome_action_prefix()),
-                Icon::ArrowRight,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(!view.loading && view.page + 1 < view.pages)
-            .tooltip_with(TooltipSpec::new("Página siguiente").placement(TooltipPlacement::Below))
-            .render(),
-        ])
-        .gap(4.0)
-    }
-
-    #[test]
-    fn the_pdf_pager_matches_its_legacy_body() {
-        for (page, pages, loading) in [
-            (0, 0, false),
-            (0, 12, false),
-            (5, 12, false),
-            (11, 12, false),
-            (5, 12, true),
-            (998, 1000, false),
-        ] {
-            let view = PreviewView {
-                scope: Scope {
-                    workspace: "/tmp/project".into(),
-                    path: "manual.pdf".into(),
-                    tab_id: 7,
-                    generation: 1,
-                },
-                kind: PreviewKind::Pdf,
-                mode: PreviewMode::Preview,
-                document: None,
-                raster: None,
-                loading,
-                error: None,
-                page,
-                pages,
-                zoom: None,
-            };
-            // In the header both stand in a content box 24 high.
-            let boxed = |pager: Element| Element::row(vec![pager]).size(None, Some(24.0));
-            crate::state_panel_parity_tests::assert_same(
-                "pdf pager",
-                boxed(legacy_pdf_pager(&view)),
-                boxed(pdf_pager(&view)),
-            );
-        }
-    }
 }

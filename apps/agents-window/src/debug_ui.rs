@@ -3,7 +3,8 @@
 use crate::theme;
 use openide_ui::{
     Button, ButtonVariant, Card, CardDensity, Component, ControlSize, DropdownMenu,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, Notice, RadiusRole, Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    DropdownMenuItem, Element, FontFamily, Icon, IconButton, Notice, RadiusRole, Separator, Text,
+    TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::sync::Arc;
 
@@ -135,13 +136,6 @@ fn bounded(text: &str) -> String {
         end -= 1;
     }
     format!("{}… (truncado)", &text[..end])
-}
-fn label(text: impl Into<String>, width: f32, color: openide_ui::Color) -> Element {
-    Element::faded_text(text, 16.0)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-        .foreground(color)
-        .size(Some(width.max(0.0)), Some(ROW))
 }
 fn tool(state: &DebugView, op: &str, icon: Icon, hint: &str, enabled: bool) -> Element {
     surface_tool(
@@ -324,8 +318,15 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                         .size(Some(12.0), Some(12.0))
                         .centered_y()
                         .size(Some(12.0), Some(ROW)),
-                        label(*title, (width - 56.0).max(0.0), theme::FOREGROUND),
-                        label(count.to_string(), 36.0, theme::FOREGROUND_SUBTLE),
+                        Text::new(*title, theme::component_palette())
+                            .fade(16.0)
+                            .render()
+                            .size(Some((width - 56.0).max(0.0).max(0.0)), Some(ROW)),
+                        Text::new(count.to_string(), theme::component_palette())
+                            .muted()
+                            .fade(16.0)
+                            .render()
+                            .size(Some(36.0), Some(ROW)),
                     ])
                     .gap(4.0),
                 )
@@ -339,7 +340,7 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                 actions.interactive_surface(
                     Element::clickable(
                         &id,
-                        label(
+                        Text::new(
                             format!(
                                 "{} · {}",
                                 if thread.stopped {
@@ -349,9 +350,12 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                                 },
                                 title
                             ),
-                            width,
-                            theme::TOOL_RESULT,
-                        ),
+                            theme::component_palette(),
+                        )
+                        .ink(theme::TOOL_RESULT)
+                        .fade(16.0)
+                        .render()
+                        .size(Some(width.max(0.0)), Some(ROW)),
                     )
                     .background(if thread.selected {
                         theme::SELECTED
@@ -386,16 +390,18 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                     .size(Some(14.0), Some(14.0))
                     .centered_y()
                     .size(Some(14.0), Some(ROW)),
-                label(
-                    bounded(&frame.name),
-                    (width - 52.0).max(0.0),
-                    theme::FOREGROUND,
-                ),
-                label(
+                Text::new(bounded(&frame.name), theme::component_palette())
+                    .fade(16.0)
+                    .render()
+                    .size(Some((width - 52.0).max(0.0).max(0.0)), Some(ROW)),
+                Text::new(
                     frame.line.map_or_else(String::new, |line| line.to_string()),
-                    32.0,
-                    theme::FOREGROUND_SUBTLE,
-                ),
+                    theme::component_palette(),
+                )
+                .muted()
+                .fade(16.0)
+                .render()
+                .size(Some(32.0), Some(ROW)),
             ])
             .gap(3.0);
             Tooltip::new(
@@ -448,8 +454,11 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                 } else {
                     Element::spacer().size(Some(12.0), Some(ROW))
                 },
-                label(bounded(&variable.name), name_width, theme::FOREGROUND),
-                label(
+                Text::new(bounded(&variable.name), theme::component_palette())
+                    .fade(16.0)
+                    .render()
+                    .size(Some(name_width.max(0.0)), Some(ROW)),
+                Text::new(
                     if variable.loading {
                         "Cargando…".into()
                     } else if variable.error.is_some() {
@@ -457,13 +466,16 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                     } else {
                         bounded(&variable.value)
                     },
-                    (available - name_width).max(0.0),
-                    if variable.error.is_some() {
-                        theme::DESTRUCTIVE
-                    } else {
-                        theme::TOOL_RESULT
-                    },
-                ),
+                    theme::component_palette(),
+                )
+                .ink(if variable.error.is_some() {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::TOOL_RESULT
+                })
+                .fade(16.0)
+                .render()
+                .size(Some((available - name_width).max(0.0).max(0.0)), Some(ROW)),
             ])
             .gap(2.0)
             .size(Some(width), Some(ROW));
@@ -481,16 +493,16 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
         Row::Output(index, output) => {
             let text = bounded(&output.text.replace(['\r', '\n'], " "));
             Tooltip::new(
-                label(
-                    text,
-                    width,
-                    if output.category == "stderr" {
+                Text::new(text, theme::component_palette())
+                    .ink(if output.category == "stderr" {
                         theme::DESTRUCTIVE
                     } else {
                         theme::TOOL_RESULT
-                    },
-                )
-                .font_family(FontFamily::Monospace),
+                    })
+                    .mono()
+                    .fade(16.0)
+                    .render()
+                    .size(Some(width.max(0.0)), Some(ROW)),
                 format!("debug_output:{}:{index}", state.scope),
                 if output.category.is_empty() {
                     "Salida"
@@ -521,14 +533,17 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                     .size(Some(8.0), Some(8.0))
                     .centered_y()
                     .size(Some(12.0), Some(ROW)),
-                label(
+                Text::new(
                     format!(
                         "{location}{}",
                         if marker.dirty { " · Sin guardar" } else { "" }
                     ),
-                    (width - 16.0).max(0.0),
-                    ink,
-                ),
+                    theme::component_palette(),
+                )
+                .ink(ink)
+                .fade(16.0)
+                .render()
+                .size(Some((width - 16.0).max(0.0).max(0.0)), Some(ROW)),
             ])
             .gap(4.0)
             .size(Some(width), Some(ROW));
@@ -547,7 +562,11 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                 })
                 .render()
         }
-        Row::Hint(text) => label(text, width, theme::FOREGROUND_SUBTLE),
+        Row::Hint(text) => Text::new(text, theme::component_palette())
+            .muted()
+            .fade(16.0)
+            .render()
+            .size(Some(width.max(0.0)), Some(ROW)),
     }
 }
 
@@ -564,11 +583,11 @@ fn configuration_selector(
         && !state.configurations.is_empty();
     let configuration_id = action(&state.scope, "configurations");
     let summary = Element::row(vec![
-        label(
-            bounded(configuration),
-            (inner - 18.0).max(0.0),
-            theme::TOOL_RESULT,
-        ),
+        Text::new(bounded(configuration), theme::component_palette())
+            .ink(theme::TOOL_RESULT)
+            .fade(16.0)
+            .render()
+            .size(Some((inner - 18.0).max(0.0).max(0.0)), Some(ROW)),
         Element::icon(Icon::ChevronDown)
             .foreground(theme::TOOL_RESULT)
             .size(Some(12.0), Some(12.0))
@@ -656,27 +675,15 @@ fn setup_notice(scope: &str) -> Element {
     .render()
 }
 
-#[cfg(test)]
-fn legacy_setup_notice(scope: &str) -> Element {
-    let copy = |value: &str, size: f32, color| {
-        Element::text(value)
-            .font_family(FontFamily::Sans)
-            .font_size(size)
-            .foreground(color)
-    };
-    Element::column(vec![
-        copy("Configura un programa para comenzar", 13.0, theme::FOREGROUND),
-        copy("Elige un adaptador y un programa en .openide/debug.json. Configurar no ejecuta el programa.", 12.0, theme::SETTINGS_FOREGROUND_SUBTLE),
-        configure_button(scope),
-    ]).gap(10.0).padding(8.0)
-}
-
 pub(crate) fn build(state: &DebugView, width: f32, height: f32) -> Element {
     let width = width.max(0.0);
     let inner = (width - 16.0).max(0.0);
     if state.status == DebugStatus::Unconfigured && state.configurations.is_empty() {
         let header = Element::row(vec![
-            label("Depuración", (inner - 68.0).max(0.0), theme::FOREGROUND),
+            Text::new("Depuración", theme::component_palette())
+                .fade(16.0)
+                .render()
+                .size(Some((inner - 68.0).max(0.0).max(0.0)), Some(ROW)),
             tool(
                 state,
                 "reload",
@@ -711,7 +718,10 @@ pub(crate) fn build(state: &DebugView, width: f32, height: f32) -> Element {
         &state.configuration
     };
     let header = Element::row(vec![
-        label("Depuración", (inner - 102.0).max(0.0), theme::FOREGROUND),
+        Text::new("Depuración", theme::component_palette())
+            .fade(16.0)
+            .render()
+            .size(Some((inner - 102.0).max(0.0).max(0.0)), Some(ROW)),
         tool(
             state,
             "reload",
@@ -782,21 +792,21 @@ pub(crate) fn build(state: &DebugView, width: f32, height: f32) -> Element {
         tool(
             state,
             "step_over",
-            crate::provider_icons::STEP_OVER,
+            crate::icons::STEP_OVER,
             "Ejecutar la siguiente línea",
             stopped && state.controls.step_over,
         ),
         tool(
             state,
             "step_into",
-            crate::provider_icons::STEP_INTO,
+            crate::icons::STEP_INTO,
             "Entrar en la llamada",
             stopped && state.controls.step_into,
         ),
         tool(
             state,
             "step_out",
-            crate::provider_icons::STEP_OUT,
+            crate::icons::STEP_OUT,
             "Salir de la llamada",
             stopped && state.controls.step_out,
         ),
@@ -820,15 +830,15 @@ pub(crate) fn build(state: &DebugView, width: f32, height: f32) -> Element {
         .as_deref()
         .unwrap_or_else(|| status_text(state.status));
     let status = Tooltip::new(
-        label(
-            bounded(message),
-            inner,
-            if state.status == DebugStatus::Failed {
+        Text::new(bounded(message), theme::component_palette())
+            .ink(if state.status == DebugStatus::Failed {
                 theme::DESTRUCTIVE
             } else {
                 theme::FOREGROUND_SUBTLE
-            },
-        ),
+            })
+            .fade(16.0)
+            .render()
+            .size(Some(inner.max(0.0)), Some(ROW)),
         "debug_status",
         status_text(state.status),
         theme::component_palette(),
@@ -911,14 +921,6 @@ fn session_active(status: DebugStatus) -> bool {
     )
 }
 
-fn sidebar_caption(text: impl Into<String>, width: f32, color: openide_ui::Color) -> Element {
-    Element::truncated_text(text)
-        .font_family(FontFamily::Sans)
-        .font_size(11.0)
-        .foreground(color)
-        .size(Some(width.max(0.0)), Some(16.0))
-}
-
 fn sidebar_status(status: DebugStatus) -> (&'static str, Icon, openide_ui::Color) {
     match status {
         DebugStatus::Unconfigured => ("Sin configurar", Icon::Settings, theme::TOOL_RESULT),
@@ -937,11 +939,14 @@ fn sidebar_session(state: &DebugView, width: f32) -> Element {
     let configured = !state.configurations.is_empty() || session_active(state.status);
     let mut children = Vec::new();
     if configured {
-        children.push(sidebar_caption(
-            "Configuración",
-            inner,
-            theme::FOREGROUND_SUBTLE,
-        ));
+        children.push(
+            Text::new("Configuración", theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .truncate()
+                .render()
+                .size(Some(inner.max(0.0)), Some(16.0)),
+        );
         let configuration = if state.configuration.is_empty() {
             "Seleccionar programa"
         } else {
@@ -961,7 +966,11 @@ fn sidebar_session(state: &DebugView, width: f32) -> Element {
                         .size(Some(12.0), Some(12.0))
                         .centered_y()
                         .size(Some(12.0), Some(ROW)),
-                    label(status, (inner - 18.0).max(0.0), color),
+                    Text::new(status, theme::component_palette())
+                        .ink(color)
+                        .fade(16.0)
+                        .render()
+                        .size(Some((inner - 18.0).max(0.0).max(0.0)), Some(ROW)),
                 ])
                 .gap(6.0)
                 .size(Some(inner), Some(ROW)),
@@ -980,11 +989,10 @@ fn sidebar_session(state: &DebugView, width: f32) -> Element {
                     .size(Some(16.0), Some(16.0))
                     .centered_y()
                     .size(Some(16.0), Some(ROW)),
-                label(
-                    "Empezar a depurar",
-                    (inner - 22.0).max(0.0),
-                    theme::FOREGROUND,
-                ),
+                Text::new("Empezar a depurar", theme::component_palette())
+                    .fade(16.0)
+                    .render()
+                    .size(Some((inner - 22.0).max(0.0).max(0.0)), Some(ROW)),
             ])
             .gap(6.0)
             .size(Some(inner), Some(ROW)),
@@ -1099,19 +1107,19 @@ fn sidebar_controls(state: &DebugView, width: f32) -> Element {
             .render(),
         control(
             "step_over",
-            crate::provider_icons::STEP_OVER,
+            crate::icons::STEP_OVER,
             "Siguiente línea",
             stopped && state.controls.step_over,
         ),
         control(
             "step_into",
-            crate::provider_icons::STEP_INTO,
+            crate::icons::STEP_INTO,
             "Entrar en la llamada",
             stopped && state.controls.step_into,
         ),
         control(
             "step_out",
-            crate::provider_icons::STEP_OUT,
+            crate::icons::STEP_OUT,
             "Salir de la llamada",
             stopped && state.controls.step_out,
         ),
@@ -1243,16 +1251,22 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
                             .size(Some(12.0), Some(12.0))
                             .centered_y()
                             .size(Some(12.0), Some(ROW)),
-                            label(
+                            Text::new(
                                 if *key == "breakpoints" && width < 240.0 {
                                     "Puntos de pausa"
                                 } else {
                                     title
                                 },
-                                (width - 46.0).max(0.0),
-                                theme::FOREGROUND,
-                            ),
-                            label(count.to_string(), 22.0, theme::FOREGROUND_SUBTLE),
+                                theme::component_palette(),
+                            )
+                            .fade(16.0)
+                            .render()
+                            .size(Some((width - 46.0).max(0.0).max(0.0)), Some(ROW)),
+                            Text::new(count.to_string(), theme::component_palette())
+                                .muted()
+                                .fade(16.0)
+                                .render()
+                                .size(Some(22.0), Some(ROW)),
                         ])
                         .gap(4.0),
                     )
@@ -1278,11 +1292,10 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
                                 .size(Some(14.0), Some(14.0))
                                 .centered_y()
                                 .size(Some(14.0), Some(ROW)),
-                            label(
-                                bounded(&frame.name),
-                                (width - 18.0).max(0.0),
-                                theme::FOREGROUND,
-                            ),
+                            Text::new(bounded(&frame.name), theme::component_palette())
+                                .fade(16.0)
+                                .render()
+                                .size(Some((width - 18.0).max(0.0).max(0.0)), Some(ROW)),
                         ])
                         .gap(4.0),
                     )
@@ -1322,8 +1335,12 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
                         &location_id,
                         Element::row(vec![
                             Element::spacer().size(Some(18.0), Some(ROW)),
-                            label(short, (width - 18.0).max(0.0), theme::FOREGROUND_SUBTLE)
-                                .font_size(11.0),
+                            Text::new(short, theme::component_palette())
+                                .role(TextRole::Small)
+                                .muted()
+                                .fade(16.0)
+                                .render()
+                                .size(Some((width - 18.0).max(0.0).max(0.0)), Some(ROW)),
                         ]),
                     )
                     .dispatch_as(id)
@@ -1353,16 +1370,20 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
                     .size(Some(8.0), Some(8.0))
                     .centered_y()
                     .size(Some(8.0), Some(ROW)),
-                label(
-                    basename(&marker.path),
-                    (width - 42.0).max(0.0),
-                    if marker.dirty {
+                Text::new(basename(&marker.path), theme::component_palette())
+                    .ink(if marker.dirty {
                         theme::FOREGROUND_SUBTLE
                     } else {
                         theme::FOREGROUND
-                    },
-                ),
-                label(marker.line.to_string(), 26.0, theme::FOREGROUND_SUBTLE),
+                    })
+                    .fade(16.0)
+                    .render()
+                    .size(Some((width - 42.0).max(0.0).max(0.0)), Some(ROW)),
+                Text::new(marker.line.to_string(), theme::component_palette())
+                    .muted()
+                    .fade(16.0)
+                    .render()
+                    .size(Some(26.0), Some(ROW)),
             ])
             .gap(4.0)
             .size(Some(width), Some(ROW));
@@ -1386,9 +1407,12 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
             })
             .render()
         }
-        SidebarRow::Item(Row::Hint(text)) => {
-            label(text, width, theme::FOREGROUND_SUBTLE).font_size(11.0)
-        }
+        SidebarRow::Item(Row::Hint(text)) => Text::new(text, theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .fade(16.0)
+            .render()
+            .size(Some(width.max(0.0)), Some(ROW)),
         SidebarRow::Item(row) => row_on_surface(state, row, width + 16.0, theme::SIDEBAR),
     }
 }
@@ -1462,17 +1486,6 @@ pub(crate) fn build_console(state: &DebugView, width: f32, height: f32) -> Eleme
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn setup_notice_matches_its_legacy_body() {
-        for scope in ["", "proyecto"] {
-            crate::state_panel_parity_tests::assert_same(
-                "debug setup",
-                legacy_setup_notice(scope),
-                setup_notice(scope),
-            );
-        }
-    }
 
     use openide_ui::{DrawCommand, HitKind, Point, Size, UiAction, UiEvent, UiTree};
     fn fixture() -> DebugView {

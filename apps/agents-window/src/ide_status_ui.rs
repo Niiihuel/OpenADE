@@ -779,10 +779,6 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
 }
 
 #[cfg(test)]
-#[path = "ide_status_parity_tests.rs"]
-mod parity_tests;
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use openide_editor::{Selection, TextBuffer};

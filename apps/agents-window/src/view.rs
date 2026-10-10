@@ -74,8 +74,6 @@ mod agent_chrome_visual_tests;
 #[cfg(test)]
 #[path = "tab_bar_visual_tests.rs"]
 mod tab_bar_visual_tests;
-#[cfg(test)]
-mod sidebar_row_parity_tests;
 pub(crate) use command_center::{build_command_center, command_result_action, command_result_row};
 use crate::sidebar_chrome::{NAV_ROW_HEIGHT as SIDEBAR_ROW_HEIGHT, TOOL_SIZE as SIDEBAR_TOOL_SIZE};
 
@@ -654,21 +652,6 @@ pub struct ViewState {
     pub github_contributions: GithubContributionsStatus,
 }
 
-fn label(value: impl Into<String>, color: Color) -> Element {
-    Element::text(value)
-        .foreground(color)
-        .font_family(FontFamily::Sans)
-        .font_size(theme::UI_FONT_SIZE)
-}
-
-fn mono(value: impl Into<String>, color: Color) -> Element {
-    label(value, color).font_family(FontFamily::Monospace)
-}
-
-fn eyebrow(value: impl Into<String>) -> Element {
-    mono(value, theme::FOREGROUND_SUBTLE).font_size(10.0)
-}
-
 fn button(id: impl Into<String>, title: impl Into<String>, fill: Color, ink: Color) -> Element {
     Button::new(id, title, theme::action_palette(fill, ink))
         .variant(if fill == theme::BRAND || fill == theme::DESTRUCTIVE {
@@ -1214,7 +1197,10 @@ fn group_header(
                 .font_family(FontFamily::Sans)
                 .font_size(12.0)
                 .flex(1.0),
-            label(count.to_string(), theme::FOREGROUND_SUBTLE).font_size(10.0),
+            UiText::new(count.to_string(), theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .render(),
             Element::icon(if group.collapsed {
                 Icon::ChevronRight
             } else {
@@ -1420,9 +1406,11 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
         count,
         SIDEBAR_ROW_HEIGHT,
         move |index| match &rows[index] {
-            SessionListRow::Section(title) => Element::panel(eyebrow(*title))
-                .padding(6.0)
-                .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
+            SessionListRow::Section(title) => {
+                Element::panel(UiText::eyebrow(*title, theme::component_palette()).render())
+                    .padding(6.0)
+                    .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT))
+            }
             SessionListRow::Warning(message) => Element::panel(
                 Element::truncated_text(message)
                     .foreground(theme::DESTRUCTIVE)
@@ -1771,7 +1759,7 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     } else {
         toolbar.push(
             Element::row(vec![
-                label("Archivo", theme::FOREGROUND).font_size(12.0),
+                UiText::new("Archivo", theme::component_palette()).render(),
                 Element::spacer().flex(1.0),
                 sort_control,
                 archive_control,
@@ -1873,7 +1861,9 @@ fn pane_loading_state(id: &str, title: &str, width: f32) -> Element {
     let block_width = (width - 64.0).clamp(80.0, 250.0);
     Element::panel(
         Element::column(vec![
-            label(title, theme::FOREGROUND_SUBTLE).font_size(12.0),
+            UiText::new(title, theme::component_palette())
+                .muted()
+                .render(),
             Skeleton::block(format!("{id}_body"), palette, block_width, 125.0).render(),
             Skeleton::line(format!("{id}_line_1"), palette, block_width)
                 .height(14.0)
@@ -1927,8 +1917,14 @@ fn transcript_item(
     match item {
         TranscriptItem::User { content, images } => {
             let mut contents = vec![
-                eyebrow("TÚ").foreground(theme::USER),
-                label(content, theme::FOREGROUND),
+                UiText::new("TÚ", theme::component_palette())
+                    .role(TextRole::Micro)
+                    .ink(theme::USER)
+                    .mono()
+                    .render(),
+                UiText::new(content, theme::component_palette())
+                    .role(TextRole::Body)
+                    .render(),
             ];
             for image in images {
                 contents.push(crate::session_surface::user_image(image));
@@ -1941,13 +1937,21 @@ fn transcript_item(
         }
         TranscriptItem::Assistant { content, streaming } => Element::panel(
             Element::column(vec![
-                eyebrow(if *streaming {
-                    "AGENTE · ESCRIBIENDO"
-                } else {
-                    "AGENTE"
-                })
-                .foreground(theme::ASSISTANT),
-                label(content, theme::FOREGROUND),
+                UiText::new(
+                    if *streaming {
+                        "AGENTE · ESCRIBIENDO"
+                    } else {
+                        "AGENTE"
+                    },
+                    theme::component_palette(),
+                )
+                .role(TextRole::Micro)
+                .ink(theme::ASSISTANT)
+                .mono()
+                .render(),
+                UiText::new(content, theme::component_palette())
+                    .role(TextRole::Body)
+                    .render(),
             ])
             .gap(8.0),
         )
@@ -1967,9 +1971,19 @@ fn transcript_item(
             theme::interactive_surface(Element::clickable(
                 format!("web_citation_open:{item_index}"),
                 Element::column(vec![
-                    eyebrow("FUENTE WEB").foreground(theme::BRAND),
-                    label(shorten(title, 100), theme::FOREGROUND),
-                    mono(shorten(url, 140), theme::FOREGROUND_SUBTLE).font_size(11.0),
+                    UiText::new("FUENTE WEB", theme::component_palette())
+                        .role(TextRole::Micro)
+                        .ink(theme::BRAND)
+                        .mono()
+                        .render(),
+                    UiText::new(shorten(title, 100), theme::component_palette())
+                        .role(TextRole::Body)
+                        .render(),
+                    UiText::new(shorten(url, 140), theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .mono()
+                        .render(),
                 ])
                 .gap(5.0)
                 .padding(10.0),
@@ -1992,16 +2006,22 @@ fn transcript_item(
             };
             Card::new(
                 Element::column(vec![
-                    eyebrow(title).foreground(ink),
-                    mono(
+                    UiText::new(title, theme::component_palette())
+                        .role(TextRole::Micro)
+                        .ink(ink)
+                        .mono()
+                        .render(),
+                    UiText::new(
                         if side_visible {
                             shorten(text, 1000)
                         } else {
                             text.clone()
                         },
-                        theme::FOREGROUND_SUBTLE,
+                        theme::component_palette(),
                     )
-                    .font_size(12.0),
+                    .muted()
+                    .mono()
+                    .render(),
                 ])
                 .gap(6.0),
                 theme::panel_card_palette(),
@@ -2013,19 +2033,29 @@ fn transcript_item(
         }
         TranscriptItem::Notice { message, is_error } => Card::new(
             Element::column(vec![
-                eyebrow(if *is_error { "ERROR" } else { "AVISO" }).foreground(if *is_error {
+                UiText::new(
+                    if *is_error { "ERROR" } else { "AVISO" },
+                    theme::component_palette(),
+                )
+                .role(TextRole::Micro)
+                .ink(if *is_error {
                     theme::DESTRUCTIVE
                 } else {
                     theme::FOREGROUND_SUBTLE
-                }),
-                label(
+                })
+                .mono()
+                .render(),
+                UiText::new(
                     crate::session_surface::conversation_notice_message(message, *is_error),
-                    if *is_error {
-                        theme::DESTRUCTIVE
-                    } else {
-                        theme::FOREGROUND
-                    },
-                ),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Body)
+                .ink(if *is_error {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::FOREGROUND
+                })
+                .render(),
             ])
             .gap(6.0),
             theme::panel_card_palette(),
@@ -2042,11 +2072,17 @@ fn timeline(state: &ViewState, side_visible: bool, compact: bool) -> Element {
     if state.transcript.is_empty() {
         items.extend([
             Element::spacer().size(None, Some(if compact { 20.0 } else { 48.0 })),
-            label("Nueva tarea", theme::BRAND).font_size(18.0),
-            label(
+            UiText::new("Nueva tarea", theme::component_palette())
+                .role(TextRole::Display)
+                .ink(theme::BRAND)
+                .render(),
+            UiText::new(
                 "Describe lo que quieres hacer. El agente trabajará en este proyecto.",
-                theme::FOREGROUND_SUBTLE,
-            ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Body)
+            .muted()
+            .render(),
         ]);
     }
     for (index, item) in state.transcript.iter().enumerate() {
@@ -2102,7 +2138,12 @@ fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f3
         actions.push(sidebar_reopen_control(theme::PANEL));
     }
     actions.extend([
-        label(shorten(session_title(state), title_max), theme::FOREGROUND),
+        UiText::new(
+            shorten(session_title(state), title_max),
+            theme::component_palette(),
+        )
+        .role(TextRole::Body)
+        .render(),
         Element::spacer().flex(1.0),
     ]);
     if sidebar_hidden {
@@ -2600,12 +2641,17 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
             );
             rows.push(
                 Element::row(vec![
-                    label(language.title(), theme::FOREGROUND)
-                        .font_size(10.0)
+                    UiText::new(language.title(), theme::component_palette())
+                        .role(TextRole::Micro)
+                        .render()
                         .padding(5.0)
                         .background(theme::SELECTED)
                         .radius(4.0),
-                    mono(total_label, theme::FOREGROUND_SUBTLE).font_size(10.0),
+                    UiText::new(total_label, theme::component_palette())
+                        .role(TextRole::Micro)
+                        .muted()
+                        .mono()
+                        .render(),
                 ])
                 .gap(8.0),
             );
@@ -2629,12 +2675,11 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
                 }
                 code_rows.push(
                     Element::row(vec![
-                        mono(
-                            format!("{:>digits$}", page.start_line + index + 1),
-                            theme::CODE_GUTTER,
-                        )
-                        .font_size(10.5)
-                        .size(Some(gutter_width), Some(16.0)),
+                        Element::text(format!("{:>digits$}", page.start_line + index + 1))
+                            .font_family(FontFamily::Monospace)
+                            .font_size(10.5)
+                            .foreground(theme::CODE_GUTTER)
+                            .size(Some(gutter_width), Some(16.0)),
                         Separator::vertical(theme::component_palette()).render(),
                         Element::formatted_text(spans).size(Some(code_width), None),
                     ])
@@ -2707,11 +2752,14 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
                 };
                 rows.push(
                     Element::row(vec![
-                        mono(
+                        UiText::new(
                             format!("{}–{}", page.start_line.saturating_add(1), page.end_line),
-                            theme::FOREGROUND_SUBTLE,
+                            theme::component_palette(),
                         )
-                        .font_size(11.0),
+                        .role(TextRole::Small)
+                        .muted()
+                        .mono()
+                        .render(),
                         Element::spacer().flex(1.0),
                         previous,
                         next,
@@ -2800,10 +2848,13 @@ fn dock_add_menu(state: &ViewState) -> Element {
 fn dock_empty_content(width: f32) -> Element {
     let content_width = (width - 48.0).clamp(150.0, 320.0);
     let content = Element::column(vec![
-        label("Abrir pestaña", theme::FOREGROUND).font_size(19.0),
-        UiText::new("Elige una vista para este panel.", theme::component_palette())
-            .muted()
-            .render(),
+        theme::text_px("Abrir pestaña", 19.0, theme::FOREGROUND),
+        UiText::new(
+            "Elige una vista para este panel.",
+            theme::component_palette(),
+        )
+        .muted()
+        .render(),
         Element::spacer().size(None, Some(8.0)),
         dock_overview::open_actions(content_width),
     ])
@@ -2896,10 +2947,13 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
             SideTab::Terminal => terminal_content(state, width),
             SideTab::CodeSnapshot => state.code_snapshot.as_ref().map_or_else(
                 || {
-                    label(
+                    UiText::new(
                         "Selecciona una vista previa del chat",
-                        theme::FOREGROUND_SUBTLE,
+                        theme::component_palette(),
                     )
+                    .role(TextRole::Body)
+                    .muted()
+                    .render()
                     .padding(12.0)
                 },
                 |preview| crate::code_snapshot_ui::build(preview, width),

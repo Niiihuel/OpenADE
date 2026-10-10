@@ -325,12 +325,15 @@ fn agent_home(state: &ViewState, width: f32, height: f32) -> Element {
         Element::icon(Icon::Chat)
             .foreground(theme::FOREGROUND_SUBTLE)
             .size(Some(24.0), Some(24.0)),
-        label("Tu agente, junto al código", theme::FOREGROUND).font_size(14.0),
-        label(
+        UiText::new("Tu agente, junto al código", theme::component_palette())
+            .role(TextRole::Body)
+            .render(),
+        UiText::new(
             "Explorá el proyecto, pedí cambios o resolvé una tarea.",
-            theme::FOREGROUND_SUBTLE,
+            theme::component_palette(),
         )
-        .font_size(12.0),
+        .muted()
+        .render(),
     ])
     .gap(10.0)
     .padding(16.0);
@@ -826,59 +829,6 @@ mod tests {
     use super::*;
     use crate::ide_workspace::WindowMode;
     use openide_ui::{DrawCommand, Frame, Point, Rect, Size, UiAction, UiEvent, UiTree};
-
-    fn legacy_agent_row(id: String, title: &str, icon: Icon, selected: bool) -> Element {
-        let ink = if selected {
-            theme::FOREGROUND
-        } else {
-            theme::FOREGROUND_SUBTLE
-        };
-        theme::interactive_surface(Element::clickable(
-            id,
-            Element::row(vec![
-                Element::icon(if selected {
-                    icon.filled()
-                } else {
-                    icon
-                })
-                .foreground(ink)
-                .size(Some(14.0), Some(14.0))
-                .centered_y()
-                .size(Some(14.0), Some(26.0)),
-                Element::truncated_text(title)
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(ink)
-                    .size(None, Some(26.0))
-                    .flex(1.0),
-            ])
-            .gap(8.0)
-            .padding(4.0),
-        ))
-        .background(if selected {
-            theme::SELECTED
-        } else {
-            Color::TRANSPARENT
-        })
-        .radius(6.0)
-        .size(None, Some(26.0))
-    }
-
-    #[test]
-    fn agent_rows_match_their_legacy_body() {
-        let long = "Una tarea con un título que no entra en la lista de tareas del IDE";
-        for selected in [false, true] {
-            for title in ["Nueva tarea", long] {
-                crate::icon_button_parity_tests::assert_same(
-                    &format!("agent row {title:?} selected={selected}"),
-                    Element::column(vec![legacy_agent_row("row".into(), title, Icon::Add, selected)])
-                        .size(Some(180.0), None),
-                    Element::column(vec![agent_row("row".into(), title, Icon::Add, selected)])
-                        .size(Some(180.0), None),
-                );
-            }
-        }
-    }
 
     fn state() -> ViewState {
         let mut state = crate::view::tests::empty_state();

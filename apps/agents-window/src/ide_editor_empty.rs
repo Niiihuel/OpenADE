@@ -102,7 +102,7 @@ pub(crate) fn build(profile: KeymapProfile, width: f32, height: f32) -> Element 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{DrawCommand, FontFamily, Point, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{DrawCommand, Point, Size, UiAction, UiEvent, UiTree};
 
     #[test]
     fn changing_profile_replaces_the_empty_editor_palette_keycaps() {
@@ -161,69 +161,6 @@ mod tests {
                         "missing key {key}"
                     );
                 }
-            }
-        }
-    }
-
-    // A shortcut row as it was built by hand before limn's `ListRow`. Delete
-    // with the final audit (S18).
-    fn legacy_row(id: &str, action: &str, title: &str, keys: Option<&str>, width: f32) -> Element {
-        let palette = theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE);
-        let mut row = vec![
-            Element::truncated_text(title)
-                .font_family(FontFamily::Sans)
-                .font_size(13.0)
-                .foreground(palette.text)
-                .flex(1.0),
-        ];
-        if let Some(keys) = keys {
-            row.push(Kbd::new(keys, palette).render());
-        }
-        palette
-            .interactive_surface(Element::clickable(
-                id,
-                Element::row(row).gap(20.0).size(None, Some(28.0)),
-            ))
-            .dispatch_as(action)
-            .radius(4.0)
-            .padding(4.0)
-            .size(Some(width), Some(32.0))
-    }
-
-    #[test]
-    fn shortcut_rows_paint_what_they_did_by_hand_under_the_rows_clip() {
-        let palette = theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE);
-        for (width, keys) in [(200.0, None), (300.0, Some("Ctrl+Shift+P"))] {
-            let row = ListRow::new("ide_empty_commands", "Buscar y ejecutar", palette)
-                .sizing(crate::ui_sizing::EMPTY_EDITOR_ROW)
-                .width(width);
-            let row = match keys {
-                Some(keys) => row.trailing(Kbd::new(keys, palette).render()),
-                None => row,
-            };
-            let current = row.render().dispatch_as("open_command_center");
-            let legacy = legacy_row("ide_empty_commands", "open_command_center", "Buscar y ejecutar", keys, width);
-            // `ListRow` clips a row of fixed width; nothing here reaches the clip.
-            let unclipped = |frames: Vec<openide_ui::Frame>| -> Vec<(Vec<DrawCommand>, String)> {
-                frames
-                    .into_iter()
-                    .map(|frame| {
-                        let regions = format!("{:?}", frame.regions);
-                        let commands = frame
-                            .commands
-                            .into_iter()
-                            .filter(|command| !matches!(command, DrawCommand::PushClip(_) | DrawCommand::PopClip))
-                            .collect();
-                        (commands, regions)
-                    })
-                    .collect()
-            };
-            for window in [360.0, 900.0] {
-                let (frames, actions) = crate::icon_button_parity_tests::states(current.clone(), window);
-                let (legacy_frames, legacy_actions) = crate::icon_button_parity_tests::states(legacy.clone(), window);
-                assert_eq!(frames.len(), 4);
-                assert_eq!(unclipped(frames), unclipped(legacy_frames), "width={width} window={window}");
-                assert_eq!(actions, legacy_actions);
             }
         }
     }

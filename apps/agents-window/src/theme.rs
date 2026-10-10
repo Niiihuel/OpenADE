@@ -40,9 +40,6 @@ pub const PANEL: Color = SCHEME.panel;
 pub const CARD: Color = SCHEME.raised;
 /// Floating action menus share the composer popover's dark surface.
 pub const MENU_SURFACE: Color = SCHEME.menu;
-// Read only by the parity copy of the suggestion popup, until S18.
-#[cfg_attr(not(test), allow(dead_code))]
-pub const MENU_HOVER: Color = SCHEME.menu_hover;
 pub const MENU_MUTED: Color = SCHEME.menu_muted;
 pub const INPUT: Color = SCHEME.hover;
 // Not a scheme role: still painted as a fill by the dock tabs and sidebar.
@@ -250,7 +247,7 @@ mod tests {
             PANEL,
             CARD,
             MENU_SURFACE,
-            MENU_HOVER,
+            SCHEME.menu_hover,
             INPUT,
             HOVER,
             SELECTED,
@@ -322,253 +319,6 @@ mod tests {
     }
 
     #[test]
-    fn the_solid_icon_and_skeleton_rows_match_the_helpers_limn_absorbed() {
-        use openide_ui::{DrawCommand, Icon, Size, SkeletonGroup, UiTree};
-
-        for icon in [
-            Icon::PanelLeft,
-            Icon::PanelRight,
-            Icon::Bell,
-            Icon::Folder,
-            Icon::Play,
-            Icon::Grid,
-            Icon::Settings,
-            Icon::Palette,
-            Icon::Laptop,
-            Icon::Terminal,
-            Icon::Keyboard,
-            Icon::Chat,
-            Icon::Users,
-            Icon::Puzzle,
-            Icon::Server,
-            Icon::Book,
-            Icon::Clock,
-            Icon::Bolt,
-            Icon::Archive,
-            Icon::ChartBar,
-            Icon::Search,
-            Icon::SettingsFill,
-            Icon::PanelLeftClose,
-        ] {
-            assert_eq!(icon.filled(), legacy_filled_icon(icon));
-        }
-
-        let commands = |rows: Vec<Element>, width: f32| -> Vec<DrawCommand> {
-            let mut tree = UiTree::new(Element::column(rows));
-            tree.set_reduced_motion(true);
-            tree.layout(Size::new(width, 400.0)).commands
-        };
-        for width in [220.0, 760.0] {
-            for (count, row_height, icon) in [(4, 30.0, false), (3, 26.0, true), (6, 34.0, true)] {
-                let limn = SkeletonGroup::rows("progress", component_palette(), count)
-                    .row_height(row_height)
-                    .icon(icon)
-                    .into_rows();
-                let legacy = legacy_skeleton_rows("progress", count, row_height, icon);
-                assert_eq!(commands(limn, width), commands(legacy, width));
-            }
-        }
-    }
-
-    // Every hand-built card shell limn's Card replaced, in both the forms it
-    // was written in; delete with the final audit (S18).
-    #[test]
-    fn card_shells_match_the_panels_they_replaced() {
-        use openide_ui::{
-            ButtonVariant, Card, CardDensity, Component, ControlSize, DrawCommand, Icon,
-            IconButton, RadiusRole,
-        };
-
-        // Content with a row that centers in a card taller than it.
-        let content = || {
-            Element::row(vec![
-                Element::column(vec![
-                    Element::text("Plan propuesto").foreground(FOREGROUND),
-                    Element::text("2 de 5 · un texto que se parte en varias líneas cuando la tarjeta es angosta")
-                        .foreground(FOREGROUND_SUBTLE),
-                ])
-                .gap(7.0)
-                .flex(1.0),
-                Button::new("card_action", "Abrir", component_palette())
-                    .render()
-                    .centered_y(),
-            ])
-            .gap(10.0)
-        };
-        type Finish = fn(Element) -> Element;
-        let own: Finish = |card| card;
-        let cases: [(&str, f32, Color, bool, f32, Option<f32>, Card, Finish); 11] = [
-            ("session card", 10.0, CARD, true, 8.0, None, Card::new(content(), card_palette()), own),
-            (
-                "user message",
-                10.0,
-                CARD,
-                false,
-                8.0,
-                None,
-                Card::new(content(), card_palette()).border(false),
-                own,
-            ),
-            (
-                "automation session card",
-                10.0,
-                CARD,
-                true,
-                8.0,
-                Some(300.0),
-                Card::new(content(), card_palette()).width(300.0),
-                own,
-            ),
-            (
-                "hook card",
-                12.0,
-                PANEL,
-                true,
-                8.0,
-                None,
-                Card::new(content(), panel_card_palette()).density(CardDensity::Roomy),
-                own,
-            ),
-            (
-                "process output",
-                12.0,
-                PANEL,
-                true,
-                9.0,
-                None,
-                Card::new(content(), panel_card_palette()).density(CardDensity::Roomy),
-                |card| card.radius(9.0),
-            ),
-            (
-                "transcript notice",
-                12.0,
-                PANEL,
-                true,
-                10.0,
-                None,
-                Card::new(content(), panel_card_palette()).density(CardDensity::Roomy),
-                |card| card.radius(10.0),
-            ),
-            (
-                "marketplace item",
-                12.0,
-                PANEL,
-                true,
-                8.0,
-                Some(280.0),
-                Card::new(content(), panel_card_palette())
-                    .density(CardDensity::Roomy)
-                    .width(280.0),
-                own,
-            ),
-            (
-                "loading and comparison cards",
-                12.0,
-                PANEL,
-                false,
-                8.0,
-                None,
-                Card::new(content(), panel_card_palette())
-                    .density(CardDensity::Roomy)
-                    .border(false),
-                own,
-            ),
-            (
-                "automation card",
-                10.0,
-                BACKGROUND,
-                true,
-                10.0,
-                Some(320.0),
-                Card::new(content(), canvas_card_palette()).width(320.0),
-                |card| card.radius(10.0),
-            ),
-            (
-                "run card",
-                10.0,
-                BACKGROUND,
-                true,
-                9.0,
-                None,
-                Card::new(content(), canvas_card_palette()),
-                |card| card.radius(9.0),
-            ),
-            (
-                "approval target",
-                10.0,
-                PANEL,
-                false,
-                6.0,
-                None,
-                Card::new(content(), panel_card_palette())
-                    .border(false)
-                    .radius(RadiusRole::Surface),
-                own,
-            ),
-        ];
-        for (name, padding, fill, border, radius, width, card, finish) in cases {
-            let current = finish(card.render());
-            let shell = |element: Element| {
-                let element = element.padding(padding).background(fill).radius(radius);
-                let element = if border {
-                    element.border(BORDER, 1.0)
-                } else {
-                    element
-                };
-                match width {
-                    Some(width) => element.size(Some(width), None),
-                    None => element,
-                }
-            };
-            // Written both as a padded panel and as a padded row or column.
-            for legacy in [shell(Element::panel(content())), shell(content())] {
-                crate::icon_button_parity_tests::assert_same(name, legacy, current.clone());
-            }
-        }
-        // A source row keeps a minimum height over its centered content, so
-        // the content here is one line, shorter than the 32 px left inside.
-        let line = || {
-            Element::row(vec![
-                Element::icon(Icon::Folder)
-                    .foreground(FOREGROUND_SUBTLE)
-                    .centered_y(),
-                Element::truncated_text("openai/skills")
-                    .foreground(FOREGROUND)
-                    .flex(1.0),
-                IconButton::new(
-                    "source_action",
-                    Icon::Trash,
-                    action_palette(PANEL, FOREGROUND_SUBTLE),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .render()
-                .centered_y(),
-            ])
-            .gap(10.0)
-        };
-        let source = |element: Element| element.radius(10.0).min_size(0.0, 56.0);
-        let current = source(
-            Card::new(line(), panel_card_palette())
-                .density(CardDensity::Roomy)
-                .render(),
-        );
-        let (frames, _) = crate::icon_button_parity_tests::states(current.clone(), 360.0);
-        assert!(
-            frames[0].commands.iter().any(|command| matches!(
-                command,
-                DrawCommand::FillRect { rect, color, .. } if *color == PANEL && rect.height == 56.0
-            )),
-            "the minimum height must be what sizes the row"
-        );
-        crate::icon_button_parity_tests::assert_same(
-            "marketplace source row",
-            source(line().padding(12.0).background(PANEL).border(BORDER, 1.0)),
-            current,
-        );
-    }
-
-    #[test]
     fn hover_progresses_from_each_surface_without_changing_geometry() {
         assert!(hover_for(SIDEBAR).r > SIDEBAR.r);
         assert!(hover_for(BACKGROUND).r > BACKGROUND.r);
@@ -581,7 +331,7 @@ mod tests {
         let menu = menu_palette();
         assert_eq!(menu.surface, MENU_SURFACE);
         assert_eq!(menu.raised, MENU_SURFACE);
-        assert_eq!(menu.hover, MENU_HOVER);
+        assert_eq!(menu.hover, SCHEME.menu_hover);
         assert_ne!(component_palette().surface, menu.surface);
         assert_ne!(component_palette().raised, menu.raised);
     }
@@ -611,79 +361,65 @@ mod tests {
         assert!(base.background.r < PANEL.r);
         assert!(base.border.r > BORDER.r);
     }
+
+    #[test]
+    fn limn_text_paints_the_inks_and_sizes_the_text_helpers_did() {
+        use openide_ui::{FontFamily, Text, TextRole};
+        // Text's default ink and `.muted()` stand for the two inks the helpers took.
+        let palette = component_palette();
+        assert_eq!(
+            (palette.text, palette.muted),
+            (FOREGROUND, FOREGROUND_SUBTLE)
+        );
+        for (role, size) in [
+            (TextRole::Display, 18.0),
+            (TextRole::Heading, 16.0),
+            (TextRole::Body, 14.0),
+            (TextRole::Label, 13.0),
+            (TextRole::Caption, 12.0),
+            (TextRole::Small, 11.0),
+            (TextRole::Micro, 10.0),
+        ] {
+            assert_eq!(
+                format!(
+                    "{:?}",
+                    Text::new("Texto", palette).role(role).muted().render()
+                ),
+                format!(
+                    "{:?}",
+                    Element::text("Texto")
+                        .font_family(FontFamily::Sans)
+                        .font_size(size)
+                        .foreground(FOREGROUND_SUBTLE)
+                ),
+            );
+            assert_eq!(
+                format!(
+                    "{:?}",
+                    Text::new("Texto", palette)
+                        .role(role)
+                        .ink(SETTINGS_FOREGROUND_SUBTLE)
+                        .mono()
+                        .truncate()
+                        .render()
+                ),
+                format!(
+                    "{:?}",
+                    Element::truncated_text("Texto")
+                        .font_family(FontFamily::Monospace)
+                        .font_size(size)
+                        .foreground(SETTINGS_FOREGROUND_SUBTLE)
+                ),
+            );
+        }
+    }
 }
 
 /// Sans text at a size off limn's `TextRole` scale (10.5, 11.5, 12.5, 15, 17,
 /// 19 and the display sizes). Text on the scale uses `openide_ui::Text`.
-// Its first callers arrive with the next sections of the UI separation.
-#[allow(dead_code)]
 pub fn text_px(value: impl Into<String>, px: f32, ink: Color) -> Element {
     Element::text(value)
         .font_family(openide_ui::FontFamily::Sans)
         .font_size(px)
         .foreground(ink)
-}
-
-/// `SkeletonGroup::rows` as it was before limn absorbed it; kept for the
-/// parity test until the final audit.
-#[cfg(test)]
-fn legacy_skeleton_rows(id: &str, rows: usize, row_height: f32, icon: bool) -> Vec<Element> {
-    use openide_ui::{Component, Skeleton};
-    (0..rows)
-        .map(|row| {
-            let fraction = [0.46, 0.62, 0.38, 0.54][row % 4];
-            let mut cells = Vec::new();
-            if icon {
-                cells.push(
-                    Skeleton::new(format!("{id}:{row}:icon"), component_palette())
-                        .width(16.0)
-                        .height(16.0)
-                        .radius(4.0)
-                        .render(),
-                );
-            }
-            cells.push(
-                Skeleton::new(format!("{id}:{row}"), component_palette())
-                    .height(10.0)
-                    .radius(5.0)
-                    .render()
-                    .flex(fraction),
-            );
-            cells.push(Element::spacer().flex(1.0 - fraction));
-            Element::row(cells)
-                .gap(10.0)
-                .centered_y()
-                .size(None, Some(row_height))
-        })
-        .collect()
-}
-
-/// `Icon::filled` as it was before limn absorbed it; kept for the parity
-/// test until the final audit.
-#[cfg(test)]
-fn legacy_filled_icon(icon: openide_ui::Icon) -> openide_ui::Icon {
-    use openide_ui::Icon;
-    match icon {
-        Icon::PanelLeft => Icon::PanelLeftOpen,
-        Icon::PanelRight => Icon::PanelRightOpen,
-        Icon::Bell => Icon::BellFill,
-        Icon::Folder => Icon::FolderFill,
-        Icon::Play => Icon::PlayFill,
-        Icon::Grid => Icon::GridFill,
-        Icon::Settings => Icon::SettingsFill,
-        Icon::Palette => Icon::PaletteFill,
-        Icon::Laptop => Icon::LaptopFill,
-        Icon::Terminal => Icon::TerminalFill,
-        Icon::Keyboard => Icon::KeyboardFill,
-        Icon::Chat => Icon::ChatFill,
-        Icon::Users => Icon::UsersFill,
-        Icon::Puzzle => Icon::PuzzleFill,
-        Icon::Server => Icon::ServerFill,
-        Icon::Book => Icon::BookFill,
-        Icon::Clock => Icon::ClockFill,
-        Icon::Bolt => Icon::BoltFill,
-        Icon::Archive => Icon::ArchiveFill,
-        Icon::ChartBar => Icon::ChartBarFill,
-        other => other,
-    }
 }

@@ -22,10 +22,6 @@ use crate::theme;
 #[path = "rich_text_link_tests.rs"]
 mod link_tests;
 
-#[cfg(test)]
-#[path = "rich_text_legacy.rs"]
-mod legacy;
-
 const MAX_URL_BYTES: usize = 2_048;
 const LINK_ACTION_PREFIX: &str = "chat_link_open:";
 
@@ -252,110 +248,5 @@ mod tests {
                 == Some("https://example.com/docs")));
         assert!(!text.contains("**"));
         assert!(!text.contains("[guía]"));
-    }
-
-    // Prose, lists, a quote, code and links, plus one response past the block limit.
-    const MESSAGES: [(&str, &str); 5] = [
-        ("prose", "# Resumen\n\nSe corrigió **la sesión** con *cuidado* en `src/main.rs`; el salto  \nforzado sigue aquí.\n\n## Detalle\n\nUn párrafo lo bastante largo como para partirse en varias líneas dentro de la columna de lectura a cualquiera de los dos anchos.\n\n### Cierre\n\nFin."),
-        ("lists", "Pasos:\n\n1. Compilar\n2. Probar\n   - [x] Unitarias\n   - [ ] De integración con un texto largo que debe partirse dentro del ancho de la lista\n- Punto suelto\n    - Anidado\n\n---\n\nDespués de la regla."),
-        ("quote", "Antes\n\n> Una cita que ocupa más de una línea cuando la columna es estrecha y conserva su barra.\n> Segunda línea con `código` y **énfasis**\n\nDespués"),
-        ("code", "Ejemplo:\n\n```rust\nfn main() {\n    println!(\"hola\");\n}\n```\n\n~~~\nsin lenguaje\n~~~\n\n```sh\ncargo test -p agents-window -p openide-ui --no-fail-fast\n```"),
-        ("links", "Mirá [repositorio](https://github.com/a/b) y https://example.test/a_(b). `https://code.test` [archivo](src/main.rs) [malo](javascript:alert(1))\n\n- [guía](https://example.com/docs)\n\n> https://www.github.com/a"),
-    ];
-
-    fn assert_same_frames(name: &str, legacy: Element, current: Element) {
-        for width in [360.0, 900.0] {
-            let frame = |element: &Element| {
-                let mut tree = UiTree::new(element.clone());
-                tree.set_reduced_motion(true);
-                tree.layout(Size::new(width, 4_000.0))
-            };
-            assert_eq!(frame(&current), frame(&legacy), "{name} width={width}");
-        }
-        // The first link idle, hovered, hinted and pressed, and what its click reports.
-        crate::icon_button_parity_tests::assert_same(name, legacy, current);
-    }
-
-    #[test]
-    fn markdown_on_limn_matches_the_renderer_it_replaced() {
-        let long = "párrafo **uno**\n\n".repeat(170);
-        for (name, source) in MESSAGES.into_iter().chain([("limited", long.as_str())]) {
-            for width in [336.0, 720.0] {
-                let label = format!("{name} at {width}");
-                let old = legacy::render_markdown_preview_at_width(source, width);
-                let new = render_markdown_preview_at_width(source, width);
-                assert_eq!(new.limited, old.limited, "{label}");
-                assert_same_frames(
-                    &label,
-                    legacy::scope_web_links(old.element, "session:item"),
-                    scope_web_links(new.element, "session:item"),
-                );
-                // A response arriving in three steps, so the cached blocks are reused too.
-                let ends = source.char_indices().map(|(index, _)| index).collect::<Vec<_>>();
-                for end in [ends[ends.len() / 3], ends[ends.len() * 2 / 3], source.len()] {
-                    let label = format!("{label} streaming to {end}");
-                    let old = legacy::render_streaming_markdown_preview_at_width(&source[..end], width);
-                    let new = render_streaming_markdown_preview_at_width(&source[..end], width);
-                    assert_eq!(new.limited, old.limited, "{label}");
-                    assert_same_frames(&label, old.element, new.element);
-                }
-                assert_same_frames(
-                    &format!("{label} cached"),
-                    legacy::render_markdown_at_width(source, width),
-                    render_markdown_at_width(source, width),
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn user_messages_and_composer_links_match_their_legacy_bodies() {
-        for source in [
-            "ñ 👩‍💻 [repo](https://github.com/a/b), https://example.test/docs y **literal**",
-            "sin enlaces, solo `src/main.rs`",
-            "https://github.com/a/b https://github.com/a/b HTTPS://EXAMPLE.TEST/x.",
-            "",
-        ] {
-            assert_same_frames(
-                &format!("user {source:?}"),
-                legacy::render_user_message(source, "session:user1"),
-                render_user_message(source, "session:user1"),
-            );
-            for width in [40.0, 200.0, 360.0, 720.0] {
-                let (old_highlights, old) = legacy::composer_links(source, width);
-                let (highlights, new) = composer_links(source, width);
-                assert_eq!(highlights, old_highlights, "{source:?} {width}");
-                assert_eq!(new.is_some(), old.is_some(), "{source:?} {width}");
-                if let (Some(old), Some(new)) = (old, new) {
-                    assert_same_frames(&format!("composer {source:?} {width}"), old, new);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn source_pages_match_their_legacy_body() {
-        let source = format!("# Título 🦀\r\n\r\n{}\nfin", "línea de **fuente** con `código`\n".repeat(900));
-        let mut start = 0;
-        loop {
-            let old = legacy::markdown_source_page(&source, start);
-            let new = Markdown::source_page(&source, start);
-            assert_eq!(
-                (new.text, new.start_byte, new.end_byte, new.previous_byte, new.next_byte),
-                (old.text, old.start_byte, old.end_byte, old.previous_byte, old.next_byte),
-            );
-            for width in [320.0, 640.0] {
-                assert_same_frames(
-                    &format!("source page {start} at {width}"),
-                    legacy::render_markdown_source_page_at_width(&old, width),
-                    new.render(width, theme::component_palette()),
-                );
-            }
-            match new.next_byte {
-                Some(next) => start = next,
-                None => break,
-            }
-        }
-        assert!(start > 0);
     }
 }

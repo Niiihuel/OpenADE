@@ -17,9 +17,10 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     let body_width = crate::ui_sizing::form_width(width).max(0.0);
     let owner = inspection.session_id.as_deref().expect("scope checked");
     let mut fields = vec![
-        text(format!("Conversación: {owner}"), theme::FOREGROUND, 12.0)
-            .font_family(FontFamily::Monospace),
-        text(
+        Text::new(format!("Conversación: {owner}"), theme::component_palette())
+            .mono()
+            .render(),
+        Text::new(
             format!(
                 "Proyecto: {}",
                 inspection
@@ -28,26 +29,40 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
                     .expect("scope checked")
                     .display()
             ),
-            theme::FOREGROUND,
-            12.0,
+            theme::component_palette(),
         )
-        .font_family(FontFamily::Monospace),
-        subtle(format!(
-            "Lectura hasta el evento {} · {} copias adicionales iniciales guardadas",
-            inspection.journal_last_sequence,
-            inspection.snapshots.len(),
-        )),
+        .mono()
+        .render(),
+        Text::new(
+            format!(
+                "Lectura hasta el evento {} · {} copias adicionales iniciales guardadas",
+                inspection.journal_last_sequence,
+                inspection.snapshots.len(),
+            ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+        .render(),
     ];
     if let Some(error) = &inspection.error {
-        fields.push(text(
-            "No se pudo validar la conversación",
-            theme::FOREGROUND,
-            12.0,
-        ));
-        fields.push(text(error, theme::FOREGROUND, 12.0));
-        fields.push(subtle(
-            "No se muestran copias de instrucciones sin validar el journal y sus checkpoints.",
-        ));
+        fields.push(
+            Text::new(
+                "No se pudo validar la conversación",
+                theme::component_palette(),
+            )
+            .render(),
+        );
+        fields.push(Text::new(error, theme::component_palette()).render());
+        fields.push(
+            Text::new(
+                "No se muestran copias de instrucciones sin validar el journal y sus checkpoints.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
     } else if let Some(snapshot) = inspection.selected_snapshot() {
         let options = inspection
             .snapshots
@@ -82,26 +97,33 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .render(),
         );
         fields.push(
-            text(snapshot.identity_description(), theme::FOREGROUND, 12.0)
-                .font_family(FontFamily::Monospace),
+            Text::new(snapshot.identity_description(), theme::component_palette())
+                .mono()
+                .render(),
         );
-        fields.push(text(
-            "Texto completo de esta copia",
-            theme::FOREGROUND,
-            12.0,
-        ));
+        fields.push(Text::new("Texto completo de esta copia", theme::component_palette()).render());
         if snapshot.content.is_empty() {
-            fields.push(subtle("El texto guardado de esta copia está vacío."));
+            fields.push(
+                Text::new(
+                    "El texto guardado de esta copia está vacío.",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            );
         } else {
             fields.push(
-                text(&snapshot.content, theme::FOREGROUND, 12.0).font_family(FontFamily::Monospace),
+                Text::new(&snapshot.content, theme::component_palette())
+                    .mono()
+                    .render(),
             );
         }
-        fields.push(subtle("Estas copias corresponden a SystemInstructionsCommitted: instrucciones adicionales del host, proyecto, skills y objetivo. El motor agrega su envoltura de workspace, herramientas y modo al preparar la solicitud. Esta consulta no reconstruye esa envoltura ni los ámbitos anidados activados posteriormente por preflight; no representa el contexto completo de cada solicitud."));
+        fields.push(Text::new("Estas copias corresponden a SystemInstructionsCommitted: instrucciones adicionales del host, proyecto, skills y objetivo. El motor agrega su envoltura de workspace, herramientas y modo al preparar la solicitud. Esta consulta no reconstruye esa envoltura ni los ámbitos anidados activados posteriormente por preflight; no representa el contexto completo de cada solicitud.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     } else {
-        fields.push(subtle("Esta conversación todavía no tiene eventos SystemInstructionsCommitted. El journal puede ser anterior a esa capacidad o no haber iniciado una solicitud de modelo. No se inventa una copia a partir de los archivos actuales."));
+        fields.push(Text::new("Esta conversación todavía no tiene eventos SystemInstructionsCommitted. El journal puede ser anterior a esa capacidad o no haber iniciado una solicitud de modelo. No se inventa una copia a partir de los archivos actuales.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     }
-    fields.push(subtle("Esta consulta muestra copias privadas validadas del journal. Conserva el texto leído al abrir; un turno activo puede registrar eventos después. Cerrar y volver a abrir consulta el journal de nuevo. No carga AGENTS.md ni cambia instrucciones, herramientas o recuperación."));
+    fields.push(Text::new("Esta consulta muestra copias privadas validadas del journal. Conserva el texto leído al abrir; un turno activo puede registrar eventos después. Cerrar y volver a abrir consulta el journal de nuevo. No carga AGENTS.md ni cambia instrucciones, herramientas o recuperación.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     let close = outline("settings_native_instructions_dismiss", "Cerrar").render();
     Modal::new(
         base,

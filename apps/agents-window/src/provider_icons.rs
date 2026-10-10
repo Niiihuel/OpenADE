@@ -60,29 +60,9 @@ pub(crate) const GROQ: Icon =
     Icon::Custom(include_str!("../assets/providers/icons/groq.svg"));
 pub(crate) const MISTRAL: Icon =
     Icon::Custom(include_str!("../assets/providers/icons/mistral.svg"));
-pub(crate) const XAI: Icon =
-    Icon::Custom(include_str!("../assets/providers/icons/xai.svg"));
-pub(crate) const STEP_OVER: Icon =
-    Icon::Custom(include_str!("../assets/openide/debug-step-over.svg"));
-pub(crate) const STEP_INTO: Icon =
-    Icon::Custom(include_str!("../assets/openide/debug-step-into.svg"));
-pub(crate) const STEP_OUT: Icon =
-    Icon::Custom(include_str!("../assets/openide/debug-step-out.svg"));
-pub(crate) const REPLACE: Icon =
-    Icon::Custom(include_str!("../assets/openide/replace.svg"));
-pub(crate) const REPLACE_ALL: Icon =
-    Icon::Custom(include_str!("../assets/openide/replace-all.svg"));
+pub(crate) const XAI: Icon = Icon::Custom(include_str!("../assets/providers/icons/xai.svg"));
 pub(crate) const CONTEXT_RING: Icon =
     Icon::Custom(include_str!("../assets/openide/context-ring.svg"));
-
-/// Theme-tintable vector marks. Native and SVG renderers consume exactly the
-/// same sources, so exports cannot silently substitute a generic glyph.
-pub(crate) fn svg_for_icon(icon: Icon) -> Option<&'static str> {
-    match icon {
-        Icon::Custom(source) => Some(source),
-        _ => None,
-    }
-}
 
 #[cfg(test)]
 pub(crate) const PROVIDER_ICONS: [Icon; 13] = [
@@ -106,6 +86,13 @@ mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
     use std::{fs, path::Path};
+
+    fn svg_for_icon(icon: Icon) -> Option<&'static str> {
+        match icon {
+            Icon::Custom(source) => Some(source),
+            _ => None,
+        }
+    }
 
     #[test]
     fn known_provider_logos_and_unknown_fallback() {

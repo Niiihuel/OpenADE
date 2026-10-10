@@ -4,10 +4,10 @@
 
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, FormField, FormFieldSizing, Color, Component, ControlSize, DateTimePicker,
-    CardGrid, Element, Empty, FontFamily, Icon, IconButton, Modal, PageColumn, SearchField,
-    Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea, TextField, TextRole, TimePicker,
-    Tooltip, TooltipPlacement, TooltipSpec,
+    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardGrid, Component, ControlSize,
+    DateTimePicker, Element, Empty, FontFamily, FormField, FormFieldSizing, Icon, IconButton,
+    Modal, PageColumn, SearchField, Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea,
+    TextField, TextRole, TimePicker, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -554,17 +554,6 @@ pub fn template_form(id: &str, backend: impl Into<String>) -> Option<AutomationF
     Some(form)
 }
 
-fn text(value: impl Into<String>, size: f32, color: Color) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
-
-fn muted(value: impl Into<String>) -> Element {
-    text(value, 12.0, theme::FOREGROUND_SUBTLE)
-}
-
 fn section_label(value: &str) -> Element {
     Text::new(value, theme::component_palette())
         .role(TextRole::Label)
@@ -593,10 +582,15 @@ fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: 
     } else {
         theme::FOREGROUND_SUBTLE
     };
-    let status_badge = Element::panel(text(status.title(), 10.0, status_color))
-        .padding(5.0)
-        .background(theme::SELECTED)
-        .radius(6.0);
+    let status_badge = Element::panel(
+        Text::new(status.title(), theme::component_palette())
+            .role(TextRole::Micro)
+            .ink(status_color)
+            .render(),
+    )
+    .padding(5.0)
+    .background(theme::SELECTED)
+    .radius(6.0);
     let toggle_id = format!("automation_toggle:{}", item.id);
     let toggle = Tooltip::new(
         Switch::new(toggle_id.clone(), item.enabled, theme::component_palette()).render(),
@@ -631,7 +625,13 @@ fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: 
                 .font_family(FontFamily::Sans)
                 .font_size(11.0)
                 .flex(1.0),
-            muted(format!("{} ejec.", item.run_count)).font_size(10.0),
+            Text::new(
+                format!("{} ejec.", item.run_count),
+                theme::component_palette(),
+            )
+            .role(TextRole::Micro)
+            .muted()
+            .render(),
         ])
         .gap(5.0),
     ];
@@ -681,7 +681,12 @@ fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: 
     .render();
     let mut actions = vec![edit, history, run];
     if busy {
-        actions.push(muted("Iniciando…").font_size(10.0));
+        actions.push(
+            Text::new("Iniciando…", theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .render(),
+        );
     }
     actions.extend([Element::spacer().flex(1.0), toggle]);
     actions.push(delete);
@@ -726,7 +731,10 @@ fn template_card(template: &AutomationTemplate, width: f32) -> Element {
                 .font_family(FontFamily::Sans)
                 .font_size(11.0)
                 .foreground(theme::FOREGROUND_SUBTLE),
-            text(schedule, 10.0, theme::FOREGROUND_SUBTLE),
+            Text::new(schedule, theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .render(),
         ])
         .gap(5.0),
     ))
@@ -738,8 +746,13 @@ fn template_card(template: &AutomationTemplate, width: f32) -> Element {
 
 fn list_heading(empty: bool, content_width: f32) -> Element {
     let heading = Element::column(vec![
-        text("Automatizaciones", 22.0, theme::FOREGROUND),
-        muted("Tareas programadas para este proyecto"),
+        theme::text_px("Automatizaciones", 22.0, theme::FOREGROUND),
+        Text::new(
+            "Tareas programadas para este proyecto",
+            theme::component_palette(),
+        )
+        .muted()
+        .render(),
     ])
     .gap(2.0);
     let new = || {
@@ -987,7 +1000,12 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
 
 fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element {
     let backend_controls = if state.backends.is_empty() {
-        muted("No hay agentes disponibles para programar tareas.")
+        Text::new(
+            "No hay agentes disponibles para programar tareas.",
+            theme::component_palette(),
+        )
+        .muted()
+        .render()
     } else {
         let backend_options: Vec<_> = state
             .backends
@@ -1020,7 +1038,12 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
     } else {
         vec![
             section_label("Motor del agente"),
-            muted("Elige quién iniciará cada ejecución."),
+            Text::new(
+                "Elige quién iniciará cada ejecución.",
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
             backend_controls,
         ]
     };
@@ -1031,7 +1054,14 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
             .as_ref()
             .map(|settings| format!("{} · {}", settings.provider_id, settings.model_id))
             .unwrap_or_else(|| "Configuración nativa actual".to_owned());
-        backend_rows.push(muted(format!("Modelo de esta tarea: {selected}")));
+        backend_rows.push(
+            Text::new(
+                format!("Modelo de esta tarea: {selected}"),
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
+        );
         backend_rows.push(
             Button::new(
                 "automation_native_current",
@@ -1043,7 +1073,14 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
             .render(),
         );
     } else {
-        backend_rows.push(muted("Se usa la CLI detectada en PATH para este equipo."));
+        backend_rows.push(
+            Text::new(
+                "Se usa la CLI detectada en PATH para este equipo.",
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
+        );
     }
     Element::column(backend_rows)
         .gap(10.0)
@@ -1210,7 +1247,7 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
             .font_family(FontFamily::Sans)
             .font_size(22.0)
             .foreground(theme::FOREGROUND),
-        muted("El despacho y el resultado del agente se registran por separado. Los resultados nativos se verifican contra el origen y el journal de la sesión."),
+        Text::new("El despacho y el resultado del agente se registran por separado. Los resultados nativos se verifican contra el origen y el journal de la sesión.", theme::component_palette()).muted().render(),
     ];
     for error in &state.native_result_errors {
         body.push(
@@ -1304,56 +1341,100 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
                 .map(|time| time.format("%d/%m/%Y %H:%M").to_string())
                 .unwrap_or_else(|| "Fecha desconocida".to_owned());
             let status_line = if content_width < 520.0 {
-                Element::column(vec![text(status, 13.0, color), muted(when).font_size(11.0)])
-                    .gap(3.0)
+                Element::column(vec![
+                    Text::new(status, theme::component_palette())
+                        .role(TextRole::Label)
+                        .ink(color)
+                        .render(),
+                    Text::new(when, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render(),
+                ])
+                .gap(3.0)
             } else {
                 Element::row(vec![
-                    text(status, 13.0, color),
+                    Text::new(status, theme::component_palette())
+                        .role(TextRole::Label)
+                        .ink(color)
+                        .render(),
                     Element::spacer().flex(1.0),
-                    muted(when).font_size(11.0),
+                    Text::new(when, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render(),
                 ])
             };
             let mut details = vec![
                 status_line,
-                muted(explanation).font_size(11.0),
-                muted(if run.manual {
-                    "Inicio manual"
-                } else {
-                    "Programada"
-                })
-                .font_size(11.0),
+                Text::new(explanation, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+                Text::new(
+                    if run.manual {
+                        "Inicio manual"
+                    } else {
+                        "Programada"
+                    },
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
             ];
             if let Some(result) = &run.native_result {
-                details.push(muted(format!("Despacho: {dispatch_status}")).font_size(11.0));
                 details.push(
-                    muted(format!(
-                        "Journal observado hasta el evento {}{}",
-                        result.last_sequence(),
-                        result
-                            .terminal_sequence()
-                            .map(|sequence| format!(" · terminal {sequence}"))
-                            .unwrap_or_default(),
-                    ))
-                    .font_size(11.0),
+                    Text::new(
+                        format!("Despacho: {dispatch_status}"),
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+                );
+                details.push(
+                    Text::new(
+                        format!(
+                            "Journal observado hasta el evento {}{}",
+                            result.last_sequence(),
+                            result
+                                .terminal_sequence()
+                                .map(|sequence| format!(" · terminal {sequence}"))
+                                .unwrap_or_default(),
+                        ),
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
                 );
                 if result.recovery_required() {
-                    details.push(text(
-                        "Requiere resolución en la sesión",
-                        11.0,
-                        theme::DESTRUCTIVE,
-                    ));
+                    details.push(
+                        Text::new(
+                            "Requiere resolución en la sesión",
+                            theme::component_palette(),
+                        )
+                        .role(TextRole::Small)
+                        .ink(theme::DESTRUCTIVE)
+                        .render(),
+                    );
                 }
             }
             if let Some(error) = &run.error {
-                details.push(text(
-                    if run.native_result.is_some() {
-                        format!("Diagnóstico de despacho: {error}")
-                    } else {
-                        error.clone()
-                    },
-                    11.0,
-                    theme::DESTRUCTIVE,
-                ));
+                details.push(
+                    Text::new(
+                        if run.native_result.is_some() {
+                            format!("Diagnóstico de despacho: {error}")
+                        } else {
+                            error.clone()
+                        },
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .ink(theme::DESTRUCTIVE)
+                    .render(),
+                );
             }
             if let Some(session_id) = &run.session_id {
                 details.push(
@@ -1462,234 +1543,6 @@ fn editor_modal(state: &AutomationViewState, base: Element, width: f32, body: El
 mod tests {
     use super::*;
     use openide_ui::{Key, Point, Size, UiAction, UiEvent, UiTree};
-
-    // The hand-measured frequency tabs that `Tabs::fill_width` replaced.
-    // Delete with the final audit (S18).
-    fn legacy_frequency_control(form: &AutomationForm, available_width: f32) -> Element {
-        let frequencies = [
-            AutomationFrequency::Once,
-            AutomationFrequency::EveryMinutes,
-            AutomationFrequency::Daily,
-            AutomationFrequency::Weekly,
-        ];
-        let compact = available_width < 390.0;
-        let columns = if compact { 2 } else { 4 };
-        let tab_width =
-            ((available_width - 4.0 - 2.0 * (columns - 1) as f32) / columns as f32).max(44.0);
-        let tabs: Vec<_> = frequencies
-            .into_iter()
-            .map(|frequency| {
-                Tab::new(frequency.action_id(), frequency.title(), tab_width)
-                    .active(form.frequency == frequency)
-            })
-            .collect();
-        if compact {
-            let mut tabs = tabs.into_iter();
-            Element::column(vec![
-                Tabs::new(tabs.by_ref().take(2).collect(), theme::segmented_palette())
-                    .id("automation_frequency_primary")
-                    .size(ControlSize::Compact)
-                    .render(),
-                Tabs::new(tabs.collect(), theme::segmented_palette())
-                    .id("automation_frequency_secondary")
-                    .size(ControlSize::Compact)
-                    .render(),
-            ])
-            .gap(4.0)
-        } else {
-            Tabs::new(tabs, theme::segmented_palette())
-                .id("automation_frequency")
-                .size(ControlSize::Compact)
-                .render()
-        }
-    }
-
-    #[test]
-    fn frequency_tabs_match_the_hand_measured_widths() {
-        let mut form = AutomationForm::new("native");
-        form.frequency = AutomationFrequency::Weekly;
-        // The form's widths in a 360 and a 900 px window, and the two sides
-        // of the point where the tabs fold into two rows.
-        for width in [160.0, 256.0, 389.5, 390.0, 480.0] {
-            assert_eq!(
-                format!("{:?}", frequency_control(&form, width)),
-                format!("{:?}", legacy_frequency_control(&form, width)),
-                "{width}"
-            );
-        }
-    }
-
-    // The task editor's hand-built rows that `FormField` replaced. Delete
-    // with the final audit (S18).
-    fn legacy_form_label(value: &str) -> Element {
-        text(value, 12.0, theme::FOREGROUND_SUBTLE).min_size(0.0, 18.0)
-    }
-
-    fn legacy_schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
-        let form = &state.form;
-        let mut rows = vec![
-            legacy_form_label("Frecuencia"),
-            frequency_control(form, content_width - 26.0),
-        ];
-        match form.frequency {
-            AutomationFrequency::Once => {
-                let (date, time) = form.once_parts();
-                rows.push(
-                    DateTimePicker::new(
-                        "automation_once_date",
-                        "automation_once_time",
-                        date,
-                        time,
-                        theme::component_palette(),
-                    )
-                    .display_month(state.calendar_year, state.calendar_month)
-                    .render(),
-                );
-            }
-            AutomationFrequency::EveryMinutes => rows.extend([
-                legacy_form_label("Cada cuántos minutos"),
-                TextField::new(
-                    "automation_interval",
-                    &form.interval_minutes,
-                    "60",
-                    theme::component_palette(),
-                )
-                .size(ControlSize::Regular)
-                .render(),
-            ]),
-            AutomationFrequency::Daily => rows.extend([
-                legacy_form_label("Hora local"),
-                TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
-            ]),
-            AutomationFrequency::Weekly => {
-                let days = ["L", "M", "X", "J", "V", "S", "D"];
-                rows.push(legacy_form_label("Día de la semana"));
-                rows.push(
-                    Element::row(
-                        days.into_iter()
-                            .enumerate()
-                            .map(|(index, day)| {
-                                let selected = usize::from(form.weekday) == index;
-                                Button::new(
-                                    format!("automation_weekday:{index}"),
-                                    day,
-                                    theme::component_palette(),
-                                )
-                                .variant(if selected {
-                                    ButtonVariant::Secondary
-                                } else {
-                                    ButtonVariant::Ghost
-                                })
-                                .size(ControlSize::Compact)
-                                .width(((content_width - 26.0 - 24.0) / 7.0).max(28.0))
-                                .active(selected)
-                                .render()
-                            })
-                            .collect(),
-                    )
-                    .gap(4.0),
-                );
-                rows.push(legacy_form_label("Hora local"));
-                rows.push(
-                    TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
-                );
-            }
-        }
-        rows
-    }
-
-    fn legacy_editor_form(state: &AutomationViewState, width: f32) -> Element {
-        match state.editor_step {
-            AutomationEditorStep::Content => Element::column(vec![
-                section_label("¿Qué hará esta tarea?"),
-                legacy_form_label("Título"),
-                TextField::new(
-                    "automation_title",
-                    &state.form.title,
-                    "Ej. Resumen diario",
-                    theme::component_palette(),
-                )
-                .size(ControlSize::Regular)
-                .render(),
-                legacy_form_label("Instrucciones"),
-                TextArea::new(
-                    "automation_prompt",
-                    &state.form.prompt,
-                    "Describe el resultado esperado y los límites de esta tarea…",
-                    theme::component_palette(),
-                )
-                .height(112.0)
-                .render(),
-                muted("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos."),
-            ])
-            .gap(8.0),
-            AutomationEditorStep::Schedule => Element::column({
-                let mut rows = vec![section_label("¿Cuándo se ejecutará?")];
-                rows.extend(legacy_schedule_editor(state, width));
-                rows
-            })
-            .gap(9.0),
-            AutomationEditorStep::Agent => editor_agent_step(state, width),
-        }
-    }
-
-    #[test]
-    fn task_editor_fields_match_the_hand_built_rows() {
-        // Alone, a field is the same element tree as its rows in a column.
-        let control = || TimePicker::new("automation_time", "09:30", theme::component_palette()).render();
-        for (sizing, gap) in [(AUTOMATION_FIELD, 8.0), (AUTOMATION_SCHEDULE_FIELD, 9.0)] {
-            assert_eq!(
-                format!("{:?}", form_field("Hora local", control(), sizing).render()),
-                format!("{:?}", Element::column(vec![legacy_form_label("Hora local"), control()]).gap(gap)),
-                "gap={gap}"
-            );
-            assert_eq!(
-                format!("{:?}", form_field("Hora local", control(), sizing).hint("Tu zona horaria.").render()),
-                format!(
-                    "{:?}",
-                    Element::column(vec![legacy_form_label("Hora local"), control(), muted("Tu zona horaria.")])
-                        .gap(gap)
-                ),
-                "gap={gap}"
-            );
-        }
-
-        // In the editor the fields nest where the rows used to be siblings.
-        let frame = |element: Element, width: f32| {
-            let mut tree = UiTree::new(element);
-            tree.set_reduced_motion(true);
-            tree.layout(Size::new(width, 700.0))
-        };
-        let steps = [
-            (AutomationEditorStep::Content, AutomationFrequency::Daily),
-            (AutomationEditorStep::Schedule, AutomationFrequency::Once),
-            (AutomationEditorStep::Schedule, AutomationFrequency::EveryMinutes),
-            (AutomationEditorStep::Schedule, AutomationFrequency::Daily),
-            (AutomationEditorStep::Schedule, AutomationFrequency::Weekly),
-        ];
-        for (step, frequency) in steps {
-            let mut state = state();
-            state.screen = AutomationScreen::Edit;
-            state.editor_step = step;
-            state.form.title = "Resumen diario".into();
-            state.form.frequency = frequency;
-            state.form.once_at = "2026-03-14T09:30".into();
-            for viewport in [360.0, 900.0] {
-                let width = Modal::fit_width(viewport, 560.0).max(240.0);
-                let form_width = crate::ui_sizing::form_width(width);
-                let legacy = editor_modal_layout(&state, form_width, legacy_editor_form(&state, form_width));
-                // The page under the modal is what the closed editor shows.
-                let mut closed = state.clone();
-                closed.screen = AutomationScreen::List;
-                let base = build_automations(&closed, viewport);
-                crate::settings_ui::visual_qa::assert_same_paint_when_nested(
-                    &frame(build_automations(&state, viewport), viewport),
-                    &frame(editor_modal(&state, base, width, legacy), viewport),
-                    &format!("{step:?} {frequency:?} viewport={viewport}"),
-                );
-            }
-        }
-    }
 
     fn state() -> AutomationViewState {
         AutomationViewState::new(
@@ -2170,77 +2023,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    // The hand-built shells limn's `PageColumn`, `CardGrid` and `Text`
-    // replaced. Delete with the final audit (S18).
-    fn legacy_cards_grid(items: Vec<Element>, content_width: f32, gap: f32) -> Element {
-        if content_width < 690.0 {
-            Element::column(items).gap(gap)
-        } else {
-            let mut rows = Vec::new();
-            let mut items = items.into_iter();
-            while let Some(first) = items.next() {
-                let second = items.next().unwrap_or_else(Element::spacer);
-                rows.push(Element::row(vec![first, second]).gap(gap));
-            }
-            Element::column(rows).gap(gap)
-        }
-    }
-
-    fn legacy_page(body: Vec<Element>, width: f32) -> Element {
-        let gutter = if width < 640.0 { 14.0 } else { 28.0 };
-        let content_width = (width - 2.0 * gutter).clamp(240.0, 960.0);
-        let content = Element::column(body)
-            .gap(10.0)
-            .size(Some(content_width), None);
-        openide_ui::ScrollArea::new("automation_page", content.centered_x().padding(gutter))
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .flex(1.0)
-    }
-
-    #[test]
-    fn limn_shells_paint_what_the_automation_helpers_painted() {
-        let frame = |element: Element, width: f32| {
-            let mut tree = UiTree::new(Element::column(vec![element]));
-            tree.set_reduced_motion(true);
-            tree.layout(Size::new(width, 700.0))
-        };
-        for width in [200.0, 360.0, 639.0, 640.0, 1200.0, 2400.0] {
-            let page = PageColumn::new("automation_page", width, theme::component_palette())
-                .min_width(240.0);
-            let content_width = page.content_width();
-            let grid = || CardGrid::new(content_width, 690.0);
-            let cards = |count: usize| {
-                TEMPLATES
-                    .iter()
-                    .take(count)
-                    .map(|template| template_card(template, grid().item_width()))
-                    .collect::<Vec<_>>()
-            };
-            let body = |current: bool| {
-                let mut body = Vec::new();
-                body.push(list_heading(false, content_width));
-                for count in 1..=3 {
-                    body.push(if current {
-                        grid().items(cards(count)).render()
-                    } else {
-                        legacy_cards_grid(cards(count), content_width, 8.0)
-                    });
-                }
-                body
-            };
-            assert_eq!(
-                frame(page.children(body(true)).render(), width),
-                frame(legacy_page(body(false), width), width),
-                "width={width}"
-            );
-        }
-        assert_eq!(
-            format!("{:?}", section_label("Motor del agente")),
-            format!("{:?}", text("Motor del agente", 13.0, theme::FOREGROUND))
-        );
     }
 
     #[test]

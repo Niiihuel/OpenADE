@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use openide_ui::{
-    Color, Component, ControlSize, Element, Empty, FontFamily, Icon, Kbd, Point,
-    ScrollArea, ScrollbarAppearance, Search, SegmentedControl, Separator, SkeletonGroup, Tab,
-    Tooltip,
+    Component, ControlSize, Element, Empty, Icon, Kbd, Point, ScrollArea, ScrollbarAppearance,
+    Search, SegmentedControl, Separator, SkeletonGroup, Tab, Text, TextRole, Tooltip,
 };
 
 use super::ViewState;
@@ -15,13 +14,6 @@ use crate::{
 
 const ROW_HEIGHT: f32 = 30.0;
 const FOOTER_HEIGHT: f32 = 28.0;
-
-fn text(value: impl Into<String>, size: f32, ink: Color) -> Element {
-    Element::truncated_text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(ink)
-}
 
 fn inset(child: Element) -> Element {
     Element::row(vec![
@@ -120,11 +112,20 @@ fn result_row(
     } else {
         (result.title.chars().count() as f32 * 7.8 + 4.0).min(text_width * 0.62)
     };
-    let mut labels =
-        vec![text(&result.title, 13.0, theme::FOREGROUND).size(Some(title_width), None)];
+    let mut labels = vec![Text::new(&result.title, theme::component_palette())
+        .role(TextRole::Label)
+        .truncate()
+        .render()
+        .size(Some(title_width), None)];
     if !secondary.is_empty() && text_width - title_width > 16.0 {
         labels.push(Element::spacer().size(Some(8.0), None));
-        labels.push(text(secondary, 12.0, theme::FOREGROUND_SUBTLE).flex(1.0));
+        labels.push(
+            Text::new(secondary, theme::component_palette())
+                .muted()
+                .truncate()
+                .render()
+                .flex(1.0),
+        );
     }
     let body = Element::row(vec![
         Element::icon(result_icon(result))
@@ -188,7 +189,11 @@ fn result_row(
 fn footer_hint(keys: &str, label: &str) -> Element {
     Element::row(vec![
         Kbd::new(keys, theme::component_palette()).render(),
-        text(label, 11.0, theme::SETTINGS_FOREGROUND_SUBTLE)
+        Text::new(label, theme::component_palette())
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .truncate()
+            .render()
             .centered_y()
             .size(None, Some(20.0)),
     ])
@@ -286,7 +291,11 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
                     Scope::All => "Resultados",
                 };
                 entries.push(inset(
-                    text(title, 11.0, theme::FOREGROUND_SUBTLE)
+                    Text::new(title, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .truncate()
+                        .render()
                         .centered_y()
                         .size(None, Some(ROW_HEIGHT)),
                 ));
@@ -345,7 +354,11 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
     // secondary to navigation and dismissal and stays in the wide layout.
     if width >= 440.0 {
         footer.push(
-            text(summary, 11.0, theme::FOREGROUND_SUBTLE)
+            Text::new(summary, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .truncate()
+                .render()
                 .centered_y()
                 .size(None, Some(FOOTER_HEIGHT))
                 .flex(1.0),
@@ -377,17 +390,17 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
     ];
     if let Some((message, error)) = search_status {
         content.push(
-            text(
-                message,
-                11.0,
-                if error {
+            Text::new(message, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(if error {
                     theme::DESTRUCTIVE
                 } else {
                     theme::FOREGROUND_SUBTLE
-                },
-            )
-            .centered_y()
-            .size(None, Some(24.0)),
+                })
+                .truncate()
+                .render()
+                .centered_y()
+                .size(None, Some(24.0)),
         );
     }
     content.extend([

@@ -5,11 +5,10 @@
 //! runtimes and are not offered as installable SKILL.md bundles here.
 
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, Chip, Color, Component, ControlSize,
-    DropdownMenu,
-    CardGrid, DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, Notice, PageColumn,
-    PageHeader, ScrollArea, SearchField, SectionHeader, Separator, Skeleton, Switch, Tab, Tabs,
-    Text, TextField, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
+    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, CardGrid, Chip, Component,
+    ControlSize, DropdownMenu, DropdownMenuItem, Element, Icon, IconButton, Modal, Notice,
+    PageColumn, PageHeader, ScrollArea, SearchField, SectionHeader, Separator, Skeleton, Switch,
+    Tab, Tabs, Text, TextField, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use std::{borrow::Cow, collections::BTreeMap};
@@ -256,16 +255,18 @@ pub(super) fn pagination_controls(total: usize, page: usize, sidebar: bool) -> E
     )
     .render();
     Element::row(vec![
-        text(
+        Text::new(
             format!(
                 "{}–{} de {}",
                 page * PAGE_SIZE + 1,
                 ((page + 1) * PAGE_SIZE).min(total),
                 total
             ),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
+            theme::component_palette(),
         )
+        .role(TextRole::Small)
+        .muted()
+        .render()
         .flex(1.0),
         previous,
         next,
@@ -382,13 +383,19 @@ pub(super) fn search_controls(state: &MarketplaceViewState, width: f32, sidebar:
 
 fn explore_status(state: &MarketplaceViewState, width: f32) -> Element {
     let explore = &state.explore;
-    let mut children = vec![text(
+    let mut children = vec![Text::new(
         "Descubre skills de la comunidad en skills.sh",
-        theme::FOREGROUND_SUBTLE,
-        12.0,
-    )];
+        theme::component_palette(),
+    )
+    .muted()
+    .render()];
     if explore.busy {
-        children.push(text("Buscando…", theme::FOREGROUND_SUBTLE, 11.0));
+        children.push(
+            Text::new("Buscando…", theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
         if explore.page.is_none() {
             for index in 0..3 {
                 children.push(
@@ -418,21 +425,25 @@ fn explore_status(state: &MarketplaceViewState, width: f32) -> Element {
         }
     }
     if let Some(page) = &explore.page {
-        children.push(text(
-            format!(
-                "Resultados para «{}»{}",
-                page.query,
-                if page.stale {
-                    " · Copia guardada sin conexión"
-                } else if page.from_cache {
-                    " · Copia guardada"
-                } else {
-                    ""
-                }
-            ),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        children.push(
+            Text::new(
+                format!(
+                    "Resultados para «{}»{}",
+                    page.query,
+                    if page.stale {
+                        " · Copia guardada sin conexión"
+                    } else if page.from_cache {
+                        " · Copia guardada"
+                    } else {
+                        ""
+                    }
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
         if let Some(warning) = &page.warning {
             children.push(
                 Alert::new("Resultados guardados", warning, theme::component_palette())
@@ -462,18 +473,21 @@ fn explore_status(state: &MarketplaceViewState, width: f32) -> Element {
             Element::spacer().flex(1.0),
         ]));
     } else if explore.page.is_none() && !explore.busy {
-        children.push(text(
-            "Escribí al menos 2 caracteres y presioná Enter para buscar.",
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        ));
+        children.push(
+            Text::new(
+                "Escribí al menos 2 caracteres y presioná Enter para buscar.",
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
+        );
     }
     Element::column(children).gap(8.0)
 }
 
 fn update_status(state: &MarketplaceViewState) -> Element {
     let mut children = vec![Element::row(vec![
-        text(
+        Text::new(
             if state.update_checking {
                 "Buscando actualizaciones…"
             } else if state.updates_checked
@@ -484,9 +498,11 @@ fn update_status(state: &MarketplaceViewState) -> Element {
             } else {
                 "Gestiona tus skills instaladas"
             },
-            theme::FOREGROUND_SUBTLE,
-            11.0,
+            theme::component_palette(),
         )
+        .role(TextRole::Small)
+        .muted()
+        .render()
         .flex(1.0),
         IconButton::new(
             "marketplace_check_updates",
@@ -515,20 +531,6 @@ fn update_status(state: &MarketplaceViewState) -> Element {
         );
     }
     Element::column(children).gap(8.0)
-}
-
-fn text(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
-
-fn clipped(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::truncated_text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
 }
 
 fn source_label(kind: SourceKind) -> &'static str {
@@ -583,18 +585,24 @@ fn item_card_content(
         marker.centered_y(),
         Element::column(vec![
             Tooltip::new(
-                clipped(&item.name, theme::FOREGROUND, 14.0),
+                Text::new(&item.name, theme::component_palette())
+                    .role(TextRole::Body)
+                    .truncate()
+                    .render(),
                 format!("marketplace_name:{}", item.id),
                 "Skill",
                 theme::component_palette(),
             )
             .description(&item.name)
             .render(),
-            clipped(
+            Text::new(
                 format!("{} · {}", item.source_name, source_label(item.source_kind)),
-                theme::FOREGROUND_SUBTLE,
-                11.0,
-            ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .truncate()
+            .render(),
         ])
         .gap(3.0)
         .flex(1.0),
@@ -617,11 +625,14 @@ fn item_card_content(
 
     let mut details = vec![header, skill_description(item, detailed)];
     if !item.source_available {
-        details.push(text(
-            "El origen ya no está disponible",
-            theme::DESTRUCTIVE,
-            12.0,
-        ));
+        details.push(
+            Text::new(
+                "El origen ya no está disponible",
+                theme::component_palette(),
+            )
+            .ink(theme::DESTRUCTIVE)
+            .render(),
+        );
     }
     let bottom = if let Some(scope) = item.installed_scope {
         let badge = Chip::new(
@@ -654,11 +665,13 @@ fn item_card_content(
         .tooltip_with(TooltipSpec::new("Desinstalar skill").placement(TooltipPlacement::Above))
         .render();
         let activation = Element::row(vec![
-            text(
+            Text::new(
                 if item.enabled { "Activa" } else { "Inactiva" },
-                theme::FOREGROUND_SUBTLE,
-                11.0,
+                theme::component_palette(),
             )
+            .role(TextRole::Small)
+            .muted()
+            .render()
             .centered_y(),
             toggle.centered_y(),
         ])
@@ -693,7 +706,11 @@ fn item_card_content(
             .filter(|value| !value.is_empty())
             .unwrap_or("Licencia no declarada");
         let license = Tooltip::new(
-            clipped(license, theme::FOREGROUND_SUBTLE, 11.0),
+            Text::new(license, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .truncate()
+                .render(),
             format!("marketplace_license:{}", item.id),
             "Licencia",
             theme::component_palette(),
@@ -721,7 +738,12 @@ fn item_card_content(
     {
         details.push(
             Element::row(vec![
-                clipped("Actualización disponible", theme::FOREGROUND_SUBTLE, 11.0).flex(1.0),
+                Text::new("Actualización disponible", theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .truncate()
+                    .render()
+                    .flex(1.0),
                 Tooltip::new(
                     Button::new(
                         format!("marketplace_update:{}", item.id),
@@ -767,11 +789,12 @@ fn skill_description(item: &MarketplaceItem, detailed: bool) -> Element {
     } else {
         None
     };
-    let body = text(
+    let body = Text::new(
         preview.as_deref().unwrap_or(&item.description),
-        theme::FOREGROUND_SUBTLE,
-        12.0,
-    );
+        theme::component_palette(),
+    )
+    .muted()
+    .render();
     if preview.is_some() {
         Tooltip::new(
             body,
@@ -808,14 +831,14 @@ fn source_form_body(state: &MarketplaceViewState) -> Element {
     // its body; see docs/limn-migration-ledger.md.
     let kind = state.add_source_kind.expect("source form requires a kind");
     let mut contents = vec![
-        text(
+        Text::new(
             match kind {
                 SourceKind::Local => "Ruta de la carpeta",
                 SourceKind::Github => "URL del repositorio",
             },
-            theme::FOREGROUND,
-            12.0,
-        ),
+            theme::component_palette(),
+        )
+        .render(),
         TextField::new(
             "marketplace_source_draft",
             &state.source_draft,
@@ -828,14 +851,16 @@ fn source_form_body(state: &MarketplaceViewState) -> Element {
         .size(ControlSize::Compact)
         .enabled(!state.busy)
         .render(),
-        text(
+        Text::new(
             match kind {
                 SourceKind::Local => "Se detectarán las carpetas que contengan SKILL.md.",
                 SourceKind::Github => "Usa una URL de GitHub que contenga archivos SKILL.md.",
             },
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render(),
     ];
     if let Some(status) = state.status.as_deref() {
         contents.push(
@@ -887,8 +912,15 @@ fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
                 .foreground(theme::FOREGROUND_SUBTLE)
                 .centered_y(),
                 Element::column(vec![
-                    clipped(&source.name, theme::FOREGROUND, 13.0),
-                    clipped(&source.location, theme::FOREGROUND_SUBTLE, 11.0),
+                    Text::new(&source.name, theme::component_palette())
+                        .role(TextRole::Label)
+                        .truncate()
+                        .render(),
+                    Text::new(&source.location, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .truncate()
+                        .render(),
                 ])
                 .gap(3.0)
                 .flex(1.0),
@@ -970,61 +1002,6 @@ fn empty_catalog(state: &MarketplaceViewState) -> Element {
     notice.render()
 }
 
-#[cfg(test)]
-fn legacy_empty_catalog(state: &MarketplaceViewState) -> Element {
-    let (heading, description) = if state.busy {
-        ("Cargando catálogo", "Consultando las skills disponibles…")
-    } else if !state.active_query().trim().is_empty() {
-        ("Sin resultados", "Prueba otra búsqueda o cambia el filtro.")
-    } else if state.active_tab() == MarketplaceTab::Installed {
-        (
-            "Todavía no instalaste skills",
-            "Elige una del catálogo y dónde instalarla.",
-        )
-    } else if state.snapshot.sources.is_empty() {
-        (
-            "Explora skills",
-            "Actualiza el catálogo o agrega un origen con archivos SKILL.md.",
-        )
-    } else {
-        (
-            "Sin skills disponibles",
-            "Actualiza el catálogo o revisa los orígenes.",
-        )
-    };
-    let mut copy = vec![
-        text(heading, theme::FOREGROUND, 14.0),
-        text(description, theme::FOREGROUND_SUBTLE, 12.0),
-    ];
-    if state.active_tab() == MarketplaceTab::Installed
-        && state.query.trim().is_empty()
-        && !state.busy
-    {
-        copy.push(Element::row(vec![
-            Button::new(
-                "marketplace_empty_all",
-                "Explorar catálogo",
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Outline)
-            .size(ControlSize::Compact)
-            .render()
-            .dispatch_as("marketplace_tab:recommended"),
-            Element::spacer().flex(1.0),
-        ]));
-    }
-    Element::row(vec![
-        Element::icon(Icon::Grid)
-            .size(Some(20.0), Some(20.0))
-            .foreground(theme::FOREGROUND_SUBTLE),
-        Element::column(copy).gap(6.0).flex(1.0),
-    ])
-    .gap(12.0)
-    .padding(16.0)
-    .background(theme::PANEL)
-    .radius(8.0)
-}
-
 fn detail_field(label: &str, value: &str) -> Element {
     let palette = theme::component_palette();
     Element::column(vec![
@@ -1075,15 +1052,17 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
             detail_field("Carpeta", &details.directory),
             detail_field("Licencia", &details.license),
             detail_field("Compatibilidad", &details.compatibility),
-            text(
+            Text::new(
                 format!(
                     "{} archivos · {} KiB de descarga",
                     details.file_count,
                     details.download_bytes.div_ceil(1024)
                 ),
-                theme::FOREGROUND_SUBTLE,
-                11.0,
-            ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         ]);
     } else {
         let source = state
@@ -1102,11 +1081,15 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
                 .filter(|value| !value.is_empty())
                 .unwrap_or("No declarada por el origen"),
         ));
-        body.push(text(
-            "Las instrucciones se copian a la ubicación de instalación elegida.",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        body.push(
+            Text::new(
+                "Las instrucciones se copian a la ubicación de instalación elegida.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     if let Some(remote) = state
         .explore
@@ -1115,14 +1098,18 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
         .and_then(|page| page.skills.iter().find(|skill| skill.id == item.id))
     {
         body.push(detail_field("Descubierta en", "skills.sh"));
-        body.push(text(
-            format!(
-                "{} instalaciones registradas en el catálogo",
-                remote.installs
-            ),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        body.push(
+            Text::new(
+                format!(
+                    "{} instalaciones registradas en el catálogo",
+                    remote.installs
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
         body.push(Element::row(vec![
             Button::new(
                 format!("marketplace_open_source:{}", item.id),
@@ -1157,14 +1144,17 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
             "Revisión disponible",
             &update.available_revision,
         ));
-        body.push(text("Actualizar reemplaza la copia instalada. La skill conserva su ubicación y su estado de activación.", theme::FOREGROUND_SUBTLE, 11.0));
+        body.push(Text::new("Actualizar reemplaza la copia instalada. La skill conserva su ubicación y su estado de activación.", theme::component_palette()).role(TextRole::Small).muted().render());
     }
     if !item.source_available {
-        body.push(text(
-            "El origen ya no está disponible",
-            theme::DESTRUCTIVE,
-            12.0,
-        ));
+        body.push(
+            Text::new(
+                "El origen ya no está disponible",
+                theme::component_palette(),
+            )
+            .ink(theme::DESTRUCTIVE)
+            .render(),
+        );
     }
     Element::column(body).gap(10.0)
 }
@@ -1172,11 +1162,13 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
 fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Element {
     if let Some(scope) = item.installed_scope {
         let mut rows = vec![
-            text(
+            Text::new(
                 format!("Instalada · {}", scope_label(scope)),
-                theme::FOREGROUND_SUBTLE,
-                11.0,
-            ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
             Element::row(vec![
                 Button::new(
                     format!("marketplace_details_toggle:{}", item.id),
@@ -1225,7 +1217,10 @@ fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Elemen
         return Element::column(rows).gap(6.0);
     }
     Element::column(vec![
-        text("Instalar en", theme::FOREGROUND_SUBTLE, 11.0),
+        Text::new("Instalar en", theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         Element::row(vec![
             Button::new(
                 "marketplace_details_scope_user",
@@ -1305,13 +1300,14 @@ pub(crate) fn ide_item_detail(
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Compact)
         .render(),
-        text(
-            "Skill para el agente nativo",
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        ),
+        Text::new("Skill para el agente nativo", theme::component_palette())
+            .muted()
+            .render(),
         Element::row(vec![
-            text("Instalar en", theme::FOREGROUND_SUBTLE, 11.0),
+            Text::new("Instalar en", theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
             scope,
         ])
         .gap(8.0),
@@ -1479,7 +1475,12 @@ fn catalog_surface(
         Element::spacer().size(None, Some(0.0))
     } else {
         Element::row(vec![
-            clipped("Instalar en", theme::FOREGROUND_SUBTLE, 10.0).centered_y(),
+            Text::new("Instalar en", theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .truncate()
+                .render()
+                .centered_y(),
             Element::spacer().flex(1.0),
             scope,
         ])
@@ -1623,7 +1624,9 @@ fn catalog_surface(
 mod tests {
     use super::*;
     use crate::marketplace::MarketplaceSource;
-    use openide_ui::{DrawCommand, HitKind, Key, Point, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{
+        Color, DrawCommand, FontFamily, HitKind, Key, Point, Size, UiAction, UiEvent, UiTree,
+    };
 
     fn native_tree(root: Element) -> UiTree {
         native_tree_with_context(root).1
@@ -1895,145 +1898,6 @@ mod tests {
                 assert!(text.y >= pill.y && text.y + text.height <= pill.y + pill.height + 0.1);
                 assert_eq!(pill.height, 22.0);
             }
-        }
-    }
-
-    // The hand-built shells limn's `PageHeader`, `SectionHeader` and
-    // `CardGrid` replaced. Delete with the final audit (S18).
-    fn legacy_section_heading(label: &str, count: usize) -> Element {
-        Element::row(vec![
-            text(label, theme::FOREGROUND, 15.0).centered_y(),
-            Chip::new(count.to_string(), theme::component_palette())
-                .render()
-                .centered_y(),
-            Element::spacer().flex(1.0),
-        ])
-        .gap(8.0)
-        .size(None, Some(28.0))
-    }
-
-    fn legacy_page_header(
-        navigation: Option<Element>,
-        width: f32,
-        refresh: Element,
-        add: Element,
-    ) -> Element {
-        let has_navigation = navigation.is_some();
-        let mut header_items = Vec::new();
-        if let Some(navigation) = navigation {
-            header_items.push(navigation.centered_y());
-        }
-        header_items.extend([
-            Element::column(vec![
-                clipped(
-                    "Marketplace",
-                    theme::FOREGROUND,
-                    if has_navigation && width < 320.0 {
-                        18.0
-                    } else {
-                        20.0
-                    },
-                ),
-                clipped("Skills para tu agente", theme::FOREGROUND_SUBTLE, 11.0),
-            ])
-            .gap(2.0)
-            .flex(1.0),
-            refresh.centered_y(),
-            add.centered_y(),
-        ]);
-        Element::row(header_items).gap(6.0).size(None, Some(40.0))
-    }
-
-    fn legacy_item_grid(
-        items: &[Cow<'_, MarketplaceItem>],
-        width: f32,
-        state: &MarketplaceViewState,
-    ) -> Element {
-        let two_columns = items.len() > 1 && width >= 740.0;
-        let card_width = if two_columns {
-            (width - 8.0) / 2.0
-        } else {
-            width
-        };
-        let mut rows = Vec::new();
-        for pair in items.chunks(if two_columns { 2 } else { 1 }) {
-            let mut cards = pair
-                .iter()
-                .map(|item| item_card_content(item, card_width, state.busy, false, Some(state)))
-                .collect::<Vec<_>>();
-            if two_columns && cards.len() == 1 {
-                cards.push(Element::spacer().size(Some(card_width), None));
-            }
-            rows.push(Element::row(cards).gap(8.0));
-        }
-        Element::column(rows).gap(8.0)
-    }
-
-    fn assert_same_frames(name: &str, widths: &[f32], build: impl Fn(f32) -> (Element, Element)) {
-        for &width in widths {
-            let frame = |element: Element| {
-                let mut tree = native_tree(Element::column(vec![
-                    element,
-                    Element::spacer().flex(1.0),
-                ]));
-                tree.layout(Size::new(width, 900.0))
-            };
-            let (legacy, current) = build(width);
-            assert_eq!(frame(current), frame(legacy), "{name} width={width}");
-        }
-    }
-
-    #[test]
-    fn limn_shells_paint_what_the_marketplace_helpers_painted() {
-        for count in [0, 1, 7, 24, 1280] {
-            assert_same_frames("section heading", &[200.0, 640.0], |_| {
-                (
-                    legacy_section_heading("Recomendadas", count),
-                    SectionHeader::new("Recomendadas", theme::component_palette())
-                        .count(count)
-                        .render(),
-                )
-            });
-        }
-        let button = |id: &str| {
-            IconButton::new(id, Icon::Refresh, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Regular)
-                .render()
-        };
-        let add = || {
-            Button::new("add", "Agregar origen", theme::component_palette())
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Regular)
-                .width(136.0)
-                .render()
-        };
-        for navigation in [false, true] {
-            assert_same_frames("page header", &[240.0, 300.0, 360.0, 900.0], |width| {
-                let navigation = || navigation.then(|| button("navigation"));
-                (
-                    legacy_page_header(navigation(), width, button("refresh"), add()),
-                    page_header(navigation(), width, button("refresh"), add()),
-                )
-            });
-        }
-        let mut state = sample_state();
-        let first = state.snapshot.items[0].clone();
-        for count in 1..=5 {
-            state.snapshot.items = (0..count)
-                .map(|index| MarketplaceItem {
-                    id: format!("source-1:skill-{index}"),
-                    name: format!("skill-{index}"),
-                    ..first.clone()
-                })
-                .collect();
-            let items: Vec<_> = state.snapshot.items.iter().map(Cow::Borrowed).collect();
-            assert_same_frames("item grid", &[360.0, 739.0, 740.0, 932.0], |width| {
-                (
-                    legacy_item_grid(&items, width, &state),
-                    item_grid(&items, width, &state),
-                )
-            });
         }
     }
 
@@ -2515,21 +2379,6 @@ mod tests {
             assert!(matches_query(item, query), "{query}");
         }
         assert!(!matches_query(item, "calendar"));
-    }
-
-    #[test]
-    fn empty_catalog_matches_its_legacy_body() {
-        let mut searching = MarketplaceViewState::default();
-        searching.query = "pdf".into();
-        let mut installed = MarketplaceViewState::default();
-        installed.tab = MarketplaceTab::Installed;
-        for state in [MarketplaceViewState::default(), searching, installed] {
-            crate::state_panel_parity_tests::assert_same(
-                "empty catalog",
-                legacy_empty_catalog(&state),
-                empty_catalog(&state),
-            );
-        }
     }
 
     #[test]

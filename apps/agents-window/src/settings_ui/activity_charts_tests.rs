@@ -1,6 +1,6 @@
 use super::*;
 use eframe::egui;
-use openide_ui::{DrawCommand, Frame, HitKind, Point, Rect, Size, UiEvent, UiTree};
+use openide_ui::{DrawCommand, FontFamily, Frame, HitKind, Point, Rect, Size, UiEvent, UiTree};
 use std::time::{Duration, Instant};
 
 fn session(id: usize, backend: &str) -> SessionView {

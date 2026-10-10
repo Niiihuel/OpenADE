@@ -98,8 +98,11 @@ fn change_row(row: &ChangeRow, width: f32, pending: bool, surface: Color) -> Ele
                     .font_size(11.0)
                     .foreground(theme::FOREGROUND_SUBTLE)
                     .flex(1.0),
-                mono(count.to_string(), theme::FOREGROUND_SUBTLE)
-                    .font_size(10.0)
+                UiText::new(count.to_string(), theme::component_palette())
+                    .role(TextRole::Micro)
+                    .muted()
+                    .mono()
+                    .render()
                     .centered_y()
                     .size(None, Some(CHANGE_ROW_HEIGHT - 8.0)),
             ])
@@ -249,18 +252,27 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
             // Keep repository access issues visible without making them the
             // first thing above local changes, which work independently.
             if let Some(notice) = &github.notice {
-                rows.push(label(notice, theme::FOREGROUND_SUBTLE).font_size(10.0));
+                rows.push(
+                    UiText::new(notice, theme::component_palette())
+                        .role(TextRole::Micro)
+                        .muted()
+                        .render(),
+                );
             }
             Some(Element::column(rows).gap(3.0).padding(8.0))
         }
         GithubStatus::Loading => Some(
-            label("Consultando GitHub…", theme::FOREGROUND_SUBTLE)
-                .font_size(10.0)
+            UiText::new("Consultando GitHub…", theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .render()
                 .padding(8.0),
         ),
         GithubStatus::Unavailable(error) => Some(
-            label(error, theme::FOREGROUND_SUBTLE)
-                .font_size(10.0)
+            UiText::new(error, theme::component_palette())
+                .role(TextRole::Micro)
+                .muted()
+                .render()
                 .padding(8.0),
         ),
         GithubStatus::NoRemote => None,
@@ -463,11 +475,13 @@ fn detail_view(detail: &ReviewDetailView, width: f32, back: bool) -> Element {
             }
             if diff.truncated {
                 children.push(
-                    label(
+                    UiText::new(
                         "Vista parcial: el archivo supera el límite de tamaño.",
-                        theme::FOREGROUND_SUBTLE,
+                        theme::component_palette(),
                     )
-                    .font_size(10.0),
+                    .role(TextRole::Micro)
+                    .muted()
+                    .render(),
                 );
             }
         }
@@ -571,8 +585,10 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
     let mut children = Vec::new();
     if let Some(error) = &state.git_action_error {
         children.push(
-            label(error, theme::DESTRUCTIVE)
-                .font_size(11.0)
+            UiText::new(error, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::DESTRUCTIVE)
+                .render()
                 .padding(5.0),
         );
     }
@@ -615,11 +631,21 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
             let count = review.unique_files() + review.untracked.len();
             children.push(
                 Element::row(vec![
-                    label(format!("{count} archivos"), theme::FOREGROUND_SUBTLE)
-                        .font_size(11.0)
+                    UiText::new(format!("{count} archivos"), theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render()
                         .flex(1.0),
-                    mono(format!("+{}", review.additions), theme::DIFF_ADDED).font_size(10.0),
-                    mono(format!("−{}", review.deletions), theme::DIFF_REMOVED).font_size(10.0),
+                    UiText::new(format!("+{}", review.additions), theme::component_palette())
+                        .role(TextRole::Micro)
+                        .ink(theme::DIFF_ADDED)
+                        .mono()
+                        .render(),
+                    UiText::new(format!("−{}", review.deletions), theme::component_palette())
+                        .role(TextRole::Micro)
+                        .ink(theme::DIFF_REMOVED)
+                        .mono()
+                        .render(),
                 ])
                 .gap(6.0)
                 .padding(4.0)
@@ -658,7 +684,11 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
                                 Element::icon(icon)
                                     .foreground(theme::FOREGROUND_SUBTLE)
                                     .size(Some(12.0), Some(16.0)),
-                                mono(count.to_string(), theme::FOREGROUND_SUBTLE).font_size(10.0),
+                                UiText::new(count.to_string(), theme::component_palette())
+                                    .role(TextRole::Micro)
+                                    .muted()
+                                    .mono()
+                                    .render(),
                             ])
                             .gap(3.0),
                             id,
@@ -694,7 +724,7 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
                 ));
             }
             if review.truncated {
-                children.push(label("Listado parcial por tamaño. Los archivos visibles se pueden inspeccionar completos.", theme::FOREGROUND_SUBTLE).font_size(10.0));
+                children.push(UiText::new("Listado parcial por tamaño. Los archivos visibles se pueden inspeccionar completos.", theme::component_palette()).role(TextRole::Micro).muted().render());
             }
             if let Some(footer) = github_footer(&review.github, surface) {
                 children.push(Separator::horizontal(theme::component_palette()).render());
@@ -709,212 +739,6 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{DrawCommand, Point, Size, UiAction, UiEvent, UiTree};
-
-    fn legacy_change_row(row: &ChangeRow, width: f32, pending: bool, surface: Color) -> Element {
-        let palette = theme::action_palette(surface, theme::FOREGROUND);
-        match row {
-            ChangeRow::Section { title, count } => {
-                let title = match title.as_str() {
-                    "CAMBIOS SIN PREPARAR" => "Sin preparar",
-                    "CAMBIOS PREPARADOS" => "Preparados",
-                    "SIN SEGUIMIENTO" => "Nuevos",
-                    other => other,
-                };
-                Element::row(vec![
-                    Element::truncated_text(title)
-                        .font_family(FontFamily::Sans)
-                        .font_size(11.0)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .flex(1.0),
-                    mono(count.to_string(), theme::FOREGROUND_SUBTLE)
-                        .font_size(10.0)
-                        .centered_y()
-                        .size(None, Some(CHANGE_ROW_HEIGHT - 8.0)),
-                ])
-                .gap(6.0)
-                .padding(4.0)
-                .size(Some(width), Some(CHANGE_ROW_HEIGHT))
-            }
-            ChangeRow::File {
-                action,
-                stage_action,
-                prepared,
-                path,
-                status,
-                additions,
-                deletions,
-            } => {
-                let (code, color) = match status.as_str() {
-                    "Nuevo" => ("A", theme::DIFF_ADDED),
-                    "Eliminado" => ("D", theme::DIFF_REMOVED),
-                    "Renombrado" => ("R", theme::FOREGROUND),
-                    "Copiado" => ("C", theme::FOREGROUND),
-                    "Conflicto" => ("!", theme::DESTRUCTIVE),
-                    "Binario" => ("B", theme::FOREGROUND_SUBTLE),
-                    _ => ("M", theme::FOREGROUND_SUBTLE),
-                };
-                let file_path = Path::new(path);
-                let filename = file_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or(path);
-                let parent = file_path
-                    .parent()
-                    .and_then(|parent| parent.to_str())
-                    .filter(|parent| !parent.is_empty());
-                // Keep the filename readable even with large line counts. Counts
-                // belong in the tooltip; the path gets inline room in wider panes.
-                let mut labels = vec![
-                    Element::icon(openide_ui::file_icon(path))
-                        .foreground(theme::ICON_PRIMARY)
-                        .size(Some(16.0), Some(CHANGE_ACTION_SIZE)),
-                    Element::truncated_text(filename)
-                        .font_family(FontFamily::Sans)
-                        .font_size(12.0)
-                        .foreground(theme::FOREGROUND)
-                        .size(None, Some(CHANGE_ACTION_SIZE))
-                        .flex(1.0),
-                ];
-                if let Some(parent) = parent.filter(|_| width >= 320.0) {
-                    labels.push(
-                        Element::truncated_text(parent)
-                            .font_family(FontFamily::Sans)
-                            .font_size(11.0)
-                            .foreground(theme::FOREGROUND_SUBTLE)
-                            .size(Some((width * 0.28).min(160.0)), Some(CHANGE_ACTION_SIZE)),
-                    );
-                }
-                let control = UiIconButton::new(
-                    stage_action,
-                    if *prepared { Icon::Minus } else { Icon::Add },
-                    palette,
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .enabled(!pending)
-                .render();
-                labels.push(
-                    Element::truncated_text(code)
-                        .font_family(FontFamily::Monospace)
-                        .foreground(color)
-                        .font_size(11.0)
-                        .size(Some(12.0), Some(CHANGE_ACTION_SIZE)),
-                );
-                let control = Tooltip::new(
-                    control
-                        .background(Color::TRANSPARENT)
-                        .hover_background(Color::TRANSPARENT)
-                        .pressed_background(Color::TRANSPARENT)
-                        .radius(0.0)
-                        .transition_ms(0),
-                    stage_action,
-                    if *prepared {
-                        "Quitar de preparados"
-                    } else {
-                        "Preparar archivo"
-                    },
-                    theme::component_palette(),
-                )
-                .placement(TooltipPlacement::Below)
-                .render();
-                let mut details = Vec::new();
-                if let Some(parent) = parent {
-                    details.push(parent.to_owned());
-                }
-                details.push(if *additions + *deletions > 0 {
-                    format!("{status} · +{additions} −{deletions}")
-                } else {
-                    status.clone()
-                });
-                let file_width = (width - CHANGE_ACTION_SIZE).max(0.0);
-                let file = Tooltip::new(
-                    Element::clickable(
-                        action,
-                        Element::row(labels)
-                            .gap(4.0)
-                            .padding(2.0)
-                            .size(Some(file_width), Some(CHANGE_ROW_HEIGHT)),
-                    )
-                    .background(Color::TRANSPARENT)
-                    .transition_ms(0)
-                    .radius(0.0)
-                    .size(Some(file_width), Some(CHANGE_ROW_HEIGHT)),
-                    action,
-                    filename,
-                    theme::component_palette(),
-                )
-                .description(details.join("\n"))
-                .placement(if surface == theme::SIDEBAR {
-                    TooltipPlacement::Right
-                } else {
-                    TooltipPlacement::Left
-                })
-                .render();
-                // Keep staging independent from opening the diff, including when
-                // the staging control is disabled by an in-flight operation.
-                Element::row(vec![
-                    file,
-                    control
-                        .centered_y()
-                        .size(Some(CHANGE_ACTION_SIZE), Some(CHANGE_ROW_HEIGHT)),
-                ])
-                .size(Some(width), Some(CHANGE_ROW_HEIGHT))
-                .background(surface)
-                .hover_background(palette.hover)
-                .pressed_background(palette.selected)
-                .hover_surface(format!("{action}:surface"), [action, stage_action])
-                .transition_ms(120)
-                .radius(ButtonSize::Small.sizing().radius)
-            }
-        }
-    }
-
-    #[test]
-    fn change_rows_match_their_legacy_body() {
-        let file = |path: &str, status: &str, prepared: bool, additions: usize| ChangeRow::File {
-            action: "review_open:0".into(),
-            stage_action: "review_stage:0".into(),
-            prepared,
-            path: path.into(),
-            status: status.into(),
-            additions,
-            deletions: 3,
-        };
-        let rows = [
-            file("src/main.rs", "Modificado", false, 12),
-            file("README.md", "Nuevo", false, 0),
-            file("crates/a/very/deep/directory/with_a_long_file_name.rs", "Conflicto", true, 25813),
-        ];
-        for width in [150.0, 300.0, 360.0] {
-            for surface in [theme::BACKGROUND, theme::SIDEBAR] {
-                for pending in [false, true] {
-                    for row in &rows {
-                        let name = format!("change row at {width} pending={pending}");
-                        let (legacy, current) = (
-                            legacy_change_row(row, width, pending, surface),
-                            change_row(row, width, pending, surface),
-                        );
-                        crate::icon_button_parity_tests::assert_same(&name, legacy.clone(), current.clone());
-                        // The staging control is the second target; the shared
-                        // surface must answer under it as well.
-                        let over_stage = |row: Element| {
-                            let mut tree = UiTree::new(Element::column(vec![row]));
-                            tree.set_reduced_motion(true);
-                            let size = Size::new(400.0, 200.0);
-                            tree.layout(size);
-                            let point = Point::new(width - 12.0, 14.0);
-                            tree.handle_event(UiEvent::PointerMove(point));
-                            let hovered = tree.layout(size);
-                            tree.handle_event(UiEvent::PointerDown(point));
-                            let pressed = tree.layout(size);
-                            (hovered, pressed, tree.handle_event(UiEvent::PointerUp(point)))
-                        };
-                        assert_eq!(over_stage(current), over_stage(legacy), "{name} over stage");
-                    }
-                }
-            }
-        }
-    }
 
     fn text_detail() -> ReviewDetailView {
         ReviewDetailView {

@@ -7,9 +7,9 @@ use crate::{
 };
 use openide_ui::{
     Button, ButtonVariant, Card, CardDensity, Component, ControlSize, DropdownMenu,
-    DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PanelHeader, PopoverPlacement,
-    Separator, TextArea, TextField, Tooltip, TooltipPlacement, TooltipSpec,
+    DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon, IconButton, PanelHeader,
+    PopoverPlacement, Separator, Text, TextArea, TextField, TextRole, Tooltip, TooltipPlacement,
+    TooltipSpec,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -43,33 +43,6 @@ pub(crate) struct EnvironmentGitUiState {
     pub worktree_path: String,
     pub remote_menu_open: bool,
     pub compare_menu_open: bool,
-}
-
-fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(if muted {
-            theme::FOREGROUND_SUBTLE
-        } else {
-            theme::FOREGROUND
-        })
-}
-
-#[cfg(test)]
-fn legacy_notices(state: &EnvironmentGitUiState) -> Vec<Element> {
-    let mut rows = Vec::new();
-    if let Some(busy) = &state.busy {
-        rows.push(text(busy, true, 11.0));
-    } else if state.loading {
-        rows.push(text("Actualizando repositorio…", true, 11.0));
-    }
-    if let Some(error) = &state.error {
-        rows.push(text(error, false, 11.0).foreground(theme::DESTRUCTIVE));
-    } else if let Some(notice) = &state.notice {
-        rows.push(text(notice, true, 11.0));
-    }
-    rows
 }
 
 pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
@@ -233,7 +206,7 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
                     Element::icon(Icon::WarningTriangle)
                         .foreground(theme::DESTRUCTIVE)
                         .size(Some(14.0), Some(14.0)),
-                    text(
+                    Text::new(
                         format!(
                             "{} {} en conflicto",
                             snapshot.conflicts,
@@ -243,10 +216,11 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
                                 "archivos"
                             }
                         ),
-                        false,
-                        11.0,
+                        theme::component_palette(),
                     )
-                    .foreground(theme::DESTRUCTIVE)
+                    .role(TextRole::Small)
+                    .ink(theme::DESTRUCTIVE)
+                    .render()
                     .flex(1.0),
                 ])
                 .gap(6.0)
@@ -269,7 +243,7 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
 
         let reason = commit_blocked_reason(state, snapshot, locked);
         let mut commit = vec![
-            text("Mensaje del commit", false, 12.0),
+            Text::new("Mensaje del commit", theme::component_palette()).render(),
             TextArea::new(
                 "environment_git_commit_message",
                 &state.commit_message,
@@ -283,7 +257,12 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
             .radius(6.0),
         ];
         if let Some(reason) = &reason {
-            commit.push(text(reason, true, 11.0));
+            commit.push(
+                Text::new(reason, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            );
         }
         commit.push(
             Button::new(
@@ -304,7 +283,7 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
                 .render(),
         );
 
-        let mut publish = vec![text("Publicar rama", false, 12.0)];
+        let mut publish = vec![Text::new("Publicar rama", theme::component_palette()).render()];
         if let Some(upstream) = &snapshot.upstream {
             publish.push(
                 Tooltip::new(
@@ -324,26 +303,54 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
                     Element::icon(Icon::ArrowUp)
                         .foreground(theme::FOREGROUND_SUBTLE)
                         .size(Some(12.0), Some(12.0)),
-                    text(format!("{} por enviar", snapshot.ahead), true, 11.0).flex(1.0),
+                    Text::new(
+                        format!("{} por enviar", snapshot.ahead),
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .flex(1.0),
                     Element::icon(Icon::ArrowDown)
                         .foreground(theme::FOREGROUND_SUBTLE)
                         .size(Some(12.0), Some(12.0)),
-                    text(format!("{} por recibir", snapshot.behind), true, 11.0).flex(1.0),
+                    Text::new(
+                        format!("{} por recibir", snapshot.behind),
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .flex(1.0),
                 ])
                 .gap(4.0)
                 .size(Some(inner), Some(20.0)),
             );
         } else {
-            publish.push(text("Sin rama de seguimiento", true, 11.0));
+            publish.push(
+                Text::new("Sin rama de seguimiento", theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            );
         }
         if snapshot.remotes.is_empty() {
-            publish.push(text(
-                "Este repositorio todavía no tiene un remoto configurado.",
-                true,
-                11.0,
-            ));
+            publish.push(
+                Text::new(
+                    "Este repositorio todavía no tiene un remoto configurado.",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+            );
         } else {
-            publish.push(text("Destino remoto", true, 11.0));
+            publish.push(
+                Text::new("Destino remoto", theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            );
             let remote_width = (inner * 0.36).clamp(80.0, 116.0).min(inner);
             let branch_width = (inner - remote_width - 6.0).max(0.0);
             let remote = if state.push_remote.is_empty() {
@@ -405,7 +412,12 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
             );
             let reason = push_blocked_reason(state, snapshot, locked);
             if let Some(reason) = reason {
-                publish.push(text(reason, true, 11.0));
+                publish.push(
+                    Text::new(reason, theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render(),
+                );
             }
             publish.push(
                 Button::new(
@@ -439,7 +451,11 @@ fn panel_header(title: &str, enabled: bool) -> Element {
     let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
     PanelHeader::new("", palette)
         .back("environment_git_back", "Volver al entorno")
-        .leading(text(title, false, 14.0))
+        .leading(
+            Text::new(title, theme::component_palette())
+                .role(TextRole::Body)
+                .render(),
+        )
         .trailing(vec![IconButton::new(
             "environment_git_refresh",
             Icon::Refresh,
@@ -481,11 +497,15 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
     let mut rows = vec![panel_header(title, enabled)];
     rows.extend(notices(state));
     if locked {
-        rows.push(text(
-            "Esperá a que termine la operación en curso para cambiar el repositorio.",
-            true,
-            11.0,
-        ));
+        rows.push(
+            Text::new(
+                "Esperá a que termine la operación en curso para cambiar el repositorio.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     let Some(snapshot) = &state.snapshot else {
         return Element::column(rows)
@@ -493,14 +513,18 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
             .padding(8.0)
             .size(Some(width), None);
     };
-    rows.push(text(&snapshot.branches.label, true, 11.5));
+    rows.push(theme::text_px(
+        &snapshot.branches.label,
+        11.5,
+        theme::FOREGROUND_SUBTLE,
+    ));
     match state.panel {
         EnvironmentGitPanel::Commit => unreachable!("commit has its compact presentation"),
         EnvironmentGitPanel::Compare => {
-            rows.push(text(
+            rows.push(theme::text_px(
                 "Comparar el estado confirmado de esta rama con otra rama del repositorio.",
-                true,
                 11.5,
+                theme::FOREGROUND_SUBTLE,
             ));
             let entries: Vec<DropdownMenuEntry> = snapshot
                 .branches
@@ -551,22 +575,39 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                 rows.push(
                     Card::new(
                         Element::column(vec![
-                            text(format!("{} archivos", comparison.files), false, 14.0),
+                            Text::new(
+                                format!("{} archivos", comparison.files),
+                                theme::component_palette(),
+                            )
+                            .role(TextRole::Body)
+                            .render(),
                             Element::row(vec![
-                                text(format!("+{}", comparison.additions), false, 13.0)
-                                    .foreground(theme::DIFF_ADDED),
-                                text(format!("−{}", comparison.deletions), false, 13.0)
-                                    .foreground(theme::DIFF_REMOVED),
+                                Text::new(
+                                    format!("+{}", comparison.additions),
+                                    theme::component_palette(),
+                                )
+                                .role(TextRole::Label)
+                                .ink(theme::DIFF_ADDED)
+                                .render(),
+                                Text::new(
+                                    format!("−{}", comparison.deletions),
+                                    theme::component_palette(),
+                                )
+                                .role(TextRole::Label)
+                                .ink(theme::DIFF_REMOVED)
+                                .render(),
                             ])
                             .gap(10.0),
-                            text(
+                            Text::new(
                                 format!(
                                     "{} commits propios · {} commits en la base",
                                     comparison.ahead, comparison.behind
                                 ),
-                                true,
-                                11.0,
-                            ),
+                                theme::component_palette(),
+                            )
+                            .role(TextRole::Small)
+                            .muted()
+                            .render(),
                         ])
                         .gap(8.0),
                         theme::panel_card_palette(),
@@ -615,21 +656,29 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                 .iter()
                 .all(|branch| branch.current)
             {
-                rows.push(text("No hay otra rama para comparar.", true, 11.0));
+                rows.push(
+                    Text::new(
+                        "No hay otra rama para comparar.",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+                );
             }
         }
         EnvironmentGitPanel::CreateBranch | EnvironmentGitPanel::CreateWorktree => {
             let worktree = state.panel == EnvironmentGitPanel::CreateWorktree;
-            rows.push(text(
+            rows.push(theme::text_px(
                 if worktree {
                     "Una carpeta de trabajo independiente para una nueva rama."
                 } else {
                     "La nueva rama parte del commit actual."
                 },
-                true,
                 11.5,
+                theme::FOREGROUND_SUBTLE,
             ));
-            rows.push(text("Nombre de la rama", false, 12.0));
+            rows.push(Text::new("Nombre de la rama", theme::component_palette()).render());
             rows.push(
                 TextField::new(
                     "environment_git_branch_name",
@@ -643,13 +692,17 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
             );
             if worktree {
                 if snapshot.head.is_none() {
-                    rows.push(text(
-                        "Creá el primer commit antes de crear un worktree.",
-                        true,
-                        11.0,
-                    ));
+                    rows.push(
+                        Text::new(
+                            "Creá el primer commit antes de crear un worktree.",
+                            theme::component_palette(),
+                        )
+                        .role(TextRole::Small)
+                        .muted()
+                        .render(),
+                    );
                 }
-                rows.push(text("Carpeta de destino", false, 12.0));
+                rows.push(Text::new("Carpeta de destino", theme::component_palette()).render());
                 rows.push(
                     TextField::new(
                         "environment_git_worktree_path",
@@ -698,148 +751,7 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
 mod tests {
     use super::*;
 
-    /// A 24 px tool set 2 px down in the 28 px commit header.
-    fn header_slot(control: Element) -> Element {
-        Element::column(vec![Element::spacer().size(None, Some(2.0)), control])
-            .size(Some(24.0), Some(28.0))
-    }
-
-    fn legacy_commit_header(enabled: bool, sidebar: bool, inner: f32) -> Element {
-        let mut header = vec![
-            header_slot(
-                IconButton::new(
-                    "environment_git_back",
-                    Icon::ArrowLeft,
-                    theme::sidebar_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .tooltip_with(
-                    TooltipSpec::new("Volver a los cambios").placement(TooltipPlacement::Below),
-                )
-                .render(),
-            ),
-            Element::truncated_text("Commit")
-                .font_family(FontFamily::Sans)
-                .font_size(13.0)
-                .foreground(theme::FOREGROUND)
-                .flex(1.0),
-            header_slot(
-                IconButton::new(
-                    "environment_git_refresh",
-                    Icon::Refresh,
-                    theme::sidebar_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .enabled(enabled)
-                .tooltip_with(
-                    TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below),
-                )
-                .render(),
-            ),
-        ];
-        if !sidebar {
-            header.push(header_slot(
-                IconButton::new("environment_dismiss", Icon::Close, theme::sidebar_palette())
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Dense)
-                    .tooltip_with(
-                        TooltipSpec::new("Cerrar entorno").placement(TooltipPlacement::Below),
-                    )
-                    .render(),
-            ));
-        }
-        Element::row(header).gap(4.0).size(Some(inner), Some(28.0))
-    }
-
-    fn legacy_panel_header(title: &str, enabled: bool) -> Element {
-        Element::row(vec![
-            IconButton::new(
-                "environment_git_back",
-                Icon::ArrowLeft,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(TooltipSpec::new("Volver al entorno").placement(TooltipPlacement::Below))
-            .render(),
-            text(title, false, 14.0).flex(1.0),
-            IconButton::new(
-                "environment_git_refresh",
-                Icon::Refresh,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .enabled(enabled)
-            .tooltip_with(
-                TooltipSpec::new("Actualizar repositorio").placement(TooltipPlacement::Below),
-            )
-            .render(),
-            IconButton::new(
-                "environment_dismiss",
-                Icon::Close,
-                theme::action_palette(theme::CARD, theme::FOREGROUND),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(
-                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
-            )
-            .render(),
-        ])
-        .gap(6.0)
-        .size(None, Some(32.0))
-    }
-
-    #[test]
-    fn the_git_headers_match_their_legacy_bodies() {
-        use crate::state_panel_parity_tests::assert_same;
-        for enabled in [true, false] {
-            for sidebar in [true, false] {
-                for width in [150.0, 236.0, 404.0] {
-                    assert_same(
-                        "commit header",
-                        legacy_commit_header(enabled, sidebar, width),
-                        commit_header(enabled, sidebar, width),
-                    );
-                }
-            }
-            for title in ["Git", "Crear worktree"] {
-                assert_same(
-                    "git panel header",
-                    legacy_panel_header(title, enabled),
-                    panel_header(title, enabled),
-                );
-            }
-        }
-    }
     use openide_ui::{HitKind, Size, UiTree};
-
-    #[test]
-    fn notices_match_their_legacy_body() {
-        let state = |busy: Option<&str>, loading, error: Option<&str>, notice: Option<&str>| {
-            EnvironmentGitUiState {
-                busy: busy.map(Into::into),
-                loading,
-                error: error.map(Into::into),
-                notice: notice.map(Into::into),
-                ..Default::default()
-            }
-        };
-        for state in [
-            state(Some("Enviando cambios…"), false, None, None),
-            state(None, true, Some("No se pudo leer el repositorio: permiso denegado"), None),
-            state(None, false, None, Some("Rama publicada")),
-        ] {
-            crate::state_panel_parity_tests::assert_same(
-                "environment git notices",
-                Element::column(legacy_notices(&state)),
-                Element::column(notices(&state)),
-            );
-        }
-    }
 
     fn snapshot() -> GitSnapshot {
         let directory = tempfile::tempdir().unwrap();

@@ -5,23 +5,12 @@ use crate::github_account::{GithubAccountStatus, GithubIdentity};
 use crate::{theme, view::ViewState};
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, PopoverPlacement, Separator, Tooltip,
+    DropdownMenuItem, Element, Icon, PopoverPlacement, Separator, Text, TextRole, Tooltip,
 };
 
 const MENU_WIDTH: f32 = 288.0;
 const TOGGLE: &str = "github_account_menu_toggle";
 const DISMISS: &str = "github_account_menu_dismiss";
-
-fn label(text: impl Into<String>, size: f32, muted: bool) -> Element {
-    Element::truncated_text(text)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(if muted {
-            theme::FOREGROUND_SUBTLE
-        } else {
-            theme::FOREGROUND
-        })
-}
 
 fn busy(state: &ViewState) -> bool {
     state.github_account_refreshing || state.github_sign_in.is_some()
@@ -61,9 +50,19 @@ fn menu_header(state: &ViewState, identity: Option<&GithubIdentity>) -> Element 
     Element::column(vec![
         Element::row(vec![
             avatar,
-            Element::column(vec![label(title, 13.0, false), label(subtitle, 11.0, true)])
-                .gap(3.0)
-                .flex(1.0),
+            Element::column(vec![
+                Text::new(title, theme::component_palette())
+                    .role(TextRole::Label)
+                    .truncate()
+                    .render(),
+                Text::new(subtitle, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .truncate()
+                    .render(),
+            ])
+            .gap(3.0)
+            .flex(1.0),
         ])
         .gap(8.0)
         .padding(8.0),
@@ -75,7 +74,7 @@ fn menu_header(state: &ViewState, identity: Option<&GithubIdentity>) -> Element 
 mod tests {
     use super::*;
     use openide_ui::{
-        DrawCommand, Frame, HitKind, Key, Point, Rect, Size, UiAction, UiEvent, UiTree,
+        DrawCommand, FontFamily, Frame, HitKind, Key, Point, Rect, Size, UiAction, UiEvent, UiTree,
     };
 
     fn connected() -> ViewState {
@@ -481,7 +480,11 @@ pub(crate) fn build(state: &ViewState, width: f32, sidebar_width: f32) -> Elemen
                 TOGGLE,
                 Element::row(vec![
                     crate::github_account_ui::avatar(identity, 20.0),
-                    label(&identity.login, 13.0, false).flex(1.0),
+                    Text::new(&identity.login, theme::component_palette())
+                        .role(TextRole::Label)
+                        .truncate()
+                        .render()
+                        .flex(1.0),
                     Element::panel(
                         Element::icon(Icon::ChevronDown).foreground(theme::FOREGROUND_SUBTLE),
                     )

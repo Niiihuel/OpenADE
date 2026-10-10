@@ -107,6 +107,7 @@ mod navigation;
 mod project_actions;
 mod project_actions_ui;
 mod provider_connections;
+mod icons;
 mod provider_icons;
 mod provider_settings;
 mod provider_usage;
@@ -140,14 +141,6 @@ mod theme;
 mod tool_presentation;
 mod tool_result_media;
 mod transcript;
-#[cfg(test)]
-mod icon_button_parity_tests;
-#[cfg(test)]
-mod state_panel_parity_tests;
-#[cfg(test)]
-mod text_button_parity_tests;
-#[cfg(test)]
-mod ui_primitives_parity_tests;
 mod ui_sizing;
 mod view;
 mod voice;

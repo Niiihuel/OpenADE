@@ -7,8 +7,8 @@ use crate::{
 };
 use openide_ui::{
     Button, ButtonGroup, ButtonVariant, Color, Component, ContextContent, ContextMeter, ContextRow,
-    ControlSize, Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea,
-    Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    ControlSize, Element, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Separator, Text,
+    TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::path::Path;
 
@@ -91,12 +91,6 @@ pub(crate) fn compaction_view(state: &ViewState) -> ContextCompactionView<'_> {
     }
 }
 
-fn text(value: impl Into<String>, size: f32, color: Color) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
 fn tokens(value: u64) -> String {
     if value >= 1_000_000 {
         format!("{:.1}M", value as f64 / 1_000_000.0)
@@ -166,15 +160,17 @@ fn summary(props: &ComposerProps<'_>) -> Element {
             .into(),
     };
     let header = openide_ui::PanelHeader::new("", theme::menu_palette())
-        .leading(text(
-            if input_only {
-                "Uso de entrada"
-            } else {
-                "Uso de contexto"
-            },
-            12.0,
-            theme::FOREGROUND,
-        ))
+        .leading(
+            Text::new(
+                if input_only {
+                    "Uso de entrada"
+                } else {
+                    "Uso de contexto"
+                },
+                theme::component_palette(),
+            )
+            .render(),
+        )
         // The close button's hint names its key, so it is built here.
         .trailing(vec![IconButton::new(
             "composer_context_dismiss",
@@ -193,44 +189,62 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         .render();
     let mut content = vec![
         Element::row(vec![
-            text(total, 12.0, theme::FOREGROUND).flex(1.0),
-            text(
+            Text::new(total, theme::component_palette())
+                .render()
+                .flex(1.0),
+            Text::new(
                 fraction
                     .map(percentage)
                     .unwrap_or_else(|| "Sin medición".into()),
-                12.0,
-                usage_ink(fraction),
-            ),
+                theme::component_palette(),
+            )
+            .ink(usage_ink(fraction))
+            .render(),
         ])
         .gap(10.0),
         progress(fraction),
-        text(remaining, 11.0, theme::FOREGROUND_SUBTLE),
+        Text::new(remaining, theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
     ];
     if fraction.is_some() {
-        content.push(text(
-            if input_only {
-                "Última entrada reportada"
-            } else {
-                "Última respuesta reportada"
-            },
-            11.0,
-            theme::FOREGROUND_SUBTLE,
-        ));
+        content.push(
+            Text::new(
+                if input_only {
+                    "Última entrada reportada"
+                } else {
+                    "Última respuesta reportada"
+                },
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     if usage.is_some_and(|usage| {
         usage.measurement_status == NativeContextMeasurementStatus::AfterCheckpoint
     }) {
-        content.push(text(
-            "El resumen está guardado. El uso se medirá en la próxima respuesta.",
-            11.0,
-            theme::FOREGROUND_SUBTLE,
-        ));
+        content.push(
+            Text::new(
+                "El resumen está guardado. El uso se medirá en la próxima respuesta.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     } else if fraction.is_some_and(|fraction| fraction >= 0.8) {
-        content.push(text(
-            "Queda poco espacio. Puedes compactar para continuar.",
-            11.0,
-            usage_ink(fraction),
-        ));
+        content.push(
+            Text::new(
+                "Queda poco espacio. Puedes compactar para continuar.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(usage_ink(fraction))
+            .render(),
+        );
     }
     let action = props.context_compaction;
     let mut footer = ButtonGroup::new(vec![Button::new(

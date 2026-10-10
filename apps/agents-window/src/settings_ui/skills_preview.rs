@@ -42,31 +42,28 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     };
     let width = Modal::fit_width(viewport_width, 760.0);
     let mut fields = vec![
-        text(&entry.name, theme::FOREGROUND, 12.0),
-        subtle(status),
-        subtle(
-            "Esta vista muestra la lectura realizada al actualizar el catálogo. Revisar no activa instrucciones ni guarda el contenido. Al guardar una selección, el motor vuelve a comprobar documento y hash.",
-        ),
-        text(
-            provenance(&entry.selection, "Documento observado"),
-            theme::FOREGROUND,
-            12.0,
-        )
-        .font_family(FontFamily::Monospace),
+        Text::new(&entry.name, theme::component_palette()).render(),
+        Text::new(status, theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
+        Text::new("Esta vista muestra la lectura realizada al actualizar el catálogo. Revisar no activa instrucciones ni guarda el contenido. Al guardar una selección, el motor vuelve a comprobar documento y hash.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
+        Text::new(provenance(&entry.selection, "Documento observado"), theme::component_palette()).mono().render(),
     ];
     if let Some(selection) = selected {
         fields.push(
-            text(
+            Text::new(
                 provenance(selection, "Selección guardada"),
-                theme::SETTINGS_FOREGROUND_SUBTLE,
-                11.0,
+                theme::component_palette(),
             )
-            .font_family(FontFamily::Monospace),
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .mono()
+            .render(),
         );
     }
-    fields.push(text("SKILL.md completo", theme::FOREGROUND, 12.0));
+    fields.push(Text::new("SKILL.md completo", theme::component_palette()).render());
     fields.push(
-        text(&entry.instructions, theme::FOREGROUND, 12.0).font_family(FontFamily::Monospace),
+        Text::new(&entry.instructions, theme::component_palette())
+            .mono()
+            .render(),
     );
     let close = outline("native_skill_preview_close", "Cerrar")
         .width(80.0)
@@ -149,27 +146,20 @@ pub(crate) fn clear_workspace_modal(
         .reverse_when_stacked(true)
         .render();
     let mut fields = vec![
-        text(
-            snapshot.workspace.display().to_string(),
-            theme::FOREGROUND,
-            12.0,
-        )
-        .font_family(FontFamily::Monospace),
-        subtle(format!(
+        Text::new(snapshot.workspace.display().to_string(), theme::component_palette()).mono().render(),
+        Text::new(format!(
             "{} skills seleccionadas en este proyecto.",
             snapshot.selections.len()
-        )),
-        subtle(
-            "Se quitarán las selecciones mostradas de este proyecto. Los SKILL.md y la selección de otros proyectos se conservan. Los turnos que ya tienen instrucciones guardadas conservan esa copia; puedes volver a revisar y seleccionar documentos para turnos nuevos.",
-        ),
+        ), theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
+        Text::new("Se quitarán las selecciones mostradas de este proyecto. Los SKILL.md y la selección de otros proyectos se conservan. Los turnos que ya tienen instrucciones guardadas conservan esa copia; puedes volver a revisar y seleccionar documentos para turnos nuevos.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
     ];
     fields.extend(snapshot.selections.iter().map(|selection| {
-        text(
+        Text::new(
             provenance(selection, "Selección que se quitará"),
-            theme::FOREGROUND,
-            12.0,
+            theme::component_palette(),
         )
-        .font_family(FontFamily::Monospace)
+        .mono()
+        .render()
     }));
     Modal::new(
         base,

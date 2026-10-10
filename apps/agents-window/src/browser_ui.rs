@@ -3,7 +3,7 @@
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry, Element,
     FontFamily, Icon, IconButton, PopoverPlacement, RasterImage, ScrollArea, Separator, Spinner,
-    Tooltip, TooltipPlacement, TooltipSpec,
+    Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{theme, view::ViewState};
@@ -36,17 +36,6 @@ pub(crate) struct BrowserUiState {
     pub queued_inputs: usize,
     pub input_rejection: Option<String>,
     pub more_open: bool,
-}
-
-fn label(value: impl Into<String>, muted: bool) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-        .foreground(if muted {
-            theme::FOREGROUND_SUBTLE
-        } else {
-            theme::FOREGROUND
-        })
 }
 
 fn menu_action(
@@ -329,15 +318,20 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
     };
     let mut content = vec![
         visual.centered_x(),
-        label(title, false).font_size(15.0).center_content(),
-        label(description, true).center_content(),
+        theme::text_px(title, 15.0, theme::FOREGROUND).center_content(),
+        Text::new(description, theme::component_palette())
+            .muted()
+            .render()
+            .center_content(),
     ];
     if mode == Surface::Error {
         if let Some(error) = &browser.error {
             content.push(
                 Tooltip::new(
-                    label("Ver detalle del error", true)
-                        .font_size(11.0)
+                    Text::new("Ver detalle del error", theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render()
                         .center_content(),
                     "browser_error_detail",
                     "Detalle del navegador",

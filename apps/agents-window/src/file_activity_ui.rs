@@ -7,8 +7,8 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    CodeDiff, CodeLanguage, Component, Element, FileActivity, FontFamily, Skeleton, Tooltip,
-    TooltipPlacement,
+    CodeDiff, CodeLanguage, Component, Element, FileActivity, FontFamily, Skeleton, Text, TextRole,
+    Tooltip, TooltipPlacement,
 };
 use std::path::Path;
 
@@ -43,14 +43,6 @@ pub(crate) fn default_expanded_calls(state: &ViewState) -> Vec<&str> {
 
 pub(crate) fn default_expanded(state: &ViewState, call: &str) -> bool {
     default_expanded_calls(state).contains(&call)
-}
-
-fn label(value: impl Into<String>) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(11.0)
-        .foreground(theme::FOREGROUND_SUBTLE)
-        .padding(8.0)
 }
 
 /// Resolve paths against this captured row at click time, never from an action
@@ -345,7 +337,14 @@ pub(crate) fn build(
                     None
                 };
                 if let Some(message) = message {
-                    body.push(label(message).padding(0.0));
+                    body.push(
+                        Text::new(message, theme::component_palette())
+                            .role(TextRole::Small)
+                            .muted()
+                            .render()
+                            .padding(8.0)
+                            .padding(0.0),
+                    );
                 }
             } else if matches!(
                 item,
@@ -355,13 +354,46 @@ pub(crate) fn build(
                     ..
                 }
             ) {
-                body.push(label("Contenido enviado · vista previa de la edición"));
+                body.push(
+                    Text::new(
+                        "Contenido enviado · vista previa de la edición",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .padding(8.0),
+                );
             } else if unconfirmed_end {
-                body.push(label("Contenido enviado · sin confirmación"));
+                body.push(
+                    Text::new(
+                        "Contenido enviado · sin confirmación",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .padding(8.0),
+                );
             } else if generating_edit {
-                body.push(label("Vista previa · generando contenido"));
+                body.push(
+                    Text::new(
+                        "Vista previa · generando contenido",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .padding(8.0),
+                );
             } else {
-                body.push(label("Cambios propuestos"));
+                body.push(
+                    Text::new("Cambios propuestos", theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render()
+                        .padding(8.0),
+                );
             }
             if let Some(preview) = preview.as_ref() {
                 for (index, file) in preview.files.iter().enumerate() {
@@ -369,7 +401,16 @@ pub(crate) fn build(
                         body.push(file_open_heading(owner, row_id, index, &file.path));
                     }
                     if file.deleted {
-                        body.push(label(format!("Se propone eliminar {}", file.path)));
+                        body.push(
+                            Text::new(
+                                format!("Se propone eliminar {}", file.path),
+                                theme::component_palette(),
+                            )
+                            .role(TextRole::Small)
+                            .muted()
+                            .render()
+                            .padding(8.0),
+                        );
                         continue;
                     }
                     if !file.lines.is_empty() {
@@ -396,7 +437,14 @@ pub(crate) fn build(
                     }
                 }
                 if preview.limited {
-                    let notice = label("Vista parcial · el contenido mostrado está limitado");
+                    let notice = Text::new(
+                        "Vista parcial · el contenido mostrado está limitado",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .padding(8.0);
                     body.push(if name == "read_file" {
                         notice.padding(0.0)
                     } else {

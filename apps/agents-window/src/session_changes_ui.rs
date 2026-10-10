@@ -8,7 +8,7 @@ use std::{
 
 use openide_ui::{
     Breadcrumb, BreadcrumbItem, Button, ButtonVariant, Component, ControlSize, Element, FontFamily,
-    Icon, IconButton, ListRow, ScrollArea, Separator, Tooltip,
+    Icon, IconButton, ListRow, ScrollArea, Separator, Text, TextRole, Tooltip,
 };
 
 use crate::{
@@ -27,13 +27,6 @@ pub(crate) struct SessionChangesUiState {
     pub result: Option<Result<Arc<SessionChanges>, String>>,
     pub selected_file: Option<String>,
     pub page: usize,
-}
-
-fn label(value: impl Into<String>, color: openide_ui::Color, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
 }
 
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
@@ -70,16 +63,23 @@ fn build_content(ui: &SessionChangesUiState, width: f32) -> Element {
         .sizing(crate::ui_sizing::TALL_HEADER)
         .render()];
     match &ui.result {
-        None => rows.push(label(
-            if ui.loading {
-                "Cargando cambios…"
-            } else {
-                "Inicia una conversación para ver sus cambios."
-            },
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        )),
-        Some(Err(error)) => rows.push(label(error, theme::DESTRUCTIVE, 12.0)),
+        None => rows.push(
+            Text::new(
+                if ui.loading {
+                    "Cargando cambios…"
+                } else {
+                    "Inicia una conversación para ver sus cambios."
+                },
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
+        ),
+        Some(Err(error)) => rows.push(
+            Text::new(error, theme::component_palette())
+                .ink(theme::DESTRUCTIVE)
+                .render(),
+        ),
         Some(Ok(changes)) => append_changes(&mut rows, Arc::clone(changes), ui, inner),
     }
     Element::column(rows)
@@ -97,8 +97,16 @@ fn append_changes(
 ) {
     use crate::session_changes::ChangesAvailability;
     if let ChangesAvailability::Unavailable { reason } = &changes.availability {
-        rows.push(label("Dato no disponible", theme::FOREGROUND, 15.0));
-        rows.push(label(reason, theme::FOREGROUND_SUBTLE, 12.0));
+        rows.push(theme::text_px(
+            "Dato no disponible",
+            15.0,
+            theme::FOREGROUND,
+        ));
+        rows.push(
+            Text::new(reason, theme::component_palette())
+                .muted()
+                .render(),
+        );
         rows.push(theme::interactive_surface(
             Button::new(
                 "dock_open:review",
@@ -113,32 +121,42 @@ fn append_changes(
     }
     rows.push(
         Element::row(vec![
-            label(
+            Text::new(
                 format!("{} archivos", changes.totals.files),
-                theme::FOREGROUND_SUBTLE,
-                11.0,
+                theme::component_palette(),
             )
+            .role(TextRole::Small)
+            .muted()
+            .render()
             .flex(1.0),
-            label(
+            Text::new(
                 format!("+{}", changes.totals.additions),
-                theme::DIFF_ADDED,
-                11.0,
-            ),
-            label(
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::DIFF_ADDED)
+            .render(),
+            Text::new(
                 format!("−{}", changes.totals.deletions),
-                theme::DIFF_REMOVED,
-                11.0,
-            ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::DIFF_REMOVED)
+            .render(),
         ])
         .gap(8.0)
         .size(Some(width), Some(22.0)),
     );
     if matches!(changes.availability, ChangesAvailability::Limited) {
-        rows.push(label(
-            "Registro parcial de cambios confirmados",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        rows.push(
+            Text::new(
+                "Registro parcial de cambios confirmados",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     // Coverage explanations are preserved without pushing files and code below
     // an unbounded banner. The full explanation is available on hover/focus.
@@ -189,31 +207,47 @@ fn append_changes(
         );
         rows.push(
             Element::row(vec![
-                label(&selected.file.status, theme::FOREGROUND_SUBTLE, 11.0).flex(1.0),
-                label(
+                Text::new(&selected.file.status, theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .flex(1.0),
+                Text::new(
                     format!("+{}", selected.file.additions),
-                    theme::DIFF_ADDED,
-                    11.0,
-                ),
-                label(
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::DIFF_ADDED)
+                .render(),
+                Text::new(
                     format!("−{}", selected.file.deletions),
-                    theme::DIFF_REMOVED,
-                    11.0,
-                ),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::DIFF_REMOVED)
+                .render(),
             ])
             .gap(6.0)
             .size(None, Some(22.0)),
         );
         if let Some(reason) = &selected.unavailable {
-            rows.push(label(reason, theme::FOREGROUND_SUBTLE, 12.0));
+            rows.push(
+                Text::new(reason, theme::component_palette())
+                    .muted()
+                    .render(),
+            );
             return;
         }
         if selected.truncated {
-            rows.push(label(
-                "Vista del diff limitada por tamaño",
-                theme::FOREGROUND_SUBTLE,
-                11.0,
-            ));
+            rows.push(
+                Text::new(
+                    "Vista del diff limitada por tamaño",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+            );
         }
         let count = selected.file.lines.len();
         let list_id = format!(
@@ -221,11 +255,14 @@ fn append_changes(
             changes.session_id, selected.file.path
         );
         if count == 0 {
-            rows.push(label(
-                "Sin diferencias de texto disponibles.",
-                theme::FOREGROUND_SUBTLE,
-                12.0,
-            ));
+            rows.push(
+                Text::new(
+                    "Sin diferencias de texto disponibles.",
+                    theme::component_palette(),
+                )
+                .muted()
+                .render(),
+            );
             return;
         }
         rows.push(
@@ -244,11 +281,14 @@ fn append_changes(
         return;
     }
     if changes.files.is_empty() {
-        rows.push(label(
-            "Este chat todavía no registró cambios en archivos.",
-            theme::FOREGROUND_SUBTLE,
-            12.0,
-        ));
+        rows.push(
+            Text::new(
+                "Este chat todavía no registró cambios en archivos.",
+                theme::component_palette(),
+            )
+            .muted()
+            .render(),
+        );
         return;
     }
     let generation = ui.generation;
@@ -272,7 +312,13 @@ fn append_changes(
 /// says what the row cannot.
 fn file_row(change: &SessionFileChange, action: String, width: f32) -> Element {
     let file = &change.file;
-    let count = |text: String, ink| label(text, ink, 11.0).size(None, Some(22.0));
+    let count = |text: String, ink| {
+        Text::new(text, theme::component_palette())
+            .role(TextRole::Small)
+            .ink(ink)
+            .render()
+            .size(None, Some(22.0))
+    };
     let filename = Path::new(&file.path)
         .file_name()
         .and_then(|name| name.to_str())
@@ -369,61 +415,6 @@ mod tests {
                 .collect(),
             coverage_notes: Vec::new(),
         })
-    }
-
-    fn legacy_file_row(change: &SessionFileChange, action: String, width: f32) -> Element {
-        let file = &change.file;
-        let row = Element::row(vec![
-            Element::icon(openide_ui::file_icon(&file.path))
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(16.0), Some(22.0)),
-            Element::truncated_text(&file.path)
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::FOREGROUND)
-                .flex(1.0)
-                .size(None, Some(22.0)),
-            label(format!("+{}", file.additions), theme::DIFF_ADDED, 11.0).size(None, Some(22.0)),
-            label(format!("−{}", file.deletions), theme::DIFF_REMOVED, 11.0)
-                .size(None, Some(22.0)),
-        ])
-        .gap(6.0)
-        .clip_children();
-        let filename = Path::new(&file.path)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(&file.path);
-        Tooltip::new(
-            theme::interactive_surface(
-                Element::clickable(&action, row)
-                    .padding(8.0)
-                    .size(Some(width), Some(38.0)),
-            ),
-            action,
-            filename,
-            theme::component_palette(),
-        )
-        .description(&file.path)
-        .footer(change.unavailable.as_deref().unwrap_or(&file.status))
-        .render()
-    }
-
-    #[test]
-    fn file_rows_match_their_legacy_body() {
-        let source = snapshot(2, 3);
-        let mut long = source.files[1].clone();
-        long.file.path = "crates/a/very/deep/directory/of/the/workspace/with_a_long_file_name.rs".into();
-        long.file.additions = 25813;
-        long.unavailable = Some("Sin línea base".into());
-        for width in [120.0, 232.0, 392.0] {
-            for change in [&source.files[0], &long] {
-                crate::icon_button_parity_tests::assert_same(
-                    &format!("changed file {} at {width}", change.file.path),
-                    legacy_file_row(change, "session_change_file:7:0".into(), width),
-                    file_row(change, "session_change_file:7:0".into(), width),
-                );
-            }
-        }
     }
 
     #[test]

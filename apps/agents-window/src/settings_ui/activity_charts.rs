@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use chrono::Datelike;
 use openide_ui::{
     Alert, BarChart, Button, ButtonContent, ButtonSize, ButtonVariant, ChartAxisLabel, ChartDatum,
-    ChartLegend, Color, Component, ControlSize, Element, FontFamily, HeatmapCell, HeatmapChart,
-    HeatmapScale, Icon, Skeleton, TooltipPlacement,
+    ChartLegend, Color, Component, ControlSize, Element, HeatmapCell, HeatmapChart, HeatmapScale,
+    Icon, Skeleton, Text, TextRole, TooltipPlacement,
 };
 
 use crate::{
@@ -33,12 +33,6 @@ pub(super) fn execution_count_label(count: usize) -> String {
             "ejecuciones"
         }
     )
-}
-fn text(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::text(value)
-        .foreground(color)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
 }
 
 fn contribution_scale() -> HeatmapScale {
@@ -117,7 +111,9 @@ pub(super) fn github_card(state: &ViewState, content_width: f32) -> Element {
                 count => format!("{count} contribuciones en el último año"),
             };
             let header = Element::row(vec![
-                text(title, theme::FOREGROUND, 12.0).flex(1.0),
+                Text::new(title, theme::component_palette())
+                    .render()
+                    .flex(1.0),
                 refresh,
             ])
             .gap(6.0);
@@ -138,11 +134,10 @@ pub(super) fn github_card(state: &ViewState, content_width: f32) -> Element {
             };
             settings_parts::settings_card(vec![Element::column(vec![
                 header,
-                text(
-                    format!("@{}", calendar.login),
-                    theme::SETTINGS_FOREGROUND_SUBTLE,
-                    11.0,
-                ),
+                Text::new(format!("@{}", calendar.login), theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
                 calendar_chart(calendar, width),
                 footer,
             ])
@@ -151,7 +146,7 @@ pub(super) fn github_card(state: &ViewState, content_width: f32) -> Element {
         }
         GithubContributionsStatus::Idle | GithubContributionsStatus::Loading => {
             settings_parts::settings_card(vec![Element::column(vec![
-                text("Cargando contribuciones…", theme::FOREGROUND, 12.0),
+                Text::new("Cargando contribuciones…", theme::component_palette()).render(),
                 Skeleton::new("github-contributions-loading", palette)
                     .height(110.0)
                     .radius(4.0)
@@ -213,16 +208,18 @@ pub(super) fn tasks_card(state: &ViewState, content_width: f32) -> Element {
     let total = state.sessions.len();
     let data = task_data(&state.sessions, &state.backend_options);
     let agent_count = data.len();
-    let title = text("Tareas por agente", theme::FOREGROUND, 12.0);
-    let total = text(
+    let title = Text::new("Tareas por agente", theme::component_palette()).render();
+    let total = Text::new(
         format!(
             "{} {}",
             task_count_label(total),
             if total == 1 { "visible" } else { "visibles" }
         ),
-        theme::SETTINGS_FOREGROUND_SUBTLE,
-        11.0,
-    );
+        theme::component_palette(),
+    )
+    .role(TextRole::Small)
+    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+    .render();
     let header = if width < 400.0 {
         Element::column(vec![title, total]).gap(4.0)
     } else {
@@ -230,11 +227,13 @@ pub(super) fn tasks_card(state: &ViewState, content_width: f32) -> Element {
     };
     let mut rows = vec![
         header,
-        text(
+        Text::new(
             "Historial visible en este equipo, agrupado por agente.",
-            theme::SETTINGS_FOREGROUND_SUBTLE,
-            11.0,
-        ),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+        .render(),
     ];
     if data.is_empty() {
         let mut palette = theme::component_palette();
@@ -273,18 +272,22 @@ pub(super) fn tasks_card(state: &ViewState, content_width: f32) -> Element {
             .integer_ticks(true)
             .render(),
         );
-        rows.push(text(
-            format!(
-                "{agent_count} {} · Ordenadas por cantidad",
-                if agent_count == 1 {
-                    "agente"
-                } else {
-                    "agentes"
-                }
-            ),
-            theme::SETTINGS_FOREGROUND_SUBTLE,
-            11.0,
-        ));
+        rows.push(
+            Text::new(
+                format!(
+                    "{agent_count} {} · Ordenadas por cantidad",
+                    if agent_count == 1 {
+                        "agente"
+                    } else {
+                        "agentes"
+                    }
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
+        );
     }
     settings_parts::settings_card(vec![Element::column(rows).gap(10.0).padding(10.0)])
 }

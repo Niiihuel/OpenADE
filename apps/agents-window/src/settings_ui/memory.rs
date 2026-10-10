@@ -183,7 +183,9 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         goal_rows.push(
             ScrollArea::new(
                 "settings_native_goal_details",
-                text(goal_details(goal), theme::FOREGROUND, 12.0).padding(10.0),
+                Text::new(goal_details(goal), theme::component_palette())
+                    .render()
+                    .padding(10.0),
             )
             .appearance(
                 ScrollbarAppearance::reserved()

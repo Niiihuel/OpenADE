@@ -8,30 +8,6 @@ use openide_ui::{
     Text, TextRole, TooltipPlacement, TooltipSpec,
 };
 
-fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(if muted {
-            theme::FOREGROUND_SUBTLE
-        } else {
-            theme::FOREGROUND
-        })
-}
-
-#[cfg(test)]
-fn legacy_status_line(saving: bool) -> Element {
-    text(
-        if saving {
-            "Guardando…"
-        } else {
-            "Cargando…"
-        },
-        true,
-        10.0,
-    )
-}
-
 fn status_line(saving: bool) -> Element {
     Text::new(
         if saving {
@@ -46,54 +22,11 @@ fn status_line(saving: bool) -> Element {
     .render()
 }
 
-#[cfg(test)]
-fn legacy_error_line(error: &str) -> Element {
-    text(error, false, 11.0).foreground(theme::DESTRUCTIVE)
-}
-
 fn error_line(error: &str) -> Element {
     Text::new(error, theme::component_palette())
         .role(TextRole::Small)
         .ink(theme::DESTRUCTIVE)
         .render()
-}
-
-#[cfg(test)]
-fn legacy_launch(action: &ProjectAction, enabled: bool) -> Element {
-    let id = format!("project_action_run:{}", action.id);
-    let contents = Element::row(vec![
-        Element::icon(Icon::Terminal)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(16.0)),
-        Element::column(vec![
-            Element::truncated_text(&action.label)
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::FOREGROUND),
-            Element::truncated_text(action.command.lines().next().unwrap_or_default())
-                .font_family(FontFamily::Monospace)
-                .font_size(10.0)
-                .foreground(theme::FOREGROUND_SUBTLE),
-        ])
-        .gap(2.0)
-        .flex(1.0),
-    ])
-    .gap(7.0)
-    .padding(5.0)
-    .size(None, Some(42.0));
-    let launch = crate::environment_ui::interactive_surface(if enabled {
-        Element::clickable(&id, contents)
-    } else {
-        Element::panel(contents)
-    })
-    .flex(1.0);
-    openide_ui::Tooltip::new(
-        launch,
-        id,
-        format!("Ejecutar en una terminal nueva\n{}", action.command),
-        theme::component_palette(),
-    )
-    .render()
 }
 
 /// The part of an action's row that runs it.
@@ -151,16 +84,16 @@ fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
 
 fn editor(state: &ProjectActionsState, width: f32) -> Element {
     Element::column(vec![
-        text(
+        Text::new(
             if state.editing_id.is_some() {
                 "Editar acción"
             } else {
                 "Nueva acción"
             },
-            false,
-            12.0,
-        ),
-        text("Nombre", true, 10.5),
+            theme::component_palette(),
+        )
+        .render(),
+        theme::text_px("Nombre", 10.5, theme::FOREGROUND_SUBTLE),
         Element::text_input(
             "project_action_label",
             &state.label_draft,
@@ -174,7 +107,7 @@ fn editor(state: &ProjectActionsState, width: f32) -> Element {
         .radius(6.0)
         .padding(7.0)
         .size(Some(width), Some(32.0)),
-        text("Comando", true, 10.5),
+        theme::text_px("Comando", 10.5, theme::FOREGROUND_SUBTLE),
         Element::text_input(
             "project_action_command",
             &state.command_draft,
@@ -188,10 +121,10 @@ fn editor(state: &ProjectActionsState, width: f32) -> Element {
         .radius(6.0)
         .padding(7.0)
         .size(Some(width), Some(34.0)),
-        text(
+        theme::text_px(
             "Una sola línea; puedes usar &&. Se abre una terminal nueva en el proyecto.",
-            true,
             10.5,
+            theme::FOREGROUND_SUBTLE,
         ),
         Element::row(vec![
             Button::new("project_action_save", "Guardar", theme::component_palette())
@@ -234,11 +167,15 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
             rows.push(action_row(action, width, !state.saving && !state.loading));
         }
         if state.actions.is_empty() && !state.loading {
-            rows.push(text(
-                "Guarda los comandos que usas para ejecutar, compilar o probar este proyecto.",
-                true,
-                11.0,
-            ));
+            rows.push(
+                Text::new(
+                    "Guarda los comandos que usas para ejecutar, compilar o probar este proyecto.",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+            );
             rows.push(crate::environment_ui::interactive_surface(
                 Button::new(
                     "project_action_new",
@@ -262,12 +199,20 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
             })
             .collect();
         if !suggestions.is_empty() {
-            rows.push(text("Sugeridas por el proyecto", true, 10.0).padding(3.0));
+            rows.push(
+                Text::new("Sugeridas por el proyecto", theme::component_palette())
+                    .role(TextRole::Micro)
+                    .muted()
+                    .render()
+                    .padding(3.0),
+            );
             for preset in suggestions {
                 rows.push(
                     Element::row(vec![
                         Element::column(vec![
-                            text(&preset.label, false, 11.0),
+                            Text::new(&preset.label, theme::component_palette())
+                                .role(TextRole::Small)
+                                .render(),
                             Element::truncated_text(&preset.command)
                                 .font_family(FontFamily::Monospace)
                                 .font_size(10.0)
@@ -305,41 +250,6 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
-
-    #[test]
-    fn the_launch_row_matches_its_legacy_body() {
-        let action = ProjectAction {
-            id: "dev".into(),
-            label: "Ejecutar el proyecto en modo desarrollo".into(),
-            command: "npm run dev -- --host 0.0.0.0 --port 5173 && echo listo\necho fin".into(),
-        };
-        for enabled in [true, false] {
-            let in_row =
-                |launch: Element| Element::row(vec![launch.flex(1.0)]).size(None, Some(42.0));
-            crate::state_panel_parity_tests::assert_same(
-                "project action",
-                in_row(legacy_launch(&action, enabled)),
-                in_row(launch(&action, enabled)),
-            );
-        }
-    }
-
-    #[test]
-    fn status_and_error_lines_match_their_legacy_body() {
-        for saving in [true, false] {
-            crate::state_panel_parity_tests::assert_same(
-                "project actions status",
-                legacy_status_line(saving).size(Some(200.0), Some(20.0)),
-                status_line(saving).size(Some(200.0), Some(20.0)),
-            );
-        }
-        let error = "No se pudieron guardar las acciones del proyecto: permiso denegado";
-        crate::state_panel_parity_tests::assert_same(
-            "project actions error",
-            legacy_error_line(error),
-            error_line(error),
-        );
-    }
 
     #[test]
     fn saved_actions_have_explicit_launch_edit_delete_targets_and_presets_only_add() {

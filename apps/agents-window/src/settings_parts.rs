@@ -4,8 +4,8 @@
 //! action IDs; an optional action is rendered only when it is supplied.
 
 use openide_ui::{
-    ActionRow, Alert, Color, Component, Element, Empty, FontFamily, Icon, PreferencesGroup,
-    RadiusRole, Skeleton, Switch,
+    ActionRow, Alert, Component, Element, Empty, Icon, PreferencesGroup, RadiusRole, Skeleton,
+    Switch, Text, TextRole,
 };
 
 pub use openide_ui::AlertTone as FeedbackTone;
@@ -14,7 +14,6 @@ use crate::{theme, ui_sizing::SETTINGS_ROW};
 
 // Logical pixels shared by Settings pages and their nested resource views.
 pub const LABEL_SIZE: f32 = 12.0;
-pub const DETAIL_SIZE: f32 = 11.0;
 pub const ROW_PADDING: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,13 +21,6 @@ pub enum CapabilityStatus {
     Ready,
     Partial,
     Planned,
-}
-
-fn label(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
 }
 
 /// Small capability marker for features that are ready, limited or planned.
@@ -55,7 +47,10 @@ pub fn status_badge(status: CapabilityStatus) -> Element {
             .size(Some(14.0), Some(14.0))
             .centered_y()
             .size(Some(14.0), Some(16.0)),
-        label(text, color, DETAIL_SIZE)
+        Text::new(text, theme::component_palette())
+            .role(TextRole::Small)
+            .ink(color)
+            .render()
             .centered_y()
             .size(None, Some(16.0)),
     ])
@@ -195,8 +190,11 @@ pub fn loading_state(title: impl Into<String>, description: impl Into<String>) -
             Element::icon(Icon::Refresh)
                 .foreground(theme::FOREGROUND_SUBTLE)
                 .size(Some(18.0), Some(18.0)),
-            label(title, theme::FOREGROUND, LABEL_SIZE),
-            label(description, theme::SETTINGS_FOREGROUND_SUBTLE, DETAIL_SIZE),
+            Text::new(title, theme::component_palette()).render(),
+            Text::new(description, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
             Element::spacer().size(None, Some(2.0)),
             Element::row(vec![
                 Skeleton::circle(format!("{placeholder_id}:icon"), palette, 24.0).render(),
@@ -222,64 +220,11 @@ pub fn loading_state(title: impl Into<String>, description: impl Into<String>) -
 #[cfg(test)]
 mod tests {
     use openide_ui::{
-        DrawCommand, ElementKind, Icon, PageHeader, Point, Size, Switch, UiAction, UiEvent, UiTree,
+        Color, DrawCommand, ElementKind, Icon, PageHeader, Point, Size, Switch, UiAction, UiEvent,
+        UiTree,
     };
 
     use super::*;
-
-    // The heading limn's `PageHeader` replaced. Delete with the final audit (S18).
-    fn legacy_section_header(
-        title: &str,
-        description: &str,
-        action: Option<Element>,
-        compact: bool,
-    ) -> Element {
-        let copy = Element::column(vec![
-            label(title, theme::FOREGROUND, 18.0),
-            label(description, theme::SETTINGS_FOREGROUND_SUBTLE, DETAIL_SIZE),
-        ])
-        .gap(4.0);
-        match (action, compact) {
-            (Some(action), true) => Element::column(vec![copy, action]).gap(8.0),
-            (Some(action), false) => {
-                Element::row(vec![copy.flex(1.0), action.centered_y()]).gap(12.0)
-            }
-            (None, _) => copy,
-        }
-    }
-
-    #[test]
-    fn page_header_paints_what_section_header_painted() {
-        const LONG: &str = "Capacidades instaladas y extensiones ejecutables, con su configuración y disponibilidad por proyecto.";
-        for description in ["Preferencias de la aplicación", LONG] {
-            for badge in [false, true] {
-                for compact in [false, true] {
-                    let action = || badge.then(|| status_badge(CapabilityStatus::Partial));
-                    let mut current = PageHeader::new("Complementos", theme::card_palette())
-                        .description(description)
-                        .stacked(compact);
-                    if let Some(action) = action() {
-                        current = current.trailing(action);
-                    }
-                    let current = current.render();
-                    let legacy =
-                        legacy_section_header("Complementos", description, action(), compact);
-                    assert_eq!(format!("{current:?}"), format!("{legacy:?}"));
-                    for width in [360.0, 900.0] {
-                        let frame = |element: Element| {
-                            let mut tree = UiTree::new(Element::column(vec![
-                                element,
-                                Element::spacer().flex(1.0),
-                            ]));
-                            tree.set_reduced_motion(true);
-                            tree.layout(Size::new(width, 600.0))
-                        };
-                        assert_eq!(frame(current.clone()), frame(legacy.clone()));
-                    }
-                }
-            }
-        }
-    }
 
     fn action_ids(element: &Element, found: &mut Vec<String>) {
         match &element.kind {

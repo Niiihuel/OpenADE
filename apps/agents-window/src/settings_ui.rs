@@ -13,10 +13,6 @@ mod instructions_inspection;
 mod mcp_inspection;
 mod memory;
 mod providers;
-#[cfg(test)]
-mod row_parity_tests;
-#[cfg(test)]
-mod form_parity_tests;
 mod rules_preview;
 mod skills_preview;
 mod subagents;
@@ -31,12 +27,10 @@ pub(crate) use skills_preview::modal as native_skill_preview_modal;
 use openide_core::SessionSort;
 use openide_harness::{CommandIsolation, ExecDecision, HookPhase, LocalTool, SkillOrigin};
 use openide_ui::{
-    ActionRow, Alert, Button, ButtonGroup, ButtonVariant, Color, Component, ControlSize,
-    DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd,
-    Modal, PageColumn, PageHeader, PopoverPlacement, RadiusRole, ScrollArea, ScrollbarAppearance,
-    SearchField,
-    SelectorSizing, Separator, Text, TextArea, TextField,
-    FormField, Select,
+    ActionRow, Alert, Button, ButtonGroup, ButtonVariant, Component, ControlSize, DropdownOption,
+    Element, FormField, Icon, IconButton as UiIconButton, Kbd, Modal, PageColumn, PageHeader,
+    PopoverPlacement, RadiusRole, ScrollArea, ScrollbarAppearance, SearchField, Select,
+    SelectorSizing, Separator, Text, TextArea, TextField, TextRole,
 };
 
 use crate::{
@@ -265,29 +259,13 @@ impl SettingsPage {
     }
 }
 
-fn text(value: impl Into<String>, color: Color, size: f32) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(size)
-        .foreground(color)
-}
-
-fn subtle(value: impl Into<String>) -> Element {
-    text(
-        value,
-        theme::SETTINGS_FOREGROUND_SUBTLE,
-        settings_parts::DETAIL_SIZE,
-    )
-}
-
 fn section(value: &str) -> Element {
-    text(
-        value,
-        theme::SETTINGS_FOREGROUND_SUBTLE,
-        settings_parts::DETAIL_SIZE,
-    )
-    .padding(4.0)
-    .min_size(0.0, 22.0)
+    Text::new(value, theme::component_palette())
+        .role(TextRole::Small)
+        .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+        .render()
+        .padding(4.0)
+        .min_size(0.0, 22.0)
 }
 
 fn field(id: &str, value: &str, placeholder: &str) -> Element {
@@ -422,7 +400,16 @@ fn navigation_groups(state: &ViewState) -> Vec<Element> {
         );
     }
     if items.is_empty() {
-        items.push(subtle("Sin secciones para esta búsqueda").padding(8.0));
+        items.push(
+            Text::new(
+                "Sin secciones para esta búsqueda",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render()
+            .padding(8.0),
+        );
     }
     items
 }
@@ -466,7 +453,9 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
                 Element::icon(Icon::Settings)
                     .foreground(theme::FOREGROUND)
                     .size(Some(16.0), Some(16.0)),
-                text("Configuración", theme::FOREGROUND, 13.0),
+                Text::new("Configuración", theme::component_palette())
+                    .role(TextRole::Label)
+                    .render(),
             ])
             .gap(8.0)
             .padding(8.0),
@@ -981,10 +970,23 @@ fn skills_page(state: &ViewState, compact: bool) -> Vec<Element> {
             SkillOrigin::User => "Usuario",
         };
         let copy = Element::column(vec![
-            text(&entry.name, theme::FOREGROUND, settings_parts::LABEL_SIZE),
-            subtle(&entry.description),
-            subtle(format!("{origin} · {status}")),
-            subtle(entry.document.display().to_string()).font_family(FontFamily::Monospace),
+            Text::new(&entry.name, theme::component_palette()).render(),
+            Text::new(&entry.description, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            Text::new(format!("{origin} · {status}"), theme::component_palette())
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            Text::new(
+                entry.document.display().to_string(),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .mono()
+            .render(),
         ])
         .gap(5.0);
         let action = ButtonGroup::new(vec![
@@ -1262,7 +1264,9 @@ pub fn provider_connect_modal(state: &ViewState, base: Element, viewport_width: 
 // stay on the first line when the description wraps.
 fn shortcut_row(description: &str, keys: &str) -> Element {
     Element::row(vec![
-        text(description, theme::FOREGROUND, settings_parts::LABEL_SIZE).flex(1.0),
+        Text::new(description, theme::component_palette())
+            .render()
+            .flex(1.0),
         Kbd::new(keys, theme::component_palette()).render(),
     ])
     .gap(12.0)
@@ -1423,25 +1427,41 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
         let mut oauth_controls = Vec::new();
         let mut server_content = vec![
             Element::row(vec![
-                text(&server.id, theme::FOREGROUND, settings_parts::LABEL_SIZE).flex(1.0),
+                Text::new(&server.id, theme::component_palette())
+                    .render()
+                    .flex(1.0),
                 Text::new(status, theme::card_palette()).muted().render(),
             ])
             .gap(10.0),
-            subtle(match &server.url {
-                Some(url) => format!("Streamable HTTP: {url}"),
-                None => format!("Programa: {}", server.program),
-            }),
+            Text::new(
+                match &server.url {
+                    Some(url) => format!("Streamable HTTP: {url}"),
+                    None => format!("Programa: {}", server.program),
+                },
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+            .render(),
         ];
         if let Some(oauth) = &server.http_oauth {
-            server_content.push(subtle(format!(
-                "OAuth 2.1 · issuer: {} · scopes: {}",
-                oauth.issuer,
-                if oauth.scopes.is_empty() {
-                    "los solicitados por el servidor".to_owned()
-                } else {
-                    oauth.scopes.join(", ")
-                }
-            )));
+            server_content.push(
+                Text::new(
+                    format!(
+                        "OAuth 2.1 · issuer: {} · scopes: {}",
+                        oauth.issuer,
+                        if oauth.scopes.is_empty() {
+                            "los solicitados por el servidor".to_owned()
+                        } else {
+                            oauth.scopes.join(", ")
+                        }
+                    ),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            );
             let oauth_busy = state.mcp_oauth_status.as_ref().is_some_and(|status| {
                 status.server_id == server.id
                     && matches!(
@@ -1457,7 +1477,15 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                     .render(),
             );
             if !cfg!(windows) {
-                server_content.push(subtle("OAuth MCP requiere Credential Manager en Windows."));
+                server_content.push(
+                    Text::new(
+                        "OAuth MCP requiere Credential Manager en Windows.",
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
+                );
             }
             if let Some(status) = state
                 .mcp_oauth_status
@@ -1466,7 +1494,7 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
             {
                 match &status.phase {
                     McpOAuthViewPhase::Discovering => {
-                        server_content.push(subtle("Buscando el servidor de autorización"));
+                        server_content.push(Text::new("Buscando el servidor de autorización", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
                         oauth_controls.push(
                             outline("mcp_oauth_cancel", "Cancelar")
                                 .icon(Icon::Close)
@@ -1474,11 +1502,10 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                         );
                     }
                     McpOAuthViewPhase::AwaitingBrowser { url } => {
-                        server_content.push(subtle("Esperando autorización en el navegador. La URL es temporal:"));
+                        server_content.push(Text::new("Esperando autorización en el navegador. La URL es temporal:", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
                         server_content.push(
                             Element::panel(
-                                text(url, theme::SETTINGS_FOREGROUND_SUBTLE, 12.0)
-                                    .font_family(FontFamily::Monospace),
+                                Text::new(url, theme::component_palette()).ink(theme::SETTINGS_FOREGROUND_SUBTLE).mono().render(),
                             )
                             .padding(10.0)
                             .background(theme::INPUT)
@@ -1496,9 +1523,7 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
                                 .render(),
                         );
                     }
-                    McpOAuthViewPhase::Authorized => server_content.push(subtle(
-                        "Autorización guardada en Credential Manager. El próximo turno usará esta credencial.",
-                    )),
+                    McpOAuthViewPhase::Authorized => server_content.push(Text::new("Autorización guardada en Credential Manager. El próximo turno usará esta credencial.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()),
                     McpOAuthViewPhase::Failed(message) => server_content.push(
                         settings_parts::feedback_banner(message, FeedbackTone::Error, None, compact),
                     ),
@@ -1583,15 +1608,19 @@ fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
         rows.push(
             Element::column(vec![
                 Element::row(vec![
-                    text(&hook.id, theme::FOREGROUND, settings_parts::LABEL_SIZE).flex(1.0),
+                    Text::new(&hook.id, theme::component_palette())
+                        .render()
+                        .flex(1.0),
                     Text::new(phase, theme::card_palette()).muted().render(),
                 ])
                 .gap(10.0),
-                subtle(format!(
-                    "{} · {}",
-                    hook.tool_name,
-                    hook.executable.display()
-                )),
+                Text::new(
+                    format!("{} · {}", hook.tool_name, hook.executable.display()),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
                 if compact {
                     Element::column(controls).gap(6.0)
                 } else {
@@ -1671,7 +1700,7 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
             .render(),
         form_field("Límite de tiempo (ms)", input("hook_draft_timeout_ms", &draft.draft_timeout_ms, "5000")).render(),
         form_field("Límite de salida (bytes)", input("hook_draft_max_output_bytes", &draft.draft_max_output_bytes, "4096")).render(),
-        subtle("El comando recibe JSON del evento por stdin. Puede tener efectos externos; sólo configura ejecutables de confianza."),
+        Text::new("El comando recibe JSON del evento por stdin. Puede tener efectos externos; sólo configura ejecutables de confianza.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
     ]);
     let cancel = outline("hook_cancel", "Cancelar").render();
     let save = theme::primary(
@@ -1762,8 +1791,9 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
         let mut body = vec![Element::row(vec![
             ScrollArea::new(
                 format!("exec_rule_pattern:{index}"),
-                text(pattern, theme::FOREGROUND, settings_parts::LABEL_SIZE)
-                    .font_family(FontFamily::Monospace),
+                Text::new(pattern, theme::component_palette())
+                    .mono()
+                    .render(),
             )
             .render()
             .size(None, Some(80.0))
@@ -1772,7 +1802,12 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
         ])
         .gap(8.0)];
         if let Some(justification) = rule.justification() {
-            body.push(subtle(justification));
+            body.push(
+                Text::new(justification, theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
+            );
         }
         let controls = vec![
             outline(format!("exec_rule_select:{index}"), "Editar")
@@ -1944,9 +1979,7 @@ pub fn exec_rule_reset_modal(state: &ViewState, base: Element, viewport_width: f
         theme::component_palette(),
     )
     .width(width)
-    .body(subtle(
-        "Esta acción reemplaza el archivo de reglas por una política vacía. Los próximos turnos usarán los permisos generales de herramientas.",
-    ))
+    .body(Text::new("Esta acción reemplaza el archivo de reglas por una política vacía. Los próximos turnos usarán los permisos generales de herramientas.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render())
     .footer(Element::row(vec![
         Element::spacer().flex(1.0),
         cancel,
@@ -1979,9 +2012,7 @@ pub fn native_skill_reset_modal(state: &ViewState, base: Element, viewport_width
         theme::component_palette(),
     )
     .width(width)
-    .body(subtle(
-        "Esta acción borra las selecciones de skills locales de todos los proyectos. Se pueden volver a seleccionar desde esta página.",
-    ))
+    .body(Text::new("Esta acción borra las selecciones de skills locales de todos los proyectos. Se pueden volver a seleccionar desde esta página.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render())
     .footer(Element::row(vec![
         Element::spacer().flex(1.0),
         cancel,
@@ -2061,7 +2092,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
         ]);
         if state.mcp_draft_oauth_enabled {
             fields.extend([
-                subtle("Usá un client ID público registrado para este issuer. La autorización se inicia después de guardar; no escribas client secrets ni tokens."),
+                Text::new("Usá un client ID público registrado para este issuer. La autorización se inicia después de guardar; no escribas client secrets ni tokens.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
                 form_field("Client ID público", input("mcp_draft_oauth_client_id", &state.mcp_draft_oauth_client_id, "client-id")).render(),
                 form_field("Issuer OAuth", input("mcp_draft_oauth_issuer", &state.mcp_draft_oauth_issuer, "https://auth.example.com"))
                     .hint("URL HTTPS exacta del servidor de autorización, sin query ni credenciales.")
@@ -2080,7 +2111,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 )
                 .hint("Uno por línea. Se unen con los scopes requeridos por el servidor; no son valores secretos.")
                 .render(),
-                subtle("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar."),
+                Text::new("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
             ]);
         } else {
             fields.push(
@@ -2096,7 +2127,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 .render(),
             );
         }
-        fields.push(subtle("Streamable HTTP negocia el protocolo al conectar: 2026-07-28 o las versiones compatibles de 2025. Solicitudes de entrada adicional aún no están disponibles."));
+        fields.push(Text::new("Streamable HTTP negocia el protocolo al conectar: 2026-07-28 o las versiones compatibles de 2025. Solicitudes de entrada adicional aún no están disponibles.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     } else {
         fields.extend([
             form_field("Programa", input("mcp_draft_program", &state.mcp_draft_program, "ej. npx"))
@@ -2135,7 +2166,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
             .render(),
         ]);
     }
-    fields.push(subtle("Los servidores nuevos se guardan desactivados. Usa Activar en la lista cuando estén listos."));
+    fields.push(Text::new("Los servidores nuevos se guardan desactivados. Usa Activar en la lista cuando estén listos.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     let cancel = outline("mcp_cancel", "Cancelar").render();
     let save = theme::primary(
         "mcp_save",
@@ -2313,12 +2344,26 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
             .render()];
         match shell {
             TerminalShell::Custom(path) if path != Path::new(draft) => {
-                editor.push(subtle(format!("Ruta guardada: {}", path.display())));
+                editor.push(
+                    Text::new(
+                        format!("Ruta guardada: {}", path.display()),
+                        theme::component_palette(),
+                    )
+                    .role(TextRole::Small)
+                    .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .render(),
+                );
             }
             TerminalShell::Custom(_) => {}
-            _ => editor.push(subtle(format!(
-                "Se mantiene «{shell_name}» hasta guardar una ruta válida."
-            ))),
+            _ => editor.push(
+                Text::new(
+                    format!("Se mantiene «{shell_name}» hasta guardar una ruta válida."),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
+                .render(),
+            ),
         }
         rows.push(
             Element::column(editor)

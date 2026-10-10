@@ -7,8 +7,8 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    AlertDialog, Button, ButtonGroup, ButtonVariant, Card, Component, ControlSize, Element, FontFamily, Icon, Modal,
-    SearchField, Separator, TextField,
+    AlertDialog, Button, ButtonGroup, ButtonVariant, Card, Component, ControlSize, Element, Icon,
+    Modal, SearchField, Separator, Text, TextField, TextRole,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -37,17 +37,6 @@ impl PluginsUiState {
     }
 }
 
-fn label(text: impl Into<String>) -> Element {
-    Element::text(text)
-        .font_family(FontFamily::Sans)
-        .font_size(12.0)
-        .foreground(theme::FOREGROUND)
-}
-fn detail(text: impl Into<String>) -> Element {
-    label(text)
-        .font_size(11.0)
-        .foreground(theme::FOREGROUND_SUBTLE)
-}
 fn metadata(manifest: &PluginManifest) -> String {
     format!("{} · {}", manifest.publisher, manifest.version)
 }
@@ -75,7 +64,7 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             .render(),
     ])
     .gap(6.0)];
-    rows.push(detail("Las instalaciones se guardan en este equipo. Activa cada plugin para el proyecto actual; sus herramientas estarán disponibles en los próximos turnos de ejecución."));
+    rows.push(Text::new("Las instalaciones se guardan en este equipo. Activa cada plugin para el proyecto actual; sus herramientas estarán disponibles en los próximos turnos de ejecución.", theme::component_palette()).role(TextRole::Small).muted().render());
     if let Some(message) = &plugins.status {
         rows.push(settings_parts::feedback_banner(
             message,
@@ -123,12 +112,21 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 Element::icon(Icon::Puzzle)
                     .foreground(theme::FOREGROUND_SUBTLE)
                     .size(Some(18.0), Some(18.0)),
-                Element::column(vec![label(&manifest.name), detail(metadata(manifest))])
-                    .gap(3.0)
-                    .flex(1.0),
+                Element::column(vec![
+                    Text::new(&manifest.name, theme::component_palette()).render(),
+                    Text::new(metadata(manifest), theme::component_palette())
+                        .role(TextRole::Small)
+                        .muted()
+                        .render(),
+                ])
+                .gap(3.0)
+                .flex(1.0),
             ])
             .gap(8.0),
-            detail(&manifest.description),
+            Text::new(&manifest.description, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
         ];
         let actions = Element::row(vec![
             Button::new(
@@ -161,11 +159,17 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             .render(),
         ])
         .gap(6.0);
-        let status = detail(if plugin.enabled {
-            "Activo en este proyecto"
-        } else {
-            "Inactivo en este proyecto"
-        });
+        let status = Text::new(
+            if plugin.enabled {
+                "Activo en este proyecto"
+            } else {
+                "Inactivo en este proyecto"
+            },
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render();
         content.push(if compact {
             Element::column(vec![status, actions]).gap(8.0)
         } else {
@@ -189,27 +193,62 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
 
 fn manifest_fields(manifest: &PluginManifest) -> Vec<Element> {
     let mut fields = vec![
-        label(&manifest.name),
-        detail(metadata(manifest)),
-        detail(&manifest.description),
-        detail(format!("Identificador: {}", manifest.id)),
-        label("Programa"),
-        label(&manifest.program).font_family(FontFamily::Monospace),
+        Text::new(&manifest.name, theme::component_palette()).render(),
+        Text::new(metadata(manifest), theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        Text::new(&manifest.description, theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        Text::new(
+            format!("Identificador: {}", manifest.id),
+            theme::component_palette(),
+        )
+        .role(TextRole::Small)
+        .muted()
+        .render(),
+        Text::new("Programa", theme::component_palette()).render(),
+        Text::new(&manifest.program, theme::component_palette())
+            .mono()
+            .render(),
     ];
     if let Some(entrypoint) = &manifest.entrypoint {
-        fields.push(detail(format!("Entrada: {entrypoint}")));
+        fields.push(
+            Text::new(format!("Entrada: {entrypoint}"), theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
     }
     if !manifest.args.is_empty() {
-        fields.push(detail(format!(
-            "Argumentos: {}",
-            serde_json::to_string(&manifest.args).unwrap_or_default()
-        )));
+        fields.push(
+            Text::new(
+                format!(
+                    "Argumentos: {}",
+                    serde_json::to_string(&manifest.args).unwrap_or_default()
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     if !manifest.credential_env_names.is_empty() {
-        fields.push(detail(format!(
-            "Variables requeridas: {}",
-            manifest.credential_env_names.join(", ")
-        )));
+        fields.push(
+            Text::new(
+                format!(
+                    "Variables requeridas: {}",
+                    manifest.credential_env_names.join(", ")
+                ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
+        );
     }
     fields
 }
@@ -226,7 +265,13 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     }
     let (title, description, body, footer, focus, return_focus) = if plugins.install_open {
         let mut fields = vec![
-            detail("Carpeta que contiene openide-plugin.json"),
+            Text::new(
+                "Carpeta que contiene openide-plugin.json",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
             TextField::new(
                 "plugins_source",
                 &plugins.source,
@@ -258,22 +303,42 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
         if let Some(preview) = &plugins.preview {
             fields.push(Separator::horizontal(theme::component_palette()).render());
             fields.extend(manifest_fields(&preview.manifest));
-            fields.push(detail(format!(
-                "{} archivos · {} KiB",
-                preview.file_count,
-                preview.total_bytes.div_ceil(1024)
-            )));
             fields.push(
-                detail(format!("SHA-256: {}", preview.digest)).font_family(FontFamily::Monospace),
+                Text::new(
+                    format!(
+                        "{} archivos · {} KiB",
+                        preview.file_count,
+                        preview.total_bytes.div_ceil(1024)
+                    ),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
             );
-            fields.push(detail("Se instalará inactivo. Al activarlo, este programa podrá ejecutarse en los próximos turnos del agente; las llamadas a sus herramientas conservarán los permisos de MCP."));
+            fields.push(
+                Text::new(
+                    format!("SHA-256: {}", preview.digest),
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .mono()
+                .render(),
+            );
+            fields.push(Text::new("Se instalará inactivo. Al activarlo, este programa podrá ejecutarse en los próximos turnos del agente; las llamadas a sus herramientas conservarán los permisos de MCP.", theme::component_palette()).role(TextRole::Small).muted().render());
         }
         if let Some(message) = &plugins.status {
-            fields.push(detail(message).foreground(if plugins.error {
-                theme::DESTRUCTIVE
-            } else {
-                theme::FOREGROUND_SUBTLE
-            }));
+            fields.push(
+                Text::new(message, theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(if plugins.error {
+                        theme::DESTRUCTIVE
+                    } else {
+                        theme::FOREGROUND_SUBTLE
+                    })
+                    .render(),
+            );
         }
         let footer = ButtonGroup::new(vec![
             Button::new(
@@ -313,11 +378,17 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .find(|plugin| &plugin.manifest.id == id)
     }) {
         let mut fields = manifest_fields(&plugin.manifest);
-        fields.extend([detail(if plugin.enabled { "Activo en el proyecto actual" } else { "Inactivo en el proyecto actual" }), detail(format!("Copia instalada: {}", plugin.path.display())), detail(format!("SHA-256: {}", plugin.digest)).font_family(FontFamily::Monospace), detail("La versión instalada se conserva hasta que la desinstales. No se descargan ni ejecutan actualizaciones al abrir esta pantalla.")]);
+        fields.extend([Text::new(if plugin.enabled { "Activo en el proyecto actual" } else { "Inactivo en el proyecto actual" }, theme::component_palette()).role(TextRole::Small).muted().render(), Text::new(format!("Copia instalada: {}", plugin.path.display()), theme::component_palette()).role(TextRole::Small).muted().render(), Text::new(format!("SHA-256: {}", plugin.digest), theme::component_palette()).role(TextRole::Small).muted().mono().render(), Text::new("La versión instalada se conserva hasta que la desinstales. No se descargan ni ejecutan actualizaciones al abrir esta pantalla.", theme::component_palette()).role(TextRole::Small).muted().render()]);
         if plugins.removal_blocked {
-            fields.push(detail(
-                "Espera a que terminen los agentes para desinstalar plugins.",
-            ));
+            fields.push(
+                Text::new(
+                    "Espera a que terminen los agentes para desinstalar plugins.",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+            );
         }
         let footer = ButtonGroup::new(vec![Button::new(
             "plugins_dialog_close",

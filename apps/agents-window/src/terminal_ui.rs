@@ -4,8 +4,8 @@
 
 use openide_ui::{
     Breadcrumb, BreadcrumbItem, Button, ButtonVariant, Color, Component, ContextMenu,
-    ContextMenuEntry, ContextMenuItem, ControlSize, Element, FontFamily, Icon, IconButton,
-    Notice, Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    ContextMenuEntry, ContextMenuItem, ControlSize, Element, FontFamily, Icon, IconButton, Notice,
+    Separator, Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -15,13 +15,6 @@ use crate::{
     theme,
     view::ViewState,
 };
-
-fn text(value: impl Into<String>, color: Color) -> Element {
-    Element::text(value)
-        .font_family(FontFamily::Sans)
-        .font_size(11.0)
-        .foreground(color)
-}
 
 fn terminal_color(color: TerminalColor, default: Color) -> Color {
     match color {
@@ -271,27 +264,6 @@ fn exit_notice(status: String, failed: bool, restart: &str) -> Element {
     .render()
 }
 
-#[cfg(test)]
-fn legacy_exit_notice(status: String, failed: bool, restart: &str) -> Element {
-    Element::row(vec![
-        Element::truncated_text(status)
-            .font_family(FontFamily::Sans)
-            .font_size(11.0)
-            .foreground(if failed {
-                theme::DESTRUCTIVE
-            } else {
-                theme::FOREGROUND_SUBTLE
-            })
-            .flex(1.0),
-        restart_button(restart),
-    ])
-    .gap(8.0)
-    .padding(4.0)
-    .background(theme::PANEL)
-    .radius(8.0)
-    .size(None, Some(40.0))
-}
-
 /// Compatibility for the former side-tab host. The bottom dock uses
 /// `build_body` and supplies exactly one session/header row itself.
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
@@ -301,14 +273,19 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             Element::icon(Icon::Terminal)
                 .foreground(theme::FOREGROUND_SUBTLE)
                 .size(Some(24.0), Some(24.0)),
-            text("Terminal local", theme::FOREGROUND).font_size(14.0),
-            text(
+            Text::new("Terminal local", theme::component_palette())
+                .role(TextRole::Body)
+                .render(),
+            Text::new(
                 state
                     .terminal_error
                     .as_deref()
                     .unwrap_or("Iniciando el shell del proyecto…"),
-                theme::FOREGROUND_SUBTLE,
-            ),
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
             theme::interactive_surface(
                 Button::new("terminal_restart", "Reintentar", theme::component_palette())
                     .variant(ButtonVariant::Subtle)
@@ -557,20 +534,6 @@ fn build_snapshot(
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
-
-    #[test]
-    fn exit_notice_matches_its_legacy_body() {
-        for (status, failed) in [
-            ("Proceso finalizado · código 1", false),
-            ("No se pudo iniciar el shell del proyecto: el ejecutable no existe", true),
-        ] {
-            crate::state_panel_parity_tests::assert_same(
-                "terminal exit",
-                legacy_exit_notice(status.into(), failed, "terminal_restart"),
-                exit_notice(status.into(), failed, "terminal_restart"),
-            );
-        }
-    }
 
     fn grid_snapshot(lines: &[&str]) -> TerminalSnapshot {
         TerminalSnapshot {
