@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use openide_ui::{
     Color, Component, ControlSize, Element, Empty, FontFamily, Icon, Kbd, Point,
-    ScrollArea, ScrollbarAppearance, Search, SegmentedControl, Tab, Tooltip,
+    ScrollArea, ScrollbarAppearance, Search, SegmentedControl, Separator, Tab, Tooltip,
 };
 
-use super::{divider, ViewState};
+use super::ViewState;
 use crate::{
     command_center::{self, ResultItem, Scope, Target},
     keymap::{KeymapProfile, ShortcutAction},
@@ -20,15 +20,6 @@ fn text(value: impl Into<String>, size: f32, ink: Color) -> Element {
         .font_family(FontFamily::Sans)
         .font_size(size)
         .foreground(ink)
-}
-
-fn centered(child: Element, height: f32) -> Element {
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        child,
-        Element::spacer().flex(1.0),
-    ])
-    .size(None, Some(height))
 }
 
 fn inset(child: Element) -> Element {
@@ -126,24 +117,21 @@ fn result_row(
         labels.push(text(secondary, 12.0, theme::FOREGROUND_SUBTLE).flex(1.0));
     }
     let body = Element::row(vec![
-        centered(
-            Element::icon(result_icon(result)).size(Some(16.0), Some(16.0)),
-            ROW_HEIGHT,
-        )
-        .size(Some(16.0), None),
-        centered(
-            Element::row(labels).size(Some(text_width), None),
-            ROW_HEIGHT,
-        )
-        .flex(1.0),
+        Element::icon(result_icon(result))
+            .size(Some(16.0), Some(16.0))
+            .centered_y()
+            .size(Some(16.0), None),
+        Element::row(labels)
+            .size(Some(text_width), None)
+            .centered_y()
+            .size(None, Some(ROW_HEIGHT))
+            .flex(1.0),
         if let Some(shortcut) = shortcut {
-            centered(
-                Kbd::new(shortcut, theme::component_palette())
-                    .max_width(shortcut_width)
-                    .render(),
-                ROW_HEIGHT,
-            )
-            .size(Some(shortcut_width), None)
+            Kbd::new(shortcut, theme::component_palette())
+                .max_width(shortcut_width)
+                .render()
+                .centered_y()
+                .size(Some(shortcut_width), None)
         } else {
             Element::spacer().size(Some(0.0), None)
         },
@@ -190,7 +178,9 @@ fn result_row(
 fn footer_hint(keys: &str, label: &str) -> Element {
     Element::row(vec![
         Kbd::new(keys, theme::component_palette()).render(),
-        centered(text(label, 11.0, theme::SETTINGS_FOREGROUND_SUBTLE), 20.0),
+        text(label, 11.0, theme::SETTINGS_FOREGROUND_SUBTLE)
+            .centered_y()
+            .size(None, Some(20.0)),
     ])
     .gap(6.0)
     .size(None, Some(20.0))
@@ -289,10 +279,11 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
                     Scope::Files => "Archivos",
                     Scope::All => "Resultados",
                 };
-                entries.push(inset(centered(
-                    text(title, 11.0, theme::FOREGROUND_SUBTLE),
-                    ROW_HEIGHT,
-                )));
+                entries.push(inset(
+                    text(title, 11.0, theme::FOREGROUND_SUBTLE)
+                        .centered_y()
+                        .size(None, Some(ROW_HEIGHT)),
+                ));
             }
             entries.push(result_row(
                 index,
@@ -351,14 +342,22 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
     // Keep complete key combinations at compact widths; the result count is
     // secondary to navigation and dismissal and stays in the wide layout.
     if width >= 440.0 {
-        footer
-            .push(centered(text(summary, 11.0, theme::FOREGROUND_SUBTLE), FOOTER_HEIGHT).flex(1.0));
+        footer.push(
+            text(summary, 11.0, theme::FOREGROUND_SUBTLE)
+                .centered_y()
+                .size(None, Some(FOOTER_HEIGHT))
+                .flex(1.0),
+        );
     } else {
         footer.push(Element::spacer().flex(1.0));
     }
     footer.extend([
-        centered(footer_hint("↑↓", "Navegar"), FOOTER_HEIGHT),
-        centered(footer_hint("Enter", "Abrir"), FOOTER_HEIGHT),
+        footer_hint("↑↓", "Navegar")
+            .centered_y()
+            .size(None, Some(FOOTER_HEIGHT)),
+        footer_hint("Enter", "Abrir")
+            .centered_y()
+            .size(None, Some(FOOTER_HEIGHT)),
         close,
     ]);
     let mut content = vec![
@@ -375,7 +374,7 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
         filter_tabs,
     ];
     if let Some((message, error)) = search_status {
-        content.push(centered(
+        content.push(
             text(
                 message,
                 11.0,
@@ -384,14 +383,15 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
                 } else {
                     theme::FOREGROUND_SUBTLE
                 },
-            ),
-            24.0,
-        ));
+            )
+            .centered_y()
+            .size(None, Some(24.0)),
+        );
     }
     content.extend([
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
         results,
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
         Element::row(footer)
             .gap(12.0)
             .size(None, Some(FOOTER_HEIGHT)),

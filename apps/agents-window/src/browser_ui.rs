@@ -2,8 +2,8 @@
 
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    Element, FontFamily, Icon, IconButton, PopoverPlacement, RasterImage, ScrollArea, Spinner,
-    Tooltip, TooltipPlacement,
+    Element, FontFamily, Icon, IconButton, PopoverPlacement, RasterImage, ScrollArea, Separator,
+    Spinner, Tooltip, TooltipPlacement,
 };
 
 use crate::{theme, view::ViewState};
@@ -290,14 +290,6 @@ fn error_copy(browser: &BrowserUiState) -> (String, String) {
     }
 }
 
-fn centered(element: Element) -> Element {
-    Element::row(vec![
-        Element::spacer().flex(1.0),
-        element,
-        Element::spacer().flex(1.0),
-    ])
-}
-
 fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
     let card_width = (width - 48.0).clamp(96.0, 360.0);
     let (title, description, icon) = match mode {
@@ -337,7 +329,7 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
             .size(Some(36.0), Some(36.0))
     };
     let mut content = vec![
-        centered(visual),
+        visual.centered_x(),
         label(title, false).font_size(15.0).center_content(),
         label(description, true).center_content(),
     ];
@@ -388,11 +380,11 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
         let actions = if card_width < 260.0 {
             Element::column(vec![retry, edit]).gap(4.0)
         } else {
-            centered(Element::row(vec![retry, edit]).gap(4.0))
+            Element::row(vec![retry, edit]).gap(4.0).centered_x()
         };
         content.push(actions);
     } else if mode == Surface::Empty {
-        content.push(centered(
+        content.push(
             Button::new(
                 "browser_focus_url",
                 "Escribir dirección",
@@ -400,8 +392,9 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
             )
             .variant(ButtonVariant::Secondary)
             .size(ControlSize::Compact)
-            .render(),
-        ));
+            .render()
+            .centered_x(),
+        );
     }
     let card = Element::column(content)
         .gap(10.0)
@@ -410,7 +403,7 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
         "browser_state_scroll",
         Element::column(vec![
             Element::spacer().size(None, Some(32.0)),
-            centered(card),
+            card.centered_x(),
             Element::spacer().size(None, Some(32.0)),
         ])
         .size(Some(width), None),
@@ -490,9 +483,7 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
     };
     Element::column(vec![
         navigation(browser, width),
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(None, Some(1.0)),
+        Separator::horizontal(theme::component_palette()).render(),
         content,
         status(browser, width, mode),
     ])

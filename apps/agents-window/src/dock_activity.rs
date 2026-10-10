@@ -354,7 +354,7 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
     if !selected_native {
         return;
     }
-    items.push(divider());
+    items.push(Separator::horizontal(theme::component_palette()).render());
     items.push(
         Element::row(vec![
             label("Procesos", theme::FOREGROUND)

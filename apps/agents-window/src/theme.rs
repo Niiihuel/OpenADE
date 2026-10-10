@@ -230,6 +230,17 @@ mod tests {
     }
 }
 
+/// Sans text at a size off limn's `TextRole` scale (10.5, 11.5, 12.5, 15, 17,
+/// 19 and the display sizes). Text on the scale uses `openide_ui::Text`.
+// Its first callers arrive with the next sections of the UI separation.
+#[allow(dead_code)]
+pub fn text_px(value: impl Into<String>, px: f32, ink: Color) -> Element {
+    Element::text(value)
+        .font_family(openide_ui::FontFamily::Sans)
+        .font_size(px)
+        .foreground(ink)
+}
+
 /// Placeholder rows for a list whose items are still loading. `id` keeps the
 /// pulse in phase across rebuilds; rows vary in length so they read as text.
 pub fn skeleton_rows(id: &str, rows: usize, row_height: f32, icon: bool) -> Vec<Element> {
@@ -255,12 +266,10 @@ pub fn skeleton_rows(id: &str, rows: usize, row_height: f32, icon: bool) -> Vec<
                     .flex(fraction),
             );
             cells.push(Element::spacer().flex(1.0 - fraction));
-            Element::column(vec![
-                Element::spacer().flex(1.0),
-                Element::row(cells).gap(10.0),
-                Element::spacer().flex(1.0),
-            ])
-            .size(None, Some(row_height))
+            Element::row(cells)
+                .gap(10.0)
+                .centered_y()
+                .size(None, Some(row_height))
         })
         .collect()
 }

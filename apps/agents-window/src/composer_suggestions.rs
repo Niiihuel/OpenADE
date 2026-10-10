@@ -9,7 +9,7 @@ use openide_core::TurnMode;
 use openide_harness::SkillSelection;
 use openide_ui::{
     Component, Element, FontFamily, Icon, Kbd, Popover, PopoverPlacement, ScrollArea,
-    ScrollbarAppearance, SelectorSizing, TextSpan,
+    ScrollbarAppearance, SelectorSizing, Separator, TextSpan,
 };
 use std::{
     io,
@@ -626,9 +626,7 @@ pub(crate) fn popup(
                 SUGGESTION_ROW_HEIGHT,
                 move |slot_index| match slots[slot_index] {
                     SuggestionSlot::Section(group) => Element::column(vec![
-                        Element::spacer()
-                            .background(theme::BORDER)
-                            .size(None, Some(1.0)),
+                        Separator::horizontal(theme::component_palette()).render(),
                         Element::text(group)
                             .font_family(FontFamily::Sans)
                             .font_size(sizing.detail_size)
@@ -715,11 +713,7 @@ pub(crate) fn popup(
             .flex(1.0),
         );
     }
-    contents.push(
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(None, Some(1.0)),
-    );
+    contents.push(Separator::horizontal(theme::component_palette()).render());
     let hint = |keys: &[&str], label: &str| {
         let mut parts = Vec::new();
         for (index, key) in keys.iter().enumerate() {

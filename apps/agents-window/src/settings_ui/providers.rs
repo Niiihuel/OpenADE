@@ -447,15 +447,12 @@ fn model_list(state: &ViewState, id: &str, width: f32) -> Element {
             // The model in use is a state, not an action: plain text in the
             // column where the other rows offer their button.
             let select = if selected {
-                Element::row(vec![
-                    Element::spacer().flex(1.0),
-                    Element::truncated_text("En uso")
-                        .font_family(FontFamily::Sans)
-                        .font_size(12.0)
-                        .foreground(theme::SETTINGS_FOREGROUND_SUBTLE),
-                    Element::spacer().flex(1.0),
-                ])
-                .size(Some(64.0), Some(ControlSize::Compact.height()))
+                Element::truncated_text("En uso")
+                    .font_family(FontFamily::Sans)
+                    .font_size(12.0)
+                    .foreground(theme::SETTINGS_FOREGROUND_SUBTLE)
+                    .centered_x()
+                    .size(Some(64.0), Some(ControlSize::Compact.height()))
             } else {
                 Button::new(
                     format!("catalog_select:{provider}/{}", m.id),
@@ -472,15 +469,7 @@ fn model_list(state: &ViewState, id: &str, width: f32) -> Element {
             let content = if width < 440.0 {
                 Element::column(vec![name, controls]).gap(6.0)
             } else {
-                Element::row(vec![
-                    name,
-                    Element::column(vec![
-                        Element::spacer().flex(1.0),
-                        controls,
-                        Element::spacer().flex(1.0),
-                    ]),
-                ])
-                .gap(10.0)
+                Element::row(vec![name, controls.centered_y()]).gap(10.0)
             };
             content
                 .padding(10.0)

@@ -8,8 +8,8 @@ use std::{
 
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Chip, Color, Component, ComponentPalette, ControlSize,
-    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Tooltip,
-    TooltipPlacement,
+    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Separator,
+    Tooltip, TooltipPlacement,
 };
 
 use crate::{
@@ -389,11 +389,7 @@ fn account_card(
     ];
     if width >= 420.0 {
         if let Some(plan) = &snapshot.plan_label {
-            header.push(Element::column(vec![
-                Element::spacer().flex(1.0),
-                plan_badge(plan),
-                Element::spacer().flex(1.0),
-            ]));
+            header.push(plan_badge(plan).centered_y());
         }
     }
     let mut rows = vec![Element::row(header).gap(6.0)];
@@ -467,9 +463,7 @@ fn account_card(
     // Keep actions independent of copy length and account state. The body
     // absorbs the extra height of its row, so every footer shares a baseline.
     let footer = Element::column(vec![
-        Element::spacer()
-            .size(None, Some(1.0))
-            .background(theme::BORDER),
+        Separator::horizontal(theme::component_palette()).render(),
         Element::row(vec![Element::spacer().flex(1.0), account_action(snapshot)]),
     ])
     .gap(10.0);
@@ -719,11 +713,7 @@ fn popup(state: &ViewState) -> Element {
     let mut body_height = 0.0;
     for (id, name, _) in accounts {
         if !cards.is_empty() {
-            cards.push(
-                Element::spacer()
-                    .background(theme::BORDER)
-                    .size(None, Some(1.0)),
-            );
+            cards.push(Separator::horizontal(theme::component_palette()).render());
             body_height += 1.0;
         }
         let (row, height) = popup_account(&snapshot(state, id, name), now);
@@ -741,27 +731,21 @@ fn popup(state: &ViewState) -> Element {
     }
     Element::column(vec![
         Element::row(vec![
-            Element::column(vec![
-                Element::spacer().flex(1.0),
-                text("Cuenta y uso", 13.0, theme::FOREGROUND).size(None, Some(18.0)),
-                Element::spacer().flex(1.0),
-            ])
-            .flex(1.0),
+            text("Cuenta y uso", 13.0, theme::FOREGROUND)
+                .size(None, Some(18.0))
+                .centered_y()
+                .flex(1.0),
             refresh(state, true),
         ])
         .gap(6.0)
         .size(None, Some(32.0)),
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(None, Some(1.0)),
+        Separator::horizontal(theme::component_palette()).render(),
         ScrollArea::new("provider_usage_popup", Element::column(cards))
             .tint(theme::FOREGROUND_SUBTLE)
             .render()
             .size(None, Some(body_height.min(POPUP_BODY_MAX_HEIGHT)))
             .flex(1.0),
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(None, Some(1.0)),
+        Separator::horizontal(theme::component_palette()).render(),
         Button::new(
             "usage_details",
             "Ver uso y proveedores",

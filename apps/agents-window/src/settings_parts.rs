@@ -51,20 +51,14 @@ pub fn status_badge(status: CapabilityStatus) -> Element {
         ),
     };
     let content = Element::row(vec![
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            Element::icon(icon)
-                .foreground(color)
-                .size(Some(14.0), Some(14.0)),
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(14.0), Some(16.0)),
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            label(text, color, DETAIL_SIZE),
-            Element::spacer().flex(1.0),
-        ])
-        .size(None, Some(16.0)),
+        Element::icon(icon)
+            .foreground(color)
+            .size(Some(14.0), Some(14.0))
+            .centered_y()
+            .size(Some(14.0), Some(16.0)),
+        label(text, color, DETAIL_SIZE)
+            .centered_y()
+            .size(None, Some(16.0)),
     ])
     .gap(4.0)
     .size(None, Some(16.0));
@@ -120,16 +114,7 @@ pub fn section_header(
     .gap(4.0);
     match (action, compact) {
         (Some(action), true) => Element::column(vec![copy, action]).gap(8.0),
-        (Some(action), false) => {
-            let width = action.style.width;
-            let action = Element::column(vec![
-                Element::spacer().flex(1.0),
-                action,
-                Element::spacer().flex(1.0),
-            ])
-            .size(width, None);
-            Element::row(vec![copy.flex(1.0), action]).gap(12.0)
-        }
+        (Some(action), false) => Element::row(vec![copy.flex(1.0), action.centered_y()]).gap(12.0),
         (None, _) => copy,
     }
 }
@@ -150,20 +135,9 @@ pub fn settings_row(
     let content = if stack_control {
         Element::column(vec![copy, control]).gap(8.0)
     } else {
-        let mut control = control;
-        let width = control.style.width;
-        let flex = control.style.flex;
-        control.style.flex = 0.0;
         // Fixed-height controls need their own vertical centering; the row
         // stretches this wrapper to match wrapped descriptions and tall copy.
-        let centered_control = Element::column(vec![
-            Element::spacer().flex(1.0),
-            control,
-            Element::spacer().flex(1.0),
-        ])
-        .size(width, None)
-        .flex(flex);
-        Element::row(vec![copy.flex(1.0), centered_control])
+        Element::row(vec![copy.flex(1.0), control.centered_y()])
             .gap(16.0)
             .min_size(0.0, 34.0)
     };

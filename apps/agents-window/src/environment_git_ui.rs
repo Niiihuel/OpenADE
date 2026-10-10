@@ -7,8 +7,8 @@ use crate::{
 };
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, TextArea, TextField,
-    Tooltip, TooltipPlacement,
+    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, Separator, TextArea,
+    TextField, Tooltip, TooltipPlacement,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -343,9 +343,9 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
         ));
         rows.push(Element::column(commit).gap(6.0));
         rows.push(
-            Element::spacer()
-                .background(theme::TREE_GUIDE)
-                .size(None, Some(1.0)),
+            Separator::horizontal(theme::component_palette())
+                .ink(theme::TREE_GUIDE)
+                .render(),
         );
 
         let mut publish = vec![text("Publicar rama", false, 12.0)];

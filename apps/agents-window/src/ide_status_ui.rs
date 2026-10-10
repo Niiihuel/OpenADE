@@ -7,7 +7,7 @@ use openide_editor::IndentStyle;
 use openide_ui::{
     AlertColors, AlertTone, Button, ButtonVariant, CodeLanguage, Color, Component, ControlSize,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon, IconButton,
-    Popover, PopoverPlacement, ScrollArea, TextField, Tooltip, TooltipPlacement,
+    Popover, PopoverPlacement, ScrollArea, Separator, TextField, Tooltip, TooltipPlacement,
 };
 
 // Reserve only the top divider; cells fill the remaining status bar height.
@@ -481,9 +481,7 @@ fn services_control(
             .flex(1.0),
         ])
         .gap(6.0),
-        Element::spacer()
-            .background(palette.border)
-            .size(None, Some(1.0)),
+        Separator::horizontal(palette).render(),
     ];
     if plain {
         rows.push(prose(
@@ -616,11 +614,7 @@ pub(crate) fn footer(state: &ViewState, width: f32) -> Element {
         theme::action_palette(theme::WINDOW, theme::FOREGROUND_SUBTLE).bar_item_surface(
             Element::clickable(
                 "notifications_toggle",
-                Element::row(vec![
-                    Element::spacer().flex(1.0),
-                    Element::row(cell).gap(3.0).foreground(ink),
-                    Element::spacer().flex(1.0),
-                ]),
+                Element::row(cell).gap(3.0).foreground(ink).centered_x(),
             )
             .padding(2.0)
             .size(Some(bell_width), Some(STATUS_HEIGHT)),
@@ -646,9 +640,9 @@ pub(crate) fn footer(state: &ViewState, width: f32) -> Element {
 pub(crate) fn document_footer(state: &ViewState, width: f32) -> Element {
     let width = width.max(0.0);
     Element::column(vec![
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(Some(width), Some(1.0)),
+        Separator::horizontal(theme::component_palette())
+            .length(width)
+            .render(),
         status_cells(state, width, false),
     ])
     .gap(0.0)

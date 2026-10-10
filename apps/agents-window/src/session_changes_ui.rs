@@ -8,7 +8,7 @@ use std::{
 
 use openide_ui::{
     Breadcrumb, BreadcrumbItem, Button, ButtonVariant, Component, ControlSize, Element, FontFamily,
-    Icon, IconButton, ScrollArea, Tooltip,
+    Icon, IconButton, ScrollArea, Separator, Tooltip,
 };
 
 use crate::{
@@ -34,12 +34,6 @@ fn label(value: impl Into<String>, color: openide_ui::Color, size: f32) -> Eleme
         .font_family(FontFamily::Sans)
         .font_size(size)
         .foreground(color)
-}
-
-fn separator() -> Element {
-    Element::spacer()
-        .size(None, Some(1.0))
-        .background(theme::BORDER)
 }
 
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
@@ -164,7 +158,7 @@ fn append_changes(
             .render(),
         );
     }
-    rows.push(separator());
+    rows.push(Separator::horizontal(theme::component_palette()).render());
     if let Some(selected_index) = ui.selected_file.as_deref().and_then(|path| {
         changes
             .files

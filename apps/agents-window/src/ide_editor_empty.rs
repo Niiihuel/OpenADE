@@ -52,12 +52,10 @@ pub(crate) fn build(profile: KeymapProfile, width: f32, height: f32) -> Element 
     if logo_size >= 64.0 {
         if let Some(image) = watermark() {
             children.push(
-                Element::row(vec![
-                    Element::spacer().flex(1.0),
-                    Element::raster_image(image).size(Some(logo_size), Some(logo_size)),
-                    Element::spacer().flex(1.0),
-                ])
-                .size(None, Some(logo_size)),
+                Element::raster_image(image)
+                    .size(Some(logo_size), Some(logo_size))
+                    .centered_x()
+                    .size(None, Some(logo_size)),
             );
             children.push(Element::spacer().size(None, Some(24.0)));
         }
@@ -105,17 +103,7 @@ pub(crate) fn build(profile: KeymapProfile, width: f32, height: f32) -> Element 
         );
     }
     let content = Element::column(children).size(Some(content_width), None);
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        Element::row(vec![
-            Element::spacer().flex(1.0),
-            content,
-            Element::spacer().flex(1.0),
-        ]),
-        Element::spacer().flex(1.0),
-    ])
-    .clip_children()
-    .flex(1.0)
+    content.centered().clip_children().flex(1.0)
 }
 
 #[cfg(test)]

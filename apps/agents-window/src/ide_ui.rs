@@ -8,7 +8,7 @@ use crate::ide_workspace::{
     TITLEBAR_HEIGHT,
 };
 use crate::keymap::{KeymapProfile, ShortcutAction};
-use openide_ui::{ButtonSize, TooltipPlacement};
+use openide_ui::{ButtonSize, Component, Separator, TooltipPlacement};
 
 #[path = "ide_menu_ui.rs"]
 mod menus;
@@ -244,14 +244,10 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
     let right = Element::row(vec![
         Element::spacer().flex(1.0),
         mode_button_sized(state, compact),
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            Element::spacer()
-                .background(theme::BORDER)
-                .size(Some(1.0), Some(16.0)),
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(1.0), Some(24.0)),
+        Separator::vertical(theme::component_palette())
+            .length(16.0)
+            .centered_in(24.0)
+            .render(),
         layout_controls,
     ])
     .gap(8.0)
@@ -260,7 +256,11 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
         .gap(8.0)
         .padding(3.0)
         .size(Some(width), Some(TITLEBAR_HEIGHT - 1.0));
-    Element::column(vec![row, divider()]).size(Some(width), Some(TITLEBAR_HEIGHT))
+    Element::column(vec![
+        row,
+        Separator::horizontal(theme::component_palette()).render(),
+    ])
+    .size(Some(width), Some(TITLEBAR_HEIGHT))
 }
 
 fn activity_bar(state: &ViewState, width: f32, height: f32) -> Element {
@@ -383,17 +383,14 @@ fn agent_tab(id: Option<&str>, title: &str, icon: Icon, active: bool, width: f32
         theme::FOREGROUND_SUBTLE
     };
     let label = Element::row(vec![
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            Element::icon(if active {
-                theme::filled_icon(icon)
-            } else {
-                icon
-            })
-            .foreground(ink)
-            .size(Some(14.0), Some(14.0)),
-            Element::spacer().flex(1.0),
-        ])
+        Element::icon(if active {
+            theme::filled_icon(icon)
+        } else {
+            icon
+        })
+        .foreground(ink)
+        .size(Some(14.0), Some(14.0))
+        .centered_y()
         .size(Some(14.0), Some(24.0)),
         Element::truncated_text(title)
             .font_family(FontFamily::Sans)
@@ -517,17 +514,14 @@ fn agent_list(state: &ViewState, width: f32, height: f32) -> Element {
         theme::interactive_surface(Element::clickable(
             id,
             Element::row(vec![
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    Element::icon(if selected {
-                        theme::filled_icon(icon)
-                    } else {
-                        icon
-                    })
-                    .foreground(ink)
-                    .size(Some(14.0), Some(14.0)),
-                    Element::spacer().flex(1.0),
-                ])
+                Element::icon(if selected {
+                    theme::filled_icon(icon)
+                } else {
+                    icon
+                })
+                .foreground(ink)
+                .size(Some(14.0), Some(14.0))
+                .centered_y()
                 .size(Some(14.0), Some(26.0)),
                 Element::truncated_text(title)
                     .font_family(FontFamily::Sans)
@@ -727,17 +721,11 @@ fn compact_panel(
 }
 
 fn statusbar(state: &ViewState, width: f32) -> Element {
-    Element::column(vec![divider(), status::footer(state, width)])
-        .size(Some(width), Some(STATUSBAR_HEIGHT))
-}
-
-fn lateral_viewport(content: Element, width: f32, height: f32) -> Element {
-    // Fixed widths stay on the row's main axis; a column would clamp the
-    // child's cross axis to the animated width and reflow its contents.
-    Element::row(vec![content])
-        .size(Some(width), Some(height))
-        .flex(0.0)
-        .clip_children()
+    Element::column(vec![
+        Separator::horizontal(theme::component_palette()).render(),
+        status::footer(state, width),
+    ])
+    .size(Some(width), Some(STATUSBAR_HEIGHT))
 }
 
 pub(super) fn build(state: &ViewState, width: f32, height: f32) -> Element {
@@ -772,17 +760,16 @@ pub(super) fn build(state: &ViewState, width: f32, height: f32) -> Element {
         let list = crate::ide_workspace::agent_list_width(state, width);
         let list_shown = crate::ide_workspace::agent_list_shown(state, width);
         let right = (right - if list > 0.0 { list + 1.0 } else { 0.0 }).max(0.0);
-        workspace.push(workspace_divider());
-        workspace.push(lateral_viewport(
+        workspace.push(Separator::vertical(theme::component_palette()).render());
+        workspace.push(
             agent(
                 state,
                 state.ide.agent_content_width.unwrap_or(right).max(right),
                 body_height,
                 list_shown,
-            ),
-            right,
-            body_height,
-        ));
+            )
+            .clip_to(right, body_height),
+        );
         if list > 0.0 {
             // The content keeps its settled width; the transition only reveals it.
             let settled = if list_shown {
@@ -790,17 +777,14 @@ pub(super) fn build(state: &ViewState, width: f32, height: f32) -> Element {
             } else {
                 crate::ide_workspace::AGENT_LIST_WIDTH
             };
-            workspace.push(workspace_divider());
-            workspace.push(lateral_viewport(
-                agent_list(state, settled.max(list), body_height),
-                list,
-                body_height,
-            ));
+            workspace.push(Separator::vertical(theme::component_palette()).render());
+            workspace
+                .push(agent_list(state, settled.max(list), body_height).clip_to(list, body_height));
         }
     }
     let mut panes = vec![activity_bar(state, width, body_height)];
     if layout.left > 0.0 {
-        panes.push(lateral_viewport(
+        panes.push(
             explorer(
                 state,
                 state
@@ -809,10 +793,9 @@ pub(super) fn build(state: &ViewState, width: f32, height: f32) -> Element {
                     .unwrap_or(layout.left)
                     .max(layout.left),
                 body_height,
-            ),
-            layout.left,
-            body_height,
-        ));
+            )
+            .clip_to(layout.left, body_height),
+        );
         panes.push(Element::spacer().size(Some(SIDEBAR_GAP), None));
     }
     // As in Agents mode, only the working surfaces share the rounded island.
@@ -897,11 +880,9 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         for visible_width in [0.0, 80.0, 180.0, 220.0] {
-            tree.set_root(Element::row(vec![lateral_viewport(
-                agent(&state, full_width, height, false),
-                visible_width,
-                height,
-            )]));
+            tree.set_root(Element::row(vec![
+                agent(&state, full_width, height, false).clip_to(visible_width, height)
+            ]));
             let frame = tree.layout(Size::new(full_width, height));
             let clipped = frame
                 .text_layouts()
@@ -923,11 +904,9 @@ mod tests {
             assert_eq!(frame.hit_test(Point::new(visible_width + 1.0, 16.0)), None);
         }
         for visible_width in [0.0, 80.0, 180.0, 220.0] {
-            tree.set_root(Element::row(vec![lateral_viewport(
-                explorer(&state, 240.0, height),
-                visible_width,
-                height,
-            )]));
+            tree.set_root(Element::row(vec![
+                explorer(&state, 240.0, height).clip_to(visible_width, height)
+            ]));
             let frame = tree.layout(Size::new(240.0, height));
             assert!(frame.regions.iter().all(|region| {
                 region.rect.x >= 0.0 && region.rect.x + region.rect.width <= visible_width + 0.01

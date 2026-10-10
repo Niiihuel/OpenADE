@@ -5,8 +5,8 @@
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Color, Component, ControlSize, DateTimePicker,
-    Element, Empty, FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Step, Stepper,
-    Switch, Tab, Tabs, TextArea, TextField, TimePicker, Tooltip,
+    Element, Empty, FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Separator, Step,
+    Stepper, Switch, Tab, Tabs, TextArea, TextField, TimePicker, Tooltip,
 };
 
 use crate::{
@@ -563,12 +563,6 @@ fn muted(value: impl Into<String>) -> Element {
     text(value, 12.0, theme::FOREGROUND_SUBTLE)
 }
 
-fn divider() -> Element {
-    Element::spacer()
-        .size(None, Some(1.0))
-        .background(theme::BORDER)
-}
-
 fn action(
     id: impl Into<String>,
     title: impl Into<String>,
@@ -904,7 +898,7 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
         }
     }
     body.extend([
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
         section_label("Plantillas de tareas programadas"),
         cards_grid(
             TEMPLATES
@@ -1121,7 +1115,10 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
         .gap(9.0),
         AutomationEditorStep::Agent => editor_agent_step(state, width),
     };
-    let mut content = vec![stepper, divider()];
+    let mut content = vec![
+        stepper,
+        Separator::horizontal(theme::component_palette()).render(),
+    ];
     if let Some(error) = &state.error {
         content.push(
             Alert::new(
@@ -1421,12 +1418,7 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
     let content = Element::column(body)
         .gap(10.0)
         .size(Some(content_width), None);
-    let centered = Element::row(vec![
-        Element::spacer().flex(1.0),
-        content,
-        Element::spacer().flex(1.0),
-    ])
-    .padding(gutter);
+    let centered = content.centered_x().padding(gutter);
     let base = ScrollArea::new("automation_page", centered)
         .tint(theme::FOREGROUND_SUBTLE)
         .render()

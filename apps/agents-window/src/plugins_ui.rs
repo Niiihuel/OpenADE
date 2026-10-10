@@ -8,7 +8,7 @@ use crate::{
 };
 use openide_ui::{
     AlertDialog, Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, Modal,
-    SearchField, TextField,
+    SearchField, Separator, TextField,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -253,11 +253,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             .gap(6.0),
         ];
         if let Some(preview) = &plugins.preview {
-            fields.push(
-                Element::spacer()
-                    .size(None, Some(1.0))
-                    .background(theme::BORDER),
-            );
+            fields.push(Separator::horizontal(theme::component_palette()).render());
             fields.extend(manifest_fields(&preview.manifest));
             fields.push(detail(format!(
                 "{} archivos · {} KiB",

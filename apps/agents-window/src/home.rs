@@ -69,11 +69,7 @@ fn build_home_layout(
         theme::FOREGROUND,
         if compact { 25.0 } else { 32.0 },
     );
-    let mut centered_title = Element::row(vec![
-        Element::spacer().flex(1.0),
-        title,
-        Element::spacer().flex(1.0),
-    ]);
+    let mut centered_title = title.centered_x();
     if available_height.is_some() {
         centered_title = centered_title.size(None, Some(title_height));
     }
@@ -90,15 +86,7 @@ fn build_home_layout(
         .gap(if show_title { gap } else { 0.0 })
         .size(Some(width), None);
 
-    let centered_content = Element::column(vec![
-        Element::spacer().flex(1.0),
-        Element::row(vec![
-            Element::spacer().flex(1.0),
-            content,
-            Element::spacer().flex(1.0),
-        ]),
-        Element::spacer().flex(1.0),
-    ]);
+    let centered_content = content.centered();
     if let Some(height) = content_height {
         // The editor itself shrinks first. Exceptional chrome (attachments or
         // an error notice) can still exceed the minimum: keep it reachable by

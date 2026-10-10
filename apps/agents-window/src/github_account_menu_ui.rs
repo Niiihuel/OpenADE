@@ -5,7 +5,7 @@ use crate::github_account::{GithubAccountStatus, GithubIdentity};
 use crate::{theme, view::ViewState};
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, PopoverPlacement, Tooltip,
+    DropdownMenuItem, Element, FontFamily, Icon, PopoverPlacement, Separator, Tooltip,
 };
 
 const MENU_WIDTH: f32 = 288.0;
@@ -72,9 +72,7 @@ fn menu_header(state: &ViewState, identity: Option<&GithubIdentity>) -> Element 
         ])
         .gap(8.0)
         .padding(8.0),
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(None, Some(1.0)),
+        Separator::horizontal(theme::component_palette()).render(),
     ])
 }
 

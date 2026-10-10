@@ -30,8 +30,8 @@ use openide_harness::{CommandIsolation, ExecDecision, HookPhase, LocalTool, Skil
 use openide_ui::{
     Button, ButtonVariant, Color, Component, ComponentPalette, ControlSize, DropdownList,
     DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd, Modal,
-    PopoverPlacement, ScrollArea, ScrollbarAppearance, SearchField, SelectorSizing, Switch,
-    TextArea, TextField,
+    PopoverPlacement, ScrollArea, ScrollbarAppearance, SearchField, SelectorSizing, Separator,
+    Switch, TextArea, TextField,
 };
 
 use crate::{
@@ -284,12 +284,6 @@ fn section(value: &str) -> Element {
     .min_size(0.0, 22.0)
 }
 
-fn divider() -> Element {
-    Element::spacer()
-        .size(None, Some(1.0))
-        .background(theme::BORDER)
-}
-
 fn field(id: &str, value: &str, placeholder: &str) -> Element {
     TextField::new(id, value, placeholder, control_palette())
         .size(ControlSize::Compact)
@@ -515,7 +509,7 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
     .flex(1.0);
     Element::column(vec![
         back,
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
         Element::row(vec![
             Element::icon(Icon::Settings)
                 .foreground(theme::FOREGROUND)
@@ -526,7 +520,7 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
         .padding(8.0),
         navigation_search(state),
         navigation,
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
         view::sidebar_account_footer(state, width - 12.0),
     ])
     .gap(6.0)
@@ -1192,12 +1186,9 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
     let account = match &state.github_account {
         GithubAccountStatus::Connected(identity) => {
             settings_parts::settings_card(vec![Element::row(vec![
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    crate::github_account_ui::avatar(identity, 32.0),
-                    Element::spacer().flex(1.0),
-                ])
-                .size(Some(32.0), None),
+                crate::github_account_ui::avatar(identity, 32.0)
+                    .centered_y()
+                    .size(Some(32.0), None),
                 settings_parts::settings_row(
                     format!("@{}", identity.login),
                     if state.github_account_refreshing { "Actualizando conexión…" } else { "Cuenta verificada · GitHub" },
@@ -2590,14 +2581,11 @@ pub fn build_settings_page(
         compact,
     ));
     body.extend(cards);
-    let centered = Element::row(vec![
-        Element::spacer().flex(1.0),
-        Element::column(body)
-            .gap(12.0)
-            .size(Some(content_width), None),
-        Element::spacer().flex(1.0),
-    ])
-    .padding(gutter);
+    let centered = Element::column(body)
+        .gap(12.0)
+        .size(Some(content_width), None)
+        .centered_x()
+        .padding(gutter);
     ScrollArea::new(format!("settings_page:{page:?}"), centered)
         .appearance(ScrollbarAppearance::reserved().rail_width(SETTINGS_SCROLL_RAIL_WIDTH))
         .tint(theme::FOREGROUND_SUBTLE)

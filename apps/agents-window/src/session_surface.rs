@@ -10,8 +10,8 @@ use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Collapsible, Color, Component, ControlSize, Element,
-    FontFamily, Icon, IconButton as UiIconButton, Marker, MarkerVariant, ScrollArea, TextArea,
-    ToolActivity, Tooltip, TooltipPlacement,
+    FontFamily, Icon, IconButton as UiIconButton, Marker, MarkerVariant, ScrollArea, Separator,
+    TextArea, ToolActivity, Tooltip, TooltipPlacement,
 };
 
 use crate::{
@@ -105,12 +105,6 @@ pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     .gap(5.0)
 }
 
-fn separator() -> Element {
-    Element::spacer()
-        .size(None, Some(1.0))
-        .background(theme::BORDER)
-}
-
 fn ellipsis(value: &str, max: usize) -> String {
     let mut chars = value.chars();
     let start: String = chars.by_ref().take(max).collect();
@@ -192,14 +186,11 @@ pub(crate) fn header(
     if let Some(agent) = cli {
         top.push(Element::spacer().size(Some(4.0), None));
         top.push(
-            Element::column(vec![
-                Element::spacer().flex(1.0),
-                Element::icon(crate::provider_icons::icon_for_agent_cli(agent))
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(Some(16.0), Some(16.0)),
-                Element::spacer().flex(1.0),
-            ])
-            .size(Some(16.0), Some(HEADER_ACTION_SIZE)),
+            Element::icon(crate::provider_icons::icon_for_agent_cli(agent))
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(16.0), Some(16.0))
+                .centered_y()
+                .size(Some(16.0), Some(HEADER_ACTION_SIZE)),
         );
     }
     top.push(
@@ -1101,15 +1092,12 @@ fn terminal_activity(
                 preview
                     .lines()
                     .map(|line| {
-                        Element::column(vec![
-                            Element::spacer().flex(1.0),
-                            Element::truncated_text(line.trim_end_matches('\r'))
-                                .font_family(FontFamily::Monospace)
-                                .font_size(12.0)
-                                .foreground(theme::FOREGROUND_SUBTLE),
-                            Element::spacer().flex(1.0),
-                        ])
-                        .size(None, Some(18.0))
+                        Element::truncated_text(line.trim_end_matches('\r'))
+                            .font_family(FontFamily::Monospace)
+                            .font_size(12.0)
+                            .foreground(theme::FOREGROUND_SUBTLE)
+                            .centered_y()
+                            .size(None, Some(18.0))
                     })
                     .collect(),
             ));
@@ -1142,7 +1130,7 @@ fn terminal_activity(
     }
     let mut body = Vec::new();
     if !content.is_empty() {
-        body.push(separator());
+        body.push(Separator::horizontal(theme::component_palette()).render());
         let content = Element::column(content).gap(4.0);
         body.push(if expanded {
             let content = Element::column(vec![
@@ -1970,21 +1958,13 @@ fn timeline(state: &ViewState, width: f32) -> Element {
     let content = Element::column(rows)
         .gap(8.0)
         .size(Some(reading_width), None);
-    ScrollArea::new(
-        "transcript",
-        Element::row(vec![
-            Element::spacer().flex(1.0),
-            content,
-            Element::spacer().flex(1.0),
-        ])
-        .padding(gutter),
-    )
-    .tint(theme::FOREGROUND_SUBTLE)
-    .render()
-    .flex(1.0)
-    .background(theme::BACKGROUND)
-    .top_fade(theme::BACKGROUND, HEADER_FADE_HEIGHT)
-    .bottom_fade(theme::BACKGROUND, TRANSCRIPT_BOTTOM_FADE_HEIGHT)
+    ScrollArea::new("transcript", content.centered_x().padding(gutter))
+        .tint(theme::FOREGROUND_SUBTLE)
+        .render()
+        .flex(1.0)
+        .background(theme::BACKGROUND)
+        .top_fade(theme::BACKGROUND, HEADER_FADE_HEIGHT)
+        .bottom_fade(theme::BACKGROUND, TRANSCRIPT_BOTTOM_FADE_HEIGHT)
 }
 
 fn permission_card(permission: &PermissionView, state: &ViewState) -> Element {
@@ -2175,21 +2155,13 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
         )
         .size(Some(14.0), Some(18.0))
         .center_content(),
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            text(title, theme::FOREGROUND, 12.0),
-            Element::spacer().flex(1.0),
-        ])
-        .flex(1.0),
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            text(
-                format!("{completed} de {}", plan.snapshot.plan.len()),
-                theme::FOREGROUND_SUBTLE,
-                11.0,
-            ),
-            Element::spacer().flex(1.0),
-        ]),
+        text(title, theme::FOREGROUND, 12.0).centered_y().flex(1.0),
+        text(
+            format!("{completed} de {}", plan.snapshot.plan.len()),
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        )
+        .centered_y(),
     ])
     .min_size(0.0, 18.0)
     .gap(8.0);
@@ -2206,19 +2178,13 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
                     .foreground(theme::FOREGROUND_SUBTLE)
                     .size(Some(14.0), Some(14.0)),
                 status => Element::panel(if status == PlanStepStatus::InProgress {
-                    Element::column(vec![
-                        Element::spacer().flex(1.0),
-                        Element::row(vec![
-                            Element::spacer().flex(1.0),
-                            Element::spacer()
-                                .size(Some(6.0), Some(6.0))
-                                .background(theme::BRAND)
-                                .radius(3.0),
-                            Element::spacer().flex(1.0),
-                        ])
-                        .size(None, Some(6.0)),
-                        Element::spacer().flex(1.0),
-                    ])
+                    Element::spacer()
+                        .size(Some(6.0), Some(6.0))
+                        .background(theme::BRAND)
+                        .radius(3.0)
+                        .centered_x()
+                        .size(None, Some(6.0))
+                        .centered_y()
                 } else {
                     Element::spacer()
                 })
@@ -2673,7 +2639,7 @@ fn tool_verification_card(
             theme::FOREGROUND_SUBTLE,
             11.0,
         ),
-        separator(),
+        Separator::horizontal(theme::component_palette()).render(),
         text(
             format!("Herramienta: {}", verification.name),
             theme::FOREGROUND,
@@ -2723,7 +2689,7 @@ fn tool_verification_card(
         details.push(mono(error, theme::FOREGROUND, 11.0));
     }
     details.extend([
-        separator(),
+        Separator::horizontal(theme::component_palette()).render(),
         text("Resultado comprobado", theme::FOREGROUND, 12.0),
         text(
             "Escribe lo que verificaste manualmente. Esta llamada no se repetirá al reanudar.",
@@ -2825,7 +2791,7 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
             theme::FOREGROUND_SUBTLE,
             11.0,
         ),
-        separator(),
+        Separator::horizontal(theme::component_palette()).render(),
         text(
             format!("Próxima herramienta pendiente: {}", batch.next_tool_name),
             theme::FOREGROUND,
@@ -2846,7 +2812,7 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
         .size(None, Some(if compact { 66.0 } else { 96.0 }))
         .background(theme::PANEL)
         .radius(8.0),
-        separator(),
+        Separator::horizontal(theme::component_palette()).render(),
     ];
     let discard = Button::new(
         "aborted_batch_discard",
@@ -2908,12 +2874,11 @@ fn composer_with_height(state: &ViewState, width: f32, available_height: Option<
         rows.push(notice);
     }
     rows.push(shell);
-    Element::row(vec![
-        Element::spacer().flex(1.0),
-        Element::column(rows).gap(8.0).size(Some(card_width), None),
-        Element::spacer().flex(1.0),
-    ])
-    .padding(16.0)
+    Element::column(rows)
+        .gap(8.0)
+        .size(Some(card_width), None)
+        .centered_x()
+        .padding(16.0)
 }
 
 fn automation_read_only_card(
@@ -3120,11 +3085,9 @@ fn build_session_surface_layout(
         let card_width =
             (center_width - if compact { 20.0 } else { 48.0 }).clamp(0.0, READING_WIDTH);
         let recovery = Element::column(vec![
-            Element::row(vec![
-                Element::spacer().flex(1.0),
-                aborted_batch_card(batch, compact).size(Some(card_width), None),
-                Element::spacer().flex(1.0),
-            ]),
+            aborted_batch_card(batch, compact)
+                .size(Some(card_width), None)
+                .centered_x(),
             Element::spacer().size(None, Some(64.0)),
         ])
         .padding(if compact { 10.0 } else { 24.0 });
@@ -3139,17 +3102,14 @@ fn build_session_surface_layout(
         let card_width =
             (center_width - if compact { 20.0 } else { 48.0 }).clamp(0.0, READING_WIDTH);
         let recovery = Element::column(vec![
-            Element::row(vec![
-                Element::spacer().flex(1.0),
-                tool_verification_card(
-                    verification,
-                    &state.tool_verification_output,
-                    state.tool_verification_is_error,
-                    compact,
-                )
-                .size(Some(card_width), None),
-                Element::spacer().flex(1.0),
-            ]),
+            tool_verification_card(
+                verification,
+                &state.tool_verification_output,
+                state.tool_verification_is_error,
+                compact,
+            )
+            .size(Some(card_width), None)
+            .centered_x(),
             // Keep the final action above the scroll viewport's bottom edge.
             Element::spacer().size(None, Some(64.0)),
         ])
@@ -3169,13 +3129,10 @@ fn build_session_surface_layout(
             chat,
             Element::column(vec![
                 Element::spacer().flex(1.0),
-                Element::row(vec![
-                    Element::spacer().flex(1.0),
-                    jump_to_bottom_control(),
-                    Element::spacer().flex(1.0),
-                ])
-                .padding(8.0)
-                .size(None, Some(52.0)),
+                jump_to_bottom_control()
+                    .centered_x()
+                    .padding(8.0)
+                    .size(None, Some(52.0)),
             ]),
         )
         .clip_children()

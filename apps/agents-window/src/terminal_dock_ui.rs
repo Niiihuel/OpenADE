@@ -10,7 +10,7 @@ use crate::{
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element, FontFamily, Icon, IconButton, MenuItem, Popover, PopoverPlacement,
-    Tooltip, TooltipPlacement,
+    Separator, Tooltip, TooltipPlacement,
 };
 
 pub(crate) const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -153,12 +153,7 @@ fn session_menu_row(state: &ViewState, tab: &DockTabView) -> Element {
     .render();
     Element::row(vec![
         select,
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            close,
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(TOOL_SIZE), Some(26.0)),
+        close.centered_y().size(Some(TOOL_SIZE), Some(26.0)),
     ])
     .gap(2.0)
     .size(None, Some(26.0))
@@ -571,7 +566,7 @@ fn header_with_sections(
             // Keep Agents' direct session tabs and their close/drag/scroll
             // interactions beside the shared bottom-panel navigation.
             leading.push(Element::panel(
-                Element::spacer().background(theme::BORDER).size(Some(1.0), Some(16.0)),
+                Separator::vertical(theme::component_palette()).length(16.0).render(),
             ).center_content().size(Some(9.0), Some(HEADER_HEIGHT)));
             leading.push(session_tabs(state, (available - sections_width - 9.0).max(0.0)).flex(1.0));
         } else {
@@ -591,9 +586,7 @@ fn header_with_sections(
     Element::overlay(
         header,
         Element::column(vec![
-            Element::spacer()
-                .background(theme::BORDER)
-                .size(None, Some(1.0)),
+            Separator::horizontal(theme::component_palette()).render(),
             Element::spacer().flex(1.0),
         ])
         .size(Some(width), Some(HEADER_HEIGHT)),
@@ -615,19 +608,12 @@ fn clipped_panel(state: &ViewState, header: Element, width: f32, height: f32) ->
     // so the last closing frames never push their following sibling downward.
     // A CLI task's terminal is drawn once, in the task's own surface.
     let panes = if crate::view::cli_task(state) {
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            Element::row(vec![
-                Element::spacer().flex(1.0),
-                Element::text("La terminal de esta tarea está en el panel Agente.")
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(theme::FOREGROUND_SUBTLE),
-                Element::spacer().flex(1.0),
-            ]),
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(width), Some((content_height - HEADER_HEIGHT).max(0.0)))
+        Element::text("La terminal de esta tarea está en el panel Agente.")
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .centered()
+            .size(Some(width), Some((content_height - HEADER_HEIGHT).max(0.0)))
     } else {
         build_panes(state, width, content_height - HEADER_HEIGHT)
     };
@@ -706,9 +692,9 @@ pub(crate) fn build_panes(state: &ViewState, width: f32, height: f32) -> Element
     };
     Element::row(vec![
         pane(0),
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(Some(1.0), Some(height)),
+        Separator::vertical(theme::component_palette())
+            .length(height)
+            .render(),
         pane(1),
     ])
     .gap(0.0)

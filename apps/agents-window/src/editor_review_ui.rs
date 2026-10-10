@@ -5,7 +5,7 @@
 use crate::theme;
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, Tooltip,
+    DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, Separator, Tooltip,
     TooltipPlacement,
 };
 
@@ -122,15 +122,6 @@ pub(crate) fn height(_review: &EditorReviewView, _pane_width: f32) -> f32 {
     HEIGHT
 }
 
-fn centered(child: Element, width: Option<f32>) -> Element {
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        child,
-        Element::spacer().flex(1.0),
-    ])
-    .size(width, Some(CONTROL))
-}
-
 fn button(
     review: &EditorReviewView,
     operation: &str,
@@ -163,38 +154,12 @@ fn button(
         (false, true) => "Ctrl+Shift+Backspace",
         (false, false) => "Ctrl+Enter",
     };
-    centered(
-        Tooltip::new(button, id, tip, theme::component_palette())
-            .shortcut(shortcut)
-            .placement(TooltipPlacement::Below)
-            .render(),
-        Some(width),
-    )
-}
-
-fn row(children: Vec<Element>, width: Option<f32>) -> Element {
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        Element::row(children).size(None, Some(CONTROL)),
-        Element::spacer().flex(1.0),
-    ])
-    .size(width, Some(HEIGHT))
-}
-
-fn separator() -> Element {
-    Element::row(vec![
-        Element::spacer().size(Some(4.0), None),
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            Element::spacer()
-                .background(theme::BORDER)
-                .size(Some(1.0), Some(14.0)),
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(1.0), Some(CONTROL)),
-        Element::spacer().size(Some(4.0), None),
-    ])
-    .size(Some(SEPARATOR_WIDTH), Some(CONTROL))
+    Tooltip::new(button, id, tip, theme::component_palette())
+        .shortcut(shortcut)
+        .placement(TooltipPlacement::Below)
+        .render()
+        .centered_y()
+        .size(Some(width), Some(CONTROL))
 }
 
 fn arrow(
@@ -243,21 +208,20 @@ fn counter(
     } else {
         position.min(count - 1) + 1
     };
-    centered(
-        Tooltip::new(
-            Element::truncated_text(format!("{position}/{count}"))
-                .font_family(FontFamily::Sans)
-                .font_size(11.0)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .center_content(),
-            action(&review.token, operation),
-            format!("{kind} {position} de {count}"),
-            theme::component_palette(),
-        )
-        .placement(TooltipPlacement::Below)
-        .render(),
-        Some(width),
+    Tooltip::new(
+        Element::truncated_text(format!("{position}/{count}"))
+            .font_family(FontFamily::Sans)
+            .font_size(11.0)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .center_content(),
+        action(&review.token, operation),
+        format!("{kind} {position} de {count}"),
+        theme::component_palette(),
     )
+    .placement(TooltipPlacement::Below)
+    .render()
+    .centered_y()
+    .size(Some(width), Some(CONTROL))
 }
 
 fn navigation_menu(
@@ -394,7 +358,14 @@ pub(crate) fn controls_with_menu(
                 review.current_hunk.saturating_add(1) < review.hunk_count,
             ),
         ]);
-        navigation.push(separator());
+        navigation.push(
+            Separator::vertical(theme::component_palette())
+                .length(14.0)
+                .centered_in(CONTROL)
+                .margin(4.0)
+                .render()
+                .size(Some(SEPARATOR_WIDTH), Some(CONTROL)),
+        );
     }
     if layout.files {
         navigation.extend([
@@ -421,7 +392,14 @@ pub(crate) fn controls_with_menu(
                 review.can_accept && review.current_file.saturating_add(1) < review.file_count,
             ),
         ]);
-        navigation.push(separator());
+        navigation.push(
+            Separator::vertical(theme::component_palette())
+                .length(14.0)
+                .centered_in(CONTROL)
+                .margin(4.0)
+                .render()
+                .size(Some(SEPARATOR_WIDTH), Some(CONTROL)),
+        );
     }
     if layout.overflow {
         navigation.push(navigation_menu(review, layout, extra, menu_width));
@@ -449,5 +427,8 @@ pub(crate) fn controls_with_menu(
     let decisions = vec![reject, Element::spacer().size(Some(GAP), None), accept];
     let controls_width = width_with_menu(review, pane_width, extra_menu);
     navigation.extend(decisions);
-    row(navigation, Some(controls_width))
+    Element::row(navigation)
+        .size(None, Some(CONTROL))
+        .centered_y()
+        .size(Some(controls_width), Some(HEIGHT))
 }

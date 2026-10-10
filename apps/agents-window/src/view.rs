@@ -13,7 +13,7 @@ use openide_ui::{
     AlertDialog, Button, ButtonVariant, Color, Component, ControlSize, DropdownList, DropdownMenu,
     DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily, Icon,
     IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search, SegmentedControl,
-    Skeleton, Tab, TextSpan, Tooltip, TooltipPlacement, TreeGuides, TreeRow, ICON_SIZE,
+    Separator, Skeleton, Tab, TextSpan, Tooltip, TooltipPlacement, TreeGuides, TreeRow, ICON_SIZE,
 };
 use serde_json::Value;
 
@@ -760,12 +760,6 @@ fn field(id: &str, value: &str, placeholder: &str) -> Element {
         .min_size(80.0, 32.0)
 }
 
-fn divider() -> Element {
-    Element::spacer()
-        .size(None, Some(1.0))
-        .background(theme::BORDER)
-}
-
 fn shorten(value: &str, max_chars: usize) -> String {
     let mut chars = value.chars();
     let prefix: String = chars.by_ref().take(max_chars).collect();
@@ -977,27 +971,21 @@ fn session_row_with_context(
     };
     // The status slot gives the 16px icon a 4px left inset, inside the
     // rounded hover surface. Reserving it also keeps idle/running titles fixed.
-    let status_marker = Element::column(vec![
-        Element::spacer().flex(1.0),
-        Element::row(vec![
-            Element::spacer().flex(1.0),
-            status_marker.size(
-                Some(if session.unread && recovery.is_none() {
-                    6.0
-                } else {
-                    16.0
-                }),
-                Some(if session.unread && recovery.is_none() {
-                    6.0
-                } else {
-                    16.0
-                }),
-            ),
-            Element::spacer().flex(1.0),
-        ]),
-        Element::spacer().flex(1.0),
-    ])
-    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
+    let status_marker = status_marker
+        .size(
+            Some(if session.unread && recovery.is_none() {
+                6.0
+            } else {
+                16.0
+            }),
+            Some(if session.unread && recovery.is_none() {
+                6.0
+            } else {
+                16.0
+            }),
+        )
+        .centered()
+        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
     let mut actions = Vec::new();
     if state
         .session_plans
@@ -1123,12 +1111,9 @@ fn session_row_with_context(
     .context_menu_style()
     .width(menu_width)
     .render();
-    let menu_button = Element::column(vec![
-        Element::spacer().flex(1.0),
-        menu_button,
-        Element::spacer().flex(1.0),
-    ])
-    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
+    let menu_button = menu_button
+        .centered_y()
+        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
     let row = Element::clickable(
         format!("session:{}", session.id),
         Element::row(vec![
@@ -1333,14 +1318,7 @@ fn sidebar_nav_action(
     let kbd = Kbd::new(shortcut, theme::component_palette())
         .max_width((width - 92.0).max(0.0))
         .render();
-    let centered = |element| {
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            element,
-            Element::spacer().flex(1.0),
-        ])
-        .size(None, Some(SIDEBAR_ROW_HEIGHT))
-    };
+    let centered = |element: Element| element.centered_y().size(None, Some(SIDEBAR_ROW_HEIGHT));
     let row = Element::clickable(
         id,
         Element::row(vec![
@@ -1840,13 +1818,10 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     )
     .placement(TooltipPlacement::Below)
     .render();
-    let align_tool = |control| {
-        Element::column(vec![
-            Element::spacer().flex(1.0),
-            control,
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT))
+    let align_tool = |control: Element| {
+        control
+            .centered_y()
+            .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT))
     };
     let context_action = align_tool(context_action);
     let sort_control = align_tool(sort_control);
@@ -1972,11 +1947,11 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     };
     let mut items = vec![
         header,
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
         primary_nav,
         session_toolbar,
         sessions_virtual_list(state, width),
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
     ];
     if !compact_usage {
         items.push(crate::provider_usage_ui::sidebar_card(state, width));
@@ -2219,12 +2194,7 @@ fn composer(state: &ViewState, center_width: f32) -> Element {
         "Ask me anything",
         Some(&state.status),
     ));
-    Element::row(vec![
-        Element::spacer().flex(1.0),
-        card,
-        Element::spacer().flex(1.0),
-    ])
-    .padding(16.0)
+    card.centered_x().padding(16.0)
 }
 
 fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f32) -> Element {
@@ -2308,7 +2278,7 @@ fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f3
             .padding(8.0)
             .background(theme::PANEL)
             .size(None, Some(HEADER - 1.0)),
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
     ])
     .size(None, Some(HEADER))
 }
@@ -2723,7 +2693,7 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
             false,
             surface_width,
         ),
-        divider(),
+        Separator::horizontal(theme::component_palette()).render(),
     ];
     match &preview.content {
         None => rows.push(pane_loading_state(
@@ -2774,9 +2744,7 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
                         )
                         .font_size(10.5)
                         .size(Some(gutter_width), Some(16.0)),
-                        Element::spacer()
-                            .size(Some(1.0), None)
-                            .background(theme::BORDER),
+                        Separator::vertical(theme::component_palette()).render(),
                         Element::formatted_text(spans).size(Some(code_width), None),
                     ])
                     .gap(6.0)
@@ -2999,17 +2967,7 @@ fn dock_empty_content(width: f32) -> Element {
     ])
     .gap(8.0)
     .size(Some(content_width), None);
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        Element::row(vec![
-            Element::spacer().flex(1.0),
-            content,
-            Element::spacer().flex(1.0),
-        ]),
-        Element::spacer().flex(1.0),
-    ])
-    .padding(20.0)
-    .flex(1.0)
+    content.centered().padding(20.0).flex(1.0)
 }
 
 fn terminal_content(state: &ViewState, width: f32) -> Element {
@@ -3032,12 +2990,12 @@ fn side_pane_sized(state: &ViewState, width: f32, height: f32) -> Element {
     if dock_chrome::visible_tabs(state).is_empty() {
         return crate::document_preview_ui::secondary(preview, width, height);
     }
-    let divider = Element::spacer().background(theme::BORDER);
+    let palette = theme::component_palette();
     if width >= 640.0 {
         let half = (width - 1.0) / 2.0;
         Element::row(vec![
             side_pane_primary_sized(state, half, height),
-            divider.size(Some(1.0), Some(height)),
+            Separator::vertical(palette).length(height).render(),
             crate::document_preview_ui::secondary(preview, half, height),
         ])
         .size(Some(width), Some(height))
@@ -3048,7 +3006,7 @@ fn side_pane_sized(state: &ViewState, width: f32, height: f32) -> Element {
         let half = (height - 1.0).max(0.0) / 2.0;
         Element::column(vec![
             side_pane_primary_sized(state, width, half),
-            divider.size(Some(width), Some(1.0)),
+            Separator::horizontal(palette).length(width).render(),
             crate::document_preview_ui::secondary(preview, width, half),
         ])
         .size(Some(width), Some(height))
@@ -3363,14 +3321,6 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
     Element::column(rows).size(Some(width), Some(height))
 }
 
-/// The center and right dock share one frame. Their entire separation is a
-/// single rule, while the draggable hit target extends on either side of it.
-fn workspace_divider() -> Element {
-    Element::spacer()
-        .size(Some(RIGHT_DIVIDER), None)
-        .background(theme::BORDER)
-}
-
 /// One outer frame for chat, editor and bottom terminal. The shared finishing
 /// pass masks opaque child corners and draws the border before deferred menus.
 fn workspace_frame(content: Element) -> Element {
@@ -3582,13 +3532,10 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
             center_items.push(timeline(state, side_visible, compact));
             if state.show_jump_to_bottom {
                 center_items.push(
-                    Element::row(vec![
-                        Element::spacer().flex(1.0),
-                        crate::session_surface::jump_to_bottom_control(),
-                        Element::spacer().flex(1.0),
-                    ])
-                    .padding(8.0)
-                    .size(None, Some(52.0)),
+                    crate::session_surface::jump_to_bottom_control()
+                        .centered_x()
+                        .padding(8.0)
+                        .size(None, Some(52.0)),
                 );
             }
         }
@@ -3730,7 +3677,7 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
     };
     let mut workspace = vec![center];
     if let Some(right) = layout.right {
-        workspace.push(workspace_divider());
+        workspace.push(Separator::vertical(theme::component_palette()).render());
         workspace.push(side_pane_sized(state, right, workspace_height).clip_children());
     }
     let top = Element::row(workspace).flex(1.0).clip_children();

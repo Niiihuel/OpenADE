@@ -1,7 +1,9 @@
 //! A compact repository navigator with demand-loaded, virtualized diffs.
 //! The repository list owns its scroll area; it never embeds patch contents.
 use super::*;
-use openide_ui::{Breadcrumb, BreadcrumbItem, ButtonSize, CodeDiff, CodeLanguage};
+use openide_ui::{
+    Breadcrumb, BreadcrumbItem, ButtonSize, CodeDiff, CodeLanguage, Component, Separator,
+};
 
 const CHANGE_ROW_HEIGHT: f32 = crate::sidebar_chrome::NAV_ROW_HEIGHT;
 const CHANGE_ACTION_SIZE: f32 = crate::sidebar_chrome::TOOL_SIZE;
@@ -93,12 +95,10 @@ fn change_row(row: &ChangeRow, width: f32, pending: bool, surface: Color) -> Ele
                     .font_size(11.0)
                     .foreground(theme::FOREGROUND_SUBTLE)
                     .flex(1.0),
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    mono(count.to_string(), theme::FOREGROUND_SUBTLE).font_size(10.0),
-                    Element::spacer().flex(1.0),
-                ])
-                .size(None, Some(CHANGE_ROW_HEIGHT - 8.0)),
+                mono(count.to_string(), theme::FOREGROUND_SUBTLE)
+                    .font_size(10.0)
+                    .centered_y()
+                    .size(None, Some(CHANGE_ROW_HEIGHT - 8.0)),
             ])
             .gap(6.0)
             .padding(4.0)
@@ -228,12 +228,9 @@ fn change_row(row: &ChangeRow, width: f32, pending: bool, surface: Color) -> Ele
             // the staging control is disabled by an in-flight operation.
             Element::row(vec![
                 file,
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    control,
-                    Element::spacer().flex(1.0),
-                ])
-                .size(Some(CHANGE_ACTION_SIZE), Some(CHANGE_ROW_HEIGHT)),
+                control
+                    .centered_y()
+                    .size(Some(CHANGE_ACTION_SIZE), Some(CHANGE_ROW_HEIGHT)),
             ])
             .size(Some(width), Some(CHANGE_ROW_HEIGHT))
             .background(surface)
@@ -394,15 +391,12 @@ fn detail_view(detail: &ReviewDetailView, width: f32, back: bool) -> Element {
     if show_stats {
         if let Some((added, removed)) = stats {
             header.push(
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    Element::spacer()
-                        .background(theme::BORDER)
-                        .size(Some(1.0), Some(12.0)),
-                    Element::spacer().flex(1.0),
-                ])
-                .padding(4.0)
-                .size(Some(9.0), Some(tool_size)),
+                Separator::vertical(theme::component_palette())
+                    .length(12.0)
+                    .centered_in(tool_size)
+                    .render()
+                    .padding(4.0)
+                    .size(Some(9.0), Some(tool_size)),
             );
             let text = |value, color, family| {
                 Element::truncated_text(value)
@@ -554,18 +548,11 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
     }
     if ide {
         // The list of changes lives in the source control sidebar.
-        return Element::column(vec![
-            Element::spacer().flex(1.0),
-            Element::row(vec![
-                Element::spacer().flex(1.0),
-                Element::text("Elige un archivo en Control de versiones para ver sus cambios.")
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(theme::FOREGROUND_SUBTLE),
-                Element::spacer().flex(1.0),
-            ]),
-            Element::spacer().flex(1.0),
-        ]);
+        return Element::text("Elige un archivo en Control de versiones para ver sus cambios.")
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .centered();
     }
     navigator(state, width)
 }
@@ -711,7 +698,7 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
                         .size(None, Some(24.0)),
                 );
             }
-            children.push(divider());
+            children.push(Separator::horizontal(theme::component_palette()).render());
             if review.files == 0 && review.untracked.is_empty() {
                 children.push(pane_empty_state(
                     Icon::CheckCircle,
@@ -732,7 +719,7 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
                 children.push(label("Listado parcial por tamaño. Los archivos visibles se pueden inspeccionar completos.", theme::FOREGROUND_SUBTLE).font_size(10.0));
             }
             if let Some(footer) = github_footer(&review.github, surface) {
-                children.push(divider());
+                children.push(Separator::horizontal(theme::component_palette()).render());
                 children.push(footer);
             }
         }

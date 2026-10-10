@@ -5,7 +5,8 @@ use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
     ButtonSize, ButtonVariant, Component, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    Element, FontFamily, Icon, IconButton, ScrollArea, SpinnerVariant, Tooltip, TooltipPlacement,
+    Element, FontFamily, Icon, IconButton, ScrollArea, Separator, SpinnerVariant, Tooltip,
+    TooltipPlacement,
 };
 
 use crate::{
@@ -197,12 +198,6 @@ fn line(value: impl Into<String>, muted: bool, size: f32, width: f32) -> Element
             theme::FOREGROUND
         })
         .size(Some(width.max(0.0)), Some(18.0))
-}
-
-fn separator(width: f32) -> Element {
-    Element::spacer()
-        .background(theme::BORDER)
-        .size(Some(width), Some(1.0))
 }
 
 fn folder_name(workspace: &str) -> &str {
@@ -931,7 +926,9 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             local_menu(state, group_width, locked),
             branch,
         ]),
-        separator(inner_width),
+        Separator::horizontal(theme::component_palette())
+            .length(inner_width)
+            .render(),
         section_heading("Control de versiones", None, inner_width),
         group(vec![
             compact_row(
@@ -960,7 +957,9 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             .gap(6.0)
             .size(Some(group_width), None),
         ]),
-        separator(inner_width),
+        Separator::horizontal(theme::component_palette())
+            .length(inner_width)
+            .render(),
         compact_row(
             "project_actions_open",
             Icon::Play,
@@ -986,7 +985,11 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
     ];
     rows.extend(crate::environment_git_ui::notices(workflow));
     if state.environment.details_expanded {
-        rows.push(separator(inner_width));
+        rows.push(
+            Separator::horizontal(theme::component_palette())
+                .length(inner_width)
+                .render(),
+        );
         let changes = &state.environment.changes;
         let changes_detail = if changes.loading {
             "Actualizando…".into()
@@ -1011,7 +1014,11 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             inner_width,
         ));
         rows.push(sources(state, inner_width));
-        rows.push(separator(inner_width));
+        rows.push(
+            Separator::horizontal(theme::component_palette())
+                .length(inner_width)
+                .render(),
+        );
         rows.push(section_heading("Herramientas", None, inner_width));
         for (id, icon, title, kind) in [
             ("terminal", Icon::Terminal, "Terminal", SideTab::Terminal),

@@ -2,7 +2,7 @@
 //! supplies the same geometry, focus surface and scrolling treatment to docks.
 use crate::theme;
 use openide_ui::{
-    Color, Component, CornerRadii, Element, FontFamily, Icon, Tooltip, TooltipPlacement,
+    Color, Component, CornerRadii, Element, FontFamily, Icon, Separator, Tooltip, TooltipPlacement,
 };
 
 // The active tab reaches the content below. Its 24px contents and the fixed
@@ -95,9 +95,7 @@ pub(crate) fn tab_surface(id: &str, content: Element, active: bool, width: f32) 
         // Hovering an inactive tab must not erase the boundary with the body.
         Element::column(vec![
             Element::spacer().flex(1.0),
-            Element::spacer()
-                .background(theme::BORDER)
-                .size(None, Some(1.0)),
+            Separator::horizontal(theme::component_palette()).render(),
         ])
     }
     .size(None, Some(TAB_HEIGHT - TOOL_SIZE));
@@ -140,12 +138,7 @@ pub(crate) fn header(
     gap: f32,
 ) -> Element {
     let tools_width = tools.style.width;
-    let tools = Element::column(vec![
-        Element::spacer().flex(1.0),
-        tools,
-        Element::spacer().flex(1.0),
-    ])
-    .size(tools_width, Some(HEADER_HEIGHT));
+    let tools = tools.centered_y().size(tools_width, Some(HEADER_HEIGHT));
     let content = Element::row(vec![
         Element::spacer().size(Some(side_inset), None),
         Element::row(vec![leading, tools]).gap(gap).flex(1.0),
@@ -155,9 +148,7 @@ pub(crate) fn header(
     Element::overlay(
         Element::column(vec![
             Element::spacer().flex(1.0),
-            Element::spacer()
-                .background(theme::BORDER)
-                .size(None, Some(1.0)),
+            Separator::horizontal(theme::component_palette()).render(),
         ])
         .background(STRIP_BACKGROUND)
         .size(Some(width), Some(HEADER_HEIGHT)),
@@ -190,9 +181,9 @@ pub(crate) fn scrolling_tabs(
                 Element::spacer().size(None, Some(5.0)),
                 Element::row(vec![
                     Element::spacer().flex(1.0),
-                    Element::spacer()
-                        .background(theme::BORDER)
-                        .size(Some(1.0), Some(14.0)),
+                    Separator::vertical(theme::component_palette())
+                        .length(14.0)
+                        .render(),
                 ])
                 .size(None, Some(14.0)),
             ])

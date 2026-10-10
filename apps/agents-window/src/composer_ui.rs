@@ -2158,12 +2158,7 @@ fn policy_controls(props: &ComposerProps<'_>) -> Element {
             width: props.width,
         },
     );
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        selector,
-        Element::spacer().flex(1.0),
-    ])
-    .size(None, Some(CONTROL_HEIGHT))
+    selector.centered_y().size(None, Some(CONTROL_HEIGHT))
 }
 
 fn leading_actions(props: &ComposerProps<'_>) -> Element {

@@ -4,8 +4,8 @@
 
 use openide_ui::{
     Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, Color, Component, ContextMenu,
-    ContextMenuEntry, ContextMenuItem, ControlSize, Element, FontFamily, Icon, IconButton, Tooltip,
-    TooltipPlacement,
+    ContextMenuEntry, ContextMenuItem, ControlSize, Element, FontFamily, Icon, IconButton,
+    Separator, Tooltip, TooltipPlacement,
 };
 
 use crate::{
@@ -407,19 +407,16 @@ fn build_snapshot(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(workspace);
-    let status_dot = Element::column(vec![
-        Element::spacer().flex(1.0),
-        Element::spacer()
-            .background(if snapshot.running {
-                theme::DIFF_ADDED
-            } else {
-                theme::FOREGROUND_SUBTLE
-            })
-            .radius(3.0)
-            .size(Some(6.0), Some(6.0)),
-        Element::spacer().flex(1.0),
-    ])
-    .size(Some(8.0), Some(32.0));
+    let status_dot = Element::spacer()
+        .background(if snapshot.running {
+            theme::DIFF_ADDED
+        } else {
+            theme::FOREGROUND_SUBTLE
+        })
+        .radius(3.0)
+        .size(Some(6.0), Some(6.0))
+        .centered_y()
+        .size(Some(8.0), Some(32.0));
     let header = Element::row(vec![
         Tooltip::new(
             status_dot,
@@ -525,13 +522,9 @@ fn build_snapshot(
 
     Element::column(vec![
         header,
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(None, Some(1.0)),
+        Separator::horizontal(theme::component_palette()).render(),
         screen,
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(None, Some(1.0)),
+        Separator::horizontal(theme::component_palette()).render(),
         footer,
     ])
     .background(theme::BACKGROUND)

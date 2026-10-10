@@ -8,7 +8,7 @@ use crate::{
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Color, Component, ContextContent, ContextMeter, ContextRow,
     ControlSize, Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea,
-    Tooltip, TooltipPlacement,
+    Separator, Tooltip, TooltipPlacement,
 };
 use std::path::Path;
 
@@ -119,11 +119,6 @@ fn usage_ink(fraction: Option<f32>) -> Color {
         Some(value) if value >= 0.8 => Color::rgb(225, 169, 65),
         _ => theme::FOREGROUND,
     }
-}
-fn rule() -> Element {
-    Element::spacer()
-        .size(None, Some(1.0))
-        .background(theme::BORDER)
 }
 fn close() -> Element {
     IconButton::new(
@@ -282,7 +277,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         .render()
         .max_height(180.0)
         .flex(1.0),
-        rule(),
+        Separator::horizontal(theme::component_palette()).render(),
         Element::row(footer).gap(6.0).size(None, Some(28.0)),
     ])
     .gap(8.0)

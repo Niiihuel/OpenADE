@@ -5,7 +5,7 @@ use super::*;
 use crate::dock_tab_ui::{self, RoundedTab, CLOSE_SIZE, HEADER_SIDE_INSET, TOOL_SIZE};
 #[cfg(test)]
 use crate::dock_tab_ui::{TAB_GAP, TAB_HEIGHT};
-use openide_ui::{ContextMenu, ContextMenuEntry, ContextMenuItem};
+use openide_ui::{Component, ContextMenu, ContextMenuEntry, ContextMenuItem, Separator};
 
 #[cfg(test)]
 const HEADER_PADDING: f32 = 2.0;
@@ -259,19 +259,12 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
     if !editor_controls.is_empty() {
         if group_separator > 0.0 {
             editor_controls.push(
-                Element::row(vec![
-                    Element::spacer().size(Some(4.0), None),
-                    Element::column(vec![
-                        Element::spacer().flex(1.0),
-                        Element::spacer()
-                            .background(theme::BORDER)
-                            .size(Some(1.0), Some(14.0)),
-                        Element::spacer().flex(1.0),
-                    ])
-                    .size(Some(1.0), Some(TOOL_SIZE)),
-                    Element::spacer().size(Some(4.0), None),
-                ])
-                .size(Some(group_separator), Some(TOOL_SIZE)),
+                Separator::vertical(theme::component_palette())
+                    .length(14.0)
+                    .centered_in(TOOL_SIZE)
+                    .margin(4.0)
+                    .render()
+                    .size(Some(group_separator), Some(TOOL_SIZE)),
             );
         }
         editor_controls.append(&mut controls);

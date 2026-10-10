@@ -7,7 +7,7 @@
 use openide_ui::{
     Alert, AlertTone, Button, ButtonSize, ButtonVariant, Chip, Color, Component, ControlSize,
     DropdownMenu, DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, ScrollArea,
-    ScrollbarAppearance, SearchField, Skeleton, Switch, Tab, Tabs, TextField, Tooltip,
+    ScrollbarAppearance, SearchField, Separator, Skeleton, Switch, Tab, Tabs, TextField, Tooltip,
     TooltipPlacement,
 };
 
@@ -378,7 +378,7 @@ pub(super) fn search_controls(state: &MarketplaceViewState, width: f32, sidebar:
         .loading(state.explore.busy)
         .render()
     };
-    Element::row(vec![search, vertically_centered(submit)])
+    Element::row(vec![search, submit.centered_y()])
         .gap(gap)
         .size(Some(width), Some(28.0))
 }
@@ -535,27 +535,8 @@ fn title(value: &str) -> Element {
     text(value, theme::FOREGROUND, 15.0)
 }
 
-fn divider() -> Element {
-    Element::spacer()
-        .size(None, Some(1.0))
-        .background(theme::BORDER)
-}
-
 fn capsule(value: impl Into<String>) -> Element {
     Chip::new(value, theme::component_palette()).render()
-}
-
-fn vertically_centered(mut control: Element) -> Element {
-    let width = control.style.width;
-    let flex = control.style.flex;
-    control.style.flex = 0.0;
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        control,
-        Element::spacer().flex(1.0),
-    ])
-    .size(width, None)
-    .flex(flex)
 }
 
 fn source_label(kind: SourceKind) -> &'static str {
@@ -583,8 +564,8 @@ fn matches_query(item: &MarketplaceItem, query: &str) -> bool {
 
 fn section_heading(label: &str, count: usize) -> Element {
     Element::row(vec![
-        vertically_centered(title(label)),
-        vertically_centered(capsule(count.to_string())),
+        title(label).centered_y(),
+        capsule(count.to_string()).centered_y(),
         Element::spacer().flex(1.0),
     ])
     .gap(8.0)
@@ -617,7 +598,7 @@ fn item_card_content(
     .radius(8.0)
     .size(Some(32.0), Some(32.0));
     let header = Element::row(vec![
-        vertically_centered(marker),
+        marker.centered_y(),
         Element::column(vec![
             Tooltip::new(
                 clipped(&item.name, theme::FOREGROUND, 14.0),
@@ -635,7 +616,7 @@ fn item_card_content(
         ])
         .gap(3.0)
         .flex(1.0),
-        vertically_centered(if detailed {
+        (if detailed {
             Element::spacer()
         } else {
             IconButton::new(
@@ -647,7 +628,8 @@ fn item_card_content(
             .size(ControlSize::Compact)
             .tooltip("Detalles de la skill")
             .render()
-        }),
+        })
+        .centered_y(),
     ])
     .gap(8.0);
 
@@ -688,12 +670,13 @@ fn item_card_content(
             .render(),
         );
         let activation = Element::row(vec![
-            vertically_centered(text(
+            text(
                 if item.enabled { "Activa" } else { "Inactiva" },
                 theme::FOREGROUND_SUBTLE,
                 11.0,
-            )),
-            vertically_centered(toggle),
+            )
+            .centered_y(),
+            toggle.centered_y(),
         ])
         .gap(8.0)
         .size(None, Some(ControlSize::Regular.height()));
@@ -703,7 +686,7 @@ fn item_card_content(
                 Element::row(vec![
                     activation,
                     Element::spacer().flex(1.0),
-                    vertically_centered(uninstall),
+                    uninstall.centered_y(),
                 ])
                 .gap(8.0)
                 .size(None, Some(ControlSize::Regular.height())),
@@ -711,10 +694,10 @@ fn item_card_content(
             .gap(8.0)
         } else {
             Element::row(vec![
-                vertically_centered(badge),
+                badge.centered_y(),
                 Element::spacer().flex(1.0),
                 activation,
-                vertically_centered(uninstall),
+                uninstall.centered_y(),
             ])
             .gap(10.0)
             .size(None, Some(ControlSize::Regular.height()))
@@ -744,12 +727,9 @@ fn item_card_content(
         .width(INSTALL_WIDTH)
         .enabled(!busy && item.source_available)
         .render();
-        Element::row(vec![
-            vertically_centered(license),
-            vertically_centered(install),
-        ])
-        .gap(8.0)
-        .size(None, Some(ControlSize::Compact.height()))
+        Element::row(vec![license.centered_y(), install.centered_y()])
+            .gap(8.0)
+            .size(None, Some(ControlSize::Compact.height()))
     };
     if let Some(update) = state
         .and_then(|state| state.updates.get(&item.id))
@@ -927,20 +907,19 @@ fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
     for source in &state.snapshot.sources {
         rows.push(
             Element::row(vec![
-                vertically_centered(
-                    Element::icon(match source.kind {
-                        SourceKind::Local => Icon::Folder,
-                        SourceKind::Github => Icon::Github,
-                    })
-                    .foreground(theme::FOREGROUND_SUBTLE),
-                ),
+                Element::icon(match source.kind {
+                    SourceKind::Local => Icon::Folder,
+                    SourceKind::Github => Icon::Github,
+                })
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .centered_y(),
                 Element::column(vec![
                     clipped(&source.name, theme::FOREGROUND, 13.0),
                     clipped(&source.location, theme::FOREGROUND_SUBTLE, 11.0),
                 ])
                 .gap(3.0)
                 .flex(1.0),
-                vertically_centered(theme::interactive_surface(
+                theme::interactive_surface(
                     IconButton::new(
                         format!("marketplace_remove_source:{}", source.id),
                         Icon::Trash,
@@ -951,7 +930,8 @@ fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
                     .tooltip("Quitar origen")
                     .enabled(!state.busy)
                     .render(),
-                )),
+                )
+                .centered_y(),
             ])
             .gap(10.0)
             .padding(12.0)
@@ -1047,7 +1027,7 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
     if description {
         body.push(skill_description(item, true));
     }
-    body.push(divider());
+    body.push(Separator::horizontal(theme::component_palette()).render());
     if let Some(details) = crate::marketplace::starter_details(&item.id) {
         body.extend([
             detail_field("Origen", &details.repository_url),
@@ -1312,17 +1292,9 @@ pub(crate) fn ide_item_detail(
     ])
     .gap(12.0)
     .size(Some(width), None);
-    ScrollArea::new(
-        "ide_extension_detail",
-        Element::row(vec![
-            Element::spacer().flex(1.0),
-            body,
-            Element::spacer().flex(1.0),
-        ])
-        .padding(12.0),
-    )
-    .render()
-    .flex(1.0)
+    ScrollArea::new("ide_extension_detail", body.centered_x().padding(12.0))
+        .render()
+        .flex(1.0)
 }
 
 pub fn marketplace_page(state: &MarketplaceViewState, available_width: f32) -> Element {
@@ -1438,7 +1410,7 @@ fn catalog_surface(
     .render();
     let mut header_items = Vec::new();
     if let Some(navigation) = navigation {
-        header_items.push(vertically_centered(navigation));
+        header_items.push(navigation.centered_y());
     }
     header_items.extend([
         Element::column(vec![
@@ -1455,8 +1427,8 @@ fn catalog_surface(
         ])
         .gap(2.0)
         .flex(1.0),
-        vertically_centered(refresh),
-        vertically_centered(add),
+        refresh.centered_y(),
+        add.centered_y(),
     ]);
     let header = Element::row(header_items).gap(6.0).size(None, Some(40.0));
 
@@ -1479,7 +1451,7 @@ fn catalog_surface(
         Element::spacer().size(None, Some(0.0))
     } else {
         Element::row(vec![
-            vertically_centered(clipped("Instalar en", theme::FOREGROUND_SUBTLE, 10.0)),
+            clipped("Instalar en", theme::FOREGROUND_SUBTLE, 10.0).centered_y(),
             Element::spacer().flex(1.0),
             scope,
         ])
@@ -1518,7 +1490,7 @@ fn catalog_surface(
         MarketplaceTab::Explore => sections.push(explore_status(state, width)),
         MarketplaceTab::Installed => sections.push(update_status(state)),
     }
-    sections.push(divider());
+    sections.push(Separator::horizontal(theme::component_palette()).render());
     if let Some(status) = state
         .status
         .as_deref()
@@ -1566,16 +1538,11 @@ fn catalog_surface(
         sections.push(item_grid(&items, width, state));
     }
     if state.active_tab() == MarketplaceTab::Recommended && !state.snapshot.sources.is_empty() {
-        sections.push(divider());
+        sections.push(Separator::horizontal(theme::component_palette()).render());
         sections.push(source_list(state, width));
     }
     let content = Element::column(sections).gap(10.0).size(Some(width), None);
-    let centered = Element::row(vec![
-        Element::spacer().flex(1.0),
-        content,
-        Element::spacer().flex(1.0),
-    ])
-    .padding(gutter);
+    let centered = content.centered_x().padding(gutter);
     let page = ScrollArea::new("marketplace_page", centered)
         .appearance(ScrollbarAppearance::reserved().rail_width(SCROLL_RAIL_WIDTH))
         .tint(theme::FOREGROUND_SUBTLE)

@@ -1,6 +1,6 @@
 use super::*;
 use crate::ide_workspace::IdeBottomPanel;
-use openide_ui::{AlertColors, AlertTone};
+use openide_ui::{AlertColors, AlertTone, Component, Separator};
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 
@@ -188,9 +188,9 @@ fn problems(state: &ViewState, width: f32, height: f32) -> Element {
             .render(),
         );
         rows.push(
-            Element::spacer()
-                .background(theme::BORDER)
-                .size(Some(row_width), Some(1.0)),
+            Separator::horizontal(theme::component_palette())
+                .length(row_width)
+                .render(),
         );
     } else {
         rows.push(problem_status(

@@ -3,7 +3,7 @@
 use crate::theme;
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuItem,
-    Element, FontFamily, Icon, IconButton, Tooltip, TooltipPlacement,
+    Element, FontFamily, Icon, IconButton, Separator, Tooltip, TooltipPlacement,
 };
 use std::sync::Arc;
 
@@ -142,16 +142,6 @@ fn label(text: impl Into<String>, width: f32, color: openide_ui::Color) -> Eleme
         .font_size(12.0)
         .foreground(color)
         .size(Some(width.max(0.0)), Some(ROW))
-}
-fn row_icon(icon: Icon, color: openide_ui::Color, size: f32) -> Element {
-    Element::column(vec![
-        Element::spacer().flex(1.0),
-        Element::icon(icon)
-            .foreground(color)
-            .size(Some(size), Some(size)),
-        Element::spacer().flex(1.0),
-    ])
-    .size(Some(size), Some(ROW))
 }
 fn tool(state: &DebugView, op: &str, icon: Icon, hint: &str, enabled: bool) -> Element {
     sized_tool(state, op, icon, hint, enabled, false)
@@ -346,15 +336,15 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                 Element::clickable(
                     id,
                     Element::row(vec![
-                        row_icon(
-                            if *expanded {
-                                Icon::ChevronDown
-                            } else {
-                                Icon::ChevronRight
-                            },
-                            theme::TOOL_RESULT,
-                            12.0,
-                        ),
+                        Element::icon(if *expanded {
+                            Icon::ChevronDown
+                        } else {
+                            Icon::ChevronRight
+                        })
+                        .foreground(theme::TOOL_RESULT)
+                        .size(Some(12.0), Some(12.0))
+                        .centered_y()
+                        .size(Some(12.0), Some(ROW)),
                         label(*title, (width - 56.0).max(0.0), theme::FOREGROUND),
                         label(count.to_string(), 36.0, theme::FOREGROUND_SUBTLE),
                     ])
@@ -408,15 +398,15 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                 },
             );
             let content = Element::row(vec![
-                row_icon(
-                    Icon::Code,
-                    if frame.selected {
+                Element::icon(Icon::Code)
+                    .foreground(if frame.selected {
                         theme::FOREGROUND
                     } else {
                         theme::TOOL_RESULT
-                    },
-                    14.0,
-                ),
+                    })
+                    .size(Some(14.0), Some(14.0))
+                    .centered_y()
+                    .size(Some(14.0), Some(ROW)),
                 label(
                     bounded(&frame.name),
                     (width - 52.0).max(0.0),
@@ -467,15 +457,15 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
             let content = Element::row(vec![
                 Element::spacer().size(Some(indent), Some(ROW)),
                 if variable.has_children {
-                    row_icon(
-                        if variable.expanded {
-                            Icon::ChevronDown
-                        } else {
-                            Icon::ChevronRight
-                        },
-                        theme::TOOL_RESULT,
-                        12.0,
-                    )
+                    Element::icon(if variable.expanded {
+                        Icon::ChevronDown
+                    } else {
+                        Icon::ChevronRight
+                    })
+                    .foreground(theme::TOOL_RESULT)
+                    .size(Some(12.0), Some(12.0))
+                    .centered_y()
+                    .size(Some(12.0), Some(ROW))
                 } else {
                     Element::spacer().size(Some(12.0), Some(ROW))
                 },
@@ -542,19 +532,16 @@ fn row_on_surface(state: &DebugView, row: &Row, width: f32, surface: openide_ui:
                 theme::FOREGROUND
             };
             let content = Element::row(vec![
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    Element::spacer()
-                        .background(if marker.dirty {
-                            theme::FOREGROUND_SUBTLE
-                        } else {
-                            theme::DESTRUCTIVE
-                        })
-                        .radius(4.0)
-                        .size(Some(8.0), Some(8.0)),
-                    Element::spacer().flex(1.0),
-                ])
-                .size(Some(12.0), Some(ROW)),
+                Element::spacer()
+                    .background(if marker.dirty {
+                        theme::FOREGROUND_SUBTLE
+                    } else {
+                        theme::DESTRUCTIVE
+                    })
+                    .radius(4.0)
+                    .size(Some(8.0), Some(8.0))
+                    .centered_y()
+                    .size(Some(12.0), Some(ROW)),
                 label(
                     format!(
                         "{location}{}",
@@ -603,7 +590,11 @@ fn configuration_selector(
             (inner - 18.0).max(0.0),
             theme::TOOL_RESULT,
         ),
-        row_icon(Icon::ChevronDown, theme::TOOL_RESULT, 12.0),
+        Element::icon(Icon::ChevronDown)
+            .foreground(theme::TOOL_RESULT)
+            .size(Some(12.0), Some(12.0))
+            .centered_y()
+            .size(Some(12.0), Some(ROW)),
     ])
     .gap(6.0)
     .size(Some(inner), Some(ROW));
@@ -951,7 +942,11 @@ fn sidebar_session(state: &DebugView, width: f32) -> Element {
         children.push(
             Tooltip::new(
                 Element::row(vec![
-                    row_icon(icon, color, 12.0),
+                    Element::icon(icon)
+                        .foreground(color)
+                        .size(Some(12.0), Some(12.0))
+                        .centered_y()
+                        .size(Some(12.0), Some(ROW)),
                     label(status, (inner - 18.0).max(0.0), color),
                 ])
                 .gap(6.0)
@@ -966,7 +961,11 @@ fn sidebar_session(state: &DebugView, width: f32) -> Element {
     } else {
         children.push(
             Element::row(vec![
-                row_icon(Icon::Play, theme::FOREGROUND, 16.0),
+                Element::icon(Icon::Play)
+                    .foreground(theme::FOREGROUND)
+                    .size(Some(16.0), Some(16.0))
+                    .centered_y()
+                    .size(Some(16.0), Some(ROW)),
                 label(
                     "Empezar a depurar",
                     (inner - 22.0).max(0.0),
@@ -1081,9 +1080,9 @@ fn sidebar_controls(state: &DebugView, width: f32) -> Element {
                 stopped && state.controls.resume,
             )
         },
-        Element::spacer()
-            .background(theme::BORDER)
-            .size(Some(1.0), Some(16.0)),
+        Separator::vertical(theme::component_palette())
+            .length(16.0)
+            .render(),
         control(
             "step_over",
             crate::provider_icons::STEP_OVER,
@@ -1221,15 +1220,15 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
                     Element::clickable(
                         &id,
                         Element::row(vec![
-                            row_icon(
-                                if *expanded {
-                                    Icon::ChevronDown
-                                } else {
-                                    Icon::ChevronRight
-                                },
-                                theme::TOOL_RESULT,
-                                12.0,
-                            ),
+                            Element::icon(if *expanded {
+                                Icon::ChevronDown
+                            } else {
+                                Icon::ChevronRight
+                            })
+                            .foreground(theme::TOOL_RESULT)
+                            .size(Some(12.0), Some(12.0))
+                            .centered_y()
+                            .size(Some(12.0), Some(ROW)),
                             label(
                                 if *key == "breakpoints" && width < 240.0 {
                                     "Puntos de pausa"
@@ -1260,7 +1259,11 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
                     Element::clickable(
                         &id,
                         Element::row(vec![
-                            row_icon(Icon::Code, theme::TOOL_RESULT, 14.0),
+                            Element::icon(Icon::Code)
+                                .foreground(theme::TOOL_RESULT)
+                                .size(Some(14.0), Some(14.0))
+                                .centered_y()
+                                .size(Some(14.0), Some(ROW)),
                             label(
                                 bounded(&frame.name),
                                 (width - 18.0).max(0.0),
@@ -1326,19 +1329,16 @@ fn sidebar_row(state: &DebugView, row: &SidebarRow, width: f32) -> Element {
         SidebarRow::Item(Row::Breakpoint(marker)) => {
             let id = row_action(&state.scope, "breakpoint", (&marker.path, marker.line));
             let content = Element::row(vec![
-                Element::column(vec![
-                    Element::spacer().flex(1.0),
-                    Element::spacer()
-                        .background(if marker.dirty {
-                            theme::FOREGROUND_SUBTLE
-                        } else {
-                            theme::DESTRUCTIVE
-                        })
-                        .radius(4.0)
-                        .size(Some(8.0), Some(8.0)),
-                    Element::spacer().flex(1.0),
-                ])
-                .size(Some(8.0), Some(ROW)),
+                Element::spacer()
+                    .background(if marker.dirty {
+                        theme::FOREGROUND_SUBTLE
+                    } else {
+                        theme::DESTRUCTIVE
+                    })
+                    .radius(4.0)
+                    .size(Some(8.0), Some(8.0))
+                    .centered_y()
+                    .size(Some(8.0), Some(ROW)),
                 label(
                     basename(&marker.path),
                     (width - 42.0).max(0.0),

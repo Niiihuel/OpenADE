@@ -7,7 +7,7 @@ use crate::{
 use openide_preview::{Document, PreviewKind};
 use openide_ui::{
     ButtonSize, ButtonVariant, Component, Element, FontFamily, Icon, IconButton, ScrollArea,
-    Tooltip, TooltipPlacement,
+    Separator, Tooltip, TooltipPlacement,
 };
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -188,25 +188,20 @@ fn document_body(
     scroll_id: &str,
 ) -> Element {
     if let Some(error) = &view.error {
-        return Element::column(vec![
-            Element::spacer().flex(1.0),
-            Element::text(error)
-                .font_family(FontFamily::Sans)
-                .font_size(13.0)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .padding(16.0),
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(width), Some(height))
-        .clip_children();
+        return Element::text(error)
+            .font_family(FontFamily::Sans)
+            .font_size(13.0)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .padding(16.0)
+            .centered_y()
+            .size(Some(width), Some(height))
+            .clip_children();
     }
     let Some(document) = view.document.as_deref() else {
-        return Element::column(vec![
-            Element::spacer().flex(1.0),
-            label("Preparando vista previa…").center_content(),
-            Element::spacer().flex(1.0),
-        ])
-        .size(Some(width), Some(height));
+        return label("Preparando vista previa…")
+            .center_content()
+            .centered_y()
+            .size(Some(width), Some(height));
     };
     let content = match document {
         Document::Markdown(document) => {
@@ -237,19 +232,10 @@ fn document_body(
                 .map(Element::raster_image)
                 .unwrap_or_else(|| label("No se pudo mostrar la imagen"))
                 .size(Some(image_width), Some(image_height));
-            let row = Element::row(vec![
-                Element::spacer().flex(1.0),
-                raster,
-                Element::spacer().flex(1.0),
-            ])
-            .size(Some(inner_width.max(image_width)), Some(image_height));
-            let canvas = Element::column(vec![
-                Element::spacer().flex(1.0),
-                row,
-                Element::spacer().flex(1.0),
-            ])
-            .padding(8.0)
-            .size(
+            let row = raster
+                .centered_x()
+                .size(Some(inner_width.max(image_width)), Some(image_height));
+            let canvas = row.centered_y().padding(8.0).size(
                 Some(inner_width.max(image_width) + 16.0),
                 Some(inner_height.max(image_height) + 16.0),
             );
@@ -312,12 +298,12 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Option<Elemen
         if view.mode == PreviewMode::Source {
             return Some(source(width));
         }
-        let divider = Element::spacer().background(theme::BORDER);
+        let palette = theme::component_palette();
         return Some(if width >= 640.0 {
             let half = (width - 1.0) / 2.0;
             Element::row(vec![
                 source(half).size(Some(half), Some(height)),
-                divider.size(Some(1.0), Some(height)),
+                Separator::vertical(palette).length(height).render(),
                 preview(view, half, height, true),
             ])
             .size(Some(width), Some(height))
@@ -326,7 +312,7 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Option<Elemen
             let half = (height - 1.0) / 2.0;
             Element::column(vec![
                 source(width).size(Some(width), Some(half)),
-                divider.size(Some(width), Some(1.0)),
+                Separator::horizontal(palette).length(width).render(),
                 preview(view, width, half, true),
             ])
             .size(Some(width), Some(height))
