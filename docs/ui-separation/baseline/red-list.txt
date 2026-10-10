@@ -24,3 +24,11 @@ openide-command-history-visual-qa and openide-conversation-stream-visual-qa.
 Everything else re-exports byte-identical. To compare those, normalize first:
   sed -E 's/nix-shell-[0-9]+-[0-9]+/NIX/g; s/\.tmp[A-Za-z0-9]+/.tmpX/g'
 (the truncated path can then still differ by one character before the ellipsis).
+
+Capture that differs between runs for another reason (timing):
+openide-code-editor-visual-qa/editor-gutter-hover-{360,900} (SVG and PNG). The test
+(code_editor_component_visual_tests.rs:390) moves the pointer over the gutter and
+settles on the real clock, so the breakpoint tooltip ("Marcar punto de interrupción  F9")
+may or may not be in the frame. The baseline frames do not have it; in three re-exports 360
+had it once, 900 had it once and one run had neither (the with-tooltip frame is in
+shots/s00-baseline-review/). A tooltip-only difference there is not a visual change.
