@@ -89,6 +89,42 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
     )
 }
 
+/// An entry of the extensions sidebar: its name over its state or source.
+fn extension_row(
+    action: &str,
+    name: &str,
+    subtitle: &str,
+    description: &str,
+    selected: bool,
+    width: f32,
+) -> Element {
+    // The open extension keeps the sidebar's hover over its selected fill.
+    let palette = openide_ui::ComponentPalette {
+        surface: if selected {
+            theme::SELECTED
+        } else {
+            theme::SIDEBAR
+        },
+        ..theme::action_palette(theme::SIDEBAR, theme::FOREGROUND)
+    };
+    Tooltip::new(
+        ListRow::new(action, name, palette)
+            .icon(Icon::Grid)
+            // A catalog entry without a source keeps its second line.
+            .subtitle(if subtitle.is_empty() { " " } else { subtitle })
+            .filled()
+            .sizing(crate::ui_sizing::EXTENSION)
+            .render()
+            .size(Some(width), crate::ui_sizing::EXTENSION.two_line_height),
+        action,
+        name,
+        theme::component_palette(),
+    )
+    .description(description)
+    .placement(TooltipPlacement::Right)
+    .render()
+}
+
 pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> Element {
     let inventory = &state.marketplace;
     let inner = (width - chrome::INSET * 2.0).max(0.0);
@@ -110,45 +146,15 @@ pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> 
                 } else {
                     &item.source_name
                 };
-            Tooltip::new(
-                theme::action_palette(theme::SIDEBAR, theme::FOREGROUND).interactive_surface(
-                    Element::clickable(
-                        &action,
-                        Element::row(vec![
-                            Element::icon(Icon::Grid)
-                                .foreground(theme::FOREGROUND_SUBTLE)
-                                .size(Some(16.0), Some(16.0)),
-                            Element::column(vec![
-                                caption(&item.name),
-                                caption(subtitle)
-                                    .font_size(10.0)
-                                    .foreground(theme::FOREGROUND_SUBTLE),
-                            ])
-                            .gap(2.0)
-                            .flex(1.0),
-                        ])
-                        .gap(7.0)
-                        .padding(5.0),
-                    )
-                    .background(
-                        if state.ide.extensions_open
-                            && state.ide.extensions_item.as_deref() == Some(item.id.as_str())
-                        {
-                            theme::SELECTED
-                        } else {
-                            theme::SIDEBAR
-                        },
-                    )
-                    .size(Some(list_width), Some(42.0))
-                    .radius(4.0),
-                ),
-                action,
+            extension_row(
+                &action,
                 &item.name,
-                theme::component_palette(),
+                subtitle,
+                &item.description,
+                state.ide.extensions_open
+                    && state.ide.extensions_item.as_deref() == Some(item.id.as_str()),
+                list_width,
             )
-            .description(&item.description)
-            .placement(TooltipPlacement::Right)
-            .render()
         })
         .collect();
     let list = if entries.is_empty() {
@@ -304,6 +310,67 @@ mod tests {
         marketplace::{MarketplaceItem, SourceKind},
     };
     use openide_ui::{Size, UiTree};
+
+    fn legacy_extension_row(
+        action: &str,
+        name: &str,
+        subtitle: &str,
+        description: &str,
+        selected: bool,
+        width: f32,
+    ) -> Element {
+        Tooltip::new(
+            theme::action_palette(theme::SIDEBAR, theme::FOREGROUND).interactive_surface(
+                Element::clickable(
+                    action,
+                    Element::row(vec![
+                        Element::icon(Icon::Grid)
+                            .foreground(theme::FOREGROUND_SUBTLE)
+                            .size(Some(16.0), Some(16.0)),
+                        Element::column(vec![
+                            caption(name),
+                            caption(subtitle)
+                                .font_size(10.0)
+                                .foreground(theme::FOREGROUND_SUBTLE),
+                        ])
+                        .gap(2.0)
+                        .flex(1.0),
+                    ])
+                    .gap(7.0)
+                    .padding(5.0),
+                )
+                .background(if selected {
+                    theme::SELECTED
+                } else {
+                    theme::SIDEBAR
+                })
+                .size(Some(width), Some(42.0))
+                .radius(4.0),
+            ),
+            action,
+            name,
+            theme::component_palette(),
+        )
+        .description(description)
+        .placement(TooltipPlacement::Right)
+        .render()
+    }
+
+    #[test]
+    fn extension_rows_match_their_legacy_body() {
+        let long = "Un complemento con un nombre que no entra en la barra lateral";
+        for width in [150.0, 248.0] {
+            for selected in [false, true] {
+                for (name, subtitle) in [("Docs", "Instalada · Activa"), (long, long)] {
+                    crate::icon_button_parity_tests::assert_same(
+                        &format!("extension {name:?} selected={selected} at {width}"),
+                        legacy_extension_row("ide_extension:x", name, subtitle, long, selected, width),
+                        extension_row("ide_extension:x", name, subtitle, long, selected, width),
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn ide_git_sidebar_keeps_file_navigation_while_the_center_has_a_diff() {

@@ -12,9 +12,9 @@ use openide_harness::{
 use openide_ui::{
     ActiveHover, AlertDialog, Button, ButtonVariant, Color, Component, ControlSize, DropdownList,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily,
-    Icon, IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search, SegmentedControl,
+    Icon, IconButton as UiIconButton, Kbd, ListRow, PopoverPlacement, ScrollArea, Search, SegmentedControl,
     Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
-    TreeRow, ICON_SIZE,
+    TreeRow,
 };
 use serde_json::Value;
 
@@ -48,6 +48,7 @@ mod command_center;
 mod dock_activity;
 #[path = "dock_chrome.rs"]
 pub(crate) mod dock_chrome;
+mod dock_overview;
 #[cfg(test)]
 #[path = "dock_visual_tests.rs"]
 mod dock_visual_tests;
@@ -70,6 +71,8 @@ mod agent_chrome_visual_tests;
 #[cfg(test)]
 #[path = "tab_bar_visual_tests.rs"]
 mod tab_bar_visual_tests;
+#[cfg(test)]
+mod sidebar_row_parity_tests;
 pub(crate) use command_center::{build_command_center, command_result_action, command_result_row};
 use crate::sidebar_chrome::{NAV_ROW_HEIGHT as SIDEBAR_ROW_HEIGHT, TOOL_SIZE as SIDEBAR_TOOL_SIZE};
 
@@ -902,6 +905,42 @@ fn session_row_with_context(
     let selected = state.selected_session.as_deref() == Some(session.id.as_str());
     let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str());
     let row_width = (width - 18.0).max(0.0);
+    let (status_marker, menu_button) = session_row_parts(state, session, row_width);
+    let mut row = ListRow::new(
+        format!("session:{}", session.id),
+        &session.title,
+        theme::action_palette(
+            if selected || menu_open {
+                theme::SELECTED
+            } else {
+                theme::SIDEBAR
+            },
+            theme::FOREGROUND,
+        ),
+    )
+    .leading(status_marker)
+    .title_fade(true)
+    .trailing(menu_button)
+    // The menu button sits over the row and takes its pointer.
+    .hover_with(format!("session_menu:{}", session.id))
+    .filled()
+    .sizing(crate::ui_sizing::SIDEBAR_TASK);
+    if selected || session.unread {
+        row = row.title_ink(theme::BRAND);
+    }
+    row.render()
+        .size(Some(row_width), crate::ui_sizing::SIDEBAR_TASK.height)
+}
+
+/// The status marker in its slot and the More menu of a session row. Which
+/// marker a session wears and what its menu offers are the app's to decide.
+fn session_row_parts(
+    state: &SessionRowContext,
+    session: &SessionView,
+    row_width: f32,
+) -> (Element, Element) {
+    let selected = state.selected_session.as_deref() == Some(session.id.as_str());
+    let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str());
     let menu_width = row_width.max(246.0);
     let recovery = state.session_recovery.get(&session.id);
     let status_marker = if recovery.is_some() {
@@ -1066,71 +1105,12 @@ fn session_row_with_context(
     let menu_button = menu_button
         .centered_y()
         .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
-    let row = Element::clickable(
-        format!("session:{}", session.id),
-        Element::row(vec![
-            status_marker,
-            Element::faded_text(&session.title, 24.0)
-                .foreground(if selected || session.unread {
-                    theme::BRAND
-                } else {
-                    theme::FOREGROUND
-                })
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(None, Some(SIDEBAR_ROW_HEIGHT))
-                .flex(1.0),
-            menu_button,
-        ])
-        .gap(4.0)
-        .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
-    )
-    .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT))
-    .background(if selected || menu_open {
-        theme::SELECTED
-    } else {
-        theme::SIDEBAR
-    })
-    .hover_background(if selected || menu_open {
-        theme::hover_for(theme::SELECTED)
-    } else {
-        theme::hover_for(theme::SIDEBAR)
-    })
-    .pressed_background(theme::SELECTED)
-    .hover_with(menu_action_id)
-    .radius(8.0);
-    theme::action_palette(
-        if selected || menu_open {
-            theme::SELECTED
-        } else {
-            theme::SIDEBAR
-        },
-        theme::FOREGROUND,
-    )
-    .interactive_surface(row)
+    (status_marker, menu_button)
 }
 
 fn project_header(project: &str, count: usize, collapsed: bool, width: f32) -> Element {
     let row_width = (width - 18.0).max(0.0);
     let action_id = format!("session_project_toggle:{project}");
-    let trailing = Element::row(vec![
-        Element::truncated_text(count.to_string())
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .font_family(FontFamily::Sans)
-            .font_size(10.0),
-        Element::panel(
-            Element::icon(if collapsed {
-                Icon::ChevronRight
-            } else {
-                Icon::ChevronDown
-            })
-            .foreground(theme::FOREGROUND_SUBTLE),
-        )
-        .size(Some(ICON_SIZE), Some(SIDEBAR_ROW_HEIGHT)),
-    ])
-    .gap(6.0)
-    .size(None, Some(SIDEBAR_ROW_HEIGHT));
     TreeRow::new(
         move |content| Element::clickable(action_id, content),
         Element::icon(openide_ui::folder_icon(project, !collapsed))
@@ -1142,7 +1122,8 @@ fn project_header(project: &str, count: usize, collapsed: bool, width: f32) -> E
         TreeGuides::root(),
         theme::action_palette(theme::SIDEBAR, theme::FOREGROUND),
     )
-    .trailing(trailing)
+    .count(count)
+    .disclosure(!collapsed)
     .width(row_width)
     .height(SIDEBAR_ROW_HEIGHT)
     .render()
@@ -1260,58 +1241,35 @@ fn sidebar_nav_action(
     width: f32,
     selected: bool,
 ) -> Element {
-    let icon = Element::icon(icon)
-        .foreground(if selected {
-            theme::FOREGROUND
-        } else {
-            theme::FOREGROUND_SUBTLE
-        })
-        .size(Some(16.0), Some(16.0));
     let kbd = Kbd::new(shortcut, theme::component_palette())
         .max_width((width - 92.0).max(0.0))
         .render();
-    let centered = |element: Element| element.centered_y().size(None, Some(SIDEBAR_ROW_HEIGHT));
-    let row = Element::clickable(
+    ListRow::new(
         id,
-        Element::row(vec![
-            Element::spacer().size(Some(4.0), None),
-            Element::row(vec![
-                centered(icon).size(Some(16.0), Some(SIDEBAR_ROW_HEIGHT)),
-                Element::truncated_text(title)
-                    .foreground(theme::FOREGROUND)
-                    .font_family(FontFamily::Sans)
-                    .font_size(13.0)
-                    .flex(1.0),
-                centered(kbd),
-            ])
-            .gap(8.0)
-            .flex(1.0),
-            Element::spacer().size(Some(8.0), None),
-        ])
-        .size(Some(width), Some(SIDEBAR_ROW_HEIGHT)),
+        title,
+        theme::action_palette(
+            if selected {
+                theme::SELECTED
+            } else {
+                theme::SIDEBAR
+            },
+            theme::FOREGROUND,
+        ),
     )
-    .size(Some(width), Some(SIDEBAR_ROW_HEIGHT))
-    .background(if selected {
-        theme::SELECTED
+    .icon(icon)
+    .icon_ink(if selected {
+        theme::FOREGROUND
     } else {
-        theme::SIDEBAR
+        theme::FOREGROUND_SUBTLE
     })
-    .hover_background(if selected {
-        theme::SELECTED
-    } else {
-        theme::hover_for(theme::SIDEBAR)
-    })
-    .pressed_background(theme::SELECTED)
-    .radius(8.0);
-    theme::action_palette(
-        if selected {
-            theme::SELECTED
-        } else {
-            theme::SIDEBAR
-        },
-        theme::FOREGROUND,
+    // The shortcut stops 8 px short of the row's edge: the row's inset and 4 more.
+    .trailing(
+        Element::row(vec![kbd.centered_y(), Element::spacer().size(Some(4.0), None)]).gap(0.0),
     )
-    .interactive_surface(row)
+    .filled()
+    .sizing(crate::ui_sizing::SIDEBAR_NAV)
+    .render()
+    .size(Some(width), crate::ui_sizing::SIDEBAR_NAV.height)
 }
 
 #[derive(Clone)]
@@ -2770,61 +2728,6 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
     Element::column(rows).gap(8.0).padding(12.0)
 }
 
-fn dock_open_actions(width: f32) -> Element {
-    let action_width = width.max(150.0);
-    Element::column(vec![
-        icon_button(
-            "dock_open:files",
-            Icon::Folder,
-            "Archivos",
-            theme::CARD,
-            theme::FOREGROUND,
-        )
-        .size(Some(action_width), Some(38.0)),
-        icon_button(
-            "dock_open:activity",
-            Icon::History,
-            "Actividad",
-            theme::CARD,
-            theme::FOREGROUND,
-        )
-        .size(Some(action_width), Some(38.0)),
-        icon_button(
-            "dock_open:review",
-            Icon::Code,
-            "Cambios de Git",
-            theme::CARD,
-            theme::FOREGROUND,
-        )
-        .size(Some(action_width), Some(38.0)),
-        icon_button(
-            "dock_open:terminal",
-            Icon::Terminal,
-            "Terminal",
-            theme::CARD,
-            theme::FOREGROUND,
-        )
-        .size(Some(action_width), Some(38.0)),
-        icon_button(
-            "dock_open:browser",
-            Icon::Globe,
-            "Navegador",
-            theme::CARD,
-            theme::FOREGROUND,
-        )
-        .size(Some(action_width), Some(38.0)),
-        icon_button(
-            "dock_open:changes",
-            Icon::Code,
-            "Cambios del chat",
-            theme::CARD,
-            theme::FOREGROUND,
-        )
-        .size(Some(action_width), Some(38.0)),
-    ])
-    .gap(6.0)
-}
-
 fn dock_add_menu(state: &ViewState) -> Element {
     let entries = [
         (
@@ -2897,7 +2800,7 @@ fn dock_empty_content(width: f32) -> Element {
             .muted()
             .render(),
         Element::spacer().size(None, Some(8.0)),
-        dock_open_actions(content_width),
+        dock_overview::open_actions(content_width),
     ])
     .gap(8.0)
     .size(Some(content_width), None);
@@ -2976,198 +2879,7 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
     } else if state.dock_tabs.is_empty() && !state.show_dock_overview {
         dock_empty_content(width)
     } else if state.show_dock_overview {
-        let query = state.dock_overview_query.trim().to_lowercase();
-        let matches = |title: &str, kind: SideTab| {
-            let kind_name = match kind {
-                SideTab::Context => "entorno",
-                SideTab::Files => "archivos",
-                SideTab::Activity => "actividad",
-                SideTab::CodeReview => "repositorio git",
-                SideTab::SessionChanges => "cambios chat conversación",
-                SideTab::Browser => "navegador web",
-                SideTab::Terminal => "terminal",
-                SideTab::FilePreview => "vista de archivo",
-                SideTab::CodeSnapshot => "vista previa capturada",
-            };
-            query.is_empty() || title.to_lowercase().contains(&query) || kind_name.contains(&query)
-        };
-        let filtered_tabs: Vec<_> = state
-            .dock_tabs
-            .iter()
-            .filter(|tab| matches(&tab.title, tab.kind))
-            .collect();
-        let filtered_recent: Vec<_> = state
-            .dock_recently_closed
-            .iter()
-            .filter(|tab| matches(&tab.title, tab.kind))
-            .collect();
-        let mut tabs = vec![
-            Search::new(
-                "dock_overview_query",
-                &state.dock_overview_query,
-                "Buscar pestañas…",
-                theme::component_palette(),
-            )
-            .render()
-            .size(None, Some(34.0)),
-            Element::row(vec![
-                eyebrow("PESTAÑAS ABIERTAS"),
-                Element::spacer().flex(1.0),
-                if state.dock_tabs.is_empty() {
-                    Element::spacer().size(Some(86.0), Some(24.0))
-                } else {
-                    button(
-                        "dock_close_all",
-                        "Cerrar todas",
-                        theme::HOVER,
-                        theme::FOREGROUND_SUBTLE,
-                    )
-                    .font_size(11.0)
-                    .min_size(0.0, 0.0)
-                    .size(Some(86.0), Some(24.0))
-                },
-            ])
-            .size(None, Some(24.0)),
-        ];
-        if filtered_tabs.is_empty() {
-            tabs.push(
-                UiText::new(
-                    if state.dock_tabs.is_empty() {
-                        "No hay pestañas abiertas"
-                    } else {
-                        "Sin coincidencias abiertas"
-                    },
-                    theme::component_palette(),
-                )
-                .role(TextRole::Small)
-                .muted()
-                .render()
-                .padding(8.0),
-            );
-        }
-        let first_id = state.dock_tabs.first().map(|tab| tab.id);
-        let last_id = state.dock_tabs.last().map(|tab| tab.id);
-        for tab in filtered_tabs {
-            tabs.push(
-                Element::row(vec![
-                    button(
-                        format!("dock_tab:{}", tab.id),
-                        shorten(&tab.title, 25),
-                        if tab.active {
-                            theme::SELECTED
-                        } else {
-                            theme::BACKGROUND
-                        },
-                        theme::FOREGROUND,
-                    )
-                    .font_size(12.0)
-                    .min_size(0.0, 0.0)
-                    .flex(1.0)
-                    .size(None, Some(28.0)),
-                    button(
-                        format!("dock_close_others:{}", tab.id),
-                        "Solo",
-                        theme::BACKGROUND,
-                        theme::FOREGROUND_SUBTLE,
-                    )
-                    .font_size(10.0)
-                    .min_size(0.0, 0.0)
-                    .size(Some(34.0), Some(28.0)),
-                    if first_id == Some(tab.id) {
-                        Element::icon(Icon::ArrowUp)
-                            .foreground(theme::BORDER)
-                            .size(Some(24.0), Some(24.0))
-                    } else {
-                        UiIconButton::new(
-                            format!("dock_move_up:{}", tab.id),
-                            Icon::ArrowUp,
-                            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
-                        )
-                        .variant(ButtonVariant::Subtle)
-                        .size(ControlSize::Dense)
-                        .tooltip_with(TooltipSpec::new("Subir").placement(TooltipPlacement::Above))
-                        .render()
-                    },
-                    if last_id == Some(tab.id) {
-                        Element::icon(Icon::ArrowDown)
-                            .foreground(theme::BORDER)
-                            .size(Some(24.0), Some(24.0))
-                    } else {
-                        UiIconButton::new(
-                            format!("dock_move_down:{}", tab.id),
-                            Icon::ArrowDown,
-                            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
-                        )
-                        .variant(ButtonVariant::Subtle)
-                        .size(ControlSize::Dense)
-                        .tooltip_with(TooltipSpec::new("Bajar").placement(TooltipPlacement::Above))
-                        .render()
-                    },
-                    if tab.closable {
-                        UiIconButton::new(
-                            format!("dock_close:{}", tab.id),
-                            Icon::Close,
-                            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
-                        )
-                        .variant(ButtonVariant::Subtle)
-                        .size(ControlSize::Compact)
-                        .tooltip_with(
-                            TooltipSpec::new("Cerrar pestaña").placement(TooltipPlacement::Above),
-                        )
-                        .render()
-                    } else {
-                        Element::spacer().size(Some(28.0), Some(28.0))
-                    },
-                ])
-                .gap(4.0)
-                .size(None, Some(28.0)),
-            );
-        }
-        tabs.push(Element::spacer().size(None, Some(8.0)));
-        tabs.push(eyebrow("RECIENTES (MÁX. 8)"));
-        if filtered_recent.is_empty() {
-            tabs.push(
-                UiText::new(
-                    if state.dock_recently_closed.is_empty() {
-                        "No hay pestañas recientes"
-                    } else {
-                        "Sin coincidencias recientes"
-                    },
-                    theme::component_palette(),
-                )
-                .role(TextRole::Small)
-                .muted()
-                .render()
-                .padding(8.0),
-            );
-        }
-        for tab in filtered_recent {
-            let row = if tab.restorable {
-                Button::new(
-                    format!("dock_reopen:{}", tab.id),
-                    shorten(&tab.title, 25),
-                    theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
-                )
-                .icon(Icon::History)
-                .variant(ButtonVariant::Subtle)
-                .render()
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .size(None, Some(28.0))
-            } else {
-                label(
-                    format!("{} · sesión cerrada", shorten(&tab.title, 25)),
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(11.0)
-                .size(None, Some(28.0))
-            };
-            tabs.push(row);
-        }
-        tabs.push(Element::spacer().size(None, Some(8.0)));
-        tabs.push(eyebrow("ABRIR PESTAÑA"));
-        tabs.push(dock_open_actions((width - 24.0).max(150.0)));
-        Element::column(tabs).gap(5.0).padding(12.0)
+        dock_overview::content(state, width)
     } else {
         match state.side_tab {
             SideTab::Context => dock_empty_content(width),

@@ -8,12 +8,12 @@ use std::{
 
 use openide_ui::{
     Breadcrumb, BreadcrumbItem, Button, ButtonVariant, Component, ControlSize, Element, FontFamily,
-    Icon, IconButton, ScrollArea, Separator, Tooltip,
+    Icon, IconButton, ListRow, ScrollArea, Separator, Tooltip,
 };
 
 use crate::{
     git_review::{ReviewLine, ReviewLineKind},
-    session_changes::SessionChanges,
+    session_changes::{SessionChanges, SessionFileChange},
     theme,
     view::ViewState,
 };
@@ -255,49 +255,43 @@ fn append_changes(
     let list_id = format!("session_changes_files:{}", changes.session_id);
     rows.push(
         ScrollArea::uniform_list(list_id, changes.files.len(), 38.0, move |index| {
-            let change = &changes.files[index];
-            let file = &change.file;
-            let row = Element::row(vec![
-                Element::icon(openide_ui::file_icon(&file.path))
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(Some(16.0), Some(22.0)),
-                Element::truncated_text(&file.path)
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(theme::FOREGROUND)
-                    .flex(1.0)
-                    .size(None, Some(22.0)),
-                label(format!("+{}", file.additions), theme::DIFF_ADDED, 11.0)
-                    .size(None, Some(22.0)),
-                label(format!("−{}", file.deletions), theme::DIFF_REMOVED, 11.0)
-                    .size(None, Some(22.0)),
-            ])
-            .gap(6.0)
-            .clip_children();
-            let action = format!("session_change_file:{generation}:{index}");
-            let filename = Path::new(&file.path)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(&file.path);
-            Tooltip::new(
-                theme::interactive_surface(
-                    Element::clickable(&action, row)
-                        .padding(8.0)
-                        .size(Some(width - 8.0), Some(38.0)),
-                ),
-                action,
-                filename,
-                theme::component_palette(),
+            file_row(
+                &changes.files[index],
+                format!("session_change_file:{generation}:{index}"),
+                width - 8.0,
             )
-            .description(&file.path)
-            .footer(change.unavailable.as_deref().unwrap_or(&file.status))
-            .render()
         })
         .render()
         .top_fade(theme::BACKGROUND, 12.0)
         .size(Some(width), None)
         .flex(1.0),
     );
+}
+
+/// One changed file of the chat: its path, its counts and the hint that
+/// says what the row cannot.
+fn file_row(change: &SessionFileChange, action: String, width: f32) -> Element {
+    let file = &change.file;
+    let count = |text: String, ink| label(text, ink, 11.0).size(None, Some(22.0));
+    let filename = Path::new(&file.path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&file.path);
+    Tooltip::new(
+        ListRow::new(&action, &file.path, theme::component_palette())
+            .icon(openide_ui::file_icon(&file.path))
+            .meta_element(count(format!("+{}", file.additions), theme::DIFF_ADDED))
+            .meta_element(count(format!("−{}", file.deletions), theme::DIFF_REMOVED))
+            .width(width)
+            .sizing(crate::ui_sizing::CHANGES_FILE)
+            .render(),
+        action,
+        filename,
+        theme::component_palette(),
+    )
+    .description(&file.path)
+    .footer(change.unavailable.as_deref().unwrap_or(&file.status))
+    .render()
 }
 
 fn diff_row(line: &ReviewLine, width: f32) -> Element {
@@ -375,6 +369,61 @@ mod tests {
                 .collect(),
             coverage_notes: Vec::new(),
         })
+    }
+
+    fn legacy_file_row(change: &SessionFileChange, action: String, width: f32) -> Element {
+        let file = &change.file;
+        let row = Element::row(vec![
+            Element::icon(openide_ui::file_icon(&file.path))
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(16.0), Some(22.0)),
+            Element::truncated_text(&file.path)
+                .font_family(FontFamily::Sans)
+                .font_size(12.0)
+                .foreground(theme::FOREGROUND)
+                .flex(1.0)
+                .size(None, Some(22.0)),
+            label(format!("+{}", file.additions), theme::DIFF_ADDED, 11.0).size(None, Some(22.0)),
+            label(format!("−{}", file.deletions), theme::DIFF_REMOVED, 11.0)
+                .size(None, Some(22.0)),
+        ])
+        .gap(6.0)
+        .clip_children();
+        let filename = Path::new(&file.path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&file.path);
+        Tooltip::new(
+            theme::interactive_surface(
+                Element::clickable(&action, row)
+                    .padding(8.0)
+                    .size(Some(width), Some(38.0)),
+            ),
+            action,
+            filename,
+            theme::component_palette(),
+        )
+        .description(&file.path)
+        .footer(change.unavailable.as_deref().unwrap_or(&file.status))
+        .render()
+    }
+
+    #[test]
+    fn file_rows_match_their_legacy_body() {
+        let source = snapshot(2, 3);
+        let mut long = source.files[1].clone();
+        long.file.path = "crates/a/very/deep/directory/of/the/workspace/with_a_long_file_name.rs".into();
+        long.file.additions = 25813;
+        long.unavailable = Some("Sin línea base".into());
+        for width in [120.0, 232.0, 392.0] {
+            for change in [&source.files[0], &long] {
+                crate::icon_button_parity_tests::assert_same(
+                    &format!("changed file {} at {width}", change.file.path),
+                    legacy_file_row(change, "session_change_file:7:0".into(), width),
+                    file_row(change, "session_change_file:7:0".into(), width),
+                );
+            }
+        }
     }
 
     #[test]

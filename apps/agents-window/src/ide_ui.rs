@@ -495,43 +495,34 @@ fn agent_new_menu(state: &ViewState) -> Element {
 }
 
 /// Every task of the project, the same ones the agents window lists.
-fn agent_list(state: &ViewState, width: f32, height: f32) -> Element {
-    let row = |id: String, title: &str, icon: Icon, selected: bool| {
-        let ink = if selected {
-            theme::FOREGROUND
-        } else {
-            theme::FOREGROUND_SUBTLE
-        };
-        theme::interactive_surface(Element::clickable(
-            id,
-            Element::row(vec![
-                Element::icon(if selected {
-                    icon.filled()
-                } else {
-                    icon
-                })
-                .foreground(ink)
-                .size(Some(14.0), Some(14.0))
-                .centered_y()
-                .size(Some(14.0), Some(26.0)),
-                Element::truncated_text(title)
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(ink)
-                    .size(None, Some(26.0))
-                    .flex(1.0),
-            ])
-            .gap(8.0)
-            .padding(4.0),
-        ))
-        .background(if selected {
+/// A task of the IDE's task list: the open one wears the solid icon, full
+/// ink and the selected fill.
+fn agent_row(id: String, title: &str, icon: Icon, selected: bool) -> Element {
+    let ink = if selected {
+        theme::FOREGROUND
+    } else {
+        theme::FOREGROUND_SUBTLE
+    };
+    let palette = openide_ui::ComponentPalette {
+        surface: if selected {
             theme::SELECTED
         } else {
             Color::TRANSPARENT
-        })
-        .radius(6.0)
-        .size(None, Some(26.0))
+        },
+        ..theme::component_palette()
     };
+    ListRow::new(id, title, palette)
+        .icon(if selected { icon.filled() } else { icon })
+        .icon_ink(ink)
+        .title_ink(ink)
+        .filled()
+        .radius(openide_ui::RadiusRole::Surface)
+        .sizing(crate::ui_sizing::AGENT_LIST)
+        .render()
+}
+
+fn agent_list(state: &ViewState, width: f32, height: f32) -> Element {
+    let row = agent_row;
     let query = state.ide.agent_list_query.trim().to_lowercase();
     let mut rows = vec![row(
         "ide_agent_list_new".into(),
@@ -823,6 +814,59 @@ mod tests {
     use super::*;
     use crate::ide_workspace::WindowMode;
     use openide_ui::{DrawCommand, Frame, Point, Rect, Size, UiAction, UiEvent, UiTree};
+
+    fn legacy_agent_row(id: String, title: &str, icon: Icon, selected: bool) -> Element {
+        let ink = if selected {
+            theme::FOREGROUND
+        } else {
+            theme::FOREGROUND_SUBTLE
+        };
+        theme::interactive_surface(Element::clickable(
+            id,
+            Element::row(vec![
+                Element::icon(if selected {
+                    icon.filled()
+                } else {
+                    icon
+                })
+                .foreground(ink)
+                .size(Some(14.0), Some(14.0))
+                .centered_y()
+                .size(Some(14.0), Some(26.0)),
+                Element::truncated_text(title)
+                    .font_family(FontFamily::Sans)
+                    .font_size(12.0)
+                    .foreground(ink)
+                    .size(None, Some(26.0))
+                    .flex(1.0),
+            ])
+            .gap(8.0)
+            .padding(4.0),
+        ))
+        .background(if selected {
+            theme::SELECTED
+        } else {
+            Color::TRANSPARENT
+        })
+        .radius(6.0)
+        .size(None, Some(26.0))
+    }
+
+    #[test]
+    fn agent_rows_match_their_legacy_body() {
+        let long = "Una tarea con un título que no entra en la lista de tareas del IDE";
+        for selected in [false, true] {
+            for title in ["Nueva tarea", long] {
+                crate::icon_button_parity_tests::assert_same(
+                    &format!("agent row {title:?} selected={selected}"),
+                    Element::column(vec![legacy_agent_row("row".into(), title, Icon::Add, selected)])
+                        .size(Some(180.0), None),
+                    Element::column(vec![agent_row("row".into(), title, Icon::Add, selected)])
+                        .size(Some(180.0), None),
+                );
+            }
+        }
+    }
 
     fn state() -> ViewState {
         let mut state = crate::view::tests::empty_state();

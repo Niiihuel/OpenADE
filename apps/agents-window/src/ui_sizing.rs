@@ -113,3 +113,66 @@ pub const WEB_CITATION: RowSizing = RowSizing {
     subtitle_height: Some(16.0),
     ..RowSizing::COMPACT
 };
+
+/// A task in the sidebar: a status slot, a faded title and its menu, edge to
+/// edge in a row of the navigation height.
+pub const SIDEBAR_TASK: RowSizing = RowSizing {
+    two_line_height: Some(28.0),
+    padding: 0.0,
+    gap: 4.0,
+    leading_height: Some(28.0),
+    title_height: Some(28.0),
+    ..RowSizing::COMPACT
+};
+
+/// A destination of the sidebar: its icon, its name and its shortcut.
+pub const SIDEBAR_NAV: RowSizing = RowSizing {
+    title_size: 13.0,
+    ..RowSizing::COMPACT
+};
+
+/// A file the chat changed: its path and its counts on one line of 22.
+pub const CHANGES_FILE: RowSizing = RowSizing {
+    height: Some(38.0),
+    padding: 8.0,
+    gap: 6.0,
+    meta_gap: 6.0,
+    title_height: Some(22.0),
+    ..RowSizing::COMPACT
+};
+
+/// A task in the IDE's task list.
+pub const AGENT_LIST: RowSizing = RowSizing {
+    height: Some(26.0),
+    icon_size: 14.0,
+    ..RowSizing::COMPACT
+};
+
+/// An entry of the extensions sidebar: its name over its state or source.
+pub const EXTENSION: RowSizing = RowSizing {
+    height: Some(42.0),
+    two_line_height: Some(42.0),
+    padding: 5.0,
+    gap: 7.0,
+    leading_height: Some(16.0),
+    subtitle_size: 10.0,
+    ..RowSizing::COMPACT
+};
+
+/// A changed file of the repository: its name, its folder and its status
+/// letter on one line, beside the control that stages it.
+pub const CHANGE_ROW: RowSizing = RowSizing {
+    padding: 2.0,
+    gap: 4.0,
+    meta_gap: 4.0,
+    ..RowSizing::COMPACT
+};
+
+/// A surface the dock can open, in the list of an empty dock.
+pub const DOCK_OPEN: RowSizing = RowSizing {
+    height: Some(38.0),
+    padding: 5.0,
+    gap: 6.0,
+    title_size: crate::theme::UI_FONT_SIZE,
+    ..RowSizing::COMPACT
+};
