@@ -79,7 +79,7 @@ fn tab(tab: &DockTabView, width: f32) -> TabItem {
             theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE),
         )
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
+        .sizing(crate::ui_sizing::TAB_CLOSE)
         .tooltip_with(
             TooltipSpec::new(format!("Cerrar {}", tab.title)).placement(TooltipPlacement::Below),
         )
@@ -347,7 +347,8 @@ mod tests {
                     .collect::<Vec<_>>();
                 assert_eq!(matches.len(), 1, "{id} must have one titlebar action");
                 let rect = matches[0].rect;
-                assert_eq!((rect.width, rect.height), (TOOL_SIZE, TOOL_SIZE));
+                let side = if id == "dock_close:1" { CLOSE_SIZE } else { TOOL_SIZE };
+                assert_eq!((rect.width, rect.height), (side, side));
                 assert_eq!(rect.y + rect.height / 2.0, RIGHT_HEADER_HEIGHT / 2.0);
                 assert!(
                     rect.x >= previous_right && rect.x + rect.width <= width - HEADER_SIDE_INSET

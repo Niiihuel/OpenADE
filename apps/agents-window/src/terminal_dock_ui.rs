@@ -418,7 +418,7 @@ fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> TabItem {
     let close_id = format!("terminal_close:{}", tab.id);
     let close = IconButton::new(close_id, Icon::Close, theme::component_palette())
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
+        .sizing(crate::ui_sizing::TAB_CLOSE)
         .tooltip_with(
             TooltipSpec::new(format!("Terminar {title}"))
                 .placement(header_tooltip_placement(state)),

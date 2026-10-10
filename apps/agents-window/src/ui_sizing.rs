@@ -76,8 +76,8 @@ pub const SETTINGS_NAV: ButtonSizing = ButtonSizing {
     inner_spacing: 6.0,
 };
 
-/// The close button of a 20 px agent tab.
-pub const AGENT_TAB_CLOSE: ButtonSizing = ButtonSizing {
+/// The close button of a tab: 20 px, so its hover stays inside the tab.
+pub const TAB_CLOSE: ButtonSizing = ButtonSizing {
     height: 20.0,
     font_size: 12.0,
     icon_size: 16.0,

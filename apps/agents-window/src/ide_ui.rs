@@ -384,7 +384,7 @@ fn agent_tab(id: Option<&str>, title: &str, icon: Icon, active: bool, width: f32
                 theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
             )
             .variant(ButtonVariant::Ghost)
-            .sizing(crate::ui_sizing::AGENT_TAB_CLOSE)
+            .sizing(crate::ui_sizing::TAB_CLOSE)
             .tooltip_with(
                 TooltipSpec::new("Cerrar pestaña")
                     .placement(TooltipPlacement::Below)

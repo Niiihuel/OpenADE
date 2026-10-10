@@ -751,6 +751,8 @@ fn export_interaction_states_visual_review() {
             ("session-row-selected", "session:selected"),
             ("dock-tab", "dock_tab:1"),
             ("dock-tab-active", "dock_tab:2"),
+            ("dock-tab-close", "dock_close:1"),
+            ("dock-tab-close-active", "dock_close:2"),
         ],
     );
 

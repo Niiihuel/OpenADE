@@ -373,7 +373,7 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
             theme::component_palette(),
         )
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
+        .sizing(crate::ui_sizing::TAB_CLOSE)
         .tooltip_with(TooltipSpec::new("Cerrar vista previa").placement(TooltipPlacement::Below))
         .render(),
     )

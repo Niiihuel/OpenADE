@@ -196,7 +196,7 @@ fn tab_close_hover_stays_inside_tab_and_keeps_neighbor_and_tab_selection_distinc
         let active_tab = region(&idle, "dock_tab:41");
         assert!(active_surface(&idle, active_tab));
         let frame = hover(&mut tree, size, "dock_close:41", theme::INPUT);
-        icon_centered_at_size(&frame, "dock_close:41", Icon::Close, 24.0);
+        icon_centered_at_size(&frame, "dock_close:41", Icon::Close, 20.0);
         let close = region(&frame, "dock_close:41");
         let tab = region(&frame, "dock_tab:41");
         assert!(tab.contains(center(close)));

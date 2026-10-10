@@ -262,7 +262,7 @@ fn compact_panel_keeps_sessions_actions_and_viewport_reachable_at_every_size() {
                 rect(&frame, "terminal_close:1").width,
                 rect(&frame, "terminal_close:1").height
             ),
-            (24.0, 24.0)
+            (20.0, 20.0)
         );
         assert!(frame.commands.iter().any(|command| matches!(command,
             DrawCommand::FillCornerRect { rect, color, radii } if *rect == first_tab && *color == theme::BACKGROUND && *radii == openide_ui::CornerRadii::top(8.0)
@@ -321,7 +321,7 @@ fn terminal_rounded_tabs_select_by_keyboard_reveal_and_keep_close_independent() 
         }
     }
     let close = rect(tree.frame(), "terminal_close:8");
-    assert_eq!((close.width, close.height), (24.0, 24.0));
+    assert_eq!((close.width, close.height), (20.0, 20.0));
     let actions = click(&mut tree, "terminal_close:8");
     assert!(clicked(&actions, "terminal_close:8"));
     assert!(!clicked(&actions, "terminal_tab:8"));

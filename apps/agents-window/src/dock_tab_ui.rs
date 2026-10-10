@@ -11,7 +11,7 @@ pub(crate) const HEADER_SIDE_INSET: f32 = TabStrip::HEADER_SIDE_INSET;
 pub(crate) const TOOL_SIZE: f32 = TabStrip::TOOL_SIZE;
 pub(crate) const TAB_HEIGHT: f32 = TabStrip::TAB_HEIGHT;
 #[cfg(test)]
-pub(crate) const CLOSE_SIZE: f32 = TabStrip::CLOSE_SIZE;
+pub(crate) const CLOSE_SIZE: f32 = crate::ui_sizing::TAB_CLOSE.height;
 #[cfg(test)]
 pub(crate) const TAB_GAP: f32 = 0.0;
 #[cfg(test)]
