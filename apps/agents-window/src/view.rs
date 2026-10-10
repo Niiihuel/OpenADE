@@ -1547,7 +1547,7 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
             .all(|group| group.collapsed);
     let sort_trigger = UiIconButton::new(
         "session_sort_toggle",
-        Icon::Filter,
+        Icon::Sort,
         theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
     )
     .variant(ButtonVariant::Subtle)
@@ -1556,7 +1556,7 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
         state.session_sort_menu_open || state.session_organization == SessionOrganization::Recent,
     )
     .tooltip_with(
-        TooltipSpec::new("Filtrar y ordenar tareas")
+        TooltipSpec::new("Ordenar tareas")
             .placement(TooltipPlacement::Below)
             .suppressed(state.session_sort_menu_open),
     )
@@ -1564,21 +1564,32 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     let sort_control = DropdownList::new(
         sort_trigger,
         {
-            let mut options = vec![
-                DropdownOption::new("session_organize:project", "Por proyecto")
-                    .icon(Icon::Folder)
-                    .selected(state.session_organization == SessionOrganization::Project),
-                DropdownOption::new("session_organize:recent", "Cronológica")
-                    .icon(Icon::Clock)
-                    .selected(state.session_organization == SessionOrganization::Recent),
+            // The archive is one flat list: organizing it would only change the hidden main list.
+            let mut options = if state.show_archived {
+                Vec::new()
+            } else {
+                vec![
+                    DropdownOption::new("session_organize:group", "Por grupo")
+                        .icon(Icon::Hash)
+                        .selected(state.session_organization == SessionOrganization::Group),
+                    DropdownOption::new("session_organize:project", "Por proyecto")
+                        .icon(Icon::Folder)
+                        .selected(state.session_organization == SessionOrganization::Project),
+                    DropdownOption::new("session_organize:recent", "Cronológica")
+                        .icon(Icon::Clock)
+                        .selected(state.session_organization == SessionOrganization::Recent),
+                ]
+            };
+            options.extend([
                 DropdownOption::new("session_sort:updated", "Actualizadas")
                     .icon(Icon::Sort)
                     .selected(state.session_sort == SessionSort::Updated),
                 DropdownOption::new("session_sort:created", "Creadas")
                     .icon(Icon::History)
                     .selected(state.session_sort == SessionSort::Created),
-            ];
-            if state.session_organization == SessionOrganization::Group
+            ]);
+            if !state.show_archived
+                && state.session_organization == SessionOrganization::Group
                 && !state.session_groups.groups.is_empty()
             {
                 options.push(
@@ -1609,7 +1620,7 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     let context_action = if state.session_organization == SessionOrganization::Group {
         UiIconButton::new(
             "session_group_new",
-            Icon::Hash,
+            Icon::Add,
             theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
         )
         .variant(ButtonVariant::Subtle)
@@ -1658,9 +1669,9 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     .active(state.show_archived)
     .tooltip_with(
         TooltipSpec::new(if state.show_archived {
-            "Cerrar archivo"
+            "Volver a tareas"
         } else {
-            "Ver archivo"
+            "Ver tareas archivadas"
         })
         .placement(TooltipPlacement::Below),
     )
@@ -1754,16 +1765,24 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
                 .min_size(0.0, 0.0)
                 .flex(1.0)
                 .size(None, Some(28.0)),
-                UiIconButton::new(
-                    "session_group_create_commit",
-                    Icon::Check,
-                    theme::sidebar_palette(),
-                )
-                .variant(ButtonVariant::Subtle)
-                .size(ControlSize::Compact)
-                .active(true)
-                .tooltip_with(TooltipSpec::new("Crear grupo").placement(TooltipPlacement::Below))
-                .render(),
+                {
+                    let mut commit = UiIconButton::new(
+                        "session_group_create_commit",
+                        Icon::Check,
+                        theme::sidebar_palette(),
+                    )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ControlSize::Compact)
+                    .active(true);
+                    if state.group_create_draft.trim().is_empty() {
+                        commit = commit.disabled();
+                    }
+                    commit
+                        .tooltip_with(
+                            TooltipSpec::new("Crear grupo").placement(TooltipPlacement::Below),
+                        )
+                        .render()
+                },
                 UiIconButton::new(
                     "session_group_create_cancel",
                     Icon::Close,
@@ -5212,7 +5231,7 @@ pub(crate) mod tests {
             sidebar(&state, 280.0),
             Size::new(280.0, 500.0),
             "session_sort_toggle",
-            Icon::Filter,
+            Icon::Sort,
             24.0,
             theme::hover_for(theme::SIDEBAR),
         );
@@ -7851,6 +7870,57 @@ pub(crate) mod tests {
         assert!(!session_list_rows(&state)
             .iter()
             .any(|row| matches!(row, SessionListRow::Session(session) if session.id == "a")));
+    }
+
+    #[test]
+    fn sidebar_sort_menu_offers_one_organization_set_and_only_sort_order_in_the_archive() {
+        let mut state = empty_state();
+        state.session_organization = SessionOrganization::Group;
+        state.session_groups.create("Trabajo").unwrap();
+        state.session_sort_menu_open = true;
+        let ids = |state: &ViewState| -> Vec<String> {
+            UiTree::new(sidebar(state, 264.0))
+                .layout(Size::new(264.0, 640.0))
+                .regions
+                .iter()
+                .map(|region| region.id.clone())
+                .filter(|id| {
+                    id.starts_with("session_organize:")
+                        || id.starts_with("session_sort:")
+                        || id == "session_expand_all"
+                })
+                .collect()
+        };
+        let count = |ids: &[String], id: &str| ids.iter().filter(|found| *found == id).count();
+        let open = ids(&state);
+        // The two tabs repeat group and project; the menu alone offers the chronological mode.
+        assert_eq!(count(&open, "session_organize:group"), 2, "{open:?}");
+        assert_eq!(count(&open, "session_organize:project"), 2, "{open:?}");
+        assert_eq!(count(&open, "session_organize:recent"), 1, "{open:?}");
+        assert_eq!(count(&open, "session_expand_all"), 1, "{open:?}");
+        state.show_archived = true;
+        assert_eq!(ids(&state), ["session_sort:updated", "session_sort:created"]);
+    }
+
+    #[test]
+    fn group_create_commit_is_disabled_while_the_name_is_blank() {
+        let mut state = empty_state();
+        state.session_organization = SessionOrganization::Group;
+        state.group_create_open = true;
+        let offered = |state: &ViewState| {
+            UiTree::new(sidebar(state, 264.0))
+                .layout(Size::new(264.0, 640.0))
+                .regions
+                .iter()
+                .any(|region| {
+                    region.id == "session_group_create_commit"
+                        && region.kind == openide_ui::HitKind::Button
+                })
+        };
+        state.group_create_draft = "  ".into();
+        assert!(!offered(&state));
+        state.group_create_draft = "Trabajo".into();
+        assert!(offered(&state));
     }
 
     #[test]

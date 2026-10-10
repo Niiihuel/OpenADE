@@ -335,13 +335,13 @@ fn agent_sidebar_toolbar_uses_shared_corners_without_overlapping_actions() {
                 native_automation: None,
             });
             let context = if organization == SessionOrganization::Group {
-                ("session_group_new", Icon::Hash)
+                ("session_group_new", Icon::Add)
             } else {
                 ("session_expand_all", Icon::Collapse)
             };
             let targets = [
                 context,
-                ("session_sort_toggle", Icon::Filter),
+                ("session_sort_toggle", Icon::Sort),
                 ("toggle_archived_view", Icon::Archive),
             ];
             let size = Size::new(width, 640.0);

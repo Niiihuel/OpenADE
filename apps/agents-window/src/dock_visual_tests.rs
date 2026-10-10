@@ -1441,6 +1441,36 @@ fn export_converged_controls_visual_review() {
         "converged-sidebar-groups-menu-hover",
         Some(Hover("session_group_menu:g1")),
     );
+    state.session_sort_menu_open = true;
+    export(
+        sidebar_for_height(&state, 264.0, 420.0),
+        264.0,
+        420.0,
+        "sidebar-sort-menu-groups",
+    );
+    state.show_archived = true;
+    export(
+        sidebar_for_height(&state, 264.0, 420.0),
+        264.0,
+        420.0,
+        "sidebar-sort-menu-archive",
+    );
+    state.show_archived = false;
+    state.session_sort_menu_open = false;
+    state.group_create_open = true;
+    export(
+        sidebar_for_height(&state, 264.0, 420.0),
+        264.0,
+        420.0,
+        "sidebar-group-create-blank",
+    );
+    state.group_create_draft = "Interfaz nueva".into();
+    export(
+        sidebar_for_height(&state, 264.0, 420.0),
+        264.0,
+        420.0,
+        "sidebar-group-create-named",
+    );
 }
 
 #[test]
