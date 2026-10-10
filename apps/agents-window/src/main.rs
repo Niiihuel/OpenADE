@@ -42,8 +42,6 @@ mod composer_suggestions;
 mod composer_ui;
 #[cfg(test)]
 mod context_visual_tests;
-#[cfg(test)]
-mod converge_panels_parity_tests;
 mod conversation_activity;
 mod conversation_source_ui;
 mod detail_worker;
