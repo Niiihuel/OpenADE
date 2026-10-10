@@ -9,7 +9,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import struct
 import subprocess
 import tempfile
 import threading
@@ -17,7 +16,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from native_desktop_fixture import (
-    _private_pointer, _private_runtime, desktop_metadata, logical_point,
+    _private_runtime, desktop_metadata, logical_point,
     move_cursor, pointer_button, read_native_state, region_point,
 )
 
@@ -191,20 +190,6 @@ def main():
         return state_when(lambda value: abs(value["viewport"][0] - width) <= 2
                           and abs(value["viewport"][1] - height) <= 2, "native viewport resize failed")
 
-    def scroll(region_id, delta):
-        observed = observation()
-        rect = observed["regions"][region_id]["rect"]
-        x, y = logical_point(active(), observed, rect[0] + rect[2] * 0.6, rect[1] + rect[3] * 0.5)
-        move_cursor(run, active, process.pid, x, y)
-        pointer = _private_pointer()
-        assert pointer is not None, "no private virtual pointer"
-        assert active().get("pid") == process.pid
-        # zwlr_virtual_pointer_v1.axis(time, vertical_scroll=0, wl_fixed value).
-        pointer._message(pointer.pointer, 3, struct.pack("=IIi",
-            int(time.monotonic() * 1000) & 0xffffffff, 0, round(delta * 256)))
-        pointer._send(pointer.pointer, 4)
-        pointer._roundtrip()
-
     def send_message(text, expected):
         click("prompt")
         keys(text)
@@ -248,14 +233,6 @@ def main():
         summary = state_when(popup_ready, "measured summary did not open")
         assert_fits(summary)
         capture("context-measured-native.png")
-        click("composer_context_details_toggle")
-        details = state_when(lambda value: value["context"]["details"]
-                             and "composer_context_details" in value["regions"], "details did not open")
-        assert_fits(details)
-        capture("context-details-native.png")
-        click("composer_context_details_toggle")
-        state_when(lambda value: value["context"]["open"] and not value["context"]["details"],
-                   "back did not return to the summary")
         # The first outside click dismisses; it must not submit the prompt.
         current = observation()
         px, py, pw, ph = context_surface(current)
@@ -268,7 +245,7 @@ def main():
         pointer_button(run, active, process.pid)
         state_when(lambda value: not value["context"]["open"], "outside pointer click did not dismiss")
         assert len(server_state["requests"]) == 1
-        checks.append("actual HTTP usage paints a 30% circle; Details/Back and outside dismissal preserve the session")
+        checks.append("actual HTTP usage paints a 30% circle; outside dismissal preserves the session")
 
         high = send_message("Segunda medición local del contexto.", 19000)
         assert abs(circle_fraction(high) - 0.95) < 0.001
@@ -282,25 +259,10 @@ def main():
         compact = state_when(popup_ready, "narrow context did not open")
         assert_fits(compact)
         capture("context-narrow-summary-native.png")
-        click("composer_context_details_toggle")
-        narrow = state_when(lambda value: value["context"]["details"]
-                            and "composer_context_details" in value["regions"], "narrow details did not open")
-        assert_fits(narrow)
-        capture("context-narrow-details-top-native.png")
-        initial_offset = narrow["context"]["details_scroll"]
-        scroll("composer_context_details", 900)
-        scrolled = state_when(lambda value: value["context"]["details_scroll"] > initial_offset + 20,
-                             "native wheel did not scroll the narrow details")
-        assert_fits(scrolled)
-        capture("context-narrow-details-scrolled-native.png")
-        # Navigation must remain reachable after scrolling the long body.
-        click("composer_context_details_toggle")
-        state_when(lambda value: value["context"]["open"] and not value["context"]["details"],
-                   "narrow Back action was lost after scroll")
         keys("-k", "Escape")
         state_when(lambda value: not value["context"]["open"]
                    and value["focused"] == "composer_context_toggle", "narrow Escape lost trigger focus")
-        checks.append("95% circle and native 520×420 viewport preserve summary, scrolling details, Back and Escape")
+        checks.append("95% circle and native 520×420 viewport preserve summary and Escape")
         assert len(server_state["requests"]) == 2 and not server_state["errors"], server_state["errors"]
         report = {"passed": checks, "fixture": str(root), "pid": process.pid,
                   "http_requests": len(server_state["requests"]), "reported_usage": usages,

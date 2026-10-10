@@ -10812,7 +10812,8 @@ impl AgentsWindow {
     }
 
     fn commit_group_create(&mut self) {
-        if !self.view.group_create_open {
+        // A blank name has nothing to report: its button is disabled too.
+        if !self.view.group_create_open || self.view.group_create_draft.trim().is_empty() {
             return;
         }
         let previous = self.view.session_groups.clone();
@@ -25171,6 +25172,16 @@ mod tests {
         app.apply_action(clicked("session_organize:group"), &ctx);
         app.apply_action(clicked("session_group_new"), &ctx);
         assert!(app.view.group_create_open);
+        let status = app.view.status.clone();
+        app.apply_action(
+            UiAction::Submitted {
+                id: "group_create_draft".into(),
+                value: "  ".into(),
+            },
+            &ctx,
+        );
+        assert!(app.view.group_create_open && app.view.session_groups.groups.is_empty());
+        assert_eq!(app.view.status, status, "a blank Enter is a no-op");
         app.apply_action(
             UiAction::InputChanged {
                 id: "group_create_draft".into(),
