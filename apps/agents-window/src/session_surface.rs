@@ -219,7 +219,7 @@ pub(crate) fn header(
     }
     if !recovery_decision_pending && width >= 300.0 {
         top.push(crate::view::window_mode_control(state));
-        top.push(crate::environment_ui::header_control(state, width));
+        top.push(crate::environment_ui::header_control(state));
     }
     if show_side_toggle {
         top.push(header_action(
@@ -243,7 +243,6 @@ pub(crate) fn header(
 fn message(
     item: &TranscriptItem,
     item_index: usize,
-    _turn_number: usize,
     reading_width: f32,
     state: &ViewState,
 ) -> Element {
@@ -897,19 +896,18 @@ pub(crate) fn tool_media_elements(
     rows
 }
 
+#[cfg(test)]
 pub(crate) fn tool_line(
     item: &TranscriptItem,
     state: &ViewState,
-    _side_visible: bool,
     compact: bool,
 ) -> Element {
-    tool_line_with_output(item, state, _side_visible, compact, None, None)
+    tool_line_with_output(item, state, compact, None, None)
 }
 
 pub(crate) fn tool_line_with_output(
     item: &TranscriptItem,
     state: &ViewState,
-    _side_visible: bool,
     compact: bool,
     partial: Option<(&str, bool)>,
     media: Option<&TranscriptItem>,
@@ -1539,7 +1537,6 @@ fn exploration_needs_attention(item: &TranscriptItem) -> bool {
 fn work_group(
     items: &[TranscriptItem],
     state: &ViewState,
-    side_visible: bool,
     compact: bool,
 ) -> Element {
     let Some(call) = items.first().and_then(|item| match item {
@@ -1615,7 +1612,7 @@ fn work_group(
                     TranscriptItem::ToolMedia { tool_call_id, .. } if tool_call_id == id
                 )
             });
-            tool_line_with_output(item, state, side_visible, compact, partial, media)
+            tool_line_with_output(item, state, compact, partial, media)
         } else {
             // Tool previews use the same controlled per-call disclosure and
             // provisional labels as their ungrouped representation.
@@ -1708,7 +1705,7 @@ pub(crate) fn jump_to_bottom_control() -> Element {
     .render()
 }
 
-fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
+fn timeline(state: &ViewState, width: f32) -> Element {
     let gutter = if width < COMPACT_BREAKPOINT {
         16.0
     } else {
@@ -1819,7 +1816,6 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
                 rows.push(work_group(
                     &state.transcript[index..end],
                     state,
-                    side_visible,
                     width < COMPACT_BREAKPOINT,
                 ));
                 index = end;
@@ -1830,7 +1826,6 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
             rows.push(tool_line_with_output(
                 item,
                 state,
-                side_visible,
                 width < COMPACT_BREAKPOINT,
                 tool_partial_output(state, index, id),
                 tool_media(state, index, id),
@@ -1844,7 +1839,7 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
                 rows.push(Element::spacer().size(None, Some(8.0)));
             }
         }
-        rows.push(message(item, index, turn_number, reading_width, state));
+        rows.push(message(item, index, reading_width, state));
         index += 1;
     }
     // Recovery and permissions remain current controls. Plan snapshots belong
@@ -1870,7 +1865,7 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
             .pending_permissions
             .iter()
             .take(3)
-            .map(|permission| permission_card(permission, state, reading_width)),
+            .map(|permission| permission_card(permission, state)),
     );
     rows.extend(related_subagent_rows(state, width < COMPACT_BREAKPOINT));
     let latest_model = state
@@ -1992,8 +1987,8 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
     .bottom_fade(theme::BACKGROUND, TRANSCRIPT_BOTTOM_FADE_HEIGHT)
 }
 
-fn permission_card(permission: &PermissionView, state: &ViewState, width: f32) -> Element {
-    crate::approval_ui::inline_root(permission, state, width)
+fn permission_card(permission: &PermissionView, state: &ViewState) -> Element {
+    crate::approval_ui::inline_root(permission, state)
 }
 
 fn subagent_permission_card(
@@ -2888,7 +2883,7 @@ fn composer(state: &ViewState, width: f32) -> Element {
 fn composer_with_height(state: &ViewState, width: f32, available_height: Option<f32>) -> Element {
     let compact = width < COMPACT_BREAKPOINT;
     let card_width = (width - 32.0).clamp(0.0, READING_WIDTH);
-    let notice = crate::approval_ui::pending_banner(state, card_width);
+    let notice = crate::approval_ui::pending_banner(state);
     // The permission banner is a single 24px control with 8px padding; retain
     // it above the editor and account for the inter-row gap.
     let shell_height = available_height
@@ -3166,7 +3161,7 @@ fn build_session_surface_layout(
             .background(theme::BACKGROUND)])
         .flex(1.0);
     }
-    let chat = timeline(state, center_width, side_visible);
+    let chat = timeline(state, center_width);
     let chat = if state.show_jump_to_bottom {
         // A floating chat control must not shrink the scroll viewport or move
         // the composer when it appears after the user scrolls upward.
@@ -3761,13 +3756,13 @@ mod tests {
         }];
         state.conversation_details.sync(Some("source-session"));
         let open_id = "conversation_source:source-session:0:0:open";
-        let first = UiTree::new(message(&state.transcript[0], 0, 1, 360.0, &state))
+        let first = UiTree::new(message(&state.transcript[0], 0, 360.0, &state))
             .layout(Size::new(360.0, 500.0));
         assert!(visible_text(&first).contains("Respuesta extensa"));
         let mut preview_tree = UiTree::new(
             ScrollArea::new(
                 "source-preview",
-                message(&state.transcript[0], 0, 1, 360.0, &state),
+                message(&state.transcript[0], 0, 360.0, &state),
             )
             .render(),
         );

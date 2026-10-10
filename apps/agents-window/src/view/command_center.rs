@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use openide_ui::{
-    Color, Component, ComponentPalette, ControlSize, Element, Empty, FontFamily, Icon, Kbd, Point,
+    Color, Component, ControlSize, Element, Empty, FontFamily, Icon, Kbd, Point,
     ScrollArea, ScrollbarAppearance, Search, SegmentedControl, Tab, Tooltip,
 };
 
@@ -210,10 +210,7 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
             Tab::new(format!("command_scope:{id}"), title, tab_width).active(scope == value)
         })
         .collect(),
-        ComponentPalette {
-            surface: theme::BACKGROUND,
-            ..theme::component_palette()
-        },
+        theme::component_palette(),
     )
     .render();
 

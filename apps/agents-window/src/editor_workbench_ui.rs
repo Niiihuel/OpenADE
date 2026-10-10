@@ -344,10 +344,6 @@ fn file_actions(view: &CodeEditorView, state: &EditorWorkbenchView, profile: Key
     entries
 }
 
-pub(crate) fn header_actions(view: &CodeEditorView, state: &EditorWorkbenchView, profile: KeymapProfile) -> Vec<Element> {
-    header_actions_with_debug(view, state, true, profile)
-}
-
 pub(crate) fn header_actions_with_debug(
     view: &CodeEditorView,
     state: &EditorWorkbenchView,

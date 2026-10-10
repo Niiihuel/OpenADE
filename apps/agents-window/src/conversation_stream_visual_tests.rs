@@ -685,7 +685,7 @@ fn streamed_tool_arguments_keep_target_and_disclosure_after_confirmation() {
             limited: false,
         },
     );
-    tree.set_root(tool_line(&tool, &state, true, false));
+    tree.set_root(tool_line(&tool, &state, false));
     let frame = tree.layout(Size::new(780.0, 600.0));
     assert!(text(&frame).contains("niño.rs"));
     assert!(!text(&frame).contains("Escrito"));
@@ -729,7 +729,7 @@ fn terminal_output_uses_snapshot_events_and_mcp_unknown_name_stays_identifiable(
         output: Some(json!({"session_id":"process-1", "events":[{"stream":"stdout", "text":"compiler output\ntest ok"}],
             "finished":false, "exit":null, "has_more_output":true}).to_string()),
         is_error:false, activity:ActivityStatus::Completed };
-    let frame = UiTree::new(tool_line(&tool, &state, false, false)).layout(Size::new(780.0, 300.0));
+    let frame = UiTree::new(tool_line(&tool, &state, false)).layout(Size::new(780.0, 300.0));
     let visible = text(&frame);
     assert!(visible.contains("compiler output"));
     assert!(visible.contains("Proceso en ejecución al consultar"));
@@ -743,7 +743,7 @@ fn terminal_output_uses_snapshot_events_and_mcp_unknown_name_stays_identifiable(
         activity: ActivityStatus::Completed,
     };
     assert!(exploration_call(&mcp).is_none());
-    let frame = UiTree::new(tool_line(&mcp, &state, false, false)).layout(Size::new(780.0, 100.0));
+    let frame = UiTree::new(tool_line(&mcp, &state, false)).layout(Size::new(780.0, 100.0));
     assert!(text(&frame).contains("mcp__github__create_issue"));
 }
 
@@ -856,7 +856,7 @@ fn compact_terminal_keeps_command_output_and_independent_actions_without_tool_js
         };
         let viewport = Size::new(width, 700.0);
         let (context, mut tree) = crate::view::ide_visual_tests::native_tree(Element::column(
-            vec![tool_line(&tool, &state, false, width < 470.0)],
+            vec![tool_line(&tool, &state, width < 470.0)],
         ));
         let compact = tree.layout(viewport);
         let compact_text = text(&compact);
@@ -922,7 +922,6 @@ fn compact_terminal_keeps_command_output_and_independent_actions_without_tool_js
         tree.set_root(Element::column(vec![tool_line(
             &tool,
             &state,
-            false,
             width < 470.0,
         )]));
         let expanded = tree.layout(viewport);
@@ -961,7 +960,6 @@ fn compact_terminal_keeps_command_output_and_independent_actions_without_tool_js
         tree.set_root(Element::column(vec![tool_line(
             &tool,
             &state,
-            false,
             width < 470.0,
         )]));
         tree.layout(viewport);
@@ -998,7 +996,7 @@ fn terminal_keeps_exceptional_states_and_does_not_echo_stdin_or_claim_process_ex
             activity,
         };
         let frame =
-            UiTree::new(tool_line(&tool, &state, false, true)).layout(Size::new(320.0, 400.0));
+            UiTree::new(tool_line(&tool, &state, true)).layout(Size::new(320.0, 400.0));
         assert!(text(&frame).contains(expected));
         assert!(!frame
             .commands
@@ -1019,7 +1017,7 @@ fn terminal_keeps_exceptional_states_and_does_not_echo_stdin_or_claim_process_ex
             activity: ActivityStatus::Completed,
         };
         let frame =
-            UiTree::new(tool_line(&tool, &state, false, true)).layout(Size::new(360.0, 400.0));
+            UiTree::new(tool_line(&tool, &state, true)).layout(Size::new(360.0, 400.0));
         assert!(text(&frame).contains("Entrada enviada"));
         assert!(!text(&frame).contains("DO_NOT_ECHO_SECRET"));
         assert!(!text(&frame).contains("Proceso finalizado"));
@@ -1137,7 +1135,7 @@ fn mcp_result_uses_raster_and_explicit_navigation_without_nested_click_targets()
     };
     state.conversation_details.toggle("tool:image-call", false);
     for width in [360.0, 900.0] {
-        let mut tree = UiTree::new(tool_line(&item, &state, false, width < 470.0));
+        let mut tree = UiTree::new(tool_line(&item, &state, width < 470.0));
         let frame = tree.layout(Size::new(width, 800.0));
         assert_eq!(
             frame
@@ -1337,7 +1335,7 @@ fn thinking_has_one_active_tail_static_brain_and_reduced_motion_stops_animation(
         });
         let clock = Instant::now();
         let viewport = Size::new(width, 900.0);
-        let mut tree = UiTree::new(timeline(&state, width, false));
+        let mut tree = UiTree::new(timeline(&state, width));
         let first = tree.layout_at(viewport, clock);
         assert!(text(&first).contains("Pensando"));
         assert!(text(&first).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
@@ -1400,7 +1398,7 @@ fn visible_response_has_no_redundant_progress_row_and_keeps_stop_available() {
                     content: "RESPUESTA_VISIBLE: la estructura ya se está mostrando.".into(),
                     streaming,
                 });
-                let mut tree = UiTree::new(timeline(&state, width, false));
+                let mut tree = UiTree::new(timeline(&state, width));
                 let frame = tree.layout(Size::new(width, 900.0));
                 let visible = text(&frame);
                 assert!(visible.contains("RESPUESTA_VISIBLE"));
@@ -1464,7 +1462,7 @@ fn waiting_remains_visible_until_first_painted_prose_and_restarts_for_a_new_requ
                 .stream_presentation
                 .sync(Some(OWNER), &state.transcript, now);
             let viewport = Size::new(width, 900.0);
-            let mut tree = UiTree::new(timeline(&state, width, false));
+            let mut tree = UiTree::new(timeline(&state, width));
             let waiting = tree.layout(viewport);
             assert!(text(&waiting).contains("Pensando"));
             assert!(!text(&waiting).contains("PRIMER_TEXTO_VISIBLE"));
@@ -1492,7 +1490,7 @@ fn waiting_remains_visible_until_first_painted_prose_and_restarts_for_a_new_requ
                 visible_bytes > 0,
                 "the first received fragment is painted immediately"
             );
-            tree.set_root(timeline(&state, width, false));
+            tree.set_root(timeline(&state, width));
             let responding = tree.layout(viewport);
             assert!(text(&responding).contains(&"PRIMER_TEXTO_VISIBLE"[..visible_bytes]));
             assert!(!text(&responding).contains("Pensando"));
@@ -1504,7 +1502,7 @@ fn waiting_remains_visible_until_first_painted_prose_and_restarts_for_a_new_requ
                 state
                     .transcript
                     .push(model_activity(2, ActivityStatus::Running, false));
-                tree.set_root(timeline(&state, width, false));
+                tree.set_root(timeline(&state, width));
                 let next_request = tree.layout(viewport);
                 assert!(text(&next_request).contains("PRIMER_TEXTO_VISIBLE"));
                 assert!(text(&next_request).contains("Pensando"));
@@ -1529,7 +1527,7 @@ fn partial_response_does_not_hide_a_durable_model_failure() {
                 is_error: true,
             },
         ]);
-        let mut tree = UiTree::new(timeline(&state, width, false));
+        let mut tree = UiTree::new(timeline(&state, width));
         let frame = tree.layout(Size::new(width, 900.0));
         let visible = text(&frame);
         assert!(visible.contains("RESPUESTA_PARCIAL_CONSERVADA"));
@@ -1557,7 +1555,7 @@ fn terminal_model_state_never_fabricates_a_thinking_tail_from_stale_host_flags()
                 .transcript
                 .push(model_activity(1, ActivityStatus::Running, false));
             state.transcript.push(model_activity(2, status, false));
-            let mut tree = UiTree::new(timeline(&state, width, false));
+            let mut tree = UiTree::new(timeline(&state, width));
             let frame = tree.layout(Size::new(width, 900.0));
             let visible = text(&frame);
             assert!(!visible.contains("Pensando"), "{status:?}: {visible}");

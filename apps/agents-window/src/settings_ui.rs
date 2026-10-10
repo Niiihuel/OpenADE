@@ -2524,7 +2524,7 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
     }
 }
 
-fn compact_navigation(state: &ViewState, _page: SettingsPage, _one_column: bool) -> Element {
+fn compact_navigation(state: &ViewState) -> Element {
     let mut items = vec![Element::row(vec![
         action_button("toggle_settings", "Volver", Icon::ArrowLeft),
         Element::spacer().flex(1.0),
@@ -2576,7 +2576,7 @@ pub fn build_settings_page(
     };
     let mut body = Vec::new();
     if !sidebar_visible {
-        body.push(compact_navigation(state, page, compact));
+        body.push(compact_navigation(state));
     }
     let status = matches!(
         page,

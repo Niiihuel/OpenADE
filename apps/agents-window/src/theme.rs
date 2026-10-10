@@ -30,7 +30,6 @@ pub const SETTINGS_FOREGROUND_SUBTLE: Color = Color::rgb(160, 160, 160);
 pub const PRIMARY_FOREGROUND: Color = Color::rgb(0, 0, 0);
 pub const USER: Color = Color::rgb(235, 235, 235);
 pub const ASSISTANT: Color = Color::rgb(212, 212, 212);
-pub const TOOL: Color = Color::rgb(184, 184, 184);
 pub const TOOL_RESULT: Color = Color::rgb(162, 162, 162);
 pub const DESTRUCTIVE: Color = Color::rgb(255, 92, 92);
 pub const DIFF_ADDED: Color = Color::rgb(139, 207, 163);
@@ -179,7 +178,6 @@ mod tests {
             PRIMARY_FOREGROUND,
             USER,
             ASSISTANT,
-            TOOL,
             TOOL_RESULT,
             ICON_PRIMARY,
         ] {

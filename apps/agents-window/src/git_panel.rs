@@ -300,6 +300,7 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
     }
 }
 
+#[cfg(test)]
 fn detail_content(detail: &ReviewDetailView, width: f32) -> Element {
     detail_view(detail, width, true)
 }

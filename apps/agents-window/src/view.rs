@@ -17,13 +17,16 @@ use openide_ui::{
 };
 use serde_json::Value;
 
+#[cfg(test)]
+use crate::git_review::{ReviewFile, ReviewLine, ReviewLineKind};
+
 use crate::{
     automation_view::{self, AutomationViewState},
     command_center::{ResultItem, Scope},
     composer_selection::ModelRouteOption,
     composer_ui::{build_composer, ComposerProps},
     files::PreviewPage,
-    git_review::{DiffStage, FileDiffDetail, GitReview, ReviewFile, ReviewLine, ReviewLineKind},
+    git_review::{DiffStage, FileDiffDetail, GitReview},
     github::GithubStatus,
     github_account::{GithubAccountStatus, GithubSignInView},
     github_contributions::GithubContributionsStatus,
@@ -79,8 +82,6 @@ const MIN_CENTER_WITH_RIGHT: f32 = 480.0;
 const MIN_CENTER_COMPACT: f32 = 320.0;
 const MIN_RIGHT_DOCK: f32 = 320.0;
 const WORKSPACE_RADIUS: f32 = 12.0;
-const ACTIVITY_PAGE_SIZE: usize = 20;
-const REVIEW_PAGE_SIZE: usize = 20;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum SideTab {
@@ -2026,57 +2027,6 @@ fn pane_loading_state(id: &str, title: &str, width: f32) -> Element {
     .size(None, Some(250.0))
 }
 
-fn page_bounds(total: usize, requested_page: usize, page_size: usize) -> (usize, usize, usize) {
-    if total == 0 {
-        return (0, 0, 0);
-    }
-    let page = requested_page.min((total - 1) / page_size);
-    let start = page * page_size;
-    (page, start, (start + page_size).min(total))
-}
-
-fn pane_pagination(id: &str, total: usize, page: usize, start: usize, end: usize) -> Element {
-    let previous = if page > 0 {
-        hinted_icon_button(
-            format!("{id}_previous"),
-            Icon::ArrowLeft,
-            "Página anterior",
-            theme::BACKGROUND,
-            theme::FOREGROUND,
-            28.0,
-        )
-    } else {
-        Element::spacer().size(Some(28.0), Some(28.0))
-    };
-    let next = if end < total {
-        hinted_icon_button(
-            format!("{id}_next"),
-            Icon::ArrowRight,
-            "Página siguiente",
-            theme::BACKGROUND,
-            theme::FOREGROUND,
-            28.0,
-        )
-    } else {
-        Element::spacer().size(Some(28.0), Some(28.0))
-    };
-    Element::row(vec![
-        mono(
-            format!("{}–{} de {total}", start + 1, end),
-            theme::FOREGROUND_SUBTLE,
-        )
-        .font_size(11.0),
-        Element::spacer().flex(1.0),
-        previous,
-        next,
-    ])
-    .gap(4.0)
-    .padding(5.0)
-    .background(theme::PANEL)
-    .radius(7.0)
-    .size(None, Some(34.0))
-}
-
 fn file_tree_content(state: &ViewState, width: f32) -> Element {
     crate::files_panel_ui::build(state, width)
 }
@@ -2101,14 +2051,6 @@ fn tool_status(
         "Error"
     } else {
         "Completada"
-    }
-}
-
-fn json_text(value: &Value) -> String {
-    if value.is_null() {
-        "Sin argumentos".to_owned()
-    } else {
-        serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
     }
 }
 
@@ -2174,7 +2116,6 @@ fn transcript_item(
         TranscriptItem::Tool { id, .. } => crate::session_surface::tool_line_with_output(
             item,
             state,
-            side_visible,
             !side_visible,
             crate::session_surface::tool_partial_output(state, item_index, id),
             crate::session_surface::tool_media(state, item_index, id),
@@ -2312,7 +2253,7 @@ fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f3
         ));
     }
     if width >= 300.0 {
-        actions.push(crate::environment_ui::header_control(state, width));
+        actions.push(crate::environment_ui::header_control(state));
     }
     if available && !visible {
         actions.push(
@@ -2393,10 +2334,12 @@ pub(super) fn sidebar_reopen_control(background: Color) -> Element {
     .render()
 }
 
+#[cfg(test)]
 fn activity_content(state: &ViewState) -> Element {
     dock_activity::content(state, state.right_dock_width.unwrap_or(400.0))
 }
 
+#[cfg(test)]
 fn compact_review_line(line: &ReviewLine, max_chars: usize) -> String {
     if line.kind == ReviewLineKind::Hunk {
         return shorten(&line.text, max_chars);
@@ -3651,7 +3594,7 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
         }
         for permission in state.pending_permissions.iter().take(3) {
             center_items.push(
-                crate::approval_ui::inline_root(permission, state, center_width).padding(8.0),
+                crate::approval_ui::inline_root(permission, state).padding(8.0),
             );
         }
         if let Some(cards) = crate::session_surface::related_subagent_cards(state, compact) {
@@ -3745,7 +3688,7 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
         .render();
         let mut actions = vec![
             window_mode_control(state),
-            crate::environment_ui::header_control(state, layout.center),
+            crate::environment_ui::header_control(state),
         ];
         if !side_visible && side_available {
             actions.push(toggle);

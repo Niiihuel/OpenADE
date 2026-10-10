@@ -183,7 +183,6 @@ fn expanded_command_output_follows_its_tail_and_preserves_manual_scroll() {
                 &app.view.transcript[0],
                 &app.view,
                 false,
-                false,
                 output,
                 None,
             ));

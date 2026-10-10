@@ -283,7 +283,7 @@ fn markers_new_turn_does_not_reactivate_old_uncertain_tool_and_recovery_confirms
     let mut state = super::tests::state();
     state.running = true;
     state.transcript = live.items().to_vec();
-    let mut tree = UiTree::new(work_group(&state.transcript[1..2], &state, false, false));
+    let mut tree = UiTree::new(work_group(&state.transcript[1..2], &state, false));
     tree.layout(Size::new(420.0, 240.0));
     assert!(!tree.is_animating());
     let events = vec![

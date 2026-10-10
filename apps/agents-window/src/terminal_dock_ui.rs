@@ -602,6 +602,7 @@ fn header_with_sections(
     .size(Some(width), Some(HEADER_HEIGHT))
 }
 
+#[cfg(test)]
 pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Element {
     clipped_panel(state, header(state, width), width, height)
 }

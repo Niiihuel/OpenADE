@@ -328,7 +328,7 @@ fn notice(
         .render()
 }
 
-pub(crate) fn inline_root(permission: &PermissionView, state: &ViewState, _width: f32) -> Element {
+pub(crate) fn inline_root(permission: &PermissionView, state: &ViewState) -> Element {
     notice(
         &root_target(permission, state),
         summary(&permission.tool_name, &permission.arguments),
@@ -359,7 +359,7 @@ pub(crate) fn inline_child(
     )
 }
 
-pub(crate) fn pending_banner(state: &ViewState, _width: f32) -> Option<Element> {
+pub(crate) fn pending_banner(state: &ViewState) -> Option<Element> {
     let root = state.pending_permissions.first();
     let children = state
         .pending_subagent_permissions
@@ -704,17 +704,17 @@ mod tests {
         state.pending_subagent_permissions[0].parent_session_id = "different-parent".into();
         assert!(!target_is_pending(&state, &target));
         state.pending_permissions.clear();
-        assert!(pending_banner(&state, 350.0).is_none());
+        assert!(pending_banner(&state).is_none());
 
         state.pending_subagent_permissions[0] = child.clone();
         state.selected_session = Some(child.child_session_id.clone());
         let from_child = child_target(&child, &state);
         assert_eq!(from_child.owner_session_id, child.child_session_id);
         assert!(target_is_pending(&state, &from_child));
-        assert!(pending_banner(&state, 350.0).is_some());
+        assert!(pending_banner(&state).is_some());
         state.selected_session = Some("unrelated-session".into());
         assert!(!target_is_pending(&state, &from_child));
-        assert!(pending_banner(&state, 350.0).is_none());
+        assert!(pending_banner(&state).is_none());
     }
 
     #[test]
@@ -725,8 +725,8 @@ mod tests {
             let action = target.review_action();
             let mut tree = UiTree::new(
                 Element::column(vec![
-                    inline_root(&state.pending_permissions[0], &state, width),
-                    pending_banner(&state, width).unwrap(),
+                    inline_root(&state.pending_permissions[0], &state),
+                    pending_banner(&state).unwrap(),
                 ])
                 .gap(16.0),
             );

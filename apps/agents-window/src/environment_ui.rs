@@ -65,7 +65,7 @@ pub(crate) fn icon_control(id: &str, icon: Icon, hint: &str, enabled: bool) -> E
 
 /// The environment shares the conversation's trailing space with the utility
 /// sidebar. The host makes their expanded presentations mutually exclusive.
-pub(crate) fn header_control(state: &ViewState, _available_width: f32) -> Element {
+pub(crate) fn header_control(state: &ViewState) -> Element {
     theme::interactive_surface(
         IconButton::new("environment_open", Icon::Laptop, theme::component_palette())
             .variant(if state.environment.open {

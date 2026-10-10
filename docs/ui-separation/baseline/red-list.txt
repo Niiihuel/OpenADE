@@ -17,3 +17,10 @@ Failing (their folders in shots/s00-baseline hold only what was written before t
   view::tab_bar_visual_tests::export_tab_bar_visual_review                (tab_bar_visual_tests.rs:193, unwrap on None)
 
 Full per-test status: openade-tests.txt, openade-export-tests.txt, limn-tests.txt.
+
+Captures that differ between runs (a temp directory name is drawn in the frame):
+all of context-visual-qa, and some files in openade-home-layout-review,
+openide-command-history-visual-qa and openide-conversation-stream-visual-qa.
+Everything else re-exports byte-identical. To compare those, normalize first:
+  sed -E 's/nix-shell-[0-9]+-[0-9]+/NIX/g; s/\.tmp[A-Za-z0-9]+/.tmpX/g'
+(the truncated path can then still differ by one character before the ellipsis).

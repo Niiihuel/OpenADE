@@ -47,12 +47,7 @@ fn path_tooltip(
 }
 
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
-    build_on_surface(state, width, theme::BACKGROUND)
-}
-
-/// The file tree can live inside the workspace island or on the sidebar chrome.
-pub(crate) fn build_on_surface(state: &ViewState, width: f32, surface: Color) -> Element {
-    build_contents(state, width, surface, false)
+    build_contents(state, width, theme::BACKGROUND, false)
 }
 
 /// The IDE owns the explorer's single compact header on the gray sidebar.
