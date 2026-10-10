@@ -2,8 +2,8 @@
 //! workspace/session epoch; this module never sends DAP or starts a process.
 use crate::theme;
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuItem, Element,
-    FontFamily, Icon, IconButton, Notice, Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    Button, ButtonVariant, Card, CardDensity, Component, ControlSize, DropdownMenu,
+    DropdownMenuItem, Element, FontFamily, Icon, IconButton, Notice, RadiusRole, Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::sync::Arc;
 
@@ -1035,12 +1035,12 @@ fn sidebar_session(state: &DebugView, width: f32) -> Element {
             .size(Some(inner), None),
         );
     }
-    Element::column(children)
-        .gap(4.0)
-        .padding(8.0)
-        .background(theme::PANEL)
-        .radius(6.0)
-        .size(Some(width), None)
+    Card::new(Element::column(children).gap(4.0), theme::panel_card_palette())
+        .density(CardDensity::Compact)
+        .border(false)
+        .radius(RadiusRole::Surface)
+        .width(width)
+        .render()
 }
 
 fn sidebar_controls(state: &DebugView, width: f32) -> Element {

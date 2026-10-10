@@ -7,7 +7,7 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    AlertDialog, Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, Modal,
+    AlertDialog, Button, ButtonVariant, Card, Component, ControlSize, Element, FontFamily, Icon, Modal,
     SearchField, Separator, TextField,
 };
 
@@ -172,12 +172,7 @@ pub(crate) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             Element::row(vec![status.flex(1.0), actions]).gap(10.0)
         });
         cards.push(
-            Element::column(content)
-                .gap(10.0)
-                .padding(10.0)
-                .background(theme::CARD)
-                .border(theme::BORDER, 1.0)
-                .radius(8.0),
+            Card::new(Element::column(content).gap(10.0), theme::card_palette()).render(),
         );
     }
     if cards.is_empty() {

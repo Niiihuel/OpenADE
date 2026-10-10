@@ -9,7 +9,8 @@ use std::collections::HashSet;
 use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Collapsible, Color, Component, ControlSize, Element,
+    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, Collapsible, Color, Component,
+    ControlSize, Element,
     FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker, MarkerVariant, PageColumn,
     ScrollArea,
     Separator, TextArea, ToolActivity, Tooltip, TooltipPlacement,
@@ -257,10 +258,9 @@ fn message(
             for image in images {
                 contents.push(user_image(image));
             }
-            Element::panel(Element::column(contents).gap(8.0))
-                .padding(10.0)
-                .background(theme::CARD)
-                .radius(8.0)
+            Card::new(Element::column(contents).gap(8.0), theme::card_palette())
+                .border(false)
+                .render()
         }
         TranscriptItem::Assistant { content, streaming } => {
             let visible = state.stream_presentation.visible_bytes(item_index, content);
@@ -316,16 +316,17 @@ fn message(
                 OutputStream::Stdout => ("SALIDA DEL PROCESO", theme::FOREGROUND_SUBTLE),
                 OutputStream::Stderr => ("DIAGNÓSTICOS DEL PROCESO", theme::FOREGROUND_SUBTLE),
             };
-            Element::panel(
+            Card::new(
                 Element::column(vec![
                     text(title, ink, 10.0),
                     mono(ellipsis(output, 700), theme::FOREGROUND_SUBTLE, 11.0),
                 ])
                 .gap(7.0),
+                theme::panel_card_palette(),
             )
-            .padding(12.0)
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
+            .density(CardDensity::Roomy)
+            .render()
+            // Radius 9 is this card's own; see docs/limn-migration-ledger.md.
             .radius(9.0)
         }
         TranscriptItem::Tool { .. } => unreachable!("tools own their captured output"),
@@ -2018,7 +2019,7 @@ fn active_subagent_card(run: &SubagentRunView, selected_session: &str) -> Elemen
     } else {
         "SUBAGENTE ACTIVO"
     };
-    Element::panel(
+    Card::new(
         Element::column(vec![
             text(relation, theme::FOREGROUND_SUBTLE, 10.0),
             text(&run.title, theme::FOREGROUND, 12.0),
@@ -2038,11 +2039,9 @@ fn active_subagent_card(run: &SubagentRunView, selected_session: &str) -> Elemen
             .render(),
         ])
         .gap(7.0),
+        theme::card_palette(),
     )
-    .padding(10.0)
-    .background(theme::CARD)
-    .border(theme::BORDER, 1.0)
-    .radius(8.0)
+    .render()
 }
 
 fn recoverable_subagent_card(run: &SubagentRunView) -> Element {
@@ -2256,11 +2255,7 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
             .render(),
         );
     }
-    Element::panel(Element::column(content).gap(7.0))
-        .padding(10.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
+    Card::new(Element::column(content).gap(7.0), theme::card_palette()).render()
 }
 
 /// Shared by the session layout and the workspace fallback so permissions
@@ -2483,11 +2478,7 @@ fn persisted_subagent_card(
             .gap(7.0),
         );
     }
-    Element::panel(Element::column(details).gap(8.0))
-        .padding(10.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
+    Card::new(Element::column(details).gap(8.0), theme::card_palette()).render()
 }
 
 fn related_subagent_rows(state: &ViewState, compact: bool) -> Vec<Element> {
@@ -2628,11 +2619,9 @@ pub(crate) fn hook_activity_card(hook: &crate::transcript::HookActivity) -> Elem
     if hook.interrupted {
         details.push(text("Verifica también el efecto de este hook fuera de OpenIDE. No se repetirá automáticamente.", theme::FOREGROUND_SUBTLE, 12.0));
     }
-    Element::panel(Element::column(details).gap(6.0))
-        .padding(12.0)
-        .background(theme::PANEL)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
+    Card::new(Element::column(details).gap(6.0), theme::panel_card_palette())
+        .density(CardDensity::Roomy)
+        .render()
 }
 
 fn tool_verification_card(
@@ -2643,19 +2632,6 @@ fn tool_verification_card(
 ) -> Element {
     let argument_height = if compact { 66.0 } else { 96.0 };
     let mut details = vec![
-        Element::row(vec![
-            Element::icon(Icon::Stop)
-                .foreground(theme::DESTRUCTIVE)
-                .size(Some(16.0), Some(16.0)),
-            text("RESULTADO SIN VERIFICAR", theme::FOREGROUND, 12.0),
-        ])
-        .gap(8.0),
-        text(
-            "La herramienta pudo haber tenido un efecto antes de la interrupción. Comprueba el resultado fuera de OpenIDE antes de continuar.",
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
-        Separator::horizontal(theme::component_palette()).render(),
         text(
             format!("Herramienta: {}", verification.name),
             theme::FOREGROUND,
@@ -2772,42 +2748,47 @@ fn tool_verification_card(
     .variant(ButtonVariant::Outline)
     .size(ControlSize::Compact)
     .render();
-    details.push(if compact {
-        Element::column(vec![cancel, confirm]).gap(8.0)
-    } else {
-        Element::row(vec![cancel, confirm]).gap(10.0)
-    });
-    Element::panel(Element::column(details).gap(10.0))
-        .padding(10.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
+    interruption_card(
+        "RESULTADO SIN VERIFICAR",
+        "La herramienta pudo haber tenido un efecto antes de la interrupción. Comprueba el resultado fuera de OpenIDE antes de continuar.".into(),
+        details,
+        [cancel, confirm],
+        compact,
+    )
 }
 
-fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
-    let count = batch.remaining_calls;
+/// What the verification and aborted-batch forms share: what stopped and
+/// why it matters, the form's own rows, and the two ways out.
+fn interruption_card(
+    title: &str,
+    reason: String,
+    rows: Vec<Element>,
+    actions: [Element; 2],
+    compact: bool,
+) -> Element {
     let mut details = vec![
         Element::row(vec![
             Element::icon(Icon::Stop)
                 .foreground(theme::DESTRUCTIVE)
                 .size(Some(16.0), Some(16.0)),
-            text("LOTE DE HERRAMIENTAS INTERRUMPIDO", theme::FOREGROUND, 12.0),
+            text(title, theme::FOREGROUND, 12.0),
         ])
         .gap(8.0),
-        text(
-            format!(
-                "El turno terminó con {count} {} sin ejecutar. Descartarlas permite iniciar otro turno. No revierte las {} llamadas ya completadas.",
-                if count == 1 {
-                    "llamada pendiente"
-                } else {
-                    "llamadas pendientes"
-                },
-                batch.completed_calls,
-            ),
-            theme::FOREGROUND_SUBTLE,
-            11.0,
-        ),
+        text(reason, theme::FOREGROUND_SUBTLE, 11.0),
         Separator::horizontal(theme::component_palette()).render(),
+    ];
+    details.extend(rows);
+    details.push(if compact {
+        Element::column(actions.into()).gap(8.0)
+    } else {
+        Element::row(actions.into()).gap(10.0)
+    });
+    Card::new(Element::column(details).gap(10.0), theme::card_palette()).render()
+}
+
+fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
+    let count = batch.remaining_calls;
+    let details = vec![
         text(
             format!("Próxima herramienta pendiente: {}", batch.next_tool_name),
             theme::FOREGROUND,
@@ -2846,16 +2827,21 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
     .variant(ButtonVariant::Outline)
     .size(ControlSize::Compact)
     .render();
-    details.push(if compact {
-        Element::column(vec![defer, discard]).gap(8.0)
-    } else {
-        Element::row(vec![defer, discard]).gap(10.0)
-    });
-    Element::panel(Element::column(details).gap(10.0))
-        .padding(10.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
+    interruption_card(
+        "LOTE DE HERRAMIENTAS INTERRUMPIDO",
+        format!(
+            "El turno terminó con {count} {} sin ejecutar. Descartarlas permite iniciar otro turno. No revierte las {} llamadas ya completadas.",
+            if count == 1 {
+                "llamada pendiente"
+            } else {
+                "llamadas pendientes"
+            },
+            batch.completed_calls,
+        ),
+        details,
+        [defer, discard],
+        compact,
+    )
 }
 
 fn composer(state: &ViewState, width: f32) -> Element {
@@ -3005,12 +2991,9 @@ fn automation_read_only_card(
         .size(ControlSize::Compact)
         .render(),
     );
-    Element::panel(Element::column(rows).gap(7.0))
-        .padding(10.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
-        .size(Some(width), None)
+    Card::new(Element::column(rows).gap(7.0), theme::card_palette())
+        .width(width)
+        .render()
 }
 
 /// Renders an active session without representing unprojected harness state.
@@ -3168,6 +3151,90 @@ mod tests {
     use image::ImageEncoder as _;
     use openide_core::{AgentEvent, AgentEventKind, TurnMode, UserImage, UserImageMime};
     use openide_ui::{DrawCommand, HitKind, Point, Size, UiEvent, UiTree};
+
+    #[test]
+    #[ignore = "export the session cards and a chat code block for manual visual review"]
+    fn export_session_cards_visual_review() {
+        let directory = std::path::PathBuf::from(format!(
+            "{}/../../target/openade-session-cards-review",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let plan = SessionPlanView {
+            snapshot: openide_core::PlanSnapshot {
+                explanation: Some("Separar la presentación del dominio sin cambiar píxeles.".into()),
+                plan: [
+                    ("Inspeccionar el proyecto", PlanStepStatus::Completed),
+                    ("Validar el plan en la conversación", PlanStepStatus::InProgress),
+                    ("Implementar los cambios acordados", PlanStepStatus::Pending),
+                ]
+                .into_iter()
+                .map(|(step, status)| openide_core::PlanStep {
+                    step: step.into(),
+                    status,
+                })
+                .collect(),
+            },
+            can_build: true,
+        };
+        let hook = crate::transcript::HookActivity {
+            tool_call_id: "call-1".into(),
+            hook_id: "post-check".into(),
+            phase: "post_tool_use".into(),
+            decision: Some("block".into()),
+            interrupted: false,
+            reason: Some("El formateador modificó archivos fuera del alcance.".into()),
+            stdout: None,
+            stderr: Some("warning: 2 files reformatted\nerror: scope violation".into()),
+            error: None,
+        };
+        let verification = ToolVerificationView {
+            goal_receipt: None,
+            session_id: "session-1".into(),
+            call_id: "call-7".into(),
+            name: "write_file".into(),
+            arguments: "{\n  \"path\": \"notes.txt\",\n  \"content\": \"hola\"\n}".into(),
+            error: Some("El proceso terminó antes de confirmar la escritura.".into()),
+            hooks: Vec::new(),
+        };
+        let batch = AbortedToolBatchView {
+            session_id: "session-1".into(),
+            next_call_id: "call-9".into(),
+            next_tool_name: "write_file".into(),
+            next_arguments: "{\"path\":\"notes.txt\"}".into(),
+            completed_calls: 1,
+            remaining_calls: 2,
+        };
+        for width in [360.0, 900.0] {
+            let compact = width < COMPACT_BREAKPOINT;
+            let size = Size::new(width, 1760.0);
+            let mut tree = UiTree::new(
+                Element::column(vec![
+                    session_plan_card("session-1", &plan, "Plan propuesto"),
+                    hook_activity_card(&hook),
+                    tool_verification_card(&verification, "", false, compact),
+                    aborted_batch_card(&batch, compact),
+                    rich_text::render_markdown_at_width(
+                        "Un bloque de código:\n\n```rust\nfn main() {\n    println!(\"hola\");\n}\n```\n",
+                        width - 32.0,
+                    ),
+                    Element::spacer().flex(1.0),
+                ])
+                .gap(12.0)
+                .padding(16.0)
+                .background(theme::BACKGROUND),
+            );
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(size);
+            crate::settings_ui::visual_qa::write_native_frame_svg(
+                &frame,
+                &directory.join(format!("session-cards-{width:.0}.svg")),
+                size.width,
+                size.height,
+            )
+            .unwrap();
+        }
+    }
 
     #[test]
     fn a_web_citation_matches_its_legacy_body() {

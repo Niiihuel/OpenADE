@@ -6,7 +6,8 @@ use crate::{
     theme,
 };
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
+    Button, ButtonVariant, Card, CardDensity, Component, ControlSize, DropdownMenu,
+    DropdownMenuEntry,
     DropdownMenuItem, Element, FontFamily, Icon, IconButton, PanelHeader, PopoverPlacement,
     Separator, TextArea, TextField, Tooltip, TooltipPlacement, TooltipSpec,
 };
@@ -548,28 +549,31 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
             );
             if let Some(comparison) = &state.comparison {
                 rows.push(
-                    Element::column(vec![
-                        text(format!("{} archivos", comparison.files), false, 14.0),
-                        Element::row(vec![
-                            text(format!("+{}", comparison.additions), false, 13.0)
-                                .foreground(theme::DIFF_ADDED),
-                            text(format!("−{}", comparison.deletions), false, 13.0)
-                                .foreground(theme::DIFF_REMOVED),
-                        ])
-                        .gap(10.0),
-                        text(
-                            format!(
-                                "{} commits propios · {} commits en la base",
-                                comparison.ahead, comparison.behind
+                    Card::new(
+                        Element::column(vec![
+                            text(format!("{} archivos", comparison.files), false, 14.0),
+                            Element::row(vec![
+                                text(format!("+{}", comparison.additions), false, 13.0)
+                                    .foreground(theme::DIFF_ADDED),
+                                text(format!("−{}", comparison.deletions), false, 13.0)
+                                    .foreground(theme::DIFF_REMOVED),
+                            ])
+                            .gap(10.0),
+                            text(
+                                format!(
+                                    "{} commits propios · {} commits en la base",
+                                    comparison.ahead, comparison.behind
+                                ),
+                                true,
+                                11.0,
                             ),
-                            true,
-                            11.0,
-                        ),
-                    ])
-                    .gap(8.0)
-                    .padding(12.0)
-                    .background(theme::PANEL)
-                    .radius(8.0),
+                        ])
+                        .gap(8.0),
+                        theme::panel_card_palette(),
+                    )
+                    .density(CardDensity::Roomy)
+                    .border(false)
+                    .render(),
                 );
                 rows.push(crate::environment_ui::interactive_surface(
                     Button::new(

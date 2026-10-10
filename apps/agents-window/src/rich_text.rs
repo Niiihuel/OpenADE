@@ -19,7 +19,7 @@ use std::{
 };
 
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ControlSize, Element, ElementKind, FontFamily, Icon,
+    Button, ButtonVariant, CodeBlock, Color, Component, ControlSize, Element, ElementKind, FontFamily, Icon,
     TextHighlight, TextSpan, Tooltip,
 };
 
@@ -1100,28 +1100,13 @@ fn render_inline_mode(
 }
 
 fn code_block(language: String, content: String) -> Element {
-    let label = if language.is_empty() {
-        "CÓDIGO".to_owned()
-    } else {
-        language.to_uppercase()
-    };
-    Element::panel(
-        Element::column(vec![
-            Element::text(label)
-                .font_family(FontFamily::Monospace)
-                .font_size(10.0)
-                .foreground(theme::FOREGROUND_SUBTLE),
-            Element::text(content)
-                .font_family(FontFamily::Monospace)
-                .font_size(12.0)
-                .foreground(theme::FOREGROUND),
-        ])
-        .gap(8.0),
-    )
-    .padding(12.0)
-    .background(theme::PANEL)
-    .border(theme::BORDER, 1.0)
-    .radius(8.0)
+    CodeBlock::new(content, theme::panel_card_palette())
+        .label(if language.is_empty() {
+            "CÓDIGO".to_owned()
+        } else {
+            language.to_uppercase()
+        })
+        .render()
 }
 
 /// Render with the actual reading-column width in logical pixels. HTTP(S)
@@ -1470,6 +1455,45 @@ mod tests {
     use unicode_segmentation::UnicodeSegmentation;
 
     use super::*;
+
+    // `code_block` as it was before limn's CodeBlock; delete with the final audit (S18).
+    fn legacy_code_block(language: String, content: String) -> Element {
+        let label = if language.is_empty() {
+            "CÓDIGO".to_owned()
+        } else {
+            language.to_uppercase()
+        };
+        Element::panel(
+            Element::column(vec![
+                Element::text(label)
+                    .font_family(FontFamily::Monospace)
+                    .font_size(10.0)
+                    .foreground(theme::FOREGROUND_SUBTLE),
+                Element::text(content)
+                    .font_family(FontFamily::Monospace)
+                    .font_size(12.0)
+                    .foreground(theme::FOREGROUND),
+            ])
+            .gap(8.0),
+        )
+        .padding(12.0)
+        .background(theme::PANEL)
+        .border(theme::BORDER, 1.0)
+        .radius(8.0)
+    }
+
+    #[test]
+    fn code_blocks_match_their_legacy_body() {
+        let long = "cargo test -p agents-window -p openide-ui --no-fail-fast\n".repeat(6);
+        for (language, content) in [("", "ls"), ("rust", "fn main() {}\n"), ("sh", long.as_str())] {
+            crate::icon_button_parity_tests::assert_same(
+                &format!("code block {language:?}"),
+                legacy_code_block(language.to_owned(), content.to_owned()),
+                code_block(language.to_owned(), content.to_owned()),
+            );
+        }
+    }
+
 
     #[test]
     fn parses_blocks_in_order_and_keeps_number_and_checklist_state() {

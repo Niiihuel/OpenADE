@@ -172,6 +172,30 @@ pub fn card_palette() -> ComponentPalette {
     SCHEME.card()
 }
 
+/// A card filled with the panel color: a hook report, a catalogue entry.
+pub fn panel_card_palette() -> ComponentPalette {
+    ComponentPalette {
+        raised: PANEL,
+        ..component_palette()
+    }
+}
+
+/// A card filled with the canvas, set on a raised page.
+pub fn canvas_card_palette() -> ComponentPalette {
+    ComponentPalette {
+        raised: BACKGROUND,
+        ..component_palette()
+    }
+}
+
+/// Read-only output on the code well.
+pub fn code_palette() -> ComponentPalette {
+    ComponentPalette {
+        surface: CODE_SURFACE,
+        ..component_palette()
+    }
+}
+
 /// Actions in a workspace sidebar.
 pub fn sidebar_palette() -> ComponentPalette {
     action_palette(SIDEBAR, FOREGROUND)
@@ -334,6 +358,171 @@ mod tests {
                 assert_eq!(commands(limn, width), commands(legacy, width));
             }
         }
+    }
+
+    // Every hand-built card shell limn's Card replaced, in both the forms it
+    // was written in; delete with the final audit (S18).
+    #[test]
+    fn card_shells_match_the_panels_they_replaced() {
+        use openide_ui::{Card, CardDensity, Component, RadiusRole};
+
+        // Content with a row that centers in a card taller than it.
+        let content = || {
+            Element::row(vec![
+                Element::column(vec![
+                    Element::text("Plan propuesto").foreground(FOREGROUND),
+                    Element::text("2 de 5 · un texto que se parte en varias líneas cuando la tarjeta es angosta")
+                        .foreground(FOREGROUND_SUBTLE),
+                ])
+                .gap(7.0)
+                .flex(1.0),
+                Button::new("card_action", "Abrir", component_palette())
+                    .render()
+                    .centered_y(),
+            ])
+            .gap(10.0)
+        };
+        type Finish = fn(Element) -> Element;
+        let own: Finish = |card| card;
+        let cases: [(&str, f32, Color, bool, f32, Option<f32>, Card, Finish); 11] = [
+            ("session card", 10.0, CARD, true, 8.0, None, Card::new(content(), card_palette()), own),
+            (
+                "user message",
+                10.0,
+                CARD,
+                false,
+                8.0,
+                None,
+                Card::new(content(), card_palette()).border(false),
+                own,
+            ),
+            (
+                "automation session card",
+                10.0,
+                CARD,
+                true,
+                8.0,
+                Some(300.0),
+                Card::new(content(), card_palette()).width(300.0),
+                own,
+            ),
+            (
+                "hook card",
+                12.0,
+                PANEL,
+                true,
+                8.0,
+                None,
+                Card::new(content(), panel_card_palette()).density(CardDensity::Roomy),
+                own,
+            ),
+            (
+                "process output",
+                12.0,
+                PANEL,
+                true,
+                9.0,
+                None,
+                Card::new(content(), panel_card_palette()).density(CardDensity::Roomy),
+                |card| card.radius(9.0),
+            ),
+            (
+                "transcript notice",
+                12.0,
+                PANEL,
+                true,
+                10.0,
+                None,
+                Card::new(content(), panel_card_palette()).density(CardDensity::Roomy),
+                |card| card.radius(10.0),
+            ),
+            (
+                "marketplace item",
+                12.0,
+                PANEL,
+                true,
+                8.0,
+                Some(280.0),
+                Card::new(content(), panel_card_palette())
+                    .density(CardDensity::Roomy)
+                    .width(280.0),
+                own,
+            ),
+            (
+                "loading and comparison cards",
+                12.0,
+                PANEL,
+                false,
+                8.0,
+                None,
+                Card::new(content(), panel_card_palette())
+                    .density(CardDensity::Roomy)
+                    .border(false),
+                own,
+            ),
+            (
+                "automation card",
+                10.0,
+                BACKGROUND,
+                true,
+                10.0,
+                Some(320.0),
+                Card::new(content(), canvas_card_palette()).width(320.0),
+                |card| card.radius(10.0),
+            ),
+            (
+                "run card",
+                10.0,
+                BACKGROUND,
+                true,
+                9.0,
+                None,
+                Card::new(content(), canvas_card_palette()),
+                |card| card.radius(9.0),
+            ),
+            (
+                "approval target",
+                10.0,
+                PANEL,
+                false,
+                6.0,
+                None,
+                Card::new(content(), panel_card_palette())
+                    .border(false)
+                    .radius(RadiusRole::Surface),
+                own,
+            ),
+        ];
+        for (name, padding, fill, border, radius, width, card, finish) in cases {
+            let current = finish(card.render());
+            let shell = |element: Element| {
+                let element = element.padding(padding).background(fill).radius(radius);
+                let element = if border {
+                    element.border(BORDER, 1.0)
+                } else {
+                    element
+                };
+                match width {
+                    Some(width) => element.size(Some(width), None),
+                    None => element,
+                }
+            };
+            // Written both as a padded panel and as a padded row or column.
+            for legacy in [shell(Element::panel(content())), shell(content())] {
+                crate::icon_button_parity_tests::assert_same(name, legacy, current.clone());
+            }
+        }
+        // A source row keeps a minimum height over its centered content.
+        let source = |element: Element| element.radius(10.0).min_size(0.0, 56.0);
+        crate::icon_button_parity_tests::assert_same(
+            "marketplace source row",
+            source(content().padding(12.0).background(PANEL).border(BORDER, 1.0)),
+            source(
+                Card::new(content(), panel_card_palette())
+                    .density(CardDensity::Roomy)
+                    .render(),
+            ),
+        );
     }
 
     #[test]

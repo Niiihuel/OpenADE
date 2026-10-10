@@ -4,7 +4,7 @@
 
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Color, Component, ControlSize, DateTimePicker,
+    Alert, AlertTone, Button, ButtonVariant, Card, Color, Component, ControlSize, DateTimePicker,
     CardGrid, Element, Empty, FontFamily, Icon, IconButton, Modal, PageColumn, SearchField,
     Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea, TextField, TextRole, TimePicker,
     Tooltip, TooltipPlacement, TooltipSpec,
@@ -685,12 +685,11 @@ fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: 
     actions.extend([Element::spacer().flex(1.0), toggle]);
     actions.push(delete);
     rows.push(Element::row(actions).gap(4.0));
-    Element::panel(Element::column(rows).gap(5.0))
-        .padding(10.0)
-        .background(theme::BACKGROUND)
-        .border(theme::BORDER, 1.0)
+    Card::new(Element::column(rows).gap(5.0), theme::canvas_card_palette())
+        .width(width)
+        .render()
+        // Radius 10 is this card's own; see docs/limn-migration-ledger.md.
         .radius(10.0)
-        .size(Some(width), None)
 }
 
 fn template_card(template: &AutomationTemplate, width: f32) -> Element {
@@ -1358,10 +1357,9 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
                 );
             }
             body.push(
-                Element::panel(Element::column(details).gap(5.0))
-                    .padding(10.0)
-                    .background(theme::BACKGROUND)
-                    .border(theme::BORDER, 1.0)
+                Card::new(Element::column(details).gap(5.0), theme::canvas_card_palette())
+                    .render()
+                    // Radius 9 is this card's own; see docs/limn-migration-ledger.md.
                     .radius(9.0),
             );
         }

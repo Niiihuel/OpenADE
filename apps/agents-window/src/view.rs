@@ -10,9 +10,9 @@ use openide_harness::{
     SubagentStatus, ToolPermissions,
 };
 use openide_ui::{
-    ActiveHover, AlertDialog, Button, ButtonVariant, Color, Component, ControlSize, DropdownList,
+    ActiveHover, AlertDialog, Button, ButtonVariant, Card, CardDensity, Color, Component, ControlSize, DropdownList,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily,
-    Icon, IconButton as UiIconButton, Kbd, ListRow, PopoverPlacement, ScrollArea, Search, SegmentedControl,
+    Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, Search, SegmentedControl,
     Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
     TreeRow,
 };
@@ -1987,7 +1987,7 @@ fn transcript_item(
                 OutputStream::Stdout => ("SALIDA DEL PROCESO", theme::TOOL_RESULT),
                 OutputStream::Stderr => ("DIAGNÓSTICOS DEL PROCESO", theme::FOREGROUND_SUBTLE),
             };
-            Element::panel(
+            Card::new(
                 Element::column(vec![
                     eyebrow(title).foreground(ink),
                     mono(
@@ -2001,13 +2001,14 @@ fn transcript_item(
                     .font_size(12.0),
                 ])
                 .gap(6.0),
+                theme::panel_card_palette(),
             )
-            .padding(12.0)
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
+            .density(CardDensity::Roomy)
+            .render()
+            // Radius 10 is this card's own; see docs/limn-migration-ledger.md.
             .radius(10.0)
         }
-        TranscriptItem::Notice { message, is_error } => Element::panel(
+        TranscriptItem::Notice { message, is_error } => Card::new(
             Element::column(vec![
                 eyebrow(if *is_error { "ERROR" } else { "AVISO" }).foreground(if *is_error {
                     theme::DESTRUCTIVE
@@ -2024,10 +2025,11 @@ fn transcript_item(
                 ),
             ])
             .gap(6.0),
+            theme::panel_card_palette(),
         )
-        .padding(12.0)
-        .background(theme::PANEL)
-        .border(theme::BORDER, 1.0)
+        .density(CardDensity::Roomy)
+        .render()
+        // Radius 10 is this card's own; see docs/limn-migration-ledger.md.
         .radius(10.0),
     }
 }

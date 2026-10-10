@@ -7,8 +7,8 @@ use std::{
 };
 
 use openide_ui::{
-    ActiveHover, Button, ButtonVariant, Chip, Color, Component, ComponentPalette, ControlSize,
-    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, RadiusRole, ScrollArea,
+    ActiveHover, Button, ButtonVariant, Card, Chip, Color, Component, ComponentPalette, ControlSize,
+    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea,
     Separator,
     Tooltip, TooltipPlacement, TooltipSpec,
 };
@@ -466,13 +466,11 @@ fn account_card(
         Element::row(vec![Element::spacer().flex(1.0), account_action(snapshot)]),
     ])
     .gap(10.0);
-    Element::panel(
+    Card::new(
         Element::column(vec![Element::column(rows).gap(10.0).flex(1.0), footer]).gap(10.0),
+        theme::card_palette(),
     )
-    .padding(10.0)
-    .background(theme::CARD)
-    .border(theme::BORDER, 1.0)
-    .radius(RadiusRole::Card.px())
+    .render()
 }
 
 fn refresh(state: &ViewState, compact: bool) -> Element {

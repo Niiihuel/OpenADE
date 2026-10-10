@@ -5,10 +5,11 @@
 //! runtimes and are not offered as installable SKILL.md bundles here.
 
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Chip, Color, Component, ControlSize, DropdownMenu,
+    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, Chip, Color, Component, ControlSize,
+    DropdownMenu,
     CardGrid, DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, Notice, PageColumn,
     PageHeader, ScrollArea, SearchField, SectionHeader, Separator, Skeleton, Switch, Tab, Tabs,
-    TextField, Tooltip, TooltipPlacement, TooltipSpec,
+    Text, TextField, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use std::{borrow::Cow, collections::BTreeMap};
@@ -22,6 +23,8 @@ use crate::{
     ui_sizing::{MARKETPLACE_HEADER, MARKETPLACE_HEADER_NARROW},
 };
 
+// The inset of `CardDensity::Roomy`, which the item card is built with.
+#[cfg(test)]
 const CARD_PADDING: f32 = 12.0;
 const INSTALL_WIDTH: f32 = 88.0;
 
@@ -389,24 +392,27 @@ fn explore_status(state: &MarketplaceViewState, width: f32) -> Element {
         if explore.page.is_none() {
             for index in 0..3 {
                 children.push(
-                    Element::column(vec![
-                        Skeleton::line(
-                            format!("marketplace_explore_loading:{index}:name"),
-                            theme::component_palette(),
-                            (width * 0.55).max(0.0),
-                        )
-                        .render(),
-                        Skeleton::line(
-                            format!("marketplace_explore_loading:{index}:source"),
-                            theme::component_palette(),
-                            (width - 24.0).max(0.0),
-                        )
-                        .render(),
-                    ])
-                    .gap(8.0)
-                    .padding(12.0)
-                    .background(theme::PANEL)
-                    .radius(8.0),
+                    Card::new(
+                        Element::column(vec![
+                            Skeleton::line(
+                                format!("marketplace_explore_loading:{index}:name"),
+                                theme::component_palette(),
+                                (width * 0.55).max(0.0),
+                            )
+                            .render(),
+                            Skeleton::line(
+                                format!("marketplace_explore_loading:{index}:source"),
+                                theme::component_palette(),
+                                (width - 24.0).max(0.0),
+                            )
+                            .render(),
+                        ])
+                        .gap(8.0),
+                        theme::panel_card_palette(),
+                    )
+                    .density(CardDensity::Roomy)
+                    .border(false)
+                    .render(),
                 );
             }
         }
@@ -745,12 +751,10 @@ fn item_card_content(
         );
     }
     details.push(bottom);
-    Element::panel(Element::column(details).gap(8.0))
-        .padding(CARD_PADDING)
-        .background(theme::PANEL)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
-        .size(Some(width), None)
+    Card::new(Element::column(details).gap(8.0), theme::panel_card_palette())
+        .density(CardDensity::Roomy)
+        .width(width)
+        .render()
 }
 
 fn skill_description(item: &MarketplaceItem, detailed: bool) -> Element {
@@ -872,7 +876,7 @@ fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
         .count(state.snapshot.sources.len())
         .render()];
     for source in &state.snapshot.sources {
-        rows.push(
+        rows.push(source_row(
             Element::row(vec![
                 Element::icon(match source.kind {
                     SourceKind::Local => Icon::Folder,
@@ -898,15 +902,19 @@ fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
                 .render()
                 .centered_y(),
             ])
-            .gap(10.0)
-            .padding(12.0)
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
-            .radius(10.0)
-            .min_size(0.0, 56.0),
-        );
+            .gap(10.0),
+        ));
     }
     Element::column(rows).gap(6.0).size(Some(width), None)
+}
+
+fn source_row(content: Element) -> Element {
+    Card::new(content, theme::panel_card_palette())
+        .density(CardDensity::Roomy)
+        .render()
+        // Radius 10 is this row's own; see docs/limn-migration-ledger.md.
+        .radius(10.0)
+        .min_size(0.0, 56.0)
 }
 
 fn empty_catalog(state: &MarketplaceViewState) -> Element {
@@ -1016,9 +1024,10 @@ fn legacy_empty_catalog(state: &MarketplaceViewState) -> Element {
 }
 
 fn detail_field(label: &str, value: &str) -> Element {
+    let palette = theme::component_palette();
     Element::column(vec![
-        text(label, theme::FOREGROUND_SUBTLE, 11.0),
-        text(value, theme::FOREGROUND, 12.0),
+        Text::new(label, palette).role(TextRole::Small).muted().render(),
+        Text::new(value, palette).render(),
     ])
     .gap(3.0)
 }

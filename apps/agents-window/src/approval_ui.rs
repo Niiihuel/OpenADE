@@ -7,8 +7,8 @@ use crate::{
     view::{PermissionView, SubagentPermissionView, ViewState},
 };
 use openide_ui::{
-    ApprovalRequest, Button, ButtonVariant, Collapsible, Component, ControlSize, Element,
-    FontFamily, Icon, Modal, ScrollArea, TextSpan,
+    ApprovalRequest, Button, ButtonVariant, Card, Collapsible, Component, ControlSize, Element,
+    FontFamily, Icon, Modal, RadiusRole, ScrollArea, TextSpan,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -454,10 +454,10 @@ pub(crate) fn modal(state: &ViewState, base: Element, width: f32, height: f32) -
     // What will happen, in the user's terms, and the exact target.
     let mut sections = vec![
         paragraph(summary.description, false, false),
-        Element::panel(paragraph(&summary.target, false, true))
-            .padding(10.0)
-            .background(theme::PANEL)
-            .radius(6.0),
+        Card::new(paragraph(&summary.target, false, true), theme::panel_card_palette())
+            .border(false)
+            .radius(RadiusRole::Surface)
+            .render(),
     ];
     if let Some(child) = target.child_session_id.as_deref() {
         let requester = state

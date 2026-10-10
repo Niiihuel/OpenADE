@@ -6,7 +6,6 @@ use std::io::{self, Write};
 
 const ROW_HEIGHT: f32 = 38.0;
 const PREVIEW_BYTES: usize = 48 * 1024;
-const PREVIEW_LINES: usize = 600;
 
 struct ToolRow {
     id: String,
@@ -294,14 +293,7 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
                 .font_size(12.0),
             );
         }
-        items.push(
-            Element::column(detail)
-                .gap(8.0)
-                .padding(8.0)
-                .background(theme::PANEL)
-                .radius(6.0)
-                .size(Some(width), None),
-        );
+        items.push(inset_card(Element::column(detail).gap(8.0), width));
     } else if state.native_commands.is_empty() {
         items.push(pane_empty_state(
             Icon::History,
@@ -328,6 +320,16 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
         ));
     }
     Element::column(items).gap(8.0).padding(12.0)
+}
+
+/// A borderless panel-colored group inside the inspector.
+fn inset_card(content: Element, width: f32) -> Element {
+    Card::new(content, theme::panel_card_palette())
+        .density(CardDensity::Compact)
+        .border(false)
+        .radius(RadiusRole::Surface)
+        .width(width)
+        .render()
 }
 
 fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
@@ -462,14 +464,7 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
                 .gap(3.0),
             );
         }
-        items.push(
-            Element::column(process)
-                .gap(5.0)
-                .padding(8.0)
-                .background(theme::PANEL)
-                .radius(6.0)
-                .size(Some(width), None),
-        );
+        items.push(inset_card(Element::column(process).gap(5.0), width));
     }
     if !state.session_approval_grants.is_empty() {
         items.push(eyebrow(format!(
@@ -507,60 +502,17 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
     }
 }
 
-/// Results can contain megabytes of output. Keep both the projection and layout
-/// bounded; virtual rows avoid shaping invisible output while scrolling.
+/// Results can contain megabytes of output; limn bounds the projection and
+/// builds only the visible rows.
 fn output_block(id: &str, source: &str, width: f32, ink: Color, max_height: f32) -> Element {
-    let mut byte_end = source.len().min(PREVIEW_BYTES);
-    while !source.is_char_boundary(byte_end) {
-        byte_end -= 1;
-    }
-    let prefix = &source[..byte_end];
-    let mut source_lines = prefix.lines();
-    let lines: Vec<String> = source_lines
-        .by_ref()
-        .take(PREVIEW_LINES)
-        .map(|line| {
-            let mut chars = line.chars();
-            let mut text: String = chars.by_ref().take(500).collect();
-            if chars.next().is_some() {
-                text.push('…');
-            }
-            if text.is_empty() {
-                text.push(' ');
-            }
-            text
-        })
-        .collect();
-    let truncated = byte_end < source.len() || source_lines.next().is_some();
-    let count = lines.len();
-    let body = ScrollArea::uniform_list(id, count, 17.0, move |index| {
-        mono(&lines[index], ink)
-            .font_size(11.0)
-            .size(Some((width - 20.0).max(100.0)), Some(17.0))
-            .clip_children()
-    })
-    .render()
-    .top_fade(theme::CODE_SURFACE, 12.0)
-    .size(
-        Some((width - 12.0).max(120.0)),
-        Some((count.max(1) as f32 * 17.0).min(max_height)),
-    );
-    let mut children = vec![body];
-    if truncated {
-        children.push(
-            label(
-                "Vista parcial · resultado demasiado extenso",
-                theme::FOREGROUND_SUBTLE,
-            )
-            .font_size(10.0),
-        );
-    }
-    Element::column(children)
-        .gap(4.0)
-        .padding(6.0)
-        .background(theme::CODE_SURFACE)
+    OutputBlock::new(id, source, theme::code_palette())
+        .ink(ink)
+        .max_height(max_height)
+        .width(width)
+        .truncation_note("Vista parcial · resultado demasiado extenso")
+        .render()
+        // Radius 5 is this block's own; see docs/limn-migration-ledger.md.
         .radius(5.0)
-        .size(Some(width), None)
 }
 
 fn bounded_json(value: &Value) -> String {
@@ -599,6 +551,61 @@ fn bounded_json(value: &Value) -> String {
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
+
+    // `output_block` as it was before limn's OutputBlock; delete with the final audit (S18).
+    fn legacy_output_block(id: &str, source: &str, width: f32, ink: Color, max_height: f32) -> Element {
+        let mut byte_end = source.len().min(PREVIEW_BYTES);
+        while !source.is_char_boundary(byte_end) {
+            byte_end -= 1;
+        }
+        let prefix = &source[..byte_end];
+        let mut source_lines = prefix.lines();
+        let lines: Vec<String> = source_lines
+            .by_ref()
+            .take(600)
+            .map(|line| {
+                let mut chars = line.chars();
+                let mut text: String = chars.by_ref().take(500).collect();
+                if chars.next().is_some() {
+                    text.push('…');
+                }
+                if text.is_empty() {
+                    text.push(' ');
+                }
+                text
+            })
+            .collect();
+        let truncated = byte_end < source.len() || source_lines.next().is_some();
+        let count = lines.len();
+        let body = ScrollArea::uniform_list(id, count, 17.0, move |index| {
+            mono(&lines[index], ink)
+                .font_size(11.0)
+                .size(Some((width - 20.0).max(100.0)), Some(17.0))
+                .clip_children()
+        })
+        .render()
+        .top_fade(theme::CODE_SURFACE, 12.0)
+        .size(
+            Some((width - 12.0).max(120.0)),
+            Some((count.max(1) as f32 * 17.0).min(max_height)),
+        );
+        let mut children = vec![body];
+        if truncated {
+            children.push(
+                label(
+                    "Vista parcial · resultado demasiado extenso",
+                    theme::FOREGROUND_SUBTLE,
+                )
+                .font_size(10.0),
+            );
+        }
+        Element::column(children)
+            .gap(4.0)
+            .padding(6.0)
+            .background(theme::CODE_SURFACE)
+            .radius(5.0)
+            .size(Some(width), None)
+    }
 
     fn legacy_tool_row(row: &ToolRow, width: f32) -> Element {
         theme::interactive_surface(
@@ -675,6 +682,90 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn inset_cards_match_the_padded_columns_they_replaced() {
+        let rows = || {
+            vec![
+                label("Herramienta", theme::FOREGROUND).font_size(13.0),
+                eyebrow("ARGUMENTOS"),
+                label("Sin resultado confirmado", theme::FOREGROUND_SUBTLE).font_size(12.0),
+            ]
+        };
+        for gap in [5.0, 8.0] {
+            for width in [136.0, 336.0] {
+                crate::icon_button_parity_tests::assert_same(
+                    &format!("inset card gap {gap} at {width}"),
+                    Element::column(rows())
+                        .gap(gap)
+                        .padding(8.0)
+                        .background(theme::PANEL)
+                        .radius(6.0)
+                        .size(Some(width), None),
+                    inset_card(Element::column(rows()).gap(gap), width),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn output_blocks_match_their_legacy_body() {
+        let long = (0..100_000)
+            .map(|n| format!("line {n}\n"))
+            .collect::<String>();
+        let wide = "á漢🙂".repeat(30_000);
+        for (source, ink, max_height) in [
+            ("", theme::FOREGROUND, 100.0),
+            ("uno\n\ntres", theme::DESTRUCTIVE, 160.0),
+            (long.as_str(), theme::FOREGROUND, 120.0),
+            (wide.as_str(), theme::FOREGROUND_SUBTLE, 200.0),
+        ] {
+            for width in [130.0, 344.0] {
+                crate::icon_button_parity_tests::assert_same(
+                    &format!("output block of {} bytes at {width}", source.len()),
+                    legacy_output_block("output", source, width, ink, max_height),
+                    output_block("output", source, width, ink, max_height),
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "export the Activity inspector with long output for manual visual review"]
+    fn export_activity_output_visual_review() {
+        let directory = std::path::PathBuf::from(format!(
+            "{}/../../target/openade-activity-output-review",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut state = super::super::tests::empty_state();
+        state.selected_tool_id = Some("t1".into());
+        state.transcript = vec![
+            TranscriptItem::Tool {
+                id: "t1".into(),
+                name: "run_command".into(),
+                arguments: serde_json::json!({"command": "cargo test --workspace", "timeout": 600}),
+                output: Some((0..100_000).map(|n| format!("test case_{n} ... ok\n")).collect()),
+                is_error: false,
+                activity: crate::transcript::ActivityStatus::Completed,
+            },
+            TranscriptItem::ProcessOutput {
+                stream: OutputStream::Stderr,
+                text: "warning: unused variable\n\nerror: aborting due to a previous error".into(),
+            },
+        ];
+        for width in [300.0, 420.0] {
+            let size = Size::new(width, 640.0);
+            let frame = UiTree::new(content(&state, width).background(theme::BACKGROUND)).layout(size);
+            crate::settings_ui::visual_qa::write_native_frame_svg(
+                &frame,
+                &directory.join(format!("activity-output-{width:.0}.svg")),
+                size.width,
+                size.height,
+            )
+            .unwrap();
         }
     }
 
