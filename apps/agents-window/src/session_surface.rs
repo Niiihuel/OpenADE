@@ -6031,28 +6031,6 @@ mod tests {
     }
 
     #[test]
-    fn a_web_citation_matches_its_post_render_outline() {
-        let legacy = ListRow::new(
-            "web_citation_open:3",
-            "Un título",
-            theme::action_palette(theme::PANEL, theme::FOREGROUND),
-        )
-        .icon(Icon::Search)
-        .icon_ink(theme::ICON_PRIMARY)
-        .subtitle("https://example.com/a")
-        .subtitle_mono(true)
-        .filled()
-        .sizing(crate::ui_sizing::WEB_CITATION)
-        .render()
-        .border(theme::BORDER, 1.0);
-        crate::converge_pages_rows_parity_tests::assert_same(
-            "web citation",
-            legacy,
-            web_citation(3, "Un título", "https://example.com/a"),
-        );
-    }
-
-    #[test]
     fn web_citation_is_clickable_in_transcript() {
         let mut state = state();
         state.transcript.push(TranscriptItem::WebCitation {

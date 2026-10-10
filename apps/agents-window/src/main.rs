@@ -142,8 +142,6 @@ mod tool_presentation;
 mod tool_result_media;
 mod transcript;
 mod ui_sizing;
-#[cfg(test)]
-mod converge_pages_rows_parity_tests;
 mod view;
 mod voice;
 

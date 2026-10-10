@@ -1197,52 +1197,6 @@ fn group_menu(state: &SessionRowContext, group: &SessionGroup, index: usize) -> 
     .render()
 }
 
-#[cfg(test)]
-fn legacy_group_header(
-    state: &SessionRowContext,
-    group: &SessionGroup,
-    index: usize,
-    count: usize,
-    width: f32,
-) -> Element {
-    let row_width = (width - 18.0).max(0.0);
-    let more = group_menu(state, group, index);
-    let row = Element::clickable(
-        format!("session_group_toggle:{}", group.id),
-        Element::row(vec![
-            Element::icon(Icon::Hash)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(16.0), Some(16.0)),
-            Element::truncated_text(&group.title)
-                .foreground(theme::FOREGROUND)
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .flex(1.0),
-            UiText::new(count.to_string(), theme::component_palette())
-                .role(TextRole::Micro)
-                .muted()
-                .render(),
-            Element::icon(if group.collapsed {
-                Icon::ChevronRight
-            } else {
-                Icon::ChevronDown
-            })
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(16.0)),
-            more,
-        ])
-        .gap(4.0)
-        .padding(2.0)
-        .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
-    )
-    .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT))
-    .background(theme::SIDEBAR)
-    .hover_background(theme::hover_for(theme::SIDEBAR))
-    .pressed_background(theme::SELECTED)
-    .radius(7.0);
-    theme::action_palette(theme::SIDEBAR, theme::FOREGROUND).interactive_surface(row)
-}
-
 fn sidebar_nav_action(
     id: &str,
     icon: Icon,
@@ -3712,72 +3666,6 @@ pub(crate) mod tests {
         }
     }
     use super::*;
-
-    #[test]
-    fn group_headings_match_their_legacy_body() {
-        use std::time::{Duration, Instant};
-        let mut state = empty_state();
-        for (id, title, collapsed) in [
-            ("a", "Backend", false),
-            ("b", "Un grupo con un nombre demasiado largo para su fila", true),
-            ("c", "Otro", false),
-        ] {
-            state.session_groups.groups.push(crate::session_groups::SessionGroup {
-                id: id.into(),
-                title: title.into(),
-                collapsed,
-            });
-        }
-        for menu in [None, Some("b".to_owned())] {
-            state.group_menu_id = menu;
-            let context = SessionRowContext::from(&state);
-            for (index, group) in state.session_groups.groups.iter().enumerate() {
-                for width in [150.0, 264.0, 420.0] {
-                    let build = |legacy: bool| {
-                        if legacy {
-                            legacy_group_header(&context, group, index, 12, width)
-                        } else {
-                            group_header(&context, group, index, 12, width)
-                        }
-                    };
-                    use crate::converge_pages_rows_parity_tests::{rounded, states};
-                    // The menu button lands at 376 where it was 375.99997, so
-                    // the frames are compared to a hundredth of a pixel.
-                    let over_row = |legacy: bool| {
-                        let (frames, actions) = states(build(legacy), 460.0, false);
-                        (frames.iter().map(rounded).collect::<Vec<_>>(), actions)
-                    };
-                    assert_eq!(over_row(false), over_row(true), "row, width={width}");
-                    // Over the menu button, which takes the pointer from the row.
-                    let frames = |legacy: bool| {
-                        let mut tree = openide_ui::UiTree::new(Element::column(vec![
-                            Element::row(vec![build(legacy), Element::spacer().flex(1.0)]),
-                            Element::spacer().flex(1.0),
-                        ]));
-                        tree.set_reduced_motion(true);
-                        let size = openide_ui::Size::new(460.0, 400.0);
-                        let idle = tree.layout(size);
-                        let button = idle
-                            .regions
-                            .iter()
-                            .find(|region| region.id == format!("session_group_menu:{}", group.id))
-                            .unwrap()
-                            .rect;
-                        let point = openide_ui::Point::new(button.x + 8.0, button.y + 8.0);
-                        tree.handle_event(openide_ui::UiEvent::PointerMove(point));
-                        let hovered = tree.layout(size);
-                        let hinted = tree.layout_at(size, Instant::now() + Duration::from_secs(2));
-                        tree.handle_event(openide_ui::UiEvent::PointerDown(point));
-                        let pressed = tree.layout(size);
-                        let actions = tree.handle_event(openide_ui::UiEvent::PointerUp(point));
-                        let frames = [idle, hovered, hinted, pressed];
-                        (frames.iter().map(rounded).collect::<Vec<_>>(), actions)
-                    };
-                    assert_eq!(frames(false), frames(true), "menu button, width={width}");
-                }
-            }
-        }
-    }
     use crate::git_review::ReviewSection;
     use openide_ui::{DrawCommand, Key, Point, Size, UiAction, UiEvent, UiTree};
     use serde_json::json;

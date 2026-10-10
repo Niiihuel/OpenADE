@@ -763,34 +763,6 @@ fn list_heading(empty: bool, content_width: f32) -> Element {
         .render()
 }
 
-#[cfg(test)]
-fn legacy_list_heading(empty: bool, content_width: f32) -> Element {
-    let heading = Element::column(vec![
-        theme::text_px("Automatizaciones", 22.0, theme::FOREGROUND),
-        Text::new(
-            "Tareas programadas para este proyecto",
-            theme::component_palette(),
-        )
-        .muted()
-        .render(),
-    ])
-    .gap(2.0);
-    let new = || {
-        Button::new("automation_new", "Nueva tarea", theme::component_palette())
-            .icon(Icon::Add)
-            .size(ControlSize::Regular)
-            .render()
-    };
-    if empty {
-        heading
-    } else if content_width < 440.0 {
-        Element::column(vec![heading, new()]).gap(8.0)
-    } else {
-        // The action stays on the title's line; limn's PageHeader centers it.
-        Element::row(vec![heading, Element::spacer().flex(1.0), new()]).gap(8.0)
-    }
-}
-
 fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     let grid = || CardGrid::new(content_width, 690.0);
     let card_width = grid().item_width();
@@ -1562,20 +1534,6 @@ fn editor_modal(state: &AutomationViewState, base: Element, width: f32, body: El
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_list_heading_matches_its_legacy_body() {
-        for empty in [false, true] {
-            for width in [300.0, 439.0, 440.0, 900.0] {
-                crate::converge_pages_rows_parity_tests::assert_same_at(
-                    "automations heading",
-                    &[width],
-                    legacy_list_heading(empty, width).size(Some(width), None),
-                    list_heading(empty, width).size(Some(width), None),
-                );
-            }
-        }
-    }
     use openide_ui::{Key, Point, Size, UiAction, UiEvent, UiTree};
 
     fn state() -> AutomationViewState {

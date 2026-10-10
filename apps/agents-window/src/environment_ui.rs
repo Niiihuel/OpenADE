@@ -5,7 +5,7 @@ use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
     ButtonVariant, Component, ComponentPalette, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, FontFamily, HeaderSizing, Icon, IconButton, ListRow, PanelHeader,
+    DropdownMenuItem, Element, HeaderSizing, Icon, IconButton, ListRow, PanelHeader,
     ScrollArea, SectionHeader, SectionSizing, Separator, SpinnerVariant, Text, TextRole, Tooltip,
     TooltipPlacement, TooltipSpec,
 };
@@ -47,10 +47,6 @@ pub(crate) struct EnvironmentUiState {
     pub changes: SessionChangesSummaryView,
     pub details_expanded: bool,
     pub workflow: crate::environment_git_ui::EnvironmentGitUiState,
-}
-
-pub(crate) fn interactive_surface(element: Element) -> Element {
-    theme::action_palette(theme::CARD, theme::FOREGROUND).interactive_surface(element)
 }
 
 /// The canvas palette with the card's hover and press, for a limn button
@@ -209,50 +205,6 @@ fn selector_trigger(
     Tooltip::new(trigger, id, detail, theme::component_palette()).render()
 }
 
-#[cfg(test)]
-fn legacy_selector_trigger(
-    id: &str,
-    icon: Icon,
-    label: &str,
-    detail: &str,
-    width: f32,
-    enabled: bool,
-) -> Element {
-    let label_width = (width - 54.0).max(0.0);
-    let visual = Element::row(vec![
-        Element::icon(icon)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(18.0), Some(36.0)),
-        Element::column(vec![
-            Text::new(label, theme::component_palette())
-                .role(TextRole::Label)
-                .truncate()
-                .render()
-                .size(Some(label_width.max(0.0)), Some(18.0)),
-            Text::new(detail, theme::component_palette())
-                .role(TextRole::Small)
-                .muted()
-                .truncate()
-                .render()
-                .size(Some(label_width.max(0.0)), Some(18.0)),
-        ])
-        .size(Some(label_width), Some(36.0)),
-        Element::icon(Icon::ChevronDown)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(36.0)),
-    ])
-    .gap(6.0)
-    .clip_children();
-    let trigger = interactive_surface(if enabled {
-        Element::clickable(id, visual)
-    } else {
-        Element::panel(visual)
-    })
-    .padding(4.0)
-    .size(Some(width), Some(44.0));
-    Tooltip::new(trigger, id, detail, theme::component_palette()).render()
-}
-
 fn counts(additions: usize, deletions: usize) -> Element {
     DiffStat::new(additions, deletions, theme::component_palette())
         .inks(theme::DIFF_ADDED, theme::DIFF_REMOVED)
@@ -331,61 +283,6 @@ fn action_row(
     Tooltip::new(row.render(), id, help, theme::component_palette()).render()
 }
 
-#[cfg(test)]
-fn legacy_action_row(
-    id: &str,
-    icon: Icon,
-    title: &str,
-    detail: &str,
-    trailing: Option<Element>,
-    help: &str,
-    width: f32,
-) -> Element {
-    let label_width = (width - 48.0).max(0.0);
-    let mut main = vec![Element::truncated_text(title)
-        .font_family(FontFamily::Sans)
-        .font_size(12.5)
-        .foreground(theme::FOREGROUND)
-        .size(Some(label_width.max(0.0)), Some(18.0))
-        .flex(1.0)];
-    if let Some(trailing) = trailing {
-        main.push(trailing);
-    }
-    let mut lines = vec![Element::row(main)
-        .gap(6.0)
-        .size(Some(label_width), Some(18.0))];
-    if !detail.is_empty() {
-        lines.push(
-            Element::truncated_text(detail)
-                .font_family(FontFamily::Sans)
-                .font_size(10.5)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(label_width.max(0.0)), Some(18.0)),
-        );
-    }
-    let height = if detail.is_empty() { 32.0 } else { 48.0 };
-    let row = Element::row(vec![
-        Element::icon(icon)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(height - 12.0)),
-        Element::column(lines).size(Some(label_width), Some(height - 12.0)),
-        Element::icon(Icon::ChevronRight)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(12.0), Some(height - 12.0)),
-    ])
-    .gap(4.0)
-    .clip_children();
-    Tooltip::new(
-        interactive_surface(Element::clickable(id, row))
-            .padding(6.0)
-            .size(Some(width), Some(height)),
-        id,
-        help,
-        theme::component_palette(),
-    )
-    .render()
-}
-
 fn source_row(
     action: Option<String>,
     preview: Element,
@@ -423,56 +320,6 @@ fn source_row(
         )
         .render(),
         None => row("").enabled(false).render(),
-    }
-}
-
-#[cfg(test)]
-fn legacy_source_row(
-    action: Option<String>,
-    preview: Element,
-    title: &str,
-    detail: &str,
-    help: &str,
-    width: f32,
-) -> Element {
-    let label_width = (width - 56.0).max(0.0);
-    let mut columns = vec![
-        preview.size(Some(30.0), Some(30.0)),
-        Element::column(vec![
-            Text::new(title, theme::component_palette())
-                .truncate()
-                .render()
-                .size(Some(label_width.max(0.0)), Some(18.0)),
-            Element::truncated_text(detail)
-                .font_family(FontFamily::Sans)
-                .font_size(10.5)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(label_width.max(0.0)), Some(18.0)),
-        ])
-        .size(Some(label_width), Some(36.0)),
-    ];
-    if action.is_some() {
-        columns.push(
-            Element::icon(Icon::ChevronRight)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(10.0), Some(36.0)),
-        );
-    }
-    let content = Element::row(columns).gap(5.0).clip_children();
-    if let Some(action) = action {
-        Tooltip::new(
-            interactive_surface(Element::clickable(&action, content))
-                .padding(5.0)
-                .size(Some(width), Some(48.0)),
-            action,
-            help,
-            theme::component_palette(),
-        )
-        .render()
-    } else {
-        Element::panel(content)
-            .padding(5.0)
-            .size(Some(width), Some(48.0))
     }
 }
 
@@ -1153,58 +1000,6 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{DrawCommand, HitKind, Size, UiTree};
-
-    #[test]
-    fn card_rows_match_their_legacy_bodies() {
-        use crate::converge_pages_rows_parity_tests::assert_same_at;
-        // As wide as asked, then in a row and in a column 14 px narrower.
-        let same = |name: &str, legacy: Element, current: Element, width: f32| {
-            assert_same_at(name, &[400.0], legacy.clone(), current.clone());
-            let row = |element| Element::row(vec![element]).size(Some(width - 14.0), None);
-            assert_same_at(name, &[400.0], row(legacy.clone()), row(current.clone()));
-            let column = |element| Element::column(vec![element]).size(Some(width - 14.0), None);
-            assert_same_at(name, &[400.0], column(legacy), column(current));
-        };
-        let long = "crates/limn/src/un/camino/bastante/largo/para/cortarse/list_row.rs";
-        for width in [150.0, 236.0, 320.0] {
-            for enabled in [true, false] {
-                for (label, detail) in [("openADE", "/home/dev/openADE"), (long, long)] {
-                    same(
-                        "selector",
-                        legacy_selector_trigger("pick", Icon::Folder, label, detail, width, enabled),
-                        selector_trigger("pick", Icon::Folder, label, detail, width, enabled),
-                        width,
-                    );
-                }
-            }
-            let trailing = [
-                || None,
-                || Some(counts(25813, 847)),
-                || Some(theme::text_px("En curso", 10.5, theme::FOREGROUND_SUBTLE)),
-            ];
-            for trailing in trailing {
-                for (title, detail) in [("Cambios del chat", "68 archivos"), ("Terminal", ""), (long, long)] {
-                    same(
-                        "action",
-                        legacy_action_row("open", Icon::Code, title, detail, trailing(), "Ayuda", width),
-                        action_row("open", Icon::Code, title, detail, trailing(), "Ayuda", width),
-                        width,
-                    );
-                }
-            }
-            for action in [None, Some("source".to_owned())] {
-                for (title, detail) in [("main.rs", "src/main.rs"), (long, long)] {
-                    let preview = || Element::icon(Icon::Globe).foreground(theme::FOREGROUND_SUBTLE);
-                    same(
-                        "source",
-                        legacy_source_row(action.clone(), preview(), title, detail, "Ayuda", width),
-                        source_row(action.clone(), preview(), title, detail, "Ayuda", width),
-                        width,
-                    );
-                }
-            }
-        }
-    }
 
     #[test]
     fn compact_environment_keeps_primary_actions_in_one_short_card() {

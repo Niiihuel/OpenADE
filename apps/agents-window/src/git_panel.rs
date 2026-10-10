@@ -733,44 +733,6 @@ mod tests {
     use super::*;
     use openide_ui::{DrawCommand, Point, Size, UiAction, UiEvent, UiTree};
 
-    fn legacy_section_row(title: &str, count: usize, width: f32) -> Element {
-            Element::row(vec![
-                Element::truncated_text(title)
-                    .font_family(FontFamily::Sans)
-                    .font_size(11.0)
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .flex(1.0),
-                UiText::new(count.to_string(), theme::component_palette())
-                    .role(TextRole::Micro)
-                    .muted()
-                    .mono()
-                    .render()
-                    .centered_y()
-                    .size(None, Some(CHANGE_ROW_HEIGHT - 8.0)),
-            ])
-            .gap(6.0)
-            .padding(4.0)
-            .size(Some(width), Some(CHANGE_ROW_HEIGHT))
-    }
-
-    #[test]
-    fn section_rows_match_their_legacy_body() {
-        for title in ["Sin preparar", "Una sección de cambios con un nombre demasiado largo"] {
-            for width in [150.0, 300.0] {
-                let row = ChangeRow::Section {
-                    title: title.into(),
-                    count: 128,
-                };
-                crate::converge_pages_rows_parity_tests::assert_same_at(
-                    "git section row",
-                    &[160.0, 420.0],
-                    legacy_section_row(title, 128, width),
-                    change_row(&row, width, false, theme::SIDEBAR),
-                );
-            }
-        }
-    }
-
     fn text_detail() -> ReviewDetailView {
         ReviewDetailView {
             path: "src/main.rs".into(),

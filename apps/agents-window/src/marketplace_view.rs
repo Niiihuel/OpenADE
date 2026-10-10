@@ -7,7 +7,7 @@
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, CardGrid, Chip, Component,
     ControlSize, DropdownMenu, DropdownMenuItem, Element, Icon, IconButton, Modal, Notice,
-    PageColumn, PageHeader, ScrollArea, SearchField, SectionHeader, Separator, Skeleton, Switch,
+    PageColumn, PageHeader, SearchField, SectionHeader, Separator, Skeleton, Switch,
     Tab, Tabs, Text, TextField, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
@@ -1328,59 +1328,6 @@ pub(crate) fn ide_item_detail(
 }
 
 
-#[cfg(test)]
-fn legacy_ide_item_detail(
-    state: &MarketplaceViewState,
-    item_id: &str,
-    available_width: f32,
-) -> Element {
-    let Some(item) = state.find_item(item_id) else {
-        return marketplace_page(state, available_width);
-    };
-    let width = (available_width - 24.0).max(0.0).min(760.0);
-    let scope = Tabs::new(
-        vec![
-            Tab::new("marketplace_scope_user", "Usuario", 72.0)
-                .active(state.install_scope == InstallScope::User),
-            Tab::new("marketplace_scope_workspace", "Proyecto", 78.0)
-                .active(state.install_scope == InstallScope::Workspace),
-        ],
-        theme::segmented_palette(),
-    )
-    .id("marketplace_scope")
-    .size(ControlSize::Compact)
-    .render();
-    let body = Element::column(vec![
-        Button::new(
-            "ide_extensions_catalog",
-            "Todos los complementos",
-            theme::component_palette(),
-        )
-        .icon(Icon::ArrowLeft)
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Compact)
-        .render(),
-        Text::new("Skill para el agente nativo", theme::component_palette())
-            .muted()
-            .render(),
-        Element::row(vec![
-            Text::new("Instalar en", theme::component_palette())
-                .role(TextRole::Small)
-                .muted()
-                .render(),
-            scope,
-        ])
-        .gap(8.0),
-        item_card_content(&item, width, state.busy, true, Some(state)),
-        detail_body(state, &item, false),
-    ])
-    .gap(12.0)
-    .size(Some(width), None);
-    ScrollArea::new("ide_extension_detail", body.centered_x().padding(12.0))
-        .render()
-        .flex(1.0)
-}
-
 pub fn marketplace_page(state: &MarketplaceViewState, available_width: f32) -> Element {
     marketplace_page_with_navigation(state, available_width, None)
 }
@@ -1805,21 +1752,6 @@ mod tests {
                 diagnostics: Vec::new(),
             },
             ..Default::default()
-        }
-    }
-
-    #[test]
-    fn the_item_detail_matches_its_legacy_body() {
-        let state = sample_state();
-        for width in [240.0, 360.0, 900.0] {
-            for id in ["source-1:git-review", "missing"] {
-                crate::converge_pages_rows_parity_tests::assert_same_at(
-                    "extension detail",
-                    &[width],
-                    legacy_ide_item_detail(&state, id, width),
-                    ide_item_detail(&state, id, width),
-                );
-            }
         }
     }
 

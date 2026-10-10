@@ -813,40 +813,6 @@ pub(super) fn build(state: &ViewState, width: f32, height: f32) -> Element {
 mod tests {
     use super::*;
     use crate::ide_workspace::WindowMode;
-
-    #[test]
-    fn the_agent_hint_matches_its_legacy_body() {
-        let legacy = {
-        Element::column(vec![
-        Element::icon(Icon::Chat)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(24.0), Some(24.0)),
-        UiText::new("Tu agente, junto al código", theme::component_palette())
-            .role(TextRole::Body)
-            .render(),
-        UiText::new(
-            "Explorá el proyecto, pedí cambios o resolvé una tarea.",
-            theme::component_palette(),
-        )
-        .muted()
-        .render(),
-    ])
-    .gap(10.0)
-    .padding(16.0)
-        };
-        let hint = Notice::new("Tu agente, junto al código", theme::component_palette())
-            .icon(Icon::Chat)
-            .description("Explorá el proyecto, pedí cambios o resolvé una tarea.")
-            .stacked()
-            .sizing(crate::ui_sizing::AGENT_HINT)
-            .render();
-        crate::converge_pages_rows_parity_tests::assert_same_at(
-            "agent hint",
-            &[120.0, 320.0, 900.0],
-            legacy,
-            hint,
-        );
-    }
     use openide_ui::{DrawCommand, Frame, Point, Rect, Size, UiAction, UiEvent, UiTree};
 
     fn state() -> ViewState {
