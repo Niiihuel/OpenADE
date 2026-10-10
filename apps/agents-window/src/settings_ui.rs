@@ -32,7 +32,8 @@ use openide_harness::{CommandIsolation, ExecDecision, HookPhase, LocalTool, Skil
 use openide_ui::{
     ActionRow, Alert, Button, ButtonGroup, ButtonVariant, Color, Component, ControlSize,
     DropdownList, DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd,
-    Modal, PopoverPlacement, RadiusRole, ScrollArea, ScrollbarAppearance, SearchField,
+    Modal, PageColumn, PageHeader, PopoverPlacement, RadiusRole, ScrollArea, ScrollbarAppearance,
+    SearchField,
     SelectorSizing, Separator, Text, TextArea, TextField,
 };
 
@@ -2430,9 +2431,15 @@ pub fn build_settings_page(
     center_width: f32,
     sidebar_visible: bool,
 ) -> Element {
-    let gutter = if center_width < 600.0 { 12.0 } else { 20.0 };
-    let content_width =
-        (center_width - SETTINGS_SCROLL_RAIL_WIDTH - gutter * 2.0).clamp(0.0, 960.0);
+    let column = PageColumn::new(
+        format!("settings_page:{page:?}"),
+        center_width,
+        theme::component_palette(),
+    )
+    .gutter(12.0, 20.0, 600.0)
+    .gap(12.0)
+    .reserve_rail(true);
+    let content_width = column.content_width();
     let compact = content_width < 640.0;
     let cards = match page {
         SettingsPage::General => general_page(state, compact),
@@ -2461,23 +2468,15 @@ pub fn build_settings_page(
         SettingsPage::Browser | SettingsPage::ComputerUse | SettingsPage::ExternalAgents
     )
         .then(|| settings_parts::status_badge(page.status()));
-    body.push(settings_parts::section_header(
-        page.title(),
-        page.description(),
-        status,
-        compact,
-    ));
+    let mut header = PageHeader::new(page.title(), theme::card_palette())
+        .description(page.description())
+        .stacked(compact);
+    if let Some(status) = status {
+        header = header.trailing(status);
+    }
+    body.push(header.render());
     body.extend(cards);
-    let centered = Element::column(body)
-        .gap(12.0)
-        .size(Some(content_width), None)
-        .centered_x()
-        .padding(gutter);
-    ScrollArea::new(format!("settings_page:{page:?}"), centered)
-        .appearance(ScrollbarAppearance::reserved().rail_width(SETTINGS_SCROLL_RAIL_WIDTH))
-        .tint(theme::FOREGROUND_SUBTLE)
-        .render()
-        .flex(1.0)
+    column.children(body).render()
 }
 
 #[cfg(test)]

@@ -5,9 +5,9 @@
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Color, Component, ControlSize, DateTimePicker,
-    Element, Empty, FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Separator, Step,
-    Stepper, Switch, Tab, Tabs, TextArea, TextField, TimePicker, Tooltip, TooltipPlacement,
-    TooltipSpec,
+    CardGrid, Element, Empty, FontFamily, Icon, IconButton, Modal, PageColumn, SearchField,
+    Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea, TextField, TextRole, TimePicker,
+    Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -565,7 +565,9 @@ fn muted(value: impl Into<String>) -> Element {
 }
 
 fn section_label(value: &str) -> Element {
-    text(value, 13.0, theme::FOREGROUND)
+    Text::new(value, theme::component_palette())
+        .role(TextRole::Label)
+        .render()
 }
 
 fn form_label(value: &str) -> Element {
@@ -734,55 +736,32 @@ fn template_card(template: &AutomationTemplate, width: f32) -> Element {
     .size(Some(width), Some(94.0))
 }
 
-fn cards_grid(items: Vec<Element>, content_width: f32, gap: f32) -> Element {
-    if content_width < 690.0 {
-        Element::column(items).gap(gap)
-    } else {
-        let mut rows = Vec::new();
-        let mut items = items.into_iter();
-        while let Some(first) = items.next() {
-            let second = items.next().unwrap_or_else(Element::spacer);
-            rows.push(Element::row(vec![first, second]).gap(gap));
-        }
-        Element::column(rows).gap(gap)
-    }
-}
-
-fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
-    let compact = content_width < 690.0;
-    let card_width = if compact {
-        content_width
-    } else {
-        (content_width - 8.0) / 2.0
-    };
+fn list_heading(empty: bool, content_width: f32) -> Element {
     let heading = Element::column(vec![
         text("Automatizaciones", 22.0, theme::FOREGROUND),
         muted("Tareas programadas para este proyecto"),
     ])
     .gap(2.0);
-    let heading = if state.items.is_empty() {
+    let new = || {
+        Button::new("automation_new", "Nueva tarea", theme::component_palette())
+            .icon(Icon::Add)
+            .size(ControlSize::Regular)
+            .render()
+    };
+    if empty {
         heading
     } else if content_width < 440.0 {
-        Element::column(vec![
-            heading,
-            Button::new("automation_new", "Nueva tarea", theme::component_palette())
-                .icon(Icon::Add)
-                .size(ControlSize::Regular)
-                .render(),
-        ])
-        .gap(8.0)
+        Element::column(vec![heading, new()]).gap(8.0)
     } else {
-        Element::row(vec![
-            heading,
-            Element::spacer().flex(1.0),
-            Button::new("automation_new", "Nueva tarea", theme::component_palette())
-                .icon(Icon::Add)
-                .size(ControlSize::Regular)
-                .render(),
-        ])
-        .gap(8.0)
-    };
-    let mut body = vec![heading];
+        // The action stays on the title's line; limn's PageHeader centers it.
+        Element::row(vec![heading, Element::spacer().flex(1.0), new()]).gap(8.0)
+    }
+}
+
+fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
+    let grid = || CardGrid::new(content_width, 690.0);
+    let card_width = grid().item_width();
+    let mut body = vec![list_heading(state.items.is_empty(), content_width)];
     let visible = state.visible_items();
     if state.items.is_empty() {
         body.push(
@@ -877,20 +856,20 @@ fn list_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
                     )
                 })
                 .collect();
-            body.push(cards_grid(cards, content_width, 8.0));
+            body.push(grid().items(cards).render());
         }
     }
     body.extend([
         Separator::horizontal(theme::component_palette()).render(),
         section_label("Plantillas de tareas programadas"),
-        cards_grid(
-            TEMPLATES
-                .iter()
-                .map(|template| template_card(template, card_width))
-                .collect(),
-            content_width,
-            8.0,
-        ),
+        grid()
+            .items(
+                TEMPLATES
+                    .iter()
+                    .map(|template| template_card(template, card_width))
+                    .collect(),
+            )
+            .render(),
     ]);
     body
 }
@@ -1393,8 +1372,9 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
 /// Responsive page body for the center dock. `width` is its available width
 /// after the shared workspace border, not the entire window width.
 pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
-    let gutter = if width < 640.0 { 14.0 } else { 28.0 };
-    let content_width = (width - 2.0 * gutter).clamp(240.0, 960.0);
+    let page =
+        PageColumn::new("automation_page", width, theme::component_palette()).min_width(240.0);
+    let content_width = page.content_width();
     let mut body = match state.screen {
         AutomationScreen::List => list_page(state, content_width),
         AutomationScreen::Edit => list_page(state, content_width),
@@ -1428,14 +1408,7 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
             );
         }
     }
-    let content = Element::column(body)
-        .gap(10.0)
-        .size(Some(content_width), None);
-    let centered = content.centered_x().padding(gutter);
-    let base = ScrollArea::new("automation_page", centered)
-        .tint(theme::FOREGROUND_SUBTLE)
-        .render()
-        .flex(1.0);
+    let base = page.children(body).render();
     if state.screen == AutomationScreen::Edit {
         let width = (width - 24.0).clamp(240.0, 560.0);
         let initial_focus = match state.editor_step {
@@ -1497,6 +1470,38 @@ mod tests {
             run_count: 0,
             created_at: 1,
             updated_at: 1,
+        }
+    }
+
+    #[test]
+    #[ignore = "export the Automations page for manual visual review"]
+    fn export_automations_visual_review() {
+        let output = std::path::Path::new("/tmp/openade-automations-review");
+        std::fs::create_dir_all(&output).unwrap();
+        let mut state = state();
+        state.items = vec![
+            sample(),
+            Automation {
+                id: "two".into(),
+                title: "Resumen semanal".into(),
+                enabled: false,
+                ..sample()
+            },
+            Automation {
+                id: "three".into(),
+                title: "Inspección de riesgos".into(),
+                ..sample()
+            },
+        ];
+        for width in [360.0, 640.0, 1200.0] {
+            let mut tree = UiTree::new(
+                Element::panel(build_automations(&state, width)).background(theme::BACKGROUND),
+            );
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 760.0));
+            let path = output.join(format!("automations-{width:.0}.svg"));
+            crate::settings_ui::visual_qa::write_frame_svg(&frame, &path, width, 760.0).unwrap();
+            eprintln!("{}", path.display());
         }
     }
 
@@ -1922,6 +1927,77 @@ mod tests {
                 );
             }
         }
+    }
+
+    // The hand-built shells limn's `PageColumn`, `CardGrid` and `Text`
+    // replaced. Delete with the final audit (S18).
+    fn legacy_cards_grid(items: Vec<Element>, content_width: f32, gap: f32) -> Element {
+        if content_width < 690.0 {
+            Element::column(items).gap(gap)
+        } else {
+            let mut rows = Vec::new();
+            let mut items = items.into_iter();
+            while let Some(first) = items.next() {
+                let second = items.next().unwrap_or_else(Element::spacer);
+                rows.push(Element::row(vec![first, second]).gap(gap));
+            }
+            Element::column(rows).gap(gap)
+        }
+    }
+
+    fn legacy_page(body: Vec<Element>, width: f32) -> Element {
+        let gutter = if width < 640.0 { 14.0 } else { 28.0 };
+        let content_width = (width - 2.0 * gutter).clamp(240.0, 960.0);
+        let content = Element::column(body)
+            .gap(10.0)
+            .size(Some(content_width), None);
+        openide_ui::ScrollArea::new("automation_page", content.centered_x().padding(gutter))
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .flex(1.0)
+    }
+
+    #[test]
+    fn limn_shells_paint_what_the_automation_helpers_painted() {
+        let frame = |element: Element, width: f32| {
+            let mut tree = UiTree::new(Element::column(vec![element]));
+            tree.set_reduced_motion(true);
+            tree.layout(Size::new(width, 700.0))
+        };
+        for width in [200.0, 360.0, 639.0, 640.0, 1200.0, 2400.0] {
+            let page = PageColumn::new("automation_page", width, theme::component_palette())
+                .min_width(240.0);
+            let content_width = page.content_width();
+            let grid = || CardGrid::new(content_width, 690.0);
+            let cards = |count: usize| {
+                TEMPLATES
+                    .iter()
+                    .take(count)
+                    .map(|template| template_card(template, grid().item_width()))
+                    .collect::<Vec<_>>()
+            };
+            let body = |current: bool| {
+                let mut body = Vec::new();
+                body.push(list_heading(false, content_width));
+                for count in 1..=3 {
+                    body.push(if current {
+                        grid().items(cards(count)).render()
+                    } else {
+                        legacy_cards_grid(cards(count), content_width, 8.0)
+                    });
+                }
+                body
+            };
+            assert_eq!(
+                frame(page.children(body(true)).render(), width),
+                frame(legacy_page(body(false), width), width),
+                "width={width}"
+            );
+        }
+        assert_eq!(
+            format!("{:?}", section_label("Motor del agente")),
+            format!("{:?}", text("Motor del agente", 13.0, theme::FOREGROUND))
+        );
     }
 
     #[test]

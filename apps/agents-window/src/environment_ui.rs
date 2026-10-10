@@ -5,8 +5,8 @@ use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
     ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    Element, FontFamily, Icon, IconButton, ScrollArea, Separator, SpinnerVariant, Tooltip,
-    TooltipPlacement, TooltipSpec,
+    Element, FontFamily, Icon, IconButton, ScrollArea, SectionHeader, SectionSizing, Separator,
+    SpinnerVariant, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -270,14 +270,13 @@ fn changes_help_summary(changes: &SessionChangesSummaryView) -> String {
 }
 
 fn section_heading(title: &str, detail: Option<String>, width: f32) -> Element {
-    let mut row = vec![text(title, true, 11.0).flex(1.0)];
+    let mut heading = SectionHeader::new(title, theme::component_palette())
+        .width(width)
+        .sizing(SectionSizing::LABEL);
     if let Some(detail) = detail {
-        row.push(text(detail, true, 10.5));
+        heading = heading.detail(detail);
     }
-    Element::row(row)
-        .gap(6.0)
-        .padding(4.0)
-        .size(Some(width), Some(25.0))
+    heading.render()
 }
 
 fn action_row(
@@ -1062,6 +1061,43 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{DrawCommand, HitKind, Size, UiTree};
+
+    // The heading limn's `SectionHeader` replaced. Delete with the final
+    // audit (S18).
+    fn legacy_section_heading(title: &str, detail: Option<String>, width: f32) -> Element {
+        let mut row = vec![text(title, true, 11.0).flex(1.0)];
+        if let Some(detail) = detail {
+            row.push(text(detail, true, 10.5));
+        }
+        Element::row(row)
+            .gap(6.0)
+            .padding(4.0)
+            .size(Some(width), Some(25.0))
+    }
+
+    #[test]
+    fn section_header_paints_what_section_heading_painted() {
+        for width in [150.0, 260.0, 420.0] {
+            for detail in [None, Some("3"), Some("128")] {
+                for title in ["Fuentes", "Archivos consultados", "Control de versiones"] {
+                    let frame = |element: Element| {
+                        let mut tree = UiTree::new(Element::column(vec![
+                            element,
+                            Element::spacer().flex(1.0),
+                        ]));
+                        tree.set_reduced_motion(true);
+                        tree.layout(Size::new(width + 40.0, 300.0))
+                    };
+                    let detail = || detail.map(str::to_owned);
+                    assert_eq!(
+                        frame(section_heading(title, detail(), width)),
+                        frame(legacy_section_heading(title, detail(), width)),
+                        "{title} width={width}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn compact_environment_keeps_primary_actions_in_one_short_card() {

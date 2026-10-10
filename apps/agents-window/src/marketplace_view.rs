@@ -6,9 +6,9 @@
 
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Chip, Color, Component, ControlSize, DropdownMenu,
-    DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, ScrollArea,
-    ScrollbarAppearance, SearchField, Separator, Skeleton, Switch, Tab, Tabs, TextField, Tooltip,
-    TooltipPlacement, TooltipSpec,
+    CardGrid, DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, PageColumn,
+    PageHeader, ScrollArea, SearchField, SectionHeader, Separator, Skeleton, Switch, Tab, Tabs,
+    TextField, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use std::{borrow::Cow, collections::BTreeMap};
@@ -19,12 +19,9 @@ use crate::{
         SkillUpdate, SourceKind,
     },
     theme,
+    ui_sizing::{MARKETPLACE_HEADER, MARKETPLACE_HEADER_NARROW},
 };
 
-// Keep the center-dock measure in sync with Automations.
-const MAX_WIDTH: f32 = 960.0;
-const CARD_GAP: f32 = 8.0;
-const SCROLL_RAIL_WIDTH: f32 = 14.0;
 const CARD_PADDING: f32 = 12.0;
 const INSTALL_WIDTH: f32 = 88.0;
 
@@ -528,10 +525,6 @@ fn clipped(value: impl Into<String>, color: Color, size: f32) -> Element {
         .foreground(color)
 }
 
-fn title(value: &str) -> Element {
-    text(value, theme::FOREGROUND, 15.0)
-}
-
 fn source_label(kind: SourceKind) -> &'static str {
     match kind {
         SourceKind::Local => "Carpeta local",
@@ -553,18 +546,6 @@ fn matches_query(item: &MarketplaceItem, query: &str) -> bool {
         || item.name.to_lowercase().contains(&query)
         || item.description.to_lowercase().contains(&query)
         || item.source_name.to_lowercase().contains(&query)
-}
-
-fn section_heading(label: &str, count: usize) -> Element {
-    Element::row(vec![
-        title(label).centered_y(),
-        Chip::new(count.to_string(), theme::component_palette())
-            .render()
-            .centered_y(),
-        Element::spacer().flex(1.0),
-    ])
-    .gap(8.0)
-    .size(None, Some(28.0))
 }
 
 #[cfg(test)]
@@ -806,24 +787,16 @@ fn item_grid(
     width: f32,
     state: &MarketplaceViewState,
 ) -> Element {
-    let two_columns = items.len() > 1 && width >= 740.0;
-    let card_width = if two_columns {
-        (width - CARD_GAP) / 2.0
-    } else {
-        width
-    };
-    let mut rows = Vec::new();
-    for pair in items.chunks(if two_columns { 2 } else { 1 }) {
-        let mut cards = pair
+    // A lone card keeps the whole row.
+    let grid = CardGrid::new(width, 740.0).columns(items.len().min(2));
+    let card_width = grid.item_width();
+    grid.items(
+        items
             .iter()
             .map(|item| item_card_content(item, card_width, state.busy, false, Some(state)))
-            .collect::<Vec<_>>();
-        if two_columns && cards.len() == 1 {
-            cards.push(Element::spacer().size(Some(card_width), None));
-        }
-        rows.push(Element::row(cards).gap(CARD_GAP));
-    }
-    Element::column(rows).gap(CARD_GAP)
+            .collect(),
+    )
+    .render()
 }
 
 fn source_form_body(state: &MarketplaceViewState) -> Element {
@@ -895,7 +868,9 @@ fn source_form_footer(state: &MarketplaceViewState) -> Element {
 }
 
 fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
-    let mut rows = vec![section_heading("Orígenes", state.snapshot.sources.len())];
+    let mut rows = vec![SectionHeader::new("Orígenes", theme::component_palette())
+        .count(state.snapshot.sources.len())
+        .render()];
     for source in &state.snapshot.sources {
         rows.push(
             Element::row(vec![
@@ -1311,15 +1286,37 @@ pub(crate) fn ide_catalog_page(
     catalog_surface(state, available_width, None, sidebar_controls_visible)
 }
 
+fn page_header(navigation: Option<Element>, width: f32, refresh: Element, add: Element) -> Element {
+    // Beside the host's sidebar control a narrow title gives up two pixels.
+    let sizing = if navigation.is_some() && width < 320.0 {
+        MARKETPLACE_HEADER_NARROW
+    } else {
+        MARKETPLACE_HEADER
+    };
+    let mut header = PageHeader::new("Marketplace", theme::component_palette())
+        .description("Skills para tu agente")
+        .trailing(Element::row(vec![refresh.centered_y(), add.centered_y()]).gap(sizing.row_gap))
+        .truncate(true)
+        .sizing(sizing);
+    if let Some(navigation) = navigation {
+        header = header.leading(navigation);
+    }
+    header.render()
+}
+
 fn catalog_surface(
     state: &MarketplaceViewState,
     available_width: f32,
     navigation: Option<Element>,
     sidebar_controls_visible: bool,
 ) -> Element {
-    let has_navigation = navigation.is_some();
-    let gutter = if available_width < 640.0 { 14.0 } else { 28.0 };
-    let width = (available_width - SCROLL_RAIL_WIDTH - 2.0 * gutter).clamp(0.0, MAX_WIDTH);
+    let page = PageColumn::new(
+        "marketplace_page",
+        available_width,
+        theme::component_palette(),
+    )
+    .reserve_rail(true);
+    let width = page.content_width();
     let compact = width < 600.0;
     let (items, total, page_index) = catalog_page(state);
     let explore = state.active_tab() == MarketplaceTab::Explore;
@@ -1398,29 +1395,7 @@ fn catalog_surface(
     .context_menu_style()
     .width(200.0)
     .render();
-    let mut header_items = Vec::new();
-    if let Some(navigation) = navigation {
-        header_items.push(navigation.centered_y());
-    }
-    header_items.extend([
-        Element::column(vec![
-            clipped(
-                "Marketplace",
-                theme::FOREGROUND,
-                if has_navigation && width < 320.0 {
-                    18.0
-                } else {
-                    20.0
-                },
-            ),
-            clipped("Skills para tu agente", theme::FOREGROUND_SUBTLE, 11.0),
-        ])
-        .gap(2.0)
-        .flex(1.0),
-        refresh.centered_y(),
-        add.centered_y(),
-    ]);
-    let header = Element::row(header_items).gap(6.0).size(None, Some(40.0));
+    let header = page_header(navigation, width, refresh, add);
 
     let tabs = tab_strip(state, false);
     let scope = Tabs::new(
@@ -1516,14 +1491,18 @@ fn catalog_surface(
             sections.push(empty_catalog(state));
         }
     } else {
-        sections.push(section_heading(
-            match state.active_tab() {
-                MarketplaceTab::Recommended => "Recomendadas",
-                MarketplaceTab::Explore => "Resultados",
-                MarketplaceTab::Installed => "Instaladas",
-            },
-            total,
-        ));
+        sections.push(
+            SectionHeader::new(
+                match state.active_tab() {
+                    MarketplaceTab::Recommended => "Recomendadas",
+                    MarketplaceTab::Explore => "Resultados",
+                    MarketplaceTab::Installed => "Instaladas",
+                },
+                theme::component_palette(),
+            )
+            .count(total)
+            .render(),
+        );
         sections.push(pagination_controls(total, page_index, false));
         sections.push(item_grid(&items, width, state));
     }
@@ -1531,13 +1510,7 @@ fn catalog_surface(
         sections.push(Separator::horizontal(theme::component_palette()).render());
         sections.push(source_list(state, width));
     }
-    let content = Element::column(sections).gap(10.0).size(Some(width), None);
-    let centered = content.centered_x().padding(gutter);
-    let page = ScrollArea::new("marketplace_page", centered)
-        .appearance(ScrollbarAppearance::reserved().rail_width(SCROLL_RAIL_WIDTH))
-        .tint(theme::FOREGROUND_SUBTLE)
-        .render()
-        .flex(1.0);
+    let page = page.children(sections).render();
     if let Some(kind) = state.add_source_kind {
         let modal_width = (available_width - 24.0).clamp(240.0, 460.0);
         Modal::new(
@@ -1862,9 +1835,149 @@ mod tests {
         }
     }
 
+    // The hand-built shells limn's `PageHeader`, `SectionHeader` and
+    // `CardGrid` replaced. Delete with the final audit (S18).
+    fn legacy_section_heading(label: &str, count: usize) -> Element {
+        Element::row(vec![
+            text(label, theme::FOREGROUND, 15.0).centered_y(),
+            Chip::new(count.to_string(), theme::component_palette())
+                .render()
+                .centered_y(),
+            Element::spacer().flex(1.0),
+        ])
+        .gap(8.0)
+        .size(None, Some(28.0))
+    }
+
+    fn legacy_page_header(
+        navigation: Option<Element>,
+        width: f32,
+        refresh: Element,
+        add: Element,
+    ) -> Element {
+        let has_navigation = navigation.is_some();
+        let mut header_items = Vec::new();
+        if let Some(navigation) = navigation {
+            header_items.push(navigation.centered_y());
+        }
+        header_items.extend([
+            Element::column(vec![
+                clipped(
+                    "Marketplace",
+                    theme::FOREGROUND,
+                    if has_navigation && width < 320.0 {
+                        18.0
+                    } else {
+                        20.0
+                    },
+                ),
+                clipped("Skills para tu agente", theme::FOREGROUND_SUBTLE, 11.0),
+            ])
+            .gap(2.0)
+            .flex(1.0),
+            refresh.centered_y(),
+            add.centered_y(),
+        ]);
+        Element::row(header_items).gap(6.0).size(None, Some(40.0))
+    }
+
+    fn legacy_item_grid(
+        items: &[Cow<'_, MarketplaceItem>],
+        width: f32,
+        state: &MarketplaceViewState,
+    ) -> Element {
+        let two_columns = items.len() > 1 && width >= 740.0;
+        let card_width = if two_columns {
+            (width - 8.0) / 2.0
+        } else {
+            width
+        };
+        let mut rows = Vec::new();
+        for pair in items.chunks(if two_columns { 2 } else { 1 }) {
+            let mut cards = pair
+                .iter()
+                .map(|item| item_card_content(item, card_width, state.busy, false, Some(state)))
+                .collect::<Vec<_>>();
+            if two_columns && cards.len() == 1 {
+                cards.push(Element::spacer().size(Some(card_width), None));
+            }
+            rows.push(Element::row(cards).gap(8.0));
+        }
+        Element::column(rows).gap(8.0)
+    }
+
+    fn assert_same_frames(name: &str, widths: &[f32], build: impl Fn(f32) -> (Element, Element)) {
+        for &width in widths {
+            let frame = |element: Element| {
+                let mut tree = native_tree(Element::column(vec![
+                    element,
+                    Element::spacer().flex(1.0),
+                ]));
+                tree.layout(Size::new(width, 900.0))
+            };
+            let (legacy, current) = build(width);
+            assert_eq!(frame(current), frame(legacy), "{name} width={width}");
+        }
+    }
+
+    #[test]
+    fn limn_shells_paint_what_the_marketplace_helpers_painted() {
+        for count in [0, 1, 7, 24, 1280] {
+            assert_same_frames("section heading", &[200.0, 640.0], |_| {
+                (
+                    legacy_section_heading("Recomendadas", count),
+                    SectionHeader::new("Recomendadas", theme::component_palette())
+                        .count(count)
+                        .render(),
+                )
+            });
+        }
+        let button = |id: &str| {
+            IconButton::new(id, Icon::Refresh, theme::component_palette())
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Regular)
+                .render()
+        };
+        let add = || {
+            Button::new("add", "Agregar origen", theme::component_palette())
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Regular)
+                .width(136.0)
+                .render()
+        };
+        for navigation in [false, true] {
+            assert_same_frames("page header", &[240.0, 300.0, 360.0, 900.0], |width| {
+                let navigation = || navigation.then(|| button("navigation"));
+                (
+                    legacy_page_header(navigation(), width, button("refresh"), add()),
+                    page_header(navigation(), width, button("refresh"), add()),
+                )
+            });
+        }
+        let mut state = sample_state();
+        let first = state.snapshot.items[0].clone();
+        for count in 1..=5 {
+            state.snapshot.items = (0..count)
+                .map(|index| MarketplaceItem {
+                    id: format!("source-1:skill-{index}"),
+                    name: format!("skill-{index}"),
+                    ..first.clone()
+                })
+                .collect();
+            let items: Vec<_> = state.snapshot.items.iter().map(Cow::Borrowed).collect();
+            assert_same_frames("item grid", &[360.0, 739.0, 740.0, 932.0], |width| {
+                (
+                    legacy_item_grid(&items, width, &state),
+                    item_grid(&items, width, &state),
+                )
+            });
+        }
+    }
+
     #[test]
     fn marketplace_counts_are_round_and_belong_to_their_heading() {
-        let frame = UiTree::new(section_heading("Skills", 1)).layout(Size::new(640.0, 28.0));
+        let heading = SectionHeader::new("Skills", theme::component_palette()).count(1);
+        let frame = UiTree::new(heading.render()).layout(Size::new(640.0, 28.0));
         let circle = frame
             .commands
             .iter()
@@ -2392,12 +2505,12 @@ mod tests {
                 .find(|region| region.id == "marketplace_search")
                 .unwrap();
             assert!(
-                (search.rect.x - gutter - SCROLL_RAIL_WIDTH / 2.0).abs() <= 1.0,
+                (search.rect.x - gutter - 14.0 / 2.0).abs() <= 1.0,
                 "search at {} with viewport {viewport_width}",
                 search.rect.x
             );
             assert!(
-                (search.rect.width - (viewport_width - SCROLL_RAIL_WIDTH - 2.0 * gutter)).abs()
+                (search.rect.width - (viewport_width - 14.0 - 2.0 * gutter)).abs()
                     <= 1.0
             );
         }
@@ -2407,7 +2520,7 @@ mod tests {
             .iter()
             .find(|region| region.id == "marketplace_search")
             .unwrap();
-        assert!((search.rect.width - MAX_WIDTH).abs() <= 1.0);
+        assert!((search.rect.width - 960.0).abs() <= 1.0);
     }
 
     #[test]

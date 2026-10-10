@@ -10,8 +10,8 @@ use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Collapsible, Color, Component, ControlSize, Element,
-    FontFamily, Icon, IconButton as UiIconButton, Marker, MarkerVariant, ScrollArea, Separator,
-    TextArea, ToolActivity, Tooltip, TooltipPlacement,
+    FontFamily, Icon, IconButton as UiIconButton, Marker, MarkerVariant, PageColumn, ScrollArea,
+    Separator, TextArea, ToolActivity, Tooltip, TooltipPlacement,
 };
 
 use crate::{
@@ -1694,14 +1694,15 @@ pub(crate) fn jump_to_bottom_control() -> Element {
 }
 
 fn timeline(state: &ViewState, width: f32) -> Element {
-    let gutter = if width < COMPACT_BREAKPOINT {
-        16.0
-    } else {
-        24.0
-    };
     // Reserve the shared scrollbar rail even before overflow. Content and
     // cached Markdown widths must not jump when the first long turn arrives.
-    let reading_width = (width - 2.0 * gutter - 14.0).clamp(120.0, READING_WIDTH);
+    let page = PageColumn::new("transcript", width, theme::component_palette())
+        .max_width(READING_WIDTH)
+        .min_width(120.0)
+        .gutter(16.0, 24.0, COMPACT_BREAKPOINT)
+        .gap(8.0)
+        .reserve_rail(true);
+    let reading_width = page.content_width();
     let _markdown_frame =
         rich_text::begin_markdown_frame(state.selected_session.as_deref(), reading_width.max(96.0));
     // Keep first content below the scrim at scroll position zero. When the
@@ -1955,13 +1956,8 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         );
     }
     rows.extend(host_activity_markers(state));
-    let content = Element::column(rows)
-        .gap(8.0)
-        .size(Some(reading_width), None);
-    ScrollArea::new("transcript", content.centered_x().padding(gutter))
-        .tint(theme::FOREGROUND_SUBTLE)
+    page.children(rows)
         .render()
-        .flex(1.0)
         .background(theme::BACKGROUND)
         .top_fade(theme::BACKGROUND, HEADER_FADE_HEIGHT)
         .bottom_fade(theme::BACKGROUND, TRANSCRIPT_BOTTOM_FADE_HEIGHT)
@@ -3053,6 +3049,22 @@ pub(crate) fn build_session_body_sized(
     )
 }
 
+/// A decision that replaces the transcript until it is taken: one card in
+/// the reading column.
+fn recovery_page(scroll_id: &str, card: Element, center_width: f32) -> Element {
+    PageColumn::new(scroll_id, center_width, theme::component_palette())
+        .max_width(READING_WIDTH)
+        .gutter(10.0, 24.0, COMPACT_BREAKPOINT)
+        .gap(0.0)
+        .children(vec![
+            card,
+            // Keep the final action above the scroll viewport's bottom edge.
+            Element::spacer().size(None, Some(64.0)),
+        ])
+        .render()
+        .background(theme::BACKGROUND)
+}
+
 fn build_session_surface_layout(
     state: &ViewState,
     center_width: f32,
@@ -3069,44 +3081,18 @@ fn build_session_surface_layout(
     };
     let compact = center_width < COMPACT_BREAKPOINT;
     if let Some(batch) = &state.pending_batch_discard {
-        let card_width =
-            (center_width - if compact { 20.0 } else { 48.0 }).clamp(0.0, READING_WIDTH);
-        let recovery = Element::column(vec![
-            aborted_batch_card(batch, compact)
-                .size(Some(card_width), None)
-                .centered_x(),
-            Element::spacer().size(None, Some(64.0)),
-        ])
-        .padding(if compact { 10.0 } else { 24.0 });
-        return with_header(vec![ScrollArea::new("aborted_batch", recovery)
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .flex(1.0)
-            .background(theme::BACKGROUND)])
-        .flex(1.0);
+        let card = aborted_batch_card(batch, compact);
+        return with_header(vec![recovery_page("aborted_batch", card, center_width)]).flex(1.0);
     }
     if let Some(verification) = &state.pending_tool_verification {
-        let card_width =
-            (center_width - if compact { 20.0 } else { 48.0 }).clamp(0.0, READING_WIDTH);
-        let recovery = Element::column(vec![
-            tool_verification_card(
-                verification,
-                &state.tool_verification_output,
-                state.tool_verification_is_error,
-                compact,
-            )
-            .size(Some(card_width), None)
-            .centered_x(),
-            // Keep the final action above the scroll viewport's bottom edge.
-            Element::spacer().size(None, Some(64.0)),
-        ])
-        .padding(if compact { 10.0 } else { 24.0 });
-        return with_header(vec![ScrollArea::new("tool_verification", recovery)
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .flex(1.0)
-            .background(theme::BACKGROUND)])
-        .flex(1.0);
+        let card = tool_verification_card(
+            verification,
+            &state.tool_verification_output,
+            state.tool_verification_is_error,
+            compact,
+        );
+        return with_header(vec![recovery_page("tool_verification", card, center_width)])
+            .flex(1.0);
     }
     let chat = timeline(state, center_width);
     let chat = if state.show_jump_to_bottom {
@@ -5736,6 +5722,52 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id == "subagent_resume:child-1"));
+    }
+
+    // The recovery scaffold limn's `PageColumn` replaced. Delete with the
+    // final audit (S18).
+    fn legacy_recovery_page(scroll_id: &str, card: Element, center_width: f32) -> Element {
+        let compact = center_width < COMPACT_BREAKPOINT;
+        let card_width =
+            (center_width - if compact { 20.0 } else { 48.0 }).clamp(0.0, READING_WIDTH);
+        let recovery = Element::column(vec![
+            card.size(Some(card_width), None).centered_x(),
+            Element::spacer().size(None, Some(64.0)),
+        ])
+        .padding(if compact { 10.0 } else { 24.0 });
+        ScrollArea::new(scroll_id, recovery)
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .flex(1.0)
+            .background(theme::BACKGROUND)
+    }
+
+    #[test]
+    fn page_column_paints_what_the_recovery_pages_painted() {
+        let batch = AbortedToolBatchView {
+            session_id: "session-1".into(),
+            next_call_id: "call-9".into(),
+            next_tool_name: "write_file".into(),
+            next_arguments: "{\"path\":\"notes.txt\"}".into(),
+            completed_calls: 1,
+            remaining_calls: 2,
+        };
+        for width in [220.0, 469.0, 470.0, 800.0, 1400.0] {
+            // A short viewport makes the page overflow and show its rail.
+            for height in [160.0, 900.0] {
+                let frame = |page: Element| {
+                    let mut tree = UiTree::new(Element::column(vec![page]));
+                    tree.set_reduced_motion(true);
+                    tree.layout(Size::new(width, height))
+                };
+                let card = || aborted_batch_card(&batch, width < COMPACT_BREAKPOINT);
+                assert_eq!(
+                    frame(recovery_page("aborted_batch", card(), width)),
+                    frame(legacy_recovery_page("aborted_batch", card(), width)),
+                    "width={width} height={height}"
+                );
+            }
+        }
     }
 
     #[test]

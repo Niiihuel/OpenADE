@@ -13,7 +13,6 @@ pub use openide_ui::AlertTone as FeedbackTone;
 use crate::{theme, ui_sizing::SETTINGS_ROW};
 
 // Logical pixels shared by Settings pages and their nested resource views.
-pub const TITLE_SIZE: f32 = 18.0;
 pub const LABEL_SIZE: f32 = 12.0;
 pub const DETAIL_SIZE: f32 = 11.0;
 pub const ROW_PADDING: f32 = 10.0;
@@ -98,25 +97,6 @@ pub fn feedback_banner(
         alert = alert.action(action);
     }
     alert.render()
-}
-
-/// Main heading inside a Settings route or nested resource view.
-pub fn section_header(
-    title: impl Into<String>,
-    description: impl Into<String>,
-    action: Option<Element>,
-    compact: bool,
-) -> Element {
-    let copy = Element::column(vec![
-        label(title, theme::FOREGROUND, TITLE_SIZE),
-        label(description, theme::SETTINGS_FOREGROUND_SUBTLE, DETAIL_SIZE),
-    ])
-    .gap(4.0);
-    match (action, compact) {
-        (Some(action), true) => Element::column(vec![copy, action]).gap(8.0),
-        (Some(action), false) => Element::row(vec![copy.flex(1.0), action.centered_y()]).gap(12.0),
-        (None, _) => copy,
-    }
 }
 
 fn row(title: impl Into<String>, description: impl Into<String>) -> ActionRow {
@@ -242,10 +222,64 @@ pub fn loading_state(title: impl Into<String>, description: impl Into<String>) -
 #[cfg(test)]
 mod tests {
     use openide_ui::{
-        DrawCommand, ElementKind, Icon, Point, Size, Switch, UiAction, UiEvent, UiTree,
+        DrawCommand, ElementKind, Icon, PageHeader, Point, Size, Switch, UiAction, UiEvent, UiTree,
     };
 
     use super::*;
+
+    // The heading limn's `PageHeader` replaced. Delete with the final audit (S18).
+    fn legacy_section_header(
+        title: &str,
+        description: &str,
+        action: Option<Element>,
+        compact: bool,
+    ) -> Element {
+        let copy = Element::column(vec![
+            label(title, theme::FOREGROUND, 18.0),
+            label(description, theme::SETTINGS_FOREGROUND_SUBTLE, DETAIL_SIZE),
+        ])
+        .gap(4.0);
+        match (action, compact) {
+            (Some(action), true) => Element::column(vec![copy, action]).gap(8.0),
+            (Some(action), false) => {
+                Element::row(vec![copy.flex(1.0), action.centered_y()]).gap(12.0)
+            }
+            (None, _) => copy,
+        }
+    }
+
+    #[test]
+    fn page_header_paints_what_section_header_painted() {
+        const LONG: &str = "Capacidades instaladas y extensiones ejecutables, con su configuración y disponibilidad por proyecto.";
+        for description in ["Preferencias de la aplicación", LONG] {
+            for badge in [false, true] {
+                for compact in [false, true] {
+                    let action = || badge.then(|| status_badge(CapabilityStatus::Partial));
+                    let mut current = PageHeader::new("Complementos", theme::card_palette())
+                        .description(description)
+                        .stacked(compact);
+                    if let Some(action) = action() {
+                        current = current.trailing(action);
+                    }
+                    let current = current.render();
+                    let legacy =
+                        legacy_section_header("Complementos", description, action(), compact);
+                    assert_eq!(format!("{current:?}"), format!("{legacy:?}"));
+                    for width in [360.0, 900.0] {
+                        let frame = |element: Element| {
+                            let mut tree = UiTree::new(Element::column(vec![
+                                element,
+                                Element::spacer().flex(1.0),
+                            ]));
+                            tree.set_reduced_motion(true);
+                            tree.layout(Size::new(width, 600.0))
+                        };
+                        assert_eq!(frame(current.clone()), frame(legacy.clone()));
+                    }
+                }
+            }
+        }
+    }
 
     fn action_ids(element: &Element, found: &mut Vec<String>) {
         match &element.kind {
@@ -384,12 +418,12 @@ mod tests {
                 CapabilityStatus::Partial,
                 CapabilityStatus::Planned,
             ] {
-                let header = section_header(
-                    "Complementos del agente",
-                    "Capacidades instaladas y extensiones ejecutables, con su configuración y disponibilidad por proyecto.",
-                    Some(status_badge(status)),
-                    compact,
-                ).background(header_color);
+                let header = PageHeader::new("Complementos del agente", theme::card_palette())
+                    .description("Capacidades instaladas y extensiones ejecutables, con su configuración y disponibilidad por proyecto.")
+                    .trailing(status_badge(status))
+                    .stacked(compact)
+                    .render()
+                    .background(header_color);
                 let mut tree = UiTree::new(Element::column(vec![header]));
                 tree.set_sans_metrics(openide_ui::FontMetrics {
                     char_width: 7.0,
