@@ -1366,6 +1366,9 @@ fn session_list_rows(state: &ViewState) -> Vec<SessionListRow> {
     rows
 }
 
+/// Air between consecutive rows of the task list.
+const SESSION_ROW_GAP: f32 = 2.0;
+
 fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
     let rows = Arc::new(session_list_rows(state));
     let context = Arc::new(SessionRowContext::from(state));
@@ -1374,11 +1377,13 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
     // the menu actions on project and session rows.
     let item_width = (width - 8.0).max(0.0);
     let row_width = (width - 26.0).max(0.0);
+    // Each row keeps its own height at the top of a pitch 2 px taller, so a
+    // selected row and a hovered neighbour do not read as one block.
     ScrollArea::uniform_list(
         "sessions_list",
         count,
-        SIDEBAR_ROW_HEIGHT,
-        move |index| match &rows[index] {
+        SIDEBAR_ROW_HEIGHT + SESSION_ROW_GAP,
+        move |index| Element::column(vec![match &rows[index] {
             SessionListRow::Section(title) => {
                 Element::panel(UiText::eyebrow(*title, theme::component_palette()).render())
                     .padding(6.0)
@@ -1415,7 +1420,7 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
             SessionListRow::Session(session) => {
                 session_row_with_context(&context, session, item_width)
             }
-        },
+        }]),
     )
     .tint(theme::FOREGROUND_SUBTLE)
     .render()
@@ -8023,6 +8028,33 @@ pub(crate) mod tests {
             .any(|region| region.id == "session:task-999"));
         assert!(tree.scroll_offset("sessions_list") > 900.0 * SIDEBAR_ROW_HEIGHT);
         assert!(visible_count(&last) < 20);
+    }
+
+    #[test]
+    fn task_list_rows_keep_their_height_with_a_gap_between_them() {
+        let mut state = empty_state();
+        state.sessions = ["a", "b"]
+            .into_iter()
+            .map(|id| SessionView {
+                id: id.into(),
+                title: format!("Tarea {id}"),
+                project: "C:/work/alpha".into(),
+                backend: "native".into(),
+                pinned: false,
+                archived: false,
+                unread: false,
+                native_automation: None,
+            })
+            .collect();
+        let frame = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 620.0));
+        let rect = |id: &str| frame.regions.iter().find(|region| region.id == id).unwrap().rect;
+        // Project heading, then its two tasks.
+        let rows = [rect("session_project_toggle:C:/work/alpha"), rect("session:a"), rect("session:b")];
+        for pair in rows.windows(2) {
+            assert_eq!(pair[0].height, SIDEBAR_ROW_HEIGHT);
+            assert_eq!(pair[1].y, pair[0].y + SIDEBAR_ROW_HEIGHT + SESSION_ROW_GAP);
+        }
+        assert_eq!(rows[2].height, SIDEBAR_ROW_HEIGHT);
     }
 
     #[test]
