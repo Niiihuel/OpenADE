@@ -654,18 +654,16 @@ fn item_card_content(
             theme::component_palette(),
         )
         .render();
-        let uninstall = theme::interactive_surface(
-            IconButton::new(
-                format!("marketplace_uninstall:{}", item.id),
-                Icon::Trash,
-                theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE),
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Compact)
-            .tooltip("Desinstalar skill")
-            .enabled(!busy)
-            .render(),
-        );
+        let uninstall = IconButton::new(
+            format!("marketplace_uninstall:{}", item.id),
+            Icon::Trash,
+            theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .enabled(!busy)
+        .tooltip_with(TooltipSpec::new("Desinstalar skill").placement(TooltipPlacement::Above))
+        .render();
         let activation = Element::row(vec![
             text(
                 if item.enabled { "Activa" } else { "Inactiva" },
@@ -916,18 +914,16 @@ fn source_list(state: &MarketplaceViewState, width: f32) -> Element {
                 ])
                 .gap(3.0)
                 .flex(1.0),
-                theme::interactive_surface(
-                    IconButton::new(
-                        format!("marketplace_remove_source:{}", source.id),
-                        Icon::Trash,
-                        theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE),
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .tooltip("Quitar origen")
-                    .enabled(!state.busy)
-                    .render(),
+                IconButton::new(
+                    format!("marketplace_remove_source:{}", source.id),
+                    Icon::Trash,
+                    theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE),
                 )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .enabled(!state.busy)
+                .tooltip_with(TooltipSpec::new("Quitar origen").placement(TooltipPlacement::Above))
+                .render()
                 .centered_y(),
             ])
             .gap(10.0)

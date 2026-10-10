@@ -684,6 +684,59 @@ fn remaining_inline_icon_buttons_match_their_hand_built_forms() {
                 .render(),
         );
     }
+    // marketplace_view's uninstall and remove-source, idle and busy.
+    let panel = theme::action_palette(theme::PANEL, theme::FOREGROUND_SUBTLE);
+    for enabled in [true, false] {
+        assert_same(
+            &format!("marketplace uninstall enabled={enabled}"),
+            theme::interactive_surface(
+                IconButton::new("marketplace_uninstall", Icon::Trash, panel)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Compact)
+                    .tooltip("Desinstalar skill")
+                    .enabled(enabled)
+                    .render(),
+            ),
+            IconButton::new("marketplace_uninstall", Icon::Trash, panel)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .enabled(enabled)
+                .tooltip_with(
+                    TooltipSpec::new("Desinstalar skill").placement(TooltipPlacement::Above),
+                )
+                .render(),
+        );
+    }
+    // document_preview_ui's zoom-out: the old text "−" control with the icon
+    // in its place, so only the glyph's shape changed.
+    assert_same(
+        "preview zoom out",
+        Tooltip::new(
+            theme::interactive_surface(Element::clickable(
+                "zoom_out",
+                Element::icon(Icon::Minus)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .center_content(),
+            ))
+            // A Ghost button always emits its fill, here fully transparent.
+            .background(Color::TRANSPARENT)
+            .size(Some(24.0), Some(24.0)),
+            "zoom_out",
+            "Alejar",
+            component(),
+        )
+        .placement(TooltipPlacement::Below)
+        .render(),
+        IconButton::new(
+            "zoom_out",
+            Icon::Minus,
+            theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(below("Alejar").palette(component()))
+        .render(),
+    );
     // The sidebar's settings button and the account usage toggle.
     let quiet = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE);
     assert_same(

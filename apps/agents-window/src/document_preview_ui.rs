@@ -6,8 +6,8 @@ use crate::{
 };
 use openide_preview::{Document, PreviewKind};
 use openide_ui::{
-    ActiveHover, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton,
-    ScrollArea, Separator, TooltipPlacement, TooltipSpec,
+    ActiveHover, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon,
+    IconButton, ScrollArea, Separator, TooltipPlacement, TooltipSpec,
 };
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -100,11 +100,16 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
             IconButton::new(
                 format!("{}:zoom_out", view.chrome_action_prefix()),
                 Icon::Minus,
-                theme::component_palette(),
+                // The text "−" this replaced was drawn in the label ink.
+                theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE),
             )
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Dense)
-            .tooltip_with(TooltipSpec::new("Alejar").placement(TooltipPlacement::Below))
+            .tooltip_with(
+                TooltipSpec::new("Alejar")
+                    .placement(TooltipPlacement::Below)
+                    .palette(theme::component_palette()),
+            )
             .render(),
         );
         actions.push(
