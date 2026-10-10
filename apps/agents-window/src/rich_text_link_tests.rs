@@ -93,6 +93,21 @@ fn bounded_composer_and_markdown_never_open_a_truncated_host() {
 }
 
 #[test]
+fn composer_offers_no_chip_for_an_address_too_long_once_encoded() {
+    // 400 two-byte letters fit the 2,048-byte limit as typed and pass it percent-encoded.
+    let source = format!("https://example.test/{}", "ñ".repeat(400));
+    let written = Markdown::web_links(&source);
+    assert_eq!(written.len(), 1);
+    assert!(Markdown::web_link(&written[0].1).is_none());
+    let (highlights, chips) = composer_links(&source, 360.0);
+    assert!(highlights.is_empty());
+    assert!(chips.is_none());
+    let (highlights, chips) = composer_links("https://example.test/ñ", 360.0);
+    assert_eq!(highlights.len(), 1);
+    assert!(chips.is_some());
+}
+
+#[test]
 fn repeated_cached_links_receive_distinct_message_and_block_focus_targets() {
     let source = "[repo](https://github.com/a/b)\n\n[repo](https://github.com/a/b)";
     let first = scope_web_links(render_markdown_at_width(source, 640.0), "session-a:item-1");

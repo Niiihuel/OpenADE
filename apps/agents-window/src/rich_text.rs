@@ -100,7 +100,12 @@ pub(crate) fn scope_web_links(mut element: Element, scope: &str) -> Element {
 /// Compact link affordances are separate from the editor's immutable source
 /// geometry: the URL stays editable and paint-only color adds no glyph width.
 pub(crate) fn composer_links(source: &str, width: f32) -> (Vec<TextHighlight>, Option<Element>) {
-    let links = Markdown::web_links(source);
+    // limn bounds the address as written; a chip must also open, so the
+    // normalized (percent-encoded) form has to pass the same limit.
+    let links = Markdown::web_links(source)
+        .into_iter()
+        .filter(|(_, url)| Markdown::web_link(url).is_some())
+        .collect::<Vec<_>>();
     let highlights = links
         .iter()
         .map(|(range, _)| TextHighlight {
