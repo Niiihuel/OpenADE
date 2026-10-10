@@ -68,7 +68,8 @@ fn open_row(item: &Notification) -> Element {
         theme::component_palette(),
     )
     .title_ink(ink)
-    .subtitle(&item.detail)
+    // An empty detail keeps its line, so every row of the list is as tall.
+    .subtitle(if item.detail.is_empty() { " " } else { &item.detail })
     .sizing(ui_sizing::NOTIFICATION);
     if item.count > 1 {
         row = row.meta_element(text(format!("×{}", item.count), 11.0, theme::FOREGROUND));
@@ -315,6 +316,37 @@ mod tests {
                 legacy_open_row(&item),
                 open_row(&item),
             );
+        }
+    }
+
+    #[test]
+    fn an_empty_detail_keeps_its_line() {
+        let item = Notification {
+            id: 7,
+            severity: Severity::Info,
+            title: "Turno completado".into(),
+            detail: String::new(),
+            target: None,
+            count: 1,
+            read: false,
+            at: SystemTime::now(),
+        };
+        for width in [240.0, 900.0] {
+            let frame = |row: Element| UiTree::new(row).layout(Size::new(width, 200.0));
+            let (legacy, current) = (frame(legacy_open_row(&item)), frame(open_row(&item)));
+            assert_eq!(current.regions, legacy.regions);
+            // The blank line is a space where it was an empty string: neither paints.
+            let painted = |frame: &openide_ui::Frame| {
+                frame
+                    .commands
+                    .iter()
+                    .filter(|command| {
+                        !matches!(command, DrawCommand::Text { text, .. } if text.trim().is_empty())
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(painted(&current), painted(&legacy));
         }
     }
 
