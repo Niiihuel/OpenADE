@@ -461,7 +461,6 @@ pub struct ViewState {
     /// Unknown usage or an unverified model limit leaves the badge hidden.
     pub composer_context_percent: Option<u8>,
     pub composer_context_open: bool,
-    pub composer_context_details_open: bool,
     /// A failed submission shown by the composer even before a turn starts.
     pub composer_error: Option<String>,
     pub turn_mode: TurnMode,
@@ -3806,7 +3805,6 @@ pub(crate) mod tests {
             composer_effort_hovered: false,
             composer_context_percent: None,
             composer_context_open: false,
-            composer_context_details_open: false,
             composer_error: None,
             turn_mode: TurnMode::Build,
             sessions: Vec::new(),

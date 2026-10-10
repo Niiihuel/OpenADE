@@ -90,37 +90,26 @@ fn open_rendered_error_details(app: &mut AgentsWindow, automation: bool) -> Stri
     };
     let size = Size::new(620.0, 760.0);
     let ctx = egui::Context::default();
-    for id in ["composer_context_toggle", "composer_context_details_toggle"] {
-        let mut tree = error_context_tree(app, automation);
-        let frame = tree.layout(size);
-        assert!(
-            tree.focus(id),
-            "error context control {id} must be reachable"
-        );
-        if id == "composer_context_details_toggle" {
-            let summary = text(&frame);
-            assert!(summary.contains("Consulta no disponible"), "{summary}");
-            assert!(summary.contains("Sin medición"), "{summary}");
-            assert!(!summary.contains("Aún no hay una respuesta medida"));
-            assert!(frame.commands.iter().all(|command| !matches!(
-                command,
-                DrawCommand::ProgressRing {
-                    fraction: Some(_),
-                    ..
-                }
-            )));
-        }
-        let actions = tree.handle_event(UiEvent::Key {
-            key: Key::Enter,
-            shift: false,
-            ctrl: false,
-        });
-        assert_eq!(actions, vec![UiAction::Clicked { id: id.into() }]);
-        for action in actions {
-            app.apply_action(action, &ctx);
-        }
+    let mut tree = error_context_tree(app, automation);
+    tree.layout(size);
+    assert!(tree.focus("composer_context_toggle"));
+    for action in tree.handle_event(UiEvent::Key {
+        key: Key::Enter,
+        shift: false,
+        ctrl: false,
+    }) {
+        app.apply_action(action, &ctx);
     }
-    let details = text(&error_context_tree(app, automation).layout(size));
+    let frame = error_context_tree(app, automation).layout(size);
+    let details = text(&frame);
+    assert!(!details.contains("Aún no hay una respuesta medida"));
+    assert!(frame.commands.iter().all(|command| !matches!(
+        command,
+        DrawCommand::ProgressRing {
+            fraction: Some(_),
+            ..
+        }
+    )));
     assert!(details.contains("Consulta no disponible"), "{details}");
     assert!(app.view.native_context.last_usage.is_none());
     assert!(app.view.native_context.conversation_usage.is_none());
@@ -154,6 +143,20 @@ fn native_context_missing_workspace_error_remains_visible_without_measurements()
     );
     assert!(app.view.native_context.workspace.is_none());
     assert!(app.view.native_context.capacity().is_none());
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        app.apply_action(
+            UiAction::Clicked {
+                id: "composer_context_copy_diagnostic".into(),
+            },
+            ui.ctx(),
+        );
+    });
+    output.textures_delta.clear();
+    assert!(output.platform_output.commands.iter().any(|command| matches!(command,
+        egui::OutputCommand::CopyText(text)
+            if text.starts_with("Diagnóstico del contexto\ncustom · error-scope-model\n")
+                && text.contains("Estado: No se pudo verificar el proyecto seleccionado"))));
     // Retaining the failed view while selecting another project must not leak
     // its cause into the next project's summary.
     app.view.workspace = root.path().display().to_string();
@@ -222,7 +225,6 @@ fn native_context_automation_load_error_keeps_recorded_route_and_visible_cause()
     assert!(missing_details.contains("No se pudo verificar el proyecto de la conversación"));
     std::fs::rename(&retained, &workspace).unwrap();
     app.view.composer_context_open = false;
-    app.view.composer_context_details_open = false;
     let journal = store.storage_root().join(format!("{}.jsonl", session.id));
     std::fs::write(&journal, b"invalid committed journal line\n").unwrap();
     let before = std::fs::read(&journal).unwrap();
@@ -272,7 +274,6 @@ fn export_context_visual(app: &mut AgentsWindow, stage: &str) {
     let directory = std::path::PathBuf::from(directory);
     std::fs::create_dir_all(&directory).unwrap();
     let was_open = app.view.composer_context_open;
-    let details_were_open = app.view.composer_context_details_open;
     app.view.composer_context_open = true;
     let mut options = resvg::usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
@@ -291,7 +292,6 @@ fn export_context_visual(app: &mut AgentsWindow, stage: &str) {
             pixmap.save_png(path.with_extension("png")).unwrap();
         };
         let viewport = openide_ui::Size::new(width, 760.0);
-        app.view.composer_context_details_open = false;
         let props = crate::composer_ui::ComposerProps::from_state(
             &app.view,
             width,
@@ -303,35 +303,8 @@ fn export_context_visual(app: &mut AgentsWindow, stage: &str) {
         let mut tree = openide_ui::UiTree::new(crate::composer_ui::build_composer(&props));
         tree.set_reduced_motion(true);
         export(&tree.layout(viewport), "compact");
-        app.view.composer_context_details_open = true;
-        let props = crate::composer_ui::ComposerProps::from_state(
-            &app.view,
-            width,
-            false,
-            None,
-            "Continuar con el harness nativo",
-            None,
-        );
-        tree.set_root(crate::composer_ui::build_composer(&props));
-        let first = tree.layout(viewport);
-        let scroll = first
-            .regions
-            .iter()
-            .find(|region| region.id == "composer_context_details")
-            .expect("actual HTTP state exposes expanded native context details")
-            .rect;
-        export(&first, "expanded-top");
-        tree.handle_event(openide_ui::UiEvent::Scroll {
-            position: openide_ui::Point::new(
-                scroll.x + scroll.width / 2.0,
-                scroll.y + scroll.height / 2.0,
-            ),
-            delta_y: -100_000.0,
-        });
-        export(&tree.layout(viewport), "expanded-bottom");
     }
     app.view.composer_context_open = was_open;
-    app.view.composer_context_details_open = details_were_open;
 }
 
 #[test]

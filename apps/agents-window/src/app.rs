@@ -5917,7 +5917,6 @@ impl AgentsWindow {
             composer_effort_hovered: false,
             composer_context_percent: None,
             composer_context_open: false,
-            composer_context_details_open: false,
             composer_error: None,
             turn_mode: TurnMode::Build,
             sessions: Vec::new(),
@@ -18311,7 +18310,6 @@ impl AgentsWindow {
                 if self.view.selected_backend == "native" {
                     self.refresh_native_context();
                     self.view.composer_context_open = !self.view.composer_context_open;
-                    self.view.composer_context_details_open = false;
                     self.view.composer_model_menu_open = false;
                     self.view.composer_model_list_open = false;
                     self.view.composer_model_query.clear();
@@ -18333,16 +18331,16 @@ impl AgentsWindow {
                     self.start_compact();
                 }
             }
-            UiAction::Clicked { id } if id == "composer_context_details_toggle" => {
+            UiAction::Clicked { id } if id == "composer_context_copy_diagnostic" => {
                 if self.view.selected_backend == "native" && self.view.composer_context_open {
                     self.refresh_native_context();
-                    self.view.composer_context_details_open =
-                        !self.view.composer_context_details_open;
+                    ctx.copy_text(crate::composer_context_ui::diagnostic(
+                        &self.view.native_context,
+                    ));
                 }
             }
             UiAction::Clicked { id } if id == "composer_context_dismiss" => {
                 self.view.composer_context_open = false;
-                self.view.composer_context_details_open = false;
             }
             UiAction::Clicked { id }
                 if matches!(

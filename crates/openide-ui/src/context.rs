@@ -1,6 +1,6 @@
 //! Composable context usage presentation; all measurements belong to the host.
 
-use crate::{Color, Component, ComponentPalette, Element, FontFamily, Separator, Text, TextRole};
+use crate::{Color, Component, ComponentPalette, Element, FontFamily, Text};
 
 /// Ink of a meter that is full, and of one past four fifths, until the host
 /// passes its own with `usage_inks`.
@@ -472,76 +472,6 @@ impl ContextRow {
     pub fn description(mut self, text: impl Into<String>) -> Self {
         self.description = Some(text.into());
         self
-    }
-}
-
-/// Caller-composed sections retain their units and provenance. No tokenizer,
-/// pricing database, or model-name inference lives in this UI component.
-pub struct ContextContent {
-    title: String,
-    description: String,
-    sections: Vec<(String, Vec<ContextRow>)>,
-    footer: Option<String>,
-    palette: ComponentPalette,
-}
-impl ContextContent {
-    pub fn new(
-        title: impl Into<String>,
-        description: impl Into<String>,
-        palette: ComponentPalette,
-    ) -> Self {
-        Self {
-            title: title.into(),
-            description: description.into(),
-            sections: Vec::new(),
-            footer: None,
-            palette,
-        }
-    }
-    pub fn section(mut self, title: impl Into<String>, rows: Vec<ContextRow>) -> Self {
-        self.sections.push((title.into(), rows));
-        self
-    }
-    pub fn footer(mut self, text: impl Into<String>) -> Self {
-        self.footer = Some(text.into());
-        self
-    }
-}
-impl Component for ContextContent {
-    fn render(self) -> Element {
-        let palette = self.palette;
-        let small = |value: String| {
-            Text::new(value, palette)
-                .role(TextRole::Small)
-                .muted()
-                .render()
-        };
-        let mut content = vec![
-            Text::new(self.title, palette).render(),
-            small(self.description),
-        ];
-        for (title, rows) in self.sections {
-            let mut group = vec![
-                Separator::horizontal(palette).render(),
-                Text::new(title, palette).render(),
-            ];
-            for row in rows {
-                let mut parts = vec![Element::row(vec![
-                    Text::new(row.label, palette).muted().render().flex(1.0),
-                    Text::new(row.value, palette).render().flex(1.0),
-                ])
-                .gap(12.0)];
-                if let Some(description) = row.description {
-                    parts.push(small(description));
-                }
-                group.push(Element::column(parts).gap(4.0));
-            }
-            content.push(Element::column(group).gap(6.0));
-        }
-        if let Some(footer) = self.footer {
-            content.push(small(footer));
-        }
-        Element::column(content).gap(10.0).padding(10.0)
     }
 }
 
@@ -1261,47 +1191,5 @@ mod tests {
             .unwrap()
             .rect;
         assert!(footer.y + footer.height + 12.0 < 240.0);
-    }
-
-    #[test]
-    fn context_sections_keep_exact_counts_unknown_units_and_long_sources_at_narrow_widths() {
-        let description =
-            "Proveedor exacto · modelo-exacto · fuente verificada al guardar el evento";
-        let long =
-            "Instrucciones adicionales locales: bytes UTF-8, no tokens del proveedor. ".repeat(8);
-        for width in [240.0, 360.0, 640.0] {
-            let frame = UiTree::new(
-                ContextContent::new(
-                    "Contexto nativo",
-                    description,
-                    ComponentPalette::neutral_dark(),
-                )
-                .section(
-                    "Última respuesta",
-                    vec![
-                        ContextRow::new("Entrada", "12 345 tokens"),
-                        ContextRow::new("Caché", "Sin dato"),
-                    ],
-                )
-                .section(
-                    "Instrucciones",
-                    vec![ContextRow::new("Skills", "4 documentos").description(&long)],
-                )
-                .footer("La caché es parte de la entrada; no se suma de nuevo.")
-                .render(),
-            )
-            .layout(Size::new(width, 1600.0));
-            let blocks = frame.text_layouts();
-            assert!(blocks.iter().any(|block| block.source == description));
-            assert!(blocks.iter().any(|block| block.source == long));
-            assert!(blocks.iter().any(|block| block.source == "Sin dato"));
-            assert!(frame.regions.is_empty());
-            for run in blocks.iter().flat_map(|block| &block.runs) {
-                assert!(
-                    run.rect.x >= 0.0 && run.rect.x + run.rect.width <= width + 0.1,
-                    "{run:?}"
-                );
-            }
-        }
     }
 }

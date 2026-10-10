@@ -185,7 +185,6 @@ mod tests {
             native_context: None,
             context_compaction: Default::default(),
             context_open: false,
-            context_details_open: false,
             project_action: Some("home_workspace_settings"),
             project_branch: Some("main"),
             branch_picker: None,

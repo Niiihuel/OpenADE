@@ -3533,7 +3533,6 @@ mod tests {
             composer_effort_hovered: false,
             composer_context_percent: None,
             composer_context_open: false,
-            composer_context_details_open: false,
             composer_error: None,
             turn_mode: openide_core::TurnMode::Build,
             sessions: vec![],
@@ -4297,7 +4296,7 @@ mod tests {
             state.composer_context_open = true;
             tree.set_root(build_session_surface(&state, width, false, false));
             let summary = tree.layout(viewport);
-            for value in ["15%", "300 / 2.0K tokens"] {
+            for value in ["300 / 2.0K tokens · 15%", "Herramientas", "4 definiciones"] {
                 assert!(
                     visible_text(&summary).contains(value),
                     "missing {value} at {width}"
@@ -4320,50 +4319,11 @@ mod tests {
                     && area.x + area.width <= width
                     && area.y + area.height <= viewport.height
             );
-            click_visible_control(&mut tree, viewport, "composer_context_details_toggle");
-            state.composer_context_details_open = true;
-            tree.set_root(build_session_surface(&state, width, false, false));
-            let details = tree.layout(viewport);
-            assert_eq!(
-                details
-                    .commands
-                    .iter()
-                    .filter(|command| matches!(command,
-                DrawCommand::Text {text,..} if matches!(text.as_str(), "Entrada" | "Salida")))
-                    .count(),
-                2
-            );
-            let text = visible_text(&details)
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
-            for value in [
-                "provider-original",
-                "exact-model-original",
-                "Herramientas",
-                "4 definiciones",
-            ] {
-                assert!(text.contains(value), "missing {value} at {width}: {text}");
-            }
-            assert!(
-                !text.contains("settings-provider-later") && !text.contains("settings-model-later")
-            );
-            let area = details
-                .regions
-                .iter()
-                .find(|region| region.id == "composer_context_details")
-                .unwrap()
-                .rect;
-            assert!(area.width <= 620.0 && area.height <= 428.0);
-            assert!(
-                area.x >= 0.0
-                    && area.y >= 0.0
-                    && area.x + area.width <= width
-                    && area.y + area.height <= viewport.height
-            );
-            click_visible_control(&mut tree, viewport, "composer_context_details_toggle");
-            state.composer_context_details_open = false;
-            tree.set_root(build_session_surface(&state, width, false, false));
+            let copied = crate::composer_context_ui::diagnostic(&state.native_context);
+            assert!(copied.contains(
+                "Proveedor e ID de modelo: provider-original · exact-model-original — La ruta"
+            ));
+            assert!(copied.contains("Herramientas: 4 definiciones — Catálogo original"));
             click_visible_control(&mut tree, viewport, "composer_context_dismiss");
             state.composer_context_open = false;
             tree.set_root(build_session_surface(&state, width, false, false));
@@ -4392,7 +4352,10 @@ mod tests {
                 let frame = UiTree::new(build_session_surface(&stale, width, false, false))
                     .layout(viewport);
                 let text = visible_text(&frame);
-                assert!(text.contains("Sin medición"), "{changed}: {text}");
+                assert!(
+                    text.contains("Aún no hay una respuesta medida"),
+                    "{changed}: {text}"
+                );
                 assert!(!text.contains("15%") && !text.contains("300 / 2.0K tokens"));
             }
         }

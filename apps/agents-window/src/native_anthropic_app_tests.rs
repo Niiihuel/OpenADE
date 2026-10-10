@@ -708,7 +708,6 @@ fn messages_components_present_real_factory_journal_and_save_exact_policy_at_bot
     app.view.selected_session = Some(session.id.clone());
     app.view.composer_context_percent = Some(90);
     app.view.composer_context_open = true;
-    app.view.composer_context_details_open = false;
     let ctx = egui::Context::default();
     for width in [360.0, 900.0] {
         let props = crate::composer_ui::ComposerProps::from_state(

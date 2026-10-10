@@ -1,4 +1,4 @@
-//! Context occupancy first; provenance and token subcategories are opt-in.
+//! Context occupancy and its categories; the full provenance is copied as text.
 //! Compaction keeps the existing host authority, persistence and recovery guards.
 
 use crate::{
@@ -6,8 +6,8 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    Button, ButtonGroup, ButtonVariant, Color, Component, ComponentPalette, ContextContent,
-    ContextMeter, ContextRow, ControlSize, Element, Icon, IconButton, Popover, PopoverPanel,
+    Button, ButtonGroup, ButtonVariant, Color, Component, ComponentPalette, ContextMeter,
+    ControlSize, Element, Icon, IconButton, Popover, PopoverPanel,
     PopoverPlacement, Progress, ScrollArea, Text, TextRole, Tooltip, TooltipPlacement,
     TooltipSpec,
 };
@@ -128,6 +128,36 @@ fn progress(fraction: Option<f32>) -> Element {
     .render()
 }
 
+/// Plain text of everything the journal projection recorded, for a bug report.
+pub(crate) fn diagnostic(usage: &crate::native_context_ui::NativeContextUiState) -> String {
+    let mut text = format!(
+        "Diagnóstico del contexto\n{} · {}\nEstado: {}\n",
+        usage.provider,
+        usage.model,
+        usage.error.as_deref().unwrap_or(usage.measurement_label())
+    );
+    let breakdown = usage
+        .breakdown
+        .iter()
+        .map(|category| (&category.label, &category.value, &category.detail));
+    let mut section = |title: &str, rows: &mut dyn Iterator<Item = (&String, &String, &String)>| {
+        text.push_str(&format!("\n{title}\n"));
+        for (label, value, detail) in rows {
+            text.push_str(&format!("{label}: {value} — {detail}\n"));
+        }
+    };
+    if !usage.breakdown.is_empty() {
+        section("Instrucciones y herramientas", &mut { breakdown });
+    }
+    for part in &usage.sections {
+        section(
+            &part.title,
+            &mut part.rows.iter().map(|row| (&row.label, &row.value, &row.detail)),
+        );
+    }
+    text
+}
+
 fn summary(props: &ComposerProps<'_>) -> Element {
     let usage = props.native_context;
     let fraction = usage.and_then(|usage| usage.used_fraction());
@@ -137,23 +167,15 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         usage.window.filter(|limit| *limit > 0).is_none()
             && usage.input_limit.is_some_and(|limit| limit > 0)
     });
-    let total = match (used, capacity) {
+    let mut total = match (used, capacity) {
         (Some(used), Some(capacity)) => format!("{} / {} tokens", tokens(used), tokens(capacity)),
         (None, Some(capacity)) => format!("Capacidad: {} tokens", tokens(capacity)),
-        (Some(used), None) => format!("{} tokens · límite sin verificar", tokens(used)),
+        (Some(used), None) => format!("{} tokens", tokens(used)),
         _ => "Capacidad sin verificar".into(),
     };
-    let remaining = match (used, capacity) {
-        (Some(used), Some(capacity)) => format!(
-            "{} tokens disponibles",
-            tokens(capacity.saturating_sub(used))
-        ),
-        _ => usage
-            .map_or("Aún no hay una respuesta medida", |usage| {
-                usage.measurement_label()
-            })
-            .into(),
-    };
+    if let Some(fraction) = fraction {
+        total.push_str(&format!(" · {}", percentage(fraction)));
+    }
     let header = openide_ui::PanelHeader::new("", theme::menu_palette())
         .leading(
             Text::new(
@@ -183,68 +205,67 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         .sizing(openide_ui::HeaderSizing::POPOVER)
         .render();
     let mut content = vec![
-        Element::row(vec![
-            Text::new(total, theme::component_palette())
-                .render()
-                .flex(1.0),
-            Text::new(
-                fraction
-                    .map(percentage)
-                    .unwrap_or_else(|| "Sin medición".into()),
-                theme::component_palette(),
-            )
-            .ink(usage_ink(fraction))
-            .render(),
-        ])
-        .gap(10.0),
+        Text::new(total, theme::component_palette()).render(),
         progress(fraction),
-        Text::new(remaining, theme::component_palette())
-            .role(TextRole::Small)
-            .muted()
-            .render(),
     ];
-    if fraction.is_some() {
+    for category in usage.into_iter().flat_map(|usage| &usage.breakdown) {
+        // A value without a figure only says that nothing was measured.
+        let measured = category.value.chars().any(|c| c.is_ascii_digit());
         content.push(
-            Text::new(
-                if input_only {
-                    "Última entrada reportada"
-                } else {
-                    "Última respuesta reportada"
-                },
-                theme::component_palette(),
-            )
-            .role(TextRole::Small)
-            .muted()
-            .render(),
+            Element::row(vec![
+                Text::new(&category.label, theme::component_palette())
+                    .muted()
+                    .render(),
+                Element::row(vec![
+                    Element::spacer().flex(1.0),
+                    Text::new(
+                        if measured { &category.value } else { "–" },
+                        theme::component_palette(),
+                    )
+                    .fade(14.0)
+                    .render(),
+                ])
+                .clip_children()
+                .flex(1.0),
+            ])
+            .gap(12.0),
         );
     }
-    if usage.is_some_and(|usage| {
+    // One status line at most; a normal measurement needs none.
+    let failure = usage
+        .and_then(|usage| usage.error.as_ref())
+        .map(|error| format!("{}: {error}", "Consulta no disponible"));
+    let status = if let Some(failure) = &failure {
+        Some(failure.as_str())
+    } else if usage.is_some_and(|usage| {
         usage.measurement_status == NativeContextMeasurementStatus::AfterCheckpoint
     }) {
-        content.push(
-            Text::new(
-                "El resumen está guardado. El uso se medirá en la próxima respuesta.",
-                theme::component_palette(),
-            )
-            .role(TextRole::Small)
-            .muted()
-            .render(),
-        );
+        Some("El resumen está guardado. El uso se medirá en la próxima respuesta.")
     } else if fraction.is_some_and(|fraction| fraction >= 0.8) {
+        Some("Queda poco espacio. Puedes compactar para continuar.")
+    } else if fraction.is_none() {
+        Some(usage.map_or("Aún no hay una respuesta medida", |usage| {
+            usage.measurement_label()
+        }))
+    } else {
+        None
+    };
+    if let Some(status) = status {
         content.push(
-            Text::new(
-                "Queda poco espacio. Puedes compactar para continuar.",
-                theme::component_palette(),
-            )
-            .role(TextRole::Small)
-            .ink(usage_ink(fraction))
-            .render(),
+            Text::new(status, theme::component_palette())
+                .role(TextRole::Small)
+                .ink(if fraction.is_some() {
+                    usage_ink(fraction)
+                } else {
+                    theme::FOREGROUND_SUBTLE
+                })
+                .render(),
         );
     }
     let action = props.context_compaction;
     let mut footer = ButtonGroup::new(vec![Button::new(
-        "composer_context_details_toggle",
-        "Detalles",
+        "composer_context_copy_diagnostic",
+        "Copiar diagnóstico",
         theme::menu_palette(),
     )
     .variant(ButtonVariant::Ghost)
@@ -281,120 +302,11 @@ fn summary(props: &ComposerProps<'_>) -> Element {
             )
             .render(),
         )
-        .body_max_height(180.0)
+        // A safety cap only: the usual seven categories fit without scrolling.
+        .body_max_height(280.0)
         .footer(footer.render().size(None, Some(28.0)))
         .sizing(crate::ui_sizing::CONTEXT_POPOVER)
         .render()
-}
-
-fn details(props: &ComposerProps<'_>) -> Element {
-    let usage = props.native_context;
-    let mut details = ContextContent::new(
-        "Detalles del contexto",
-        usage
-            .map(|usage| format!("{} · {}", usage.provider, usage.model))
-            .unwrap_or_else(|| "Sin medición para la ruta seleccionada.".into()),
-        theme::menu_palette(),
-    );
-    if let Some(usage) = usage {
-        if let Some(error) = &usage.error {
-            details = details.section(
-                "Consulta no disponible",
-                vec![ContextRow::new("Estado", error)],
-            );
-        } else if let Some(last) = &usage.last_usage {
-            let mut rows = vec![
-                ContextRow::new("Entrada", tokens(last.input_tokens)),
-                ContextRow::new("Salida", tokens(last.output_tokens)),
-            ];
-            if let Some(cached) = last.cached_input_tokens {
-                rows.push(
-                    ContextRow::new("Entrada en caché", tokens(cached))
-                        .description("Ya incluida en Entrada; no se suma otra vez."),
-                );
-            }
-            if let Some(reasoning) = last.reasoning_tokens {
-                rows.push(
-                    ContextRow::new("Razonamiento", tokens(reasoning))
-                        .description("Ya incluido en Salida; no se suma otra vez."),
-                );
-            }
-            details = details.section("Última respuesta", rows);
-        }
-        let mut limits = Vec::new();
-        if let Some(limit) = usage.window {
-            limits.push(ContextRow::new("Ventana", tokens(limit)));
-        }
-        if let Some(limit) = usage.input_limit {
-            limits.push(ContextRow::new("Límite de entrada", tokens(limit)));
-        }
-        if let Some(limit) = usage.max_output {
-            limits.push(ContextRow::new("Máximo de salida", tokens(limit)));
-        }
-        if let Some(reserve) = usage.output_reserve {
-            limits.push(
-                ContextRow::new("Reserva de salida", tokens(reserve))
-                    .description("Capacidad reservada para responder; no es consumo medido."),
-            );
-        }
-        if !limits.is_empty() {
-            details = details.section("Capacidad del modelo · tokens", limits);
-        }
-        if !usage.breakdown.is_empty() {
-            details = details.section(
-                "Instrucciones y herramientas",
-                usage
-                    .breakdown
-                    .iter()
-                    .map(|category| {
-                        ContextRow::new(&category.label, &category.value)
-                            .description(&category.detail)
-                    })
-                    .collect(),
-            );
-        }
-        for section in &usage.sections {
-            details = details.section(
-                &section.title,
-                section
-                    .rows
-                    .iter()
-                    .map(|row| ContextRow::new(&row.label, &row.value).description(&row.detail))
-                    .collect(),
-            );
-        }
-    }
-    let header = Element::row(vec![
-        Button::new(
-            "composer_context_details_toggle",
-            "Volver",
-            theme::menu_palette(),
-        )
-        .icon(Icon::ArrowLeft)
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Compact)
-        .render(),
-        Element::spacer().flex(1.0),
-        IconButton::new(
-            "composer_context_dismiss",
-            Icon::Close,
-            theme::menu_palette(),
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
-        .tooltip_with(
-            TooltipSpec::new("Cerrar contexto")
-                .shortcut("Esc")
-                .placement(TooltipPlacement::Below),
-        )
-        .render(),
-    ])
-    .size(None, Some(28.0));
-    Element::column(vec![header, ScrollArea::new("composer_context_details",
-        details.footer("Caché y razonamiento ya están incluidos en los tokens reportados. Las cantidades y bytes de las fuentes se muestran por separado.").render())
-        .render().max_height(340.0)
-            .flex(1.0),
-    ]).gap(6.0)
 }
 
 pub(crate) fn control_width(props: &ComposerProps<'_>) -> f32 {
@@ -433,29 +345,13 @@ pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
     }
     Popover::new(
         trigger,
-        if props.context_details_open {
-            details(props)
-        } else {
-            summary(props)
-        },
+        summary(props),
         true,
         "composer_context_dismiss",
         theme::menu_palette(),
     )
-    .width((props.width - 16.0).clamp(
-        96.0,
-        if props.context_details_open {
-            440.0
-        } else {
-            320.0
-        },
-    ))
+    .width((props.width - 16.0).clamp(96.0, 320.0))
     .placement(PopoverPlacement::TopEnd)
-    .view_key(if props.context_details_open {
-        "details"
-    } else {
-        "summary"
-    })
     .render()
     .popover_return_focus("composer_context_toggle")
 }

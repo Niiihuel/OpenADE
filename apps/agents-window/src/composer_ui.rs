@@ -100,7 +100,6 @@ pub(crate) struct ComposerProps<'a> {
     pub native_context: Option<&'a crate::native_context_ui::NativeContextUiState>,
     pub context_compaction: crate::composer_context_ui::ContextCompactionView<'a>,
     pub context_open: bool,
-    pub context_details_open: bool,
     pub goal: Option<&'a str>,
     pub goal_editor_open: bool,
     pub goal_draft: &'a str,
@@ -232,7 +231,6 @@ impl<'a> ComposerProps<'a> {
                 .then_some(&state.native_context),
             context_compaction: crate::composer_context_ui::compaction_view(state),
             context_open: state.selected_backend == "native" && state.composer_context_open,
-            context_details_open: state.composer_context_details_open,
             goal: state
                 .native_goal
                 .goal
@@ -2405,7 +2403,6 @@ pub(crate) mod tests {
             native_context: None,
             context_compaction: Default::default(),
             context_open: false,
-            context_details_open: false,
             goal: None,
             goal_editor_open: false,
             goal_draft: "",
@@ -3077,7 +3074,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn native_context_panel_keeps_unknown_units_scroll_and_keyboard_dismissal() {
+    fn native_context_panel_keeps_unknown_apart_from_zero_and_dismisses_by_keyboard() {
         use crate::native_context_ui::{
             NativeContextRow, NativeContextSection, NativeContextUiState,
         };
@@ -3101,7 +3098,6 @@ pub(crate) mod tests {
             let mut state = props("Draft", width);
             state.native_context = Some(&usage);
             state.context_open = true;
-            state.context_details_open = true;
             let viewport = Size::new(width, 640.0);
             let mut tree = UiTree::new(build_composer(&state));
             tree.set_reduced_motion(true);
@@ -3118,27 +3114,23 @@ pub(crate) mod tests {
             assert!(frame.commands.iter().any(|command| matches!(command,
                 DrawCommand::ProgressRing { rect, fraction: None, .. }
                     if meter.rect.contains(Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)))));
-            assert!(frame
-                .text_layouts()
-                .iter()
-                .any(|block| block.source == "Detalles del contexto"));
-            assert!(!frame.commands.iter().any(|command| matches!(command,
-                DrawCommand::Text { text, .. } if text == "0%")));
+            let painted = |needle: &str| {
+                frame.commands.iter().any(|command| matches!(command,
+                    DrawCommand::Text { text, .. } if text.contains(needle)))
+            };
+            assert!(painted("Aún no hay una respuesta medida"));
+            assert!(!painted("0%"), "unknown is not a measured zero");
+            assert!(!painted("SKILL-"), "provenance rows are only copied");
             let area = frame
                 .regions
                 .iter()
-                .find(|region| region.id == "composer_context_details")
+                .find(|region| region.id == "composer_context_summary")
                 .unwrap()
                 .rect;
             assert!(area.x >= 0.0 && area.x + area.width <= width + 0.1);
-            let point = Point::new(area.x + 12.0, area.y + area.height / 2.0);
-            tree.handle_event(UiEvent::Scroll {
-                position: point,
-                delta_y: -10000.0,
-            });
-            let bottom = tree.layout(viewport);
-            assert!(bottom.commands.iter().any(|command| matches!(command,
-                DrawCommand::Text { text, .. } if text.starts_with("Caché y razonamiento"))));
+            assert!(crate::composer_context_ui::diagnostic(&usage).contains(
+                "SKILL-23.md: 123 bytes · tokens desconocidos — Copia local revalidada"
+            ));
             assert_eq!(
                 tree.handle_event(UiEvent::Key {
                     key: openide_ui::Key::Escape,
@@ -3176,7 +3168,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn compact_context_prioritizes_usage_and_defers_token_categories_to_details() {
+    fn context_popover_lists_usage_and_categories_and_copies_the_provenance() {
         use crate::native_context_ui::{
             NativeContextCategory, NativeContextRow, NativeContextSection, NativeContextUiState,
         };
@@ -3216,9 +3208,9 @@ pub(crate) mod tests {
             let frame = tree.layout(viewport);
             for label in [
                 "Uso de contexto",
-                "15%",
-                "300 / 2.0K tokens",
-                "1.7K tokens disponibles",
+                "300 / 2.0K tokens · 15%",
+                "Skills",
+                "2 · 400 bytes",
             ] {
                 assert!(
                     frame.commands.iter().any(|command| matches!(command,
@@ -3228,19 +3220,11 @@ pub(crate) mod tests {
             }
             assert!(!frame.commands.iter().any(|command| matches!(command,
                 DrawCommand::Text {text,..} if text.contains("SHA-256"))));
-            for secondary in [
-                "Skills",
-                "Entrada",
-                "Salida",
-                "Entrada en caché",
-                "Razonamiento",
-            ] {
+            for copied in ["Identidad", "disponibles", "reportada"] {
                 assert!(
-                    !frame
-                        .text_layouts()
-                        .iter()
-                        .any(|block| block.source == secondary),
-                    "{secondary} belongs in the details view"
+                    !frame.commands.iter().any(|command| matches!(command,
+                    DrawCommand::Text {text,..} if text.contains(copied))),
+                    "{copied} is not part of the popover"
                 );
             }
             let free_track = frame
@@ -3262,7 +3246,7 @@ pub(crate) mod tests {
                 .find(|region| region.id == "composer_context_summary")
                 .unwrap();
             assert!(summary.rect.width <= 344.0 && summary.rect.height <= viewport.height - 16.0);
-            assert!(tree.focus("composer_context_details_toggle"));
+            assert!(tree.focus("composer_context_copy_diagnostic"));
             assert_eq!(
                 tree.handle_event(UiEvent::Key {
                     key: openide_ui::Key::Enter,
@@ -3270,52 +3254,15 @@ pub(crate) mod tests {
                     ctrl: false
                 }),
                 vec![UiAction::Clicked {
-                    id: "composer_context_details_toggle".into()
+                    id: "composer_context_copy_diagnostic".into()
                 }]
             );
-            state.context_details_open = true;
-            tree.set_root(build_composer(&state));
-            let mut seen = std::collections::BTreeSet::new();
-            let mut diagnostic_visible = false;
-            for _ in 0..16 {
-                let expanded = tree.layout(viewport);
-                for block in expanded.text_layouts() {
-                    if block.runs.iter().any(|run| run.visible.is_some()) {
-                        seen.insert(block.source.clone());
-                    }
-                    if block.source == "Diagnostic SHA-256" && !block.runs.is_empty() {
-                        diagnostic_visible |= block.runs.iter().all(|run| {
-                            run.visible.is_some_and(|visible| {
-                                visible.width >= run.rect.width - 0.1
-                                    && visible.height >= run.rect.height - 0.1
-                            })
-                        });
-                    }
-                }
-                let area = expanded
-                    .regions
-                    .iter()
-                    .find(|region| region.id == "composer_context_details")
-                    .unwrap()
-                    .rect;
-                tree.handle_event(UiEvent::Scroll {
-                    position: Point::new(area.x + 8.0, area.y + area.height / 2.0),
-                    delta_y: -60.0,
-                });
-            }
-            for label in [
-                "Entrada",
-                "Salida",
-                "Entrada en caché",
-                "Razonamiento",
-                "Skills",
-                "2 · 400 bytes",
-            ] {
-                assert!(seen.contains(label), "details preserve {label}: {seen:?}");
-            }
-            assert!(
-                diagnostic_visible,
-                "wrapped diagnostic must remain fully reachable"
+            assert_eq!(
+                crate::composer_context_ui::diagnostic(&usage),
+                "Diagnóstico del contexto\n · \nEstado: Aún no hay una respuesta medida\n\n\
+                 Instrucciones y herramientas\n\
+                 Skills: 2 · 400 bytes — Diagnostic SHA-256 must be optional\n\n\
+                 Detalles\nIdentidad: Diagnostic SHA-256 — Exact origin details\n"
             );
         }
     }
