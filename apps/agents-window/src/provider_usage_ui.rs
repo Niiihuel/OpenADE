@@ -8,7 +8,7 @@ use std::{
 
 use openide_ui::{
     ActiveHover, Button, ButtonVariant, Card, Chip, Color, Component, ComponentPalette,
-    ControlSize, Element, FontFamily, Icon, IconButton, Popover, PopoverPanel, PopoverPlacement,
+    ControlSize, Element, FontFamily, Icon, IconButton, ListRow, PageHeader, Popover, PopoverPanel, PopoverPlacement,
     ScrollArea, Separator, Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
@@ -830,6 +830,118 @@ fn popup_panel(state: &ViewState, cards: Vec<Element>, body_height: f32) -> Elem
         .render()
 }
 
+/// The sidebar's account row: the provider's mark, "Cuenta y uso" over the
+/// headline in its status color, and a chevron.
+fn usage_anchor(
+    icon: Icon,
+    summary: String,
+    color: Color,
+    count: usize,
+    open: bool,
+    width: f32,
+) -> Element {
+    let centered = |icon: Icon, ink: Color| {
+        Element::panel(
+            Element::icon(icon)
+                .foreground(ink)
+                .size(Some(16.0), Some(16.0)),
+        )
+        .center_content()
+    };
+    let palette = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND);
+    let mut row = ListRow::new(
+        "usage_toggle",
+        "Cuenta y uso",
+        ComponentPalette {
+            surface: if open {
+                theme::SELECTED
+            } else {
+                theme::SIDEBAR
+            },
+            ..palette
+        },
+    )
+    .leading(centered(icon, theme::ICON_PRIMARY))
+    .subtitle(summary)
+    .subtitle_ink(color)
+    .trailing(centered(Icon::ChevronRight, theme::FOREGROUND_SUBTLE).size(Some(16.0), Some(32.0)))
+    .filled()
+    .sizing(crate::ui_sizing::USAGE_ANCHOR);
+    if count > 1 {
+        row = row.meta_element(
+            Text::new(format!("+{}", count - 1), theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
+    }
+    // Sized after rendering: `ListRow::width` would also clip the row.
+    row.render().size(Some(width), Some(44.0))
+}
+
+#[cfg(test)]
+fn legacy_usage_anchor(
+    icon: Icon,
+    summary: String,
+    color: Color,
+    count: usize,
+    open: bool,
+    content_width: f32,
+) -> Element {
+    let (padding, summary_height, anchor_height) = (6.0, 32.0, 44.0);
+    let mut heading = vec![Text::new("Cuenta y uso", theme::component_palette())
+        .truncate()
+        .render()
+        .flex(1.0)];
+    if count > 1 {
+        heading.push(
+            Text::new(format!("+{}", count - 1), theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
+    }
+    let anchor = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND)
+        .interactive_surface(Element::clickable(
+            "usage_toggle",
+            Element::row(vec![
+                Element::panel(
+                    Element::icon(icon)
+                        .foreground(theme::ICON_PRIMARY)
+                        .size(Some(16.0), Some(16.0)),
+                )
+                .center_content()
+                .size(Some(16.0), Some(summary_height)),
+                Element::column(vec![
+                    Element::row(heading).gap(4.0).size(None, Some(16.0)),
+                    Text::new(summary, theme::component_palette())
+                        .role(TextRole::Small)
+                        .ink(color)
+                        .truncate()
+                        .render()
+                        .size(None, Some(16.0)),
+                ])
+                .flex(1.0),
+                Element::panel(
+                    Element::icon(Icon::ChevronRight)
+                        .foreground(theme::FOREGROUND_SUBTLE)
+                        .size(Some(16.0), Some(16.0)),
+                )
+                .center_content()
+                .size(Some(16.0), Some(summary_height)),
+            ])
+            .gap(6.0)
+            .padding(padding),
+        ))
+        .background(if open {
+            theme::SELECTED
+        } else {
+            theme::SIDEBAR
+        })
+        .size(Some(content_width), Some(anchor_height));
+    anchor
+}
+
 /// Compact card for the sidebar footer. Its height stays independent of the
 /// number of accounts, while the anchored body has its own scroll position.
 pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
@@ -886,56 +998,14 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
             theme::FOREGROUND_SUBTLE,
         )
     };
-    let mut heading = vec![Text::new("Cuenta y uso", theme::component_palette())
-        .truncate()
-        .render()
-        .flex(1.0)];
-    if count > 1 {
-        heading.push(
-            Text::new(format!("+{}", count - 1), theme::component_palette())
-                .role(TextRole::Small)
-                .muted()
-                .render(),
-        );
-    }
-    let anchor = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND)
-        .interactive_surface(Element::clickable(
-            "usage_toggle",
-            Element::row(vec![
-                Element::panel(
-                    Element::icon(icon)
-                        .foreground(theme::ICON_PRIMARY)
-                        .size(Some(16.0), Some(16.0)),
-                )
-                .center_content()
-                .size(Some(16.0), Some(summary_height)),
-                Element::column(vec![
-                    Element::row(heading).gap(4.0).size(None, Some(16.0)),
-                    Text::new(summary, theme::component_palette())
-                        .role(TextRole::Small)
-                        .ink(color)
-                        .truncate()
-                        .render()
-                        .size(None, Some(16.0)),
-                ])
-                .flex(1.0),
-                Element::panel(
-                    Element::icon(Icon::ChevronRight)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .size(Some(16.0), Some(16.0)),
-                )
-                .center_content()
-                .size(Some(16.0), Some(summary_height)),
-            ])
-            .gap(6.0)
-            .padding(padding),
-        ))
-        .background(if state.provider_usage_open {
-            theme::SELECTED
-        } else {
-            theme::SIDEBAR
-        })
-        .size(Some(content_width), Some(anchor_height));
+    let anchor = usage_anchor(
+        icon,
+        summary,
+        color,
+        count,
+        state.provider_usage_open,
+        content_width,
+    );
     let anchor = Tooltip::new(
         anchor,
         "usage_toggle",
@@ -990,6 +1060,56 @@ pub(crate) fn sidebar_compact(state: &ViewState) -> Element {
 /// Settings cards for the same four-account catalog used by provider setup.
 /// The outer Settings page owns scrolling and the page heading.
 pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> {
+    let count = provider_connections::PROVIDERS
+        .iter()
+        .filter(|(id, _, _)| connected(state, id))
+        .count();
+    let subtle = ComponentPalette {
+        muted: theme::SETTINGS_FOREGROUND_SUBTLE,
+        ..theme::component_palette()
+    };
+    let intro = PageHeader::new("Suscripciones y consumo", subtle)
+        .description(format!(
+            "{count} {} · Información de cada cuenta",
+            if count == 1 {
+                "proveedor conectado"
+            } else {
+                "proveedores conectados"
+            }
+        ))
+        .trailing(refresh(state, false))
+        .trailing_top(true)
+        .stacked(content_width < 500.0)
+        .sizing(crate::ui_sizing::USAGE_HEADER)
+        .render();
+    let mut cards = vec![intro];
+    let now = now_ms();
+    let two_columns = content_width >= 700.0;
+    let card_width = if two_columns {
+        (content_width - 12.0) / 2.0
+    } else {
+        content_width
+    };
+    for accounts in provider_connections::PROVIDERS.chunks(if two_columns { 2 } else { 1 }) {
+        let row = accounts
+            .iter()
+            .map(|(id, name, _)| {
+                account_card(state, &snapshot(state, id, name), card_width, now)
+                    .size(Some(card_width), None)
+            })
+            .collect::<Vec<_>>();
+        cards.push(if two_columns {
+            Element::row(row).gap(12.0)
+        } else {
+            Element::column(row)
+        });
+    }
+    cards.push(Text::new("Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
+    cards
+}
+
+#[cfg(test)]
+fn legacy_usage_page(state: &ViewState, content_width: f32) -> Vec<Element> {
     let compact = content_width < 500.0;
     let count = provider_connections::PROVIDERS
         .iter()
@@ -1061,6 +1181,43 @@ pub(crate) fn provider_card(state: &ViewState, id: &str, width: f32) -> Option<E
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sidebar_account_row_matches_its_legacy_body() {
+        for open in [false, true] {
+            for count in [0, 1, 3] {
+                for summary in ["Claude · 42 %", "Un proveedor con un titular demasiado largo · Sin actualizar"] {
+                    for width in [120.0, 228.0] {
+                        let row = |build: fn(Icon, String, Color, usize, bool, f32) -> Element| {
+                            build(Icon::Chat, summary.into(), theme::WARNING, count, open, width)
+                        };
+                        crate::converge_pages_rows_parity_tests::assert_same_at(
+                            "usage anchor",
+                            &[300.0],
+                            row(legacy_usage_anchor),
+                            row(usage_anchor),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_usage_heading_matches_its_legacy_body() {
+        let mut state = fixture();
+        for refreshing in [false, true] {
+            state.provider_usage_refreshing = refreshing;
+            for width in [280.0, 499.0, 500.0, 900.0] {
+                crate::converge_pages_rows_parity_tests::assert_same_at(
+                    "usage heading",
+                    &[width],
+                    legacy_usage_page(&state, width).remove(0).size(Some(width), None),
+                    usage_page(&state, width).remove(0).size(Some(width), None),
+                );
+            }
+        }
+    }
     use crate::provider_connections::ConnectionSummary;
     use openide_ui::{DrawCommand, Frame, Key, Point, Size, UiAction, UiEvent, UiTree};
 

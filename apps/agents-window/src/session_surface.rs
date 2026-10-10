@@ -545,10 +545,9 @@ fn web_citation(index: usize, title: &str, url: &str) -> Element {
     .subtitle(url)
     .subtitle_mono(true)
     .filled()
+    .outlined()
     .sizing(crate::ui_sizing::WEB_CITATION)
     .render()
-    // A limn row has no outline: the hairline of this card is the app's.
-    .border(theme::BORDER, 1.0)
 }
 
 pub(crate) fn activity_marker(activity: &TranscriptActivity) -> Element {
@@ -3391,6 +3390,41 @@ mod tests {
         }
     }
 
+    #[test]
+    #[ignore]
+    fn export_web_citation_visual_review() {
+        let directory = std::path::PathBuf::from(format!(
+            "{}/../../target/openade-session-cards-review",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let size = Size::new(360.0, 96.0);
+        let mut tree = UiTree::new(
+            Element::column(vec![
+                web_citation(0, "Documentación de limn", "https://example.com/limn/list-row"),
+                Element::spacer().flex(1.0),
+            ])
+            .padding(16.0)
+            .background(theme::BACKGROUND),
+        );
+        tree.set_reduced_motion(true);
+        for state in ["idle", "hover"] {
+            if state == "hover" {
+                tree.handle_event(openide_ui::UiEvent::PointerMove(openide_ui::Point::new(
+                    100.0, 40.0,
+                )));
+            }
+            let frame = tree.layout(size);
+            crate::settings_ui::visual_qa::write_native_frame_svg(
+                &frame,
+                &directory.join(format!("web-citation-{state}.svg")),
+                size.width,
+                size.height,
+            )
+            .unwrap();
+        }
+    }
+
     use serde_json::{json, Value};
     use unicode_segmentation::UnicodeSegmentation;
 
@@ -5994,6 +6028,28 @@ mod tests {
         for text in ["Resultado", "Compila", "Pruebas pasan"] {
             assert!(normalized.contains(text), "{visible}");
         }
+    }
+
+    #[test]
+    fn a_web_citation_matches_its_post_render_outline() {
+        let legacy = ListRow::new(
+            "web_citation_open:3",
+            "Un título",
+            theme::action_palette(theme::PANEL, theme::FOREGROUND),
+        )
+        .icon(Icon::Search)
+        .icon_ink(theme::ICON_PRIMARY)
+        .subtitle("https://example.com/a")
+        .subtitle_mono(true)
+        .filled()
+        .sizing(crate::ui_sizing::WEB_CITATION)
+        .render()
+        .border(theme::BORDER, 1.0);
+        crate::converge_pages_rows_parity_tests::assert_same(
+            "web citation",
+            legacy,
+            web_citation(3, "Un título", "https://example.com/a"),
+        );
     }
 
     #[test]

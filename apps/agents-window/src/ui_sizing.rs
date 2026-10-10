@@ -6,7 +6,8 @@
 
 use openide_ui::{
     ActionRowSizing, ButtonGroupSizing, ButtonSizing, FormFieldSizing, HeaderSizing, Modal,
-    NoticeSizing, PageHeaderSizing, PagerSizing, RowSizing, StatusBarItemSizing, TextRole,
+    NoticeSizing, PageHeaderSizing, PagerSizing, RowSizing, SectionSizing, StatusBarItemSizing,
+    TextRole,
 };
 
 /// The header's labelled navigation buttons: a 14 px label, 5 px from the edge.
@@ -123,6 +124,51 @@ pub const MARKETPLACE_HEADER_NARROW: PageHeaderSizing = PageHeaderSizing {
     ..MARKETPLACE_HEADER
 };
 
+/// The Automations heading: a 22 px title with "Nueva tarea" on its line.
+pub const AUTOMATIONS_HEADER: PageHeaderSizing = PageHeaderSizing {
+    title_size: 22.0,
+    description_size: 12.0,
+    copy_gap: 2.0,
+    row_gap: 8.0,
+    stacked_gap: 8.0,
+    height: 0.0,
+};
+
+/// The usage page's heading, with its refresh button on the title's line.
+pub const USAGE_HEADER: PageHeaderSizing = PageHeaderSizing {
+    title_size: 18.0,
+    description_size: 11.0,
+    copy_gap: 4.0,
+    row_gap: 12.0,
+    stacked_gap: 12.0,
+    height: 0.0,
+};
+
+/// A heading in the list of changed files: a cut label hung from the top
+/// inset, as tall as the file rows.
+pub const CHANGE_SECTION: SectionSizing = SectionSizing {
+    height: crate::sidebar_chrome::NAV_ROW_HEIGHT,
+    padding: 4.0,
+    gap: 6.0,
+    title_size: 11.0,
+    title_muted: false,
+    detail_size: 10.0,
+    align_top: true,
+};
+
+/// The hint over the agent's composer: an icon above two lines of copy.
+pub const AGENT_HINT: NoticeSizing = NoticeSizing {
+    icon_size: 24.0,
+    title_role: TextRole::Body,
+    description_role: TextRole::Caption,
+    gap: 0.0,
+    copy_gap: 10.0,
+    padding: 16.0,
+    height: None,
+    title_height: None,
+    description_height: None,
+};
+
 /// A status line of the Problems panel: one cut row of fixed height.
 pub const PROBLEM_STATUS: NoticeSizing = NoticeSizing {
     height: Some(51.0),
@@ -186,6 +232,68 @@ pub const NOTIFICATION: RowSizing = RowSizing {
     ..RowSizing::COMPACT
 };
 
+/// The project selector of the environment card: two lines of 18 between
+/// its icon and its chevron.
+pub const ENVIRONMENT_SELECTOR: RowSizing = RowSizing {
+    height: Some(44.0),
+    two_line_height: Some(44.0),
+    gap: 6.0,
+    icon_size: 18.0,
+    leading_height: Some(36.0),
+    title_size: 13.0,
+    copy_gap: 0.0,
+    title_height: Some(18.0),
+    subtitle_height: Some(18.0),
+    ..RowSizing::COMPACT
+};
+
+/// A tool of the environment card: its name, a status beside it and an
+/// optional second line, before a small chevron.
+pub const ENVIRONMENT_ACTION: RowSizing = RowSizing {
+    height: Some(32.0),
+    two_line_height: Some(48.0),
+    padding: 6.0,
+    gap: 4.0,
+    trailing_icon_size: 12.0,
+    title_size: 12.5,
+    subtitle_size: 10.5,
+    copy_gap: 0.0,
+    meta_size: 10.5,
+    meta_gap: 6.0,
+    title_height: Some(18.0),
+    subtitle_height: Some(18.0),
+    ..RowSizing::COMPACT
+};
+
+/// A source the conversation used: a 30 px preview beside two lines of 18.
+pub const ENVIRONMENT_SOURCE: RowSizing = RowSizing {
+    height: Some(48.0),
+    two_line_height: Some(48.0),
+    padding: 5.0,
+    gap: 5.0,
+    leading_width: 30.0,
+    subtitle_size: 10.5,
+    copy_gap: 0.0,
+    title_height: Some(18.0),
+    subtitle_height: Some(18.0),
+    ..RowSizing::COMPACT
+};
+
+/// The sidebar's account row: two lines of 16 beside a mark as tall as both.
+pub const USAGE_ANCHOR: RowSizing = RowSizing {
+    height: Some(44.0),
+    two_line_height: Some(44.0),
+    padding: 6.0,
+    gap: 6.0,
+    leading_width: 16.0,
+    leading_height: Some(32.0),
+    copy_gap: 0.0,
+    meta_gap: 4.0,
+    title_height: Some(16.0),
+    subtitle_height: Some(16.0),
+    ..RowSizing::COMPACT
+};
+
 /// A web citation in the transcript: a title of 18 over an address of 16.
 pub const WEB_CITATION: RowSizing = RowSizing {
     height: None,
@@ -205,6 +313,17 @@ pub const SIDEBAR_TASK: RowSizing = RowSizing {
     gap: 4.0,
     leading_height: Some(28.0),
     title_height: Some(28.0),
+    ..RowSizing::COMPACT
+};
+
+/// The heading of a group of tasks: its mark, its name, a count, a chevron
+/// and its menu, 4 px apart.
+pub const SIDEBAR_GROUP: RowSizing = RowSizing {
+    two_line_height: Some(28.0),
+    padding: 2.0,
+    gap: 4.0,
+    leading_height: Some(16.0),
+    meta_gap: 4.0,
     ..RowSizing::COMPACT
 };
 

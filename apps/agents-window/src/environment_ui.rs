@@ -182,9 +182,35 @@ fn folder_name(workspace: &str) -> &str {
         })
 }
 
-/// Hand-built on purpose: in the card its chevron falls outside the clip,
-/// and a `ListRow` would fit it in. See the ledger (s09a).
+/// The copy keeps the width the card budgets for it, so in a card laid out
+/// narrower than `width` the chevron falls outside the clip, as it always has.
 fn selector_trigger(
+    id: &str,
+    icon: Icon,
+    label: &str,
+    detail: &str,
+    width: f32,
+    enabled: bool,
+) -> Element {
+    let trigger = ListRow::new(
+        id,
+        label,
+        theme::action_palette(theme::CARD, theme::FOREGROUND),
+    )
+    .icon(icon)
+    .subtitle(detail)
+    .trailing_icon(Icon::ChevronDown)
+    .enabled(enabled)
+    .title_ink(theme::FOREGROUND)
+    .copy_width((width - 54.0).max(0.0))
+    .width(width)
+    .sizing(crate::ui_sizing::ENVIRONMENT_SELECTOR)
+    .render();
+    Tooltip::new(trigger, id, detail, theme::component_palette()).render()
+}
+
+#[cfg(test)]
+fn legacy_selector_trigger(
     id: &str,
     icon: Icon,
     label: &str,
@@ -277,9 +303,36 @@ fn section_heading(title: &str, detail: Option<String>, width: f32) -> Element {
     heading.render()
 }
 
-/// Hand-built on purpose, like `selector_trigger`: the card lays it out
-/// narrower than `width`, cutting its counts and hiding its chevron.
+/// Like `selector_trigger`, its copy keeps the card's budget: laid out
+/// narrower than `width`, its counts are cut and its chevron is hidden.
 fn action_row(
+    id: &str,
+    icon: Icon,
+    title: &str,
+    detail: &str,
+    trailing: Option<Element>,
+    help: &str,
+    width: f32,
+) -> Element {
+    let mut row = ListRow::new(
+        id,
+        title,
+        theme::action_palette(theme::CARD, theme::FOREGROUND),
+    )
+    .icon(icon)
+    .subtitle(detail)
+    .trailing_icon(Icon::ChevronRight)
+    .copy_width((width - 48.0).max(0.0))
+    .width(width)
+    .sizing(crate::ui_sizing::ENVIRONMENT_ACTION);
+    if let Some(trailing) = trailing {
+        row = row.meta_element(trailing);
+    }
+    Tooltip::new(row.render(), id, help, theme::component_palette()).render()
+}
+
+#[cfg(test)]
+fn legacy_action_row(
     id: &str,
     icon: Icon,
     title: &str,
@@ -334,6 +387,47 @@ fn action_row(
 }
 
 fn source_row(
+    action: Option<String>,
+    preview: Element,
+    title: &str,
+    detail: &str,
+    help: &str,
+    width: f32,
+) -> Element {
+    let row = |id: &str| {
+        ListRow::new(
+            id,
+            title,
+            theme::action_palette(theme::CARD, theme::FOREGROUND),
+        )
+        .leading(preview)
+        .subtitle(detail)
+        .title_ink(theme::FOREGROUND)
+        .copy_width((width - 56.0).max(0.0))
+        .width(width)
+        .sizing(crate::ui_sizing::ENVIRONMENT_SOURCE)
+    };
+    match action {
+        Some(action) => Tooltip::new(
+            row(&action)
+                // Centered on the two lines of copy, not on the row.
+                .trailing(
+                    Element::icon(Icon::ChevronRight)
+                        .foreground(theme::FOREGROUND_SUBTLE)
+                        .size(Some(10.0), Some(36.0)),
+                )
+                .render(),
+            action,
+            help,
+            theme::component_palette(),
+        )
+        .render(),
+        None => row("").enabled(false).render(),
+    }
+}
+
+#[cfg(test)]
+fn legacy_source_row(
     action: Option<String>,
     preview: Element,
     title: &str,
@@ -1059,6 +1153,58 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{DrawCommand, HitKind, Size, UiTree};
+
+    #[test]
+    fn card_rows_match_their_legacy_bodies() {
+        use crate::converge_pages_rows_parity_tests::assert_same_at;
+        // As wide as asked, then in a row and in a column 14 px narrower.
+        let same = |name: &str, legacy: Element, current: Element, width: f32| {
+            assert_same_at(name, &[400.0], legacy.clone(), current.clone());
+            let row = |element| Element::row(vec![element]).size(Some(width - 14.0), None);
+            assert_same_at(name, &[400.0], row(legacy.clone()), row(current.clone()));
+            let column = |element| Element::column(vec![element]).size(Some(width - 14.0), None);
+            assert_same_at(name, &[400.0], column(legacy), column(current));
+        };
+        let long = "crates/limn/src/un/camino/bastante/largo/para/cortarse/list_row.rs";
+        for width in [150.0, 236.0, 320.0] {
+            for enabled in [true, false] {
+                for (label, detail) in [("openADE", "/home/dev/openADE"), (long, long)] {
+                    same(
+                        "selector",
+                        legacy_selector_trigger("pick", Icon::Folder, label, detail, width, enabled),
+                        selector_trigger("pick", Icon::Folder, label, detail, width, enabled),
+                        width,
+                    );
+                }
+            }
+            let trailing = [
+                || None,
+                || Some(counts(25813, 847)),
+                || Some(theme::text_px("En curso", 10.5, theme::FOREGROUND_SUBTLE)),
+            ];
+            for trailing in trailing {
+                for (title, detail) in [("Cambios del chat", "68 archivos"), ("Terminal", ""), (long, long)] {
+                    same(
+                        "action",
+                        legacy_action_row("open", Icon::Code, title, detail, trailing(), "Ayuda", width),
+                        action_row("open", Icon::Code, title, detail, trailing(), "Ayuda", width),
+                        width,
+                    );
+                }
+            }
+            for action in [None, Some("source".to_owned())] {
+                for (title, detail) in [("main.rs", "src/main.rs"), (long, long)] {
+                    let preview = || Element::icon(Icon::Globe).foreground(theme::FOREGROUND_SUBTLE);
+                    same(
+                        "source",
+                        legacy_source_row(action.clone(), preview(), title, detail, "Ayuda", width),
+                        source_row(action.clone(), preview(), title, detail, "Ayuda", width),
+                        width,
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn compact_environment_keeps_primary_actions_in_one_short_card() {

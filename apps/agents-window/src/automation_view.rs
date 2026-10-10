@@ -6,7 +6,7 @@ use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardGrid, Component, ControlSize,
     DateTimePicker, Element, Empty, FontFamily, FormField, FormFieldSizing, Icon, IconButton,
-    Modal, PageColumn, SearchField, Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea,
+    Modal, PageColumn, PageHeader, SearchField, Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea,
     TextField, TextRole, TimePicker, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
@@ -745,6 +745,26 @@ fn template_card(template: &AutomationTemplate, width: f32) -> Element {
 }
 
 fn list_heading(empty: bool, content_width: f32) -> Element {
+    let heading = PageHeader::new("Automatizaciones", theme::component_palette())
+        .description("Tareas programadas para este proyecto")
+        .sizing(crate::ui_sizing::AUTOMATIONS_HEADER);
+    if empty {
+        return heading.render();
+    }
+    heading
+        .trailing(
+            Button::new("automation_new", "Nueva tarea", theme::component_palette())
+                .icon(Icon::Add)
+                .size(ControlSize::Regular)
+                .render(),
+        )
+        .trailing_top(true)
+        .stacked(content_width < 440.0)
+        .render()
+}
+
+#[cfg(test)]
+fn legacy_list_heading(empty: bool, content_width: f32) -> Element {
     let heading = Element::column(vec![
         theme::text_px("Automatizaciones", 22.0, theme::FOREGROUND),
         Text::new(
@@ -1542,6 +1562,20 @@ fn editor_modal(state: &AutomationViewState, base: Element, width: f32, body: El
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_list_heading_matches_its_legacy_body() {
+        for empty in [false, true] {
+            for width in [300.0, 439.0, 440.0, 900.0] {
+                crate::converge_pages_rows_parity_tests::assert_same_at(
+                    "automations heading",
+                    &[width],
+                    legacy_list_heading(empty, width).size(Some(width), None),
+                    list_heading(empty, width).size(Some(width), None),
+                );
+            }
+        }
+    }
     use openide_ui::{Key, Point, Size, UiAction, UiEvent, UiTree};
 
     fn state() -> AutomationViewState {

@@ -8,7 +8,7 @@ use crate::ide_workspace::{
     TITLEBAR_HEIGHT,
 };
 use crate::keymap::{KeymapProfile, ShortcutAction};
-use openide_ui::{Component, Separator, TooltipPlacement};
+use openide_ui::{Component, Notice, Separator, TooltipPlacement};
 
 #[path = "ide_menu_ui.rs"]
 mod menus;
@@ -321,22 +321,12 @@ fn agent_home(state: &ViewState, width: f32, height: f32) -> Element {
         ),
         Some((height - 52.0).max(0.0)),
     );
-    let hint = Element::column(vec![
-        Element::icon(Icon::Chat)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(24.0), Some(24.0)),
-        UiText::new("Tu agente, junto al código", theme::component_palette())
-            .role(TextRole::Body)
-            .render(),
-        UiText::new(
-            "Explorá el proyecto, pedí cambios o resolvé una tarea.",
-            theme::component_palette(),
-        )
-        .muted()
-        .render(),
-    ])
-    .gap(10.0)
-    .padding(16.0);
+    let hint = Notice::new("Tu agente, junto al código", theme::component_palette())
+        .icon(Icon::Chat)
+        .description("Explorá el proyecto, pedí cambios o resolvé una tarea.")
+        .stacked()
+        .sizing(crate::ui_sizing::AGENT_HINT)
+        .render();
     let mut contents = Vec::new();
     if height > 300.0 {
         contents.push(hint);
@@ -823,6 +813,40 @@ pub(super) fn build(state: &ViewState, width: f32, height: f32) -> Element {
 mod tests {
     use super::*;
     use crate::ide_workspace::WindowMode;
+
+    #[test]
+    fn the_agent_hint_matches_its_legacy_body() {
+        let legacy = {
+        Element::column(vec![
+        Element::icon(Icon::Chat)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .size(Some(24.0), Some(24.0)),
+        UiText::new("Tu agente, junto al código", theme::component_palette())
+            .role(TextRole::Body)
+            .render(),
+        UiText::new(
+            "Explorá el proyecto, pedí cambios o resolvé una tarea.",
+            theme::component_palette(),
+        )
+        .muted()
+        .render(),
+    ])
+    .gap(10.0)
+    .padding(16.0)
+        };
+        let hint = Notice::new("Tu agente, junto al código", theme::component_palette())
+            .icon(Icon::Chat)
+            .description("Explorá el proyecto, pedí cambios o resolvé una tarea.")
+            .stacked()
+            .sizing(crate::ui_sizing::AGENT_HINT)
+            .render();
+        crate::converge_pages_rows_parity_tests::assert_same_at(
+            "agent hint",
+            &[120.0, 320.0, 900.0],
+            legacy,
+            hint,
+        );
+    }
     use openide_ui::{DrawCommand, Frame, Point, Rect, Size, UiAction, UiEvent, UiTree};
 
     fn state() -> ViewState {
