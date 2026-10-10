@@ -433,8 +433,6 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
         .clip_children()
 }
 
-/// Sidebar navigation returns to Changes; the environment-card dismiss action
-/// has no role here because the IDE owns the sidebar's visibility controls.
 /// The heading of a Git panel inside the environment card.
 fn panel_header(title: &str, enabled: bool) -> Element {
     let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
@@ -456,6 +454,8 @@ fn panel_header(title: &str, enabled: bool) -> Element {
         .render()
 }
 
+/// Sidebar navigation returns to Changes; the environment-card dismiss action
+/// has no role here because the IDE owns the sidebar's visibility controls.
 pub(crate) fn build_sidebar(state: &EnvironmentGitUiState, width: f32, locked: bool) -> Element {
     if state.panel == EnvironmentGitPanel::Commit {
         commit_view(state, width, locked, true)
