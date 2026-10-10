@@ -373,6 +373,34 @@ mod tests {
     }
 
     #[test]
+    fn an_extension_without_a_subtitle_keeps_its_line() {
+        for width in [150.0, 248.0] {
+            for selected in [false, true] {
+                let frame = |row: Element| UiTree::new(row).layout(Size::new(width, 200.0));
+                let (legacy, current) = (
+                    frame(legacy_extension_row("ide_extension:x", "Docs", "", "Docs", selected, width)),
+                    frame(extension_row("ide_extension:x", "Docs", "", "Docs", selected, width)),
+                );
+                assert_eq!(current.regions, legacy.regions);
+                // The only difference is the blank line's text, " " where it was "".
+                let blank_as_space = |frame: &openide_ui::Frame| {
+                    let mut commands = frame.commands.clone();
+                    for command in &mut commands {
+                        if let openide_ui::DrawCommand::Text { text, .. } = command {
+                            if text.is_empty() {
+                                *text = " ".into();
+                            }
+                        }
+                    }
+                    commands
+                };
+                assert_ne!(current.commands, legacy.commands);
+                assert_eq!(current.commands, blank_as_space(&legacy));
+            }
+        }
+    }
+
+    #[test]
     fn ide_git_sidebar_keeps_file_navigation_while_the_center_has_a_diff() {
         let mut state = super::super::tests::empty_state();
         state.git_review = Some(Ok(Arc::new(GitReview {
