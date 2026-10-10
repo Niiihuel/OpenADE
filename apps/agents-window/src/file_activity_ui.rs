@@ -152,7 +152,10 @@ pub(crate) fn build(
                     && *activity == ActivityStatus::Completed
                     && output.is_some()
                     && matches!(name.as_str(), "write_file" | "apply_patch"),
-                presentation.note,
+                // The proposed change stays: the approval card shows only its path.
+                presentation.note.filter(|_| {
+                    !crate::session_surface::approval_card_shown(state, name, arguments, *activity)
+                }),
             )
         }
         TranscriptItem::ToolPreview {

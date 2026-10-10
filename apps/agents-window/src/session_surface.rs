@@ -998,7 +998,10 @@ pub(crate) fn tool_line_with_output(
     .command(presentation.kind == ToolKind::Command)
     .running(*activity == ActivityStatus::Running && !*is_error)
     .expanded(expanded);
-    if let Some(note) = presentation.note {
+    if let Some(note) = presentation
+        .note
+        .filter(|_| !approval_card_shown(state, name, arguments, *activity))
+    {
         row = row.note(note);
     }
     Tooltip::new(
@@ -1009,6 +1012,38 @@ pub(crate) fn tool_line_with_output(
     )
     .description(name)
     .render()
+}
+
+/// Whether this waiting call's approval card is in the transcript. The card
+/// already shows the whole request, so the row then keeps only its header.
+/// Requests carry no call id; the same tool and arguments are the same ask.
+pub(crate) fn approval_card_shown(
+    state: &ViewState,
+    name: &str,
+    arguments: &serde_json::Value,
+    activity: ActivityStatus,
+) -> bool {
+    if activity != ActivityStatus::WaitingPermission {
+        return false;
+    }
+    let arguments = serde_json::to_string_pretty(arguments).unwrap_or_default();
+    let selected = state.selected_session.as_deref();
+    state
+        .pending_permissions
+        .iter()
+        .take(3)
+        .map(|permission| (&permission.tool_name, &permission.arguments))
+        .chain(
+            state
+                .pending_subagent_permissions
+                .iter()
+                .filter(|permission| {
+                    selected == Some(&permission.child_session_id)
+                        || selected == Some(&permission.parent_session_id)
+                })
+                .map(|permission| (&permission.tool_name, &permission.arguments)),
+        )
+        .any(|(tool, requested)| tool == name && *requested == arguments)
 }
 
 /// A recorded command is a compact terminal, not its tool-input JSON. The
@@ -1052,10 +1087,11 @@ fn terminal_activity(
         .as_ref()
         .map(|(text, _)| text.as_str())
         .or(output.as_deref());
+    let answered_below = !expanded && approval_card_shown(state, name, arguments, *activity);
     let mut content = Vec::new();
     let mut visible_copy = String::new();
     let mut limited = false;
-    if let Some(command) = command {
+    if let Some(command) = command.filter(|_| !answered_below) {
         let (command, clipped) = tool_presentation::clip_text(command, 12_000);
         limited |= clipped;
         let prompt = format!("$ {command}");
@@ -1245,7 +1281,7 @@ fn terminal_activity(
     if let Some(note) =
         tool_presentation::present(name, arguments, *activity, *is_error, output.as_deref()).note
     {
-        if !visible_copy.contains(&note) {
+        if !answered_below && !visible_copy.contains(&note) {
             terminal = terminal.note(note);
         }
     }

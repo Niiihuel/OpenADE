@@ -1025,6 +1025,79 @@ fn terminal_keeps_exceptional_states_and_does_not_echo_stdin_or_claim_process_ex
 }
 
 #[test]
+fn waiting_row_is_one_header_line_only_while_its_approval_card_is_shown() {
+    let arguments = json!({"command":"rm prueba2.md"});
+    let tool = TranscriptItem::Tool {
+        id: "waiting".into(),
+        name: "run_command".into(),
+        arguments: arguments.clone(),
+        output: None,
+        is_error: false,
+        activity: ActivityStatus::WaitingPermission,
+    };
+    let row = |state: &ViewState| {
+        text(&UiTree::new(tool_line(&tool, state, true)).layout(Size::new(360.0, 400.0)))
+    };
+    let repeats = |row: &str| {
+        assert!(row.contains("Permiso pendiente"), "{row}");
+        row.contains("Esperando autorización") && row.contains("$ rm prueba2.md")
+    };
+    let pretty = serde_json::to_string_pretty(&arguments).unwrap();
+    let permission = |arguments: &str| crate::view::PermissionView {
+        request_id: "request".into(),
+        tool_name: "run_command".into(),
+        arguments: arguments.into(),
+    };
+    let mut state = state();
+    assert!(repeats(&row(&state)), "no card: the row is the only request");
+    state.pending_permissions = vec![permission("{}")];
+    assert!(repeats(&row(&state)), "a card for another call");
+    state.pending_permissions = vec![permission("{}"); 3];
+    state.pending_permissions.push(permission(&pretty));
+    assert!(repeats(&row(&state)), "only three cards are rendered");
+    state.pending_permissions = vec![permission(&pretty)];
+    assert!(!repeats(&row(&state)));
+    state.conversation_details.set_expanded("tool:waiting", true);
+    assert!(row(&state).contains("$ rm prueba2.md"), "opened on purpose");
+    state.conversation_details.set_expanded("tool:waiting", false);
+    state.pending_permissions.clear();
+    state.pending_subagent_permissions = vec![crate::view::SubagentPermissionView {
+        child_session_id: OWNER.into(),
+        parent_session_id: "parent".into(),
+        request_id: "request".into(),
+        tool_name: "run_command".into(),
+        arguments: pretty,
+    }];
+    assert!(!repeats(&row(&state)));
+    state.pending_subagent_permissions[0].child_session_id = "another".into();
+    assert!(repeats(&row(&state)), "that card belongs to another session");
+
+    let arguments =
+        json!({"patch":"*** Begin Patch\n*** Delete File: docs/borrador.md\n*** End Patch\n"});
+    let file = TranscriptItem::Tool {
+        id: "waiting-file".into(),
+        name: "apply_patch".into(),
+        arguments: arguments.clone(),
+        output: None,
+        is_error: false,
+        activity: ActivityStatus::WaitingPermission,
+    };
+    let row = |state: &ViewState| {
+        text(&UiTree::new(tool_line(&file, state, true)).layout(Size::new(360.0, 400.0)))
+    };
+    assert!(row(&state).contains("Esperando autorización"));
+    state.pending_permissions = vec![crate::view::PermissionView {
+        request_id: "request".into(),
+        tool_name: "apply_patch".into(),
+        arguments: serde_json::to_string_pretty(&arguments).unwrap(),
+    }];
+    let paired = row(&state);
+    assert!(!paired.contains("Esperando autorización"), "{paired}");
+    assert!(paired.contains("Permiso pendiente"), "{paired}");
+    assert!(paired.contains("borrador.md"), "{paired}");
+}
+
+#[test]
 #[ignore = "exports compact native terminal timelines with bundled fonts under /tmp"]
 fn export_terminal_timeline_native_visual_review() {
     let directory = std::path::Path::new("/tmp/openade-terminal-timeline-review");
