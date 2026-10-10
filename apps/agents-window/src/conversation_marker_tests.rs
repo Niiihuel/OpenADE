@@ -598,6 +598,72 @@ fn export_chat_marker_visual_review() {
             .unwrap();
         }
     }
+    // A reopened session whose second request never finished, after an
+    // exploration with one failed read: both take the destructive ink.
+    let mut sequence = 0;
+    let events = [
+        AgentEventKind::TurnStarted {
+            prompt: "Buscá dónde se define el tema".into(),
+        },
+        request(1),
+        response(1),
+        AgentEventKind::ToolStarted {
+            tool_call: call("read", "read_file"),
+        },
+        AgentEventKind::ToolFinished {
+            tool_call_id: "read".into(),
+            output: "pub const PANEL".into(),
+            is_error: false,
+        },
+        AgentEventKind::ToolStarted {
+            tool_call: call("search", "search_text"),
+        },
+        AgentEventKind::ToolFinished {
+            tool_call_id: "search".into(),
+            output: "No se pudo leer el directorio".into(),
+            is_error: true,
+        },
+        request(2),
+    ]
+    .map(|kind| {
+        sequence += 1;
+        AgentEvent::new("marker-session", sequence, kind)
+    });
+    state.pending_permissions.clear();
+    state.selected_tool_id = None;
+    state.running = false;
+    state.transcript = TranscriptProjection::from_events(&events).items().to_vec();
+    // A failed request is hidden when the turn's error notice follows it;
+    // without one it shows its own title.
+    state
+        .transcript
+        .push(TranscriptItem::Activity(TranscriptActivity::Model {
+            id: "model:failed".into(),
+            step: 3,
+            model: "exact-model-id".into(),
+            has_text: false,
+            status: ActivityStatus::Failed,
+        }));
+    for width in [420.0, 900.0] {
+        let mut tree = UiTree::new(build_session_surface(&state, width, false, false));
+        tree.set_reduced_motion(true);
+        let frame = tree.layout_at(Size::new(width, 900.0), clock);
+        let text = super::tests::visible_text(&frame);
+        for expected in [
+            "Solicitud al modelo interrumpida",
+            "Solicitud al modelo fallida",
+            "1 con error",
+        ] {
+            assert!(text.contains(expected), "{expected}: {text}");
+        }
+        crate::settings_ui::visual_qa::write_frame_svg(
+            &frame,
+            &output.join(format!("marker-failed-{}.svg", width as u32)),
+            width,
+            900.0,
+        )
+        .unwrap();
+    }
     println!("{}", output.display());
 }
 
