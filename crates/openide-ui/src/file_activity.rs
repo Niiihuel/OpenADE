@@ -384,10 +384,6 @@ impl Component for FileActivity {
     }
 }
 
-// The body before the shell moved to limn, kept for the parity test.
-#[cfg(test)]
-impl FileActivity {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

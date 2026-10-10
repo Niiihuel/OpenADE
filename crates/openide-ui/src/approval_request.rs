@@ -141,10 +141,6 @@ impl Component for ApprovalRequest {
     }
 }
 
-// The body before its text moved to limn's Text, kept for the parity test.
-#[cfg(test)]
-impl ApprovalRequest {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

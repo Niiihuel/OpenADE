@@ -289,10 +289,6 @@ impl Component for ToolActivity {
     }
 }
 
-// The bodies before the shells moved to limn, kept for the parity test.
-#[cfg(test)]
-impl ToolActivity {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

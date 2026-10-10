@@ -545,14 +545,6 @@ impl Component for ContextContent {
     }
 }
 
-// The bodies before they moved to limn's Text and Separator, kept for the
-// parity test.
-#[cfg(test)]
-impl ContextContent {}
-
-#[cfg(test)]
-impl ContextMeter {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
