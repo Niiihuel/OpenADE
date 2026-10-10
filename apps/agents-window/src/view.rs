@@ -7,14 +7,13 @@ use std::{
 use openide_core::{OutputStream, PlanSnapshot, SessionSort, TurnMode};
 use openide_harness::{
     CommandIsolation, HostedWebSearchMode, PersistentCommandExit, PersistentCommandSessionInfo,
-    ToolPermissions,
+    SubagentStatus, ToolPermissions,
 };
 use openide_ui::{
-    guides_for_depths, AlertDialog, Button, ButtonVariant, Color, Component, ControlSize,
-    DropdownList, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element,
-    Empty, FontFamily, Icon, IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search,
-    SegmentedControl, Skeleton, Tab, Tabs, TextSpan, Tooltip, TooltipPlacement, TreeGuides,
-    TreeRow, ICON_SIZE,
+    AlertDialog, Button, ButtonVariant, Color, Component, ControlSize, DropdownList, DropdownMenu,
+    DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily, Icon,
+    IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search, SegmentedControl,
+    Skeleton, Tab, TextSpan, Tooltip, TooltipPlacement, TreeGuides, TreeRow, ICON_SIZE,
 };
 use serde_json::Value;
 
@@ -26,24 +25,53 @@ use crate::{
     files::PreviewPage,
     git_review::{DiffStage, FileDiffDetail, GitReview, ReviewFile, ReviewLine, ReviewLineKind},
     github::GithubStatus,
-    github_account::GithubAccountStatus,
+    github_account::{GithubAccountStatus, GithubSignInView},
+    github_contributions::GithubContributionsStatus,
     home,
     marketplace_view::{self, MarketplaceViewState},
     model_catalog::CatalogSnapshot,
+    provider_settings::{CatalogModelsFilter, CatalogSettingsTab, ProviderConnectionView},
     session_groups::{SessionGroup, SessionGroups},
     settings_preferences::TerminalShell,
     settings_ui::{self, SettingsPage},
-    terminal::{TerminalColor, TerminalSnapshot},
+    terminal::TerminalSnapshot,
     theme,
     transcript::TranscriptItem,
 };
 
 mod command_center;
-pub(crate) use command_center::build_command_center;
+#[path = "dock_activity.rs"]
+mod dock_activity;
+#[path = "dock_chrome.rs"]
+mod dock_chrome;
+#[cfg(test)]
+#[path = "dock_visual_tests.rs"]
+mod dock_visual_tests;
+#[path = "document_markdown_ui.rs"]
+pub(crate) mod document_markdown_ui;
+#[path = "git_panel.rs"]
+mod git_panel;
+#[path = "ide_activity_ui.rs"]
+mod ide_activity_ui;
+#[path = "ide_search_ui.rs"]
+mod ide_search_ui;
+#[path = "ide_ui.rs"]
+mod ide_ui;
+#[cfg(test)]
+#[path = "ide_visual_tests.rs"]
+pub(crate) mod ide_visual_tests;
+#[cfg(test)]
+#[path = "agent_chrome_visual_tests.rs"]
+mod agent_chrome_visual_tests;
+#[cfg(test)]
+#[path = "tab_bar_visual_tests.rs"]
+mod tab_bar_visual_tests;
+pub(crate) use command_center::{build_command_center, command_result_action, command_result_row};
+use crate::sidebar_chrome::{NAV_ROW_HEIGHT as SIDEBAR_ROW_HEIGHT, TOOL_SIZE as SIDEBAR_TOOL_SIZE};
 
 const GAP: f32 = 4.0;
 const HEADER: f32 = 48.0;
-const RIGHT_HEADER_HEIGHT: f32 = 64.0;
+const RIGHT_HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 /// The center and the right dock are two panes of the same workspace surface.
 /// Keep their divider independent of the gap around the separate left dock.
 const RIGHT_DIVIDER: f32 = 1.0;
@@ -61,8 +89,11 @@ pub enum SideTab {
     Files,
     Activity,
     CodeReview,
+    SessionChanges,
     FilePreview,
+    CodeSnapshot,
     Terminal,
+    Browser,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -94,6 +125,7 @@ pub struct FileRowView {
 pub struct DockTabView {
     pub id: u64,
     pub title: String,
+    pub full_path: Option<String>,
     pub active: bool,
     pub kind: SideTab,
     pub closable: bool,
@@ -153,12 +185,35 @@ pub struct SubagentRunView {
 }
 
 #[derive(Clone, Debug)]
+pub struct SubagentInputEditView {
+    pub child_session_id: String,
+    pub input_id: String,
+    pub expected_revision: u64,
+    pub prompt: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct SubagentSessionView {
+    pub child_session_id: String,
+    pub parent_session_id: String,
+    pub title: String,
+    pub status: SubagentStatus,
+    pub cancellation_requested: bool,
+    pub open_inputs: usize,
+    pub inputs: Vec<openide_harness::SubagentInputSnapshot>,
+    pub dispatch_error: Option<String>,
+    pub depth: u8,
+}
+
+#[derive(Clone, Debug)]
 pub struct ToolVerificationView {
+    pub goal_receipt: Option<crate::resume_worker::GoalReceiptInspection>,
     pub session_id: String,
     pub call_id: String,
     pub name: String,
     pub arguments: String,
     pub error: Option<String>,
+    pub hooks: Vec<crate::transcript::HookActivity>,
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +234,16 @@ pub struct ComposerAttachmentView {
     pub is_dir: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeAutomationSessionView {
+    pub automation_id: String,
+    pub run_id: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub manual: bool,
+    pub scheduled_at_ms: i64,
+}
+
 #[derive(Clone)]
 pub struct SessionView {
     pub id: String,
@@ -188,10 +253,13 @@ pub struct SessionView {
     pub pinned: bool,
     pub archived: bool,
     pub unread: bool,
+    /// Display-only origin fields; frozen authority and credentials stay private.
+    pub native_automation: Option<NativeAutomationSessionView>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionRecoveryView {
+    StartAutomation,
     Resume,
     Permission,
     VerifyTool,
@@ -208,6 +276,7 @@ pub struct SessionPlanView {
 impl SessionRecoveryView {
     pub fn label(&self) -> &str {
         match self {
+            Self::StartAutomation => "Iniciar ejecución registrada",
             Self::Resume => "Reanudar turno",
             Self::Permission => "Resolver permiso y reanudar",
             Self::VerifyTool => "Verificar herramienta",
@@ -243,43 +312,138 @@ pub(crate) struct McpOAuthViewStatus {
     pub phase: McpOAuthViewPhase,
 }
 
+/// One known agent CLI and where OpenIDE found it, if anywhere.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentCliRowView {
+    pub id: String,
+    pub label: String,
+    pub resolved: Option<String>,
+    /// The path the user typed, empty when detection is automatic.
+    pub manual: String,
+}
+
+/// The review model choice as Settings shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ReviewModelView {
+    pub mode: crate::review_model::ReviewModelMode,
+    /// The saved manual choice as "provider · model", empty when none.
+    pub manual: String,
+    /// What automatic mode would use right now, empty when it would keep the
+    /// selected model.
+    pub automatic: String,
+    /// The provider and model of the saved manual choice, either may be empty.
+    pub manual_provider: String,
+    pub manual_model: String,
+}
+
+/// One enabled Claude Code plugin that ships skills.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PluginSkillsRowView {
+    pub id: String,
+    pub skill_count: usize,
+    pub enabled: bool,
+}
+
+/// One Claude Code hook found on this machine and whether OpenIDE runs it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompatHookRowView {
+    /// The plugin that defines it, empty for the user's own settings.
+    pub origin: String,
+    pub event: String,
+    pub matcher: String,
+    pub command: String,
+    pub enabled: bool,
+    /// False for events OpenIDE does not act on yet; the switch is disabled.
+    pub runs_today: bool,
+}
+
+/// One pending tool call from an external CLI, awaiting the user's decision.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExternalApprovalView {
+    pub title: String,
+    pub detail: String,
+}
+
 pub struct ViewState {
+    pub(crate) ide: crate::ide_workspace::IdeWorkspaceState,
+    pub(crate) ide_search: crate::ide_search::IdeSearchState,
+    pub(crate) document_preview: Option<crate::document_preview::PreviewView>,
+    pub(crate) markdown_preview: Option<crate::document_preview::MarkdownPreviewTab>,
+    pub(crate) ide_status: crate::ide_status_ui::IdeStatusView,
     pub workspace: String,
     pub workspace_draft: String,
     /// Cached for the composer so opening the Git review tab is not required.
     pub project_branch: Option<String>,
+    pub(crate) composer_branches: crate::git_branches::BranchPickerView,
     pub prompt: String,
     pub composer_attachments: Vec<ComposerAttachmentView>,
+    pub(crate) composer_attachment_visuals:
+        BTreeMap<String, crate::composer_attachments::AttachmentVisual>,
+    pub composer_attachment_loading: bool,
+    pub(crate) composer_image_viewer: Option<crate::composer_attachments::ImageGalleryView>,
     pub composer_add_menu_open: bool,
     pub composer_listening: bool,
+    /// Temporary editor presentation; the draft itself remains unchanged.
+    pub composer_expanded: bool,
     /// Persistent objective for the selected project and session draft.
     pub composer_goal: Option<String>,
     pub composer_goal_editor_open: bool,
     pub composer_goal_draft: String,
+    pub(crate) native_goal: crate::native_goal_ui::NativeGoalUiState,
+    pub(crate) native_instructions: crate::native_instruction_ui::NativeInstructionUiState,
+    pub(crate) native_context: crate::native_context_ui::NativeContextUiState,
+    pub composer_permissions_open: bool,
+    pub(crate) composer_full_access_confirm:
+        Option<crate::composer_permissions_ui::FullAccessConfirmation>,
+    pub(crate) composer_suggestions: crate::composer_suggestions::ComposerSuggestionsState,
     pub composer_project_menu_open: bool,
+    pub(crate) environment: crate::environment_ui::EnvironmentUiState,
+    pub(crate) project_actions: crate::project_actions::ProjectActionsState,
     /// Absolute workspace path and display name, in stable menu order.
     pub composer_project_options: Vec<(String, String)>,
     pub endpoint: String,
     pub model: String,
     pub native_provider_id: String,
+    pub native_output_limit_draft: String,
+    pub native_output_limit_field: String,
+    pub native_output_limit_responses: bool,
+    pub native_output_limit_messages: bool,
+    pub native_output_limit_load_error: Option<String>,
     pub hosted_web_search_mode: Option<HostedWebSearchMode>,
     pub catalog: Option<Arc<CatalogSnapshot>>,
     pub catalog_status: String,
     pub catalog_refreshing: bool,
+    pub(crate) provider_connections:
+        BTreeMap<String, crate::provider_connections::ConnectionSummary>,
+    pub(crate) provider_connect: Option<crate::provider_connections::ConnectView>,
+    pub(crate) provider_usage: BTreeMap<String, crate::provider_usage::ProviderUsageSnapshot>,
+    pub(crate) provider_usage_open: bool,
+    pub(crate) provider_usage_refreshing: bool,
     pub catalog_browse_provider: String,
     pub catalog_provider_query: String,
     pub catalog_model_query: String,
+    pub(crate) catalog_models_filter: CatalogModelsFilter,
+    pub(crate) catalog_settings_tab: CatalogSettingsTab,
+    pub(crate) catalog_expanded_model: Option<String>,
+    pub(crate) catalog_provider_menu_open: bool,
+    pub(crate) native_provider_definitions: BTreeMap<String, ProviderConnectionView>,
+    pub(crate) native_provider_registry_error: Option<String>,
     pub backend_options: Vec<(String, String)>,
     pub selected_backend: String,
     pub backend_menu_open: bool,
     pub composer_model: String,
     pub composer_model_options: Vec<(String, String)>,
     pub composer_routes: Vec<ModelRouteOption>,
+    pub(crate) composer_model_metadata: BTreeMap<String, crate::model_metadata::ModelMetadataView>,
     pub composer_provider_status: BTreeMap<String, ProviderModelStatus>,
     pub composer_model_menu_open: bool,
     pub composer_model_list_open: bool,
     /// Transient filter for the model list; never persisted with provider settings.
     pub composer_model_query: String,
+    /// Provider sections retain their collapsed state across menu openings.
+    pub composer_collapsed_model_providers: std::collections::BTreeSet<String>,
+    /// Search results initially expand their groups without overwriting preferences.
+    pub composer_search_collapsed_model_providers: std::collections::BTreeSet<String>,
     pub composer_advanced_open: bool,
     pub composer_effort: String,
     pub composer_effort_options: Vec<(String, String)>,
@@ -290,6 +454,10 @@ pub struct ViewState {
     /// Last provider-reported context use for the selected native session.
     /// Unknown usage or an unverified model limit leaves the badge hidden.
     pub composer_context_percent: Option<u8>,
+    pub composer_context_open: bool,
+    pub composer_context_details_open: bool,
+    /// A failed submission shown by the composer even before a turn starts.
+    pub composer_error: Option<String>,
     pub turn_mode: TurnMode,
     pub sessions: Vec<SessionView>,
     pub session_plans: BTreeMap<String, SessionPlanView>,
@@ -326,19 +494,42 @@ pub struct ViewState {
     pub native_key_available: bool,
     pub workspace_writes_enabled: bool,
     pub native_tool_permissions: ToolPermissions,
+    pub native_full_access: bool,
     pub native_command_isolation: CommandIsolation,
+    pub external_agents: crate::external_agent_settings::ExternalAgentSettings,
+    pub external_approval: Option<ExternalApprovalView>,
+    pub compat_hooks: Vec<CompatHookRowView>,
+    pub plugin_skills: Vec<PluginSkillsRowView>,
+    pub agent_clis: Vec<AgentCliRowView>,
+    /// The check command saved for the open project, shown in Settings.
+    pub turn_check_command: String,
+    pub turn_check_failure: Option<String>,
+    pub review_model: ReviewModelView,
+    pub compat_hooks_error: Option<String>,
     pub session_approval_grants: Vec<SessionApprovalGrantView>,
     pub(crate) native_commands: Vec<PersistentCommandSessionInfo>,
     pub(crate) native_commands_error: Option<String>,
+    pub(crate) native_command_control:
+        crate::native_command_control_ui::NativeCommandControlUiState,
+    pub(crate) native_command_output: crate::native_command_output_ui::NativeCommandOutputUiState,
+    pub(crate) native_command_history:
+        crate::native_command_history_ui::NativeCommandHistoryUiState,
     pub(crate) pending_native_command_termination: Option<String>,
     pub(crate) native_command_terminating: Option<String>,
     pub(crate) native_hooks: crate::native_hook_settings::HookUiState,
     pub(crate) native_exec_rules: crate::exec_policy_settings::ExecPolicyUiState,
     pub(crate) native_skills: crate::native_skills_settings::NativeSkillsUiState,
+    pub(crate) plugins: crate::plugins_ui::PluginsUiState,
+    pub keymap_profile: crate::keymap::KeymapProfile,
+    pub vim_mode: bool,
+    pub settings_keymap_menu_open: bool,
     pub settings_reduced_motion: bool,
     pub settings_reopen_last_workspace: bool,
     pub settings_terminal_shell: TerminalShell,
     pub settings_terminal_shell_draft: String,
+    pub settings_terminal_shell_menu_open: bool,
+    pub(crate) settings_choice_menu_open: Option<String>,
+    pub settings_terminal_shell_editing: bool,
     pub(crate) mcp_servers: Vec<crate::mcp_settings::McpServerSettings>,
     /// The saved ID being edited; `None` means the form creates a new server.
     pub(crate) mcp_selected_id: Option<String>,
@@ -355,6 +546,10 @@ pub struct ViewState {
     /// One requested OAuth scope per line; no token or client secret.
     pub(crate) mcp_draft_oauth_scopes: String,
     pub(crate) mcp_oauth_status: Option<McpOAuthViewStatus>,
+    pub(crate) mcp_inspection: crate::mcp_inspection::McpInspectionUiState,
+    pub(crate) conversation_activity: crate::conversation_activity::ConversationActivityUi,
+    pub(crate) conversation_details: crate::conversation_activity::ConversationDetailsUi,
+    pub(crate) stream_presentation: crate::stream_presentation::StreamingPresentation,
     pub(crate) mcp_draft_program: String,
     /// JSON array of literal process arguments, preserving empty strings.
     pub(crate) mcp_draft_args: String,
@@ -369,6 +564,7 @@ pub struct ViewState {
     pub marketplace: MarketplaceViewState,
     pub settings_page: SettingsPage,
     pub settings_nav_open: bool,
+    pub settings_nav_query: String,
     pub can_go_back: bool,
     pub can_go_forward: bool,
     pub show_command_center: bool,
@@ -387,6 +583,10 @@ pub struct ViewState {
     /// keeps these at `None` and uses the persisted dock preferences.
     pub left_presentation_width: Option<f32>,
     pub right_presentation_width: Option<f32>,
+    /// Transient panel height; the saved preference and visibility stay logical.
+    pub bottom_presentation_height: Option<f32>,
+    /// Transient in-flow environment reveal; None uses its open state.
+    pub environment_presentation_progress: Option<f32>,
     pub side_tab: SideTab,
     /// Pages are independent so switching tabs preserves the user's place.
     pub activity_page: usize,
@@ -396,15 +596,41 @@ pub struct ViewState {
     pub dock_overview_query: String,
     pub show_dock_overview: bool,
     pub show_dock_add_menu: bool,
+    pub notifications: crate::notifications::NotificationCenter,
+    pub show_dock_tabs_menu: bool,
     pub file_preview: Option<FilePreviewView>,
-    pub git_review: Option<Result<GitReview, String>>,
+    pub(crate) code_editor: Option<crate::code_editor_ui::CodeEditorView>,
+    pub(crate) editor_workbench: crate::editor_workbench_ui::EditorWorkbenchView,
+    pub(crate) debug: crate::debug_ui::DebugView,
+    pub(crate) debug_open: bool,
+    pub(crate) code_snapshot: Option<crate::code_snapshot_ui::CodeSnapshotView>,
+    pub(crate) code_editor_quit_confirm: bool,
+    pub(crate) code_editor_pending_saves: bool,
+    pub(crate) chat_diffs: crate::chat_diff_ui::ChatDiffUiState,
+    pub(crate) code_editor_reload_confirm: Option<crate::code_editor_files::EditorFileScope>,
+    pub git_review: Option<Result<Arc<GitReview>, String>>,
+    pub git_action_pending: bool,
+    pub git_action_error: Option<String>,
+    pub(crate) session_changes: crate::session_changes_ui::SessionChangesUiState,
+    pub(crate) browser: crate::browser_ui::BrowserUiState,
     pub review_detail: Option<ReviewDetailView>,
+    pub terminal_tabs: Vec<DockTabView>,
+    pub terminal_menu_open: bool,
+    pub terminal_controls: crate::terminal_dock_ui::TerminalControlsView,
+    pub terminal_maximized: bool,
+    pub show_terminal_panel: bool,
+    pub terminal_panel_height: f32,
     pub terminal_snapshot: Option<TerminalSnapshot>,
     pub terminal_input: String,
     pub terminal_error: Option<String>,
     pub pending_permissions: Vec<PermissionView>,
+    pub approval_ui: crate::approval_ui::ApprovalUiState,
+    pub composer_pending: Option<crate::composer_pending::PendingComposerSelection>,
     pub pending_subagent_permissions: Vec<SubagentPermissionView>,
     pub active_subagents: Vec<SubagentRunView>,
+    pub subagent_sessions: Vec<SubagentSessionView>,
+    pub expanded_subagent_inputs: Option<String>,
+    pub subagent_input_edit: Option<SubagentInputEditView>,
     pub recoverable_subagent: Option<SubagentRunView>,
     pub pending_tool_verification: Option<ToolVerificationView>,
     pub pending_batch_discard: Option<AbortedToolBatchView>,
@@ -414,6 +640,10 @@ pub struct ViewState {
     pub show_jump_to_bottom: bool,
     pub github_account: GithubAccountStatus,
     pub github_account_menu_open: bool,
+    pub github_account_refreshing: bool,
+    pub github_account_notice: Option<String>,
+    pub github_sign_in: Option<GithubSignInView>,
+    pub github_contributions: GithubContributionsStatus,
 }
 
 fn label(value: impl Into<String>, color: Color) -> Element {
@@ -471,9 +701,9 @@ fn icon_button(
         // The caller may request a 24/26/28 px toolbar target. A 30 px
         // minimum made its hover fill and hit region exceed the row, while a
         // text-button inset could leave the glyph visually off-center.
-        control.padding(4.0).radius(7.0).min_size(0.0, 0.0)
+        control.padding(4.0).min_size(0.0, 0.0)
     } else {
-        control.padding(5.0).radius(8.0).min_size(0.0, 30.0)
+        control.padding(5.0).min_size(0.0, 30.0)
     }
 }
 
@@ -487,7 +717,9 @@ fn hinted_icon_button(
 ) -> Element {
     let id = id.into();
     Tooltip::new(
-        icon_button(id.clone(), icon, "", fill, ink).size(Some(size), Some(size)),
+        icon_button(id.clone(), icon, "", fill, ink)
+            .padding(((size - 16.0) / 2.0).max(0.0))
+            .size(Some(size), Some(size)),
         id,
         hint,
         theme::component_palette(),
@@ -506,7 +738,9 @@ fn hinted_shortcut_icon_button(
 ) -> Element {
     let id = id.into();
     Tooltip::new(
-        icon_button(id.clone(), icon, "", fill, ink).size(Some(size), Some(size)),
+        icon_button(id.clone(), icon, "", fill, ink)
+            .padding(((size - 16.0) / 2.0).max(0.0))
+            .size(Some(size), Some(size)),
         id,
         hint,
         theme::component_palette(),
@@ -547,28 +781,6 @@ fn workspace_name(workspace: &str) -> &str {
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .unwrap_or("Elegir proyecto")
-}
-
-fn workspace_hint(workspace: &str) -> String {
-    let path = Path::new(workspace);
-    let name = workspace_name(workspace);
-    match path
-        .parent()
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-    {
-        Some(parent) => format!("…/{}/{}", shorten(parent, 12), shorten(name, 14)),
-        None => shorten(workspace, 28),
-    }
-}
-
-fn backend_name(state: &ViewState) -> &str {
-    state
-        .backend_options
-        .iter()
-        .find(|(id, _)| id == &state.selected_backend)
-        .map(|(_, title)| title.as_str())
-        .unwrap_or("Sin agente")
 }
 
 fn session_title(state: &ViewState) -> &str {
@@ -614,6 +826,9 @@ pub struct DockLayout {
 }
 
 pub fn dock_layout(state: &ViewState, viewport: f32) -> DockLayout {
+    if crate::ide_workspace::active(state) {
+        return crate::ide_workspace::layout(state, viewport);
+    }
     let left_visible = !(state.show_settings && viewport < 760.0)
         && state
             .left_presentation_width
@@ -707,7 +922,6 @@ struct SessionRowContext {
     selected_session: Option<String>,
     running: bool,
     session_menu_id: Option<String>,
-    backend_options: Vec<(String, String)>,
     session_groups: SessionGroups,
     group_menu_id: Option<String>,
     session_plans: BTreeMap<String, SessionPlanView>,
@@ -720,7 +934,6 @@ impl From<&ViewState> for SessionRowContext {
             selected_session: state.selected_session.clone(),
             running: state.running,
             session_menu_id: state.session_menu_id.clone(),
-            backend_options: state.backend_options.clone(),
             session_groups: state.session_groups.clone(),
             group_menu_id: state.group_menu_id.clone(),
             session_plans: state.session_plans.clone(),
@@ -741,45 +954,49 @@ fn session_row_with_context(
 ) -> Element {
     let selected = state.selected_session.as_deref() == Some(session.id.as_str());
     let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str());
-    let backend = state
-        .backend_options
-        .iter()
-        .find(|(id, _)| id == &session.backend)
-        .map(|(_, name)| name.as_str())
-        .unwrap_or(&session.backend)
-        .split_whitespace()
-        .next()
-        .unwrap_or("CLI");
     let row_width = (width - 18.0).max(0.0);
     let menu_width = row_width.max(246.0);
     let recovery = state.session_recovery.get(&session.id);
     let status_marker = if recovery.is_some() {
-        Element::icon(Icon::Refresh)
-            .foreground(theme::BRAND)
-            .size(Some(16.0), Some(32.0))
+        Element::icon(Icon::Refresh).foreground(theme::BRAND)
     } else if session.unread {
-        Element::column(vec![
-            Element::spacer().size(None, Some(13.0)),
-            Element::row(vec![
-                Element::spacer().size(Some(5.0), Some(6.0)),
-                Element::spacer()
-                    .size(Some(6.0), Some(6.0))
-                    .background(theme::BRAND)
-                    .radius(3.0),
-            ]),
-        ])
-        .size(Some(16.0), Some(32.0))
+        Element::spacer()
+            .size(Some(6.0), Some(6.0))
+            .background(theme::BRAND)
+            .radius(3.0)
     } else if selected && state.running {
-        Element::icon(Icon::Clock)
-            .foreground(theme::FOREGROUND)
-            .size(Some(16.0), Some(32.0))
+        Element::icon(Icon::Clock).foreground(theme::FOREGROUND)
     } else if session.pinned {
-        Element::icon(Icon::Pin)
+        Element::icon(Icon::Pin).foreground(theme::FOREGROUND_SUBTLE)
+    } else if let Some(agent) = session.backend.strip_prefix(CLI_BACKEND) {
+        Element::icon(crate::provider_icons::icon_for_agent_cli(agent))
             .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(16.0), Some(32.0))
     } else {
-        Element::spacer().size(Some(16.0), Some(32.0))
+        Element::spacer()
     };
+    // The status slot gives the 16px icon a 4px left inset, inside the
+    // rounded hover surface. Reserving it also keeps idle/running titles fixed.
+    let status_marker = Element::column(vec![
+        Element::spacer().flex(1.0),
+        Element::row(vec![
+            Element::spacer().flex(1.0),
+            status_marker.size(
+                Some(if session.unread && recovery.is_none() {
+                    6.0
+                } else {
+                    16.0
+                }),
+                Some(if session.unread && recovery.is_none() {
+                    6.0
+                } else {
+                    16.0
+                }),
+            ),
+            Element::spacer().flex(1.0),
+        ]),
+        Element::spacer().flex(1.0),
+    ])
+    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
     let mut actions = Vec::new();
     if state
         .session_plans
@@ -815,13 +1032,6 @@ fn session_row_with_context(
             "Restaurar",
             Icon::ArchiveUp,
             false,
-        ));
-        actions.push(DropdownMenuEntry::Separator);
-        actions.push(session_menu_action(
-            format!("session_delete:{}", session.id),
-            "Eliminar…",
-            Icon::Trash,
-            true,
         ));
     } else {
         actions.push(session_menu_action(
@@ -864,6 +1074,13 @@ fn session_row_with_context(
             }
         }
     }
+    actions.push(DropdownMenuEntry::Separator);
+    actions.push(session_menu_action(
+        format!("session_delete:{}", session.id),
+        "Eliminar…",
+        Icon::Trash,
+        true,
+    ));
     // The menu owns its popover. The parent row remains one full-width action,
     // while its last child has a more specific hit region and takes precedence.
     let menu_action_id = format!("session_menu:{}", session.id);
@@ -873,15 +1090,15 @@ fn session_row_with_context(
         theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE),
     )
     .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Regular)
+    .size(ControlSize::Dense)
     .render()
     .background(Color::TRANSPARENT)
     .hover_background(Color::TRANSPARENT)
     .pressed_background(Color::TRANSPARENT)
     .transition_ms(0)
-    .padding(8.0)
+    .padding(4.0)
     .min_size(0.0, 0.0)
-    .size(Some(32.0), Some(32.0));
+    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE));
     let menu_button = if menu_open {
         menu_button
     } else {
@@ -891,6 +1108,7 @@ fn session_row_with_context(
             "Más acciones",
             theme::component_palette(),
         )
+        .placement(TooltipPlacement::Right)
         .render()
     };
     let menu_button = DropdownMenu::new(
@@ -901,13 +1119,20 @@ fn session_row_with_context(
         theme::menu_palette(),
     )
     .placement(PopoverPlacement::BottomEnd)
+    .context_menu_style()
     .width(menu_width)
     .render();
-    Element::clickable(
+    let menu_button = Element::column(vec![
+        Element::spacer().flex(1.0),
+        menu_button,
+        Element::spacer().flex(1.0),
+    ])
+    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
+    let row = Element::clickable(
         format!("session:{}", session.id),
         Element::row(vec![
             status_marker,
-            Element::truncated_text(&session.title)
+            Element::faded_text(&session.title, 24.0)
                 .foreground(if selected || session.unread {
                     theme::BRAND
                 } else {
@@ -916,26 +1141,14 @@ fn session_row_with_context(
                 .font_family(FontFamily::Sans)
                 .font_size(12.0)
                 .min_size(0.0, 0.0)
-                .size(None, Some(32.0))
+                .size(None, Some(SIDEBAR_ROW_HEIGHT))
                 .flex(1.0),
-            Element::panel(
-                Element::truncated_text(backend)
-                    .foreground(if selected {
-                        theme::FOREGROUND
-                    } else {
-                        theme::FOREGROUND_SUBTLE
-                    })
-                    .font_family(FontFamily::Sans)
-                    .font_size(10.0),
-            )
-            .padding(4.0)
-            .size(Some(44.0), Some(32.0)),
             menu_button,
         ])
-        .gap(2.0)
-        .size(Some(row_width), Some(32.0)),
+        .gap(4.0)
+        .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
     )
-    .size(Some(row_width), Some(32.0))
+    .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT))
     .background(if selected || menu_open {
         theme::SELECTED
     } else {
@@ -948,7 +1161,16 @@ fn session_row_with_context(
     })
     .pressed_background(theme::SELECTED)
     .hover_with(menu_action_id)
-    .radius(8.0)
+    .radius(8.0);
+    theme::action_palette(
+        if selected || menu_open {
+            theme::SELECTED
+        } else {
+            theme::SIDEBAR
+        },
+        theme::FOREGROUND,
+    )
+    .interactive_surface(row)
 }
 
 fn project_header(project: &str, count: usize, collapsed: bool, width: f32) -> Element {
@@ -967,23 +1189,24 @@ fn project_header(project: &str, count: usize, collapsed: bool, width: f32) -> E
             })
             .foreground(theme::FOREGROUND_SUBTLE),
         )
-        .size(Some(ICON_SIZE), Some(32.0)),
+        .size(Some(ICON_SIZE), Some(SIDEBAR_ROW_HEIGHT)),
     ])
     .gap(6.0)
-    .size(None, Some(32.0));
+    .size(None, Some(SIDEBAR_ROW_HEIGHT));
     TreeRow::new(
         move |content| Element::clickable(action_id, content),
-        Element::icon(Icon::Folder).foreground(theme::FOREGROUND_SUBTLE),
+        Element::icon(openide_ui::folder_icon(project, !collapsed))
+            .foreground(theme::FOREGROUND_SUBTLE),
         Element::truncated_text(workspace_name(project))
             .foreground(theme::FOREGROUND)
             .font_family(FontFamily::Sans)
             .font_size(12.0),
         TreeGuides::root(),
-        theme::component_palette(),
+        theme::action_palette(theme::SIDEBAR, theme::FOREGROUND),
     )
     .trailing(trailing)
     .width(row_width)
-    .height(32.0)
+    .height(SIDEBAR_ROW_HEIGHT)
     .render()
 }
 
@@ -1031,8 +1254,8 @@ fn group_header(
         theme::component_palette(),
     )
     .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Compact)
-    .width(28.0)
+    .size(ControlSize::Dense)
+    .width(SIDEBAR_TOOL_SIZE)
     .active(menu_open)
     .render();
     let more_anchor = if menu_open {
@@ -1044,6 +1267,7 @@ fn group_header(
             "Opciones del grupo",
             theme::component_palette(),
         )
+        .placement(TooltipPlacement::Right)
         .render()
     };
     let more = DropdownMenu::new(
@@ -1054,9 +1278,10 @@ fn group_header(
         theme::menu_palette(),
     )
     .placement(PopoverPlacement::BottomEnd)
+    .context_menu_style()
     .width(202.0)
     .render();
-    Element::clickable(
+    let row = Element::clickable(
         format!("session_group_toggle:{}", group.id),
         Element::row(vec![
             Element::icon(Icon::Hash)
@@ -1078,14 +1303,15 @@ fn group_header(
             more,
         ])
         .gap(4.0)
-        .padding(3.0)
-        .size(Some(row_width), Some(32.0)),
+        .padding(2.0)
+        .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
     )
-    .size(Some(row_width), Some(32.0))
+    .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT))
     .background(theme::SIDEBAR)
     .hover_background(theme::hover_for(theme::SIDEBAR))
     .pressed_background(theme::SELECTED)
-    .radius(7.0)
+    .radius(7.0);
+    theme::action_palette(theme::SIDEBAR, theme::FOREGROUND).interactive_surface(row)
 }
 
 fn sidebar_nav_action(
@@ -1096,25 +1322,44 @@ fn sidebar_nav_action(
     width: f32,
     selected: bool,
 ) -> Element {
-    Element::clickable(
+    let icon = Element::icon(icon)
+        .foreground(if selected {
+            theme::FOREGROUND
+        } else {
+            theme::FOREGROUND_SUBTLE
+        })
+        .size(Some(16.0), Some(16.0));
+    let kbd = Kbd::new(shortcut, theme::component_palette())
+        .max_width((width - 92.0).max(0.0))
+        .render();
+    let centered = |element| {
+        Element::column(vec![
+            Element::spacer().flex(1.0),
+            element,
+            Element::spacer().flex(1.0),
+        ])
+        .size(None, Some(SIDEBAR_ROW_HEIGHT))
+    };
+    let row = Element::clickable(
         id,
         Element::row(vec![
-            Element::icon(icon)
-                .foreground(if selected {
-                    theme::FOREGROUND
-                } else {
-                    theme::FOREGROUND_SUBTLE
-                })
-                .size(Some(16.0), Some(16.0)),
-            label(title, theme::FOREGROUND).font_size(13.0),
-            Element::spacer().flex(1.0),
-            Kbd::new(shortcut, theme::component_palette()).render(),
+            Element::spacer().size(Some(4.0), None),
+            Element::row(vec![
+                centered(icon).size(Some(16.0), Some(SIDEBAR_ROW_HEIGHT)),
+                Element::truncated_text(title)
+                    .foreground(theme::FOREGROUND)
+                    .font_family(FontFamily::Sans)
+                    .font_size(13.0)
+                    .flex(1.0),
+                centered(kbd),
+            ])
+            .gap(8.0)
+            .flex(1.0),
+            Element::spacer().size(Some(8.0), None),
         ])
-        .gap(10.0)
-        .padding(8.0)
-        .size(Some(width), Some(32.0)),
+        .size(Some(width), Some(SIDEBAR_ROW_HEIGHT)),
     )
-    .size(Some(width), Some(32.0))
+    .size(Some(width), Some(SIDEBAR_ROW_HEIGHT))
     .background(if selected {
         theme::SELECTED
     } else {
@@ -1126,7 +1371,16 @@ fn sidebar_nav_action(
         theme::hover_for(theme::SIDEBAR)
     })
     .pressed_background(theme::SELECTED)
-    .radius(8.0)
+    .radius(8.0);
+    theme::action_palette(
+        if selected {
+            theme::SELECTED
+        } else {
+            theme::SIDEBAR
+        },
+        theme::FOREGROUND,
+    )
+    .interactive_surface(row)
 }
 
 #[derive(Clone)]
@@ -1269,23 +1523,26 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
     // the menu actions on project and session rows.
     let item_width = (width - 8.0).max(0.0);
     let row_width = (width - 26.0).max(0.0);
-    ScrollArea::uniform_list("sessions_list", count, 32.0, move |index| {
-        match &rows[index] {
+    ScrollArea::uniform_list(
+        "sessions_list",
+        count,
+        SIDEBAR_ROW_HEIGHT,
+        move |index| match &rows[index] {
             SessionListRow::Section(title) => Element::panel(eyebrow(*title))
-                .padding(9.0)
-                .size(Some(row_width), Some(32.0)),
+                .padding(6.0)
+                .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
             SessionListRow::Warning(message) => Element::panel(
                 Element::truncated_text(message)
                     .foreground(theme::DESTRUCTIVE)
                     .font_family(FontFamily::Sans)
                     .font_size(11.0),
             )
-            .padding(8.0)
-            .size(Some(row_width), Some(32.0)),
+            .padding(6.0)
+            .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT)),
             SessionListRow::Empty(message) => {
                 Element::panel(label(*message, theme::FOREGROUND_SUBTLE))
-                    .padding(8.0)
-                    .size(Some(row_width), Some(32.0))
+                    .padding(6.0)
+                    .size(Some(row_width), Some(SIDEBAR_ROW_HEIGHT))
             }
             SessionListRow::Project {
                 path,
@@ -1300,196 +1557,25 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
             SessionListRow::Session(session) => {
                 session_row_with_context(&context, session, item_width)
             }
-        }
-    })
+        },
+    )
     .tint(theme::FOREGROUND_SUBTLE)
     .render()
-    .padding(8.0)
+    .padding(6.0)
     .flex(1.0)
 }
 
 pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
-    let account_width = (width - if state.show_settings { 16.0 } else { 58.0 }).max(80.0);
-    let account = match &state.github_account {
-        GithubAccountStatus::Connected(identity) => {
-            let initial = identity
-                .login
-                .chars()
-                .next()
-                .unwrap_or('G')
-                .to_ascii_uppercase()
-                .to_string();
-            let badge = Element::panel(
-                label(initial, theme::FOREGROUND)
-                    .font_size(12.0)
-                    .font_family(FontFamily::Sans)
-                    .foreground(theme::FOREGROUND)
-                    .size(Some(12.0), Some(12.0)),
-            )
-            .padding(8.0)
-            .size(Some(28.0), Some(28.0))
-            .background(theme::SELECTED)
-            .radius(14.0);
-            let anchor = Element::clickable(
-                "github_account_open",
-                Element::row(vec![
-                    badge,
-                    Element::truncated_text(&identity.login)
-                        .font_family(FontFamily::Sans)
-                        .font_size(13.0)
-                        .foreground(theme::FOREGROUND)
-                        .flex(1.0),
-                    Element::panel(
-                        Element::icon(Icon::Github).foreground(theme::FOREGROUND_SUBTLE),
-                    )
-                    .size(Some(28.0), Some(28.0)),
-                ])
-                .gap(8.0)
-                .padding(4.0)
-                .size(Some(account_width), Some(36.0)),
-            )
-            .size(Some(account_width), Some(36.0))
-            .background(theme::SIDEBAR)
-            .hover_background(theme::hover_for(theme::SIDEBAR))
-            .pressed_background(theme::SELECTED)
-            .transition_ms(120)
-            .radius(9.0);
-            Tooltip::new(
-                anchor,
-                "github_account_open",
-                format!("Abrir perfil de {} en GitHub", identity.login),
-                theme::component_palette(),
-            )
-            .render()
-        }
-        GithubAccountStatus::Unverified { accounts, notice } => {
-            let many = accounts.len() > 1;
-            let reconnect = !many && notice.is_some();
-            let action_id = if many {
-                "github_account_menu_toggle".to_owned()
-            } else if reconnect {
-                "github_account_connect".to_owned()
-            } else {
-                format!("github_account_verify:{}", accounts[0])
-            };
-            let title = if many {
-                if width < 230.0 {
-                    "Elegir cuenta"
-                } else {
-                    "Elegir cuenta GitHub"
-                }
-            } else if reconnect {
-                if width < 230.0 {
-                    "Reconectar"
-                } else {
-                    "Reconectar GitHub"
-                }
-            } else if width < 230.0 {
-                "Verificar"
-            } else {
-                "Verificar GitHub"
-            };
-            let mut button = Button::new(
-                action_id.clone(),
-                title,
-                theme::action_palette(theme::SIDEBAR, theme::FOREGROUND),
-            )
-            .icon(Icon::Github)
-            .variant(ButtonVariant::Subtle)
-            .size(ControlSize::Spacious)
-            .width(account_width);
-            if many {
-                button = button.trailing_icon(Icon::ChevronDown);
-            }
-            let hint = notice.as_deref().unwrap_or(if many {
-                "Hay varias cuentas guardadas. Elige cuál verificar."
-            } else {
-                "Cuenta guardada sin verificar. Comprueba la conexión."
-            });
-            let anchor = Tooltip::new(
-                button.render().padding(8.0).gap(10.0),
-                action_id,
-                hint,
-                theme::component_palette(),
-            )
-            .render();
-            if many {
-                let mut options: Vec<DropdownOption> = accounts
-                    .iter()
-                    .map(|account| {
-                        DropdownOption::new(
-                            format!("github_account_verify:{account}"),
-                            format!("@{account}"),
-                        )
-                        .icon(Icon::Github)
-                    })
-                    .collect();
-                options.push(
-                    DropdownOption::new("github_account_connect", "Reconectar con GitHub")
-                        .icon(Icon::Refresh),
-                );
-                DropdownList::new(
-                    anchor,
-                    options,
-                    state.github_account_menu_open,
-                    "github_account_menu_dismiss",
-                    theme::menu_palette(),
-                )
-                .placement(PopoverPlacement::TopStart)
-                .width(232.0)
-                .render()
-            } else {
-                anchor
-            }
-        }
-        status => {
-            let (title, hint, disabled) = match status {
-                GithubAccountStatus::Checking => {
-                    ("Buscando GitHub…", "Buscando una cuenta de GitHub", true)
-                }
-                GithubAccountStatus::Connecting => (
-                    "Conectando…",
-                    "Completa el inicio de sesión en el navegador",
-                    true,
-                ),
-                GithubAccountStatus::Verifying(_) => {
-                    ("Verificando…", "Validando la cuenta con GitHub", true)
-                }
-                GithubAccountStatus::Unavailable(reason) => {
-                    ("Conectar con GitHub", reason.as_str(), false)
-                }
-                GithubAccountStatus::Disconnected => {
-                    ("Conectar con GitHub", "Iniciar sesión con GitHub", false)
-                }
-                GithubAccountStatus::Connected(_) => unreachable!(),
-                GithubAccountStatus::Unverified { .. } => unreachable!(),
-            };
-            let title = if width < 230.0 && !disabled {
-                "Conectar"
-            } else {
-                title
-            };
-            let mut button = Button::new(
-                "github_account_connect",
-                title,
-                theme::action_palette(theme::SIDEBAR, theme::FOREGROUND),
-            )
-            .icon(Icon::Github)
-            .variant(ButtonVariant::Subtle)
-            .size(ControlSize::Spacious)
-            .width(account_width);
-            if disabled {
-                button = button.disabled();
-            }
-            Tooltip::new(
-                button.render().padding(8.0).gap(10.0),
-                "github_account_connect",
-                hint,
-                theme::component_palette(),
-            )
-            .render()
-        }
-    };
+    use crate::sidebar_chrome::{ACCOUNT_FOOTER_HEIGHT, GAP, INSET, TOOL_SIZE};
+    let account_width = (width
+        - INSET * 2.0
+        - if state.show_settings {
+            0.0
+        } else {
+            TOOL_SIZE + GAP
+        })
+    .max(0.0);
+    let account = crate::github_account_menu_ui::build(state, account_width, width);
     let settings = Tooltip::new(
         UiIconButton::new(
             "toggle_settings",
@@ -1497,24 +1583,31 @@ pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
             theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
         )
         .variant(ButtonVariant::Subtle)
-        .size(ControlSize::Spacious)
+        .button_size(openide_ui::ButtonSize::IconExtraSmall)
         .render(),
         "toggle_settings",
         "Configuración",
         theme::component_palette(),
     )
+    .placement(TooltipPlacement::Right)
     .render();
     let mut footer = vec![account.flex(1.0)];
     if !state.show_settings {
         footer.push(settings);
     }
-    Element::panel(Element::row(footer).gap(6.0))
-        .padding(8.0)
-        .size(None, Some(52.0))
+    Element::panel(Element::row(footer).gap(GAP))
+        .padding(INSET)
+        .size(None, Some(ACCOUNT_FOOTER_HEIGHT))
 }
 
+#[cfg(test)]
 fn sidebar(state: &ViewState, width: f32) -> Element {
-    let header = Element::panel(
+    sidebar_for_height(state, width, 720.0)
+}
+
+fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
+    let header = Element::panel(Element::row(vec![
+        Element::spacer().size(Some(2.0), None),
         Element::row(vec![
             Tooltip::new(
                 icon_button(
@@ -1524,41 +1617,44 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
                     theme::SIDEBAR,
                     theme::FOREGROUND,
                 )
-                .size(Some(32.0), Some(32.0)),
+                .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
                 "toggle_sidebar",
                 "Ocultar barra lateral",
                 theme::component_palette(),
             )
-            .shortcut("Ctrl+B")
+            .shortcut(crate::keymap::KeymapProfile::default().shortcut(crate::keymap::ShortcutAction::ToggleSidebar))
             .placement(TooltipPlacement::Below)
             .render(),
-            // TruncatedText vertically centers its line inside the 32 px
+            // TruncatedText vertically centers its line inside the 24 px
             // header row; Text paints at the top and sat above the toggle.
             Element::truncated_text("OpenIDE")
                 .foreground(theme::FOREGROUND)
                 .font_family(FontFamily::Sans)
-                .font_size(14.0),
+                .font_size(13.0),
             Element::spacer().flex(1.0),
+            crate::notifications_ui::bell(&state.notifications, theme::SIDEBAR, SIDEBAR_TOOL_SIZE, false),
         ])
-        .gap(2.0),
-    )
-    .padding(8.0)
-    .size(None, Some(HEADER));
+        .gap(4.0)
+        .flex(1.0),
+        Element::spacer().size(Some(2.0), None),
+    ]))
+    .padding(4.0)
+    .size(None, Some(crate::dock_tab_ui::HEADER_HEIGHT));
     let primary_nav = Element::column(vec![
         sidebar_nav_action(
             "new_session_sidebar",
             Icon::Add,
             "Nueva tarea",
-            "Ctrl+N",
-            width - 18.0,
+            state.keymap_profile.shortcut(crate::keymap::ShortcutAction::NewTask),
+            width - 12.0,
             false,
         ),
         sidebar_nav_action(
             "open_command_center",
             Icon::Search,
             "Buscar",
-            "Ctrl+K",
-            width - 18.0,
+            state.keymap_profile.shortcut(crate::keymap::ShortcutAction::CommandPalette),
+            width - 12.0,
             false,
         ),
         sidebar_nav_action(
@@ -1566,7 +1662,7 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
             Icon::Clock,
             "Automatizaciones",
             "",
-            width - 18.0,
+            width - 12.0,
             state.main_page == MainPage::Automations,
         ),
         sidebar_nav_action(
@@ -1574,12 +1670,12 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
             Icon::Grid,
             "Marketplace",
             "",
-            width - 18.0,
+            width - 12.0,
             state.main_page == MainPage::Marketplace,
         ),
     ])
-    .gap(4.0)
-    .padding(8.0);
+    .gap(2.0)
+    .padding(6.0);
     let project_paths: BTreeSet<_> = state
         .sessions
         .iter()
@@ -1608,7 +1704,7 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
         },
         theme::FOREGROUND_SUBTLE,
     )
-    .size(Some(28.0), Some(28.0));
+    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE));
     let sort_trigger = if state.session_sort_menu_open {
         sort_trigger
     } else {
@@ -1618,6 +1714,7 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
             "Filtrar y ordenar tareas",
             theme::component_palette(),
         )
+        .placement(TooltipPlacement::Below)
         .render()
     };
     let sort_control = DropdownList::new(
@@ -1678,11 +1775,12 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
                 },
                 theme::FOREGROUND_SUBTLE,
             )
-            .size(Some(28.0), Some(28.0)),
+            .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
             "session_group_new",
             "Nuevo grupo",
             theme::component_palette(),
         )
+        .placement(TooltipPlacement::Below)
         .render()
     } else {
         let mut expand = UiIconButton::new(
@@ -1695,12 +1793,14 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
             theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
         )
         .variant(ButtonVariant::Subtle)
-        .size(ControlSize::Compact);
+        .size(ControlSize::Dense);
         if project_paths.is_empty() || state.session_organization == SessionOrganization::Recent {
             expand = expand.disabled();
         }
         Tooltip::new(
-            expand.render().size(Some(28.0), Some(28.0)),
+            expand
+                .render()
+                .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
             "session_expand_all",
             if all_projects_collapsed {
                 "Expandir proyectos"
@@ -1709,6 +1809,7 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
             },
             theme::component_palette(),
         )
+        .placement(TooltipPlacement::Below)
         .render()
     };
     let archive_control = Tooltip::new(
@@ -1727,7 +1828,7 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
             },
             theme::FOREGROUND_SUBTLE,
         )
-        .size(Some(28.0), Some(28.0)),
+        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
         "toggle_archived_view",
         if state.show_archived {
             "Cerrar archivo"
@@ -1736,7 +1837,19 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
         },
         theme::component_palette(),
     )
+    .placement(TooltipPlacement::Below)
     .render();
+    let align_tool = |control| {
+        Element::column(vec![
+            Element::spacer().flex(1.0),
+            control,
+            Element::spacer().flex(1.0),
+        ])
+        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT))
+    };
+    let context_action = align_tool(context_action);
+    let sort_control = align_tool(sort_control);
+    let archive_control = align_tool(archive_control);
     let mut toolbar = Vec::new();
     if !state.show_archived {
         let selector = SegmentedControl::new(
@@ -1825,7 +1938,8 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
                     theme::SELECTED,
                     theme::FOREGROUND,
                     28.0,
-                ),
+                )
+                .tooltip_placement(TooltipPlacement::Below),
                 hinted_icon_button(
                     "session_group_create_cancel",
                     Icon::Close,
@@ -1833,27 +1947,45 @@ fn sidebar(state: &ViewState, width: f32) -> Element {
                     theme::SIDEBAR,
                     theme::FOREGROUND_SUBTLE,
                     28.0,
-                ),
+                )
+                .tooltip_placement(TooltipPlacement::Below),
             ])
             .gap(3.0)
             .size(None, Some(28.0)),
         );
     }
-    let session_toolbar = Element::column(toolbar).gap(4.0).padding(8.0);
-    let footer = sidebar_account_footer(state, width);
-    Element::column(vec![
+    let session_toolbar = Element::column(toolbar).gap(4.0).padding(6.0);
+    let compact_usage = height < 440.0;
+    let footer = if compact_usage {
+        let usage_slot = crate::sidebar_chrome::ACCOUNT_FOOTER_HEIGHT;
+        Element::row(vec![
+            sidebar_account_footer(state, (width - usage_slot - 4.0).max(0.0)).flex(1.0),
+            Element::panel(crate::provider_usage_ui::sidebar_compact(state))
+                .padding(crate::sidebar_chrome::INSET)
+                .size(Some(usage_slot), Some(usage_slot)),
+        ])
+        .gap(4.0)
+        .size(None, Some(crate::sidebar_chrome::ACCOUNT_FOOTER_HEIGHT))
+    } else {
+        sidebar_account_footer(state, width)
+    };
+    let mut items = vec![
         header,
         divider(),
         primary_nav,
         session_toolbar,
         sessions_virtual_list(state, width),
         divider(),
-        footer,
-    ])
-    .size(Some(width), None)
-    .background(theme::SIDEBAR)
-    .border(theme::BORDER, 1.0)
-    .radius(6.0)
+    ];
+    if !compact_usage {
+        items.push(crate::provider_usage_ui::sidebar_card(state, width));
+    }
+    items.push(footer);
+    Element::column(items)
+        .size(Some(width), None)
+        .background(theme::SIDEBAR)
+        .border(theme::BORDER, 1.0)
+        .radius(6.0)
 }
 
 fn pane_empty_state(
@@ -1946,133 +2078,25 @@ fn pane_pagination(id: &str, total: usize, page: usize, start: usize, end: usize
 }
 
 fn file_tree_content(state: &ViewState, width: f32) -> Element {
-    let mut content = vec![Element::row(vec![
-        eyebrow(format!(
-            "ARCHIVOS · {}",
-            shorten(workspace_name(&state.workspace), 20)
-        )),
-        Element::spacer().flex(1.0),
-        Tooltip::new(
-            icon_button(
-                "files_refresh",
-                Icon::Refresh,
-                "",
-                theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
-            )
-            .size(Some(28.0), Some(28.0)),
-            "files_refresh",
-            "Actualizar archivos",
-            theme::component_palette(),
-        )
-        .render(),
-    ])
-    .gap(6.0)
-    .size(None, Some(32.0))];
-    if state.file_rows.is_empty() {
-        let failed = state.files_status.starts_with("No se pudo");
-        content.push(pane_empty_state(
-            if failed { Icon::Refresh } else { Icon::Folder },
-            if failed {
-                "No se pudieron cargar los archivos"
-            } else {
-                "Carpeta vacía"
-            },
-            if state.files_status.is_empty() {
-                "Abre un proyecto para ver sus archivos aquí.".to_owned()
-            } else {
-                state.files_status.clone()
-            },
-            Some(("files_refresh", "Volver a cargar")),
-        ));
-    } else {
-        if state.files_status.starts_with("Lista parcial") {
-            content.push(label(&state.files_status, theme::FOREGROUND_SUBTLE).font_size(11.0));
-        }
-        let rows = Arc::new(state.file_rows.clone());
-        let guides = Arc::new(guides_for_depths(
-            &rows.iter().map(|entry| entry.depth).collect::<Vec<_>>(),
-        ));
-        let row_count = rows.len() + usize::from(state.file_root_can_load_more);
-        content.push(
-            ScrollArea::uniform_list("file_tree", row_count, 28.0, move |index| {
-                if index == rows.len() {
-                    return Button::new(
-                        "file_more_root",
-                        "Cargar más archivos…",
-                        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .render()
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .size(Some((width - 16.0).max(120.0)), Some(28.0));
-                }
-                let entry = &rows[index];
-                let icon = Element::icon(if entry.is_dir {
-                    Icon::Folder
-                } else {
-                    Icon::Code
-                })
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(ICON_SIZE), Some(ICON_SIZE));
-                let title = Element::truncated_text(&entry.name)
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(theme::FOREGROUND);
-                let mut row = TreeRow::new(
-                    move |content| Element::clickable(format!("file_row:{index}"), content),
-                    icon,
-                    title,
-                    guides[index].clone(),
-                    theme::component_palette(),
-                )
-                .width((width - 16.0).max(120.0))
-                .guide_color(theme::TREE_GUIDE);
-                if entry.is_dir {
-                    let chevron = Element::icon(if entry.expanded {
-                        Icon::ChevronDown
-                    } else {
-                        Icon::ChevronRight
-                    })
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(Some(ICON_SIZE), Some(ICON_SIZE));
-                    row = row.trailing(if entry.expanded && entry.can_load_more {
-                        Element::row(vec![
-                            Button::new(
-                                format!("file_more:{index}"),
-                                "Más",
-                                theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
-                            )
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Compact)
-                            .render()
-                            .font_family(FontFamily::Sans)
-                            .font_size(11.0)
-                            .padding(3.0)
-                            .radius(5.0)
-                            .size(Some(36.0), Some(22.0)),
-                            chevron,
-                        ])
-                        .gap(4.0)
-                    } else {
-                        chevron
-                    });
-                }
-                row.render()
-            })
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .flex(1.0),
-        );
-    }
-    Element::column(content).gap(6.0).padding(8.0).flex(1.0)
+    crate::files_panel_ui::build(state, width)
 }
 
-fn tool_status(output: &Option<String>, is_error: bool) -> &'static str {
+fn tool_status(
+    output: &Option<String>,
+    is_error: bool,
+    activity: crate::transcript::ActivityStatus,
+) -> &'static str {
     if output.is_none() {
-        "En curso"
+        match activity {
+            crate::transcript::ActivityStatus::Running => "En curso",
+            crate::transcript::ActivityStatus::WaitingPermission => "Esperando permiso",
+            crate::transcript::ActivityStatus::PermissionInterrupted => {
+                "Permiso pendiente en turno interrumpido"
+            }
+            crate::transcript::ActivityStatus::Failed => "Falló sin resultado",
+            crate::transcript::ActivityStatus::Cancelled => "Cancelada",
+            _ => "Resultado incierto",
+        }
     } else if is_error {
         "Error"
     } else {
@@ -2122,76 +2146,40 @@ fn transcript_item(
             .gap(8.0),
         )
         .padding(14.0),
-        TranscriptItem::WebCitation { title, url } => Element::clickable(
-            format!("web_citation_open:{item_index}"),
-            Element::column(vec![
-                eyebrow("FUENTE WEB").foreground(theme::BRAND),
-                label(shorten(title, 100), theme::FOREGROUND),
-                mono(shorten(url, 140), theme::FOREGROUND_SUBTLE).font_size(11.0),
-            ])
-            .gap(5.0)
-            .padding(10.0),
-        )
-        .background(theme::PANEL)
-        .hover_background(theme::HOVER)
-        .border(theme::BORDER, 1.0)
-        .radius(10.0),
-        TranscriptItem::Tool {
-            id,
-            name,
-            arguments,
-            output,
-            is_error,
-        } => {
-            let selected = state.selected_tool_id.as_deref() == Some(id.as_str());
-            let ink = if *is_error {
-                theme::DESTRUCTIVE
-            } else {
-                theme::TOOL
-            };
-            let mut rows = vec![icon_button(
-                format!("tool:{id}"),
-                Icon::Code,
-                format!(
-                    "{} · {}",
-                    shorten(if name.is_empty() { "Herramienta" } else { name }, 24),
-                    tool_status(output, *is_error)
-                ),
-                if selected {
-                    theme::SELECTED
-                } else {
-                    theme::PANEL
-                },
-                ink,
-            )
-            .size(None, Some(34.0))];
-            // On a narrow surface, the selected tool expands in place.
-            if !side_visible && selected {
-                rows.push(mono(json_text(arguments), theme::FOREGROUND_SUBTLE).font_size(12.0));
-                if let Some(output) = output {
-                    rows.push(
-                        mono(
-                            output,
-                            if *is_error {
-                                theme::DESTRUCTIVE
-                            } else {
-                                theme::FOREGROUND
-                            },
-                        )
-                        .font_size(12.0),
-                    );
-                }
-            } else if selected {
-                rows.push(
-                    label("Detalles en Actividad →", theme::FOREGROUND_SUBTLE).font_size(12.0),
-                );
-            }
-            Element::panel(Element::column(rows).gap(6.0))
-                .padding(8.0)
-                .background(theme::PANEL)
-                .border(theme::BORDER, 1.0)
-                .radius(10.0)
+        TranscriptItem::Reasoning { .. }
+        | TranscriptItem::ToolPreview { .. }
+        | TranscriptItem::ModelUsage { .. } => {
+            crate::session_surface::model_stream_item(item, item_index, state, 780.0)
         }
+        TranscriptItem::PlanSnapshot { .. } => {
+            crate::session_surface::plan_snapshot_item(item, item_index, state)
+        }
+        TranscriptItem::WebSearch { .. } => crate::search_activity_ui::hosted(item, state),
+        TranscriptItem::Hook(hook) => crate::session_surface::hook_activity_card(hook),
+        TranscriptItem::Activity(activity) => crate::session_surface::activity_marker(activity),
+        TranscriptItem::WebCitation { title, url } => {
+            theme::interactive_surface(Element::clickable(
+                format!("web_citation_open:{item_index}"),
+                Element::column(vec![
+                    eyebrow("FUENTE WEB").foreground(theme::BRAND),
+                    label(shorten(title, 100), theme::FOREGROUND),
+                    mono(shorten(url, 140), theme::FOREGROUND_SUBTLE).font_size(11.0),
+                ])
+                .gap(5.0)
+                .padding(10.0),
+            ))
+            .background(theme::PANEL)
+            .border(theme::BORDER, 1.0)
+        }
+        TranscriptItem::Tool { id, .. } => crate::session_surface::tool_line_with_output(
+            item,
+            state,
+            side_visible,
+            !side_visible,
+            crate::session_surface::tool_partial_output(state, item_index, id),
+            crate::session_surface::tool_media(state, item_index, id),
+        ),
+        TranscriptItem::ToolOutput { .. } | TranscriptItem::ToolMedia { .. } => Element::spacer(),
         TranscriptItem::ProcessOutput { stream, text } => {
             let (title, ink) = match stream {
                 OutputStream::Stdout => ("SALIDA DEL PROCESO", theme::TOOL_RESULT),
@@ -2225,7 +2213,7 @@ fn transcript_item(
                     theme::FOREGROUND_SUBTLE
                 }),
                 label(
-                    message,
+                    crate::session_surface::conversation_notice_message(message, *is_error),
                     if *is_error {
                         theme::DESTRUCTIVE
                     } else {
@@ -2255,8 +2243,15 @@ fn timeline(state: &ViewState, side_visible: bool, compact: bool) -> Element {
         ]);
     }
     for (index, item) in state.transcript.iter().enumerate() {
+        if matches!(
+            item,
+            TranscriptItem::ToolOutput { .. } | TranscriptItem::ToolMedia { .. }
+        ) {
+            continue;
+        }
         items.push(transcript_item(item, index, state, side_visible));
     }
+    items.extend(crate::session_surface::host_activity_markers(state));
     ScrollArea::new(
         "transcript",
         Element::column(items)
@@ -2267,11 +2262,14 @@ fn timeline(state: &ViewState, side_visible: bool, compact: bool) -> Element {
     .render()
     .flex(1.0)
     .background(theme::BACKGROUND)
+    .bottom_fade(
+        theme::BACKGROUND,
+        crate::session_surface::TRANSCRIPT_BOTTOM_FADE_HEIGHT,
+    )
 }
 
 fn composer(state: &ViewState, center_width: f32) -> Element {
-    let compact = center_width < 470.0;
-    let card_width = (center_width - if compact { 20.0 } else { 32.0 }).clamp(0.0, 1120.0);
+    let card_width = (center_width - 32.0).clamp(0.0, 1120.0);
     let card = build_composer(&ComposerProps::from_state(
         state,
         card_width,
@@ -2285,54 +2283,7 @@ fn composer(state: &ViewState, center_width: f32) -> Element {
         card,
         Element::spacer().flex(1.0),
     ])
-    .padding(10.0)
-}
-
-fn permission_card(permission: &PermissionView, compact: bool) -> Element {
-    Element::panel(
-        Element::column(vec![
-            eyebrow("PERMISO REQUERIDO"),
-            label(
-                format!("El agente quiere usar {}", permission.tool_name),
-                theme::FOREGROUND,
-            )
-            .font_size(13.0),
-            ScrollArea::new(
-                format!("permission_args:{}", permission.request_id),
-                mono(&permission.arguments, theme::FOREGROUND_SUBTLE)
-                    .font_size(11.0)
-                    .padding(6.0),
-            )
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .size(None, Some(if compact { 64.0 } else { 86.0 }))
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
-            .radius(6.0),
-            Element::row(vec![
-                button(
-                    format!("permission_deny:{}", permission.request_id),
-                    "Denegar",
-                    theme::HOVER,
-                    theme::FOREGROUND,
-                )
-                .size(Some(90.0), Some(30.0)),
-                button(
-                    format!("permission_allow:{}", permission.request_id),
-                    "Permitir una vez",
-                    theme::BRAND,
-                    theme::PRIMARY_FOREGROUND,
-                )
-                .size(Some(140.0), Some(30.0)),
-            ])
-            .gap(6.0),
-        ])
-        .gap(6.0),
-    )
-    .padding(10.0)
-    .background(theme::CARD)
-    .border(theme::BORDER, 1.0)
-    .radius(10.0)
+    .padding(16.0)
 }
 
 fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f32) -> Element {
@@ -2352,35 +2303,64 @@ fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f3
         label(shorten(session_title(state), title_max), theme::FOREGROUND),
         Element::spacer().flex(1.0),
     ]);
+    if sidebar_hidden {
+        actions.push(crate::notifications_ui::bell(
+            &state.notifications,
+            theme::PANEL,
+            SIDEBAR_TOOL_SIZE,
+            false,
+        ));
+    }
+    if width >= 300.0 {
+        actions.push(crate::environment_ui::header_control(state, width));
+    }
     if available && !visible {
         actions.push(
-            icon_button(
+            Tooltip::new(
+                icon_button(
+                    "toggle_side_pane",
+                    Icon::PanelRightOpen,
+                    "Panel",
+                    theme::HOVER,
+                    theme::FOREGROUND,
+                )
+                .size(Some(74.0), Some(32.0)),
                 "toggle_side_pane",
-                Icon::PanelRightOpen,
-                "Panel",
-                theme::HOVER,
-                theme::FOREGROUND,
+                "Mostrar panel derecho: archivos, cambios, terminal y navegador",
+                theme::component_palette(),
             )
-            .size(Some(74.0), Some(32.0)),
+            .placement(TooltipPlacement::Below)
+            .render(),
         );
     }
     actions.push(
-        icon_button(
+        Tooltip::new(
+            icon_button(
+                "toggle_settings",
+                if state.show_settings {
+                    Icon::Close
+                } else {
+                    Icon::Settings
+                },
+                if state.show_settings {
+                    "Volver"
+                } else {
+                    "Opciones"
+                },
+                theme::HOVER,
+                theme::FOREGROUND,
+            )
+            .size(Some(96.0), Some(32.0)),
             "toggle_settings",
             if state.show_settings {
-                Icon::Close
+                "Volver al chat"
             } else {
-                Icon::Settings
+                "Abrir configuración de OpenIDE"
             },
-            if state.show_settings {
-                "Volver"
-            } else {
-                "Opciones"
-            },
-            theme::HOVER,
-            theme::FOREGROUND,
+            theme::component_palette(),
         )
-        .size(Some(96.0), Some(32.0)),
+        .placement(TooltipPlacement::Below)
+        .render(),
     );
     Element::column(vec![
         Element::panel(Element::row(actions).gap(6.0))
@@ -2403,342 +2383,18 @@ pub(super) fn sidebar_reopen_control(background: Color) -> Element {
             background,
             theme::FOREGROUND,
         )
-        .size(Some(32.0), Some(32.0)),
+        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
         "toggle_sidebar_reopen",
         "Mostrar barra lateral",
         theme::component_palette(),
     )
-    .shortcut("Ctrl+B")
+    .shortcut(crate::keymap::KeymapProfile::default().shortcut(crate::keymap::ShortcutAction::ToggleSidebar))
     .placement(TooltipPlacement::Below)
     .render()
 }
 
-fn context_content(state: &ViewState) -> Element {
-    if state.selected_session.is_none() && state.transcript.is_empty() {
-        return Element::column(vec![
-            pane_empty_state(
-                Icon::Chat,
-                "Sin tarea activa",
-                "Inicia una tarea para ver aquí su contexto y el trabajo del agente.",
-                Some(("new_session_header", "Nueva tarea")),
-            ),
-            Element::spacer().size(None, Some(12.0)),
-            eyebrow("PROYECTO ACTUAL"),
-            label(workspace_name(&state.workspace), theme::FOREGROUND),
-            mono(workspace_hint(&state.workspace), theme::FOREGROUND_SUBTLE).font_size(11.0),
-        ])
-        .gap(6.0)
-        .padding(12.0);
-    }
-    let latest_user = state.transcript.iter().rev().find_map(|item| match item {
-        TranscriptItem::User { content, .. } => Some(content.as_str()),
-        _ => None,
-    });
-    let latest_assistant = state.transcript.iter().rev().find_map(|item| match item {
-        TranscriptItem::Assistant { content, .. } => Some(content.as_str()),
-        _ => None,
-    });
-    let tool_count = state
-        .transcript
-        .iter()
-        .filter(|item| matches!(item, TranscriptItem::Tool { .. }))
-        .count();
-    let mut items = vec![
-        eyebrow("PROYECTO"),
-        label(workspace_name(&state.workspace), theme::FOREGROUND).font_size(15.0),
-        mono(workspace_hint(&state.workspace), theme::FOREGROUND_SUBTLE).font_size(11.0),
-        Element::spacer().size(None, Some(6.0)),
-        eyebrow("SESIÓN"),
-        label(session_title(state), theme::FOREGROUND),
-        Element::spacer().size(None, Some(6.0)),
-        eyebrow("AGENTE"),
-        label(backend_name(state), theme::FOREGROUND),
-    ];
-    if state.selected_backend == "native" {
-        items.push(mono(&state.model, theme::FOREGROUND_SUBTLE).font_size(12.0));
-    }
-    items.extend([
-        Element::spacer().size(None, Some(6.0)),
-        eyebrow("ESTADO"),
-        label(&state.status, theme::FOREGROUND_SUBTLE),
-        label(
-            format!("{tool_count} herramientas en esta sesión"),
-            theme::FOREGROUND_SUBTLE,
-        )
-        .font_size(12.0),
-    ]);
-    if let Some(prompt) = latest_user {
-        items.extend([
-            Element::spacer().size(None, Some(8.0)),
-            eyebrow("ÚLTIMA SOLICITUD"),
-            label(shorten(prompt, 500), theme::FOREGROUND),
-        ]);
-    }
-    if let Some(response) = latest_assistant {
-        items.extend([
-            Element::spacer().size(None, Some(8.0)),
-            eyebrow("ÚLTIMA RESPUESTA"),
-            label(shorten(response, 500), theme::FOREGROUND_SUBTLE),
-        ]);
-    }
-    Element::column(items).gap(5.0).padding(12.0)
-}
-
 fn activity_content(state: &ViewState) -> Element {
-    let tools: Vec<_> = state
-        .transcript
-        .iter()
-        .filter(|item| matches!(item, TranscriptItem::Tool { .. }))
-        .collect();
-    let selected = state
-        .selected_tool_id
-        .as_deref()
-        .and_then(|selected_id| {
-            tools
-                .iter()
-                .copied()
-                .find(|item| matches!(item, TranscriptItem::Tool { id, .. } if id == selected_id))
-        })
-        .or_else(|| tools.last().copied());
-    let mut items = vec![eyebrow("ACTIVIDAD DE LA SESIÓN")];
-    let selected_native = state.selected_session.as_deref().is_some_and(|id| {
-        state.selected_backend == "native"
-            || !state.native_commands.is_empty()
-            || state
-                .sessions
-                .iter()
-                .any(|session| session.id == id && session.backend == "native")
-    });
-    if selected_native {
-        items.push(eyebrow(format!(
-            "PERMISOS DE SESIÓN · {}",
-            state.session_approval_grants.len()
-        )));
-        if state.session_approval_grants.is_empty() {
-            items.push(
-                label(
-                    "No hay permisos vigentes en esta tarea.",
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(11.0),
-            );
-        }
-        for grant in &state.session_approval_grants {
-            items.push(
-                Element::row(vec![
-                    Element::column(vec![
-                        label(&grant.tool_name, theme::FOREGROUND).font_size(11.0),
-                        mono(shorten(&grant.key_digest, 12), theme::FOREGROUND_SUBTLE)
-                            .font_size(10.0),
-                    ])
-                    .gap(3.0)
-                    .flex(1.0),
-                    button(
-                        format!("session_approval_revoke:{}", grant.key_digest),
-                        "Revocar",
-                        theme::HOVER,
-                        theme::DESTRUCTIVE,
-                    )
-                    .font_size(10.0)
-                    .size(Some(76.0), Some(26.0)),
-                ])
-                .gap(8.0)
-                .padding(8.0)
-                .background(theme::PANEL)
-                .border(theme::BORDER, 1.0)
-                .radius(7.0),
-            );
-        }
-        items.push(Element::spacer().size(None, Some(8.0)));
-        items.push(eyebrow(format!(
-            "COMANDOS PERSISTENTES · {}",
-            state.native_commands.len()
-        )));
-        if let Some(error) = &state.native_commands_error {
-            items.push(label(error, theme::DESTRUCTIVE).font_size(11.0));
-        } else if state.native_commands.is_empty() {
-            items.push(
-                label(
-                    "No hay procesos registrados en esta tarea.",
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(11.0),
-            );
-        }
-        for command in &state.native_commands {
-            let status = match &command.exit {
-                None => "En ejecución".to_owned(),
-                Some(PersistentCommandExit::Exited { code }) => {
-                    format!(
-                        "Finalizado · código {}",
-                        code.map_or_else(|| "?".into(), |code| code.to_string())
-                    )
-                }
-                Some(PersistentCommandExit::Terminated) => "Terminado".to_owned(),
-                Some(PersistentCommandExit::TimedOut) => "Tiempo agotado".to_owned(),
-                Some(PersistentCommandExit::WaitFailed(_)) => "Estado incierto".to_owned(),
-            };
-            let mut details = format!(
-                "{} · {}",
-                if command.pty { "PTY" } else { "Tuberías" },
-                status
-            );
-            if command.has_output {
-                details.push_str(" · salida pendiente");
-            }
-            let action = if command.exit.is_none()
-                && state.native_command_terminating.as_deref() != Some(command.id.as_str())
-            {
-                button(
-                    format!("native_command_terminate:{}", command.id),
-                    "Terminar",
-                    theme::HOVER,
-                    theme::DESTRUCTIVE,
-                )
-                .font_size(10.0)
-                .min_size(0.0, 0.0)
-                .size(Some(72.0), Some(26.0))
-            } else {
-                label(
-                    if state.native_command_terminating.as_deref() == Some(command.id.as_str()) {
-                        "Terminando…"
-                    } else {
-                        ""
-                    },
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(10.0)
-                .size(Some(72.0), Some(26.0))
-            };
-            items.push(
-                Element::column(vec![
-                    Element::row(vec![
-                        mono(shorten(&command.id, 18), theme::FOREGROUND)
-                            .font_size(11.0)
-                            .flex(1.0),
-                        action,
-                    ])
-                    .gap(6.0),
-                    label(details, theme::FOREGROUND_SUBTLE).font_size(10.0),
-                ])
-                .gap(3.0)
-                .padding(8.0)
-                .background(theme::PANEL)
-                .border(theme::BORDER, 1.0)
-                .radius(7.0),
-            );
-        }
-        items.push(Element::spacer().size(None, Some(8.0)));
-    }
-    if let Some(TranscriptItem::Tool {
-        name,
-        arguments,
-        output,
-        is_error,
-        ..
-    }) = selected
-    {
-        items.push(
-            label(
-                format!(
-                    "{} · {}",
-                    if name.is_empty() { "Herramienta" } else { name },
-                    tool_status(output, *is_error)
-                ),
-                if *is_error {
-                    theme::DESTRUCTIVE
-                } else {
-                    theme::TOOL
-                },
-            )
-            .font_size(16.0),
-        );
-        items.push(eyebrow("ARGUMENTOS"));
-        items.push(mono(json_text(arguments), theme::FOREGROUND).font_size(12.0));
-        items.push(eyebrow("RESULTADO"));
-        items.push(
-            mono(
-                output.as_deref().unwrap_or("Esperando resultado…"),
-                if *is_error {
-                    theme::DESTRUCTIVE
-                } else {
-                    theme::FOREGROUND
-                },
-            )
-            .font_size(12.0),
-        );
-    } else {
-        items.push(pane_empty_state(
-            Icon::History,
-            "Sin actividad todavía",
-            "Las herramientas y sus resultados aparecerán aquí cuando el agente trabaje.",
-            None,
-        ));
-    }
-    if !tools.is_empty() {
-        let tool_count = tools.len();
-        let (page, start, end) = page_bounds(tool_count, state.activity_page, ACTIVITY_PAGE_SIZE);
-        items.extend([
-            Element::spacer().size(None, Some(8.0)),
-            eyebrow(format!("HERRAMIENTAS · {tool_count}")),
-        ]);
-        for item in tools.into_iter().rev().skip(start).take(end - start) {
-            if let TranscriptItem::Tool {
-                id,
-                name,
-                output,
-                is_error,
-                ..
-            } = item
-            {
-                items.push(
-                    icon_button(
-                        format!("tool:{id}"),
-                        Icon::Code,
-                        format!(
-                            "{} · {}",
-                            shorten(if name.is_empty() { "Herramienta" } else { name }, 16),
-                            tool_status(output, *is_error)
-                        ),
-                        if state.selected_tool_id.as_deref() == Some(id.as_str()) {
-                            theme::SELECTED
-                        } else {
-                            theme::BACKGROUND
-                        },
-                        if *is_error {
-                            theme::DESTRUCTIVE
-                        } else {
-                            theme::FOREGROUND_SUBTLE
-                        },
-                    )
-                    .size(None, Some(28.0)),
-                );
-            }
-        }
-        if start > 0 || end < tool_count {
-            items.push(pane_pagination(
-                "activity_page",
-                tool_count,
-                page,
-                start,
-                end,
-            ));
-        }
-    }
-    if let Some((stream, output)) = state.transcript.iter().rev().find_map(|item| match item {
-        TranscriptItem::ProcessOutput { stream, text } => Some((stream, text)),
-        _ => None,
-    }) {
-        items.extend([
-            Element::spacer().size(None, Some(8.0)),
-            eyebrow(match stream {
-                OutputStream::Stdout => "SALIDA DEL PROCESO",
-                OutputStream::Stderr => "DIAGNÓSTICOS DEL PROCESO",
-            }),
-            mono(output, theme::FOREGROUND_SUBTLE).font_size(12.0),
-        ]);
-    }
-    Element::column(items).gap(8.0).padding(12.0)
+    dock_activity::content(state, state.right_dock_width.unwrap_or(400.0))
 }
 
 fn compact_review_line(line: &ReviewLine, max_chars: usize) -> String {
@@ -2751,450 +2407,8 @@ fn compact_review_line(line: &ReviewLine, max_chars: usize) -> String {
     shorten(&format!("{old:>4} {new:>4} {code}"), max_chars)
 }
 
-fn review_file_card(
-    file: &ReviewFile,
-    section_index: usize,
-    file_index: usize,
-    width: f32,
-    remaining: &mut usize,
-) -> Element {
-    let usable = (width - 42.0).max(100.0);
-    let line_chars = (usable / 6.8).max(12.0) as usize;
-    let path_chars = ((usable - 110.0) / 6.5).max(12.0) as usize;
-    let filename = if file.path.is_empty() {
-        "Archivo".to_owned()
-    } else {
-        shorten(&file.path, path_chars)
-    };
-    let mut content = vec![Element::row(vec![
-        Element::icon(Icon::Code)
-            .foreground(theme::ICON_PRIMARY)
-            .size(Some(16.0), Some(20.0)),
-        mono(filename, theme::FOREGROUND).font_size(11.0).flex(1.0),
-        mono(format!("+{}", file.additions), theme::DIFF_ADDED).font_size(10.0),
-        mono(format!("−{}", file.deletions), theme::DIFF_REMOVED).font_size(10.0),
-    ])
-    .gap(5.0)
-    .padding(8.0)
-    .size(None, Some(34.0))];
-    if !file.status.is_empty() {
-        content.push(
-            label(&file.status, theme::FOREGROUND_SUBTLE)
-                .font_size(10.0)
-                .padding(7.0),
-        );
-    }
-    if !file.lines.is_empty() && *remaining > 0 {
-        content.push(divider());
-    }
-    let visible = file.lines.len().min((*remaining).min(60));
-    for line in file.lines.iter().take(visible) {
-        let (ink, fill) = match line.kind {
-            ReviewLineKind::Added => (theme::DIFF_ADDED, theme::DIFF_ADDED_BG),
-            ReviewLineKind::Removed => (theme::DIFF_REMOVED, theme::DIFF_REMOVED_BG),
-            ReviewLineKind::Hunk => (theme::FOREGROUND_SUBTLE, theme::DIFF_HUNK_BG),
-            _ => (theme::FOREGROUND_SUBTLE, theme::PANEL),
-        };
-        content.push(
-            mono(compact_review_line(line, line_chars), ink)
-                .font_size(11.0)
-                .padding(3.0)
-                .background(fill)
-                .size(Some(usable), Some(21.0)),
-        );
-    }
-    *remaining -= visible;
-    if file.lines.len() > visible {
-        content.push(
-            label(
-                format!("{} líneas más en este archivo", file.lines.len() - visible),
-                theme::FOREGROUND_SUBTLE,
-            )
-            .font_size(10.0)
-            .padding(7.0),
-        );
-    } else if file.lines.is_empty() {
-        content.push(
-            label(
-                if file.status == "Binario" {
-                    "El contenido binario no se muestra"
-                } else {
-                    "Sin líneas de código para mostrar"
-                },
-                theme::FOREGROUND_SUBTLE,
-            )
-            .font_size(10.0)
-            .padding(7.0),
-        );
-    }
-    Element::clickable(
-        format!("review_file_open:{section_index}:{file_index}"),
-        Element::column(content)
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
-            .radius(8.0),
-    )
-}
-
-const REVIEW_DETAIL_PAGE_SIZE: usize = 100;
-
-fn review_detail_content(detail: &ReviewDetailView, width: f32) -> Element {
-    let mut rows = vec![
-        Element::row(vec![
-            hinted_icon_button(
-                "review_detail_back",
-                Icon::ArrowLeft,
-                "Volver a cambios",
-                theme::BACKGROUND,
-                theme::FOREGROUND,
-                28.0,
-            ),
-            mono(
-                shorten(&detail.path, ((width - 90.0) / 7.0).max(8.0) as usize),
-                theme::FOREGROUND,
-            )
-            .font_size(12.0)
-            .flex(1.0),
-        ])
-        .gap(8.0),
-        eyebrow(match detail.stage {
-            DiffStage::Staged => "CAMBIOS PREPARADOS",
-            DiffStage::Unstaged => "CAMBIOS SIN PREPARAR",
-        }),
-        divider(),
-    ];
-    match &detail.content {
-        None => rows.push(pane_loading_state("review_detail", "Cargando diff", width)),
-        Some(Err(error)) => rows.push(pane_empty_state(
-            Icon::Code,
-            "No se pudo abrir el diff",
-            error,
-            Some(("review_detail_retry", "Reintentar")),
-        )),
-        Some(Ok(None)) => rows.push(pane_empty_state(
-            Icon::Check,
-            "Sin diff disponible",
-            "Puede que el archivo haya cambiado desde la última actualización.",
-            Some(("review_refresh", "Actualizar cambios")),
-        )),
-        Some(Ok(Some(diff))) => {
-            let file = &diff.file;
-            rows.push(
-                Element::row(vec![
-                    label(&file.status, theme::FOREGROUND_SUBTLE)
-                        .font_size(11.0)
-                        .flex(1.0),
-                    mono(format!("+{}", file.additions), theme::DIFF_ADDED).font_size(11.0),
-                    mono(format!("−{}", file.deletions), theme::DIFF_REMOVED).font_size(11.0),
-                ])
-                .gap(8.0)
-                .padding(8.0)
-                .background(theme::PANEL)
-                .radius(7.0),
-            );
-            if let Some(old_path) = &file.old_path {
-                rows.push(
-                    mono(format!("Desde {old_path}"), theme::FOREGROUND_SUBTLE).font_size(10.0),
-                );
-            }
-            let total = file.lines.len();
-            if total == 0 {
-                rows.push(
-                    label(
-                        "No hay líneas de texto para mostrar.",
-                        theme::FOREGROUND_SUBTLE,
-                    )
-                    .font_size(11.0),
-                );
-            } else {
-                let (page, start, end) =
-                    page_bounds(total, detail.page_index, REVIEW_DETAIL_PAGE_SIZE);
-                let line_chars = ((width - 95.0) / 6.7).max(12.0) as usize;
-                for line in &file.lines[start..end] {
-                    let (ink, fill) = match line.kind {
-                        ReviewLineKind::Added => (theme::DIFF_ADDED, theme::DIFF_ADDED_BG),
-                        ReviewLineKind::Removed => (theme::DIFF_REMOVED, theme::DIFF_REMOVED_BG),
-                        ReviewLineKind::Hunk => (theme::FOREGROUND_SUBTLE, theme::DIFF_HUNK_BG),
-                        _ => (theme::FOREGROUND_SUBTLE, theme::CODE_SURFACE),
-                    };
-                    rows.push(
-                        mono(compact_review_line(line, line_chars), ink)
-                            .font_size(11.0)
-                            .padding(4.0)
-                            .background(fill)
-                            .size(Some((width - 26.0).max(100.0)), Some(22.0)),
-                    );
-                }
-                if start > 0 || end < total {
-                    rows.push(pane_pagination("review_detail", total, page, start, end));
-                }
-            }
-            if diff.truncated {
-                rows.push(label("Diff limitado por tamaño. Abre el archivo en el editor para verlo completo.", theme::FOREGROUND_SUBTLE).font_size(10.0));
-            }
-        }
-    }
-    Element::column(rows).gap(5.0).padding(12.0)
-}
-
 fn code_review_content(state: &ViewState, width: f32) -> Element {
-    if let Some(detail) = &state.review_detail {
-        return review_detail_content(detail, width);
-    }
-    let mut rows = vec![Element::row(vec![
-        label("Cambios de Git", theme::FOREGROUND).font_size(15.0),
-        Element::spacer().flex(1.0),
-        hinted_icon_button(
-            "review_refresh",
-            Icon::Refresh,
-            "Actualizar cambios de Git",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            28.0,
-        ),
-    ])
-    .gap(5.0)];
-    match &state.git_review {
-        Some(Ok(review)) => {
-            rows.push(
-                Element::row(vec![
-                    mono(
-                        shorten(&review.branch, ((width - 150.0) / 6.8).max(8.0) as usize),
-                        theme::FOREGROUND,
-                    )
-                    .font_size(11.0),
-                    Element::spacer().flex(1.0),
-                    mono(format!("+{}", review.additions), theme::DIFF_ADDED).font_size(11.0),
-                    mono(format!("−{}", review.deletions), theme::DIFF_REMOVED).font_size(11.0),
-                ])
-                .gap(8.0)
-                .padding(7.0)
-                .background(theme::PANEL)
-                .radius(6.0),
-            );
-            rows.push(
-                mono(
-                    format!(
-                        "{} archivos · {} diffs · {} nuevos",
-                        review.unique_files(),
-                        review.files,
-                        review.untracked.len(),
-                    ),
-                    theme::FOREGROUND_SUBTLE,
-                )
-                .font_size(11.0),
-            );
-            if let Some(tracking) = &review.tracking {
-                rows.push(
-                    mono(
-                        format!(
-                            "{} · ↑{}  ↓{}",
-                            tracking.upstream, tracking.ahead, tracking.behind
-                        ),
-                        theme::FOREGROUND_SUBTLE,
-                    )
-                    .font_size(10.0),
-                );
-            }
-            rows.push(divider());
-            rows.push(
-                Element::row(vec![
-                    eyebrow("GITHUB"),
-                    Element::spacer().flex(1.0),
-                    match &review.github {
-                        GithubStatus::Ready(github) => {
-                            mono(&github.repository.remote_name, theme::FOREGROUND_SUBTLE)
-                                .font_size(10.0)
-                        }
-                        _ => Element::spacer(),
-                    },
-                ])
-                .padding(4.0),
-            );
-            match &review.github {
-                GithubStatus::Loading => rows.push(
-                    label("Consultando PR de la rama…", theme::FOREGROUND_SUBTLE).font_size(11.0),
-                ),
-                GithubStatus::NoRemote => rows.push(
-                    label(
-                        "Sin remoto de GitHub en este proyecto",
-                        theme::FOREGROUND_SUBTLE,
-                    )
-                    .font_size(11.0),
-                ),
-                GithubStatus::Unavailable(error) => {
-                    rows.push(label(error, theme::FOREGROUND_SUBTLE).font_size(11.0))
-                }
-                GithubStatus::Ready(github) => {
-                    rows.push(
-                        Button::new(
-                            "github_repo_open",
-                            github.repository.full_name(),
-                            theme::action_palette(theme::CARD, theme::FOREGROUND),
-                        )
-                        .variant(ButtonVariant::Outline)
-                        .size(ControlSize::Compact)
-                        .render()
-                        .font_family(FontFamily::Sans)
-                        .font_size(12.0)
-                        .background(theme::CARD)
-                        .border(theme::BORDER, 1.0)
-                        .radius(6.0)
-                        .size(Some((width - 24.0).max(80.0)), Some(32.0)),
-                    );
-                    for pull in github.pulls.iter().take(4) {
-                        let title = shorten(&pull.title, ((width - 90.0) / 6.5).max(12.0) as usize);
-                        let draft = if pull.draft { " · Borrador" } else { "" };
-                        rows.push(
-                            Button::new(
-                                format!("github_pr_open:{}", pull.number),
-                                format!("#{} {}{}", pull.number, title, draft),
-                                theme::action_palette(theme::PANEL, theme::FOREGROUND),
-                            )
-                            .variant(ButtonVariant::Outline)
-                            .size(ControlSize::Compact)
-                            .render()
-                            .font_family(FontFamily::Sans)
-                            .font_size(11.0)
-                            .background(theme::PANEL)
-                            .border(theme::BORDER, 1.0)
-                            .radius(6.0)
-                            .size(Some((width - 24.0).max(80.0)), Some(32.0)),
-                        );
-                    }
-                    if github.pulls.is_empty() && github.notice.is_none() {
-                        rows.push(
-                            label("Sin PR abierto para esta rama", theme::FOREGROUND_SUBTLE)
-                                .font_size(11.0),
-                        );
-                    }
-                    if let Some(notice) = &github.notice {
-                        rows.push(label(notice, theme::FOREGROUND_SUBTLE).font_size(11.0));
-                    }
-                }
-            }
-            rows.push(divider());
-            let tracked_count: usize = review
-                .sections
-                .iter()
-                .map(|section| section.files.len())
-                .sum();
-            let total = tracked_count + review.untracked.len();
-            if total == 0 {
-                rows.push(pane_empty_state(
-                    Icon::Check,
-                    "Sin cambios pendientes",
-                    "Los archivos del proyecto están al día.",
-                    None,
-                ));
-            } else {
-                let (page, start, end) = page_bounds(total, state.review_page, REVIEW_PAGE_SIZE);
-                let mut remaining_lines = 240;
-                let mut offset = 0;
-                for (section_index, section) in review.sections.iter().enumerate() {
-                    let files = section.files.len();
-                    let local_start = start.saturating_sub(offset).min(files);
-                    let local_end = end.saturating_sub(offset).min(files);
-                    offset += files;
-                    if local_start == local_end {
-                        continue;
-                    }
-                    rows.push(
-                        Element::row(vec![
-                            eyebrow(&section.title),
-                            Element::spacer().flex(1.0),
-                            mono(format!("{files}"), theme::FOREGROUND_SUBTLE).font_size(10.0),
-                        ])
-                        .padding(4.0),
-                    );
-                    for (local_index, file) in
-                        section.files[local_start..local_end].iter().enumerate()
-                    {
-                        rows.push(review_file_card(
-                            file,
-                            section_index,
-                            local_start + local_index,
-                            width,
-                            &mut remaining_lines,
-                        ));
-                    }
-                }
-                if page == 0 {
-                    for (title, empty_text) in [
-                        ("CAMBIOS PREPARADOS", "Sin cambios preparados"),
-                        ("CAMBIOS SIN PREPARAR", "Sin cambios sin preparar"),
-                    ] {
-                        if !review.sections.iter().any(|section| section.title == title) {
-                            rows.push(eyebrow(title).padding(4.0));
-                            rows.push(label(empty_text, theme::FOREGROUND_SUBTLE).font_size(11.0));
-                        }
-                    }
-                }
-                let untracked_start = start
-                    .saturating_sub(tracked_count)
-                    .min(review.untracked.len());
-                let untracked_end = end
-                    .saturating_sub(tracked_count)
-                    .min(review.untracked.len());
-                if untracked_start < untracked_end {
-                    rows.push(
-                        Element::row(vec![
-                            eyebrow("SIN SEGUIMIENTO"),
-                            Element::spacer().flex(1.0),
-                            mono(
-                                format!("{}", review.untracked.len()),
-                                theme::FOREGROUND_SUBTLE,
-                            )
-                            .font_size(10.0),
-                        ])
-                        .padding(4.0),
-                    );
-                    let path_chars = ((width - 75.0) / 6.5).max(12.0) as usize;
-                    for path in review.untracked[untracked_start..untracked_end].iter() {
-                        rows.push(
-                            Element::row(vec![
-                                Element::icon(Icon::Code)
-                                    .foreground(theme::ICON_PRIMARY)
-                                    .size(Some(16.0), Some(16.0)),
-                                mono(shorten(path, path_chars), theme::FOREGROUND).font_size(11.0),
-                            ])
-                            .gap(7.0)
-                            .padding(8.0)
-                            .background(theme::PANEL)
-                            .border(theme::BORDER, 1.0)
-                            .radius(6.0),
-                        );
-                    }
-                }
-                if start > 0 || end < total {
-                    rows.push(pane_pagination("review_page", total, page, start, end));
-                }
-                if review.truncated || remaining_lines == 0 {
-                    rows.push(
-                        label(
-                            "El diff se ha acotado para mantener el panel fluido; actualiza o abre Git para inspeccionar el resto.",
-                            theme::FOREGROUND_SUBTLE,
-                        )
-                        .font_size(11.0),
-                    );
-                }
-            }
-        }
-        Some(Err(error)) => {
-            rows.push(pane_empty_state(
-                Icon::Code,
-                "No se pudieron cargar los cambios",
-                error,
-                Some(("review_refresh", "Reintentar")),
-            ));
-        }
-        None => rows.push(pane_loading_state(
-            "review_changes",
-            "Cargando cambios",
-            width,
-        )),
-    }
-    Element::column(rows).gap(5.0).padding(12.0)
+    git_panel::content(state, width)
 }
 
 const PREVIEW_VISIBLE_CHARS_PER_LINE: usize = 280;
@@ -3560,27 +2774,12 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
     let language = PreviewLanguage::for_path(&preview.path);
     let surface_width = (width - 38.0).max(120.0);
     let mut rows = vec![
-        Element::row(vec![
-            Element::icon(Icon::Code)
-                .foreground(theme::ICON_PRIMARY)
-                .size(Some(16.0), Some(22.0)),
-            mono(
-                shorten(&preview.path, ((width - 88.0) / 6.8).max(8.0) as usize),
-                theme::FOREGROUND,
-            )
-            .font_size(11.0)
-            .flex(1.0),
-            hinted_icon_button(
-                format!("dock_close:{}", preview.tab_id),
-                Icon::Close,
-                "Cerrar archivo",
-                theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
-                26.0,
-            ),
-        ])
-        .gap(6.0)
-        .size(None, Some(28.0)),
+        crate::code_editor_ui::path_breadcrumb(
+            "file_preview_path",
+            &preview.path,
+            false,
+            surface_width,
+        ),
         divider(),
     ];
     match &preview.content {
@@ -3719,27 +2918,9 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
     Element::column(rows).gap(8.0).padding(12.0)
 }
 
-pub(crate) fn dock_tab_page_size(width: f32) -> usize {
-    if width < 430.0 {
-        1
-    } else if width < 540.0 {
-        2
-    } else {
-        3
-    }
-}
-
 fn dock_open_actions(width: f32) -> Element {
     let action_width = width.max(150.0);
     Element::column(vec![
-        icon_button(
-            "dock_open:context",
-            Icon::PanelRight,
-            "Contexto",
-            theme::CARD,
-            theme::FOREGROUND,
-        )
-        .size(Some(action_width), Some(38.0)),
         icon_button(
             "dock_open:files",
             Icon::Folder,
@@ -3772,29 +2953,63 @@ fn dock_open_actions(width: f32) -> Element {
             theme::FOREGROUND,
         )
         .size(Some(action_width), Some(38.0)),
+        icon_button(
+            "dock_open:browser",
+            Icon::Globe,
+            "Navegador",
+            theme::CARD,
+            theme::FOREGROUND,
+        )
+        .size(Some(action_width), Some(38.0)),
+        icon_button(
+            "dock_open:changes",
+            Icon::Code,
+            "Cambios del chat",
+            theme::CARD,
+            theme::FOREGROUND,
+        )
+        .size(Some(action_width), Some(38.0)),
     ])
     .gap(6.0)
 }
 
 fn dock_add_menu(state: &ViewState) -> Element {
     let entries = [
-        ("terminal", "Terminal", Icon::Terminal, SideTab::Terminal),
-        ("context", "Contexto", Icon::PanelRight, SideTab::Context),
+        (
+            "terminal",
+            "Nueva terminal",
+            Icon::Terminal,
+            SideTab::Terminal,
+        ),
+        ("browser", "Navegador", Icon::Globe, SideTab::Browser),
+        (
+            "changes",
+            "Cambios del chat",
+            Icon::Code,
+            SideTab::SessionChanges,
+        ),
         ("files", "Archivos", Icon::Folder, SideTab::Files),
         ("activity", "Actividad", Icon::History, SideTab::Activity),
         ("review", "Cambios de Git", Icon::Code, SideTab::CodeReview),
     ];
-    let menu = entries
+    let mut menu: Vec<DropdownMenuEntry> = entries
         .into_iter()
         .map(|(id, title, icon, kind)| {
             let already_open = state.dock_tabs.iter().any(|tab| tab.kind == kind);
             let mut item = DropdownMenuItem::new(format!("dock_open:{id}"), title).icon(icon);
-            if already_open {
+            if already_open && kind != SideTab::Terminal {
                 item = item.annotation("Abierta");
             }
             item.into()
         })
         .collect();
+    if crate::ide_workspace::active(state) {
+        menu.push(
+            DropdownMenuItem::new("dock_open:debugger", "Depurador")
+                .icon(Icon::Code)
+                .into(),
+        );
+    }
     let anchor = if state.show_dock_add_menu {
         icon_button(
             "dock_add_tab",
@@ -3803,16 +3018,20 @@ fn dock_add_menu(state: &ViewState) -> Element {
             theme::SELECTED,
             theme::FOREGROUND,
         )
-        .size(Some(32.0), Some(32.0))
+        .size(
+            Some(crate::dock_tab_ui::TOOL_SIZE),
+            Some(crate::dock_tab_ui::TOOL_SIZE),
+        )
     } else {
         hinted_icon_button(
             "dock_add_tab",
             Icon::Add,
             "Abrir pestaña",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            32.0,
+            Color::TRANSPARENT,
+            theme::FOREGROUND,
+            crate::dock_tab_ui::TOOL_SIZE,
         )
+        .tooltip_placement(TooltipPlacement::Below)
     };
     DropdownMenu::new(
         anchor,
@@ -3822,6 +3041,7 @@ fn dock_add_menu(state: &ViewState) -> Element {
         theme::menu_palette(),
     )
     .placement(PopoverPlacement::BottomEnd)
+    .context_menu_style()
     .width(224.0)
     .render()
 }
@@ -3849,341 +3069,90 @@ fn dock_empty_content(width: f32) -> Element {
     .flex(1.0)
 }
 
-fn terminal_color(color: TerminalColor, default: Color) -> Color {
-    match color {
-        TerminalColor::Default => default,
-        TerminalColor::Rgb(red, green, blue) => Color::rgb(red, green, blue),
-        TerminalColor::Indexed(index) if index < 16 => {
-            const ANSI: [(u8, u8, u8); 16] = [
-                (38, 38, 38),
-                (205, 79, 79),
-                (126, 190, 137),
-                (207, 183, 118),
-                (115, 157, 208),
-                (188, 142, 198),
-                (112, 185, 190),
-                (214, 214, 214),
-                (100, 100, 100),
-                (238, 108, 108),
-                (152, 216, 163),
-                (229, 208, 135),
-                (147, 185, 230),
-                (208, 168, 218),
-                (144, 207, 211),
-                (245, 245, 245),
-            ];
-            let (red, green, blue) = ANSI[index as usize];
-            Color::rgb(red, green, blue)
-        }
-        TerminalColor::Indexed(index) if index < 232 => {
-            let cube = index - 16;
-            let channel = |value: u8| if value == 0 { 0 } else { 55 + value * 40 };
-            Color::rgb(
-                channel(cube / 36),
-                channel((cube / 6) % 6),
-                channel(cube % 6),
-            )
-        }
-        TerminalColor::Indexed(index) => {
-            let gray = 8 + (index - 232) * 10;
-            Color::rgb(gray, gray, gray)
-        }
-    }
-}
-
-fn terminal_row(snapshot: &TerminalSnapshot, index: usize, width: f32) -> Element {
-    let spans = snapshot
-        .styled_lines
-        .get(index)
-        .into_iter()
-        .flatten()
-        .map(|run| {
-            let mut foreground = terminal_color(run.style.foreground, theme::FOREGROUND);
-            let mut background = match run.style.background {
-                TerminalColor::Default => None,
-                color => Some(terminal_color(color, theme::CODE_SURFACE)),
-            };
-            if run.style.inverse {
-                let swapped = background.unwrap_or(theme::CODE_SURFACE);
-                background = Some(foreground);
-                foreground = swapped;
-            }
-            if run.style.bold && run.style.foreground == TerminalColor::Default {
-                foreground = theme::BRAND;
-            }
-            if run.style.dim {
-                foreground = Color::rgb(
-                    foreground.r.saturating_sub(45),
-                    foreground.g.saturating_sub(45),
-                    foreground.b.saturating_sub(45),
-                );
-            }
-            let mut span = TextSpan::new(&run.text, foreground, 11.5, FontFamily::Monospace);
-            if let Some(background) = background {
-                span = span.background(background);
-            }
-            span
-        })
-        .collect::<Vec<_>>();
-    Element::formatted_text(if spans.is_empty() {
-        vec![TextSpan::new(
-            " ",
-            theme::FOREGROUND,
-            11.5,
-            FontFamily::Monospace,
-        )]
-    } else {
-        spans
-    })
-    .size(Some(width), Some(16.0))
-}
-
 fn terminal_content(state: &ViewState, width: f32) -> Element {
-    let content_width = (width - 24.0).max(140.0);
-    let header = Element::row(vec![
-        Element::icon(Icon::Terminal)
-            .foreground(theme::FOREGROUND_SUBTLE)
-            .size(Some(18.0), Some(18.0)),
-        label("Terminal", theme::FOREGROUND).font_size(14.0),
-        Element::spacer().flex(1.0),
-        hinted_icon_button(
-            "terminal_scroll_up",
-            Icon::ArrowUp,
-            "Subir en el historial",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            28.0,
-        ),
-        hinted_icon_button(
-            "terminal_scroll_down",
-            Icon::ArrowDown,
-            "Bajar en el historial",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            28.0,
-        ),
-        hinted_shortcut_icon_button(
-            "terminal_clear",
-            Icon::Trash,
-            "Limpiar pantalla",
-            "Ctrl+L",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            28.0,
-        ),
-        hinted_shortcut_icon_button(
-            "terminal_interrupt",
-            Icon::Stop,
-            "Interrumpir",
-            "Ctrl+C",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            28.0,
-        ),
-    ])
-    .gap(5.0)
-    .size(Some(content_width), Some(32.0));
-    let Some(snapshot) = &state.terminal_snapshot else {
-        let description = state
-            .terminal_error
-            .as_deref()
-            .unwrap_or("Preparando una sesión local en el proyecto…");
-        return Element::column(vec![
-            header,
-            pane_empty_state(
-                Icon::Terminal,
-                "Terminal no disponible",
-                description,
-                Some(("terminal_restart", "Reintentar")),
-            ),
-        ])
-        .gap(12.0)
-        .padding(12.0);
-    };
-    let mut rows = Vec::with_capacity(snapshot.styled_lines.len());
-    for index in 0..snapshot.styled_lines.len() {
-        rows.push(terminal_row(snapshot, index, content_width - 18.0));
-    }
-    let screen = Element::column(rows)
-        .gap(0.0)
-        .padding(9.0)
-        .background(theme::CODE_SURFACE)
-        .border(theme::BORDER, 1.0)
-        .radius(9.0)
-        .size(Some(content_width), None);
-    let screen = Element::clickable("terminal_screen", screen);
-    let status = if let Some(error) = &state.terminal_error {
-        error.clone()
-    } else if let Some(error) = &snapshot.error {
-        error.clone()
-    } else if snapshot.running {
-        format!(
-            "Sesión local · {} × {} · clic en pantalla para interactuar",
-            snapshot.cols, snapshot.rows
-        )
-    } else {
-        format!(
-            "Proceso finalizado · código {}",
-            snapshot.exit_code.unwrap_or(0)
-        )
-    };
-    let mut content = vec![
-        header,
-        screen,
-        mono(status, theme::FOREGROUND_SUBTLE).font_size(10.0),
-    ];
-    if snapshot.running {
-        let input = Element::text_input(
-            "terminal_input",
-            &state.terminal_input,
-            "Escribe un comando y pulsa Enter",
-        )
-        .font_family(FontFamily::Monospace)
-        .font_size(12.0)
-        .background(theme::CARD)
-        .foreground(theme::FOREGROUND)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0)
-        .size(Some((content_width - 43.0).max(90.0)), Some(36.0));
-        content.push(
-            Element::row(vec![
-                input,
-                hinted_icon_button(
-                    "terminal_send",
-                    Icon::ArrowRight,
-                    "Enviar comando · Enter",
-                    theme::SELECTED,
-                    theme::FOREGROUND,
-                    36.0,
-                ),
-            ])
-            .gap(7.0)
-            .size(Some(content_width), Some(36.0)),
-        );
-    } else {
-        content.push(
-            button(
-                "terminal_restart",
-                "Nueva sesión",
-                theme::SELECTED,
-                theme::FOREGROUND,
-            )
-            .size(Some(126.0), Some(32.0)),
-        );
-    }
-    Element::column(content)
-        .gap(9.0)
-        .padding(12.0)
-        .size(Some(width), None)
+    crate::terminal_ui::build(state, width)
 }
 
+#[cfg(test)]
 fn side_pane(state: &ViewState, width: f32) -> Element {
-    let page_size = dock_tab_page_size(width);
-    let active_index = state
-        .dock_tabs
-        .iter()
-        .position(|tab| tab.active)
-        .unwrap_or(0);
-    let tab_page = active_index / page_size;
-    let tab_page_count = state.dock_tabs.len().div_ceil(page_size);
-    let visible_tabs: Vec<&DockTabView> = state
-        .dock_tabs
-        .iter()
-        .skip(tab_page * page_size)
-        .take(page_size)
-        .collect();
-    // Reserve both trailing actions, their gaps, and the header's inset before
-    // sizing the tab strip. At the minimum dock width all controls stay in the
-    // same top row rather than leaking into the transcript pane.
-    let reserved = if tab_page_count > 1 { 200.0 } else { 146.0 };
-    let tab_width = ((width - reserved) / visible_tabs.len().max(1) as f32).clamp(44.0, 110.0);
-    let tabs = Tabs::new(
-        visible_tabs
-            .into_iter()
-            .map(|tab| {
-                Tab::new(format!("dock_tab:{}", tab.id), &tab.title, tab_width)
-                    .icon(match tab.kind {
-                        SideTab::Context => Icon::PanelRight,
-                        SideTab::Files => Icon::Folder,
-                        SideTab::Activity => Icon::History,
-                        SideTab::CodeReview | SideTab::FilePreview => Icon::Code,
-                        SideTab::Terminal => Icon::Terminal,
-                    })
-                    .active(tab.active)
-            })
-            .collect(),
-        theme::segmented_palette(),
-    )
-    .id("right_dock_tabs")
-    .height(32.0)
-    .render();
-    let mut tab_controls = vec![tabs, Element::spacer().flex(1.0)];
-    if tab_page_count > 1 {
-        tab_controls.push(if tab_page > 0 {
-            hinted_icon_button(
-                "dock_tab_page_previous",
-                Icon::ArrowLeft,
-                "Pestañas anteriores",
-                theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
-                28.0,
-            )
-        } else {
-            Element::spacer().size(Some(28.0), Some(28.0))
-        });
-        tab_controls.push(if tab_page + 1 < tab_page_count {
-            hinted_icon_button(
-                "dock_tab_page_next",
-                Icon::ArrowRight,
-                "Más pestañas",
-                theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
-                28.0,
-            )
-        } else {
-            Element::spacer().size(Some(28.0), Some(28.0))
-        });
+    side_pane_sized(state, width, 600.0)
+}
+
+fn side_pane_sized(state: &ViewState, width: f32, height: f32) -> Element {
+    let Some(preview) = state
+        .markdown_preview
+        .as_ref()
+        .filter(|_| !state.show_dock_overview)
+    else {
+        return side_pane_primary_sized(state, width, height);
+    };
+    if dock_chrome::visible_tabs(state).is_empty() {
+        return crate::document_preview_ui::secondary(preview, width, height);
     }
-    tab_controls.push(dock_add_menu(state));
-    tab_controls.push(hinted_icon_button(
-        "dock_overview_toggle",
-        Icon::Menu,
-        if state.show_dock_overview {
-            "Cerrar vista de pestañas"
-        } else {
-            "Ver todas las pestañas"
-        },
-        if state.show_dock_overview {
-            theme::SELECTED
-        } else {
-            theme::BACKGROUND
-        },
-        theme::FOREGROUND_SUBTLE,
-        32.0,
-    ));
-    tab_controls.push(hinted_icon_button(
-        "toggle_side_pane",
-        Icon::PanelRightClose,
-        "Ocultar panel derecho",
-        theme::BACKGROUND,
-        theme::FOREGROUND_SUBTLE,
-        32.0,
-    ));
-    let header = Element::panel(Element::row(tab_controls).gap(4.0))
-        .padding(16.0)
-        .size(None, Some(RIGHT_HEADER_HEIGHT));
-    let body = if state.dock_tabs.is_empty() && !state.show_dock_overview {
+    let divider = Element::spacer().background(theme::BORDER);
+    if width >= 640.0 {
+        let half = (width - 1.0) / 2.0;
+        Element::row(vec![
+            side_pane_primary_sized(state, half, height),
+            divider.size(Some(1.0), Some(height)),
+            crate::document_preview_ui::secondary(preview, half, height),
+        ])
+        .size(Some(width), Some(height))
+        .clip_children()
+    } else {
+        // Small windows keep both groups usable instead of squeezing the source
+        // and tab close buttons into columns narrower than their controls.
+        let half = (height - 1.0).max(0.0) / 2.0;
+        Element::column(vec![
+            side_pane_primary_sized(state, width, half),
+            divider.size(Some(width), Some(1.0)),
+            crate::document_preview_ui::secondary(preview, width, half),
+        ])
+        .size(Some(width), Some(height))
+        .clip_children()
+    }
+}
+
+fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Element {
+    if crate::ide_workspace::active(state)
+        && !state.show_dock_overview
+        && dock_chrome::visible_tabs(state).is_empty()
+    {
+        return crate::ide_editor_empty::build(state.keymap_profile, width, height)
+            .size(Some(width), Some(height));
+    }
+    let header = dock_chrome::header(state, width);
+    // A single document status row belongs to this editor group. It does not
+    // consume the scroll viewport or appear under a preview-only resource.
+    let document_status = !crate::ide_workspace::active(state)
+        && !state.show_dock_overview
+        && crate::ide_status_ui::document_scope(state).is_some();
+    let status_height = if document_status {
+        crate::ide_workspace::STATUSBAR_HEIGHT
+    } else {
+        0.0
+    };
+    let body = if crate::ide_workspace::active(state)
+        && !state.show_dock_overview
+        && (state.dock_tabs.is_empty()
+            || matches!(state.side_tab, SideTab::Files | SideTab::Context))
+    {
+        crate::ide_editor_empty::build(state.keymap_profile, width, (height - crate::dock_tab_ui::HEADER_HEIGHT).max(0.0))
+    } else if state.dock_tabs.is_empty() && !state.show_dock_overview {
         dock_empty_content(width)
     } else if state.show_dock_overview {
         let query = state.dock_overview_query.trim().to_lowercase();
         let matches = |title: &str, kind: SideTab| {
             let kind_name = match kind {
-                SideTab::Context => "contexto",
+                SideTab::Context => "entorno",
                 SideTab::Files => "archivos",
                 SideTab::Activity => "actividad",
-                SideTab::CodeReview => "cambios",
+                SideTab::CodeReview => "repositorio git",
+                SideTab::SessionChanges => "cambios chat conversación",
+                SideTab::Browser => "navegador web",
                 SideTab::Terminal => "terminal",
                 SideTab::FilePreview => "vista de archivo",
+                SideTab::CodeSnapshot => "vista previa capturada",
             };
             query.is_empty() || title.to_lowercase().contains(&query) || kind_name.contains(&query)
         };
@@ -4357,13 +3326,44 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
         Element::column(tabs).gap(5.0).padding(12.0)
     } else {
         match state.side_tab {
-            SideTab::Context => context_content(state),
+            SideTab::Context => dock_empty_content(width),
             SideTab::Files => file_tree_content(state, width),
-            SideTab::Activity => activity_content(state),
+            SideTab::Activity => dock_activity::content(state, width),
             SideTab::CodeReview => code_review_content(state, width),
+            SideTab::SessionChanges => crate::session_changes_ui::build(state, width),
+            SideTab::Browser => crate::browser_ui::build(state, width),
             SideTab::Terminal => terminal_content(state, width),
+            SideTab::CodeSnapshot => state.code_snapshot.as_ref().map_or_else(
+                || {
+                    label(
+                        "Selecciona una vista previa del chat",
+                        theme::FOREGROUND_SUBTLE,
+                    )
+                    .padding(12.0)
+                },
+                |preview| crate::code_snapshot_ui::build(preview, width),
+            ),
             SideTab::FilePreview => {
-                if let Some(preview) = &state.file_preview {
+                if let Some(preview) = crate::document_preview_ui::build(
+                    state,
+                    width,
+                    (height - RIGHT_HEADER_HEIGHT - status_height).max(0.0),
+                ) {
+                    preview
+                } else if let Some(editor) = &state.code_editor {
+                    if crate::ide_workspace::active(state) {
+                        crate::code_editor_ui::build_ide(editor, &state.editor_workbench, width, state.keymap_profile, state.vim_mode)
+                    } else {
+                        crate::code_editor_ui::build_with_debug(
+                            editor,
+                            &state.editor_workbench,
+                            width,
+                            false,
+                            state.keymap_profile,
+                            state.vim_mode,
+                        )
+                    }
+                } else if let Some(preview) = &state.file_preview {
                     file_preview_content(preview, width)
                 } else {
                     label("Selecciona un archivo", theme::FOREGROUND_SUBTLE).padding(12.0)
@@ -4371,9 +3371,19 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
             }
         }
     };
-    let body = if (state.dock_tabs.is_empty() && !state.show_dock_overview)
-        || (!state.show_dock_overview
-            && matches!(state.side_tab, SideTab::Files | SideTab::Terminal))
+    let body = if !state.show_dock_overview
+        && (state.dock_tabs.is_empty()
+            || matches!(
+                state.side_tab,
+                SideTab::Files
+                    | SideTab::Browser
+                    | SideTab::Terminal
+                    | SideTab::CodeReview
+                    | SideTab::SessionChanges
+                    | SideTab::CodeSnapshot
+            )
+            || (state.side_tab == SideTab::FilePreview
+                && (state.code_editor.is_some() || state.document_preview.is_some())))
     {
         // Files owns its virtual list; Terminal displays a bounded PTY screen
         // and keeps its command line visible below the screen.
@@ -4389,7 +3399,10 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
                 SideTab::Context => "side_pane_context",
                 SideTab::Activity => "side_pane_activity",
                 SideTab::CodeReview => "side_pane_review",
+                SideTab::SessionChanges => "side_pane_session_changes",
+                SideTab::Browser => "side_pane_browser",
                 SideTab::FilePreview => "side_pane_preview",
+                SideTab::CodeSnapshot => "side_pane_code_snapshot",
                 SideTab::Files | SideTab::Terminal => unreachable!(),
             }
         };
@@ -4398,7 +3411,13 @@ fn side_pane(state: &ViewState, width: f32) -> Element {
             .render()
             .flex(1.0)
     };
-    Element::column(vec![header, body]).size(Some(width), None)
+    // Each scrolling viewport owns its fade. Applying it to the whole pane
+    // would paint over resource headers, breadcrumbs and refresh controls.
+    let mut rows = vec![header, body];
+    if document_status {
+        rows.push(crate::ide_status_ui::document_footer(state, width));
+    }
+    Element::column(rows).size(Some(width), Some(height))
 }
 
 /// The center and right dock share one frame. Their entire separation is a
@@ -4409,8 +3428,107 @@ fn workspace_divider() -> Element {
         .background(theme::BORDER)
 }
 
+/// One outer frame for chat, editor and bottom terminal. The shared finishing
+/// pass masks opaque child corners and draws the border before deferred menus.
+fn workspace_frame(content: Element) -> Element {
+    content
+        .background(theme::BACKGROUND)
+        .border(theme::BORDER, 1.0)
+        .radius(WORKSPACE_RADIUS)
+        .corner_mask(theme::WINDOW)
+        .clip_children()
+        .flex(1.0)
+}
+
 pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
+    build_view_sized(state, viewport_width, 720.0)
+}
+
+pub(crate) fn terminal_panel_height(state: &ViewState, viewport_height: f32) -> f32 {
+    if cli_task_in_center(state) {
+        return 0.0;
+    }
+    if !state.show_settings && state.main_page == MainPage::Workspace {
+        if let Some(height) = state.bottom_presentation_height {
+            let chrome = if crate::ide_workspace::active(state) {
+                crate::ide_workspace::TITLEBAR_HEIGHT + crate::ide_workspace::STATUSBAR_HEIGHT
+            } else { 0.0 };
+            return height.clamp(0.0, (viewport_height - 2.0 * GAP - chrome).max(0.0));
+        }
+    }
+    nominal_terminal_panel_height(state, viewport_height)
+}
+
+/// Prefix of the backend of a task that runs an agent CLI in a terminal.
+pub(crate) const CLI_BACKEND: &str = "cli:";
+
+/// The selected task is an agent CLI: its terminal is the whole task.
+pub(crate) fn cli_task(state: &ViewState) -> bool {
+    state.selected_session.is_some() && state.selected_backend.starts_with(CLI_BACKEND)
+}
+
+/// A CLI task shows its terminal in the center, not in the bottom panel.
+fn cli_task_in_center(state: &ViewState) -> bool {
+    cli_task(state)
+        && !state.show_settings
+        && state.main_page == MainPage::Workspace
+        && !crate::ide_workspace::active(state)
+}
+
+pub(crate) fn nominal_terminal_panel_height(state: &ViewState, viewport_height: f32) -> f32 {
+    if cli_task_in_center(state) {
+        return 0.0;
+    }
+    // In the IDE a CLI task's terminal lives in the agent panel, so it alone
+    // does not open the bottom panel.
+    let visible = (state.show_terminal_panel && !cli_task(state)) || state.ide.bottom_open;
+    if !visible || state.show_settings || state.main_page != MainPage::Workspace {
+        return 0.0;
+    }
+    let ide = crate::ide_workspace::active(state);
+    let chrome = if ide {
+        crate::ide_workspace::TITLEBAR_HEIGHT + crate::ide_workspace::STATUSBAR_HEIGHT
+    } else {
+        0.0
+    };
+    let available = (viewport_height - 2.0 * GAP - chrome).max(0.0);
+    // Reserve space on the same timeline as Environment. A binary open/closed
+    // budget makes a maximized terminal jump by 180 px at either end of the
+    // animation. No progress means a settled state (also reduced motion).
+    // The stored preference remains untouched throughout the transition.
+    let environment_progress = if ide {
+        0.0
+    } else {
+        state
+            .environment_presentation_progress
+            .unwrap_or(if state.environment.open { 1.0 } else { 0.0 })
+            .clamp(0.0, 1.0)
+    };
+    let minimum_workspace = 180.0 + 180.0 * environment_progress;
+    let maximum = (available - minimum_workspace).max(0.0);
+    if state.terminal_maximized {
+        maximum
+    } else {
+        state
+            .terminal_panel_height
+            .max(120.0)
+            .min(available * 0.65)
+            .min(maximum)
+    }
+}
+
+pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_height: f32) -> Element {
+    if crate::ide_workspace::active(state) {
+        return workspace_modals(
+            state,
+            ide_ui::build(state, viewport_width, viewport_height),
+            viewport_width,
+            viewport_height,
+        );
+    }
     let layout = dock_layout(state, viewport_width);
+    let terminal_height = terminal_panel_height(state, viewport_height);
+    let workspace_height = (viewport_height - terminal_height).max(0.0);
     let left = layout.left;
     let left_visible = left > 1.0;
     let center_min_with_right = if state.side_tab == SideTab::Files {
@@ -4425,8 +3543,6 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
             3.0 * GAP + RIGHT_DIVIDER + 200.0 + MIN_RIGHT_DOCK + center_min_with_right
         };
     let side_visible = layout.right.is_some();
-    let center_width = layout.center;
-    let compact = center_width < 460.0;
     let is_home = state.main_page == MainPage::Workspace
         && state.selected_session.is_none()
         && state.transcript.is_empty()
@@ -4435,21 +3551,74 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
     let is_session = state.main_page == MainPage::Workspace
         && !state.show_settings
         && state.selected_session.is_some();
+    let environment = (state.main_page == MainPage::Workspace && !state.show_settings)
+        .then(|| {
+            crate::environment_ui::layout(
+                state,
+                layout.center,
+                (workspace_height - 2.0 * GAP).max(0.0),
+            )
+        })
+        .filter(|layout| layout.progress > 0.001);
+    let center_width = environment.map_or(layout.center, |environment| environment.chat_width);
+    let session_height = (workspace_height
+        - 2.0 * GAP
+        - environment
+            .filter(|environment| environment.stacked)
+            .map_or(0.0, |environment| {
+                environment.allocated_height
+                    + if is_home {
+                        48.0 * environment.progress
+                    } else {
+                        0.0
+                    }
+            }))
+    .max(0.0);
+    let compact = center_width < 460.0;
     let center = if !state.show_settings && state.main_page == MainPage::Automations {
         automation_view::build_automations(&state.automations, center_width)
     } else if !state.show_settings && state.main_page == MainPage::Marketplace {
-        marketplace_view::marketplace_page(&state.marketplace, center_width)
-    } else if is_home {
-        home::build_home(state, center_width)
-    } else if is_session {
-        crate::session_surface::build_session_surface(
-            state,
+        marketplace_view::marketplace_page_with_navigation(
+            &state.marketplace,
             center_width,
-            side_visible,
-            side_available,
+            (!left_visible).then(|| sidebar_reopen_control(theme::BACKGROUND)),
         )
+    } else if is_home {
+        home::build_home_sized(state, center_width, session_height)
+    } else if is_session && cli_task_in_center(state) {
+        // The task's header, then its terminal; the side panel stays beside it.
+        let header_height = crate::dock_tab_ui::HEADER_HEIGHT;
+        Element::column(vec![
+            crate::session_surface::header(state, center_width, side_visible, side_available)
+                .size(Some(center_width), Some(header_height)),
+            crate::terminal_dock_ui::build_panes(
+                state,
+                center_width,
+                (session_height - header_height).max(0.0),
+            ),
+        ])
+        .background(theme::BACKGROUND)
+        .flex(1.0)
+    } else if is_session {
+        if environment.is_some() {
+            crate::session_surface::build_session_body_sized(
+                state,
+                center_width,
+                session_height,
+                side_visible,
+                side_available,
+            )
+        } else {
+            crate::session_surface::build_session_surface_sized(
+                state,
+                center_width,
+                session_height,
+                side_visible,
+                side_available,
+            )
+        }
     } else {
-        let mut center_items = if state.show_settings {
+        let mut center_items = if state.show_settings || environment.is_some() {
             Vec::new()
         } else {
             vec![workspace_header(
@@ -4472,22 +3641,18 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
                 center_items.push(
                     Element::row(vec![
                         Element::spacer().flex(1.0),
-                        icon_button(
-                            "jump_to_bottom",
-                            Icon::ArrowDown,
-                            "Volver al final",
-                            theme::CARD,
-                            theme::FOREGROUND,
-                        )
-                        .size(Some(130.0), Some(28.0)),
+                        crate::session_surface::jump_to_bottom_control(),
+                        Element::spacer().flex(1.0),
                     ])
                     .padding(8.0)
-                    .size(None, Some(36.0)),
+                    .size(None, Some(52.0)),
                 );
             }
         }
         for permission in state.pending_permissions.iter().take(3) {
-            center_items.push(permission_card(permission, compact).padding(8.0));
+            center_items.push(
+                crate::approval_ui::inline_root(permission, state, center_width).padding(8.0),
+            );
         }
         if let Some(cards) = crate::session_surface::related_subagent_cards(state, compact) {
             center_items.push(cards);
@@ -4504,33 +3669,96 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
             if state.show_settings {
                 settings_ui::build_settings_sidebar(state, left)
             } else {
-                sidebar(state, left)
+                sidebar_for_height(state, left, viewport_height - 2.0 * GAP)
             }
+            .corner_mask(theme::WINDOW)
             .clip_children(),
         );
     }
-    let center = if is_home && !side_visible && side_available {
+    let center = if let Some(environment) = environment {
+        let panel =
+            crate::environment_ui::panel(state, environment.panel_width, environment.panel_height);
+        if environment.stacked {
+            let environment_panel = Element::column(vec![
+                Element::spacer().size(None, Some(if is_home { 54.0 } else { 6.0 })),
+                Element::row(vec![
+                    Element::spacer().size(Some(8.0), None),
+                    panel,
+                    Element::spacer().size(Some(8.0), None),
+                ]),
+            ])
+            .size(
+                Some(layout.center),
+                Some(
+                    environment.allocated_height
+                        + if is_home {
+                            48.0 * environment.progress
+                        } else {
+                            0.0
+                        },
+                ),
+            )
+            .clip_children();
+            Element::column(vec![environment_panel, center]).flex(1.0)
+        } else {
+            let environment_panel = Element::column(vec![
+                Element::spacer().size(None, Some(if is_home { 48.0 } else { 8.0 })),
+                Element::row(vec![
+                    Element::spacer().size(Some(8.0), None),
+                    panel,
+                    Element::spacer().size(Some(8.0), None),
+                ]),
+                Element::spacer().flex(1.0),
+            ])
+            .size(Some(environment.allocated_width), None)
+            .clip_children();
+            Element::row(vec![center, environment_panel]).flex(1.0)
+        }
+    } else {
+        center
+    };
+    let center = if environment.is_some() && !is_home && !cli_task_in_center(state) {
+        let header = if is_session {
+            crate::session_surface::header(state, layout.center, side_visible, side_available)
+        } else {
+            workspace_header(state, side_available, side_visible, layout.center)
+        };
+        Element::column(vec![header, center]).flex(1.0)
+    } else {
+        center
+    };
+    let center = if is_home {
         let toggle = Tooltip::new(
             icon_button(
                 "toggle_side_pane_header",
                 Icon::PanelRightOpen,
                 "",
                 theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
+                theme::FOREGROUND,
             )
-            .size(Some(32.0), Some(32.0)),
+            .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
             "toggle_side_pane_header",
-            "Mostrar panel derecho",
+            "Mostrar panel derecho: archivos, cambios, terminal y navegador",
             theme::component_palette(),
         )
         .placement(TooltipPlacement::Below)
         .render();
+        let mut actions = vec![
+            window_mode_control(state),
+            crate::environment_ui::header_control(state, layout.center),
+        ];
+        if !side_visible && side_available {
+            actions.push(toggle);
+        }
         Element::overlay(
             center,
             Element::column(vec![
-                Element::row(vec![Element::spacer().flex(1.0), toggle])
-                    .padding(8.0)
-                    .size(None, Some(48.0)),
+                Element::row(vec![
+                    Element::spacer().flex(1.0),
+                    Element::row(actions).gap(4.0),
+                ])
+                .padding(4.0)
+                .size(None, Some(crate::dock_tab_ui::HEADER_HEIGHT)),
                 Element::spacer().flex(1.0),
             ]),
         )
@@ -4540,7 +3768,7 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
     };
     let center = if !left_visible
         && !state.show_settings
-        && (is_home || state.main_page != MainPage::Workspace)
+        && (is_home || matches!(state.main_page, MainPage::Automations))
     {
         // A free overlay shares the center dock's full bounds. Its small
         // top-left action has no height in normal layout, so closing the
@@ -4551,7 +3779,7 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
                 theme::BACKGROUND,
             ))
             .padding(4.0)
-            .size(Some(40.0), Some(40.0))]),
+            .size(Some(crate::dock_tab_ui::HEADER_HEIGHT), Some(crate::dock_tab_ui::HEADER_HEIGHT))]),
         )
         .flex(1.0)
     } else {
@@ -4560,25 +3788,101 @@ pub fn build_view(state: &ViewState, viewport_width: f32) -> Element {
     let mut workspace = vec![center];
     if let Some(right) = layout.right {
         workspace.push(workspace_divider());
-        workspace.push(side_pane(state, right).clip_children());
+        workspace.push(side_pane_sized(state, right, workspace_height).clip_children());
     }
-    docks.push(
-        Element::row(workspace)
-            .background(theme::BACKGROUND)
-            .border(theme::BORDER, 1.0)
-            .radius(WORKSPACE_RADIUS)
-            .flex(1.0),
-    );
+    let top = Element::row(workspace).flex(1.0).clip_children();
+    let workspace = if terminal_height > 0.0 {
+        let width = layout.center + layout.right.map_or(0.0, |right| right + RIGHT_DIVIDER);
+        Element::column(vec![
+            top,
+            ide_ui::bottom::build(state, width, terminal_height)
+                .size(None, Some(terminal_height)),
+        ])
+    } else {
+        Element::column(vec![top])
+    };
+    docks.push(workspace_frame(workspace));
     let base = Element::row(docks)
         .gap(GAP)
         .padding(GAP)
         .background(theme::WINDOW);
+    workspace_modals(state, base, viewport_width, viewport_height)
+}
+
+pub(crate) fn window_mode_control(state: &ViewState) -> Element {
+    ide_ui::mode_button(state)
+}
+
+fn workspace_modals(
+    state: &ViewState,
+    base: Element,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Element {
+    let base = crate::notifications_ui::toast_layer(state, base);
     let base = confirmation_dialog(state, base, viewport_width);
+    let base = crate::github_account_ui::sign_in_alert(state, base, viewport_width);
+    let base = settings_ui::provider_connect_modal(state, base, viewport_width);
     let base = settings_ui::mcp_editor_modal(state, base, viewport_width);
     let base = settings_ui::hook_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_editor_modal(state, base, viewport_width);
     let base = settings_ui::exec_rule_reset_modal(state, base, viewport_width);
-    settings_ui::native_skill_reset_modal(state, base, viewport_width)
+    let base = settings_ui::external_approval_modal(state, base, viewport_width);
+    let base = settings_ui::native_skill_reset_modal(state, base, viewport_width);
+    let base = settings_ui::native_skill_preview_modal(state, base, viewport_width);
+    let base = crate::plugins_ui::modal(state, base, viewport_width);
+    let base = settings_ui::native_skill_clear_workspace_modal(state, base, viewport_width);
+    let base = settings_ui::native_instructions_modal(state, base, viewport_width);
+    let base = crate::native_command_output_ui::modal(state, base, viewport_width);
+    let base = crate::native_command_control_ui::modal(state, base, viewport_width);
+    let base = crate::native_command_history_ui::modal(state, base, viewport_width);
+    let base = crate::conversation_source_ui::modal(state, base, viewport_width);
+    let base = settings_ui::provider_model_details_modal(state, base, viewport_width);
+    let base = crate::composer_permissions_ui::full_access_dialog(state, base, viewport_width);
+    let base = crate::approval_ui::modal(state, base, viewport_width, viewport_height);
+    let base = crate::code_editor_ui::confirmation(state, base, viewport_width);
+    ide_ui::new_file_modal(state, base, viewport_width)
+}
+
+pub fn build_window_view(state: &ViewState, width: f32, height: f32) -> Element {
+    let base = build_view_sized(state, width, height);
+    let Some(gallery) = &state.composer_image_viewer else {
+        return base;
+    };
+    if !gallery.is_current(state) {
+        return base;
+    }
+    let title = if let Some(source) = &gallery.tool_source {
+        format!(
+            "Imagen de herramienta {} de {}",
+            gallery.selected + 1,
+            source.images.len()
+        )
+    } else {
+        let Some(file) = gallery.attachments.get(gallery.selected) else {
+            return base;
+        };
+        file.label.clone()
+    };
+    let mut viewer = openide_ui::ImageViewer::new(
+        base,
+        true,
+        title,
+        "composer_image_close",
+        theme::component_palette(),
+    )
+    .viewport(openide_ui::Size::new(width, height))
+    .gallery(gallery.selected, gallery.image_count())
+    .previous_action("composer_image_previous")
+    .next_action("composer_image_next")
+    .return_focus("prompt");
+    if let Some(image) = &gallery.image {
+        viewer = viewer.image(image.clone());
+    }
+    if let Some(error) = &gallery.error {
+        viewer = viewer.error(error);
+    }
+    viewer.render()
 }
 
 fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) -> Element {
@@ -4597,9 +3901,9 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
             .width(width)
             .confirm_label("Guardar")
             .body(
-                field("rename_title", &state.rename_draft, "Nombre de la tarea")
-                    .font_size(14.0)
-                    .size(Some((width - 48.0).max(0.0)), Some(40.0)),
+                openide_ui::TextField::new("rename_title", &state.rename_draft, "Nombre de la tarea", theme::component_palette())
+                    .size(ControlSize::Compact)
+                    .render(),
             )
             .render();
         }
@@ -4623,29 +3927,19 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
             .width(width)
             .confirm_label("Guardar")
             .body(
-                field(
+                openide_ui::TextField::new(
                     "group_rename_draft",
                     &state.group_rename_draft,
                     "Nombre del grupo",
+                    theme::component_palette(),
                 )
-                .font_size(14.0)
-                .size(Some((width - 48.0).max(0.0)), Some(40.0)),
+                .size(ControlSize::Compact)
+                .render(),
             )
             .render();
         }
     }
-    let dialog = if let Some(id) = state.pending_native_command_termination.as_deref() {
-        state.native_commands.iter().find(|command| command.id == id && command.exit.is_none()).map(|command| {
-            (
-                "¿Terminar este comando?".to_owned(),
-                format!("Se cerrará el proceso {} y sus descendientes. La salida ya producida quedará disponible para el agente.", shorten(&command.id, 18)),
-                format!("native_command_terminate_confirm:{id}"),
-                "native_command_terminate_cancel".to_owned(),
-                "Terminar proceso".to_owned(),
-                true,
-            )
-        })
-    } else if let Some(id) = state.pending_mcp_delete_id.as_deref() {
+    let dialog = if let Some(id) = state.pending_mcp_delete_id.as_deref() {
         state.mcp_servers.iter().find(|server| server.id == id).map(|server| {
             let mut description = "Se quitará de la configuración de este proyecto. Podrás volver a agregarlo más adelante.".to_owned();
             if state.settings_notice_error {
@@ -4704,8 +3998,8 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
     } else if let Some(id) = state.pending_delete_session_id.as_deref() {
         state.sessions.iter().find(|session| session.id == id).map(|session| {
             (
-                format!("¿Eliminar «{}»?", session.title),
-                "Se eliminará la tarea archivada, sus subagentes y su historial. Esta acción no se puede deshacer.".to_owned(),
+                "¿Eliminar conversación?".to_owned(),
+                format!("«{}»\n\nSe eliminará esta conversación, sus subagentes y su historial. Los archivos del proyecto se conservarán. Esta acción no se puede deshacer.", session.title),
                 format!("delete_confirm:{id}"),
                 "delete_cancel".to_owned(),
                 "Eliminar".to_owned(),
@@ -4764,7 +4058,38 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    #[test]
+    fn provider_usage_remains_reachable_in_the_short_workspace_sidebar() {
+        let mut state = empty_state();
+        state.show_side_pane = false;
+        state.github_account = GithubAccountStatus::Disconnected;
+        for (width, height) in [(520.0, 320.0), (900.0, 320.0), (900.0, 720.0)] {
+            let mut tree = UiTree::new(build_view_sized(&state, width, height));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, height));
+            for action in ["usage_toggle", "toggle_settings", "github_account_connect"] {
+                let rect = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == action)
+                    .unwrap_or_else(|| panic!("missing {action} at {width}x{height}"))
+                    .rect;
+                assert!(
+                    rect.y >= 0.0 && rect.y + rect.height <= height + 0.1,
+                    "{action} unreachable at {width}x{height}: {rect:?}"
+                );
+            }
+            if height < 440.0 {
+                let bounds = |id: &str| frame.regions.iter().find(|r| r.id == id).unwrap().rect;
+                let usage = bounds("usage_toggle");
+                let settings = bounds("toggle_settings");
+                assert_eq!(usage.height, settings.height);
+                assert_eq!(usage.y, settings.y, "footer tools share one baseline");
+                assert!(settings.x + settings.width < usage.x);
+            }
+        }
+    }
     use super::*;
     use crate::git_review::ReviewSection;
     use openide_ui::{DrawCommand, Key, Point, Size, UiAction, UiEvent, UiTree};
@@ -4793,14 +4118,24 @@ mod tests {
         )));
     }
 
-    fn empty_state() -> ViewState {
+    pub(crate) fn empty_state() -> ViewState {
         ViewState {
+            ide: crate::ide_workspace::IdeWorkspaceState::default(),
+            ide_search: crate::ide_search::IdeSearchState::default(),
+            document_preview: None,
+            markdown_preview: None,
+            ide_status: Default::default(),
             sessions_status: None,
             session_plans: BTreeMap::new(),
             session_recovery: BTreeMap::new(),
             pending_permissions: Vec::new(),
+            approval_ui: Default::default(),
+            composer_pending: None,
             pending_subagent_permissions: Vec::new(),
             active_subagents: Vec::new(),
+            subagent_sessions: Vec::new(),
+            expanded_subagent_inputs: None,
+            subagent_input_edit: None,
             recoverable_subagent: None,
             pending_tool_verification: None,
             pending_batch_discard: None,
@@ -4809,35 +4144,71 @@ mod tests {
             workspace: "C:/project".into(),
             workspace_draft: "C:/project".into(),
             project_branch: None,
+            composer_branches: Default::default(),
             prompt: String::new(),
             composer_attachments: Vec::new(),
+            composer_attachment_visuals: Default::default(),
+            composer_attachment_loading: false,
+            composer_image_viewer: None,
             composer_add_menu_open: false,
             composer_listening: false,
+            composer_expanded: false,
             composer_goal: None,
             composer_goal_editor_open: false,
             composer_goal_draft: String::new(),
+            native_goal: Default::default(),
+            native_instructions: Default::default(),
+            native_context: Default::default(),
+            composer_permissions_open: false,
+            composer_full_access_confirm: None,
+            composer_suggestions: Default::default(),
             composer_project_menu_open: false,
+            environment: Default::default(),
+            project_actions: Default::default(),
             composer_project_options: Vec::new(),
             endpoint: String::new(),
             model: String::new(),
             native_provider_id: "custom".into(),
+            native_output_limit_draft: String::new(),
+            native_output_limit_field: String::new(),
+            native_output_limit_responses: false,
+            native_output_limit_messages: false,
+            native_output_limit_load_error: None,
             hosted_web_search_mode: None,
             catalog: None,
             catalog_status: String::new(),
             catalog_refreshing: false,
+            provider_connections: BTreeMap::new(),
+            provider_usage: BTreeMap::new(),
+            provider_usage_open: false,
+            provider_usage_refreshing: false,
+            provider_connect: None,
             catalog_browse_provider: "openai".into(),
             catalog_provider_query: String::new(),
             catalog_model_query: String::new(),
+            catalog_models_filter: CatalogModelsFilter::All,
+            catalog_settings_tab: CatalogSettingsTab::Models,
+            catalog_expanded_model: None,
+            catalog_provider_menu_open: false,
+            native_provider_definitions: crate::provider_settings::connection_views_with_registry(
+                &crate::native_provider::ProviderRegistry::builtin(),
+                &crate::native_provider::NativeProviderSettings::default(),
+                |_| false,
+            ),
+            native_provider_registry_error: None,
             backend_options: vec![("native".into(), "Nativo".into())],
             selected_backend: "native".into(),
             backend_menu_open: false,
             composer_model: "gpt-4.1".into(),
             composer_model_options: vec![("gpt-4.1".into(), "gpt-4.1".into())],
             composer_routes: Vec::new(),
+            composer_model_metadata: Default::default(),
             composer_provider_status: BTreeMap::new(),
             composer_model_menu_open: false,
             composer_model_list_open: false,
             composer_model_query: String::new(),
+            composer_collapsed_model_providers: Default::default(),
+            composer_search_collapsed_model_providers: Default::default(),
             composer_advanced_open: false,
             composer_effort: "default".into(),
             composer_effort_options: Vec::new(),
@@ -4845,6 +4216,9 @@ mod tests {
             composer_effort_preview: None,
             composer_effort_hovered: false,
             composer_context_percent: None,
+            composer_context_open: false,
+            composer_context_details_open: false,
+            composer_error: None,
             turn_mode: TurnMode::Build,
             sessions: Vec::new(),
             selected_session: None,
@@ -4878,23 +4252,43 @@ mod tests {
             native_key_available: false,
             workspace_writes_enabled: false,
             native_tool_permissions: ToolPermissions::default(),
+            native_full_access: false,
             native_command_isolation: if cfg!(windows) {
                 CommandIsolation::WorkspaceWriteOffline
             } else {
                 CommandIsolation::HostUnrestricted
             },
+            external_agents: Default::default(),
+            external_approval: None,
+            compat_hooks: Vec::new(),
+            plugin_skills: Vec::new(),
+            agent_clis: Vec::new(),
+            turn_check_command: String::new(),
+            turn_check_failure: None,
+            review_model: Default::default(),
+            compat_hooks_error: None,
             session_approval_grants: Vec::new(),
             native_commands: Vec::new(),
             native_commands_error: None,
+            native_command_control: Default::default(),
+            native_command_output: Default::default(),
+            native_command_history: Default::default(),
             pending_native_command_termination: None,
             native_command_terminating: None,
             native_hooks: Default::default(),
             native_exec_rules: Default::default(),
             native_skills: Default::default(),
+            plugins: Default::default(),
+            keymap_profile: crate::keymap::KeymapProfile::default(),
+            vim_mode: false,
+            settings_keymap_menu_open: false,
             settings_reduced_motion: false,
             settings_reopen_last_workspace: false,
             settings_terminal_shell: TerminalShell::System,
             settings_terminal_shell_draft: String::new(),
+            settings_terminal_shell_menu_open: false,
+            settings_choice_menu_open: None,
+            settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),
             mcp_selected_id: None,
             mcp_editor_open: false,
@@ -4913,6 +4307,10 @@ mod tests {
             mcp_draft_cwd: String::new(),
             mcp_draft_env_names: String::new(),
             mcp_load_error: None,
+            mcp_inspection: Default::default(),
+            conversation_activity: Default::default(),
+            conversation_details: Default::default(),
+            stream_presentation: Default::default(),
             show_settings: false,
             main_page: MainPage::Workspace,
             automations: AutomationViewState::new(
@@ -4923,6 +4321,7 @@ mod tests {
             marketplace: MarketplaceViewState::default(),
             settings_page: SettingsPage::General,
             settings_nav_open: false,
+            settings_nav_query: String::new(),
             can_go_back: false,
             can_go_forward: false,
             show_command_center: false,
@@ -4939,11 +4338,14 @@ mod tests {
             right_dock_width: None,
             left_presentation_width: None,
             right_presentation_width: None,
+            bottom_presentation_height: None,
+            environment_presentation_progress: None,
             side_tab: SideTab::Context,
             activity_page: 0,
             review_page: 0,
             dock_tabs: vec![
                 DockTabView {
+                    full_path: None,
                     id: 1,
                     title: "Contexto".into(),
                     active: true,
@@ -4951,6 +4353,7 @@ mod tests {
                     closable: false,
                 },
                 DockTabView {
+                    full_path: None,
                     id: 2,
                     title: "Actividad".into(),
                     active: false,
@@ -4962,9 +4365,30 @@ mod tests {
             dock_overview_query: String::new(),
             show_dock_overview: false,
             show_dock_add_menu: false,
+            notifications: Default::default(),
+            show_dock_tabs_menu: false,
             file_preview: None,
+            code_editor: None,
+            editor_workbench: Default::default(),
+            debug: Default::default(),
+            debug_open: false,
+            code_snapshot: None,
+            code_editor_quit_confirm: false,
+            code_editor_pending_saves: false,
+            chat_diffs: Default::default(),
+            code_editor_reload_confirm: None,
             git_review: None,
+            git_action_pending: false,
+            git_action_error: None,
+            session_changes: Default::default(),
+            browser: Default::default(),
             review_detail: None,
+            terminal_tabs: Vec::new(),
+            terminal_menu_open: false,
+            terminal_controls: Default::default(),
+            terminal_maximized: false,
+            show_terminal_panel: false,
+            terminal_panel_height: 240.0,
             terminal_snapshot: None,
             terminal_input: String::new(),
             terminal_error: None,
@@ -4972,7 +4396,135 @@ mod tests {
             show_jump_to_bottom: false,
             github_account: GithubAccountStatus::Disconnected,
             github_account_menu_open: false,
+            github_account_refreshing: false,
+            github_account_notice: None,
+            github_sign_in: None,
+            github_contributions: GithubContributionsStatus::Idle,
         }
+    }
+
+    /// Export the same tree/paint commands used by the host. This does not
+    /// replace OS rendering acceptance, and never reads account data.
+    #[test]
+    #[ignore = "export native chat and compact selectors for visual inspection"]
+    fn export_streaming_and_compact_selectors_visual_review() {
+        use crate::composer_selection::{
+            CredentialAvailability, ExecutionSupport, ModelRouteOption, RouteSource,
+        };
+        use crate::transcript::{ActivityStatus, ModelStreamStatus, TranscriptItem};
+        let directory = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/streaming-selectors-visual-qa");
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut state = empty_state();
+        state.workspace = "/test/project".into();
+        state.project_branch = Some("main".into());
+        state.show_side_pane = false;
+        state.native_provider_id = "codex".into();
+        state.model = "fixture-model".into();
+        state.composer_model = state.model.clone();
+        state.composer_routes = (0..12)
+            .map(|index| ModelRouteOption {
+                route_id: format!("native:codex:fixture-model-{index}"),
+                backend: "native".into(),
+                provider_id: "codex".into(),
+                provider_name: "Codex".into(),
+                model_id: format!("fixture-model-{index}"),
+                model_name: format!("Modelo de prueba {index}"),
+                credential: CredentialAvailability::EnvPresentUnverified,
+                execution: ExecutionSupport::Verified,
+                source: RouteSource::AdapterReview,
+                catalog_present: true,
+                provider_listed: Some(true),
+                effort_options: Vec::new(),
+            })
+            .collect();
+        state.composer_model_options = state
+            .composer_routes
+            .iter()
+            .map(|route| (route.model_id.clone(), route.model_name.clone()))
+            .collect();
+        state.composer_model = state.composer_routes[0].model_id.clone();
+        let export = |state: &ViewState, name: &str, width: f32, height: f32| {
+            let mut tree = UiTree::new(build_view(state, width));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, height));
+            let path = directory.join(format!("{name}-{width:.0}.svg"));
+            settings_ui::visual_qa::write_frame_svg(&frame, &path, width, height).unwrap();
+            let svg = std::fs::read_to_string(&path).unwrap();
+            let mut options = resvg::usvg::Options::default();
+            options.fontdb_mut().load_system_fonts();
+            let svg_tree = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+            resvg::render(
+                &svg_tree,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
+            pixmap.save_png(path.with_extension("png")).unwrap();
+        };
+        export(&state, "home", 1400.0, 900.0);
+        state.prompt = "Primera línea\nSegunda línea\n".into();
+        export(&state, "composer-multiline", 1400.0, 900.0);
+        state.composer_permissions_open = true;
+        export(&state, "permissions", 1400.0, 900.0);
+        state.composer_permissions_open = false;
+        state.composer_full_access_confirm =
+            Some(crate::composer_permissions_ui::FullAccessConfirmation::new(
+                &state,
+                crate::agent_tool_settings::AgentToolSettings::default(),
+            ));
+        export(&state, "full-access-confirmation", 1400.0, 900.0);
+        export(&state, "full-access-confirmation", 360.0, 720.0);
+        state.composer_full_access_confirm = None;
+        state.composer_model_menu_open = true;
+        state.composer_model_list_open = true;
+        export(&state, "models", 1400.0, 900.0);
+        state.composer_model_menu_open = false;
+        state.composer_model_list_open = false;
+        state.prompt.clear();
+        state.selected_session = Some("visual-fixture".into());
+        state.selected_session_title = Some("Revisar el proyecto".into());
+        state.transcript = vec![
+            TranscriptItem::User {
+                content: "Explica el proyecto sin modificar archivos.".into(),
+                images: Vec::new(),
+            },
+            TranscriptItem::Assistant {
+                content: "Voy a revisar la estructura del proyecto.".into(),
+                streaming: false,
+            },
+            TranscriptItem::Reasoning {
+                id: "reasoning-fixture".into(),
+                step: 1,
+                content: "Resumen público: comprobar los módulos principales.".into(),
+                status: ModelStreamStatus::Committed,
+                truncated: false,
+            },
+            TranscriptItem::Tool {
+                id: "read-fixture".into(),
+                name: "read_file".into(),
+                arguments: json!({"path":"README.md"}),
+                output: Some("# Proyecto\nAplicación Rust".into()),
+                is_error: false,
+                activity: ActivityStatus::Completed,
+            },
+            TranscriptItem::Assistant {
+                content: "## Estructura\n\nLa aplicación usa **Rust** y componentes propios.\n\n- Motor: eventos tipados y journal.\n- Interfaz: openide-ui.\n\n```rust\nfn main() {}\n```".into(),
+                streaming: false,
+            },
+        ];
+        export(&state, "timeline", 1400.0, 900.0);
+        state.sidebar_collapsed = true;
+        export(&state, "timeline", 480.0, 760.0);
+        state.transcript.push(TranscriptItem::Assistant {
+            content: "## Fuente extensa\n\nLectura íntegra con UTF-8: ñ🙂漢字\n".repeat(600),
+            streaming: false,
+        });
+        let index = state.transcript.len() - 1;
+        let id = format!("conversation_source:visual-fixture:{index}:0:open");
+        assert!(crate::conversation_source_ui::apply_action(&mut state, &id));
+        export(&state, "complete-response", 480.0, 760.0);
+        export(&state, "complete-response", 1400.0, 900.0);
     }
 
     #[test]
@@ -4994,7 +4546,7 @@ mod tests {
                         rect,
                         color,
                         radius,
-                    } if *color == Color::rgb(38, 38, 38) && *radius == 26.0 => Some(*rect),
+                    } if *color == Color::rgb(38, 38, 38) && *radius == 10.0 => Some(*rect),
                     _ => None,
                 })
                 .expect("shared composer card");
@@ -5025,13 +4577,16 @@ mod tests {
             GithubAccountStatus::Disconnected,
             GithubAccountStatus::Connected(crate::github_account::GithubIdentity {
                 login: "nihue".to_owned(),
+                avatar: None,
             }),
         ] {
             state.github_account = status;
-            let frame =
-                UiTree::new(sidebar_account_footer(&state, 264.0)).layout(Size::new(264.0, 52.0));
+            let frame = UiTree::new(sidebar_account_footer(&state, 264.0)).layout(Size::new(
+                264.0,
+                crate::sidebar_chrome::ACCOUNT_FOOTER_HEIGHT,
+            ));
             let account_id = if matches!(state.github_account, GithubAccountStatus::Connected(_)) {
-                "github_account_open"
+                "github_account_menu_toggle"
             } else {
                 "github_account_connect"
             };
@@ -5046,8 +4601,8 @@ mod tests {
                 .find(|region| region.id == "toggle_settings")
                 .expect("settings control");
             assert!(account.rect.x + account.rect.width <= settings.rect.x);
-            assert_eq!(settings.rect.width, 36.0);
-            assert_eq!(settings.rect.height, 36.0);
+            assert_eq!(settings.rect.width, 24.0);
+            assert_eq!(settings.rect.height, 24.0);
             let gear = frame.commands.iter().find_map(|command| match command {
                 DrawCommand::Icon {
                     icon: Icon::Settings,
@@ -5057,8 +4612,333 @@ mod tests {
                 _ => None,
             });
             let gear = gear.expect("settings icon");
-            assert!((gear.x + gear.width / 2.0 - settings.rect.x - 18.0).abs() < 1.0);
-            assert!((gear.y + gear.height / 2.0 - settings.rect.y - 18.0).abs() < 1.0);
+            assert_eq!((gear.width, gear.height), (16.0, 16.0));
+            assert!((gear.x + gear.width / 2.0 - settings.rect.x - 12.0).abs() < 1.0);
+            assert!((gear.y + gear.height / 2.0 - settings.rect.y - 12.0).abs() < 1.0);
+        }
+    }
+
+    #[test]
+    fn sidebar_shortcuts_fit_compact_navigation_without_empty_badges() {
+        for (width, expected_keys) in [(132.0, 0), (182.0, 2), (246.0, 2)] {
+            let mut tree = UiTree::new(sidebar_nav_action(
+                "new_session_sidebar",
+                Icon::Add,
+                "Nueva tarea",
+                "Ctrl+N",
+                width,
+                false,
+            ));
+            tree.set_text_measurer(|text, _, _| text.chars().count() as f32 * 7.0);
+            let frame = tree.layout(Size::new(width, 28.0));
+            assert_eq!(frame.regions.len(), 1, "keycaps are passive");
+            let keys: Vec<_> = frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Text {
+                        text,
+                        position,
+                        font_family: FontFamily::Sans,
+                        ..
+                    } if ["Ctrl", "N"].contains(&text.as_str()) => Some((text, position)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(keys.len(), expected_keys, "at {width}px");
+            for (key, position) in keys {
+                assert!(position.x >= 8.0);
+                assert!(position.x + key.chars().count() as f32 * 7.0 <= width - 8.0);
+                assert!(position.y >= 0.0 && position.y + 11.0 <= 28.0);
+            }
+            for command in &frame.commands {
+                if let DrawCommand::FillRect { rect, radius, .. } = command {
+                    if *radius == 3.0 && rect.height == 18.0 {
+                        assert!(rect.x >= 8.0 && rect.x + rect.width <= width - 8.0);
+                        assert!(rect.y >= 0.0 && rect.y + rect.height <= 28.0);
+                    }
+                }
+            }
+        }
+        let frame = UiTree::new(sidebar_nav_action(
+            "open_automations",
+            Icon::Clock,
+            "Automatizaciones",
+            "",
+            246.0,
+            false,
+        ))
+        .layout(Size::new(246.0, 28.0));
+        assert!(
+            !frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::FillRect { radius, rect, .. } if *radius == 3.0 && rect.height == 18.0
+            )),
+            "actions without shortcuts do not show empty badges"
+        );
+    }
+
+    #[test]
+    fn command_center_hints_stay_inside_compact_card_and_clear_scrollbar() {
+        let mut state = empty_state();
+        state.command_results = crate::command_center::search(
+            "",
+            Scope::All,
+            &[],
+            &[],
+            crate::command_center::DEFAULT_RESULT_LIMIT,
+        );
+        for width in [300.0, 560.0] {
+            let mut tree = UiTree::new(build_command_center(&state, width, 420.0));
+            tree.set_text_measurer(|text, _, _| text.chars().count() as f32 * 7.0);
+            let frame = tree.layout(Size::new(width, 420.0));
+            for key in [
+                if cfg!(target_os = "macos") {
+                    "⌃"
+                } else {
+                    "Ctrl"
+                },
+                "N",
+                "Enter",
+            ] {
+                assert!(
+                    frame.commands.iter().any(|command| matches!(command,
+                        DrawCommand::Text { text, font_family: FontFamily::Sans, .. } if text == key
+                    )),
+                    "missing {key} at {width}px"
+                );
+            }
+            for arrow in [Icon::ArrowUp, Icon::ArrowDown] {
+                assert!(
+                    frame.commands.iter().any(|command| matches!(command,
+                        DrawCommand::Icon { icon, rect, .. } if *icon == arrow
+                            && rect.x >= 10.0 && rect.x + rect.width <= width - 10.0
+                            && rect.y >= 10.0 && rect.y + rect.height <= 410.0
+                    )),
+                    "native navigation hint must fit within the card"
+                );
+            }
+            let result = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "command_result:0")
+                .unwrap();
+            let rail = frame
+                .regions
+                .iter()
+                .find(|region| region.kind == openide_ui::HitKind::Scrollbar)
+                .unwrap();
+            let mut cap_count = 0;
+            for command in &frame.commands {
+                if let DrawCommand::FillRect { rect, radius, .. } = command {
+                    if *radius == 3.0 && rect.height == 18.0 {
+                        cap_count += 1;
+                        assert!(rect.x >= 10.0 && rect.x + rect.width <= width - 10.0);
+                        assert!(rect.y >= 10.0 && rect.y + rect.height <= 410.0);
+                        if rect.y >= result.rect.y && rect.y < result.rect.y + result.rect.height {
+                            assert!(rect.x + rect.width < rail.rect.x);
+                        }
+                    }
+                }
+            }
+            assert!(
+                cap_count >= 4,
+                "escape, enter and both navigation caps remain visible"
+            );
+        }
+    }
+
+    #[test]
+    fn shortcut_settings_keep_long_key_combinations_within_compact_cards() {
+        let state = empty_state();
+        for width in [360.0, 1300.0] {
+            let mut tree = UiTree::new(settings_ui::build_settings_page(
+                &state,
+                SettingsPage::Shortcuts,
+                width,
+                true,
+            ));
+            tree.set_text_measurer(|text, _, _| text.chars().count() as f32 * 7.0);
+            tree.layout(Size::new(width, 760.0));
+            tree.scroll_to_end("settings_page:Shortcuts");
+            let frame = tree.layout(Size::new(width, 760.0));
+            for key in ["Ctrl", "Shift", "M"] {
+                assert!(
+                    frame.commands.iter().any(|command| matches!(command,
+                        DrawCommand::Text { text, font_family: FontFamily::Sans, .. } if text == key
+                    )),
+                    "missing {key} at {width}px"
+                );
+            }
+            let right = frame
+                .regions
+                .iter()
+                .find(|region| region.kind == openide_ui::HitKind::Scrollbar)
+                .map_or(width - 14.0, |region| region.rect.x);
+            for command in &frame.commands {
+                if let DrawCommand::FillRect { rect, radius, .. } = command {
+                    if *radius == 3.0 && rect.height == 18.0 {
+                        assert!(rect.x >= 14.0 && rect.x + rect.width < right);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "export native keyboard shortcut surfaces for manual visual review"]
+    fn export_keyboard_shortcut_visual_review() {
+        let output = std::path::PathBuf::from(format!(
+            "{}/../../target/kbd-visual-qa",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        std::fs::create_dir_all(&output).unwrap();
+        let mut state = empty_state();
+        state.command_results = crate::command_center::search(
+            "",
+            Scope::All,
+            &[],
+            &[],
+            crate::command_center::DEFAULT_RESULT_LIMIT,
+        );
+        let mut cases = Vec::new();
+        for width in [300.0, 560.0] {
+            cases.push((
+                format!("command-center-{width:.0}"),
+                width,
+                520.0,
+                build_command_center(&state, width, 520.0),
+            ));
+        }
+        for width in [176.0, 264.0] {
+            cases.push((
+                format!("sidebar-{width:.0}"),
+                width,
+                720.0,
+                sidebar(&state, width),
+            ));
+        }
+        {
+            use crate::notifications::{Severity, Target};
+            let task = |id: &str| Some(Target::Session(id.into()));
+            let center = &mut state.notifications;
+            center.push(Severity::Info, "Turno completado", "Ordenar las importaciones", task("a"));
+            center.push(Severity::Error, "Turno fallido", "Migrar la base de datos", task("b"));
+            center.push(Severity::Attention, "Permiso pendiente: run_command", "Arreglar el login", task("c"));
+            center.push(Severity::Attention, "Permiso pendiente: run_command", "Arreglar el login", task("c"));
+            cases.push(("sidebar-bell-264".into(), 264.0, 420.0, sidebar(&state, 264.0)));
+            state.notifications.toggle();
+            cases.push(("sidebar-notifications-420".into(), 420.0, 420.0, sidebar(&state, 264.0)));
+            state.notifications.close();
+            cases.push((
+                "toast-560".into(),
+                560.0,
+                300.0,
+                crate::notifications_ui::toast_layer(
+                    &state,
+                    Element::spacer()
+                        .background(theme::BACKGROUND)
+                        .size(Some(560.0), Some(300.0)),
+                ),
+            ));
+            cases.push((
+                "settings-notifications-700".into(),
+                700.0,
+                420.0,
+                crate::notifications_ui::settings_group(&state.notifications, false),
+            ));
+            state.notifications.clear();
+        }
+        {
+            state.agent_clis = vec![
+                AgentCliRowView {
+                    id: "claude".into(),
+                    label: "Claude Code".into(),
+                    resolved: Some("/usr/bin/claude".into()),
+                    manual: String::new(),
+                },
+                AgentCliRowView {
+                    id: "codex".into(),
+                    label: "Codex".into(),
+                    resolved: Some("/usr/bin/codex".into()),
+                    manual: String::new(),
+                },
+            ];
+            cases.push(("home-cli-1100".into(), 1100.0, 700.0, build_view_sized(&state, 1100.0, 700.0)));
+            state.selected_session = Some("cli-task".into());
+            state.selected_session_title = Some("Claude Code".into());
+            state.selected_backend = "cli:claude".into();
+            state.show_terminal_panel = true;
+            cases.push(("cli-task-1100".into(), 1100.0, 700.0, build_view_sized(&state, 1100.0, 700.0)));
+            let task = |id: &str, title: &str, backend: &str| SessionView {
+                id: id.into(),
+                title: title.into(),
+                project: state.workspace.clone(),
+                backend: backend.into(),
+                pinned: false,
+                archived: false,
+                unread: false,
+                native_automation: None,
+            };
+            let tasks = vec![
+                task("cli-task", "Claude Code", "cli:claude"),
+                task("chat", "Revisar el editor", "native"),
+                task("codex-task", "Codex", "cli:codex"),
+            ];
+            state.sessions = tasks;
+            state.ide.mode = crate::ide_workspace::WindowMode::Ide;
+            state.ide.agent_tabs = vec!["cli-task".into(), "chat".into()];
+            cases.push(("ide-agent-tabs-1400".into(), 1400.0, 760.0, build_view_sized(&state, 1400.0, 760.0)));
+            state.ide.agent_list_open = true;
+            state.ide.agent_width = 620.0;
+            cases.push(("ide-agent-list-1400".into(), 1400.0, 760.0, build_view_sized(&state, 1400.0, 760.0)));
+            state.ide = Default::default();
+            state.sessions.clear();
+            cases.push((
+                "environment-360".into(),
+                360.0,
+                420.0,
+                crate::environment_ui::panel(&state, 360.0, 420.0),
+            ));
+            state.selected_session = None;
+            state.selected_backend = "native".into();
+            state.show_terminal_panel = false;
+        }
+        for page in [SettingsPage::Usage, SettingsPage::Mcp, SettingsPage::Automations] {
+            cases.push((
+                format!("settings-{page:?}-1000"),
+                1000.0,
+                1100.0,
+                settings_ui::build_settings_page(&state, page, 1000.0, true),
+            ));
+        }
+        for page in [SettingsPage::Shortcuts, SettingsPage::WorkspaceSearch] {
+            for width in [360.0, 1300.0] {
+                cases.push((
+                    format!("settings-{page:?}-{width:.0}"),
+                    width,
+                    760.0,
+                    settings_ui::build_settings_page(&state, page, width, true),
+                ));
+            }
+        }
+        for (name, width, height, root) in cases {
+            let mut tree = UiTree::new(root);
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, height));
+            let path = output.join(format!("{name}.svg"));
+            settings_ui::visual_qa::write_frame_svg(&frame, &path, width, height).unwrap();
+            let svg = std::fs::read_to_string(&path).unwrap();
+            let mut options = resvg::usvg::Options::default();
+            options.fontdb_mut().load_system_fonts();
+            let svg_tree = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+            resvg::render(
+                &svg_tree,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            eprintln!("{}", path.display());
         }
     }
 
@@ -5081,7 +4961,16 @@ mod tests {
                     .unwrap_or_else(|| panic!("missing {value} at {width}"))
             };
             let title = text_position("OpenIDE");
-            let nav = text_position("Nueva tarea");
+            let nav = frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Text { text, position, .. } if text.starts_with("Nue") => {
+                        Some(*position)
+                    }
+                    _ => None,
+                })
+                .expect("new task navigation label");
             let account_label = text_position(if width < 230.0 {
                 "Conectar"
             } else {
@@ -5130,13 +5019,14 @@ mod tests {
         state.github_account =
             GithubAccountStatus::Connected(crate::github_account::GithubIdentity {
                 login: "nihue".to_owned(),
+                avatar: None,
             });
         let frame =
             UiTree::new(sidebar_account_footer(&state, 176.0)).layout(Size::new(176.0, 52.0));
         let account = frame
             .regions
             .iter()
-            .find(|region| region.id == "github_account_open")
+            .find(|region| region.id == "github_account_menu_toggle")
             .unwrap()
             .rect;
         let github = frame
@@ -5144,13 +5034,13 @@ mod tests {
             .iter()
             .find_map(|command| match command {
                 DrawCommand::Icon {
-                    icon: Icon::Github,
+                    icon: Icon::ChevronDown,
                     rect,
                     ..
                 } => Some(*rect),
                 _ => None,
             })
-            .expect("connected GitHub icon");
+            .expect("connected account menu indicator");
         assert!((github.y + github.height / 2.0 - (account.y + account.height / 2.0)).abs() <= 1.0);
     }
 
@@ -5216,7 +5106,8 @@ mod tests {
                 ..ReviewSection::default()
             }],
             ..GitReview::default()
-        }));
+        }
+        .into()));
         let frame = UiTree::new(code_review_content(&state, 360.0)).layout(Size::new(360.0, 800.0));
         let labels: Vec<_> = frame
             .commands
@@ -5226,57 +5117,59 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(labels.contains(&"CAMBIOS PREPARADOS"), "{labels:?}");
-        assert!(labels.contains(&"CAMBIOS SIN PREPARAR"));
-        assert!(labels.contains(&"src/main.rs"));
-        assert!(labels.iter().any(|label| label.contains("+fn main()")));
+        assert!(labels.contains(&"Preparados"), "{labels:?}");
+        assert!(labels.contains(&"main.rs"));
+        assert!(labels.contains(&"src"));
+        assert!(
+            !labels.iter().any(|label| label.contains("+fn main()")),
+            "summary must not render a patch before selection"
+        );
     }
 
     #[test]
-    fn review_pages_reach_changes_past_the_initial_limit() {
+    fn review_scroll_reaches_changes_past_the_initial_viewport() {
         let mut state = empty_state();
         state.git_review = Some(Ok(GitReview {
             branch: "main".into(),
-            untracked: (0..45).map(|index| format!("file-{index:02}.rs")).collect(),
+            untracked: (0..1000)
+                .map(|index| format!("file-{index:04}.rs"))
+                .collect(),
             ..GitReview::default()
-        }));
-        let first = UiTree::new(code_review_content(&state, 360.0)).layout(Size::new(360.0, 900.0));
+        }
+        .into()));
+        let viewport = Size::new(360.0, 600.0);
+        let mut tree = UiTree::new(code_review_content(&state, 360.0));
+        tree.set_reduced_motion(true);
+        let first = tree.layout(viewport);
         assert!(first
             .regions
             .iter()
-            .any(|region| region.id == "review_page_next"));
+            .any(|region| region.id == "review_untracked_open:0"));
+        assert!(
+            first
+                .regions
+                .iter()
+                .filter(|region| region.id.starts_with("review_untracked_open:"))
+                .count()
+                < 30
+        );
         assert!(!first
             .regions
             .iter()
-            .any(|region| region.id == "review_page_previous"));
-        let first_text: Vec<_> = first
-            .commands
-            .iter()
-            .filter_map(|command| match command {
-                DrawCommand::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert!(first_text.contains(&"file-00.rs"));
-        assert!(!first_text.contains(&"file-20.rs"));
-
-        state.review_page = 1;
-        let second =
-            UiTree::new(code_review_content(&state, 360.0)).layout(Size::new(360.0, 900.0));
-        let second_text: Vec<_> = second
-            .commands
-            .iter()
-            .filter_map(|command| match command {
-                DrawCommand::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert!(second_text.contains(&"file-20.rs"));
-        assert!(!second_text.contains(&"file-00.rs"));
-        assert!(second
+            .any(|region| region.id.starts_with("review_page_")));
+        tree.handle_event(UiEvent::ScrollDirect {
+            position: Point::new(150.0, 250.0),
+            delta_y: -100_000.0,
+        });
+        let end = tree.layout(viewport);
+        assert!(end
             .regions
             .iter()
-            .any(|region| region.id == "review_page_previous"));
+            .any(|region| region.id == "review_untracked_open:999"));
+        assert!(!end
+            .regions
+            .iter()
+            .any(|region| region.id == "review_untracked_open:0"));
     }
 
     #[test]
@@ -5285,10 +5178,12 @@ mod tests {
         state.dock_tabs.clear();
         let frame = UiTree::new(side_pane(&state, 420.0)).layout(Size::new(420.0, 600.0));
         for id in [
-            "dock_open:context",
             "dock_open:files",
             "dock_open:activity",
             "dock_open:review",
+            "dock_open:terminal",
+            "dock_open:browser",
+            "dock_open:changes",
         ] {
             let rect = frame
                 .regions
@@ -5306,6 +5201,7 @@ mod tests {
         let mut state = empty_state();
         state.show_dock_overview = true;
         state.dock_tabs.push(DockTabView {
+            full_path: None,
             id: 3,
             title: "Terminal".into(),
             active: false,
@@ -5365,8 +5261,10 @@ mod tests {
                 arguments: json!({"path": format!("src/file-{index}.rs")}),
                 output: Some(format!("result-{index}")),
                 is_error: false,
+                activity: crate::transcript::ActivityStatus::Completed,
             });
             state.dock_tabs.push(DockTabView {
+                full_path: None,
                 id: index + 10,
                 title: format!("file-{index}.rs"),
                 active: false,
@@ -5493,84 +5391,106 @@ mod tests {
     }
 
     #[test]
-    fn right_header_pages_tabs_without_overlapping_actions_at_compact_widths() {
+    fn right_header_shrinks_tabs_without_overlapping_actions_at_compact_widths() {
         let mut state = empty_state();
-        state.dock_tabs.insert(
-            1,
-            DockTabView {
-                id: 3,
-                title: "Archivos".into(),
-                active: false,
-                kind: SideTab::Files,
-                closable: false,
-            },
-        );
-        state.dock_tabs.push(DockTabView {
-            id: 4,
-            title: "Cambios".into(),
-            active: false,
-            kind: SideTab::CodeReview,
-            closable: false,
-        });
-        for (width, visible) in [(320.0, 1), (430.0, 2), (540.0, 3)] {
+        state.dock_tabs = (1..=5)
+            .map(|id| DockTabView {
+                id,
+                full_path: None,
+                title: format!("Archivo {id}"),
+                active: id == 1,
+                kind: SideTab::FilePreview,
+                closable: true,
+            })
+            .collect();
+        for width in [320.0, 430.0, 540.0] {
             let frame = UiTree::new(side_pane(&state, width)).layout(Size::new(width, 360.0));
-            for id in [
-                "dock_overview_toggle",
-                "dock_add_tab",
-                "toggle_side_pane",
-                "dock_tab_page_next",
-            ] {
-                let rect = frame
-                    .regions
-                    .iter()
-                    .find(|region| region.id == id)
-                    .unwrap_or_else(|| panic!("missing right header action: {id}"))
-                    .rect;
+            let regions: Vec<_> = frame
+                .regions
+                .iter()
+                .filter(|region| {
+                    region.id.starts_with("dock_tab:")
+                        || region.id.starts_with("dock_close:")
+                        || ["dock_tabs_menu", "dock_add_tab", "toggle_side_pane"]
+                            .contains(&region.id.as_str())
+                })
+                .collect();
+            for region in &regions {
+                let rect = region.rect;
                 assert!(
-                    rect.x >= 0.0 && rect.x + rect.width <= width,
-                    "{id}: {rect:?}"
+                    rect.x >= 0.0 && rect.x + rect.width <= width + 0.1,
+                    "{}: {rect:?}",
+                    region.id
                 );
                 assert!(rect.y >= 0.0 && rect.y + rect.height <= RIGHT_HEADER_HEIGHT);
-            }
-            for (index, tab) in state.dock_tabs.iter().enumerate() {
-                assert_eq!(
-                    frame
-                        .regions
+                if let Some(tab_id) = region.id.strip_prefix("dock_close:") {
+                    let parent_id = format!("dock_tab:{tab_id}");
+                    let parent = regions
                         .iter()
-                        .any(|region| region.id == format!("dock_tab:{}", tab.id)),
-                    index < visible,
-                    "width={width} tab={} index={index}",
-                    tab.id,
-                );
+                        .find(|candidate| candidate.id == parent_id)
+                        .expect("every visible close belongs to a visible tab")
+                        .rect;
+                    assert!(
+                        rect.x >= parent.x
+                            && rect.y >= parent.y
+                            && rect.x + rect.width <= parent.x + parent.width + 0.1
+                            && rect.y + rect.height <= parent.y + parent.height + 0.1,
+                        "close must stay inside its own tab: {}",
+                        region.id
+                    );
+                    assert_eq!(
+                        frame.hit_test(Point::new(
+                            rect.x + rect.width / 2.0,
+                            rect.y + rect.height / 2.0,
+                        )),
+                        Some(region.id.as_str()),
+                        "the close action must take priority over its parent tab"
+                    );
+                }
             }
+            let is_own_close = |parent: &str, child: &str| match (
+                parent.strip_prefix("dock_tab:"),
+                child.strip_prefix("dock_close:"),
+            ) {
+                (Some(parent), Some(child)) => parent == child,
+                _ => false,
+            };
+            for (index, left) in regions.iter().enumerate() {
+                for right in regions.iter().skip(index + 1) {
+                    if is_own_close(&left.id, &right.id) || is_own_close(&right.id, &left.id) {
+                        continue;
+                    }
+                    assert!(
+                        left.rect.x + left.rect.width <= right.rect.x + 0.1
+                            || right.rect.x + right.rect.width <= left.rect.x + 0.1,
+                        "overlap: {} {}",
+                        left.id,
+                        right.id
+                    );
+                }
+            }
+            assert!(regions.iter().any(|region| region.id == "dock_tab:1"));
+            assert!(regions.iter().any(|region| region.id == "dock_close:1"));
+            assert!(!frame
+                .regions
+                .iter()
+                .any(|region| region.id.starts_with("dock_tab_page")));
         }
-        let width = MIN_RIGHT_DOCK;
-        let frame = UiTree::new(side_pane(&state, width)).layout(Size::new(width, 360.0));
-        // The shared rounded workspace paints the strip. An opaque child
-        // rectangle here would square off its top-right corner.
-        assert!(!frame.commands.iter().any(|command| matches!(
-            command,
-            DrawCommand::FillRect { rect, color, .. }
-                if *color == theme::BACKGROUND
-                    && rect.x == 0.0
-                    && rect.y == 0.0
-                    && (rect.width - width).abs() < 0.01
-                    && (rect.height - RIGHT_HEADER_HEIGHT).abs() < 0.01
-        )));
-        assert!(!frame.commands.iter().any(|command| matches!(
-            command,
-            DrawCommand::FillRect { rect, color, .. }
-                if *color == theme::BORDER
-                    && rect.y > 0.0
-                    && rect.y < RIGHT_HEADER_HEIGHT
-                    && rect.height <= 1.0
-                    && rect.width >= width - 2.0
-        )));
     }
 
     #[test]
     fn dock_add_tab_uses_a_compact_anchored_popover_with_real_views() {
         let mut state = empty_state();
+        state.side_tab = SideTab::Files;
+        state.dock_tabs.clear();
+        state.dock_tabs.push(DockTabView {
+            full_path: None,
+            id: 1,
+            title: "Archivos".into(),
+            active: true,
+            kind: SideTab::Files,
+            closable: true,
+        });
         let viewport = Size::new(320.0, 440.0);
         let closed = UiTree::new(side_pane(&state, viewport.width)).layout(viewport);
         assert!(closed
@@ -5599,13 +5519,14 @@ mod tests {
             .rect;
         assert!(popup.y >= anchor.y + anchor.height);
         assert!(popup.x >= 0.0 && popup.x + popup.width <= viewport.width);
-        assert!(popup.height < 230.0, "add menu should not become a page");
+        assert!(popup.height < 290.0, "six real views fit a compact menu");
         for id in [
             "dock_open:terminal",
-            "dock_open:context",
             "dock_open:files",
             "dock_open:activity",
             "dock_open:review",
+            "dock_open:browser",
+            "dock_open:changes",
         ] {
             let item = opened
                 .regions
@@ -5714,7 +5635,7 @@ mod tests {
             Size::new(280.0, 500.0),
             "toggle_sidebar",
             Icon::PanelLeftClose,
-            32.0,
+            24.0,
             theme::hover_for(theme::SIDEBAR),
         );
         assert_dock_icon_hover_geometry(
@@ -5722,7 +5643,7 @@ mod tests {
             Size::new(280.0, 500.0),
             "session_sort_toggle",
             Icon::Filter,
-            28.0,
+            24.0,
             theme::hover_for(theme::SIDEBAR),
         );
         assert_dock_icon_hover_geometry(
@@ -5730,24 +5651,24 @@ mod tests {
             Size::new(280.0, 500.0),
             "toggle_settings",
             Icon::Settings,
-            36.0,
+            24.0,
             theme::hover_for(theme::SIDEBAR),
         );
         assert_dock_icon_hover_geometry(
             side_pane(&state, 430.0),
             Size::new(430.0, 500.0),
-            "dock_overview_toggle",
+            "dock_tabs_menu",
             Icon::Menu,
-            32.0,
-            theme::hover_for(theme::BACKGROUND),
+            crate::dock_tab_ui::TOOL_SIZE,
+            theme::interactive_palette().hover,
         );
         assert_dock_icon_hover_geometry(
             side_pane(&state, 430.0),
             Size::new(430.0, 500.0),
             "toggle_side_pane",
             Icon::PanelRightClose,
-            32.0,
-            theme::hover_for(theme::BACKGROUND),
+            crate::dock_tab_ui::TOOL_SIZE,
+            theme::interactive_palette().hover,
         );
     }
 
@@ -5757,13 +5678,13 @@ mod tests {
         let cases = [
             (
                 side_pane(&state, 430.0),
-                "dock_overview_toggle",
-                "Ver todas las pestañas",
+                "dock_tabs_menu",
+                "Todas las pestañas",
             ),
             (
                 code_review_content(&state, 430.0),
                 "review_refresh",
-                "Actualizar cambios de Git",
+                "Actualizar cambios",
             ),
         ];
         for (root, id, title) in cases {
@@ -5779,6 +5700,12 @@ mod tests {
                 )),
                 "focused {id} should show its tooltip"
             );
+            if id == "dock_tabs_menu" {
+                for key in ["Ctrl", "Tab"] {
+                    assert!(focused.commands.iter().any(|command| matches!(command,
+                        DrawCommand::Text { text, .. } if text == key)));
+                }
+            }
             assert_eq!(
                 tree.handle_event(UiEvent::Key {
                     key: Key::Enter,
@@ -5795,17 +5722,22 @@ mod tests {
             page_index: 0,
             content: None,
         });
-        let mut tree = UiTree::new(file_preview_content(
-            state.file_preview.as_ref().unwrap(),
-            430.0,
-        ));
+        state.dock_tabs = vec![DockTabView {
+            full_path: None,
+            id: 7,
+            title: "example.rs".into(),
+            active: true,
+            kind: SideTab::FilePreview,
+            closable: true,
+        }];
+        let mut tree = UiTree::new(dock_chrome::header(&state, 430.0));
         let viewport = Size::new(430.0, 500.0);
         tree.layout(viewport);
         assert!(tree.focus("dock_close:7"));
         let focused = tree.layout(viewport);
         assert!(focused.commands.iter().any(|command| matches!(
             command,
-            DrawCommand::Text { text, .. } if text == "Cerrar archivo"
+            DrawCommand::Text { text, .. } if text == "Cerrar example.rs"
         )));
     }
 
@@ -5813,20 +5745,29 @@ mod tests {
     fn home_offers_right_dock_toggle_without_moving_the_composer() {
         let mut state = empty_state();
         let viewport = Size::new(1200.0, 700.0);
-        let visible = UiTree::new(build_view(&state, viewport.width)).layout(viewport);
+        let visible =
+            UiTree::new(build_view_sized(&state, viewport.width, viewport.height)).layout(viewport);
         assert!(!visible
             .regions
             .iter()
             .any(|region| region.id == "toggle_side_pane_header"));
         assert!(visible.regions.iter().any(|region| region.id == "prompt"));
         state.show_side_pane = false;
-        let collapsed = UiTree::new(build_view(&state, viewport.width)).layout(viewport);
+        let collapsed =
+            UiTree::new(build_view_sized(&state, viewport.width, viewport.height)).layout(viewport);
         let toggle = collapsed
             .regions
             .iter()
             .find(|region| region.id == "toggle_side_pane_header")
             .expect("right dock reopen action")
             .rect;
+        assert!(collapsed.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Icon { icon: Icon::PanelRightOpen, rect, tint }
+                if *tint == theme::FOREGROUND
+                    && (rect.x + rect.width / 2.0 - toggle.x - toggle.width / 2.0).abs() < 0.01
+                    && (rect.y + rect.height / 2.0 - toggle.y - toggle.height / 2.0).abs() < 0.01
+        )), "the available dock action must not use muted ink");
         let collapsed_prompt = collapsed
             .regions
             .iter()
@@ -5839,8 +5780,12 @@ mod tests {
             "toggle={toggle:?}, composer={collapsed_prompt:?}"
         );
         let center_width = dock_layout(&state, viewport.width).center;
-        let standalone = UiTree::new(home::build_home(&state, center_width))
-            .layout(Size::new(center_width, viewport.height - 2.0 * GAP));
+        let standalone = UiTree::new(home::build_home_sized(
+            &state,
+            center_width,
+            viewport.height - 2.0 * GAP,
+        ))
+        .layout(Size::new(center_width, viewport.height - 2.0 * GAP));
         let standalone_prompt = standalone
             .regions
             .iter()
@@ -5848,7 +5793,8 @@ mod tests {
             .expect("standalone home composer")
             .rect;
         assert!((collapsed_prompt.y - standalone_prompt.y - GAP).abs() < 0.01);
-        let narrow = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 700.0));
+        let narrow =
+            UiTree::new(build_view_sized(&state, 900.0, 700.0)).layout(Size::new(900.0, 700.0));
         assert!(!narrow
             .regions
             .iter()
@@ -5996,9 +5942,9 @@ mod tests {
         assert!(submit.y + submit.height <= viewport.height - GAP);
         assert!(submit.y > viewport.height / 2.0);
         let reopen = rect(&collapsed, "toggle_sidebar_reopen");
-        let new_task = rect(&collapsed, "new_session_header");
-        assert!(reopen.x + reopen.width <= new_task.x);
-        assert_eq!(reopen.y, new_task.y);
+        let settings = rect(&collapsed, "toggle_settings_header");
+        assert!(reopen.x + reopen.width <= settings.x);
+        assert_eq!(reopen.y, settings.y);
     }
 
     #[test]
@@ -6065,16 +6011,275 @@ mod tests {
         }
     }
 
+    fn settings_test_control_rect(frame: &openide_ui::Frame, id: &str) -> openide_ui::Rect {
+        frame
+            .regions
+            .iter()
+            .find(|region| region.id == id)
+            .unwrap_or_else(|| panic!("missing Settings control {id}"))
+            .rect
+    }
+
+    fn settings_test_control_fill(frame: &openide_ui::Frame, id: &str) -> Color {
+        let bounds = settings_test_control_rect(frame, id);
+        frame
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::FillRect { rect, color, .. }
+                    if (rect.x - bounds.x).abs() < 0.01
+                        && (rect.y - bounds.y).abs() < 0.01
+                        && (rect.width - bounds.width).abs() < 0.01
+                        && (rect.height - bounds.height).abs() < 0.01 =>
+                {
+                    Some(*color)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing Settings fill for {id}: {bounds:?}"))
+    }
+
+    #[test]
+    fn settings_body_links_and_sidebar_have_independent_animated_hover_state() {
+        use std::time::{Duration, Instant};
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::General;
+        state.settings_reduced_motion = false;
+        for width in [1300.0, 1412.0] {
+            let start = Instant::now();
+            let viewport = Size::new(width, 830.0);
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(false);
+            for milliseconds in [0, 16, 60, 140, 320, 600] {
+                let frame = tree.layout_at(viewport, start + Duration::from_millis(milliseconds));
+                assert_eq!(
+                    settings_test_control_fill(&frame, "settings_page:general"),
+                    theme::SELECTED
+                );
+                for suffix in ["appearance", "shortcuts"] {
+                    assert_eq!(
+                        settings_test_control_fill(&frame, &format!("settings_page:{suffix}")),
+                        theme::SIDEBAR,
+                        "idle sidebar {suffix} at {milliseconds}ms, width {width}"
+                    );
+                }
+                for suffix in ["appearance", "data", "shortcuts"] {
+                    assert_eq!(
+                        settings_test_control_fill(&frame, &format!("settings_link:{suffix}")),
+                        Color::rgb(55, 55, 55)
+                    );
+                }
+            }
+            let frame = tree.layout_at(viewport, start + Duration::from_millis(600));
+            let center = |rect: openide_ui::Rect| {
+                Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)
+            };
+            let appearance_link = center(settings_test_control_rect(
+                &frame,
+                "settings_link:appearance",
+            ));
+            let shortcuts_link = center(settings_test_control_rect(
+                &frame,
+                "settings_link:shortcuts",
+            ));
+            let appearance_nav = center(settings_test_control_rect(
+                &frame,
+                "settings_page:appearance",
+            ));
+            tree.handle_event_at(
+                UiEvent::PointerMove(appearance_link),
+                start + Duration::from_millis(600),
+            );
+            tree.layout_at(viewport, start + Duration::from_millis(600));
+            let middle = tree.layout_at(viewport, start + Duration::from_millis(660));
+            let fill = settings_test_control_fill(&middle, "settings_link:appearance");
+            assert!(
+                fill.r > 55 && fill.r < 66,
+                "the body control still animates"
+            );
+            assert_eq!(
+                settings_test_control_fill(&middle, "settings_page:appearance"),
+                theme::SIDEBAR
+            );
+            let hovered = tree.layout_at(viewport, start + Duration::from_millis(740));
+            assert_eq!(
+                settings_test_control_fill(&hovered, "settings_link:appearance"),
+                Color::rgb(66, 66, 66)
+            );
+            assert_eq!(
+                settings_test_control_fill(&hovered, "settings_page:appearance"),
+                theme::SIDEBAR
+            );
+            tree.set_root(build_view(&state, width));
+            let rebuilt = tree.layout_at(viewport, start + Duration::from_millis(740));
+            assert_eq!(
+                settings_test_control_fill(&rebuilt, "settings_link:appearance"),
+                Color::rgb(66, 66, 66)
+            );
+            assert_eq!(
+                settings_test_control_fill(&rebuilt, "settings_page:appearance"),
+                theme::SIDEBAR
+            );
+
+            tree.handle_event_at(
+                UiEvent::PointerMove(appearance_nav),
+                start + Duration::from_millis(800),
+            );
+            tree.layout_at(viewport, start + Duration::from_millis(800));
+            let nav_hovered = tree.layout_at(viewport, start + Duration::from_millis(940));
+            assert_eq!(
+                settings_test_control_fill(&nav_hovered, "settings_page:appearance"),
+                theme::hover_for(theme::SIDEBAR)
+            );
+            assert_eq!(
+                settings_test_control_fill(&nav_hovered, "settings_link:appearance"),
+                Color::rgb(55, 55, 55)
+            );
+            assert_eq!(
+                settings_test_control_fill(&nav_hovered, "settings_link:shortcuts"),
+                Color::rgb(55, 55, 55)
+            );
+
+            tree.handle_event_at(
+                UiEvent::PointerMove(shortcuts_link),
+                start + Duration::from_millis(1000),
+            );
+            tree.layout_at(viewport, start + Duration::from_millis(1000));
+            let shortcuts_hovered = tree.layout_at(viewport, start + Duration::from_millis(1140));
+            assert_eq!(
+                settings_test_control_fill(&shortcuts_hovered, "settings_link:shortcuts"),
+                Color::rgb(66, 66, 66)
+            );
+            assert_eq!(
+                settings_test_control_fill(&shortcuts_hovered, "settings_page:shortcuts"),
+                theme::SIDEBAR
+            );
+            assert_eq!(
+                settings_test_control_fill(&shortcuts_hovered, "settings_page:appearance"),
+                theme::SIDEBAR
+            );
+            tree.handle_event_at(UiEvent::PointerLeave, start + Duration::from_millis(1200));
+            tree.layout_at(viewport, start + Duration::from_millis(1200));
+            let idle = tree.layout_at(viewport, start + Duration::from_millis(1340));
+            assert_eq!(
+                settings_test_control_fill(&idle, "settings_page:general"),
+                theme::SELECTED
+            );
+            for suffix in ["appearance", "shortcuts"] {
+                assert_eq!(
+                    settings_test_control_fill(&idle, &format!("settings_page:{suffix}")),
+                    theme::SIDEBAR
+                );
+                assert_eq!(
+                    settings_test_control_fill(&idle, &format!("settings_link:{suffix}")),
+                    Color::rgb(55, 55, 55)
+                );
+            }
+            tree.scroll_to_end("settings_navigation");
+            let bottom = tree.layout_at(viewport, start + Duration::from_millis(1340));
+            assert_eq!(
+                settings_test_control_fill(&bottom, "settings_page:data"),
+                theme::SIDEBAR
+            );
+            assert_eq!(
+                settings_test_control_fill(&bottom, "settings_link:data"),
+                Color::rgb(55, 55, 55)
+            );
+        }
+    }
+
+    #[test]
+    fn settings_body_links_have_unique_focus_targets_and_dispatch_original_routes() {
+        use std::time::{Duration, Instant};
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::General;
+        for suffix in ["appearance", "data", "shortcuts"] {
+            let start = Instant::now();
+            let viewport = Size::new(1412.0, 830.0);
+            let mut tree = UiTree::new(build_view(&state, viewport.width));
+            tree.set_reduced_motion(false);
+            let frame = tree.layout_at(viewport, start);
+            let mut ids = std::collections::HashSet::new();
+            for region in frame.regions.iter().filter(|region| {
+                matches!(
+                    region.kind,
+                    openide_ui::HitKind::Button
+                        | openide_ui::HitKind::TextInput
+                        | openide_ui::HitKind::TextArea
+                )
+            }) {
+                assert!(ids.insert(&region.id), "duplicate widget ID {}", region.id);
+            }
+            let link = format!("settings_link:{suffix}");
+            let route = format!("settings_page:{suffix}");
+            assert!(tree.focus(&link));
+            assert_eq!(tree.focused_id(), Some(link.as_str()));
+            let focused = tree.layout_at(viewport, start + Duration::from_millis(140));
+            assert_eq!(
+                settings_test_control_fill(&focused, "settings_page:general"),
+                theme::SELECTED
+            );
+            assert_eq!(
+                tree.handle_event_at(
+                    UiEvent::Key {
+                        key: Key::Enter,
+                        shift: false,
+                        ctrl: false
+                    },
+                    start + Duration::from_millis(140)
+                ),
+                vec![UiAction::Clicked { id: route.clone() }]
+            );
+            let rect = settings_test_control_rect(&focused, &link);
+            let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+            tree.handle_event_at(
+                UiEvent::PointerDown(point),
+                start + Duration::from_millis(160),
+            );
+            assert_eq!(
+                tree.handle_event_at(
+                    UiEvent::PointerUp(point),
+                    start + Duration::from_millis(170)
+                ),
+                vec![UiAction::Clicked { id: route.clone() }]
+            );
+            assert_eq!(tree.focused_id(), Some(link.as_str()));
+            assert!(tree.focus(&route));
+            assert_eq!(tree.focused_id(), Some(route.as_str()));
+            tree.layout_at(viewport, start + Duration::from_millis(320));
+            assert_eq!(
+                tree.handle_event_at(
+                    UiEvent::Key {
+                        key: Key::Enter,
+                        shift: false,
+                        ctrl: false
+                    },
+                    start + Duration::from_millis(320)
+                ),
+                vec![UiAction::Clicked { id: route }]
+            );
+        }
+    }
+
     fn settings_action_reachable(tree: &mut UiTree, action: &str, width: f32, height: f32) -> bool {
-        for _ in 0..30 {
-            let frame = tree.layout(Size::new(width, height));
+        // Smooth-scroll reachability must depend on elapsed UI time, not on
+        // how expensive the machine's layout implementation happens to be.
+        let start = std::time::Instant::now();
+        for step in 0..120 {
+            let now = start + std::time::Duration::from_secs_f64(step as f64 / 120.0);
+            let frame = tree.layout_at(Size::new(width, height), now);
             if frame.regions.iter().any(|region| region.id == action) {
                 return true;
             }
-            tree.handle_event(UiEvent::Scroll {
-                position: Point::new(width * 0.65, height * 0.5),
-                delta_y: -180.0,
-            });
+            tree.handle_event_at(
+                UiEvent::Scroll {
+                    position: Point::new(width * 0.65, height * 0.5),
+                    delta_y: -180.0,
+                },
+                now,
+            );
         }
         false
     }
@@ -6090,8 +6295,8 @@ mod tests {
             (SettingsPage::Agent, "agent_tool:read_file"),
             (SettingsPage::Agent, "command_isolation:host_unrestricted"),
             (SettingsPage::Providers, "catalog_refresh"),
-            (SettingsPage::Terminal, "settings_terminal_shell:system"),
-            (SettingsPage::WorkspaceSearch, "composer_add_context"),
+            (SettingsPage::Terminal, "settings_terminal_shell_toggle"),
+            (SettingsPage::WorkspaceSearch, "open_command_center"),
             (SettingsPage::Mcp, "mcp_new"),
             (SettingsPage::Skills, "open_marketplace"),
             (SettingsPage::Automations, "open_automations"),
@@ -6099,10 +6304,207 @@ mod tests {
             (SettingsPage::Github, "github_account_connect"),
         ] {
             state.settings_page = page;
+            state.settings_choice_menu_open = None;
             let mut tree = UiTree::new(build_view(&state, 1100.0));
+            let menu = match action {
+                "command_isolation:host_unrestricted" => Some("isolation"),
+                "session_organize:recent" => Some("organization"),
+                _ => None,
+            };
+            if let Some(menu) = menu {
+                assert!(settings_action_reachable(
+                    &mut tree,
+                    &format!("settings_choice_toggle:{menu}"),
+                    1100.0,
+                    720.0,
+                ));
+                state.settings_choice_menu_open = Some(menu.into());
+                tree.set_root(build_view(&state, 1100.0));
+            }
             assert!(
                 settings_action_reachable(&mut tree, action, 1100.0, 720.0),
                 "{page:?} missing {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn settings_terminal_shell_selector_and_conditional_editor_fit_and_accept_keyboard() {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Terminal;
+        for width in [360.0, 620.0, 1300.0] {
+            state.settings_terminal_shell_menu_open = false;
+            state.settings_terminal_shell_editing = false;
+            state.settings_terminal_shell_draft.clear();
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 900.0));
+            let trigger = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "settings_terminal_shell_toggle")
+                .unwrap()
+                .rect;
+            assert!(trigger.x >= 0.0 && trigger.x + trigger.width <= width);
+            assert!(!frame
+                .regions
+                .iter()
+                .any(|region| region.id == "settings_terminal_shell_path"));
+            assert!(!frame
+                .regions
+                .iter()
+                .any(|region| region.id.starts_with("settings_terminal_shell:")));
+            let center = Point::new(
+                trigger.x + trigger.width / 2.0,
+                trigger.y + trigger.height / 2.0,
+            );
+            tree.handle_event(UiEvent::PointerDown(center));
+            assert_eq!(
+                tree.handle_event(UiEvent::PointerUp(center)),
+                vec![UiAction::Clicked {
+                    id: "settings_terminal_shell_toggle".into()
+                }]
+            );
+
+            state.settings_terminal_shell_menu_open = true;
+            tree.set_root(build_view(&state, width));
+            let frame = tree.layout(Size::new(width, 900.0));
+            for id in [
+                "settings_terminal_shell:system",
+                "settings_terminal_shell_edit",
+            ] {
+                let option = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == id)
+                    .unwrap()
+                    .rect;
+                assert!(
+                    option.x >= 0.0 && option.x + option.width <= width,
+                    "{id} at {width}px"
+                );
+            }
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Escape,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "settings_terminal_shell_dismiss".into()
+                }]
+            );
+            assert!(tree.focus("settings_terminal_shell:system"));
+            tree.handle_event(UiEvent::Key {
+                key: Key::End,
+                shift: false,
+                ctrl: false,
+            });
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "settings_terminal_shell_edit".into()
+                }]
+            );
+
+            state.settings_terminal_shell_menu_open = false;
+            state.settings_terminal_shell_editing = true;
+            for draft in ["", "relative-shell"] {
+                state.settings_terminal_shell_draft = draft.into();
+                tree.set_root(build_view(&state, width));
+                let frame = tree.layout(Size::new(width, 900.0));
+                for id in [
+                    "settings_terminal_shell_path",
+                    "settings_terminal_shell_cancel",
+                ] {
+                    let control = frame
+                        .regions
+                        .iter()
+                        .find(|region| region.id == id)
+                        .unwrap()
+                        .rect;
+                    assert!(control.x >= 0.0 && control.x + control.width <= width);
+                }
+                assert!(
+                    !tree.focus("settings_terminal_shell:custom"),
+                    "invalid draft must not submit"
+                );
+            }
+            state.settings_terminal_shell_draft = std::env::current_exe()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            tree.set_root(build_view(&state, width));
+            let frame = tree.layout(Size::new(width, 900.0));
+            let save = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "settings_terminal_shell:custom")
+                .unwrap()
+                .rect;
+            assert!(save.x >= 0.0 && save.x + save.width <= width);
+            assert!(tree.focus("settings_terminal_shell:custom"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "settings_terminal_shell:custom".into()
+                }]
+            );
+        }
+        state.settings_terminal_shell_editing = false;
+        let saved_path = std::env::current_exe().unwrap().parent().unwrap()
+            .join("very-long-custom-shell-directory-for-a-workspace/another-directory-with-a-long-name/shell-executable");
+        state.settings_terminal_shell = TerminalShell::Custom(saved_path.clone());
+        state.settings_terminal_shell_draft = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let mut tree = UiTree::new(build_view(&state, 360.0));
+        assert!(settings_action_reachable(
+            &mut tree,
+            "settings_terminal_shell_path",
+            360.0,
+            900.0
+        ));
+        let frame = tree.layout(Size::new(360.0, 900.0));
+        let save = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "settings_terminal_shell:custom")
+            .unwrap()
+            .rect;
+        let path_lines: Vec<_> = frame
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { position, text, .. }
+                    if text.starts_with("Ruta guardada:")
+                        || text.contains("very-long-custom-shell")
+                        || text.contains("another-directory-with")
+                        || text.contains("shell-executable") =>
+                {
+                    Some(*position)
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !path_lines.is_empty(),
+            "saved path stays discoverable while draft changes"
+        );
+        for line in path_lines {
+            assert!(
+                line.y >= save.y + save.height && line.x >= 0.0 && line.x < 360.0,
+                "saved path overlaps actions: {line:?}"
             );
         }
     }
@@ -6201,6 +6603,7 @@ mod tests {
             vec![crate::native_skills_settings::NativeSkillCatalogEntry {
                 name: selection.name.clone(),
                 description: "Review changes".into(),
+                instructions: "---\nname: review\ndescription: Review changes\n---\nReview the complete changes.".into(),
                 origin: openide_harness::SkillOrigin::Project,
                 document: selection.provenance.document.clone(),
                 selection: selection.clone(),
@@ -6237,6 +6640,729 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "export native scroll frames for manual motion and scrollbar review"]
+    fn export_scroll_area_visual_review() {
+        let output = std::path::PathBuf::from(format!(
+            "{}/../../target/scroll-area-visual-qa",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        std::fs::create_dir_all(&output).unwrap();
+        let mut options = resvg::usvg::Options::default();
+        options.fontdb_mut().load_system_fonts();
+        let save_frame = |frame: &openide_ui::Frame, name: &str, width: f32| {
+            let path = output.join(format!("{name}.svg"));
+            settings_ui::visual_qa::write_frame_svg(frame, &path, width, 520.0).unwrap();
+            let svg = std::fs::read_to_string(&path).unwrap();
+            let svg_tree = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, 520).unwrap();
+            resvg::render(
+                &svg_tree,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            eprintln!("{}", path.display());
+        };
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Agent;
+        state.native_provider_id = "openai".into();
+        state.model = "gpt-4.1".into();
+        let mut cases = Vec::new();
+        for width in [360.0, 1300.0] {
+            cases.push((
+                format!("agent-{width:.0}"),
+                width,
+                settings_ui::build_settings_page(&state, SettingsPage::Agent, width, true)
+                    .background(theme::BACKGROUND),
+            ));
+        }
+        cases.push((
+            "settings-sidebar-264".into(),
+            264.0,
+            settings_ui::build_settings_sidebar(&state, 264.0).background(theme::SIDEBAR),
+        ));
+        for (name, width, root) in cases {
+            let start = std::time::Instant::now();
+            let viewport = Size::new(width, 520.0);
+            let mut tree = UiTree::new(root);
+            let initial = tree.layout_at(viewport, start);
+            assert!(
+                initial
+                    .regions
+                    .iter()
+                    .any(|region| region.kind == openide_ui::HitKind::Scrollbar),
+                "{name} must overflow for scroll review"
+            );
+            let point = Point::new(20.0, 300.0);
+            tree.handle_event_at(UiEvent::PointerMove(point), start);
+            tree.handle_event_at(
+                UiEvent::Scroll {
+                    position: point,
+                    delta_y: -240.0,
+                },
+                start,
+            );
+            for index in 0..=9 {
+                let at = start + std::time::Duration::from_millis(index * 16);
+                let frame = tree.layout_at(viewport, at);
+                save_frame(&frame, &format!("{name}-frame-{index:02}"), width);
+            }
+            let at = start + std::time::Duration::from_millis(160);
+            let settled = tree.layout_at(viewport, at);
+            let rail = settled
+                .regions
+                .iter()
+                .find(|region| region.kind == openide_ui::HitKind::Scrollbar)
+                .unwrap();
+            let arrow = Point::new(
+                rail.rect.x + rail.rect.width / 2.0,
+                rail.rect.y + rail.rect.height - 7.0,
+            );
+            tree.handle_event_at(UiEvent::PointerMove(arrow), at);
+            save_frame(
+                &tree.layout_at(viewport, at + std::time::Duration::from_millis(120)),
+                &format!("{name}-arrow-hover"),
+                width,
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "export native Settings paint commands for manual visual review"]
+    fn export_settings_visual_review() {
+        let output = std::path::PathBuf::from(
+            std::env::var("OPENIDE_SETTINGS_VISUAL_QA_DIR").unwrap_or_else(|_| {
+                format!(
+                    "{}/../../target/settings-visual-qa",
+                    env!("CARGO_MANIFEST_DIR")
+                )
+            }),
+        );
+        std::fs::create_dir_all(&output).unwrap();
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.native_provider_id = "openai".into();
+        state.model = "gpt-4.1".into();
+        state.catalog_browse_provider = "openai".into();
+        state.catalog = Some(Arc::new(crate::model_catalog::reviewed_seed_snapshot()));
+        state.native_output_limit_responses = true;
+        state.native_output_limit_field = "max_output_tokens".into();
+        let pages = [
+            SettingsPage::General,
+            SettingsPage::Appearance,
+            SettingsPage::Agent,
+            SettingsPage::Providers,
+            SettingsPage::Browser,
+            SettingsPage::ComputerUse,
+            SettingsPage::Terminal,
+            SettingsPage::WorkspaceSearch,
+            SettingsPage::Memory,
+            SettingsPage::Subagents,
+            SettingsPage::ExternalAgents,
+            SettingsPage::Plugins,
+            SettingsPage::Mcp,
+            SettingsPage::Skills,
+            SettingsPage::Commands,
+            SettingsPage::Automations,
+            SettingsPage::Hooks,
+            SettingsPage::Data,
+            SettingsPage::Usage,
+            SettingsPage::Github,
+            SettingsPage::Shortcuts,
+        ];
+        for width in [360.0, 620.0, 1300.0] {
+            for page in pages {
+                state.settings_page = page;
+                let mut tree = UiTree::new(
+                    settings_ui::build_settings_page(&state, page, width, true)
+                        .background(theme::BACKGROUND),
+                );
+                tree.set_reduced_motion(true);
+                let frame = tree.layout(Size::new(width, 900.0));
+                settings_ui::visual_qa::write_frame_svg(
+                    &frame,
+                    &output.join(format!("{page:?}-{width}.svg")),
+                    width,
+                    900.0,
+                )
+                .unwrap();
+            }
+        }
+        state.settings_page = SettingsPage::Terminal;
+        for (name, menu_open, editing, custom_saved) in [
+            ("Terminal-menu", true, false, false),
+            ("Terminal-custom-draft", false, true, false),
+            ("Terminal-custom-saved-changing", false, true, true),
+        ] {
+            state.settings_terminal_shell_menu_open = menu_open;
+            state.settings_terminal_shell_editing = editing;
+            state.settings_terminal_shell = if custom_saved {
+                TerminalShell::Custom(std::env::current_exe().unwrap().parent().unwrap().join("very-long-custom-shell-directory-for-a-workspace/another-directory-with-a-long-name/shell-executable"))
+            } else {
+                TerminalShell::System
+            };
+            state.settings_terminal_shell_draft = if custom_saved {
+                std::env::current_exe()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            } else {
+                String::new()
+            };
+            for width in [360.0, 1300.0] {
+                let mut tree = UiTree::new(
+                    settings_ui::build_settings_page(&state, SettingsPage::Terminal, width, true)
+                        .background(theme::BACKGROUND),
+                );
+                tree.set_reduced_motion(true);
+                settings_ui::visual_qa::write_frame_svg(
+                    &tree.layout(Size::new(width, 900.0)),
+                    &output.join(format!("{name}-{width}.svg")),
+                    width,
+                    900.0,
+                )
+                .unwrap();
+            }
+        }
+        state.settings_terminal_shell_menu_open = false;
+        state.settings_terminal_shell_editing = false;
+        state.settings_page = SettingsPage::Providers;
+        for width in [360.0, 620.0, 1300.0] {
+            state.catalog_expanded_model = Some("gpt-4.1".into());
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(true);
+            settings_ui::visual_qa::write_frame_svg(
+                &tree.layout(Size::new(width, 900.0)),
+                &output.join(format!("Model-details-{width}.svg")),
+                width,
+                900.0,
+            )
+            .unwrap();
+        }
+        state.catalog_expanded_model = None;
+        let mut tree = UiTree::new(build_view(&state, 1300.0));
+        tree.set_reduced_motion(true);
+        settings_ui::visual_qa::write_frame_svg(
+            &tree.layout(Size::new(1300.0, 900.0)),
+            &output.join("Providers-workspace.svg"),
+            1300.0,
+            900.0,
+        )
+        .unwrap();
+        state.catalog_settings_tab = crate::provider_settings::CatalogSettingsTab::Connection;
+        for width in [360.0, 1300.0] {
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(true);
+            settings_ui::visual_qa::write_frame_svg(
+                &tree.layout(Size::new(width, 900.0)),
+                &output.join(format!("Provider-connection-{width}.svg")),
+                width,
+                900.0,
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn mcp_settings_notes_wrap_without_covering_rows_or_clipping_copy() {
+        let state = empty_state();
+        for width in [360.0, 620.0, 1300.0] {
+            let mut tree = UiTree::new(settings_ui::build_settings_page(
+                &state,
+                SettingsPage::Mcp,
+                width,
+                true,
+            ));
+            tree.set_reduced_motion(true);
+            tree.set_sans_metrics(openide_ui::FontMetrics::default());
+            let frame = tree.layout(Size::new(width, 900.0));
+            let text_runs: Vec<_> = frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Text {
+                        position,
+                        text,
+                        font_size,
+                        ..
+                    } => Some((position, text.as_str(), font_size)),
+                    _ => None,
+                })
+                .collect();
+            let connection_index = text_runs
+                .iter()
+                .position(|(_, text, _)| *text == "Conexión al ejecutar")
+                .unwrap();
+            let approval_index = text_runs
+                .iter()
+                .position(|(_, text, _)| *text == "Aprobación de herramientas")
+                .unwrap();
+            assert!(approval_index > connection_index + 1);
+            for (position, _, font_size) in &text_runs[connection_index + 1..approval_index] {
+                let line_height = openide_ui::FontMetrics::default().line_height * **font_size
+                    / openide_ui::DEFAULT_FONT_SIZE;
+                assert!(
+                    position.y + line_height < text_runs[approval_index].0.y,
+                    "MCP notes overlap at {width}px"
+                );
+            }
+            let mut clips = Vec::new();
+            let mut note_active = false;
+            for command in &frame.commands {
+                match command {
+                    DrawCommand::PushClip(rect) => clips.push(*rect),
+                    DrawCommand::PopClip => {
+                        clips.pop();
+                    }
+                    DrawCommand::Text {
+                        position,
+                        text,
+                        font_size,
+                        ..
+                    } => {
+                        match text.as_str() {
+                            "Sin servidores"
+                            | "Conexión al ejecutar"
+                            | "Aprobación de herramientas" => {
+                                note_active = true;
+                                continue;
+                            }
+                            "Uso" => note_active = false,
+                            _ => {}
+                        }
+                        if !note_active {
+                            continue;
+                        }
+                        let line_height = openide_ui::FontMetrics::default().line_height
+                            * *font_size
+                            / openide_ui::DEFAULT_FONT_SIZE;
+                        for clip in &clips {
+                            assert!(
+                                position.y + line_height <= clip.y + clip.height + 0.01,
+                                "MCP note clipped at {width}px: {}",
+                                text
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_settings_page_keeps_controls_inside_small_and_large_viewports() {
+        let mut state = empty_state();
+        state.catalog = Some(Arc::new(crate::model_catalog::reviewed_seed_snapshot()));
+        let pages = [
+            SettingsPage::General,
+            SettingsPage::Appearance,
+            SettingsPage::Agent,
+            SettingsPage::Providers,
+            SettingsPage::Browser,
+            SettingsPage::ComputerUse,
+            SettingsPage::Terminal,
+            SettingsPage::WorkspaceSearch,
+            SettingsPage::Memory,
+            SettingsPage::Subagents,
+            SettingsPage::ExternalAgents,
+            SettingsPage::Plugins,
+            SettingsPage::Mcp,
+            SettingsPage::Skills,
+            SettingsPage::Commands,
+            SettingsPage::Automations,
+            SettingsPage::Hooks,
+            SettingsPage::Data,
+            SettingsPage::Usage,
+            SettingsPage::Github,
+            SettingsPage::Shortcuts,
+        ];
+        for width in [360.0, 620.0, 1300.0] {
+            for page in pages {
+                let mut tree = UiTree::new(settings_ui::build_settings_page(
+                    &state,
+                    page,
+                    width,
+                    width >= 760.0,
+                ));
+                for _ in 0..16 {
+                    let frame = tree.layout(Size::new(width, 720.0));
+                    for region in &frame.regions {
+                        assert!(
+                            region.rect.x >= -0.5
+                                && region.rect.x + region.rect.width <= width + 0.5,
+                            "{page:?} at {width}: {} {:?}",
+                            region.id,
+                            region.rect
+                        );
+                    }
+                    tree.handle_event(UiEvent::Scroll {
+                        position: Point::new(width * 0.65, 360.0),
+                        delta_y: -200.0,
+                    });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_virtual_list_reaches_last_exact_model_and_preserves_keyboard_actions() {
+        let mut state = public_catalog_settings_fixture("");
+        let mut catalog = state.catalog.as_deref().unwrap().clone();
+        let provider = catalog.providers.get_mut("openrouter").unwrap();
+        let template = provider.models.values().next().unwrap().clone();
+        provider.models.clear();
+        for index in 0..300 {
+            let mut model = template.clone();
+            model.id = format!("vendor/fixture-{index:03}:exact");
+            model.name = format!("Fixture {index:03}");
+            provider.models.insert(model.id.clone(), model);
+        }
+        state.catalog = Some(Arc::new(catalog));
+        for width in [360.0, 620.0, 1300.0] {
+            let mut tree = UiTree::new(settings_ui::build_settings_page(
+                &state,
+                SettingsPage::Providers,
+                width,
+                true,
+            ));
+            tree.set_reduced_motion(true);
+            assert!(settings_action_reachable(
+                &mut tree,
+                "catalog_select:openrouter/vendor/fixture-000:exact",
+                width,
+                720.0
+            ));
+            tree.scroll_to_index("catalog_models:openrouter", 299);
+            assert!(
+                settings_action_reachable(
+                    &mut tree,
+                    "catalog_select:openrouter/vendor/fixture-299:exact",
+                    width,
+                    720.0
+                ),
+                "last model at {width}"
+            );
+            let frame = tree.layout(Size::new(width, 720.0));
+            let visible = frame
+                .regions
+                .iter()
+                .filter(|region| region.id.starts_with("catalog_select:"))
+                .count();
+            assert!(visible < 12, "only visible rows should be built");
+            assert!(tree.focus("catalog_select:openrouter/vendor/fixture-299:exact"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "catalog_select:openrouter/vendor/fixture-299:exact".into()
+                }]
+            );
+        }
+    }
+
+    fn public_catalog_settings_fixture(active_model: &str) -> ViewState {
+        let mut state = empty_state();
+        state.show_settings = true;
+        state.settings_page = SettingsPage::Providers;
+        state.selected_backend = "native".into();
+        state.native_provider_id = "openrouter".into();
+        state.model = active_model.into();
+        state.catalog_browse_provider = "openrouter".into();
+        state.native_provider_definitions =
+            crate::provider_settings::connection_views_with_registry(
+                &crate::native_provider::ProviderRegistry::builtin(),
+                &crate::native_provider::NativeProviderSettings {
+                    provider_id: "openrouter".into(),
+                    model_id: active_model.into(),
+                    ..Default::default()
+                },
+                |_| false,
+            );
+        // These renderer fixtures describe a configured connection and API
+        // metadata. They neither authenticate nor verify external generation.
+        state.provider_connections.insert(
+            "openrouter".into(),
+            crate::provider_connections::ConnectionSummary {
+                configured: true,
+                ..Default::default()
+            },
+        );
+        state.catalog = Some(Arc::new(serde_json::from_value(json!({
+            "version":3,"fetched_at_ms":1,
+            "provider_status":{"openrouter":{"source":"official_api","attempted_at_ms":1,"verified_at_ms":1}},
+            "providers":{"openrouter":{"id":"openrouter","name":"OpenRouter","models":{
+                "vendor/exact-model:v1":{"id":"vendor/exact-model:v1","name":"Exact model fixture",
+                    "tool_call":true,"tool_call_declared":true,
+                    "modalities":{"input":["text"],"output":["text"]},
+                    "limit":{"context":131072,"input":120000,"output":8192},
+                    "provider_limits_declared":true,"capabilities_declared":true,
+                    "declared_capabilities":{"image_input":false,"thinking":true,"structured_outputs":true},
+                    "cost":{"input":1.25,"output":4.5,"cache_read":0.25}}}}}
+        })).unwrap()));
+        state
+    }
+
+    #[test]
+    fn model_details_modal_keeps_exact_metadata_scroll_and_restores_focus() {
+        let mut state = public_catalog_settings_fixture("");
+        for width in [360.0, 620.0, 1300.0] {
+            state.catalog_expanded_model = None;
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(true);
+            assert!(settings_action_reachable(
+                &mut tree,
+                "catalog_model_details:vendor/exact-model:v1",
+                width,
+                720.0
+            ));
+            assert!(tree.focus("catalog_model_details:vendor/exact-model:v1"));
+            state.catalog_expanded_model = Some("vendor/exact-model:v1".into());
+            tree.set_root(build_view(&state, width));
+            let frame = tree.layout(Size::new(width, 720.0));
+            let modal = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:catalog_model_details_dismiss")
+                .unwrap()
+                .rect;
+            assert!((modal.x + modal.width / 2.0 - width / 2.0).abs() < 1.0);
+            assert!(modal.x >= 0.0 && modal.x + modal.width <= width);
+            assert!(frame.commands.iter().any(
+                |command| matches!(command, DrawCommand::Text { text, .. } if text == "vendor/exact-model:v1")
+            ));
+            assert!(settings_action_reachable(
+                &mut tree,
+                "provider_details_select",
+                width,
+                720.0
+            ));
+            let scroll_id = "modal_body:catalog_model_details_dismiss";
+            let body = frame
+                .regions
+                .iter()
+                .find(|region| region.id == scroll_id && region.kind == openide_ui::HitKind::Scroll)
+                .unwrap()
+                .rect;
+            let mut observed = std::collections::HashSet::new();
+            for _ in 0..12 {
+                for command in tree.layout(Size::new(width, 720.0)).commands {
+                    if let DrawCommand::Text { text, .. } = command {
+                        observed.insert(text);
+                    }
+                }
+                tree.handle_event(UiEvent::Scroll {
+                    position: Point::new(body.x + body.width * 0.5, body.y + body.height * 0.5),
+                    delta_y: -180.0,
+                });
+            }
+            assert!(
+                tree.scroll_offset(scroll_id) > 0.0,
+                "metadata must scroll at {width}"
+            );
+            for exact in [
+                "131072 tokens",
+                "120000 tokens",
+                "8192 tokens",
+                "US$ 1.2500",
+                "US$ 4.5000",
+                "US$ 0.2500",
+            ] {
+                assert!(observed.contains(exact), "{exact} at {width}");
+            }
+            assert!(tree.focus("provider_details_select"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "catalog_select:openrouter/vendor/exact-model:v1".into()
+                }]
+            );
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Escape,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "catalog_model_details_dismiss".into()
+                }]
+            );
+            state.catalog_expanded_model = None;
+            tree.set_root(build_view(&state, width));
+            tree.layout(Size::new(width, 720.0));
+            assert_eq!(
+                tree.focused_id(),
+                Some("catalog_model_details:vendor/exact-model:v1")
+            );
+        }
+    }
+    #[test]
+    fn chart_settings_render_account_and_task_data_at_multiple_widths() {
+        use crate::github_contributions::{GithubContributionCalendar, GithubContributionDay};
+        use chrono::Datelike;
+
+        let mut state = empty_state();
+        state.github_account =
+            GithubAccountStatus::Connected(crate::github_account::GithubIdentity {
+                login: "octocat".into(),
+                avatar: None,
+            });
+        let first = chrono::NaiveDate::from_ymd_opt(2025, 9, 29).unwrap();
+        let mut weeks = vec![[None; 7]];
+        let mut total = 0;
+        for offset in 0..366 {
+            let date = first + chrono::Duration::days(offset);
+            let row = date.weekday().num_days_from_sunday() as usize;
+            if row == 0 {
+                weeks.push([None; 7]);
+            }
+            let level = if offset > 280 && offset % 5 == 0 {
+                (offset % 4 + 1) as u8
+            } else {
+                0
+            };
+            let count = u32::from(level);
+            total += count;
+            weeks.last_mut().unwrap()[row] = Some(GithubContributionDay { date, count, level });
+        }
+        state.github_contributions = GithubContributionsStatus::Ready(GithubContributionCalendar {
+            login: "octocat".into(),
+            total,
+            weeks,
+        });
+        state.backend_options = vec![
+            ("native".into(), "Agente Rust".into()),
+            ("codex".into(), "Codex".into()),
+            ("claude".into(), "Claude Code".into()),
+        ];
+        state.sessions = (0..15)
+            .map(|index| SessionView {
+                id: index.to_string(),
+                title: "Tarea".into(),
+                project: "/project".into(),
+                backend: if index < 8 {
+                    "native"
+                } else if index < 13 {
+                    "codex"
+                } else {
+                    "claude"
+                }
+                .into(),
+                pinned: false,
+                archived: false,
+                unread: false,
+                native_automation: None,
+            })
+            .collect();
+        for width in [480.0, 1100.0] {
+            for (page, name, prefix, observations) in [
+                (SettingsPage::Github, "github", "github-contributions:", 366),
+                (SettingsPage::Usage, "usage", "usage-tasks:", 3),
+            ] {
+                let content = settings_ui::build_settings_page(&state, page, width, true);
+                let mut tree = UiTree::new(Element::panel(content).background(theme::BACKGROUND));
+                tree.set_reduced_motion(true);
+                let mut frame = tree.layout(Size::new(width, 760.0));
+                // Account usage now leads the Usage page. The existing local
+                // activity chart remains reachable through the page's scroll.
+                for _ in 0..24 {
+                    if frame
+                        .regions
+                        .iter()
+                        .filter(|region| region.id.starts_with(prefix))
+                        .count()
+                        == observations
+                    {
+                        break;
+                    }
+                    tree.handle_event(UiEvent::Scroll {
+                        position: Point::new(width / 2.0, 380.0),
+                        delta_y: -100.0,
+                    });
+                    frame = tree.layout(Size::new(width, 760.0));
+                }
+                let regions: Vec<_> = frame
+                    .regions
+                    .iter()
+                    .filter(|region| region.id.starts_with(prefix))
+                    .collect();
+                assert_eq!(regions.len(), observations, "{name} at {width}");
+                assert!(regions.iter().all(|region| region.rect.x >= 0.0
+                    && region.rect.x + region.rect.width <= width + 0.01));
+                if let Some(directory) = std::env::var_os("OPENIDE_CHART_QA_DIR") {
+                    let directory = std::path::PathBuf::from(directory);
+                    std::fs::create_dir_all(&directory).unwrap();
+                    let path = directory.join(format!("{name}-{width:.0}.svg"));
+                    crate::settings_ui::visual_qa::write_frame_svg(&frame, &path, width, 760.0)
+                        .unwrap();
+                    let svg = std::fs::read_to_string(&path).unwrap();
+                    let mut options = resvg::usvg::Options::default();
+                    options.fontdb_mut().load_system_fonts();
+                    let svg_tree = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+                    let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, 760).unwrap();
+                    resvg::render(
+                        &svg_tree,
+                        resvg::tiny_skia::Transform::identity(),
+                        &mut pixmap.as_mut(),
+                    );
+                    pixmap.save_png(path.with_extension("png")).unwrap();
+                }
+            }
+        }
+        state.github_account = GithubAccountStatus::Disconnected;
+        let frame = UiTree::new(settings_ui::build_settings_page(
+            &state,
+            SettingsPage::Github,
+            1100.0,
+            true,
+        ))
+        .layout(Size::new(1100.0, 760.0));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id.starts_with("github-contributions:")));
+    }
+
+    #[test]
+    fn settings_search_filters_navigation_and_preserves_route_keyboard_focus() {
+        let mut state = empty_state();
+        state.settings_nav_query = "proveedores".into();
+        let mut tree = UiTree::new(settings_ui::build_settings_sidebar(&state, 260.0));
+        let frame = tree.layout(Size::new(260.0, 720.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "settings_search"));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "settings_page:providers"));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == "settings_page:terminal"));
+        assert!(tree.focus("settings_page:providers"));
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: Key::Enter,
+                shift: false,
+                ctrl: false
+            }),
+            vec![UiAction::Clicked {
+                id: "settings_page:providers".into()
+            }]
+        );
+    }
+
+    #[test]
     fn every_settings_page_has_a_native_content_surface_at_wide_and_narrow_widths() {
         let state = empty_state();
         let pages = [
@@ -6251,6 +7377,7 @@ mod tests {
             (SettingsPage::Agent, "Agente"),
             (SettingsPage::Memory, "Memoria"),
             (SettingsPage::Subagents, "Subagentes"),
+            (SettingsPage::ExternalAgents, "CLIs externas"),
             (SettingsPage::Plugins, "Plugins"),
             (SettingsPage::Mcp, "MCP"),
             (SettingsPage::Skills, "Skills"),
@@ -6283,7 +7410,16 @@ mod tests {
         state.show_settings = true;
         state.settings_page = SettingsPage::Agent;
         for width in [520.0, 1100.0] {
+            state.settings_choice_menu_open = None;
             let mut host = UiTree::new(build_view(&state, width));
+            assert!(settings_action_reachable(
+                &mut host,
+                "settings_choice_toggle:isolation",
+                width,
+                720.0,
+            ));
+            state.settings_choice_menu_open = Some("isolation".into());
+            host.set_root(build_view(&state, width));
             let host_reachable = settings_action_reachable(
                 &mut host,
                 "command_isolation:host_unrestricted",
@@ -6295,15 +7431,14 @@ mod tests {
                 "host choice unreachable at {width}px, offset {}",
                 host.scroll_offset("settings_page:Agent")
             );
-            let mut offline = UiTree::new(build_view(&state, width));
             assert_eq!(
                 settings_action_reachable(
-                    &mut offline,
+                    &mut host,
                     "command_isolation:workspace_write_offline",
                     width,
                     720.0,
                 ),
-                cfg!(windows),
+                openide_harness::CommandIsolation::WorkspaceWriteOffline.is_available_on_host(),
             );
         }
     }
@@ -6388,17 +7523,31 @@ mod tests {
             }
             state.mcp_editor_open = false;
         }
-        let frame = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 720.0));
-        assert!(frame.commands.iter().any(|command| matches!(
-            command,
-            DrawCommand::Text { text, .. } if text == "Activado"
-        )));
-        state.mcp_servers[0].enabled = false;
-        let disabled = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 720.0));
-        assert!(disabled.commands.iter().any(|command| matches!(
-            command,
-            DrawCommand::Text { text, .. } if text == "Desactivado"
-        )));
+        // Activating a saved server means it will connect during a native
+        // turn. The badge must remain reachable without claiming a live link.
+        for (enabled, label) in [(true, "Activado para turnos"), (false, "Desactivado")] {
+            state.mcp_servers[0].enabled = enabled;
+            for width in [520.0, 1100.0] {
+                let mut tree = UiTree::new(build_view(&state, width));
+                let visible = (0..30).any(|_| {
+                    let frame = tree.layout(Size::new(width, 720.0));
+                    if frame.commands.iter().any(|command| {
+                        matches!(
+                            command,
+                            DrawCommand::Text { text, .. } if text == label
+                        )
+                    }) {
+                        return true;
+                    }
+                    tree.handle_event(UiEvent::Scroll {
+                        position: Point::new(width * 0.65, 360.0),
+                        delta_y: -180.0,
+                    });
+                    false
+                });
+                assert!(visible, "MCP status {label} unreachable at {width}px");
+            }
+        }
     }
 
     #[test]
@@ -6499,12 +7648,100 @@ mod tests {
                     id != "mcp_oauth_authorize:remote",
                     "{id} at {width}px"
                 );
+                if reachable {
+                    let frame = tree.layout(Size::new(width, 720.0));
+                    let button = frame
+                        .regions
+                        .iter()
+                        .find(|region| region.id == id)
+                        .unwrap()
+                        .rect;
+                    assert!(
+                        button.x >= 0.0 && button.x + button.width <= width,
+                        "OAuth action is horizontally clipped: {id} at {width}px"
+                    );
+                    let point = Point::new(
+                        button.x + button.width / 2.0,
+                        button.y + button.height / 2.0,
+                    );
+                    tree.handle_event(UiEvent::PointerDown(point));
+                    assert_eq!(
+                        tree.handle_event(UiEvent::PointerUp(point)),
+                        vec![UiAction::Clicked { id: id.to_owned() }],
+                        "OAuth pointer action at {width}px"
+                    );
+                    assert!(tree.focus(id));
+                    assert_eq!(
+                        tree.handle_event(UiEvent::Key {
+                            key: Key::Enter,
+                            shift: false,
+                            ctrl: false,
+                        }),
+                        vec![UiAction::Clicked { id: id.to_owned() }],
+                        "OAuth keyboard action at {width}px"
+                    );
+                }
             }
-            let frame = UiTree::new(build_view(&state, width)).layout(Size::new(width, 720.0));
-            assert!(frame.commands.iter().any(|command| matches!(
-                command,
-                DrawCommand::Text { text, .. } if text.contains("auth.example.test/authorize")
-            )));
+            // The entire temporary URL wraps naturally and remains
+            // selectable, including when the resource card needs scrolling.
+            let url = "https://auth.example.test/authorize?state=transient";
+            let mut tree = UiTree::new(build_view(&state, width));
+            let mut selection = None;
+            for _ in 0..30 {
+                let frame = tree.layout(Size::new(width, 720.0));
+                let mut rendered = String::new();
+                let mut first = None;
+                let mut last = None;
+                for command in &frame.commands {
+                    if let DrawCommand::Text {
+                        position,
+                        text,
+                        font_family,
+                        ..
+                    } = command
+                    {
+                        if *font_family == FontFamily::Monospace
+                            && !text.is_empty()
+                            && url[rendered.len()..].starts_with(text)
+                        {
+                            rendered.push_str(text);
+                            first.get_or_insert(*position);
+                            last = Some(*position);
+                            if rendered == url {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if rendered == url {
+                    selection = Some((first.unwrap(), last.unwrap()));
+                    break;
+                }
+                tree.handle_event(UiEvent::Scroll {
+                    position: Point::new(width * 0.65, 360.0),
+                    delta_y: -180.0,
+                });
+            }
+            let (first, last) = selection
+                .unwrap_or_else(|| panic!("Full OAuth authorization URL unreachable at {width}px"));
+            tree.handle_event(UiEvent::PointerDown(Point::new(first.x, first.y + 4.0)));
+            tree.handle_event(UiEvent::PointerMove(Point::new(width - 16.0, last.y + 4.0)));
+            tree.handle_event(UiEvent::PointerUp(Point::new(width - 16.0, last.y + 4.0)));
+            assert_eq!(
+                tree.selected_text(),
+                Some(url),
+                "OAuth URL selection at {width}px"
+            );
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::C,
+                    shift: false,
+                    ctrl: true
+                }),
+                vec![UiAction::CopyRequested {
+                    text: url.to_owned()
+                }],
+            );
         }
     }
 
@@ -6609,18 +7846,21 @@ mod tests {
         let height = 720.0;
         let sidebar_x = dock_layout(&state, width).left / 2.0;
         let mut tree = UiTree::new(build_view(&state, width));
+        // Advance a simulated 120 Hz clock while preserving smooth scroll.
+        // Reaching a route must not depend on CPU time spent laying out frames.
+        let start = std::time::Instant::now();
+        let mut tick = 0_u32;
         for page in [
             SettingsPage::General,
             SettingsPage::Appearance,
             SettingsPage::Providers,
             SettingsPage::Browser,
-            SettingsPage::ComputerUse,
             SettingsPage::Terminal,
             SettingsPage::Shortcuts,
-            SettingsPage::WorkspaceSearch,
             SettingsPage::Agent,
             SettingsPage::Memory,
             SettingsPage::Subagents,
+            SettingsPage::ExternalAgents,
             SettingsPage::Plugins,
             SettingsPage::Mcp,
             SettingsPage::Skills,
@@ -6632,8 +7872,10 @@ mod tests {
             SettingsPage::Github,
         ] {
             let mut visible = false;
-            for _ in 0..30 {
-                let frame = tree.layout(Size::new(width, height));
+            for _ in 0..120 {
+                let now = start + std::time::Duration::from_secs_f64(f64::from(tick) / 120.0);
+                tick += 1;
+                let frame = tree.layout_at(Size::new(width, height), now);
                 if frame
                     .regions
                     .iter()
@@ -6642,17 +7884,20 @@ mod tests {
                     visible = true;
                     break;
                 }
-                tree.handle_event(UiEvent::Scroll {
-                    position: Point::new(sidebar_x, 430.0),
-                    delta_y: -120.0,
-                });
+                tree.handle_event_at(
+                    UiEvent::Scroll {
+                        position: Point::new(sidebar_x, 430.0),
+                        delta_y: -120.0,
+                    },
+                    now,
+                );
             }
             assert!(visible, "sidebar could not reach {page:?}");
         }
     }
 
     #[test]
-    fn settings_shows_save_and_error_notices_inside_the_page() {
+    fn settings_shows_save_and_error_notices_as_a_card_over_the_page() {
         let mut state = empty_state();
         state.show_settings = true;
         for (message, is_error) in [
@@ -6661,52 +7906,148 @@ mod tests {
         ] {
             state.settings_notice = Some(message.into());
             state.settings_notice_error = is_error;
-            let frame = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 720.0));
-            assert!(frame.commands.iter().any(|command| matches!(
-                command,
-                DrawCommand::Text { text, .. } if text == message
-            )));
-            if is_error {
-                assert!(frame.commands.iter().any(|command| matches!(
-                    command,
-                    DrawCommand::FillRect { color, .. } if *color == theme::DIFF_REMOVED_BG
-                )));
-            }
+            let mut tree = UiTree::new(build_view(&state, 1100.0));
+            // The notice is checked settled, not partway through its entrance.
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(1100.0, 720.0));
+            let ink = frame.commands.iter().find_map(|command| match command {
+                DrawCommand::Text { text, color, position, .. } if text == message => {
+                    Some((*color, *position))
+                }
+                _ => None,
+            });
+            let (ink, position) = ink.expect("the notice is on screen");
+            assert!(position.x > 600.0 && position.y > 500.0, "bottom right: {position:?}");
+            let error = openide_ui::AlertColors::for_tone(
+                openide_ui::AlertTone::Error,
+                theme::menu_palette(),
+            )
+            .accent;
+            assert_eq!(ink == error, is_error);
+            assert!(frame
+                .regions
+                .iter()
+                .any(|region| region.id == "settings_notice_dismiss"));
         }
     }
 
     #[test]
-    fn model_catalog_uses_side_by_side_lists_only_when_settings_has_room() {
-        let mut state = empty_state();
-        state.show_settings = true;
-        state.settings_page = SettingsPage::Providers;
-        state.native_provider_id = "openai".into();
-        state.model = "gpt-5.4".into();
-        state.catalog_browse_provider = "openai".into();
-        state.catalog = Some(std::sync::Arc::new(
-            serde_json::from_value(json!({
-                "fetched_at_ms": 1,
-                "providers": {
-                    "openai": {
-                        "id": "openai", "name": "OpenAI",
-                        "models": {
-                            "gpt-5.4": {
-                                "id": "gpt-5.4", "name": "GPT-5.4",
-                                "tool_call": true,
-                                "modalities": {"input": ["text"], "output": ["text"]}
-                            }
-                        }
-                    }
+    fn output_limit_controls_are_reachable_and_require_an_explicit_chat_parameter() {
+        for width in [360.0, 620.0, 1300.0] {
+            let mut state = public_catalog_settings_fixture("vendor/exact-model:v1");
+            state.native_output_limit_draft = "4096".into();
+            for parameter in ["max_tokens", "max_completion_tokens"] {
+                state.native_output_limit_field = parameter.into();
+                for id in [
+                    format!("native_output_limit_field:{parameter}"),
+                    "native_output_limit_save".into(),
+                    "native_output_limit_reset".into(),
+                    "native_output_limit_tokens".into(),
+                ] {
+                    let mut tree = UiTree::new(build_view(&state, width));
+                    tree.set_reduced_motion(true);
+                    assert!(
+                        settings_action_reachable(&mut tree, &id, width, 720.0),
+                        "{id} at {width}px"
+                    );
                 }
-            }))
-            .unwrap(),
-        ));
-        for (viewport, side_by_side) in [(1300.0, true), (620.0, false)] {
+            }
+            state.native_output_limit_field.clear();
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(true);
+            assert!(!settings_action_reachable(
+                &mut tree,
+                "native_output_limit_save",
+                width,
+                720.0
+            ));
+            // OpenCode's registered exact gpt-5.4 route uses Responses. Codex
+            // account-managed output controls are intentionally not editable.
+            let responses = crate::native_provider::adapter("opencode")
+                .unwrap()
+                .for_model("gpt-5.4")
+                .unwrap();
+            assert_eq!(
+                responses.wire_api,
+                crate::native_provider::NativeWireApi::Responses
+            );
+            state.native_provider_id = "opencode".into();
+            state.catalog_browse_provider = "opencode".into();
+            state.model = "gpt-5.4".into();
+            state
+                .native_provider_definitions
+                .get_mut("opencode")
+                .unwrap()
+                .wire_api = responses.wire_api;
+            state.provider_connections.insert(
+                "opencode".into(),
+                crate::provider_connections::ConnectionSummary {
+                    configured: true,
+                    service: "zen".into(),
+                    ..Default::default()
+                },
+            );
+            state.native_output_limit_responses = true;
+            state.native_output_limit_field = "max_output_tokens".into();
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(true);
+            assert!(settings_action_reachable(
+                &mut tree,
+                "native_output_limit_save",
+                width,
+                720.0
+            ));
+            state.running = true;
+            let mut tree = UiTree::new(build_view(&state, width));
+            tree.set_reduced_motion(true);
+            assert!(!settings_action_reachable(
+                &mut tree,
+                "native_output_limit_save",
+                width,
+                720.0
+            ));
+        }
+    }
+
+    #[test]
+    fn model_catalog_public_navigation_and_model_rows_fit_each_settings_width() {
+        let mut state = public_catalog_settings_fixture("");
+        for viewport in [360.0, 620.0, 1300.0] {
+            state.catalog_browse_provider.clear();
+            let mut provider_tree = UiTree::new(build_view(&state, viewport));
+            provider_tree.set_reduced_motion(true);
+            assert!(settings_action_reachable(
+                &mut provider_tree,
+                "catalog_browse:openrouter",
+                viewport,
+                720.0
+            ));
+            let overview = provider_tree.layout(Size::new(viewport, 720.0));
+            for region in &overview.regions {
+                assert!(
+                    region.rect.x >= -0.5 && region.rect.x + region.rect.width <= viewport + 0.5,
+                    "{} at {viewport}",
+                    region.id
+                );
+            }
+            assert!(provider_tree.focus("catalog_browse:openrouter"));
+            assert_eq!(
+                provider_tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "catalog_browse:openrouter".into()
+                }]
+            );
+            state.catalog_browse_provider = "openrouter".into();
             let mut tree = UiTree::new(build_view(&state, viewport));
+            tree.set_reduced_motion(true);
             assert!(
                 settings_action_reachable(
                     &mut tree,
-                    "catalog_select:openai/gpt-5.4",
+                    "catalog_select:openrouter/vendor/exact-model:v1",
                     viewport,
                     720.0,
                 ),
@@ -6717,31 +8058,107 @@ mod tests {
             let model = frame
                 .regions
                 .iter()
-                .find(|region| region.id == "catalog_select:openai/gpt-5.4")
+                .find(|region| region.id == "catalog_select:openrouter/vendor/exact-model:v1")
                 .unwrap()
                 .rect;
-            let mut provider_tree = UiTree::new(build_view(&state, viewport));
-            assert!(settings_action_reachable(
-                &mut provider_tree,
-                "catalog_browse:openai",
-                viewport,
-                720.0
-            ));
-            let provider_frame = provider_tree.layout(Size::new(viewport, 720.0));
-            let provider = provider_frame
+            // List labels use TruncatedText, which paints a single measured
+            // line without a selectable TextLayoutBlock. Its details action
+            // still carries the complete ID, and the modal must display it.
+            let name = frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Text {
+                        text,
+                        position,
+                        font_size,
+                        font_family,
+                        ..
+                    } if *font_family == FontFamily::Monospace
+                        && "vendor/exact-model:v1".starts_with(text.trim_end_matches('…'))
+                        && text.starts_with("vendor/") =>
+                    {
+                        assert!(text == "vendor/exact-model:v1" || text.ends_with('…'));
+                        let metrics = openide_ui::FontMetrics::default();
+                        let scale = *font_size / openide_ui::DEFAULT_FONT_SIZE;
+                        Some(openide_ui::Rect::new(
+                            position.x,
+                            position.y,
+                            text.chars().count() as f32 * metrics.char_width * scale,
+                            metrics.line_height * scale,
+                        ))
+                    }
+                    _ => None,
+                })
+                .expect("the exact model ID or its measured prefix remains visible");
+            assert!(model.x >= 0.0 && model.x + model.width <= viewport);
+            if viewport >= 620.0 {
+                assert!(
+                    model.x >= name.x + name.width - 0.5,
+                    "horizontal row at {viewport}: {name:?}, {model:?}"
+                );
+            } else {
+                assert!(
+                    model.y >= name.y + name.height - 0.5,
+                    "stacked row at {viewport}: {name:?}, {model:?}"
+                );
+            }
+            assert!(tree.focus("catalog_model_details:vendor/exact-model:v1"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "catalog_model_details:vendor/exact-model:v1".into()
+                }]
+            );
+            state.catalog_expanded_model = Some("vendor/exact-model:v1".into());
+            tree.set_root(build_view(&state, viewport));
+            assert!(
+                tree.layout(Size::new(viewport, 720.0))
+                    .text_layouts()
+                    .iter()
+                    .any(|block| block.source == "vendor/exact-model:v1"),
+                "the full exact model ID must be accessible at {viewport}px"
+            );
+            state.catalog_expanded_model = None;
+            tree.set_root(build_view(&state, viewport));
+            // Return through the provider page's actual scroll surface. The
+            // forward reachability helper only scrolls down.
+            for _ in 0..30 {
+                if tree
+                    .layout(Size::new(viewport, 720.0))
+                    .regions
+                    .iter()
+                    .any(|region| region.id == "catalog_overview")
+                {
+                    break;
+                }
+                tree.handle_event(UiEvent::Scroll {
+                    position: Point::new(viewport * 0.65, 360.0),
+                    delta_y: 180.0,
+                });
+            }
+            assert!(tree
+                .layout(Size::new(viewport, 720.0))
                 .regions
                 .iter()
-                .find(|region| region.id == "catalog_browse:openai")
-                .unwrap()
-                .rect;
-            if side_by_side {
-                assert!(model.x >= provider.x + provider.width);
-            } else {
-                assert!(model.x < provider.x + provider.width);
-            }
+                .any(|region| region.id == "catalog_overview"));
+            assert!(tree.focus("catalog_overview"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "catalog_overview".into()
+                }]
+            );
         }
     }
-
     #[test]
     fn settings_keeps_shared_frame_radius_and_keyboard_actions() {
         let mut state = empty_state();
@@ -6765,7 +8182,7 @@ mod tests {
         assert!(frame.commands.iter().any(|command| matches!(
             command,
             DrawCommand::StrokeRect { radius, color, .. }
-                if *radius == 14.0 && *color == theme::BORDER
+                if *radius == 12.0 && *color == theme::BORDER
         )));
         assert!(tree.focus("settings_page:agent"));
         assert_eq!(
@@ -6797,6 +8214,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
             SessionView {
                 id: "b".into(),
@@ -6806,6 +8224,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
         ];
         assert!(state.session_groups.assign("a", &first));
@@ -6893,6 +8312,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
             SessionView {
                 id: "two".into(),
@@ -6902,6 +8322,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
             SessionView {
                 id: "three".into(),
@@ -6911,6 +8332,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
         ];
         let frame = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 620.0));
@@ -6941,6 +8363,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             })
             .collect();
         let mut tree = UiTree::new(build_view(&state, 1200.0));
@@ -6960,12 +8383,12 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id == "session:task-999"));
-        assert!(tree.scroll_offset("sessions_list") > 30_000.0);
+        assert!(tree.scroll_offset("sessions_list") > 900.0 * SIDEBAR_ROW_HEIGHT);
         assert!(visible_count(&last) < 20);
     }
 
     #[test]
-    fn session_row_keeps_unicode_title_agent_and_menu_in_separate_bounds() {
+    fn session_row_keeps_unicode_title_status_and_menu_in_separate_bounds() {
         let mut state = empty_state();
         state
             .backend_options
@@ -6978,10 +8401,11 @@ mod tests {
             pinned: false,
             archived: false,
             unread: true,
+            native_automation: None,
         };
         for width in [176.0, 264.0] {
             let frame = UiTree::new(session_row(&state, &session, width))
-                .layout(Size::new(width - 18.0, 32.0));
+                .layout(Size::new(width - 18.0, 28.0));
             let action = frame
                 .regions
                 .iter()
@@ -6992,8 +8416,8 @@ mod tests {
                 .iter()
                 .find(|region| region.id == "session_menu:unicode")
                 .unwrap();
-            assert_eq!(action.rect.height, 32.0);
-            assert_eq!(menu.rect.height, 32.0);
+            assert_eq!(action.rect.height, 28.0);
+            assert_eq!(menu.rect.height, 24.0);
             assert!(action.rect.x <= menu.rect.x);
             assert!(action.rect.x + action.rect.width >= menu.rect.x + menu.rect.width);
             assert!(menu.rect.x + menu.rect.width <= width - 18.0);
@@ -7015,9 +8439,18 @@ mod tests {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            assert!(labels.contains(&"Codex"), "{labels:?}");
-            assert!(labels.iter().any(|title| title.starts_with("Analiza")));
-            assert!(!labels.contains(&session.title.as_str()), "{labels:?}");
+            assert!(!labels.contains(&"Codex"), "{labels:?}");
+            assert!(!labels.contains(&"Nativo"), "{labels:?}");
+            assert!(labels.contains(&session.title.as_str()), "{labels:?}");
+            assert!(
+                labels.iter().all(|title| !title.ends_with('…')),
+                "{labels:?}"
+            );
+            assert!(frame.commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::Text { text, color, .. }
+                    if text == &session.title && color.a < theme::BRAND.a
+            )));
             assert!(frame.commands.iter().any(|command| matches!(
                 command,
                 DrawCommand::FillRect { rect, color, .. }
@@ -7025,7 +8458,7 @@ mod tests {
             )));
         }
         let mut tree = UiTree::new(session_row(&state, &session, 264.0));
-        tree.layout(Size::new(246.0, 32.0));
+        tree.layout(Size::new(246.0, 28.0));
         assert!(tree.focus("session:unicode"));
         assert_eq!(
             tree.handle_event(UiEvent::Key {
@@ -7040,6 +8473,69 @@ mod tests {
     }
 
     #[test]
+    fn running_session_clock_has_inset_and_keeps_title_clear() {
+        let mut state = empty_state();
+        state.selected_session = Some("running".into());
+        state.running = true;
+        let session = SessionView {
+            id: "running".into(),
+            title: "Investigá la terminal y el entorno del proyecto con un título largo".into(),
+            project: "/project".into(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+            native_automation: None,
+        };
+        for width in [176.0, 264.0] {
+            let mut tree = UiTree::new(session_row(&state, &session, width));
+            tree.set_reduced_motion(true);
+            tree.layout(Size::new(width - 18.0, 28.0));
+            tree.handle_event(UiEvent::PointerMove(Point::new(40.0, 16.0)));
+            let frame = tree.layout(Size::new(width - 18.0, 28.0));
+            let clock = frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Icon {
+                        rect,
+                        icon: Icon::Clock,
+                        ..
+                    } => Some(*rect),
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!((clock.width, clock.height), (16.0, 16.0));
+            assert!(clock.x >= 4.0 && clock.y >= 6.0, "{clock:?}");
+            let menu = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "session_menu:running")
+                .unwrap()
+                .rect;
+            for command in &frame.commands {
+                if let DrawCommand::Text { position, text, .. } = command {
+                    if text == &session.title {
+                        assert!(position.x >= clock.x + clock.width + 4.0);
+                        assert!(position.x < menu.x);
+                    }
+                }
+            }
+            assert!(tree.focus("session_menu:running"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "session_menu:running".into()
+                }]
+            );
+        }
+    }
+
+    #[test]
     fn session_row_hover_spans_title_and_more_without_a_separate_icon_patch() {
         let state = empty_state();
         let session = SessionView {
@@ -7050,6 +8546,7 @@ mod tests {
             pinned: false,
             archived: false,
             unread: false,
+            native_automation: None,
         };
         let mut tree = UiTree::new(session_row(&state, &session, 264.0));
         tree.set_reduced_motion(true);
@@ -7098,6 +8595,7 @@ mod tests {
             pinned: false,
             archived: false,
             unread: false,
+            native_automation: None,
         };
         let base = UiTree::new(session_row(&state, &session, 264.0)).layout(Size::new(246.0, 32.0));
         state.selected_session = Some(session.id.clone());
@@ -7146,6 +8644,7 @@ mod tests {
             can_load_more: false,
         }];
         state.dock_tabs.push(DockTabView {
+            full_path: None,
             id: 3,
             title: "Archivos".into(),
             active: true,
@@ -7153,6 +8652,7 @@ mod tests {
             closable: false,
         });
         state.dock_tabs.push(DockTabView {
+            full_path: None,
             id: 4,
             title: "README.md".into(),
             active: false,
@@ -7182,11 +8682,17 @@ mod tests {
             arguments: "{\"path\":\"README.md\"}".into(),
         });
         let frame = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 720.0));
+        let review = crate::approval_ui::ApprovalTarget {
+            owner_session_id: state.selected_session.clone().unwrap_or_default(),
+            workspace: state.workspace.clone(),
+            child_session_id: None,
+            request_id: "req-1".into(),
+        }
+        .review_action();
         for id in [
             "file_row:0",
             "dock_tab:3",
-            "permission_allow:req-1",
-            "permission_deny:req-1",
+            format!("{review}:inline").as_str(),
             "prompt",
         ] {
             assert!(
@@ -7217,7 +8723,7 @@ mod tests {
         assert!(settings_frame
             .regions
             .iter()
-            .any(|region| region.id == "permission_deny:req-1"));
+            .any(|region| region.id == format!("{review}:inline")));
     }
 
     #[test]
@@ -7242,9 +8748,15 @@ mod tests {
             title: "Actualizar pruebas".into(),
         });
         let frame = UiTree::new(build_view(&state, 1100.0)).layout(Size::new(1100.0, 850.0));
+        let review = crate::approval_ui::ApprovalTarget {
+            owner_session_id: "parent-1".into(),
+            workspace: state.workspace.clone(),
+            child_session_id: Some("child-1".into()),
+            request_id: "request-1".into(),
+        }
+        .review_action();
         for id in [
-            "subagent_permission_allow:child-1:request-1",
-            "subagent_permission_deny:child-1:request-1",
+            format!("{review}:inline").as_str(),
             "subagent_cancel:child-1",
         ] {
             assert!(
@@ -7315,9 +8827,17 @@ mod tests {
                 _ => None,
             })
             .collect();
+        let row_height = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "file_row:1")
+            .expect("nested row is visible")
+            .rect
+            .height;
+        assert_eq!(row_height, 24.0);
         assert!(strokes
             .iter()
-            .any(|rect| rect.width == 1.0 && rect.height == 28.0));
+            .any(|rect| rect.width == 1.0 && rect.height == row_height));
         assert!(
             strokes
                 .iter()
@@ -7334,7 +8854,7 @@ mod tests {
             .y;
         assert!(strokes
             .iter()
-            .any(|rect| rect.width == 1.0 && rect.height == 28.0 && rect.y == file_row_y));
+            .any(|rect| rect.width == 1.0 && rect.height == row_height && rect.y == file_row_y));
     }
 
     #[test]
@@ -7375,14 +8895,14 @@ mod tests {
     #[test]
     fn project_tree_header_reuses_tree_row_and_keeps_toggle_action() {
         let frame = UiTree::new(project_header("C:/work/openIDE", 3, false, 264.0))
-            .layout(Size::new(246.0, 32.0));
+            .layout(Size::new(246.0, 28.0));
         let action = frame
             .regions
             .iter()
             .find(|region| region.id == "session_project_toggle:C:/work/openIDE")
             .unwrap();
         assert_eq!(action.rect.width, 246.0);
-        assert_eq!(action.rect.height, 32.0);
+        assert_eq!(action.rect.height, 28.0);
         assert!(frame.commands.iter().any(|command| matches!(command,
             DrawCommand::Text { text, .. } if text == "openIDE"
         )));
@@ -7390,7 +8910,7 @@ mod tests {
             DrawCommand::Text { text, .. } if text == "3"
         )));
         assert!(frame.commands.iter().any(|command| matches!(command,
-            DrawCommand::Icon { icon: Icon::Folder, rect, .. } if rect.y == 8.0 && rect.width == 16.0
+            DrawCommand::Icon { icon, rect, .. } if *icon == openide_ui::folder_icon("C:/work/openIDE", true) && rect.y == 6.0 && rect.width == 16.0
         )));
     }
 
@@ -7406,6 +8926,7 @@ mod tests {
                 pinned: true,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
             SessionView {
                 id: "active".into(),
@@ -7415,6 +8936,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
             SessionView {
                 id: "archived".into(),
@@ -7424,6 +8946,7 @@ mod tests {
                 pinned: false,
                 archived: true,
                 unread: false,
+                native_automation: None,
             },
         ];
         state.session_menu_id = Some("active".into());
@@ -7440,7 +8963,7 @@ mod tests {
         assert_eq!(count(&active, "session:archived"), 0);
         assert_eq!(count(&active, "session_pin:active"), 1);
         assert_eq!(count(&active, "session_archive:active"), 1);
-        assert_eq!(count(&active, "session_delete:active"), 0);
+        assert_eq!(count(&active, "session_delete:active"), 1);
         assert_eq!(count(&active, "toggle_archived_view"), 1);
 
         state.show_archived = true;
@@ -7465,9 +8988,11 @@ mod tests {
             pinned: false,
             archived: false,
             unread: false,
+            native_automation: None,
         }];
         state.session_menu_id = Some("interrupted".into());
         for recovery in [
+            SessionRecoveryView::StartAutomation,
             SessionRecoveryView::Resume,
             SessionRecoveryView::Permission,
             SessionRecoveryView::VerifyTool,
@@ -7505,6 +9030,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
             SessionView {
                 id: "second".into(),
@@ -7514,6 +9040,7 @@ mod tests {
                 pinned: false,
                 archived: false,
                 unread: false,
+                native_automation: None,
             },
         ];
         let closed = UiTree::new(build_view(&state, 1000.0)).layout(Size::new(1000.0, 700.0));
@@ -7561,13 +9088,30 @@ mod tests {
         state
             .composer_model_options
             .push(("gpt-6-sol".into(), "GPT-6 Sol".into()));
+        state.selected_backend = "native".into();
+        state.native_provider_id = "openai".into();
+        state.composer_model = "gpt-6-sol".into();
+        state.composer_routes = vec![ModelRouteOption {
+            route_id: "native:openai:gpt-6-sol".into(),
+            backend: "native".into(),
+            provider_id: "openai".into(),
+            provider_name: "OpenAI".into(),
+            model_id: "gpt-6-sol".into(),
+            model_name: "GPT-6 Sol".into(),
+            credential: crate::composer_selection::CredentialAvailability::EnvPresentUnverified,
+            execution: crate::composer_selection::ExecutionSupport::Verified,
+            source: crate::composer_selection::RouteSource::AdapterReview,
+            catalog_present: true,
+            provider_listed: Some(true),
+            effort_options: Vec::new(),
+        }];
         state.composer_model_menu_open = true;
         state.composer_model_list_open = true;
         let open = UiTree::new(build_view(&state, 1000.0)).layout(Size::new(1000.0, 700.0));
         let option = open
             .regions
             .iter()
-            .find(|region| region.id == "composer_model:gpt-6-sol")
+            .find(|region| region.id == "composer_route:native:openai:gpt-6-sol")
             .unwrap();
         assert!(option.rect.x > theme::SIDEBAR_WIDTH);
         assert!(open
@@ -7577,7 +9121,7 @@ mod tests {
     }
 
     #[test]
-    fn rename_and_archived_delete_require_explicit_commit() {
+    fn rename_and_delete_require_explicit_commit() {
         let mut state = empty_state();
         state.show_archived = true;
         state.sessions.push(SessionView {
@@ -7588,6 +9132,7 @@ mod tests {
             pinned: false,
             archived: true,
             unread: false,
+            native_automation: None,
         });
         state.renaming_session_id = Some("old".into());
         state.rename_draft = "Nuevo nombre".into();
@@ -7610,15 +9155,32 @@ mod tests {
 
         state.renaming_session_id = None;
         state.pending_delete_session_id = Some("old".into());
-        let delete = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
-        for id in ["delete_confirm:old", "delete_cancel"] {
-            assert!(delete.regions.iter().any(|region| region.id == id));
+        for archived in [false, true] {
+            state.sessions[0].archived = archived;
+            state.show_archived = archived;
+            let delete = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
+            for id in ["delete_confirm:old", "delete_cancel"] {
+                assert!(delete.regions.iter().any(|region| region.id == id));
+            }
+            assert!(!delete
+                .regions
+                .iter()
+                .any(|region| region.id == "session_delete:old"));
+            assert_eq!(delete.hit_test(Point::new(4.0, 4.0)), Some("delete_cancel"));
+            let text = delete
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .flat_map(str::split_whitespace)
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(text.contains("¿Eliminar conversación?"));
+            assert!(text.contains("«Vieja tarea»"));
+            assert!(text.contains("Los archivos del proyecto se conservarán."));
         }
-        assert!(!delete
-            .regions
-            .iter()
-            .any(|region| region.id == "session_delete:old"));
-        assert_eq!(delete.hit_test(Point::new(4.0, 4.0)), Some("delete_cancel"));
     }
 
     #[test]
@@ -7673,6 +9235,7 @@ mod tests {
             pinned: false,
             archived: false,
             unread: false,
+            native_automation: None,
         });
         state.pending_archive_session_id = Some("task".into());
         let archive = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
@@ -7706,8 +9269,19 @@ mod tests {
     #[test]
     fn narrow_window_hides_right_dock_and_keeps_multiline_composer() {
         let mut state = empty_state();
+        state.prompt = "Una tarea con instrucciones".into();
+        let single =
+            UiTree::new(build_view_sized(&state, 520.0, 320.0)).layout(Size::new(520.0, 320.0));
+        let single_height = single
+            .regions
+            .iter()
+            .find(|region| region.id == "prompt")
+            .unwrap()
+            .rect
+            .height;
         state.prompt = "Una tarea con instrucciones\nen varias líneas".into();
-        let frame = UiTree::new(build_view(&state, 520.0)).layout(Size::new(520.0, 320.0));
+        let frame =
+            UiTree::new(build_view_sized(&state, 520.0, 320.0)).layout(Size::new(520.0, 320.0));
         assert!(!frame.regions.iter().any(|region| region.id == "dock_tab:1"));
         let prompt = frame
             .regions
@@ -7719,7 +9293,8 @@ mod tests {
             .iter()
             .find(|region| region.id == "run_toggle")
             .unwrap();
-        assert!(prompt.rect.height >= 60.0);
+        assert!(prompt.rect.height > single_height);
+        assert!(submit.rect.y > prompt.rect.y + prompt.rect.height);
         assert!(submit.rect.x + submit.rect.width <= 520.0);
         assert!(submit.rect.y + submit.rect.height <= 320.0);
     }
@@ -7735,6 +9310,7 @@ mod tests {
             arguments: json!({"path": "src/main.rs"}),
             output: Some("fn main() {}".into()),
             is_error: false,
+            activity: crate::transcript::ActivityStatus::Completed,
         });
         let frame = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 620.0));
         let visible = frame
@@ -7754,12 +9330,58 @@ mod tests {
                 .iter()
                 .filter(|region| region.id == "tool:call-1")
                 .count()
-                >= 2
+                >= 1
         );
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "conversation_detail:draft:tool:call-1"));
     }
 
     #[test]
-    fn native_command_activity_shows_state_and_confirmed_termination() {
+    fn activity_inspector_tracks_only_the_selected_commands_partial_output() {
+        let mut state = empty_state();
+        state.selected_tool_id = Some("running-call".into());
+        state.transcript = vec![
+            TranscriptItem::Tool {
+                id: "running-call".into(),
+                name: "run_command".into(),
+                arguments: json!({"command":"cargo test"}),
+                output: None,
+                is_error: false,
+                activity: crate::transcript::ActivityStatus::Running,
+            },
+            TranscriptItem::ToolOutput {
+                tool_call_id: "running-call".into(),
+                text: "PARTIAL_PROCESS_OUTPUT".into(),
+                truncated: true,
+            },
+        ];
+        let frame = UiTree::new(activity_content(&state)).layout(Size::new(600.0, 700.0));
+        let visible = frame
+            .text_layouts()
+            .iter()
+            .map(|layout| layout.source.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(visible.contains("PARTIAL_PROCESS_OUTPUT"));
+        assert!(visible.contains("SALIDA EN CURSO"));
+        assert!(visible.contains("contenido fue omitida"));
+        if let TranscriptItem::ToolOutput { tool_call_id, .. } = &mut state.transcript[1] {
+            *tool_call_id = "another-call".into();
+        }
+        let frame = UiTree::new(activity_content(&state)).layout(Size::new(600.0, 700.0));
+        let visible = frame
+            .text_layouts()
+            .iter()
+            .map(|layout| layout.source.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(!visible.contains("PARTIAL_PROCESS_OUTPUT"));
+    }
+
+    #[test]
+    fn native_command_activity_shows_state_and_one_control_and_recovery_entry() {
         let mut state = empty_state();
         state.selected_session = Some("native-1".into());
         state.selected_backend = "native".into();
@@ -7779,7 +9401,7 @@ mod tests {
             },
         ];
         let frame = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
-        assert!(frame
+        assert!(!frame
             .regions
             .iter()
             .any(|region| region.id == "native_command_terminate:running-1"));
@@ -7787,6 +9409,24 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id == "native_command_terminate:finished-1"));
+        for command in ["running-1", "finished-1"] {
+            let id = format!(
+                "native_command_control_open:{}",
+                serde_json::to_string(&("native-1", command)).unwrap()
+            );
+            assert_eq!(
+                frame
+                    .regions
+                    .iter()
+                    .filter(|region| region.id == id)
+                    .count(),
+                1
+            );
+        }
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "native_command_operation_history"));
         let text = frame
             .commands
             .iter()
@@ -7804,18 +9444,24 @@ mod tests {
 
         state.pending_native_command_termination = Some("running-1".into());
         let confirm = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
-        assert!(confirm
+        assert!(!confirm
             .regions
             .iter()
             .any(|region| region.id == "native_command_terminate_confirm:running-1"));
-        assert!(confirm
+        assert!(!confirm
             .regions
             .iter()
             .any(|region| region.id == "native_command_terminate_cancel"));
+        state.native_commands.clear();
+        let no_manager = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
+        assert!(no_manager
+            .regions
+            .iter()
+            .any(|region| region.id == "native_command_operation_history"));
     }
 
     #[test]
-    fn narrow_timeline_expands_only_selected_tool() {
+    fn narrow_timeline_expands_only_explicitly_opened_tool() {
         let mut state = empty_state();
         for id in ["one", "two"] {
             state.transcript.push(TranscriptItem::Tool {
@@ -7824,9 +9470,11 @@ mod tests {
                 arguments: json!({"path": id}),
                 output: Some(format!("result-{id}")),
                 is_error: false,
+                activity: crate::transcript::ActivityStatus::Completed,
             });
         }
-        state.selected_tool_id = Some("two".into());
+        state.selected_tool_id = Some("one".into());
+        state.conversation_details.toggle("tool:two", false);
         let frame = UiTree::new(build_view(&state, 520.0)).layout(Size::new(520.0, 620.0));
         let text = frame
             .commands
@@ -7930,7 +9578,7 @@ mod tests {
         // The renderer may split a wrapped label into multiple text commands.
         assert!(painted.contains("línea larga"));
         assert!(painted.contains("abreviada"));
-        assert!(frame
+        assert!(!frame
             .regions
             .iter()
             .any(|region| region.id == "dock_close:7"));
@@ -7985,7 +9633,7 @@ mod tests {
         let loading_frame = loading_tree.layout(Size::new(520.0, 380.0));
         assert!(
             loading_tree.is_animating(),
-            "loading spinner should repaint"
+            "loading placeholders should pulse"
         );
         let result_viewport = loading_frame
             .regions
@@ -7995,18 +9643,28 @@ mod tests {
             })
             .expect("search result viewport")
             .rect;
-        let spinner = loading_frame
+        assert!(!loading_frame
             .commands
             .iter()
-            .find_map(|command| match command {
-                DrawCommand::Spinner { rect, .. } => Some(*rect),
+            .any(|command| matches!(command, DrawCommand::Spinner { .. })));
+        let placeholders: Vec<_> = loading_frame
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::FillRect { rect, radius, .. }
+                    if *radius == 5.0 && rect.height == 10.0 =>
+                {
+                    Some(*rect)
+                }
                 _ => None,
             })
-            .expect("centered search spinner");
-        let spinner_center_x = spinner.x + spinner.width / 2.0;
-        let spinner_center_y = spinner.y + spinner.height / 2.0;
-        assert!((spinner_center_x - result_viewport.x - result_viewport.width / 2.0).abs() < 4.0);
-        assert!((spinner_center_y - result_viewport.y - result_viewport.height / 2.0).abs() < 4.0);
+            .collect();
+        assert!(placeholders.len() >= 3, "{placeholders:?}");
+        for (index, row) in placeholders.iter().enumerate() {
+            assert!(row.x >= result_viewport.x && row.x + row.width <= result_viewport.x + result_viewport.width);
+            assert!(row.y >= result_viewport.y && row.y + row.height <= result_viewport.y + result_viewport.height);
+            assert!((row.y - placeholders[0].y - index as f32 * 30.0).abs() < 0.5);
+        }
         assert!(!loading_frame.regions.iter().any(|region| {
             region.id == "command_results" && region.kind == openide_ui::HitKind::Scrollbar
         }));
@@ -8060,15 +9718,16 @@ mod tests {
             .regions
             .iter()
             .any(|region| region.id == "command_close"));
-        assert!(frame.commands.iter().any(|command| {
-            matches!(
-                command,
-                DrawCommand::Icon {
-                    icon: Icon::CloseCircle,
-                    ..
-                }
-            )
-        }));
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::Text { text, font_family: FontFamily::Sans, .. } if text == "Esc"
+        )));
+        assert!(!frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::Icon {
+                icon: Icon::CloseCircle | Icon::CloseBold,
+                ..
+            }
+        )));
         for id in [
             "command_scope:all",
             "command_scope:commands",

@@ -16,6 +16,8 @@ use std::{
 use openide_harness::HostedWebSearchMode;
 use serde::{Deserialize, Serialize};
 
+use crate::keymap::KeymapProfile;
+
 const FILE_NAME: &str = "settings-preferences.json";
 const MAX_FILE_BYTES: u64 = 64 * 1024;
 const CURRENT_VERSION: u64 = 1;
@@ -66,9 +68,47 @@ impl TerminalShell {
     }
 }
 
+/// Only account identity and OpenIDE consent are persisted, never credentials.
+/// Automatic preserves discovery for installations predating account selection.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "mode", content = "login", rename_all = "snake_case")]
+pub(crate) enum GithubAccountPreference {
+    #[default]
+    Automatic,
+    Selected(String),
+    Disconnected,
+}
+
+impl GithubAccountPreference {
+    pub fn selected(login: &str) -> Result<Self, String> {
+        if login.is_empty()
+            || login.len() > 39
+            || login.starts_with('-')
+            || login.ends_with('-')
+            || !login
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err("La cuenta de GitHub no es válida.".into());
+        }
+        Ok(Self::Selected(login.to_owned()))
+    }
+
+    fn valid(&self) -> bool {
+        match self {
+            Self::Selected(login) => Self::selected(login).is_ok(),
+            Self::Automatic | Self::Disconnected => true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SettingsPreferences {
     pub reduced_motion: bool,
+    /// Application shortcut preset. This does not enable modal text editing.
+    pub keymap_profile: KeymapProfile,
+    /// Modal editing is independent from the workbench shortcut preset.
+    pub vim_mode: bool,
     pub terminal_shell: TerminalShell,
     pub reopen_last_workspace: bool,
     pub last_workspace: Option<PathBuf>,
@@ -78,6 +118,7 @@ pub(crate) struct SettingsPreferences {
     /// Hosted Responses search is an explicit opt-in because it may contact
     /// external sources and its exact mode is bound to native resume identity.
     pub hosted_web_search_mode: Option<HostedWebSearchMode>,
+    pub github_account: GithubAccountPreference,
 }
 
 impl Default for SettingsPreferences {
@@ -89,11 +130,14 @@ impl Default for SettingsPreferences {
                     "1" | "true" | "yes"
                 )
             }),
+            keymap_profile: KeymapProfile::default(),
+            vim_mode: false,
             terminal_shell: TerminalShell::System,
             reopen_last_workspace: false,
             last_workspace: None,
             last_settings_page: DEFAULT_SETTINGS_PAGE.to_owned(),
             hosted_web_search_mode: None,
+            github_account: GithubAccountPreference::Automatic,
         }
     }
 }
@@ -121,6 +165,16 @@ impl SettingsPreferences {
             .and_then(serde_json::Value::as_bool)
         {
             preferences.reduced_motion = reduced_motion;
+        }
+        if let Some(profile) = value
+            .get("keymap_profile")
+            .and_then(serde_json::Value::as_str)
+            .and_then(KeymapProfile::from_id)
+        {
+            preferences.keymap_profile = profile;
+        }
+        if let Some(enabled) = value.get("vim_mode").and_then(serde_json::Value::as_bool) {
+            preferences.vim_mode = enabled;
         }
         if let Some(shell) = value
             .get("terminal_shell")
@@ -153,6 +207,15 @@ impl SettingsPreferences {
         preferences.hosted_web_search_mode = value
             .get("hosted_web_search_mode")
             .and_then(|mode| serde_json::from_value(mode.clone()).ok());
+        if let Some(account) = value.get("github_account") {
+            // A damaged explicit choice must never reconnect an arbitrary
+            // system account. An absent field alone retains legacy discovery.
+            preferences.github_account =
+                serde_json::from_value::<GithubAccountPreference>(account.clone())
+                    .ok()
+                    .filter(GithubAccountPreference::valid)
+                    .unwrap_or(GithubAccountPreference::Disconnected);
+        }
         preferences
     }
 
@@ -198,6 +261,9 @@ impl SettingsPreferences {
     /// Write to a unique temporary file, fsync it, then atomically replace the
     /// previous JSON (including on Windows). A failed write leaves it intact.
     pub fn save(&self, root: &Path) -> Result<(), String> {
+        if !self.github_account.valid() {
+            return Err("La cuenta de GitHub no es válida.".into());
+        }
         if matches!(&self.terminal_shell, TerminalShell::Custom(path) if !valid_custom_path_syntax(path))
         {
             return Err("La ruta del shell debe ser absoluta y válida".to_owned());
@@ -221,11 +287,14 @@ impl SettingsPreferences {
         let payload = serde_json::to_vec_pretty(&serde_json::json!({
             "version": CURRENT_VERSION,
             "reduced_motion": self.reduced_motion,
+            "keymap_profile": self.keymap_profile.id(),
+            "vim_mode": self.vim_mode,
             "terminal_shell": self.terminal_shell,
             "reopen_last_workspace": self.reopen_last_workspace,
             "last_workspace": workspace_text,
             "last_settings_page": self.last_settings_page,
             "hosted_web_search_mode": self.hosted_web_search_mode,
+            "github_account": self.github_account,
         }))
         .map_err(|error| format!("No se pudieron serializar las preferencias: {error}"))?;
         let temp = root.join(format!(
@@ -404,6 +473,150 @@ fn replace_atomically(temporary: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn github_choice_round_trips_and_malformed_choice_never_discovers_another_account() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            SettingsPreferences::load(root.path()).github_account,
+            GithubAccountPreference::Automatic
+        );
+        for github_account in [
+            GithubAccountPreference::Selected("octocat".into()),
+            GithubAccountPreference::Disconnected,
+        ] {
+            let preferences = SettingsPreferences {
+                github_account: github_account.clone(),
+                ..SettingsPreferences::default()
+            };
+            preferences.save(root.path()).unwrap();
+            assert_eq!(
+                SettingsPreferences::load(root.path()).github_account,
+                github_account
+            );
+        }
+        for invalid in [
+            serde_json::json!({"mode":"selected", "login":"../escape"}),
+            serde_json::json!("invalid"),
+            serde_json::Value::Null,
+        ] {
+            fs::write(
+                root.path().join(FILE_NAME),
+                serde_json::to_vec(&serde_json::json!({
+                    "version": CURRENT_VERSION, "github_account": invalid, "vim_mode": true
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let loaded = SettingsPreferences::load(root.path());
+            assert_eq!(loaded.github_account, GithubAccountPreference::Disconnected);
+            assert!(loaded.vim_mode);
+        }
+        let invalid = SettingsPreferences {
+            github_account: GithubAccountPreference::Selected("../escape".into()),
+            ..SettingsPreferences::default()
+        };
+        assert!(invalid.save(root.path()).is_err());
+    }
+
+    #[test]
+    fn keyboard_profiles_round_trip_as_stable_ids() {
+        let root = tempfile::tempdir().unwrap();
+        for profile in KeymapProfile::ALL.iter().copied() {
+            let preferences = SettingsPreferences {
+                keymap_profile: profile,
+                vim_mode: true,
+                reduced_motion: true,
+                reopen_last_workspace: true,
+                ..SettingsPreferences::default()
+            };
+            preferences.save(root.path()).unwrap();
+            let json: serde_json::Value =
+                serde_json::from_slice(&fs::read(root.path().join(FILE_NAME)).unwrap()).unwrap();
+            assert_eq!(json["keymap_profile"], profile.id());
+            assert_eq!(json["vim_mode"], true);
+            assert_eq!(SettingsPreferences::load(root.path()), preferences);
+        }
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn vim_recovers_independently_and_is_disabled_for_existing_settings() {
+        let root = tempfile::tempdir().unwrap();
+        for value in [
+            None,
+            Some(serde_json::json!("true")),
+            Some(serde_json::json!(1)),
+        ] {
+            let mut json = serde_json::json!({"version": CURRENT_VERSION, "keymap_profile": "zed"});
+            if let Some(value) = value {
+                json["vim_mode"] = value;
+            }
+            fs::write(
+                root.path().join(FILE_NAME),
+                serde_json::to_vec(&json).unwrap(),
+            )
+            .unwrap();
+            let loaded = SettingsPreferences::load(root.path());
+            assert_eq!(loaded.keymap_profile, KeymapProfile::Zed);
+            assert!(!loaded.vim_mode);
+        }
+        fs::write(
+            root.path().join(FILE_NAME),
+            br#"{"version":1,"keymap_profile":false,"vim_mode":true}"#,
+        )
+        .unwrap();
+        let loaded = SettingsPreferences::load(root.path());
+        assert!(loaded.vim_mode);
+        assert_eq!(loaded.keymap_profile, KeymapProfile::default());
+    }
+
+    #[test]
+    fn missing_or_invalid_keyboard_profile_preserves_other_preferences() {
+        let root = tempfile::tempdir().unwrap();
+        for value in [
+            None,
+            Some(serde_json::json!("future-profile")),
+            Some(serde_json::json!(false)),
+            Some(serde_json::json!({"id": "zed"})),
+        ] {
+            let mut json = serde_json::json!({
+                "version": CURRENT_VERSION,
+                "reduced_motion": true,
+                "reopen_last_workspace": true,
+                "last_settings_page": "settings_page:shortcuts"
+            });
+            if let Some(value) = value {
+                json["keymap_profile"] = value;
+            }
+            fs::write(
+                root.path().join(FILE_NAME),
+                serde_json::to_vec(&json).unwrap(),
+            )
+            .unwrap();
+            let preferences = SettingsPreferences::load(root.path());
+            assert_eq!(preferences.keymap_profile, KeymapProfile::default());
+            assert!(preferences.reduced_motion && preferences.reopen_last_workspace);
+            assert_eq!(preferences.last_settings_page, "settings_page:shortcuts");
+        }
+        for profile in KeymapProfile::ALL.iter().copied() {
+            fs::write(
+                root.path().join(FILE_NAME),
+                serde_json::to_vec(&serde_json::json!({
+                    "version": CURRENT_VERSION,
+                    "keymap_profile": profile.id(),
+                    "terminal_shell": {"kind": "unknown"},
+                    "last_settings_page": 42
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                SettingsPreferences::load(root.path()).keymap_profile,
+                profile
+            );
+        }
+    }
 
     #[test]
     fn round_trip_and_atomic_replacement() {

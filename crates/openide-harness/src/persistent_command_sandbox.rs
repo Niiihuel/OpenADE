@@ -15,7 +15,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
@@ -89,7 +88,9 @@ pub(super) fn start(
     cancellation: &CancellationToken,
     runtime: &tokio::runtime::Handle,
     sessions: &mut HashMap<String, Arc<Session>>,
+    registration: super::NativeOutputRegistration,
 ) -> Result<PersistentCommandStarted, AgentError> {
+    let super::NativeOutputRegistration { id, capture } = registration;
     let timeout_ms = u64::try_from(manager.limits.max_lifetime.as_millis())
         .map_err(|_| AgentError::Tool("sandbox lifetime exceeds supported range".into()))?;
     let mut sandbox = spawn_workspace_write_offline_persistent(
@@ -99,7 +100,7 @@ pub(super) fn start(
         &manager.workspace,
         cancellation,
     )?;
-    if cancellation.is_cancelled() {
+    if cancellation.is_cancelled() || manager.revoked.is_cancelled() {
         sandbox.kill().map_err(|error| {
             AgentError::EffectUncertain(format!(
                 "cancelled sandbox start and tree kill failed: {error}"
@@ -121,12 +122,19 @@ pub(super) fn start(
     let stderr = sandbox.take_stderr().ok_or_else(|| {
         AgentError::EffectUncertain("sandbox stderr pipe is unavailable after spawn".into())
     })?;
-    let output = Arc::new(OutputBuffer::new(manager.limits.max_buffered_output_bytes));
+    let output =
+        Arc::new(OutputBuffer::new(manager.limits.max_buffered_output_bytes).with_capture(capture));
+    // Attach containment before either reader can observe an output failure.
+    // Every thread-creation failure also closes this tree before returning.
+    let process = Arc::new(SandboxRuntime::new(sandbox));
+    let tree = Arc::new(Mutex::new(Some(SessionTree::Sandbox(Arc::clone(&process)))));
+    output.attach_tree(Arc::clone(&tree));
     let stdout_output = Arc::clone(&output);
     let stdout_reader = thread::Builder::new()
         .name("openide-mxc-stdout".into())
         .spawn(move || read_pipe_blocking(stdout, PersistentCommandStream::Stdout, stdout_output))
         .map_err(|error| {
+            output.fail_capture(format!("sandbox stdout reader could not start: {error}"));
             AgentError::EffectUncertain(format!(
                 "sandbox started but stdout reader could not start: {error}"
             ))
@@ -136,6 +144,7 @@ pub(super) fn start(
         .name("openide-mxc-stderr".into())
         .spawn(move || read_pipe_blocking(stderr, PersistentCommandStream::Stderr, stderr_output))
         .map_err(|error| {
+            output.fail_capture(format!("sandbox stderr reader could not start: {error}"));
             AgentError::EffectUncertain(format!(
                 "sandbox started but stderr reader could not start: {error}"
             ))
@@ -145,23 +154,24 @@ pub(super) fn start(
         .name("openide-mxc-stdin".into())
         .spawn(move || write_input(stdin, input_rx))
         .map_err(|error| {
+            output.fail_capture(format!("sandbox stdin writer could not start: {error}"));
             AgentError::EffectUncertain(format!(
                 "sandbox started but stdin writer could not start: {error}"
             ))
         })?;
 
-    let process = Arc::new(SandboxRuntime::new(sandbox));
-    let tree = Arc::new(Mutex::new(Some(SessionTree::Sandbox(Arc::clone(&process)))));
     let input = Arc::new(AsyncMutex::new(Some(input_tx)));
-    let stop = CancellationToken::new();
+    let stop = output.stop.clone();
     let session = Arc::new(Session {
         stdin: Arc::new(AsyncMutex::new(None)),
         output: Arc::clone(&output),
         stop: stop.clone(),
         tree: Arc::clone(&tree),
         poll_lock: AsyncMutex::new(()),
+        controls: Mutex::new(super::CommandControlState::new(program, args, None)),
         pty: false,
         pty_console: None,
+        resize_lock: AsyncMutex::new(()),
         sandbox_stdin: Some(Arc::clone(&input)),
     });
     let lifetime = manager.limits.max_lifetime;
@@ -179,7 +189,6 @@ pub(super) fn start(
         }
         .run();
     });
-    let id = Uuid::new_v4().to_string();
     sessions.insert(id.clone(), session);
     Ok(PersistentCommandStarted { id })
 }
@@ -203,6 +212,7 @@ struct InFlightInput<'a> {
 impl Drop for InFlightInput<'_> {
     fn drop(&mut self) {
         if !self.complete {
+            self.session.mark_stdin_uncertain();
             self.session.stop_tree();
         }
     }

@@ -16,14 +16,28 @@ const MAX_RESULT_JSON_BYTES: usize = 128 * 1024;
 const TOOL_POLL_OUTPUT_BYTES: usize = 8 * 1024;
 const MAX_POLL_WAIT_MS: u64 = 30_000;
 
-pub(super) fn is_persistent_tool(name: &str) -> bool {
+pub(crate) fn is_persistent_tool(name: &str) -> bool {
     matches!(
         name,
         "start_command" | "poll_command" | "write_stdin" | "terminate_command" | "resize_command"
     )
 }
 
-pub(super) fn definitions(manager: &PersistentCommandManager) -> Vec<ToolDefinition> {
+pub(crate) fn definitions(manager: &PersistentCommandManager) -> Vec<ToolDefinition> {
+    definitions_for_profile(
+        manager.isolation(),
+        manager.pty_tools_enabled(),
+        manager.pty_resize_tools_enabled(),
+    )
+}
+
+/// Pure catalog construction; its flags are the host's effective capabilities.
+/// No manager, process, output registration or runtime is created here.
+pub(crate) fn definitions_for_profile(
+    isolation: crate::CommandIsolation,
+    pty_enabled: bool,
+    resize_enabled: bool,
+) -> Vec<ToolDefinition> {
     let mut definitions = vec![
         legacy_start_command_definition(),
         ToolDefinition {
@@ -64,9 +78,13 @@ pub(super) fn definitions(manager: &PersistentCommandManager) -> Vec<ToolDefinit
             }),
         },
     ];
-    if manager.isolation() == crate::CommandIsolation::WorkspaceWriteOffline {
-        definitions[0].description = "Start a persistent command inside the Windows workspace-write/offline OS sandbox. Uses ordinary stdin, stdout, and stderr pipes; no PTY or implicit shell. Requires approval.".into();
-    } else if manager.pty_tools_enabled() {
+    if isolation == crate::CommandIsolation::WorkspaceWriteOffline {
+        definitions[0].description = if cfg!(windows) {
+            "Start a persistent command inside the Windows workspace-write/offline OS sandbox. Uses ordinary stdin, stdout, and stderr pipes; no PTY or implicit shell. Requires approval."
+        } else {
+            "Start a persistent command inside the workspace-write/offline OS sandbox. Requires Bubblewrap and working user namespaces on Linux. Only the workspace, mounted system runtime and private temporary files are visible; network sockets are blocked. Uses ordinary pipes; no PTY, implicit shell or unrestricted fallback. Requires approval."
+        }.into();
+    } else if pty_enabled {
         definitions[0] = ToolDefinition {
             name: "start_command".into(),
             description: "Start a persistent command in this workspace with host filesystem and network rights. No implicit shell or inherited secret environment. Set pty=true for a Windows terminal with merged output. Requires approval.".into(),
@@ -84,7 +102,7 @@ pub(super) fn definitions(manager: &PersistentCommandManager) -> Vec<ToolDefinit
             }),
         };
     }
-    if manager.pty_resize_tools_enabled() {
+    if resize_enabled {
         definitions.push(ToolDefinition {
             name: "resize_command".into(),
             description: "Resize a running Windows PTY to the specified columns and rows. Pipe and sandboxed commands cannot be resized. Requires approval.".into(),
@@ -119,7 +137,7 @@ pub(crate) fn legacy_start_command_definition() -> ToolDefinition {
     }
 }
 
-pub(super) async fn execute(
+pub(crate) async fn execute(
     manager: &PersistentCommandManager,
     call: &ToolCall,
     context: &ToolContext,
@@ -361,6 +379,7 @@ fn snapshot_output(snapshot: PersistentCommandSnapshot) -> Result<ToolOutput, Ag
 mod tests {
     use super::*;
     use crate::{CommandIsolation, LocalTool, LocalTools, PersistentCommandLimits, ToolExecutor};
+    #[cfg(windows)]
     use std::path::PathBuf;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
@@ -448,9 +467,11 @@ mod tests {
         assert!(manager.list_sessions().unwrap().is_empty());
     }
 
-    #[cfg(windows)]
     #[test]
     fn offline_manager_advertises_pipes_without_host_or_pty_claims() {
+        if !CommandIsolation::WorkspaceWriteOffline.is_available_on_host() {
+            return;
+        }
         let workspace = tempfile::tempdir().unwrap();
         let manager = Arc::new(
             PersistentCommandManager::new(
@@ -524,8 +545,16 @@ mod tests {
             .into_iter()
             .find(|definition| definition.name == "start_command")
             .unwrap();
-        assert!(enabled_start.parameters["properties"].get("pty").is_some());
-        assert_ne!(legacy_start, enabled_start);
+        assert_eq!(
+            enabled_start.parameters["properties"].get("pty").is_some(),
+            cfg!(windows),
+            "PTY capability must match the host implementation"
+        );
+        if cfg!(windows) {
+            assert_ne!(legacy_start, enabled_start);
+        } else {
+            assert_eq!(legacy_start, enabled_start);
+        }
         crate::ToolCatalog::from_executor(&enabled).unwrap();
     }
 

@@ -1,0 +1,18 @@
+build:
+  name: Build and test the native SwiftUI app
+  steps:
+    - eas/checkout
+    - run:
+        name: Build SwiftUI, run XCTest, capture simulator
+        command: bash scripts/build-simulator.sh
+    - eas/upload_artifact:
+        name: Upload simulator app
+        inputs:
+          type: application-archive
+          path: build/OpenADERemote-simulator.tar.gz
+    - eas/upload_artifact:
+        name: Upload test results and preview
+        if: ${ always() }
+        inputs:
+          type: build-artifact
+          path: build/reports

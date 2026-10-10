@@ -7,9 +7,9 @@ use crate::mcp_oauth_controller::discover_oauth_session;
 use crate::mcp_settings::{McpServerSettings, McpSettings};
 use async_trait::async_trait;
 use openide_harness::{
-    inspect_mcp_stdio_launch, mcp_runtime_digest, AgentError, McpCompositeTools, McpHttpClient,
-    McpServerBinding, McpServerRuntimeIdentity, McpStdioClient, McpStdioServerIdentity,
-    McpToolClient, PreparedToolSession, ToolExecutor, ToolPreparation,
+    inspect_mcp_stdio_launch, mcp_runtime_digest, AgentError, McpCompositeTools, McpError,
+    McpHttpClient, McpServerBinding, McpServerRuntimeIdentity, McpStdioClient,
+    McpStdioServerIdentity, McpToolClient, PreparedToolSession, ToolExecutor, ToolPreparation,
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -30,6 +30,26 @@ pub(crate) struct McpRuntime {
 enum McpClient {
     Stdio(Arc<McpStdioClient>),
     Http(Arc<McpHttpClient>),
+}
+
+enum McpStartupError {
+    Cancelled,
+    Failed(String),
+}
+
+impl std::fmt::Display for McpStartupError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cancelled => formatter.write_str("Inicio MCP cancelado"),
+            Self::Failed(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl From<String> for McpStartupError {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
+    }
 }
 
 impl McpClient {
@@ -68,15 +88,13 @@ impl ToolPreparation for McpToolPreparation {
         base_tools: Arc<dyn ToolExecutor>,
         cancellation: &CancellationToken,
     ) -> Result<Box<dyn PreparedToolSession>, AgentError> {
-        let runtime = discover_mcp_runtime(&self.servers, workspace, base_tools, cancellation)
-            .await
-            .map_err(|error| {
-                if cancellation.is_cancelled() {
-                    AgentError::Cancelled
-                } else {
-                    AgentError::Runtime(error)
-                }
-            })?;
+        let runtime =
+            discover_mcp_runtime_inner(&self.servers, workspace, base_tools, cancellation)
+                .await
+                .map_err(|error| match error {
+                    McpStartupError::Cancelled => AgentError::Cancelled,
+                    McpStartupError::Failed(message) => AgentError::Runtime(message),
+                })?;
         Ok(Box::new(runtime))
     }
 }
@@ -145,14 +163,26 @@ impl McpRuntime {
 /// Start enabled servers, discover complete tool snapshots, then compose them
 /// with the supplied local tools. Any failed or cancelled startup closes every
 /// server already started by this call.
+#[cfg(test)]
 pub(crate) async fn discover_mcp_runtime(
     servers: &[McpServerSettings],
     workspace: &Path,
     local_tools: Arc<dyn ToolExecutor>,
     cancellation: &CancellationToken,
 ) -> Result<McpRuntime, String> {
+    discover_mcp_runtime_inner(servers, workspace, local_tools, cancellation)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn discover_mcp_runtime_inner(
+    servers: &[McpServerSettings],
+    workspace: &Path,
+    local_tools: Arc<dyn ToolExecutor>,
+    cancellation: &CancellationToken,
+) -> Result<McpRuntime, McpStartupError> {
     if cancellation.is_cancelled() {
-        return Err("Inicio MCP cancelado".to_owned());
+        return Err(McpStartupError::Cancelled);
     }
     let enabled = servers
         .iter()
@@ -170,34 +200,31 @@ pub(crate) async fn discover_mcp_runtime(
     let mut all_resume_safe = true;
     for server in &enabled {
         if cancellation.is_cancelled() {
-            let _ = shutdown_all(&clients).await;
-            return Err("Inicio MCP cancelado".to_owned());
+            return Err(failed_startup(McpStartupError::Cancelled, &clients).await);
         }
         let mut launch_recheck = None;
         let connected = if server.url.is_some() {
             match server.runtime_http_config() {
                 Ok(config) if server.http_oauth.is_some() => {
                     match discover_oauth_session(server, cancellation).await {
-                        Ok(oauth) => tokio::select! {
-                            biased;
-                            _ = cancellation.cancelled() => Err("Inicio MCP cancelado".to_owned()),
-                            result = McpHttpClient::connect_with_oauth(config, oauth, cancellation) => {
-                                result.map(|client| McpClient::Http(Arc::new(client)))
-                                    .map_err(|error| format!("No se pudo conectar MCP HTTP {} con OAuth: {error}. Si el servidor rechazó la credencial, autorizá de nuevo en Settings > MCP.", server.id))
-                            }
-                        },
-                        Err(error) => Err(format!("MCP HTTP {}: {error}", server.id)),
+                        // Await cooperative cancellation: dropping connect in
+                        // an outer select would skip partial-session DELETE.
+                        Ok(oauth) => McpHttpClient::connect_with_oauth(config, oauth, cancellation)
+                            .await
+                            .map(|client| McpClient::Http(Arc::new(client)))
+                            .map_err(|error| http_startup_error(&server.id, true, error)),
+                        Err(_) if cancellation.is_cancelled() => Err(McpStartupError::Cancelled),
+                        Err(error) => Err(McpStartupError::Failed(format!(
+                            "MCP HTTP {}: {error}",
+                            server.id
+                        ))),
                     }
                 }
-                Ok(config) => tokio::select! {
-                    biased;
-                    _ = cancellation.cancelled() => Err("Inicio MCP cancelado".to_owned()),
-                    result = McpHttpClient::connect(config, cancellation) => {
-                        result.map(|client| McpClient::Http(Arc::new(client)))
-                            .map_err(|error| format!("No se pudo conectar MCP HTTP {}: {error}", server.id))
-                    }
-                },
-                Err(error) => Err(error),
+                Ok(config) => McpHttpClient::connect(config, cancellation)
+                    .await
+                    .map(|client| McpClient::Http(Arc::new(client)))
+                    .map_err(|error| http_startup_error(&server.id, false, error)),
+                Err(error) => Err(McpStartupError::Failed(error)),
             }
         } else {
             match server.runtime_config(workspace) {
@@ -210,21 +237,20 @@ pub(crate) async fn discover_mcp_runtime(
                     }
                     tokio::select! {
                     biased;
-                    _ = cancellation.cancelled() => Err("Inicio MCP cancelado".to_owned()),
+                    _ = cancellation.cancelled() => Err(McpStartupError::Cancelled),
                     result = McpStdioClient::connect(config) => {
                         result.map(|client| McpClient::Stdio(Arc::new(client)))
-                            .map_err(|error| format!("No se pudo iniciar MCP {}: {error}", server.id))
+                            .map_err(|error| McpStartupError::Failed(format!("No se pudo iniciar MCP {}: {error}", server.id)))
                     }
                     }
                 }
-                Err(error) => Err(error),
+                Err(error) => Err(McpStartupError::Failed(error)),
             }
         };
         let client = match connected {
             Ok(client) => client,
             Err(error) => {
-                let _ = shutdown_all(&clients).await;
-                return Err(error);
+                return Err(failed_startup(error, &clients).await);
             }
         };
         let verified_stdio_identity = match (&client, launch_recheck) {
@@ -243,8 +269,21 @@ pub(crate) async fn discover_mcp_runtime(
             match McpServerBinding::discover(server.id.clone(), tool_client, cancellation).await {
                 Ok(binding) => binding,
                 Err(error) => {
-                    let _ = shutdown_all(&clients).await;
-                    return Err(format!("No se pudo descubrir MCP {}: {error}", server.id));
+                    let error = if matches!(
+                        error,
+                        openide_harness::McpToolAdapterError::Discovery {
+                            source: McpError::Cancelled,
+                            ..
+                        }
+                    ) {
+                        McpStartupError::Cancelled
+                    } else {
+                        McpStartupError::Failed(format!(
+                            "No se pudo descubrir MCP {}: {error}",
+                            server.id
+                        ))
+                    };
+                    return Err(failed_startup(error, &clients).await);
                 }
             };
         let verified_identity = match &clients.last().expect("connected MCP client").1 {
@@ -261,14 +300,16 @@ pub(crate) async fn discover_mcp_runtime(
         bindings.push(binding);
     }
     if cancellation.is_cancelled() {
-        let _ = shutdown_all(&clients).await;
-        return Err("Inicio MCP cancelado".to_owned());
+        return Err(failed_startup(McpStartupError::Cancelled, &clients).await);
     }
     let tools = match McpCompositeTools::new(local_tools, bindings) {
         Ok(tools) => Arc::new(tools),
         Err(error) => {
-            let _ = shutdown_all(&clients).await;
-            return Err(format!("Catálogo MCP no válido: {error}"));
+            return Err(failed_startup(
+                McpStartupError::Failed(format!("Catálogo MCP no válido: {error}")),
+                &clients,
+            )
+            .await);
         }
     };
     let mcp_tool_names = tools.mcp_tool_names().map(str::to_owned).collect();
@@ -364,6 +405,30 @@ pub(crate) async fn discover_mcp_runtime(
     })
 }
 
+fn http_startup_error(id: &str, oauth: bool, error: McpError) -> McpStartupError {
+    if matches!(error, McpError::Cancelled) {
+        return McpStartupError::Cancelled;
+    }
+    let message = if oauth {
+        format!(
+            "No se pudo conectar MCP HTTP {id} con OAuth: {error}. Si el servidor rechazó la credencial, autorizá de nuevo en Settings > MCP."
+        )
+    } else {
+        format!("No se pudo conectar MCP HTTP {id}: {error}")
+    };
+    McpStartupError::Failed(message)
+}
+
+async fn failed_startup(
+    error: McpStartupError,
+    clients: &[(String, McpClient)],
+) -> McpStartupError {
+    match shutdown_all(clients).await {
+        Ok(()) => error,
+        Err(cleanup) => McpStartupError::Failed(format!("{error}; {cleanup}")),
+    }
+}
+
 async fn shutdown_all(clients: &[(String, McpClient)]) -> Result<(), String> {
     let mut first_error = None;
     for (id, client) in clients {
@@ -382,6 +447,7 @@ mod tests {
     use openide_core::ToolCall;
     use openide_harness::{LocalTools, ToolContext};
     use serde_json::json;
+    #[cfg(windows)]
     use std::fs;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
@@ -447,7 +513,10 @@ mod tests {
                     &json!({"jsonrpc":"2.0","id":request["id"],"result":result}),
                 )
                 .unwrap();
-                let header = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", response.len());
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    response.len()
+                );
                 reader.get_mut().write_all(header.as_bytes()).unwrap();
                 reader.get_mut().write_all(&response).unwrap();
             }
@@ -694,6 +763,176 @@ mod tests {
         )
         .await;
         assert!(result.is_err_and(|error| error.contains("cancelado")));
+    }
+
+    #[tokio::test]
+    async fn runtime_cancellation_during_legacy_initialize_waits_for_partial_session_delete() {
+        for delete_succeeds in [true, false] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let (initialized_tx, initialized_rx) = tokio::sync::oneshot::channel();
+            let (delete_tx, delete_rx) = tokio::sync::oneshot::channel();
+            let (release_delete, release_rx) = std::sync::mpsc::channel();
+            let server = thread::spawn(move || {
+                let mut methods = Vec::new();
+                let mut held_initialized = None;
+                let mut initialized_tx = Some(initialized_tx);
+                let mut delete_tx = Some(delete_tx);
+                let deadline = Instant::now() + Duration::from_secs(10);
+                for index in 0..4 {
+                    let stream = loop {
+                        match listener.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                                assert!(
+                                    Instant::now() < deadline,
+                                    "missing partial-session cleanup"
+                                );
+                                thread::sleep(Duration::from_millis(5));
+                            }
+                            Err(error) => panic!("HTTP fixture accept failed: {error}"),
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut reader = BufReader::new(stream);
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    let http_method = line.split_whitespace().next().unwrap().to_owned();
+                    let mut headers = std::collections::BTreeMap::new();
+                    loop {
+                        line.clear();
+                        reader.read_line(&mut line).unwrap();
+                        if line == "\r\n" {
+                            break;
+                        }
+                        if let Some((name, value)) = line.split_once(':') {
+                            headers.insert(name.to_ascii_lowercase(), value.trim().to_owned());
+                        }
+                    }
+                    let content_length = headers
+                        .get("content-length")
+                        .map_or(0, |value| value.parse().unwrap());
+                    let mut body = vec![0; content_length];
+                    reader.read_exact(&mut body).unwrap();
+                    let request: serde_json::Value = if body.is_empty() {
+                        serde_json::Value::Null
+                    } else {
+                        serde_json::from_slice(&body).unwrap()
+                    };
+                    let expected = [
+                        "server/discover",
+                        "initialize",
+                        "notifications/initialized",
+                        "DELETE",
+                    ][index];
+                    if index == 3 {
+                        assert_eq!(http_method, "DELETE");
+                        assert!(request.is_null());
+                    } else {
+                        assert_eq!(http_method, "POST");
+                        assert_eq!(request["method"], expected);
+                    }
+                    methods.push(expected.to_owned());
+                    if index >= 2 {
+                        assert_eq!(headers["mcp-session-id"], "runtime-partial");
+                        assert_eq!(headers["mcp-protocol-version"], "2025-06-18");
+                    }
+                    if index == 2 {
+                        held_initialized = Some(reader);
+                        initialized_tx.take().unwrap().send(()).unwrap();
+                        continue;
+                    }
+                    let (status, body, session) = match index {
+                        0 => (
+                            "400 Bad Request",
+                            json!({"jsonrpc":"2.0","id":request["id"],"error":{"code":-32601,"message":"Method not found"}}),
+                            "",
+                        ),
+                        1 => (
+                            "200 OK",
+                            json!({"jsonrpc":"2.0","id":request["id"],"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"partial runtime","version":"1"},"capabilities":{"tools":{}}}}),
+                            "Mcp-Session-Id: runtime-partial\r\n",
+                        ),
+                        3 => {
+                            delete_tx.take().unwrap().send(()).unwrap();
+                            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                            (
+                                if delete_succeeds {
+                                    "204 No Content"
+                                } else {
+                                    "503 Service Unavailable"
+                                },
+                                serde_json::Value::Null,
+                                "",
+                            )
+                        }
+                        _ => unreachable!(),
+                    };
+                    let bytes = if body.is_null() {
+                        Vec::new()
+                    } else {
+                        serde_json::to_vec(&body).unwrap()
+                    };
+                    write!(reader.get_mut(), "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{session}Content-Length: {}\r\nConnection: close\r\n\r\n", bytes.len()).unwrap();
+                    reader.get_mut().write_all(&bytes).unwrap();
+                    reader.get_mut().flush().unwrap();
+                }
+                drop(held_initialized);
+                methods
+            });
+            let workspace = tempfile::tempdir().unwrap();
+            let workspace_path = workspace.path().to_path_buf();
+            let preparation = McpToolPreparation::new(vec![McpServerSettings {
+                id: "partial".into(),
+                enabled: true,
+                program: String::new(),
+                args: Vec::new(),
+                cwd: None,
+                credential_env_names: Vec::new(),
+                url: Some(format!("http://{address}/mcp")),
+                http_bearer_token_env_name: None,
+                http_oauth: None,
+            }]);
+            let cancellation = CancellationToken::new();
+            let task_token = cancellation.clone();
+            let startup = tokio::spawn(async move {
+                preparation
+                    .prepare(&workspace_path, Arc::new(LocalTools::new()), &task_token)
+                    .await
+            });
+            initialized_rx.await.unwrap();
+            cancellation.cancel();
+            tokio::time::timeout(Duration::from_secs(5), delete_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                !startup.is_finished(),
+                "runtime dropped connect before cleanup acknowledgement"
+            );
+            release_delete.send(()).unwrap();
+            let error = startup.await.unwrap().err().unwrap();
+            if delete_succeeds {
+                assert!(matches!(error, AgentError::Cancelled));
+            } else {
+                assert!(matches!(error, AgentError::Runtime(message)
+                    if message.contains("request cancelled")
+                        && message.contains("DELETE returned HTTP 503")
+                        && message.contains("remote session may remain active")));
+            }
+            assert_eq!(
+                server.join().unwrap(),
+                [
+                    "server/discover",
+                    "initialize",
+                    "notifications/initialized",
+                    "DELETE"
+                ]
+            );
+        }
     }
 
     #[cfg(windows)]

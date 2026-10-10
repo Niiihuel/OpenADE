@@ -3,11 +3,24 @@
 Una ventana de agentes nativa en Rust, con un framework de UI propio, un harness
 propio y adaptadores configurables para agentes de línea de comandos.
 
+El botón **IDE / Agentes** cambia la distribución del mismo espacio de trabajo.
+La vista IDE reúne explorador, editor con pestañas, terminal inferior y agente
+lateral, conservando los documentos y la sesión. Usa los componentes nativos de
+`openide-ui`; los detalles están en [Espacio de trabajo IDE](docs/ide-workspace.md).
+
+Markdown ofrece Código, Vista previa y vista dividida sobre el mismo buffer.
+Imágenes y PDF se abren en visores nativos con zoom y ajuste al panel. El motor
+Rust compartido se documenta en [Vistas previas de documentos](docs/native-document-preview.md).
+
+Los [plugins locales](docs/plugins.md) pueden aportar herramientas MCP al agente.
+Se revisan antes de instalarse y se activan por proyecto desde Configuración → Plugins.
+El repositorio incluye un [ejemplo mínimo](examples/plugins/project-info/README.md).
+
 ## Estado
 
 El proyecto está en desarrollo. Las implementaciones originales viven en
 `crates/` y la aplicación de escritorio en `apps/agents-window/`. Los clones de
-Warp, ZCode y Codex están en `references/` para estudiar su arquitectura; esa carpeta
+Zed, ZCode y Codex están en `references/` para estudiar su arquitectura; esa carpeta
 queda fuera del proyecto y no se incorpora a sus binarios.
 
 ## Desarrollo
@@ -16,8 +29,41 @@ Requiere Rust estable y las herramientas de compilación nativas de la plataform
 
 ```sh
 cargo test --workspace
-cargo run -p agents-window
+cargo run --profile desktop -p agents-window
 ```
+
+En Linux, para compilar reutilizando la caché incremental y limpiar automáticamente
+los artefactos de builds anteriores:
+
+```sh
+python3 scripts/build.py
+python3 scripts/build.py --run
+```
+
+En NixOS, si el compilador C o `pkg-config` no están en el entorno:
+
+```sh
+nix-shell -p stdenv.cc pkg-config wayland libxkbcommon --run 'python3 scripts/build.py'
+```
+
+El script utiliza por defecto el perfil optimizado `desktop`, con ejecutable en
+`target/desktop/agents-window`. Evita ejecutar la interfaz sin optimización: el
+coste de medir texto y dibujar cambia mucho en el perfil `dev`. Para depurar con
+compilaciones rápidas se puede usar `python3 scripts/build.py --profile dev --run`.
+
+El comando usa siempre `target/`, conserva el ejecutable actual y las dependencias
+de la última compilación correcta, y elimina los artefactos con hashes antiguos de
+`target/<perfil>/deps/`, sin tocar los otros perfiles. Si la compilación falla,
+no ejecuta la limpieza. La caché
+incremental y los archivos auxiliares de Cargo se conservan para evitar recompilar
+todo en cada cambio. Los comandos directos de Cargo siguen funcionando, pero la
+limpieza automática se ejecuta mediante este script.
+
+El perfil de desarrollo conserva información de líneas para los backtraces y
+omite los símbolos de depuración de las dependencias. Para una sesión de depuración
+con inspección de variables se puede usar `CARGO_PROFILE_DEV_DEBUG=2`, a costa de
+más espacio y una recompilación. La caché no es un historial de versiones ni tiene
+un límite fijo de tamaño: puede crecer con las dependencias y los tests.
 
 En el entorno Windows actual, el toolchain GNU puede compilar sin instalar
 Visual Studio Build Tools:
@@ -93,16 +139,27 @@ actividad, cambios de Git y vista previa de texto a la derecha. La vista de
 sesión agrupa llamadas de herramientas, muestra sus estados reales y conserva
 el composer visible durante el scroll. El texto estático y los párrafos con
 formato admiten selección por arrastre y copia con `Ctrl+C`; la vista previa de
-archivos muestra números de línea y resaltado discreto. El panel de cambios lee los diffs
-preparados y sin preparar de forma acotada, sin modificar el repositorio.
+archivos muestra números de línea y resaltado discreto. El panel de cambios muestra una lista virtual de archivos y carga el diff al
+seleccionar uno. Las acciones explícitas por archivo permiten preparar o quitar
+de preparados mediante un worker, conservando el contenido en disco.
 Si el proyecto tiene un remoto de `github.com`, el mismo dock consulta los PR
 abiertos de la rama actual fuera del hilo visual. Para repositorios privados
 puede leer `GH_TOKEN` o `GITHUB_TOKEN` del entorno; consulta
 [el alcance de GitHub](docs/github.md).
 Las pestañas del dock conservan
-su identidad por proyecto y tarea. Las sesiones admiten título, fijado, archivo,
+su identidad por proyecto y tarea, admiten cierre individual, arrastre y
+navegación con `Ctrl+Tab`. El menú `+` crea terminales independientes.
+La tarjeta [Entorno](docs/conversation-environment.md) reúne cambios, ramas,
+worktrees locales, commit, push y comparación de ramas. Su botón `+` permite
+guardar acciones del proyecto y ejecutarlas en terminales independientes.
+Al abrirla, el chat y el composer se acomodan en el espacio restante con una
+transición; la tarjeta y sus selectores no cubren la conversación.
+Consulta [la estructura e interacción del panel derecho](docs/right-dock.md). Las sesiones admiten título, fijado, archivo,
 eliminación confirmada y borradores persistentes por tarea, con guardado al
 cerrar. Un registro dañado se informa sin ocultar las otras sesiones.
+«Eliminar…» está disponible en conversaciones normales y archivadas. La
+confirmación elimina su historial y subagentes, conservando los archivos del
+proyecto. Las ejecuciones activas y los cambios de rama bloquean la operación.
 El selector Grupo/Proyecto permite organizar tareas en grupos manuales o por
 carpeta; el filtro conserva la vista cronológica y el orden por fecha. Los
 grupos y el estado plegado de la barra se guardan localmente. Los controles de

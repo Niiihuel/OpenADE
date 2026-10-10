@@ -10,8 +10,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc::{self, SyncSender, TrySendError},
-        Arc, Mutex, Weak,
+        Arc, Condvar, Mutex, Weak,
     },
     thread,
 };
@@ -22,9 +21,94 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 pub const SCROLLBACK_LINES: usize = 1_000;
 pub const MAX_COLUMNS: u16 = 240;
 pub const MAX_ROWS: u16 = 120;
+pub const FONT_SIZE: f32 = 12.0;
+pub const CELL_WIDTH: f32 = 7.2;
+pub const LINE_HEIGHT: f32 = 18.0;
+// Keep the terminal grid close to its header while retaining horizontal room
+// for text selection. Rendering, PTY dimensions and pointer mapping share these.
+pub const SCREEN_PADDING_X: f32 = 12.0;
+pub const SCREEN_PADDING_Y: f32 = 4.0;
 const READ_CHUNK_BYTES: usize = 8 * 1024;
 const MAX_INPUT_BYTES: usize = 16 * 1024;
-const INPUT_QUEUE_SLOTS: usize = 64;
+// Keep the former 64 × 16 KiB memory ceiling, but budget bytes rather than
+// individual key events. A busy frame can legitimately deliver hundreds of
+// one-character events before the PTY writer gets scheduled.
+const MAX_PENDING_INPUT_BYTES: usize = 64 * MAX_INPUT_BYTES;
+
+#[derive(Default)]
+struct PendingInput {
+    bytes: Vec<u8>,
+    closed: bool,
+}
+
+#[derive(Default)]
+struct InputQueue {
+    pending: Mutex<PendingInput>,
+    ready: Condvar,
+}
+
+impl InputQueue {
+    fn push(&self, bytes: &[u8]) -> io::Result<()> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| io::Error::other("terminal input lock poisoned"))?;
+        if pending.closed {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "terminal input worker stopped",
+            ));
+        }
+        if bytes.len() > MAX_PENDING_INPUT_BYTES.saturating_sub(pending.bytes.len()) {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "terminal input queue exceeds 1 MiB",
+            ));
+        }
+        // Appending under one short lock preserves ordering across keyboard,
+        // paste and terminal-protocol responses. PTY I/O never holds this lock.
+        let required = pending.bytes.len() + bytes.len();
+        if required > pending.bytes.capacity() {
+            let capacity = pending
+                .bytes
+                .capacity()
+                .saturating_mul(2)
+                .max(required)
+                .min(MAX_PENDING_INPUT_BYTES);
+            let additional = capacity - pending.bytes.len();
+            pending.bytes.reserve_exact(additional);
+        }
+        pending.bytes.extend_from_slice(bytes);
+        drop(pending);
+        self.ready.notify_one();
+        Ok(())
+    }
+
+    fn take(&self) -> io::Result<Option<Vec<u8>>> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| io::Error::other("terminal input lock poisoned"))?;
+        while pending.bytes.is_empty() && !pending.closed {
+            pending = self
+                .ready
+                .wait(pending)
+                .map_err(|_| io::Error::other("terminal input lock poisoned"))?;
+        }
+        if pending.closed {
+            return Ok(None);
+        }
+        Ok(Some(std::mem::take(&mut pending.bytes)))
+    }
+
+    fn close(&self) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.closed = true;
+            pending.bytes.clear();
+        }
+        self.ready.notify_all();
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Dimensions {
@@ -51,12 +135,22 @@ impl Dimensions {
 }
 
 struct TerminalCallbacks {
-    // Weak avoids a cycle: the writer thread owns SharedScreen while waiting
-    // on its receiver. Closing the session must drop the final strong sender.
-    reply: Option<Weak<SyncSender<Vec<u8>>>>,
+    // Parser callbacks do not own the input queue's lifetime. Explicit session
+    // closure wakes the writer and rejects any later protocol responses.
+    reply: Option<Weak<InputQueue>>,
+    /// The window title the running program last asked for.
+    title: String,
 }
 
 impl vt100::Callbacks for TerminalCallbacks {
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        self.title = String::from_utf8_lossy(title)
+            .chars()
+            .filter(|character| !character.is_control())
+            .take(160)
+            .collect();
+    }
+
     fn unhandled_csi(
         &mut self,
         screen: &mut vt100::Screen,
@@ -80,7 +174,7 @@ impl vt100::Callbacks for TerminalCallbacks {
             (None, None | Some(0), 'c') => b"\x1b[?1;2c".to_vec(),
             _ => return,
         };
-        let _ = reply.try_send(response);
+        let _ = reply.push(&response);
     }
 }
 
@@ -89,25 +183,39 @@ struct SharedScreen {
     error: Mutex<Option<String>>,
     revision: AtomicU64,
     closed: AtomicBool,
+    visible: AtomicBool,
+    repaint: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl SharedScreen {
-    fn new(size: Dimensions, reply: Option<Weak<SyncSender<Vec<u8>>>>) -> Self {
+    fn new(size: Dimensions, reply: Option<Weak<InputQueue>>) -> Self {
         Self {
             parser: Mutex::new(vt100::Parser::new_with_callbacks(
                 size.rows,
                 size.cols,
                 SCROLLBACK_LINES,
-                TerminalCallbacks { reply },
+                TerminalCallbacks {
+                    reply,
+                    title: String::new(),
+                },
             )),
             error: Mutex::new(None),
             revision: AtomicU64::new(0),
             closed: AtomicBool::new(false),
+            visible: AtomicBool::new(true),
+            repaint: Mutex::new(None),
         }
     }
 
     fn changed(&self) {
         self.revision.fetch_add(1, Ordering::Release);
+        if self.visible.load(Ordering::Relaxed) {
+            if let Ok(repaint) = self.repaint.lock() {
+                if let Some(repaint) = &*repaint {
+                    repaint();
+                }
+            }
+        }
     }
 
     fn set_error(&self, error: io::Error) {
@@ -149,6 +257,7 @@ pub struct TerminalStyle {
     pub italic: bool,
     pub underline: bool,
     pub inverse: bool,
+    pub selected: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -171,6 +280,31 @@ pub struct TerminalSnapshot {
     pub exit_code: Option<u32>,
     pub error: Option<String>,
     pub revision: u64,
+    pub shell: String,
+    pub alternate_screen: bool,
+    pub selection: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct Selection {
+    anchor: (u16, u16),
+    cursor: (u16, u16),
+    dragging: bool,
+}
+
+impl Selection {
+    fn range(self) -> ((u16, u16), (u16, u16)) {
+        if self.anchor <= self.cursor {
+            (self.anchor, self.cursor)
+        } else {
+            (self.cursor, self.anchor)
+        }
+    }
+
+    fn contains(self, row: u16, col: u16) -> bool {
+        let (start, end) = self.range();
+        (row, col) >= start && (row, col) < end
+    }
 }
 
 #[derive(Debug)]
@@ -186,14 +320,34 @@ enum SessionStatus {
 pub struct TerminalSession {
     master: Option<Box<dyn MasterPty + Send>>,
     child: Option<Box<dyn Child + Send + Sync>>,
-    input: Option<Arc<SyncSender<Vec<u8>>>>,
+    input: Option<Arc<InputQueue>>,
     shared: Arc<SharedScreen>,
     observed_revision: u64,
     status: SessionStatus,
     size: Dimensions,
+    shell: String,
+    selection: Option<Selection>,
+    scroll_remainder: f32,
 }
 
 impl TerminalSession {
+    /// Cached process identity; reading the selector never snapshots the PTY.
+    pub fn shell_label(&self) -> &str { &self.shell }
+
+    /// The reader wakes the host when output arrives. Register once, avoiding
+    /// a high-frequency idle timer just to make interactive input responsive.
+    pub fn set_repaint_callback(&mut self, callback: impl Fn() + Send + Sync + 'static) {
+        if let Ok(mut repaint) = self.shared.repaint.lock() {
+            if repaint.is_none() {
+                *repaint = Some(Arc::new(callback));
+            }
+        }
+    }
+
+    pub fn set_visible(&self, visible: bool) {
+        self.shared.visible.store(visible, Ordering::Relaxed);
+    }
+
     /// Launch the user's shell in `workspace`. On Windows, PowerShell is the
     /// built-in default; `OPENIDE_TERMINAL_SHELL` can point to another shell.
     pub fn spawn(workspace: &Path, cols: u16, rows: u16) -> io::Result<Self> {
@@ -208,6 +362,18 @@ impl TerminalSession {
         rows: u16,
         program: &OsStr,
         args: &[OsString],
+    ) -> io::Result<Self> {
+        Self::spawn_with_env(workspace, cols, rows, program, args, &[])
+    }
+
+    /// Like `spawn_with_command`, with extra variables for the child only.
+    pub fn spawn_with_env(
+        workspace: &Path,
+        cols: u16,
+        rows: u16,
+        program: &OsStr,
+        args: &[OsString],
+        env: &[(&str, String)],
     ) -> io::Result<Self> {
         if program.is_empty() {
             return Err(io::Error::new(
@@ -230,6 +396,13 @@ impl TerminalSession {
         let mut command = CommandBuilder::new(program);
         command.args(args);
         command.cwd(&workspace);
+        command.env("TERM", "xterm-256color");
+        command.env("COLORTERM", "truecolor");
+        command.env("TERM_PROGRAM", "OpenIDE");
+        command.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+        for (key, value) in env {
+            command.env(key, value);
+        }
         let mut child = pair
             .slave
             .spawn_command(command)
@@ -252,14 +425,13 @@ impl TerminalSession {
                 return Err(io::Error::other(error.to_string()));
             }
         };
-        let (input, queued_input) = mpsc::sync_channel(INPUT_QUEUE_SLOTS);
-        let input = Arc::new(input);
+        let input = Arc::new(InputQueue::default());
         let shared = Arc::new(SharedScreen::new(size, Some(Arc::downgrade(&input))));
         if let Err(error) = start_reader(reader, Arc::clone(&shared)) {
             let _ = child.kill();
             return Err(error);
         }
-        if let Err(error) = start_writer(writer, queued_input, Arc::clone(&shared)) {
+        if let Err(error) = start_writer(writer, Arc::clone(&input), Arc::clone(&shared)) {
             shared.closed.store(true, Ordering::Release);
             let _ = child.kill();
             return Err(error);
@@ -273,6 +445,14 @@ impl TerminalSession {
             observed_revision: 0,
             status: SessionStatus::Running,
             size,
+            shell: Path::new(program)
+                .file_name()
+                .unwrap_or(program)
+                .to_string_lossy()
+                .trim_end_matches(".exe")
+                .to_owned(),
+            selection: None,
+            scroll_remainder: 0.0,
         })
     }
 
@@ -295,14 +475,117 @@ impl TerminalSession {
             .input
             .as_ref()
             .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "terminal closed"))?;
-        input.try_send(bytes.to_vec()).map_err(|error| match error {
-            TrySendError::Full(_) => {
-                io::Error::new(io::ErrorKind::WouldBlock, "terminal input queue is full")
+        input.push(bytes)?;
+        // Input always returns to the live prompt, including after a history
+        // selection. Keep this in the session so all input routes agree.
+        self.selection = None;
+        self.scroll_remainder = 0.0;
+        self.scroll(i32::MIN);
+        self.shared.changed();
+        Ok(())
+    }
+
+    /// Clipboard text is a single edit in shells that support bracketed
+    /// paste. Strip escape/control bytes before wrapping so pasted output
+    /// cannot terminate the bracket or inject terminal control sequences.
+    pub fn paste(&mut self, text: &str) -> io::Result<()> {
+        if text.len() > MAX_INPUT_BYTES - 12 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "el texto pegado supera los 16 KiB",
+            ));
+        }
+        let bracketed = self
+            .shared
+            .parser
+            .lock()
+            .map_err(|_| io::Error::other("terminal screen lock poisoned"))?
+            .screen()
+            .bracketed_paste();
+        self.write(&paste_bytes(text, bracketed))
+    }
+
+    /// Mode-aware special keys are required by full-screen programs such as
+    /// vim and less; their cursor mode differs from the shell's default.
+    pub fn key(&mut self, key: openide_ui::Key, shift: bool, ctrl: bool) -> io::Result<bool> {
+        let application_cursor = self
+            .shared
+            .parser
+            .lock()
+            .map_err(|_| io::Error::other("terminal screen lock poisoned"))?
+            .screen()
+            .application_cursor();
+        let Some(bytes) = key_bytes(key, shift, ctrl, application_cursor) else {
+            return Ok(false);
+        };
+        self.write(&bytes)?;
+        Ok(true)
+    }
+
+    pub fn begin_selection(&mut self, row: u16, col: u16) {
+        let point = (row.min(self.size.rows - 1), col.min(self.size.cols));
+        self.selection = Some(Selection {
+            anchor: point,
+            cursor: point,
+            dragging: true,
+        });
+        self.shared.changed();
+    }
+
+    pub fn extend_selection(&mut self, row: u16, col: u16) -> bool {
+        let Some(selection) = self.selection.as_mut().filter(|s| s.dragging) else {
+            return false;
+        };
+        let point = (row.min(self.size.rows - 1), col.min(self.size.cols));
+        if selection.cursor != point {
+            selection.cursor = point;
+            self.shared.changed();
+        }
+        true
+    }
+
+    pub fn end_selection(&mut self) -> bool {
+        if let Some(selection) = self.selection.as_mut().filter(|s| s.dragging) {
+            selection.dragging = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Preserve touchpad sub-line deltas instead of rounding each event to
+    /// zero. Normal wheel input and touchpad input share the same history.
+    pub fn scroll_pixels(&mut self, delta: f32) -> bool {
+        if !delta.is_finite() {
+            return false;
+        }
+        self.scroll_remainder += delta;
+        let rows = (self.scroll_remainder / LINE_HEIGHT).trunc() as i32;
+        self.scroll_remainder -= rows as f32 * LINE_HEIGHT;
+        if rows == 0 {
+            return false;
+        }
+        let modes = self.shared.parser.lock().ok().map(|parser| {
+            (
+                parser.screen().alternate_screen(),
+                parser.screen().application_cursor(),
+            )
+        });
+        // Full-screen programs own their viewport rather than our shell
+        // scrollback. Translate wheel rows to their current cursor mode.
+        if let Some((true, application_cursor)) = modes {
+            let key = if rows > 0 {
+                openide_ui::Key::ArrowUp
+            } else {
+                openide_ui::Key::ArrowDown
+            };
+            if let Some(sequence) = key_bytes(key, false, false, application_cursor) {
+                return self
+                    .write(&sequence.repeat(rows.unsigned_abs().min(24) as usize))
+                    .is_ok();
             }
-            TrySendError::Disconnected(_) => {
-                io::Error::new(io::ErrorKind::BrokenPipe, "terminal input worker stopped")
-            }
-        })
+        }
+        self.scroll(rows)
     }
 
     /// Send a command as if typed and followed by Enter. This is for the
@@ -365,6 +648,7 @@ impl TerminalSession {
         if screen.scrollback() == previous {
             return false;
         }
+        self.selection = None;
         self.shared.changed();
         true
     }
@@ -396,12 +680,26 @@ impl TerminalSession {
         changed
     }
 
+    /// The window title set by the running program; empty until it sets one.
+    pub fn title(&self) -> String {
+        self.shared
+            .parser
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .callbacks()
+            .title
+            .clone()
+    }
+
     pub fn snapshot(&self) -> TerminalSnapshot {
         let parser = self.shared.parser.lock().unwrap_or_else(|e| e.into_inner());
         let screen = parser.screen();
         let (rows, cols) = screen.size();
         let cursor = screen.cursor_position();
-        let visible_cursor = (screen.scrollback() == 0 && !screen.hide_cursor()).then_some((
+        let visible_cursor = (matches!(self.status, SessionStatus::Running)
+            && screen.scrollback() == 0
+            && !screen.hide_cursor())
+        .then_some((
             cursor.0.min(rows.saturating_sub(1)),
             cursor.1.min(cols.saturating_sub(1)),
         ));
@@ -417,7 +715,7 @@ impl TerminalSession {
         TerminalSnapshot {
             lines: screen.rows(0, cols).collect(),
             styled_lines: (0..rows)
-                .map(|row| styled_row(screen, row, cols, visible_cursor))
+                .map(|row| styled_row(screen, row, cols, visible_cursor, self.selection))
                 .collect(),
             cursor,
             cols,
@@ -430,6 +728,11 @@ impl TerminalSession {
             },
             error,
             revision: self.shared.revision.load(Ordering::Acquire),
+            shell: self.shell.clone(),
+            alternate_screen: screen.alternate_screen(),
+            selection: self
+                .selection
+                .and_then(|selection| selected_text(screen, selection)),
         }
     }
 
@@ -440,7 +743,9 @@ impl TerminalSession {
             return;
         }
         self.shared.closed.store(true, Ordering::Release);
-        self.input.take();
+        if let Some(input) = self.input.take() {
+            input.close();
+        }
         let resources = Arc::new(Mutex::new((self.child.take(), self.master.take())));
         let worker_resources = Arc::clone(&resources);
         // ConPTY teardown can block while its pipes are drained. Move both
@@ -464,6 +769,7 @@ fn styled_row(
     row: u16,
     cols: u16,
     visible_cursor: Option<(u16, u16)>,
+    selection: Option<Selection>,
 ) -> Vec<TerminalSpan> {
     let mut spans: Vec<TerminalSpan> = Vec::new();
     for col in 0..cols {
@@ -481,6 +787,7 @@ fn styled_row(
             italic: cell.italic(),
             underline: cell.underline(),
             inverse: cell.inverse(),
+            selected: selection.is_some_and(|selection| selection.contains(row, col)),
         };
         if visible_cursor == Some((row, col)) {
             style.inverse = !style.inverse;
@@ -499,7 +806,142 @@ fn styled_row(
             });
         }
     }
+    // The viewport already owns the full cell-grid background. Empty default
+    // cells at the end of a row need no text shaping; keep any cursor,
+    // selection or ANSI background spans, and retain spacing before them.
+    if let Some(last) = spans
+        .last_mut()
+        .filter(|span| span.style == TerminalStyle::default())
+    {
+        last.text.truncate(last.text.trim_end_matches(' ').len());
+        if last.text.is_empty() {
+            spans.pop();
+        }
+    }
     spans
+}
+
+fn selected_text(screen: &vt100::Screen, selection: Selection) -> Option<String> {
+    let (start, end) = selection.range();
+    if start == end {
+        return None;
+    }
+    let (_, cols) = screen.size();
+    let mut text = String::new();
+    for row in start.0..=end.0 {
+        let first = if row == start.0 { start.1 } else { 0 };
+        let last = if row == end.0 { end.1 } else { cols };
+        let mut line = String::new();
+        for col in first..last {
+            if let Some(cell) = screen.cell(row, col) {
+                if !cell.is_wide_continuation() {
+                    line.push_str(if cell.has_contents() {
+                        cell.contents()
+                    } else {
+                        " "
+                    });
+                }
+            }
+        }
+        text.push_str(if screen.row_wrapped(row) {
+            &line
+        } else {
+            line.trim_end_matches(' ')
+        });
+        if row < end.0 && !screen.row_wrapped(row) {
+            text.push('\n');
+        }
+    }
+    Some(text)
+}
+
+fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
+    let text: String = text
+        .chars()
+        .filter(|ch| !ch.is_control() || matches!(ch, '\r' | '\n' | '\t'))
+        .collect();
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+    if bracketed {
+        format!("\x1b[200~{text}\x1b[201~").into_bytes()
+    } else {
+        text.replace('\n', "\r").into_bytes()
+    }
+}
+
+pub(crate) fn key_bytes(
+    key: openide_ui::Key,
+    shift: bool,
+    ctrl: bool,
+    application_cursor: bool,
+) -> Option<Vec<u8>> {
+    use openide_ui::Key;
+    if ctrl {
+        let control = match key {
+            Key::A => 1,
+            Key::B => 2,
+            Key::C => 3,
+            Key::D => 4,
+            Key::E => 5,
+            Key::F => 6,
+            Key::G => 7,
+            Key::H => 8,
+            Key::I => 9,
+            Key::J => 10,
+            Key::K => 11,
+            Key::L => 12,
+            Key::M => 13,
+            Key::N => 14,
+            Key::O => 15,
+            Key::P => 16,
+            Key::Q => 17,
+            Key::R => 18,
+            Key::S => 19,
+            Key::T => 20,
+            Key::U => 21,
+            Key::V => 22,
+            Key::W => 23,
+            Key::X => 24,
+            Key::Y => 25,
+            Key::Z => 26,
+            Key::Space => 0,
+            _ => u8::MAX,
+        };
+        if control != u8::MAX {
+            return Some(vec![control]);
+        }
+    }
+    let suffix = match key {
+        Key::ArrowUp => Some('A'),
+        Key::ArrowDown => Some('B'),
+        Key::ArrowRight => Some('C'),
+        Key::ArrowLeft => Some('D'),
+        Key::Home => Some('H'),
+        Key::End => Some('F'),
+        _ => None,
+    };
+    if let Some(suffix) = suffix {
+        return Some(if ctrl || shift {
+            let modifier = 1 + u8::from(shift) + 4 * u8::from(ctrl);
+            format!("\x1b[1;{modifier}{suffix}").into_bytes()
+        } else if application_cursor {
+            format!("\x1bO{suffix}").into_bytes()
+        } else {
+            format!("\x1b[{suffix}").into_bytes()
+        });
+    }
+    let bytes = match key {
+        Key::Enter => b"\r".as_slice(),
+        Key::Tab if shift => b"\x1b[Z",
+        Key::Tab => b"\t",
+        Key::Escape => b"\x1b",
+        Key::Backspace if ctrl => b"\x08",
+        Key::Backspace => b"\x7f",
+        Key::Delete => b"\x1b[3~",
+        Key::PageUp => b"\x1b[5~",
+        Key::PageDown => b"\x1b[6~",
+        _ => return None,
+    };
+    Some(bytes.to_vec())
 }
 
 type TerminalResources = (
@@ -548,6 +990,10 @@ fn start_reader(mut reader: Box<dyn Read + Send>, shared: Arc<SharedScreen>) -> 
                         }
                     }
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    // Linux PTYs signal slave closure with EIO, not EOF.
+                    // It is normal termination and must not show an error.
+                    #[cfg(target_os = "linux")]
+                    Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
                     Err(error) => {
                         shared.set_error(error);
                         break;
@@ -560,13 +1006,21 @@ fn start_reader(mut reader: Box<dyn Read + Send>, shared: Arc<SharedScreen>) -> 
 
 fn start_writer(
     mut writer: Box<dyn Write + Send>,
-    input: mpsc::Receiver<Vec<u8>>,
+    input: Arc<InputQueue>,
     shared: Arc<SharedScreen>,
 ) -> io::Result<()> {
     thread::Builder::new()
         .name("openide-terminal-write".to_owned())
         .spawn(move || {
-            while let Ok(bytes) = input.recv() {
+            loop {
+                let bytes = match input.take() {
+                    Ok(Some(bytes)) => bytes,
+                    Ok(None) => break,
+                    Err(error) => {
+                        shared.set_error(error);
+                        break;
+                    }
+                };
                 if shared.closed.load(Ordering::Acquire) {
                     break;
                 }
@@ -575,6 +1029,7 @@ fn start_writer(
                     break;
                 }
             }
+            input.close();
         })
         .map(|_| ())
 }
@@ -602,6 +1057,7 @@ fn default_shell() -> (OsString, Vec<OsString>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -638,20 +1094,21 @@ mod tests {
     #[test]
     fn answers_conpty_cursor_query_and_marks_visible_cursor() {
         let size = Dimensions::new(16, 3);
-        let (reply, input) = mpsc::sync_channel(2);
-        let reply = Arc::new(reply);
+        let reply = Arc::new(InputQueue::default());
         let shared = Arc::new(SharedScreen::new(size, Some(Arc::downgrade(&reply))));
         shared.parser.lock().unwrap().process(b"hi\x1b[6n\x1b[5n");
-        assert_eq!(input.try_recv().unwrap(), b"\x1b[1;3R");
-        assert_eq!(input.try_recv().unwrap(), b"\x1b[0n");
+        assert_eq!(reply.take().unwrap().unwrap(), b"\x1b[1;3R\x1b[0n");
         let session = TerminalSession {
             master: None,
             child: None,
             input: None,
             shared,
             observed_revision: 0,
-            status: SessionStatus::Exited(0),
+            status: SessionStatus::Running,
             size,
+            shell: "test".into(),
+            selection: None,
+            scroll_remainder: 0.0,
         };
         let snapshot = session.snapshot();
         assert!(snapshot.styled_lines[0]
@@ -671,6 +1128,9 @@ mod tests {
             observed_revision: 0,
             status: SessionStatus::Exited(0),
             size,
+            shell: "test".into(),
+            selection: None,
+            scroll_remainder: 0.0,
         };
         assert!(!session.poll());
         shared.parser.lock().unwrap().process(b"hello");
@@ -750,5 +1210,296 @@ mod tests {
         );
         session.close();
         assert!(!session.snapshot().running);
+    }
+
+    #[test]
+    fn blocked_writer_preserves_large_keyboard_bursts_in_exact_order() {
+        struct BlockFirstWrite {
+            started: Option<mpsc::Sender<()>>,
+            resume: mpsc::Receiver<()>,
+            flushed: mpsc::Sender<Vec<u8>>,
+            captured: Vec<u8>,
+        }
+        impl Write for BlockFirstWrite {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                if let Some(started) = self.started.take() {
+                    started.send(()).unwrap();
+                    self.resume.recv_timeout(Duration::from_secs(5)).unwrap();
+                }
+                self.captured.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                self.flushed.send(self.captured.clone()).unwrap();
+                Ok(())
+            }
+        }
+
+        let mut session = fixture(b"");
+        let input = Arc::new(InputQueue::default());
+        session.input = Some(Arc::clone(&input));
+        let (started, wait_started) = mpsc::channel();
+        let (resume, wait_resume) = mpsc::channel();
+        let (flushed, wait_flushed) = mpsc::channel();
+        start_writer(
+            Box::new(BlockFirstWrite {
+                started: Some(started),
+                resume: wait_resume,
+                flushed,
+                captured: Vec::new(),
+            }),
+            Arc::clone(&input),
+            Arc::clone(&session.shared),
+        )
+        .unwrap();
+        session.write(b"prefix:").unwrap();
+        wait_started.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let command = "export OPENIDE_E2E_TOKEN=kept; printf 'AGAIN:%s\\n' \"$OPENIDE_E2E_TOKEN\"; printf '%s' \"$$\" > '/tmp/fixture/output'; # café 世界 🧠\r".repeat(8);
+        assert!(command.chars().count() > 240);
+        for character in command.chars() {
+            let mut bytes = [0; 4];
+            session
+                .write(character.encode_utf8(&mut bytes).as_bytes())
+                .unwrap();
+        }
+        assert_eq!(input.pending.lock().unwrap().bytes, command.as_bytes());
+        resume.send(()).unwrap();
+        assert_eq!(
+            wait_flushed.recv_timeout(Duration::from_secs(5)).unwrap(),
+            b"prefix:"
+        );
+        let mut expected = b"prefix:".to_vec();
+        expected.extend_from_slice(command.as_bytes());
+        assert_eq!(
+            wait_flushed.recv_timeout(Duration::from_secs(5)).unwrap(),
+            expected
+        );
+        session.close();
+    }
+
+    #[test]
+    fn input_queue_enforces_byte_limit_atomically_and_closes_waiters() {
+        let input = Arc::new(InputQueue::default());
+        let full = vec![b'x'; MAX_PENDING_INPUT_BYTES];
+        input.push(&full).unwrap();
+        assert_eq!(
+            input.push(b"!").unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(input.take().unwrap().unwrap(), full);
+        // Rejection does not inject a partial character or poison future input.
+        input.push("é".as_bytes()).unwrap();
+        assert_eq!(input.take().unwrap().unwrap(), "é".as_bytes());
+        let (finished, completion) = mpsc::channel();
+        let waiting = Arc::clone(&input);
+        thread::spawn(move || finished.send(waiting.take().unwrap()).unwrap());
+        input.close();
+        assert_eq!(
+            completion.recv_timeout(Duration::from_secs(5)).unwrap(),
+            None
+        );
+        assert_eq!(
+            input.push(b"x").unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe
+        );
+    }
+
+    fn fixture(bytes: &[u8]) -> TerminalSession {
+        let size = Dimensions::new(16, 3);
+        let shared = Arc::new(SharedScreen::new(size, None));
+        shared.parser.lock().unwrap().process(bytes);
+        TerminalSession {
+            master: None,
+            child: None,
+            input: None,
+            shared,
+            observed_revision: 0,
+            status: SessionStatus::Running,
+            size,
+            shell: "test".into(),
+            selection: None,
+            scroll_remainder: 0.0,
+        }
+    }
+
+    #[test]
+    fn bracketed_paste_is_one_edit_and_cannot_end_its_own_envelope() {
+        assert_eq!(
+            paste_bytes("one\r\ntwo", true),
+            b"\x1b[200~one\ntwo\x1b[201~"
+        );
+        assert_eq!(paste_bytes("one\ntwo", false), b"one\rtwo");
+        assert_eq!(
+            paste_bytes("a\x1b[201~\0\x03b", true),
+            b"\x1b[200~a[201~b\x1b[201~"
+        );
+    }
+
+    #[test]
+    fn interactive_programs_receive_cursor_mode_and_modifiers() {
+        use openide_ui::Key;
+        assert_eq!(
+            key_bytes(Key::ArrowUp, false, false, true).unwrap(),
+            b"\x1bOA"
+        );
+        assert_eq!(
+            key_bytes(Key::ArrowUp, false, false, false).unwrap(),
+            b"\x1b[A"
+        );
+        assert_eq!(
+            key_bytes(Key::ArrowLeft, false, true, false).unwrap(),
+            b"\x1b[1;5D"
+        );
+        assert_eq!(key_bytes(Key::Tab, true, false, false).unwrap(), b"\x1b[Z");
+        assert_eq!(
+            key_bytes(Key::PageDown, false, false, false).unwrap(),
+            b"\x1b[6~"
+        );
+    }
+
+    #[test]
+    fn selection_preserves_unicode_and_logical_line_breaks() {
+        let mut session = fixture("héllo\r\n世界!".as_bytes());
+        session.begin_selection(0, 0);
+        assert!(session.extend_selection(1, 5));
+        assert!(session.end_selection());
+        let snapshot = session.snapshot();
+        assert_eq!(snapshot.selection.as_deref(), Some("héllo\n世界!"));
+        assert!(snapshot
+            .styled_lines
+            .iter()
+            .flatten()
+            .any(|span| span.style.selected));
+        // A backwards drag has exactly the same textual result.
+        session.begin_selection(1, 5);
+        session.extend_selection(0, 0);
+        assert_eq!(session.snapshot().selection, snapshot.selection);
+    }
+
+    #[test]
+    fn touchpad_accumulates_small_deltas_and_input_returns_to_prompt() {
+        let mut session = fixture(b"a\r\nb\r\nc\r\nd\r\ne\r\nf");
+        assert!(!session.scroll_pixels(5.0));
+        assert!(!session.scroll_pixels(5.0));
+        assert!(session.scroll_pixels(8.0));
+        assert_eq!(session.snapshot().scrollback_position, 1);
+        let input = Arc::new(InputQueue::default());
+        session.input = Some(Arc::clone(&input));
+        session.begin_selection(0, 0);
+        session.extend_selection(0, 1);
+        session.write(b"x").unwrap();
+        assert_eq!(input.take().unwrap().unwrap(), b"x");
+        let snapshot = session.snapshot();
+        assert_eq!(snapshot.scrollback_position, 0);
+        assert_eq!(snapshot.selection, None);
+    }
+
+    #[test]
+    fn blank_cells_do_not_allocate_text_runs_but_cursor_and_background_survive() {
+        let session = fixture(b"hello");
+        let snapshot = session.snapshot();
+        assert_eq!(snapshot.lines[0], "hello");
+        assert!(snapshot.styled_lines[1].is_empty());
+        assert!(snapshot.styled_lines[2].is_empty());
+        assert_eq!(
+            snapshot.styled_lines[0]
+                .iter()
+                .map(|span| span.text.len())
+                .sum::<usize>(),
+            6,
+            "five characters plus the visible cursor, without padding the whole row"
+        );
+        assert!(snapshot.styled_lines[0].last().unwrap().style.inverse);
+
+        let session = fixture(b"\x1b[41m \x1b[0m\x1b[?25l");
+        let snapshot = session.snapshot();
+        assert_eq!(snapshot.styled_lines[0].len(), 1);
+        assert_eq!(snapshot.styled_lines[0][0].text, " ");
+        assert_eq!(
+            snapshot.styled_lines[0][0].style.background,
+            TerminalColor::Indexed(1)
+        );
+    }
+
+    #[test]
+    fn selected_blank_cells_keep_their_columns_after_empty_tail_elision() {
+        let mut session = fixture(b"x\x1b[?25l");
+        session.begin_selection(0, 2);
+        session.extend_selection(0, 8);
+        let snapshot = session.snapshot();
+        let spans = &snapshot.styled_lines[0];
+        assert_eq!(spans[0].text, "x ");
+        assert_eq!(spans[1].text, "      ");
+        assert!(spans[1].style.selected);
+        assert_eq!(spans.len(), 2);
+    }
+
+    #[test]
+    fn output_revision_wakes_the_host_without_an_idle_loop() {
+        let mut session = fixture(b"");
+        let count = Arc::new(AtomicU64::new(0));
+        let callback_count = count.clone();
+        session.set_repaint_callback(move || {
+            callback_count.fetch_add(1, Ordering::Relaxed);
+        });
+        assert!(!session.poll());
+        assert_eq!(count.load(Ordering::Relaxed), 0);
+        session.shared.changed();
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+        assert!(session.poll());
+        assert!(!session.poll());
+        session.set_visible(false);
+        session.shared.changed();
+        assert_eq!(
+            count.load(Ordering::Relaxed),
+            1,
+            "hidden PTYs must not repaint the workspace"
+        );
+        assert!(session.poll());
+    }
+
+    #[test]
+    fn wheel_in_full_screen_program_uses_its_application_cursor_mode() {
+        let mut session = fixture(b"\x1b[?1049h\x1b[?1h");
+        let input = Arc::new(InputQueue::default());
+        session.input = Some(Arc::clone(&input));
+        assert!(session.scroll_pixels(LINE_HEIGHT * 2.0));
+        assert_eq!(input.take().unwrap().unwrap(), b"\x1bOA\x1bOA");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_shell_has_terminal_capabilities_and_clean_exit() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut session = TerminalSession::spawn_with_command(
+            directory.path(),
+            80,
+            4,
+            OsStr::new("sh"),
+            &[
+                OsString::from("-c"),
+                OsString::from("printf '%s/%s' \"$TERM\" \"$COLORTERM\""),
+            ],
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            session.poll();
+            let snapshot = session.snapshot();
+            if !snapshot.running
+                && snapshot
+                    .lines
+                    .iter()
+                    .any(|line| line.contains("xterm-256color/truecolor"))
+            {
+                assert_eq!(snapshot.error, None);
+                assert_eq!(snapshot.exit_code, Some(0));
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("shell did not finish: {:?}", session.snapshot());
     }
 }

@@ -1,4 +1,5 @@
-//! Pure state for the right dock. Rendering and external resources (files, PTYs,
+//! Pure state for the right dock and independent bottom terminal. Rendering
+//! and external resources (files, PTYs,
 //! browsers) belong to the app layer; this module only owns tab identity, scope,
 //! ordering, selection, and per-workspace layout preferences.
 
@@ -7,10 +8,13 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-const DEFAULT_WIDTH_RATIO: f32 = 0.45;
+const DEFAULT_WIDTH_RATIO: f32 = 0.32;
 const MAX_WIDTH_RATIO: f32 = 0.65;
 const MIN_WIDTH_PX: f32 = 320.0;
 const MAX_RECENT_PER_OWNER: usize = 8;
+const DEFAULT_TERMINAL_HEIGHT_PX: f32 = 240.0;
+const MIN_TERMINAL_HEIGHT_PX: f32 = 120.0;
+const MAX_TERMINAL_HEIGHT_RATIO: f32 = 0.65;
 
 /// A tab can belong to the whole workspace, a draft, or one task.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -53,8 +57,17 @@ pub enum DockTabKind {
     Files,
     Activity,
     CodeReview,
+    SessionChanges,
     Terminal,
-    FilePreview { path: PathBuf },
+    Browser,
+    FilePreview {
+        path: PathBuf,
+    },
+    /// Immutable captured tool content, never a writable file identity.
+    CodeSnapshot {
+        source: String,
+        title: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -81,11 +94,14 @@ pub struct DockTab {
 impl DockTab {
     pub fn title(&self) -> String {
         match &self.kind {
-            DockTabKind::Context => "Contexto".to_owned(),
+            DockTabKind::Context => "Vistas".to_owned(),
             DockTabKind::Files => "Archivos".to_owned(),
             DockTabKind::Activity => "Actividad".to_owned(),
-            DockTabKind::CodeReview => "Cambios".to_owned(),
+            DockTabKind::CodeReview => "Repositorio".to_owned(),
+            DockTabKind::SessionChanges => "Cambios del chat".to_owned(),
             DockTabKind::Terminal => "Terminal".to_owned(),
+            DockTabKind::Browser => "Navegador".to_owned(),
+            DockTabKind::CodeSnapshot { title, .. } => format!("{title} · Vista previa"),
             DockTabKind::FilePreview { path } => path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -94,8 +110,8 @@ impl DockTab {
     }
 }
 
-/// A closed tab kept for the overview. Resource-backed terminal sessions are
-/// listed for context but cannot be restored after the host releases the PTY.
+/// A closed tab kept for the overview. Terminals and browsers are listed for
+/// context but cannot restore a runtime that the host has already released.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecentlyClosedTab {
     pub tab: DockTab,
@@ -109,6 +125,10 @@ struct WorkspaceDock {
     active_by_owner: HashMap<DockOwner, DockTabId>,
     collapsed_by_owner: HashMap<DockOwner, bool>,
     preferred_width_px: Option<f32>,
+    terminal_active_by_owner: HashMap<DockOwner, DockTabId>,
+    terminal_collapsed_by_owner: HashMap<DockOwner, bool>,
+    terminal_maximized_by_owner: HashMap<DockOwner, bool>,
+    preferred_terminal_height_px: Option<f32>,
 }
 
 /// In-memory registry. Keep one instance in the application while switching
@@ -121,8 +141,18 @@ pub struct DockState {
 
 impl DockState {
     /// Open a tab, or activate the existing tab of the same kind and owner.
-    /// Opening also expands the dock for that owner.
+    /// Opening expands only its surface (right dock or bottom terminal).
     pub fn open(&mut self, scope: &DockScope, kind: DockTabKind) -> DockTabId {
+        self.open_tab(scope, kind, true)
+    }
+
+    /// Explicit terminal creation owns a fresh PTY; opening the Terminal view
+    /// through navigation can still reuse the existing tab with `open`.
+    pub fn new_terminal(&mut self, scope: &DockScope) -> DockTabId {
+        self.open_tab(scope, DockTabKind::Terminal, false)
+    }
+
+    fn open_tab(&mut self, scope: &DockScope, kind: DockTabKind, reuse: bool) -> DockTabId {
         let workspace = self
             .workspaces
             .entry(scope.workspace_id.clone())
@@ -132,18 +162,22 @@ impl DockState {
         workspace
             .recently_closed
             .retain(|entry| entry.tab.owner != scope.owner || entry.tab.kind != kind);
+        let selected = if kind == DockTabKind::Terminal {
+            workspace.terminal_active_by_owner.get(&scope.owner)
+        } else {
+            workspace.active_by_owner.get(&scope.owner)
+        };
+        let reusable = |tab: &&DockTab| reuse && tab.owner == scope.owner && tab.kind == kind;
         if let Some(tab) = workspace
             .tabs
             .iter()
-            .find(|tab| tab.owner == scope.owner && tab.kind == kind)
+            .filter(reusable)
+            .find(|tab| Some(&tab.id) == selected)
+            .or_else(|| workspace.tabs.iter().find(reusable))
         {
-            workspace
-                .active_by_owner
-                .insert(scope.owner.clone(), tab.id);
-            workspace
-                .collapsed_by_owner
-                .insert(scope.owner.clone(), false);
-            return tab.id;
+            let id = tab.id;
+            select_tab(workspace, &scope.owner, id, kind == DockTabKind::Terminal);
+            return id;
         }
 
         self.next_tab_id = self
@@ -151,16 +185,14 @@ impl DockState {
             .checked_add(1)
             .expect("dock tab IDs exhausted");
         let id = DockTabId(self.next_tab_id);
+        let terminal = kind == DockTabKind::Terminal;
         workspace.tabs.push(DockTab {
             id,
             workspace_id: scope.workspace_id.clone(),
             owner: scope.owner.clone(),
             kind,
         });
-        workspace.active_by_owner.insert(scope.owner.clone(), id);
-        workspace
-            .collapsed_by_owner
-            .insert(scope.owner.clone(), false);
+        select_tab(workspace, &scope.owner, id, terminal);
         id
     }
 
@@ -197,7 +229,8 @@ impl DockState {
 
     /// When a draft becomes its first task, transfer its tabs and preferences
     /// without changing their IDs. If the task already has a tab of the same
-    /// kind, the draft tab wins; the existing task duplicate is removed.
+    /// singleton kind, the draft tab wins; the existing task duplicate is removed.
+    /// Terminals retain every identity because each one owns a distinct live PTY.
     /// Returns the number of draft tabs transferred.
     pub fn promote_draft(&mut self, workspace_id: &str, task_id: &str) -> usize {
         if task_id.is_empty() {
@@ -217,7 +250,11 @@ impl DockState {
         let duplicate_ids: HashSet<DockTabId> = workspace
             .tabs
             .iter()
-            .filter(|tab| tab.owner == target && draft_kinds.contains(&tab.kind))
+            .filter(|tab| {
+                tab.owner == target
+                    && tab.kind != DockTabKind::Terminal
+                    && draft_kinds.contains(&tab.kind)
+            })
             .map(|tab| tab.id)
             .collect();
         workspace
@@ -229,18 +266,26 @@ impl DockState {
             }
         }
 
-        let draft_active = workspace.active_by_owner.remove(&DockOwner::Draft);
-        let target_active = workspace.active_by_owner.get(&target).copied();
-        let next_active = draft_active
-            .filter(|id| workspace.tabs.iter().any(|tab| tab.id == *id))
-            .or_else(|| target_active.filter(|id| !duplicate_ids.contains(id)));
-        if let Some(id) = next_active {
-            workspace.active_by_owner.insert(target.clone(), id);
-        } else {
-            workspace.active_by_owner.remove(&target);
-        }
-        if let Some(collapsed) = workspace.collapsed_by_owner.remove(&DockOwner::Draft) {
-            workspace.collapsed_by_owner.insert(target, collapsed);
+        promote_selection(
+            &workspace.tabs,
+            &mut workspace.active_by_owner,
+            &target,
+            false,
+        );
+        promote_selection(
+            &workspace.tabs,
+            &mut workspace.terminal_active_by_owner,
+            &target,
+            true,
+        );
+        for preferences in [
+            &mut workspace.collapsed_by_owner,
+            &mut workspace.terminal_collapsed_by_owner,
+            &mut workspace.terminal_maximized_by_owner,
+        ] {
+            if let Some(value) = preferences.remove(&DockOwner::Draft) {
+                preferences.insert(target.clone(), value);
+            }
         }
         // Draft history follows the task just like its open tabs. Keep the
         // newest entry for each kind and discard entries now open in the task.
@@ -272,10 +317,53 @@ impl DockState {
             .map_or(&[], |workspace| workspace.tabs.as_slice())
     }
 
+    /// A hidden task's resources still belong to their open tabs. Hosts use
+    /// this across all workspaces rather than releasing a PTY/browser just
+    /// because its owner is temporarily outside the visible scope.
+    pub fn contains_tab(&self, raw_id: u64) -> bool {
+        self.workspaces
+            .values()
+            .any(|workspace| workspace.tabs.iter().any(|tab| tab.id.get() == raw_id))
+    }
+
+    /// A durably deleted task must release its private resources even when its
+    /// tabs are currently hidden by another task. Shared workspace tabs survive.
+    pub fn forget_task(&mut self, workspace_id: &str, task_id: &str) {
+        let Some(workspace) = self.workspaces.get_mut(workspace_id) else {
+            return;
+        };
+        let owner = DockOwner::Task(task_id.to_owned());
+        workspace.tabs.retain(|tab| tab.owner != owner);
+        workspace
+            .recently_closed
+            .retain(|entry| entry.tab.owner != owner);
+        workspace.active_by_owner.remove(&owner);
+        workspace.collapsed_by_owner.remove(&owner);
+        workspace.terminal_active_by_owner.remove(&owner);
+        workspace.terminal_collapsed_by_owner.remove(&owner);
+        workspace.terminal_maximized_by_owner.remove(&owner);
+    }
+
+    /// The complete visible resource registry, including the bottom terminals.
+    /// Use `right_tabs` or `terminal_tabs` when rendering a particular surface.
     pub fn visible_tabs(&self, scope: &DockScope) -> Vec<&DockTab> {
         self.tabs(&scope.workspace_id)
             .iter()
             .filter(|tab| visible_to(tab, &scope.owner))
+            .collect()
+    }
+
+    pub fn right_tabs(&self, scope: &DockScope) -> Vec<&DockTab> {
+        self.visible_tabs(scope)
+            .into_iter()
+            .filter(|tab| tab.kind != DockTabKind::Terminal)
+            .collect()
+    }
+
+    pub fn terminal_tabs(&self, scope: &DockScope) -> Vec<&DockTab> {
+        self.visible_tabs(scope)
+            .into_iter()
+            .filter(|tab| tab.kind == DockTabKind::Terminal)
             .collect()
     }
 
@@ -309,22 +397,16 @@ impl DockState {
         Some(id)
     }
 
-    /// The owner keeps a separate active tab. If that tab was closed, the last
-    /// visible tab becomes active without changing other owners' selections.
+    /// Selection on the right never changes when opening or activating a terminal.
     pub fn active_tab(&self, scope: &DockScope) -> Option<&DockTab> {
         let workspace = self.workspaces.get(&scope.workspace_id)?;
-        let active = workspace.active_by_owner.get(&scope.owner);
-        workspace
-            .tabs
-            .iter()
-            .find(|tab| Some(&tab.id) == active && visible_to(tab, &scope.owner))
-            .or_else(|| {
-                workspace
-                    .tabs
-                    .iter()
-                    .rev()
-                    .find(|tab| visible_to(tab, &scope.owner))
-            })
+        selected_tab(workspace, scope, false)
+    }
+
+    /// Bottom terminal selection is independent per owner, even while collapsed.
+    pub fn active_terminal(&self, scope: &DockScope) -> Option<&DockTab> {
+        let workspace = self.workspaces.get(&scope.workspace_id)?;
+        selected_tab(workspace, scope, true)
     }
 
     /// Returns false if the tab belongs to another workspace or task.
@@ -332,17 +414,15 @@ impl DockState {
         let Some(workspace) = self.workspaces.get_mut(&scope.workspace_id) else {
             return false;
         };
-        if !workspace
+        let Some(tab) = workspace
             .tabs
             .iter()
-            .any(|tab| tab.id == id && visible_to(tab, &scope.owner))
-        {
+            .find(|tab| tab.id == id && visible_to(tab, &scope.owner))
+        else {
             return false;
-        }
-        workspace.active_by_owner.insert(scope.owner.clone(), id);
-        workspace
-            .collapsed_by_owner
-            .insert(scope.owner.clone(), false);
+        };
+        let terminal = tab.kind == DockTabKind::Terminal;
+        select_tab(workspace, &scope.owner, id, terminal);
         true
     }
 
@@ -360,21 +440,24 @@ impl DockState {
             .recently_closed
             .retain(|entry| entry.tab.owner != removed.owner || entry.tab.kind != removed.kind);
         workspace.recently_closed.push_front(RecentlyClosedTab {
-            restorable: !matches!(removed.kind, DockTabKind::Terminal),
+            restorable: !matches!(
+                removed.kind,
+                DockTabKind::Terminal | DockTabKind::Browser | DockTabKind::CodeSnapshot { .. }
+            ),
             tab: removed.clone(),
         });
         trim_recent_owner(workspace, &removed.owner);
         Some(removed)
     }
 
-    /// Close every visible tab except `keep`. Hidden tabs from other tasks
-    /// remain in the registry. Returns removed tabs for resource cleanup.
+    /// Close other right-side tabs. Bottom terminals and hidden tasks survive.
+    /// Passing a terminal as `keep` is rejected without changing either selection.
     pub fn close_others(&mut self, scope: &DockScope, keep: DockTabId) -> Vec<DockTab> {
-        if !self.activate(scope, keep) {
+        if !self.right_tabs(scope).iter().any(|tab| tab.id == keep) || !self.activate(scope, keep) {
             return Vec::new();
         }
         let ids: Vec<DockTabId> = self
-            .visible_tabs(scope)
+            .right_tabs(scope)
             .into_iter()
             .filter(|tab| tab.id != keep)
             .map(|tab| tab.id)
@@ -384,10 +467,11 @@ impl DockState {
             .collect()
     }
 
-    /// Close all tabs visible to this owner, preserving tabs of other tasks.
+    /// Close all right-side tabs visible to this owner, preserving terminals
+    /// and tabs of other tasks. Explicit resource teardown uses `visible_tabs`.
     pub fn close_all_visible(&mut self, scope: &DockScope) -> Vec<DockTab> {
         let ids: Vec<DockTabId> = self
-            .visible_tabs(scope)
+            .right_tabs(scope)
             .into_iter()
             .map(|tab| tab.id)
             .collect();
@@ -412,7 +496,10 @@ impl DockState {
         let (Some(index), Some(over_index)) = (index, over_index) else {
             return false;
         };
-        if index == over_index {
+        if index == over_index
+            || (workspace.tabs[index].kind == DockTabKind::Terminal)
+                != (workspace.tabs[over_index].kind == DockTabKind::Terminal)
+        {
             return false;
         }
         let tab = workspace.tabs.remove(index);
@@ -430,12 +517,77 @@ impl DockState {
 
     /// An empty scope can remain open to show the tab launcher. Closing the
     /// final tab must not silently change the user's dock visibility choice.
+    /// A conversation without a visibility preference starts collapsed until
+    /// the user opens the panel or one of its tabs.
     pub fn is_collapsed(&self, scope: &DockScope) -> bool {
         self.workspaces
             .get(&scope.workspace_id)
             .and_then(|workspace| workspace.collapsed_by_owner.get(&scope.owner))
             .copied()
+            .unwrap_or(true)
+    }
+
+    pub fn set_terminal_collapsed(&mut self, scope: &DockScope, collapsed: bool) {
+        self.workspaces
+            .entry(scope.workspace_id.clone())
+            .or_default()
+            .terminal_collapsed_by_owner
+            .insert(scope.owner.clone(), collapsed);
+    }
+
+    pub fn is_terminal_collapsed(&self, scope: &DockScope) -> bool {
+        self.workspaces
+            .get(&scope.workspace_id)
+            .and_then(|workspace| workspace.terminal_collapsed_by_owner.get(&scope.owner))
+            .copied()
+            .unwrap_or(true)
+    }
+
+    pub fn set_terminal_maximized(&mut self, scope: &DockScope, maximized: bool) {
+        self.workspaces
+            .entry(scope.workspace_id.clone())
+            .or_default()
+            .terminal_maximized_by_owner
+            .insert(scope.owner.clone(), maximized);
+    }
+
+    pub fn is_terminal_maximized(&self, scope: &DockScope) -> bool {
+        self.workspaces
+            .get(&scope.workspace_id)
+            .and_then(|workspace| workspace.terminal_maximized_by_owner.get(&scope.owner))
+            .copied()
             .unwrap_or(false)
+    }
+
+    pub fn set_terminal_height_px(&mut self, workspace_id: &str, height_px: f32) {
+        if height_px.is_finite() && height_px > 0.0 {
+            self.workspaces
+                .entry(workspace_id.to_owned())
+                .or_default()
+                .preferred_terminal_height_px = Some(height_px);
+        }
+    }
+
+    /// Unclamped workspace preference. Presentation applies current viewport
+    /// limits without overwriting this value when the window becomes smaller.
+    pub fn preferred_terminal_height_px(&self, workspace_id: &str) -> f32 {
+        self.workspaces
+            .get(workspace_id)
+            .and_then(|workspace| workspace.preferred_terminal_height_px)
+            .unwrap_or(DEFAULT_TERMINAL_HEIGHT_PX)
+    }
+
+    /// Keep the user's preference while fitting within 65% of the available
+    /// height. The 120 px minimum yields on very short windows; it never pushes
+    /// the transcript or composer outside their available space.
+    pub fn terminal_height_px(&self, workspace_id: &str, available_height_px: f32) -> f32 {
+        if !available_height_px.is_finite() || available_height_px <= 0.0 {
+            return 0.0;
+        }
+        let max = available_height_px * MAX_TERMINAL_HEIGHT_RATIO;
+        let min = MIN_TERMINAL_HEIGHT_PX.min(max);
+        let preferred = self.preferred_terminal_height_px(workspace_id);
+        preferred.clamp(min, max)
     }
 
     /// Save a user-resized width in logical pixels. The rendered width is
@@ -449,7 +601,7 @@ impl DockState {
         }
     }
 
-    /// Width is 45% initially, at least 320 px when space allows, and at most
+    /// Width is 32% initially, at least 320 px when space allows, and at most
     /// 65% of the available horizontal space. A narrow viewport cannot exceed
     /// its available width. The app still decides when to hide the whole dock.
     pub fn width_px(&self, workspace_id: &str, available_width_px: f32) -> f32 {
@@ -483,32 +635,109 @@ fn trim_recent_owner(workspace: &mut WorkspaceDock, owner: &DockOwner) {
     });
 }
 
-fn repair_active_after_close(workspace: &mut WorkspaceDock, removed_id: DockTabId, index: usize) {
-    for (owner, active_id) in &mut workspace.active_by_owner {
-        if *active_id != removed_id {
-            continue;
-        }
-        let next = workspace.tabs[index.min(workspace.tabs.len())..]
-            .iter()
-            .find(|tab| visible_to(tab, owner))
-            .or_else(|| {
-                workspace.tabs[..index.min(workspace.tabs.len())]
-                    .iter()
-                    .rev()
-                    .find(|tab| visible_to(tab, owner))
-            });
-        if let Some(tab) = next {
-            *active_id = tab.id;
-        } else {
-            *active_id = DockTabId(0);
-        }
+fn select_tab(workspace: &mut WorkspaceDock, owner: &DockOwner, id: DockTabId, terminal: bool) {
+    let (active, collapsed) = if terminal {
+        (
+            &mut workspace.terminal_active_by_owner,
+            &mut workspace.terminal_collapsed_by_owner,
+        )
+    } else {
+        (
+            &mut workspace.active_by_owner,
+            &mut workspace.collapsed_by_owner,
+        )
+    };
+    active.insert(owner.clone(), id);
+    collapsed.insert(owner.clone(), false);
+}
+
+fn selected_tab<'a>(
+    workspace: &'a WorkspaceDock,
+    scope: &DockScope,
+    terminal: bool,
+) -> Option<&'a DockTab> {
+    let active = if terminal {
+        &workspace.terminal_active_by_owner
+    } else {
+        &workspace.active_by_owner
     }
-    workspace.active_by_owner.retain(|_, id| id.get() != 0);
+    .get(&scope.owner);
+    let eligible = |tab: &&DockTab| {
+        (tab.kind == DockTabKind::Terminal) == terminal && visible_to(tab, &scope.owner)
+    };
+    workspace
+        .tabs
+        .iter()
+        .filter(eligible)
+        .find(|tab| Some(&tab.id) == active)
+        .or_else(|| workspace.tabs.iter().rev().find(eligible))
+}
+
+fn promote_selection(
+    tabs: &[DockTab],
+    selections: &mut HashMap<DockOwner, DockTabId>,
+    target: &DockOwner,
+    terminal: bool,
+) {
+    let draft = selections.remove(&DockOwner::Draft);
+    let previous = selections.get(target).copied();
+    let eligible = |id: &DockTabId| {
+        tabs.iter().any(|tab| {
+            tab.id == *id
+                && visible_to(tab, target)
+                && (tab.kind == DockTabKind::Terminal) == terminal
+        })
+    };
+    if let Some(id) = draft.filter(eligible).or_else(|| previous.filter(eligible)) {
+        selections.insert(target.clone(), id);
+    } else {
+        selections.remove(target);
+    }
+}
+
+fn repair_active_after_close(workspace: &mut WorkspaceDock, removed_id: DockTabId, index: usize) {
+    for (selections, terminal) in [
+        (&mut workspace.active_by_owner, false),
+        (&mut workspace.terminal_active_by_owner, true),
+    ] {
+        for (owner, active_id) in selections.iter_mut() {
+            if *active_id != removed_id {
+                continue;
+            }
+            let eligible = |tab: &&DockTab| {
+                visible_to(tab, owner) && (tab.kind == DockTabKind::Terminal) == terminal
+            };
+            let split = index.min(workspace.tabs.len());
+            let next = workspace.tabs[split..]
+                .iter()
+                .find(eligible)
+                .or_else(|| workspace.tabs[..split].iter().rev().find(eligible));
+            *active_id = next.map_or(DockTabId(0), |tab| tab.id);
+        }
+        selections.retain(|_, id| id.get() != 0);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_terminal_creation_keeps_independent_ids_and_lifetimes() {
+        let mut dock = DockState::default();
+        let scope = DockScope::new("workspace", DockOwner::Draft);
+        let first = dock.new_terminal(&scope);
+        let second = dock.new_terminal(&scope);
+        assert_ne!(first, second);
+        assert_eq!(dock.visible_tabs(&scope).len(), 2);
+        dock.set_terminal_collapsed(&scope, true);
+        assert_eq!(dock.open(&scope, DockTabKind::Terminal), second);
+        assert!(!dock.is_terminal_collapsed(&scope));
+        dock.close(&scope, first).unwrap();
+        assert!(dock.contains_tab(second.get()));
+        assert_eq!(dock.active_terminal(&scope).unwrap().id, second);
+        assert!(dock.active_tab(&scope).is_none());
+    }
 
     fn task(workspace: &str, id: &str) -> DockScope {
         DockScope::new(workspace, DockOwner::Task(id.to_owned()))
@@ -595,7 +824,7 @@ mod tests {
         assert!(dock.is_collapsed(&alice));
         assert!(!dock.is_collapsed(&bob));
         assert_eq!(dock.width_px("repo", 1200.0), 500.0);
-        assert_eq!(dock.width_px("other", 1200.0), 540.0);
+        assert_eq!(dock.width_px("other", 1200.0), 384.0);
         assert_eq!(dock.width_px("repo", 600.0), 390.0);
         assert_eq!(dock.width_px("repo", 200.0), 200.0);
         assert_eq!(dock.width_px("repo", 1200.0), 500.0);
@@ -639,9 +868,10 @@ mod tests {
                 .len(),
             1
         );
-        assert!(dock
-            .open_file(workspace, "alice", Path::new("../secret"))
-            .is_none());
+        assert!(
+            dock.open_file(workspace, "alice", Path::new("../secret"))
+                .is_none()
+        );
         assert!(dock.open_file(workspace, "alice", Path::new("")).is_none());
         assert_eq!(dock.tabs("repo").len(), 1);
     }
@@ -680,10 +910,12 @@ mod tests {
         assert_eq!(dock.visible_tabs(&task).len(), 2);
         assert_eq!(dock.tabs("repo")[0].id, draft_context);
         assert_eq!(dock.tabs("repo")[1].id, draft_activity);
-        assert!(!dock
-            .tabs("repo")
-            .iter()
-            .any(|tab| tab.id == duplicate_context || tab.id == duplicate_activity));
+        assert!(
+            !dock
+                .tabs("repo")
+                .iter()
+                .any(|tab| tab.id == duplicate_context || tab.id == duplicate_activity)
+        );
         assert_eq!(
             dock.active_tab(&task).map(|tab| tab.id),
             Some(draft_activity)
@@ -718,10 +950,12 @@ mod tests {
         let foreign = dock.open(&bob, DockTabKind::Activity);
         assert_eq!(dock.close_others(&alice, second).len(), 2);
         assert_eq!(dock.active_tab(&alice).map(|tab| tab.id), Some(second));
-        assert!(!dock
-            .tabs("repo")
-            .iter()
-            .any(|tab| tab.id == first || tab.id == global));
+        assert!(
+            !dock
+                .tabs("repo")
+                .iter()
+                .any(|tab| tab.id == first || tab.id == global)
+        );
         assert!(dock.tabs("repo").iter().any(|tab| tab.id == foreign));
         assert_eq!(dock.close_all_visible(&alice).len(), 1);
         assert_eq!(dock.tabs("repo").len(), 1);
@@ -837,5 +1071,199 @@ mod tests {
         assert_eq!(dock.recently_closed(&alice)[0].tab.id, draft_tab);
         assert_eq!(dock.recently_closed(&bob)[0].tab.id, bob_tab);
         assert_eq!(dock.reopen_recent(&bob, draft_tab), None);
+    }
+
+    #[test]
+    fn promoting_multiple_draft_terminals_preserves_each_live_pty_identity() {
+        let mut dock = DockState::default();
+        let draft = DockScope::new("repo", DockOwner::Draft);
+        let target = task("repo", "task");
+        let existing = dock.new_terminal(&target);
+        let first = dock.new_terminal(&draft);
+        let second = dock.new_terminal(&draft);
+        assert_eq!(dock.promote_draft("repo", "task"), 2);
+        let terminals: Vec<_> = dock
+            .visible_tabs(&target)
+            .iter()
+            .map(|tab| tab.id)
+            .collect();
+        assert_eq!(terminals, vec![existing, first, second]);
+        assert!(dock.visible_tabs(&draft).is_empty());
+        assert_eq!(
+            dock.active_terminal(&target).map(|tab| tab.id),
+            Some(second)
+        );
+        assert!(dock.active_tab(&target).is_none());
+        assert!(dock.contains_tab(existing.get()));
+        assert!(dock.contains_tab(first.get()));
+        assert!(dock.contains_tab(second.get()));
+    }
+
+    #[test]
+    fn terminal_and_right_selections_and_visibility_are_independent() {
+        let mut dock = DockState::default();
+        let scope = task("repo", "alice");
+        let browser = dock.open(&scope, DockTabKind::Browser);
+        dock.set_collapsed(&scope, true);
+        let terminal = dock.open(&scope, DockTabKind::Terminal);
+        assert_eq!(dock.active_tab(&scope).map(|tab| tab.id), Some(browser));
+        assert_eq!(
+            dock.active_terminal(&scope).map(|tab| tab.id),
+            Some(terminal)
+        );
+        assert!(dock.is_collapsed(&scope));
+        assert!(!dock.is_terminal_collapsed(&scope));
+        dock.set_terminal_collapsed(&scope, true);
+        dock.set_terminal_maximized(&scope, true);
+        assert!(dock.activate(&scope, browser));
+        assert!(!dock.is_collapsed(&scope));
+        assert!(dock.is_terminal_collapsed(&scope));
+        assert!(dock.is_terminal_maximized(&scope));
+        assert!(dock.activate(&scope, terminal));
+        assert!(!dock.is_terminal_collapsed(&scope));
+        assert_eq!(
+            dock.right_tabs(&scope)
+                .iter()
+                .map(|tab| tab.id)
+                .collect::<Vec<_>>(),
+            [browser]
+        );
+        assert_eq!(
+            dock.terminal_tabs(&scope)
+                .iter()
+                .map(|tab| tab.id)
+                .collect::<Vec<_>>(),
+            [terminal]
+        );
+        assert_eq!(dock.visible_tabs(&scope).len(), 2);
+        assert!(
+            dock.contains_tab(terminal.get()),
+            "collapsing never releases the PTY"
+        );
+    }
+
+    #[test]
+    fn right_bulk_close_and_reorder_never_touch_bottom_terminals() {
+        let mut dock = DockState::default();
+        let scope = task("repo", "alice");
+        let browser = dock.open(&scope, DockTabKind::Browser);
+        let terminal = dock.new_terminal(&scope);
+        let file = dock.open(&scope, DockTabKind::Files);
+        let second = dock.new_terminal(&scope);
+        dock.set_terminal_collapsed(&scope, true);
+        assert!(!dock.reorder(&scope, terminal, file));
+        assert!(dock.reorder(&scope, second, terminal));
+        assert!(dock.close_others(&scope, terminal).is_empty());
+        assert_eq!(dock.active_tab(&scope).map(|tab| tab.id), Some(file));
+        assert_eq!(
+            dock.close_others(&scope, browser)
+                .iter()
+                .map(|tab| tab.id)
+                .collect::<Vec<_>>(),
+            [file]
+        );
+        assert_eq!(dock.active_terminal(&scope).map(|tab| tab.id), Some(second));
+        assert!(dock.is_terminal_collapsed(&scope));
+        assert_eq!(
+            dock.close_all_visible(&scope)
+                .iter()
+                .map(|tab| tab.id)
+                .collect::<Vec<_>>(),
+            [browser]
+        );
+        assert!(dock.right_tabs(&scope).is_empty());
+        assert_eq!(dock.terminal_tabs(&scope).len(), 2);
+        assert!(dock.contains_tab(terminal.get()) && dock.contains_tab(second.get()));
+        dock.close(&scope, second).unwrap();
+        assert_eq!(
+            dock.active_terminal(&scope).map(|tab| tab.id),
+            Some(terminal)
+        );
+        assert!(dock.active_tab(&scope).is_none());
+    }
+
+    #[test]
+    fn shared_terminal_close_repairs_only_terminal_selection_for_each_owner() {
+        let mut dock = DockState::default();
+        let shared = DockScope::new("repo", DockOwner::Workspace);
+        let alice = task("repo", "alice");
+        let bob = task("repo", "bob");
+        let global = dock.new_terminal(&shared);
+        let personal = dock.new_terminal(&alice);
+        let browser_a = dock.open(&alice, DockTabKind::Browser);
+        let browser_b = dock.open(&bob, DockTabKind::Browser);
+        assert!(dock.activate(&alice, global));
+        assert!(dock.activate(&bob, global));
+        dock.close(&alice, global).unwrap();
+        assert_eq!(
+            dock.active_terminal(&alice).map(|tab| tab.id),
+            Some(personal)
+        );
+        assert!(dock.active_terminal(&bob).is_none());
+        assert_eq!(dock.active_tab(&alice).map(|tab| tab.id), Some(browser_a));
+        assert_eq!(dock.active_tab(&bob).map(|tab| tab.id), Some(browser_b));
+    }
+
+    #[test]
+    fn promotion_transfers_both_surfaces_without_overwriting_the_other_selection() {
+        let mut dock = DockState::default();
+        let draft = DockScope::new("repo", DockOwner::Draft);
+        let target = task("repo", "task");
+        let right = dock.open(&draft, DockTabKind::Browser);
+        let first = dock.new_terminal(&draft);
+        let second = dock.new_terminal(&draft);
+        let existing = dock.new_terminal(&target);
+        dock.activate(&draft, first);
+        dock.set_collapsed(&draft, true);
+        dock.set_terminal_collapsed(&draft, false);
+        dock.set_terminal_maximized(&draft, true);
+        assert_eq!(dock.promote_draft("repo", "task"), 3);
+        assert_eq!(dock.active_tab(&target).map(|tab| tab.id), Some(right));
+        assert_eq!(dock.active_terminal(&target).map(|tab| tab.id), Some(first));
+        assert!(dock.is_collapsed(&target));
+        assert!(!dock.is_terminal_collapsed(&target));
+        assert!(dock.is_terminal_maximized(&target));
+        assert!(dock.is_terminal_collapsed(&draft));
+        assert!(!dock.is_terminal_maximized(&draft));
+        assert!(dock.contains_tab(existing.get()) && dock.contains_tab(second.get()));
+        dock.close(&target, first).unwrap();
+        assert_eq!(
+            dock.active_terminal(&target).map(|tab| tab.id),
+            Some(second)
+        );
+        assert_eq!(dock.active_tab(&target).map(|tab| tab.id), Some(right));
+    }
+
+    #[test]
+    fn terminal_preferences_are_per_owner_and_height_is_per_workspace_and_bounded() {
+        let mut dock = DockState::default();
+        let alice = task("repo", "alice");
+        let bob = task("repo", "bob");
+        let other = task("other", "alice");
+        let a = dock.new_terminal(&alice);
+        let b = dock.new_terminal(&bob);
+        let c = dock.new_terminal(&other);
+        dock.set_terminal_collapsed(&alice, true);
+        dock.set_terminal_maximized(&alice, true);
+        dock.set_terminal_height_px("repo", 400.0);
+        assert_eq!(dock.terminal_height_px("repo", 1000.0), 400.0);
+        assert_eq!(dock.terminal_height_px("other", 1000.0), 240.0);
+        assert_eq!(dock.terminal_height_px("repo", 400.0), 260.0);
+        assert_eq!(dock.terminal_height_px("repo", 100.0), 65.0);
+        assert_eq!(dock.terminal_height_px("repo", 1000.0), 400.0);
+        for invalid in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
+            dock.set_terminal_height_px("repo", invalid);
+            assert_eq!(dock.terminal_height_px("repo", 1000.0), 400.0);
+            assert_eq!(dock.terminal_height_px("repo", invalid), 0.0);
+        }
+        assert!(!dock.is_terminal_collapsed(&bob));
+        assert!(!dock.is_terminal_maximized(&bob));
+        assert!(!dock.is_terminal_collapsed(&other));
+        dock.forget_task("repo", "alice");
+        assert!(!dock.contains_tab(a.get()));
+        assert!(dock.contains_tab(b.get()) && dock.contains_tab(c.get()));
+        assert!(dock.is_terminal_collapsed(&alice));
+        assert!(!dock.is_terminal_maximized(&alice));
+        assert_eq!(dock.terminal_height_px("repo", 1000.0), 400.0);
     }
 }

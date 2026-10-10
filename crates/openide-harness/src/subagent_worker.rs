@@ -7,13 +7,13 @@
 use crate::permission::PendingPermissions;
 use crate::subagent_tools::coordination_definitions;
 use crate::subagents::{QueuedInputState, QueuedSubagentInput, SubagentControl, SubagentRunLease};
-use crate::tool_scheduler::trusted_local_read;
+use crate::tool_scheduler::trusted_plan_read;
 use crate::{
     native_model_context_digest, AgentError, AgentRunner, CommandHooks, CommandIsolation,
-    HookValidationError, ModelBackend, PermissionChoice, PermissionPolicy, ResumeDisposition,
-    ResumeEngine, ResumeError, RunLimits, SubagentCoordinator, SubagentError, SubagentOutcome,
-    SubagentRecord, SubagentSpec, SubagentStatus, SubagentToolExecutor, SubagentToolLimits,
-    TokenBudgetPolicy, ToolCatalog, ToolCatalogError, ToolExecutor,
+    HookValidationError, ModelBackend, NativeCommandProfile, PermissionChoice, PermissionPolicy,
+    ResumeDisposition, ResumeEngine, ResumeError, RunLimits, SubagentCoordinator, SubagentError,
+    SubagentOutcome, SubagentRecord, SubagentSpec, SubagentStatus, SubagentToolExecutor,
+    SubagentToolLimits, TokenBudgetPolicy, ToolCatalog, ToolCatalogError, ToolExecutor,
 };
 use openide_core::{
     replay_native, AgentEvent, AgentEventKind, AgentMessage, AgentRunRequest,
@@ -33,6 +33,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const TERMINAL_DRAIN_LIMIT: Duration = Duration::from_secs(5);
 const BRIDGE_SUBSCRIBER_CAPACITY: usize = 256;
 
+#[cfg(test)]
+static EXIT_AFTER_BRIDGE_CANCEL_COMMIT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// A child event reaches subscribers only after the runner has synced it to
 /// the child's journal. `Closed` means the in-memory approval authority is
 /// gone; consumers can reload the journal to recover missed events.
@@ -47,12 +51,19 @@ pub enum SubagentBridgeEvent {
     },
 }
 
+struct ChildCancellationAuthority {
+    coordinator: Arc<SubagentCoordinator>,
+    control: SubagentControl,
+    commands: Option<NativeCommandProfile>,
+}
+
 struct ActiveChild {
     generation: Uuid,
     permissions: Arc<PendingPermissions>,
     cancellation: CancellationToken,
     request_ids: HashSet<String>,
     cancelling: bool,
+    cancellation_authority: Option<ChildCancellationAuthority>,
 }
 
 #[derive(Default)]
@@ -147,37 +158,64 @@ impl SubagentEventBridge {
         active.permissions.resolve(request_id, choice)
     }
 
-    /// Cancel one live child. Approvals close immediately; its worker remains
-    /// registered until it reports the durable terminal event or exits.
-    pub fn cancel_child(&self, child_session_id: &str) -> bool {
+    /// Persist cancellation before revoking approvals or signalling the worker.
+    /// A failed registry write leaves the live capability unchanged for retry.
+    /// The opaque parent control was issued when the worker was prepared; it
+    /// does not require reacquiring a parent lease held by another live turn.
+    pub fn cancel_child(&self, child_session_id: &str) -> Result<bool, SubagentError> {
         let cancellation = {
             let mut state = self
                 .state
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner());
             let Some(active) = state.active.get_mut(child_session_id) else {
-                return false;
+                return Ok(false);
             };
             if active.cancelling {
-                return false;
+                return Ok(false);
+            }
+            let authority = active
+                .cancellation_authority
+                .as_ref()
+                .ok_or(SubagentError::CancellationAuthorityUnavailable)?;
+            let (_, affected) = authority
+                .coordinator
+                .request_cancel_control_with_affected(&authority.control, child_session_id)?;
+            #[cfg(test)]
+            if EXIT_AFTER_BRIDGE_CANCEL_COMMIT.load(std::sync::atomic::Ordering::SeqCst) {
+                // Test-only process cut: no Drop, approval revocation or token
+                // notification can run after the durable registry commit.
+                std::process::exit(86);
+            }
+            if let Some(profile) = &authority.commands {
+                revoke_command_owners(profile, &affected)
+                    .map_err(|error| SubagentError::CommandRevocation(error.to_string()))?;
             }
             active.cancelling = true;
             active.request_ids.clear();
             active.cancellation.clone()
         };
         cancellation.cancel();
-        true
+        Ok(true)
     }
 
-    fn register(
+    fn register_with_commands(
         self: &Arc<Self>,
         child_session_id: &str,
         handle: &crate::AgentRunHandle,
+        coordinator: Arc<SubagentCoordinator>,
+        control: SubagentControl,
+        commands: Option<NativeCommandProfile>,
     ) -> Result<ChildBridgeRegistration, SubagentWorkerError> {
         self.register_capability(
             child_session_id,
             handle.permission_capability(),
             handle.cancellation_token(),
+            Some(ChildCancellationAuthority {
+                coordinator,
+                control,
+                commands,
+            }),
         )
     }
 
@@ -186,6 +224,7 @@ impl SubagentEventBridge {
         child_session_id: &str,
         permissions: Arc<PendingPermissions>,
         cancellation: CancellationToken,
+        cancellation_authority: Option<ChildCancellationAuthority>,
     ) -> Result<ChildBridgeRegistration, SubagentWorkerError> {
         let mut state = self
             .state
@@ -205,6 +244,7 @@ impl SubagentEventBridge {
                 cancellation,
                 request_ids: HashSet::new(),
                 cancelling: false,
+                cancellation_authority,
             },
         );
         Ok(ChildBridgeRegistration {
@@ -379,6 +419,8 @@ pub struct SubagentWorker {
     session_approval_isolation: Option<CommandIsolation>,
     event_bridge: Option<Arc<SubagentEventBridge>>,
     nested_subagents: Option<SubagentToolLimits>,
+    native_goals: bool,
+    persistent_commands: Option<NativeCommandProfile>,
 }
 
 impl SubagentWorker {
@@ -406,6 +448,8 @@ impl SubagentWorker {
             session_approval_isolation: None,
             event_bridge: None,
             nested_subagents: None,
+            native_goals: false,
+            persistent_commands: None,
         }
     }
 
@@ -452,6 +496,42 @@ impl SubagentWorker {
     pub fn with_nested_subagents(mut self, limits: SubagentToolLimits) -> Self {
         self.nested_subagents = Some(limits);
         self
+    }
+
+    /// Each admitted child gets a fresh goal tool wrapper using its own lease.
+    /// No parent ledger/authority is inherited. Frozen older reservations keep
+    /// their original surface when recovered by a newer host.
+    pub fn with_native_goals(mut self) -> Self {
+        self.native_goals = true;
+        self
+    }
+
+    /// Opt into a host-owned pool. Pure profile definitions freeze reservation
+    /// identity; an exact child claim/lease is required to bind its own manager.
+    pub fn with_persistent_commands(mut self, profile: NativeCommandProfile) -> Self {
+        self.persistent_commands = Some(profile);
+        self
+    }
+
+    /// Revoke only the IDs returned by a committed cancellation transaction.
+    /// This helper grants no command execution authority and never rereads lineage.
+    pub fn revoke_persistent_commands_for(&self, owners: &[String]) -> Result<(), AgentError> {
+        if let Some(profile) = &self.persistent_commands {
+            revoke_command_owners(profile, owners)?;
+        }
+        Ok(())
+    }
+
+    fn request_cancel_and_revoke(
+        &self,
+        control: &SubagentControl,
+        child_id: &str,
+    ) -> Result<(), SubagentWorkerError> {
+        let (_, affected) = self
+            .coordinator
+            .request_cancel_control_with_affected(control, child_id)?;
+        self.revoke_persistent_commands_for(&affected)?;
+        Ok(())
     }
 
     pub fn with_auto_compaction(
@@ -538,6 +618,14 @@ impl SubagentWorker {
         } else {
             identity.update([0]);
         }
+        if let Some(profile) = &self.persistent_commands {
+            // Freeze the capability choice even when this first turn is Plan:
+            // later Build inputs must not silently upgrade an older reservation.
+            // Preserve earlier v3 digests when absent; ephemeral epoch/generation
+            // never identify a durable reservation.
+            identity.update(b"openide-subagent-persistent-commands-v1\0");
+            identity.update(profile.identity_digest().as_bytes());
+        }
         let context_digest = format!("{:x}", identity.finalize());
         Ok(SubagentSpec {
             prompt: prompt.to_owned(),
@@ -545,19 +633,6 @@ impl SubagentWorker {
             mode,
             context_digest,
         })
-    }
-
-    fn child_depth(&self, child_id: &str) -> Result<u8, SubagentWorkerError> {
-        let stored = self
-            .sessions
-            .load(child_id)?
-            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
-        stored
-            .session
-            .subagent
-            .as_ref()
-            .map(|link| link.depth)
-            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))
     }
 
     fn legacy_v2_spec_for(
@@ -632,7 +707,29 @@ impl SubagentWorker {
                 nested_subagents: None,
                 ..self.clone()
             },
+            Self {
+                native_goals: false,
+                ..self.clone()
+            },
+            Self {
+                nested_subagents: None,
+                native_goals: false,
+                ..self.clone()
+            },
         ];
+        let mut candidates = candidates.to_vec();
+        if self.persistent_commands.is_some() {
+            candidates.extend(candidates.clone().into_iter().map(|mut candidate| {
+                candidate.persistent_commands = None;
+                candidate
+            }));
+        }
+        if let Some(base) = crate::native_goal_base_instructions(&self.instructions) {
+            candidates.extend(candidates.clone().into_iter().map(|mut candidate| {
+                candidate.instructions = base.clone();
+                candidate
+            }));
+        }
         for candidate in candidates {
             let digest = candidate
                 .spec_for(&stored.session.workspace, prompt, mode, link.depth)?
@@ -640,7 +737,7 @@ impl SubagentWorker {
             if digest == link.request_digest {
                 return Ok((candidate, digest));
             }
-            if candidate.nested_subagents.is_none() {
+            if candidate.nested_subagents.is_none() && candidate.persistent_commands.is_none() {
                 let digest = candidate
                     .legacy_v2_spec_for(&stored.session.workspace, prompt, mode, link.depth)?
                     .digest_hex()?;
@@ -659,6 +756,33 @@ impl SubagentWorker {
             }
         }
         Err(SubagentError::Store(StoreError::ConflictingSubagentIdentity).into())
+    }
+
+    /// Read-only validation of an initial reservation before host dispatch.
+    /// No admission or claim is created, and a changed worker profile fails closed.
+    pub fn validate_initial_child(
+        &self,
+        child_id: &str,
+        spawn_id: &str,
+        prompt: &str,
+        mode: TurnMode,
+    ) -> Result<(), SubagentWorkerError> {
+        let stored = self
+            .sessions
+            .load(child_id)?
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        let link = stored
+            .session
+            .subagent
+            .as_ref()
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        if link.spawn_id != spawn_id || !stored.events.is_empty() {
+            return Err(SubagentWorkerError::InvalidChildAdmission(
+                child_id.to_owned(),
+            ));
+        }
+        self.worker_for_existing_child(child_id, prompt, mode, false)?;
+        Ok(())
     }
 
     /// Read-only preflight before committing a follow-up input. A Ready child
@@ -689,6 +813,14 @@ impl SubagentWorker {
             )));
         }
         let mut definitions = self.tools.definitions();
+        if mode == TurnMode::Build {
+            if let Some(profile) = &self.persistent_commands {
+                definitions.extend(profile.definitions());
+            }
+        }
+        if self.native_goals {
+            definitions.extend(crate::goal_tools::definitions(mode));
+        }
         if mode == TurnMode::Build
             && depth < self.coordinator.limits().max_depth
             && self.nested_subagents.is_some()
@@ -697,8 +829,9 @@ impl SubagentWorker {
         }
         let definitions = definitions.into_iter().filter(|definition| {
             mode == TurnMode::Build
-                || (trusted_local_read(&definition.name)
-                    && self.tools.certifies_parallel_read(&definition.name)
+                || (trusted_plan_read(&definition.name)
+                    && (self.tools.certifies_plan_read(&definition.name)
+                        || (self.native_goals && definition.name == "get_goal"))
                     && !self.command_hooks.has_hooks_for_tool(&definition.name))
         });
         Ok(ToolCatalog::new(definitions)?)
@@ -708,6 +841,7 @@ impl SubagentWorker {
         &self,
         run_lease: &SubagentRunLease,
         mode: TurnMode,
+        recovering: bool,
     ) -> Result<Arc<dyn ToolExecutor>, SubagentWorkerError> {
         let session = self
             .sessions
@@ -717,21 +851,63 @@ impl SubagentWorker {
             .as_ref()
             .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(session.id.clone()))?
             .depth;
-        if mode != TurnMode::Build || depth >= self.coordinator.limits().max_depth {
-            return Ok(self.tools.clone());
+        let mut tools = self.tools.clone();
+        if mode == TurnMode::Build {
+            if let Some(profile) = &self.persistent_commands {
+                tools = Arc::new(profile.overlay(
+                    tools,
+                    self.sessions.clone(),
+                    run_lease.native_lease(),
+                )?);
+            }
         }
-        let Some(limits) = self.nested_subagents else {
-            return Ok(self.tools.clone());
-        };
-        let nested = SubagentToolExecutor::new(
-            self.tools.clone(),
-            self.clone(),
-            self.coordinator.clone(),
-            self.sessions.clone(),
-            run_lease.shared_native_lease(),
-            limits,
-        )?;
-        Ok(Arc::new(nested))
+        if mode == TurnMode::Build && depth < self.coordinator.limits().max_depth {
+            if let Some(limits) = self.nested_subagents {
+                tools = Arc::new(SubagentToolExecutor::new(
+                    tools,
+                    self.clone(),
+                    self.coordinator.clone(),
+                    self.sessions.clone(),
+                    run_lease.shared_native_lease(),
+                    limits,
+                )?);
+            }
+        }
+        if self.native_goals {
+            let record = self
+                .sessions
+                .load(&session.id)?
+                .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(session.id.clone()))?;
+            let turn_id = record
+                .events
+                .iter()
+                .rev()
+                .find_map(|event| match &event.kind {
+                    AgentEventKind::TurnAdmitted { turn_id, .. }
+                    | AgentEventKind::TurnAdmittedWithImages { turn_id, .. } => {
+                        Some(turn_id.as_str())
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(session.id.clone()))?;
+            let goals = if recovering {
+                crate::NativeGoalToolExecutor::new_for_recovery(
+                    tools,
+                    self.sessions.clone(),
+                    run_lease.shared_native_lease(),
+                    turn_id,
+                )?
+            } else {
+                crate::NativeGoalToolExecutor::new(
+                    tools,
+                    self.sessions.clone(),
+                    run_lease.shared_native_lease(),
+                    turn_id,
+                )?
+            };
+            tools = Arc::new(goals);
+        }
+        Ok(tools)
     }
 
     fn recovery_engine_for_claimed_turn(
@@ -776,7 +952,47 @@ impl SubagentWorker {
                     )
                 }
             };
-        let tools = self.tools_for_claimed_turn(run_lease, mode)?;
+        let tools = self.tools_for_claimed_turn(run_lease, mode, true)?;
+        let frozen = record
+            .events
+            .iter()
+            .rev()
+            .take_while(|e| {
+                !matches!(
+                    e.kind,
+                    AgentEventKind::TurnAdmitted { .. }
+                        | AgentEventKind::TurnAdmittedWithImages { .. }
+                )
+            })
+            .find_map(|e| match &e.kind {
+                AgentEventKind::SystemInstructionsCommitted { content, .. } => {
+                    Some(content.clone())
+                }
+                _ => None,
+            });
+        let instructions = match frozen {
+            Some(content) => content,
+            None if self.native_goals
+                && !record
+                    .events
+                    .iter()
+                    .rev()
+                    .take_while(|e| {
+                        !matches!(
+                            e.kind,
+                            AgentEventKind::TurnAdmitted { .. }
+                                | AgentEventKind::TurnAdmittedWithImages { .. }
+                        )
+                    })
+                    .any(|e| matches!(e.kind, AgentEventKind::ModelContextCommitted { .. })) =>
+            {
+                let goals = openide_core::NativeGoalStore::new(self.sessions.clone())
+                    .list(child_id)
+                    .map_err(|e| AgentError::Runtime(e.to_string()))?;
+                crate::native_goal_system_instructions(&self.instructions, goals.last())?
+            }
+            None => self.instructions.clone(),
+        };
         let mut engine = ResumeEngine::new(
             self.sessions.clone(),
             checkpoints,
@@ -788,11 +1004,24 @@ impl SubagentWorker {
             self.token_budget,
         )
         .with_limits(self.limits)
-        .with_system_instructions(self.instructions.clone())
+        .with_system_instructions(instructions)
         .with_native_runtime_identity(self.provider.clone(), self.endpoint.clone())
         .with_command_hooks(self.command_hooks.clone());
         if let Some(isolation) = self.session_approval_isolation {
             engine = engine.with_session_approvals(self.sessions.clone(), isolation);
+        }
+        if let Some(profile) = &self.persistent_commands {
+            let actor = match mode {
+                TurnMode::Build => {
+                    profile.actor(self.sessions.clone(), run_lease.native_lease())?
+                }
+                TurnMode::Plan => {
+                    profile.actor_existing(self.sessions.clone(), run_lease.native_lease())?
+                }
+            };
+            if let Some(actor) = actor {
+                engine = engine.with_manual_command_actor(actor);
+            }
         }
         Ok(engine)
     }
@@ -979,6 +1208,7 @@ impl SubagentWorker {
                 ));
             }
             SubagentStatus::Cancelled => {
+                self.request_cancel_and_revoke(&control, &child_id)?;
                 return Ok(SubagentRecoveryState::Terminal(
                     self.cancelled_or_durable(&child_id)?,
                 ));
@@ -1210,6 +1440,12 @@ impl SubagentWorker {
             SubagentStatus::Cancelled => SubagentOutcome::Cancelled,
             _ => unreachable!("durable_terminal returns only terminal states"),
         };
+        if matches!(
+            terminal.status,
+            SubagentStatus::Failed | SubagentStatus::Cancelled
+        ) {
+            self.revoke_persistent_commands_for(std::slice::from_ref(&child_id))?;
+        }
         self.coordinator.finish_child(&run_lease, outcome)?;
         drop(engine);
         drop(run_lease);
@@ -1250,17 +1486,39 @@ impl SubagentWorker {
         mode: TurnMode,
         cancellation: &CancellationToken,
     ) -> Result<SubagentTurnResult, SubagentWorkerError> {
-        let depth = self.child_depth(child_id)?;
-        let spec = self.spec_for(control.workspace(), prompt, mode, depth)?;
-        let child =
-            self.coordinator
-                .prepared_child(control, child_id, spawn_id, &spec.digest_hex()?)?;
+        let (worker, digest) = self.worker_for_existing_child(child_id, prompt, mode, false)?;
+        worker.run_prepared_checked_blocking(
+            control,
+            child_id,
+            spawn_id,
+            prompt,
+            mode,
+            cancellation,
+            &digest,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_prepared_checked_blocking(
+        &self,
+        control: &SubagentControl,
+        child_id: &str,
+        spawn_id: &str,
+        prompt: &str,
+        mode: TurnMode,
+        cancellation: &CancellationToken,
+        request_digest: &str,
+    ) -> Result<SubagentTurnResult, SubagentWorkerError> {
+        let child = self
+            .coordinator
+            .prepared_child(control, child_id, spawn_id, request_digest)?;
         let child_id = child.session.id;
         match child.status {
             SubagentStatus::Completed | SubagentStatus::Failed => {
                 return self.durable_terminal(&child_id);
             }
             SubagentStatus::Cancelled => {
+                self.request_cancel_and_revoke(control, &child_id)?;
                 return self.cancelled_or_durable(&child_id);
             }
             SubagentStatus::Running => {
@@ -1271,12 +1529,20 @@ impl SubagentWorker {
             }
             SubagentStatus::Ready => {}
         }
+        #[cfg(test)]
+        initial_dispatch_process_cut(spawn_id, "before_claim");
         if cancellation.is_cancelled() {
-            self.coordinator
-                .request_cancel_control(control, &child_id)?;
+            self.request_cancel_and_revoke(control, &child_id)?;
             return self.cancelled_or_durable(&child_id);
         }
+        if mode == TurnMode::Build {
+            if let Some(profile) = &self.persistent_commands {
+                profile.ensure_live(&child_id)?;
+            }
+        }
         let run_lease = self.coordinator.start_child_control(control, &child_id)?;
+        #[cfg(test)]
+        initial_dispatch_process_cut(spawn_id, "after_claim");
         let admission = self.sessions.admit_native_turn(
             &child_id,
             spawn_id,
@@ -1284,6 +1550,8 @@ impl SubagentWorker {
             self.model.model_id(),
             mode,
         )?;
+        #[cfg(test)]
+        initial_dispatch_process_cut(spawn_id, "after_admission");
         let result = self.execute_claimed_turn(
             control,
             &run_lease,
@@ -1341,6 +1609,7 @@ impl SubagentWorker {
     ) -> Result<(), SubagentWorkerError> {
         loop {
             if cancellation.is_cancelled() {
+                self.request_cancel_and_revoke(control, child_id)?;
                 return Ok(());
             }
             let (run, input) = match self.coordinator.claim_next_input_control(control, child_id) {
@@ -1411,7 +1680,7 @@ impl SubagentWorker {
             return Err(SubagentWorkerError::UnresolvedChild(child_id.to_owned()));
         }
         if cancellation.is_cancelled() || self.coordinator.cancellation_requested(run)? {
-            self.coordinator.request_cancel_control(control, child_id)?;
+            self.request_cancel_and_revoke(control, child_id)?;
             self.coordinator.pause_child(run)?;
             return Err(SubagentWorkerError::Cancelled);
         }
@@ -1448,15 +1717,36 @@ impl SubagentWorker {
         history: Vec<AgentMessage>,
         cancellation: &CancellationToken,
     ) -> Result<SubagentTurnResult, SubagentWorkerError> {
-        let tools = self.tools_for_claimed_turn(run_lease, mode)?;
+        let tools = self.tools_for_claimed_turn(run_lease, mode, false)?;
+        let instructions = if self.native_goals {
+            let goals = openide_core::NativeGoalStore::new(self.sessions.clone())
+                .list(child_id)
+                .map_err(|e| AgentError::Runtime(e.to_string()))?;
+            crate::native_goal_system_instructions(&self.instructions, goals.last())?
+        } else {
+            self.instructions.clone()
+        };
         let mut runner = AgentRunner::new(self.model.clone(), tools)
             .with_command_hooks(self.command_hooks.clone())
             .with_permission_policy(self.permission_policy.clone())
-            .with_system_instructions(self.instructions.clone())
+            .with_system_instructions(instructions)
             .with_native_runtime_identity(self.provider.clone(), self.endpoint.clone())
             .with_event_journal(self.sessions.clone())
             .with_native_steering(self.sessions.clone())
             .with_limits(self.limits);
+        if let Some(profile) = &self.persistent_commands {
+            let actor = match mode {
+                TurnMode::Build => {
+                    profile.actor(self.sessions.clone(), run_lease.native_lease())?
+                }
+                TurnMode::Plan => {
+                    profile.actor_existing(self.sessions.clone(), run_lease.native_lease())?
+                }
+            };
+            if let Some(actor) = actor {
+                runner = runner.with_manual_command_actor(actor);
+            }
+        }
         if let Some(isolation) = self.session_approval_isolation {
             runner = runner.with_session_approvals(self.sessions.clone(), isolation);
         }
@@ -1482,20 +1772,28 @@ impl SubagentWorker {
             run_lease.shared_native_lease(),
         );
         let registration = match &self.event_bridge {
-            Some(bridge) => match bridge.register(child_id, &handle) {
-                Ok(registration) => Some(registration),
-                Err(error) => {
-                    handle.cancel();
-                    return Err(error);
+            Some(bridge) => {
+                match bridge.register_with_commands(
+                    child_id,
+                    &handle,
+                    self.coordinator.clone(),
+                    control.clone(),
+                    self.persistent_commands.clone(),
+                ) {
+                    Ok(registration) => Some(registration),
+                    Err(error) => {
+                        handle.cancel();
+                        return Err(error);
+                    }
                 }
-            },
+            }
             None => None,
         };
         let mut terminal_seen = false;
         let mut terminal_at = None;
         loop {
             if cancellation.is_cancelled() || self.coordinator.cancellation_requested(run_lease)? {
-                self.coordinator.request_cancel_control(control, child_id)?;
+                self.request_cancel_and_revoke(control, child_id)?;
                 handle.cancel();
             }
             match handle.events.recv_timeout(POLL_INTERVAL) {
@@ -1521,12 +1819,28 @@ impl SubagentWorker {
             return Err(SubagentWorkerError::MissingTerminal(child_id.to_owned()));
         }
         let result = self.durable_terminal(child_id)?;
+        #[cfg(test)]
+        if std::env::var("OPENIDE_INITIAL_DISPATCH_CUT").as_deref() == Ok("after_terminal") {
+            let spawn_id = self
+                .sessions
+                .load(child_id)?
+                .and_then(|stored| stored.session.subagent)
+                .map(|link| link.spawn_id)
+                .unwrap_or_default();
+            initial_dispatch_process_cut(&spawn_id, "after_terminal");
+        }
         let outcome = match result.status {
             SubagentStatus::Completed => SubagentOutcome::Completed,
             SubagentStatus::Failed => SubagentOutcome::Failed,
             SubagentStatus::Cancelled => SubagentOutcome::Cancelled,
             _ => unreachable!("durable_terminal returns only terminal states"),
         };
+        if matches!(
+            result.status,
+            SubagentStatus::Failed | SubagentStatus::Cancelled
+        ) {
+            self.revoke_persistent_commands_for(&[child_id.to_owned()])?;
+        }
         self.coordinator.finish_child(run_lease, outcome)?;
         Ok(result)
     }
@@ -1554,6 +1868,19 @@ impl SubagentWorker {
             Err(error) => Err(error),
         }
     }
+}
+
+fn revoke_command_owners(
+    profile: &NativeCommandProfile,
+    owners: &[String],
+) -> Result<(), AgentError> {
+    let mut first_error = None;
+    for owner in owners {
+        if let Err(error) = profile.revoke_owner(owner) {
+            first_error.get_or_insert(error);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 fn terminal_from_events(
@@ -1705,6 +2032,16 @@ fn is_terminal(kind: &AgentEventKind) -> bool {
     )
 }
 
+#[cfg(test)]
+fn initial_dispatch_process_cut(spawn_id: &str, point: &str) {
+    if spawn_id == "spawn-initial-process-cut"
+        && std::env::var("OPENIDE_INITIAL_DISPATCH_CUT").as_deref() == Ok(point)
+    {
+        // Subprocess-only acceptance: exit bypasses Drop/lease cleanup.
+        std::process::exit(86);
+    }
+}
+
 struct CancelOnDrop(CancellationToken);
 
 impl Drop for CancelOnDrop {
@@ -1712,6 +2049,10 @@ impl Drop for CancelOnDrop {
         self.0.cancel();
     }
 }
+
+#[cfg(test)]
+#[path = "subagent_persistent_command_tests.rs"]
+mod persistent_command_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1924,6 +2265,16 @@ mod tests {
         crash_point: CrashPoint,
         permission_policy: PermissionPolicy,
     ) -> (String, String) {
+        crashed_child_with_goal_mode(root, model, tools, crash_point, permission_policy, false)
+    }
+    fn crashed_child_with_goal_mode(
+        root: &Path,
+        model: Arc<dyn ModelBackend>,
+        tools: Arc<dyn ToolExecutor>,
+        crash_point: CrashPoint,
+        permission_policy: PermissionPolicy,
+        native_goals: bool,
+    ) -> (String, String) {
         let sessions = Arc::new(SessionStore::open(root.join("sessions")).unwrap());
         let parent = sessions.create(root, "native").unwrap();
         let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
@@ -1938,6 +2289,11 @@ mod tests {
             "https://fixture.example/v1",
         )
         .with_permission_policy(permission_policy.clone());
+        let worker = if native_goals {
+            worker.with_native_goals()
+        } else {
+            worker
+        };
         let child = worker
             .prepare_child(
                 &parent_lease,
@@ -1957,7 +2313,7 @@ mod tests {
             )
             .unwrap();
         let run_lease = coordinator.start_child(&parent_lease, &child_id).unwrap();
-        let catalog = ToolCatalog::from_executor(tools.as_ref()).unwrap();
+        let catalog = worker.catalog_for_mode(TurnMode::Build, 1).unwrap();
         append_child(
             &sessions,
             &child_id,
@@ -2226,10 +2582,15 @@ mod tests {
         first_permissions.insert("same-request".into(), first_tx);
         second_permissions.insert("same-request".into(), second_tx);
         let first = bridge
-            .register_capability("child-a", first_permissions, CancellationToken::new())
+            .register_capability("child-a", first_permissions, CancellationToken::new(), None)
             .unwrap();
         let second = bridge
-            .register_capability("child-b", second_permissions, CancellationToken::new())
+            .register_capability(
+                "child-b",
+                second_permissions,
+                CancellationToken::new(),
+                None,
+            )
             .unwrap();
         let call = ToolCall {
             id: "effect-1".into(),
@@ -2254,6 +2615,215 @@ mod tests {
         assert_eq!(second_rx.blocking_recv().unwrap(), PermissionChoice::Deny);
     }
 
+    #[test]
+    fn bridge_cancellation_process_cut_reopens_subtree_before_notification() {
+        let root = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "subagent_worker::tests::bridge_cancel_cut_child",
+                "--nocapture",
+            ])
+            .env("OPENIDE_BRIDGE_CANCEL_CUT_ROOT", root.path())
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(86),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let sessions = Arc::new(SessionStore::open(root.path().join("sessions")).unwrap());
+        let listing = sessions.list_with_diagnostics().unwrap();
+        assert!(listing.diagnostics.is_empty());
+        assert_eq!(listing.sessions.len(), 3);
+        let parent = listing
+            .sessions
+            .iter()
+            .find(|stored| stored.session.subagent.is_none())
+            .unwrap();
+        let coordinator = SubagentCoordinator::new(sessions.clone(), Default::default()).unwrap();
+        let snapshot = coordinator
+            .list_children_snapshot_for_ui(&parent.session.id)
+            .unwrap();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].agent.status, SubagentStatus::Cancelled);
+        assert!(snapshot[0].agent.cancellation_requested);
+        assert_eq!(snapshot[0].open_inputs, 0);
+        let nested = coordinator
+            .list_children_snapshot_for_ui(&snapshot[0].agent.session.id)
+            .unwrap();
+        assert_eq!(nested.len(), 1);
+        assert_eq!(nested[0].agent.status, SubagentStatus::Cancelled);
+        assert!(nested[0].agent.cancellation_requested);
+        let lease = sessions
+            .try_acquire_native_lease(&parent.session.id)
+            .unwrap();
+        let control = coordinator.issue_control(&lease).unwrap();
+        let inputs = coordinator
+            .inputs_control(&control, &snapshot[0].agent.session.id)
+            .unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].state, QueuedInputState::Skipped);
+        assert!(listing
+            .sessions
+            .iter()
+            .all(|stored| stored.events.is_empty()));
+    }
+
+    #[test]
+    #[ignore = "subprocess helper for cancellation cut acceptance"]
+    fn bridge_cancel_cut_child() {
+        let Some(root) = std::env::var_os("OPENIDE_BRIDGE_CANCEL_CUT_ROOT") else {
+            return;
+        };
+        let root = std::path::PathBuf::from(root);
+        let sessions = Arc::new(SessionStore::open(root.join("sessions")).unwrap());
+        let parent = sessions.create(&root, "native").unwrap();
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            Arc::new(SubagentCoordinator::new(sessions.clone(), Default::default()).unwrap());
+        let spec = SubagentSpec {
+            prompt: "Inspect".into(),
+            model: "fixture".into(),
+            mode: TurnMode::Build,
+            context_digest: "a".repeat(64),
+        };
+        let child = coordinator
+            .create_child(&parent_lease, "cancel-cut", &spec)
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .create_child(run.native_lease(), "nested-cut", &spec)
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "queued-cut",
+                "More work",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let bridge = Arc::new(SubagentEventBridge::new());
+        let token = CancellationToken::new();
+        let _registration = bridge
+            .register_capability(
+                &child.session.id,
+                Arc::new(PendingPermissions::default()),
+                token,
+                Some(ChildCancellationAuthority {
+                    coordinator: coordinator.clone(),
+                    control: coordinator.issue_control(&parent_lease).unwrap(),
+                    commands: None,
+                }),
+            )
+            .unwrap();
+        EXIT_AFTER_BRIDGE_CANCEL_COMMIT.store(true, Ordering::SeqCst);
+        bridge.cancel_child(&child.session.id).unwrap();
+        panic!("process cut must occur before token notification");
+    }
+
+    #[test]
+    fn bridge_registry_failure_keeps_approval_and_token_live_for_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = Arc::new(SessionStore::open(root.path().join("sessions")).unwrap());
+        let parent = sessions.create(root.path(), "native").unwrap();
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            Arc::new(SubagentCoordinator::new(sessions.clone(), Default::default()).unwrap());
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "bridge-failure",
+                &SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        let control = coordinator.issue_control(&parent_lease).unwrap();
+        let bridge = Arc::new(SubagentEventBridge::new());
+        let permissions = Arc::new(PendingPermissions::default());
+        let (sender, _receiver) = tokio::sync::oneshot::channel();
+        permissions.insert("pending".into(), sender);
+        let cancellation = CancellationToken::new();
+        let registration = bridge
+            .register_capability(
+                &child.session.id,
+                permissions,
+                cancellation.clone(),
+                Some(ChildCancellationAuthority {
+                    coordinator: coordinator.clone(),
+                    control,
+                    commands: None,
+                }),
+            )
+            .unwrap();
+        registration.forward(AgentEvent::new(
+            &child.session.id,
+            1,
+            AgentEventKind::PermissionRequested {
+                request_id: "pending".into(),
+                tool_call: ToolCall {
+                    id: "effect".into(),
+                    name: "effect".into(),
+                    arguments: json!({}),
+                },
+            },
+        ));
+        let registry = sessions.storage_root().join("subagents.registry.json");
+        let original = std::fs::read(&registry).unwrap();
+        std::fs::write(&registry, b"invalid JSON").unwrap();
+        assert!(bridge.cancel_child(&child.session.id).is_err());
+        assert!(!cancellation.is_cancelled());
+        assert_eq!(
+            bridge.live_snapshot(),
+            vec![(child.session.id.clone(), vec!["pending".into()])]
+        );
+        std::fs::write(&registry, &original).unwrap();
+        assert!(bridge.cancel_child(&child.session.id).unwrap());
+        assert!(cancellation.is_cancelled());
+        let reopened = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(sessions.storage_root()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        assert!(reopened.list_children_for_ui(&parent.id).unwrap()[0].cancellation_requested);
+        assert!(!bridge.resolve_permission(&child.session.id, "pending", PermissionChoice::Allow));
+        assert!(!bridge.cancel_child(&child.session.id).unwrap());
+        assert!(coordinator.cancellation_requested(&run).unwrap());
+    }
+
+    #[test]
+    fn bridge_without_durable_authority_cannot_signal_cancellation() {
+        let bridge = Arc::new(SubagentEventBridge::new());
+        let token = CancellationToken::new();
+        let _registration = bridge
+            .register_capability(
+                "child",
+                Arc::new(PendingPermissions::default()),
+                token.clone(),
+                None,
+            )
+            .unwrap();
+        assert!(matches!(
+            bridge.cancel_child("child"),
+            Err(SubagentError::CancellationAuthorityUnavailable)
+        ));
+        assert!(!token.is_cancelled());
+        assert_eq!(bridge.active_child_ids(), vec!["child"]);
+    }
+
     #[tokio::test]
     async fn cancelling_child_closes_approval_before_any_effect() {
         let root = tempfile::tempdir().unwrap();
@@ -2266,7 +2836,7 @@ mod tests {
         let events = bridge.subscribe();
         let tools = Arc::new(CountingTools(AtomicUsize::new(0)));
         let worker = SubagentWorker::new(
-            coordinator,
+            coordinator.clone(),
             sessions.clone(),
             Arc::new(PermissionModel),
             tools.clone(),
@@ -2291,8 +2861,16 @@ mod tests {
                 .await
         });
         let (_, request_id) = next_bridge_permission(&events).await;
-        assert!(bridge.cancel_child(&child_id));
-        assert!(!bridge.cancel_child(&child_id));
+        // A new parent turn may hold its lease while this child is active.
+        let _busy_parent = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        assert!(bridge.cancel_child(&child_id).unwrap());
+        let reopened = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(sessions.storage_root()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        assert!(reopened.list_children_for_ui(&parent.id).unwrap()[0].cancellation_requested);
+        assert!(!bridge.cancel_child(&child_id).unwrap());
         assert!(!bridge.resolve_permission(&child_id, &request_id, PermissionChoice::Allow));
         let result = tokio::time::timeout(Duration::from_secs(5), running)
             .await
@@ -2301,7 +2879,7 @@ mod tests {
             .unwrap();
         assert_eq!(result.status, SubagentStatus::Cancelled);
         assert_eq!(tools.0.load(Ordering::SeqCst), 0);
-        assert!(!bridge.cancel_child(&child_id));
+        assert!(!bridge.cancel_child(&child_id).unwrap());
     }
 
     #[test]
@@ -2313,6 +2891,7 @@ mod tests {
                 "child",
                 Arc::new(PendingPermissions::default()),
                 CancellationToken::new(),
+                None,
             )
             .unwrap();
         for sequence in 1..=(BRIDGE_SUBSCRIBER_CAPACITY as u64 + 1) {
@@ -2338,6 +2917,7 @@ mod tests {
                 "child",
                 Arc::new(PendingPermissions::default()),
                 CancellationToken::new(),
+                None,
             )
             .unwrap();
         second.forward(AgentEvent::new(
@@ -3136,6 +3716,333 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mailbox_publication_process_cuts_reopen_mutations_without_duplicate_turn() {
+        for operation in ["enqueue", "edit", "skip", "claim"] {
+            for stage in ["temporary-synced", "renamed", "directory-synced"] {
+                let root = tempfile::tempdir().unwrap();
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--ignored",
+                        "--exact",
+                        "subagent_worker::tests::mailbox_publication_cut_child",
+                        "--nocapture",
+                    ])
+                    .env("OPENIDE_MAILBOX_PUBLICATION_ROOT", root.path())
+                    .env("OPENIDE_MAILBOX_PUBLICATION_OPERATION", operation)
+                    .env("OPENIDE_MAILBOX_PUBLICATION_STAGE", stage)
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    output.status.code(),
+                    Some(86),
+                    "{operation}/{stage}: {} {}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let model = Arc::new(ChildModel(AtomicUsize::new(0)));
+                let (sessions, coordinator, worker) =
+                    reopened_worker(root.path(), model.clone(), Arc::new(LocalTools::new()));
+                let published_before =
+                    std::fs::read(sessions.storage_root().join("subagents.registry.json")).unwrap();
+                assert_eq!(
+                    coordinator.recover_registry_temporaries().unwrap(),
+                    usize::from(stage == "temporary-synced")
+                );
+                assert_eq!(coordinator.recover_registry_temporaries().unwrap(), 0);
+                assert_eq!(
+                    std::fs::read(sessions.storage_root().join("subagents.registry.json")).unwrap(),
+                    published_before
+                );
+                let listing = sessions.list_with_diagnostics().unwrap();
+                assert!(listing.diagnostics.is_empty());
+                let parent = listing
+                    .sessions
+                    .iter()
+                    .find(|s| s.session.subagent.is_none())
+                    .unwrap();
+                let child = listing
+                    .sessions
+                    .iter()
+                    .find(|s| s.session.subagent.is_some())
+                    .unwrap();
+                let lease = Arc::new(
+                    sessions
+                        .try_acquire_native_lease(&parent.session.id)
+                        .unwrap(),
+                );
+                let control = coordinator.issue_control(&lease).unwrap();
+                let before_retry = coordinator
+                    .inputs_control(&control, &child.session.id)
+                    .unwrap();
+                assert_eq!(
+                    before_retry.len(),
+                    usize::from(operation != "enqueue" || stage != "temporary-synced")
+                );
+                let input = coordinator
+                    .enqueue_input(
+                        &lease,
+                        &child.session.id,
+                        "publication-cut",
+                        "second",
+                        TurnMode::Build,
+                    )
+                    .unwrap();
+                let edit_published = operation == "edit" && stage != "temporary-synced";
+                let skip_published = operation == "skip" && stage != "temporary-synced";
+                assert_eq!(input.revision, u64::from(edit_published || skip_published));
+                if skip_published {
+                    assert_eq!(
+                        coordinator
+                            .skip_pending_input(&lease, &child.session.id, "publication-cut", 0)
+                            .unwrap()
+                            .status,
+                        crate::SubagentInputStatus::Skipped
+                    );
+                }
+                assert_eq!(
+                    input.prompt,
+                    if edit_published {
+                        "second edited"
+                    } else {
+                        "second"
+                    }
+                );
+                let claim_published = operation == "claim" && stage != "temporary-synced";
+                let state = coordinator
+                    .input_state(&control, &child.session.id)
+                    .unwrap();
+                assert_eq!(
+                    state.0,
+                    if claim_published {
+                        SubagentStatus::Interrupted
+                    } else {
+                        SubagentStatus::Completed
+                    }
+                );
+                if claim_published {
+                    let recovered = worker
+                        .resume(
+                            lease.clone(),
+                            child.session.id.clone(),
+                            "spawn-publication".into(),
+                            "first".into(),
+                            TurnMode::Build,
+                            CancellationToken::new(),
+                        )
+                        .await
+                        .unwrap();
+                    assert!(matches!(
+                        recovered,
+                        SubagentRecoveryState::Terminal(SubagentTurnResult {
+                            status: SubagentStatus::Completed,
+                            ..
+                        })
+                    ));
+                } else {
+                    worker
+                        .drain_queued_prepared(
+                            control.clone(),
+                            child.session.id.clone(),
+                            CancellationToken::new(),
+                        )
+                        .await
+                        .unwrap();
+                }
+                worker
+                    .drain_queued_prepared(
+                        control.clone(),
+                        child.session.id.clone(),
+                        CancellationToken::new(),
+                    )
+                    .await
+                    .unwrap();
+                let expected_calls = usize::from(!skip_published);
+                assert_eq!(model.0.load(Ordering::SeqCst), expected_calls);
+                let stored = sessions.load(&child.session.id).unwrap().unwrap();
+                assert_eq!(stored.events.iter().filter(|e| matches!(&e.kind, AgentEventKind::TurnAdmitted { turn_id,.. } if turn_id == "publication-cut")).count(), expected_calls);
+                if !skip_published {
+                    assert!(stored.events.iter().any(|e| matches!(&e.kind, AgentEventKind::TurnAdmitted { turn_id,prompt,.. } if turn_id == "publication-cut" && prompt == &input.prompt)));
+                }
+                drop(worker);
+                drop(coordinator);
+                drop(control);
+                drop(lease);
+                drop(sessions);
+                let (sessions, coordinator, _) =
+                    reopened_worker(root.path(), model.clone(), Arc::new(LocalTools::new()));
+                let lease = sessions
+                    .try_acquire_native_lease(&parent.session.id)
+                    .unwrap();
+                let control = coordinator.issue_control(&lease).unwrap();
+                let state = coordinator
+                    .input_state(&control, &child.session.id)
+                    .unwrap();
+                assert_eq!(state.0, SubagentStatus::Completed);
+                assert!(state.1.is_none());
+                assert_eq!(state.2, 0);
+                assert_eq!(
+                    coordinator
+                        .inputs_control(&control, &child.session.id)
+                        .unwrap()[0]
+                        .state,
+                    if skip_published {
+                        QueuedInputState::Skipped
+                    } else {
+                        QueuedInputState::Done
+                    }
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess helper for mailbox publication cuts"]
+    async fn mailbox_publication_cut_child() {
+        let Some(root) = std::env::var_os("OPENIDE_MAILBOX_PUBLICATION_ROOT") else {
+            return;
+        };
+        let root = std::path::PathBuf::from(root);
+        let sessions = Arc::new(SessionStore::open(root.join("sessions")).unwrap());
+        let parent = sessions.create(&root, "native").unwrap();
+        let lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+        let coordinator =
+            Arc::new(SubagentCoordinator::new(sessions.clone(), Default::default()).unwrap());
+        let worker = SubagentWorker::new(
+            coordinator.clone(),
+            sessions.clone(),
+            Arc::new(ChildModel(AtomicUsize::new(0))),
+            Arc::new(LocalTools::new()),
+            "fixture",
+            "https://fixture.example/v1",
+        );
+        let child = worker
+            .run(
+                lease.clone(),
+                "spawn-publication".into(),
+                "first".into(),
+                TurnMode::Build,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &lease,
+                &child.child_session_id,
+                "publication-cut",
+                "second",
+                TurnMode::Build,
+            )
+            .unwrap();
+        match std::env::var("OPENIDE_MAILBOX_PUBLICATION_OPERATION")
+            .unwrap()
+            .as_str()
+        {
+            "edit" => {
+                coordinator
+                    .edit_pending_input(
+                        &lease,
+                        &child.child_session_id,
+                        "publication-cut",
+                        0,
+                        "second edited",
+                    )
+                    .unwrap();
+            }
+            "skip" => {
+                coordinator
+                    .skip_pending_input(&lease, &child.child_session_id, "publication-cut", 0)
+                    .unwrap();
+            }
+            "claim" => {
+                let control = coordinator.issue_control(&lease).unwrap();
+                let _claim = coordinator
+                    .claim_next_input_control(&control, &child.child_session_id)
+                    .unwrap()
+                    .unwrap();
+            }
+            _ => panic!("unknown operation"),
+        }
+        panic!("publication cut did not fire");
+    }
+
+    #[tokio::test]
+    async fn skipped_mailbox_input_is_never_admitted_or_sent_to_model_after_reopen() {
+        let root = tempfile::tempdir().unwrap();
+        let model = Arc::new(ChildModel(AtomicUsize::new(0)));
+        let (sessions, coordinator, worker) =
+            reopened_worker(root.path(), model.clone(), Arc::new(LocalTools::new()));
+        let parent = sessions.create(root.path(), "native").unwrap();
+        let lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+        let child = worker
+            .run(
+                lease.clone(),
+                "spawn-skip".into(),
+                "first".into(),
+                TurnMode::Build,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &lease,
+                &child.child_session_id,
+                "omit",
+                "Never execute",
+                TurnMode::Build,
+            )
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &lease,
+                &child.child_session_id,
+                "keep",
+                "Execute",
+                TurnMode::Build,
+            )
+            .unwrap();
+        coordinator
+            .skip_pending_input(&lease, &child.child_session_id, "omit", 0)
+            .unwrap();
+        drop(worker);
+        drop(coordinator);
+        drop(lease);
+        drop(sessions);
+        let (sessions, coordinator, worker) =
+            reopened_worker(root.path(), model.clone(), Arc::new(LocalTools::new()));
+        let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let control = coordinator.issue_control(&lease).unwrap();
+        worker
+            .drain_queued_prepared(
+                control.clone(),
+                child.child_session_id.clone(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        worker
+            .drain_queued_prepared(
+                control.clone(),
+                child.child_session_id.clone(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(model.0.load(Ordering::SeqCst), 2); // initial + retained entry
+        let stored = sessions.load(&child.child_session_id).unwrap().unwrap();
+        assert!(!stored.events.iter().any(
+            |e| matches!(&e.kind,AgentEventKind::TurnAdmitted{turn_id,..} if turn_id=="omit")
+        ));
+        assert_eq!(stored.events.iter().filter(|e| matches!(&e.kind,AgentEventKind::TurnAdmitted{turn_id,..} if turn_id=="keep")).count(),1);
+        let inputs = coordinator
+            .inputs_control(&control, &child.child_session_id)
+            .unwrap();
+        assert_eq!(inputs[0].state, QueuedInputState::Skipped);
+        assert_eq!(inputs[1].state, QueuedInputState::Done);
+    }
+
+    #[tokio::test]
     async fn queued_follow_up_recovers_after_enqueue_claim_or_admission_crash() {
         for crash_stage in [0, 1, 2] {
             let root = tempfile::tempdir().unwrap();
@@ -3175,6 +4082,25 @@ mod tests {
                     TurnMode::Build,
                 )
                 .unwrap();
+            coordinator
+                .edit_pending_input(
+                    &parent_lease,
+                    &initial.child_session_id,
+                    &input.id,
+                    0,
+                    "second edited\nwith context",
+                )
+                .unwrap();
+            let input = coordinator
+                .enqueue_input(
+                    &parent_lease,
+                    &initial.child_session_id,
+                    &input.id,
+                    "second",
+                    TurnMode::Build,
+                )
+                .unwrap();
+            assert_eq!(input.revision, 1);
             if crash_stage > 0 {
                 let control = coordinator.issue_control(&parent_lease).unwrap();
                 let (run, claimed) = coordinator
@@ -3242,6 +4168,7 @@ mod tests {
                     .count(),
                 2
             );
+            assert!(stored.events.iter().any(|event| matches!(&event.kind, AgentEventKind::TurnAdmitted { turn_id, prompt, .. } if turn_id == &input.id && prompt == "second edited\nwith context")));
             assert_eq!(model.0.load(Ordering::SeqCst), 2);
             let (status, active, pending) = coordinator
                 .input_state(&control, &initial.child_session_id)
@@ -3250,6 +4177,205 @@ mod tests {
             assert!(active.is_none());
             assert_eq!(pending, 0);
         }
+    }
+
+    #[tokio::test]
+    async fn initial_child_dispatch_process_cuts_reopen_one_admission_and_exact_context() {
+        for point in [
+            "before_claim",
+            "after_claim",
+            "after_admission",
+            "after_terminal",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "subagent_worker::tests::initial_dispatch_cut_child",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("OPENIDE_INITIAL_DISPATCH_ROOT", root.path())
+                .env("OPENIDE_INITIAL_DISPATCH_CUT", point)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::inherit())
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(86), "cut {point}");
+            let ids: Vec<String> = serde_json::from_slice(
+                &std::fs::read(root.path().join("initial-identities.json")).unwrap(),
+            )
+            .unwrap();
+            let model = Arc::new(ChildModel(AtomicUsize::new(0)));
+            let (sessions, coordinator, worker) =
+                reopened_worker(root.path(), model.clone(), Arc::new(LocalTools::new()));
+            let worker = worker.with_system_instructions("Frozen initial process scope");
+            let snapshots = coordinator.list_children_snapshot_for_ui(&ids[0]).unwrap();
+            assert_eq!(snapshots.len(), 1);
+            assert_eq!(
+                snapshots[0].agent.status,
+                if point == "before_claim" {
+                    SubagentStatus::Ready
+                } else {
+                    SubagentStatus::Interrupted
+                }
+            );
+            let before = sessions.load(&ids[1]).unwrap().unwrap().events;
+            assert_eq!(
+                before
+                    .iter()
+                    .filter(|e| matches!(e.kind, AgentEventKind::TurnAdmitted { .. }))
+                    .count(),
+                usize::from(matches!(point, "after_admission" | "after_terminal"))
+            );
+            assert_eq!(
+                before
+                    .iter()
+                    .filter(|e| matches!(e.kind, AgentEventKind::ModelRequestStarted { .. }))
+                    .count(),
+                usize::from(point == "after_terminal")
+            );
+            let lease = Arc::new(sessions.try_acquire_native_lease(&ids[0]).unwrap());
+            let control = coordinator.issue_control(&lease).unwrap();
+            drop(lease);
+            if point == "before_claim" {
+                worker
+                    .validate_initial_child(
+                        &ids[1],
+                        "spawn-initial-process-cut",
+                        "Initial process task",
+                        TurnMode::Build,
+                    )
+                    .unwrap();
+                let terminal = worker
+                    .run_prepared(
+                        control,
+                        ids[1].clone(),
+                        "spawn-initial-process-cut".into(),
+                        "Initial process task".into(),
+                        TurnMode::Build,
+                        CancellationToken::new(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(terminal.status, SubagentStatus::Completed);
+            } else {
+                assert!(matches!(
+                    worker
+                        .run_prepared(
+                            control,
+                            ids[1].clone(),
+                            "spawn-initial-process-cut".into(),
+                            "Initial process task".into(),
+                            TurnMode::Build,
+                            CancellationToken::new()
+                        )
+                        .await,
+                    Err(SubagentWorkerError::NeedsRecovery(_))
+                ));
+                assert_eq!(model.0.load(Ordering::SeqCst), 0);
+                assert_eq!(sessions.load(&ids[1]).unwrap().unwrap().events, before);
+                let lease = Arc::new(sessions.try_acquire_native_lease(&ids[0]).unwrap());
+                let result = worker
+                    .resume(
+                        lease,
+                        ids[1].clone(),
+                        "spawn-initial-process-cut".into(),
+                        "Initial process task".into(),
+                        TurnMode::Build,
+                        CancellationToken::new(),
+                    )
+                    .await
+                    .unwrap();
+                assert!(matches!(
+                    result,
+                    SubagentRecoveryState::Terminal(SubagentTurnResult {
+                        status: SubagentStatus::Completed,
+                        ..
+                    })
+                ));
+            }
+            assert_eq!(
+                model.0.load(Ordering::SeqCst),
+                usize::from(point != "after_terminal"),
+                "model at {point}"
+            );
+            if point == "after_terminal" {
+                assert_eq!(
+                    sessions.load(&ids[1]).unwrap().unwrap().events,
+                    before,
+                    "terminal reconciliation must not add journal events"
+                );
+            }
+            let record = sessions.load(&ids[1]).unwrap().unwrap();
+            assert_eq!(record.events.iter().filter(|e| matches!(&e.kind, AgentEventKind::TurnAdmitted { turn_id, prompt, .. } if turn_id == "spawn-initial-process-cut" && prompt == "Initial process task")).count(), 1);
+            assert_eq!(
+                record
+                    .events
+                    .iter()
+                    .filter(|e| matches!(e.kind, AgentEventKind::TurnCompleted { .. }))
+                    .count(),
+                1
+            );
+            assert!(record.events.iter().any(|e| matches!(&e.kind, AgentEventKind::SystemInstructionsCommitted { content, .. } if content == "Frozen initial process scope")));
+            let _released = sessions.try_acquire_native_lease(&ids[1]).unwrap();
+            assert_eq!(
+                coordinator.list_children_snapshot_for_ui(&ids[0]).unwrap()[0]
+                    .agent
+                    .status,
+                SubagentStatus::Completed
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess helper for initial child dispatch cuts"]
+    async fn initial_dispatch_cut_child() {
+        let Some(root) = std::env::var_os("OPENIDE_INITIAL_DISPATCH_ROOT") else {
+            return;
+        };
+        let root = std::path::PathBuf::from(root);
+        let sessions = Arc::new(SessionStore::open(root.join("sessions")).unwrap());
+        let parent = sessions.create(&root, "native").unwrap();
+        let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            Arc::new(SubagentCoordinator::new(sessions.clone(), Default::default()).unwrap());
+        let worker = SubagentWorker::new(
+            coordinator.clone(),
+            sessions.clone(),
+            Arc::new(ChildModel(AtomicUsize::new(0))),
+            Arc::new(LocalTools::new()),
+            "fixture",
+            "https://fixture.example/v1",
+        )
+        .with_system_instructions("Frozen initial process scope");
+        let child = worker
+            .prepare_child(
+                &lease,
+                "spawn-initial-process-cut",
+                "Initial process task",
+                TurnMode::Build,
+            )
+            .unwrap();
+        std::fs::write(
+            root.join("initial-identities.json"),
+            serde_json::to_vec(&[parent.id, child.session.id.clone()]).unwrap(),
+        )
+        .unwrap();
+        let control = coordinator.issue_control(&lease).unwrap();
+        drop(lease);
+        worker
+            .run_prepared(
+                control,
+                child.session.id,
+                "spawn-initial-process-cut".into(),
+                "Initial process task".into(),
+                TurnMode::Build,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        panic!("initial worker did not reach process cut");
     }
 
     #[tokio::test]
@@ -3834,6 +4960,416 @@ mod tests {
                 .filter(|event| matches!(event.kind, AgentEventKind::TurnAdmitted { .. }))
                 .count(),
             2
+        );
+    }
+    struct ChildGoalReader {
+        mode: TurnMode,
+        calls: AtomicUsize,
+        expect_frozen_goal: bool,
+    }
+    #[async_trait]
+    impl ModelBackend for ChildGoalReader {
+        fn model_id(&self) -> &str {
+            "fixture-child"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        async fn complete(
+            &self,
+            messages: &[AgentMessage],
+            tools: &[ToolDefinition],
+            _: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            if self.expect_frozen_goal {
+                assert!(messages
+                    .first()
+                    .unwrap()
+                    .content
+                    .contains("Child full objective"));
+                assert!(!messages
+                    .first()
+                    .unwrap()
+                    .content
+                    .contains("Parent private objective"));
+            }
+            assert!(tools.iter().any(|t| t.name == "get_goal"));
+            assert_eq!(
+                tools.iter().any(|t| t.name == "complete_goal"),
+                self.mode == TurnMode::Build
+            );
+            assert!(!tools.iter().any(|t| t.name == "spawn_agent"));
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                let mut calls = vec![ToolCall {
+                    id: "read-child".into(),
+                    name: "get_goal".into(),
+                    arguments: json!({}),
+                }];
+                if self.mode == TurnMode::Build {
+                    calls.push(ToolCall {
+                        id: "change-parent".into(),
+                        name: "complete_goal".into(),
+                        arguments: json!({"goal_id":"parent-goal","expected_revision":0}),
+                    });
+                    calls.push(ToolCall {id: "parent-evidence".into(), name: "record_goal_evidence".into(), arguments: json!({"goal_id":"child-goal","expected_revision":0,"criterion_id":"verify","turn_id":"parent-seed","summary":"A completed parent turn"})});
+                }
+                Ok(ModelOutput {
+                    content: String::new(),
+                    tool_calls: calls,
+                })
+            } else {
+                assert!(messages
+                    .iter()
+                    .any(|m| m.content.contains("Child full objective")));
+                assert!(!messages
+                    .iter()
+                    .any(|m| m.content.contains("Parent private objective")));
+                Ok(ModelOutput {
+                    content: "Child scope verified".into(),
+                    tool_calls: vec![],
+                })
+            }
+        }
+    }
+    #[tokio::test]
+    async fn child_goal_tools_are_scoped_to_child_in_plan_and_build_at_depth_limit() {
+        use openide_core::{NativeGoalCriterion, NativeGoalStore};
+        for mode in [TurnMode::Plan, TurnMode::Build] {
+            let root = tempfile::tempdir().unwrap();
+            let sessions = Arc::new(SessionStore::open(root.path().join("sessions")).unwrap());
+            let parent = sessions.create(root.path(), "native").unwrap();
+            let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+            let goals = NativeGoalStore::new(sessions.clone());
+            let criteria = || {
+                vec![NativeGoalCriterion {
+                    id: "verify".into(),
+                    description: "Verify".into(),
+                    evidence: None,
+                }]
+            };
+            let parent_goal = goals
+                .create(
+                    &parent_lease,
+                    "parent-goal",
+                    "Parent private objective",
+                    criteria(),
+                )
+                .unwrap();
+            let admission = sessions
+                .admit_native_turn(
+                    &parent.id,
+                    "parent-seed",
+                    "Seed",
+                    "fixture-child",
+                    TurnMode::Build,
+                )
+                .unwrap();
+            sessions
+                .append_native_event(&AgentEvent::new(
+                    &parent.id,
+                    admission.sequence + 1,
+                    AgentEventKind::TurnStarted {
+                        prompt: "Seed".into(),
+                    },
+                ))
+                .unwrap();
+            sessions
+                .append_native_event(&AgentEvent::new(
+                    &parent.id,
+                    admission.sequence + 2,
+                    AgentEventKind::TurnCompleted {
+                        response: "Core fixture".into(),
+                        steps: 1,
+                    },
+                ))
+                .unwrap();
+            let coordinator = Arc::new(
+                SubagentCoordinator::new(
+                    sessions.clone(),
+                    crate::SubagentLimits {
+                        max_depth: 1,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+            );
+            let model = Arc::new(ChildGoalReader {
+                mode,
+                calls: AtomicUsize::new(0),
+                expect_frozen_goal: true,
+            });
+            let worker = SubagentWorker::new(
+                coordinator,
+                sessions.clone(),
+                model.clone(),
+                Arc::new(LocalTools::new()),
+                "fixture",
+                "https://fixture.example/v1",
+            )
+            .with_nested_subagents(SubagentToolLimits::default())
+            .with_native_goals();
+            let child = worker
+                .prepare_child(&parent_lease, "spawn-goal", "Inspect child goal", mode)
+                .unwrap();
+            let child_id = child.session.id;
+            let child_lease = sessions.try_acquire_native_lease(&child_id).unwrap();
+            let child_goal = goals
+                .create(
+                    &child_lease,
+                    "child-goal",
+                    "Child full objective",
+                    criteria(),
+                )
+                .unwrap();
+            drop(child_lease);
+            let parent_journal = sessions.load(&parent.id).unwrap().unwrap().events;
+            let result = tokio::time::timeout(
+                Duration::from_secs(10),
+                worker.run(
+                    parent_lease,
+                    "spawn-goal".into(),
+                    "Inspect child goal".into(),
+                    mode,
+                    CancellationToken::new(),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(result.status, SubagentStatus::Completed);
+            assert_eq!(model.calls.load(Ordering::SeqCst), 2);
+            let events = sessions.load(&child_id).unwrap().unwrap().events;
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|e| matches!(e.kind, AgentEventKind::ToolFinished { .. }))
+                    .count(),
+                if mode == TurnMode::Build { 3 } else { 1 }
+            );
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|e| matches!(
+                        e.kind,
+                        AgentEventKind::ToolFinished { is_error: true, .. }
+                    ))
+                    .count(),
+                if mode == TurnMode::Build { 2 } else { 0 }
+            );
+            assert_eq!(
+                sessions.load(&parent.id).unwrap().unwrap().events,
+                parent_journal
+            );
+            if mode == TurnMode::Build {
+                let frozen = events
+                    .iter()
+                    .find_map(|e| match &e.kind {
+                        AgentEventKind::SystemInstructionsCommitted { content, .. } => {
+                            Some(content.clone())
+                        }
+                        _ => None,
+                    })
+                    .unwrap();
+                let restored = worker.clone().with_system_instructions(frozen.clone());
+                restored.validate_follow_up_child(&child_id).unwrap();
+                let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+                worker
+                    .coordinator
+                    .enqueue_input(
+                        &lease,
+                        &child_id,
+                        "goal-follow-up",
+                        "Inspect again",
+                        TurnMode::Build,
+                    )
+                    .unwrap();
+                let control = worker.coordinator.issue_control(&lease).unwrap();
+                drop(lease);
+                restored
+                    .drain_queued_prepared(control, child_id.clone(), CancellationToken::new())
+                    .await
+                    .unwrap();
+                assert_eq!(model.calls.load(Ordering::SeqCst), 3);
+                let after = sessions.load(&child_id).unwrap().unwrap().events;
+                let contexts = after
+                    .iter()
+                    .filter_map(|e| match &e.kind {
+                        AgentEventKind::SystemInstructionsCommitted { content, .. } => {
+                            Some(content.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(contexts, vec![frozen.as_str(), frozen.as_str()]);
+            }
+            let reopened = NativeGoalStore::new(Arc::new(
+                SessionStore::open(root.path().join("sessions")).unwrap(),
+            ));
+            assert_eq!(reopened.list(&parent.id).unwrap(), vec![parent_goal]);
+            assert_eq!(reopened.list(&child_id).unwrap(), vec![child_goal]);
+        }
+    }
+    struct LegacyGoalGuard(AtomicUsize);
+    #[async_trait]
+    impl ModelBackend for LegacyGoalGuard {
+        fn model_id(&self) -> &str {
+            "fixture-child"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        async fn complete(
+            &self,
+            _: &[AgentMessage],
+            tools: &[ToolDefinition],
+            _: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            assert!(!tools.iter().any(|t| matches!(
+                t.name.as_str(),
+                "get_goal" | "record_goal_evidence" | "complete_goal"
+            )));
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(ModelOutput {
+                content: "Legacy scope preserved".into(),
+                tool_calls: vec![],
+            })
+        }
+    }
+    #[tokio::test]
+    async fn goal_enabled_host_recovers_legacy_child_without_adding_goal_tools() {
+        let root = tempfile::tempdir().unwrap();
+        let model = Arc::new(LegacyGoalGuard(AtomicUsize::new(0)));
+        let tools = Arc::new(LocalTools::new());
+        let (parent_id, child_id) = crashed_child(
+            root.path(),
+            model.clone(),
+            tools.clone(),
+            CrashPoint::ModelInFlight,
+        );
+        let (sessions, _, worker) = reopened_worker(root.path(), model.clone(), tools);
+        let worker = worker
+            .with_native_goals()
+            .with_nested_subagents(SubagentToolLimits::default());
+        let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent_id).unwrap());
+        let result = worker
+            .resume(
+                parent_lease,
+                child_id.clone(),
+                "spawn-recover".into(),
+                "Recover safely".into(),
+                TurnMode::Build,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            result,
+            SubagentRecoveryState::Terminal(SubagentTurnResult {
+                status: SubagentStatus::Completed,
+                ..
+            })
+        ));
+        assert_eq!(model.0.load(Ordering::SeqCst), 1);
+        let events = sessions.load(&child_id).unwrap().unwrap().events;
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e.kind, AgentEventKind::ToolCatalogCommitted { .. }))
+                .count(),
+            1
+        );
+    }
+    #[tokio::test]
+    async fn goal_enabled_child_recovery_reopens_own_ledger_and_exact_catalog() {
+        use openide_core::{NativeGoalCriterion, NativeGoalStore};
+        let root = tempfile::tempdir().unwrap();
+        let model = Arc::new(ChildGoalReader {
+            mode: TurnMode::Build,
+            calls: AtomicUsize::new(0),
+            expect_frozen_goal: false,
+        });
+        let tools = Arc::new(LocalTools::new());
+        let (parent_id, child_id) = crashed_child_with_goal_mode(
+            root.path(),
+            model.clone(),
+            tools.clone(),
+            CrashPoint::ModelInFlight,
+            PermissionPolicy::new(),
+            true,
+        );
+        let (sessions, _, worker) = reopened_worker(root.path(), model.clone(), tools);
+        let worker = worker.with_native_goals();
+        let goals = openide_core::NativeGoalStore::new(sessions.clone());
+        let child_lease = sessions.try_acquire_native_lease(&child_id).unwrap();
+        let goal = goals
+            .create(
+                &child_lease,
+                "child-goal",
+                "Child full objective",
+                vec![NativeGoalCriterion {
+                    id: "verify".into(),
+                    description: "Verify".into(),
+                    evidence: None,
+                }],
+            )
+            .unwrap();
+        drop(child_lease);
+        let before = sessions.load(&child_id).unwrap().unwrap().events;
+        let digest = before
+            .iter()
+            .find_map(|e| match &e.kind {
+                AgentEventKind::ToolCatalogCommitted { digest } => Some(digest.clone()),
+                _ => None,
+            })
+            .unwrap();
+        let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent_id).unwrap());
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            worker.resume(
+                parent_lease,
+                child_id.clone(),
+                "spawn-recover".into(),
+                "Recover safely".into(),
+                TurnMode::Build,
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            result,
+            SubagentRecoveryState::Terminal(SubagentTurnResult {
+                status: SubagentStatus::Completed,
+                ..
+            })
+        ));
+        assert_eq!(model.calls.load(Ordering::SeqCst), 2);
+        let events = sessions.load(&child_id).unwrap().unwrap().events;
+        assert_eq!(
+            events
+                .iter()
+                .filter_map(|e| match &e.kind {
+                    AgentEventKind::ToolCatalogCommitted { digest } => Some(digest.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![digest.as_str()]
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e.kind, AgentEventKind::ToolFinished { .. }))
+                .count(),
+            3
+        );
+        assert_eq!(
+            NativeGoalStore::new(Arc::new(
+                SessionStore::open(root.path().join("sessions")).unwrap()
+            ))
+            .list(&child_id)
+            .unwrap(),
+            vec![goal]
         );
     }
 }

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "project-info",
+  "name": "Información del proyecto",
+  "version": "1.0.0",
+  "description": "Consulta nombres y contadores del primer nivel del proyecto sin leer el contenido de sus archivos.",
+  "publisher": "OpenIDE",
+  "program": "python3",
+  "entrypoint": "server.py",
+  "args": ["${workspace}"],
+  "credential_env_names": []
+}

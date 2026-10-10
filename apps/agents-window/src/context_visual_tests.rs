@@ -1,0 +1,553 @@
+//! Real-composer context review with synthetic usage and the application's fonts.
+//! No provider, persisted conversation, credentials, or user documents are read.
+
+use crate::composer_ui::{build_composer, ComposerProps};
+use crate::native_context_ui::{
+    NativeContextCategory, NativeContextMeasurementStatus, NativeContextRow, NativeContextSection,
+    NativeContextUiState,
+};
+use crate::{theme, view};
+use eframe::egui;
+use openide_core::ModelTokenUsage;
+use openide_ui::{
+    DrawCommand, Element, FontFamily, Frame, Key, Point, Rect, Size, UiAction, UiEvent, UiTree,
+};
+use std::collections::BTreeSet;
+use std::path::Path;
+
+const CASES: [&str; 10] = [
+    "unknown",
+    "measured-30",
+    "tiny",
+    "near-full-95",
+    "compacted",
+    "input-only",
+    "five-long-sources",
+    "ready-to-compact",
+    "compacting",
+    "error",
+];
+const SOURCES: [&str; 5] = ["Sistema", "Proyecto", "Skills", "Herramientas", "MCP"];
+const DRAFT: &str = "Revisá el uso de contexto sin modificar los archivos.";
+const DETAIL_MARKER: &str = "DIAGNOSTIC_FINGERPRINT_NOT_SUMMARY";
+
+fn usage(input: u64, output: u64) -> ModelTokenUsage {
+    ModelTokenUsage {
+        input_tokens: input,
+        output_tokens: output,
+        total_tokens: input + output,
+        cached_input_tokens: Some(input / 2),
+        reasoning_tokens: Some(output / 2),
+    }
+}
+
+fn fixture(name: &str) -> view::ViewState {
+    let mut state = view::tests::empty_state();
+    let workspace = std::env::temp_dir().canonicalize().unwrap();
+    state.workspace = workspace.display().to_string();
+    state.selected_backend = "native".into();
+    state.native_provider_id = "fixture-provider".into();
+    state.model = "context-review-model".into();
+    state.composer_model = state.model.clone();
+    state.composer_model_options = vec![(state.model.clone(), "Modelo de revisión".into())];
+    state.prompt = DRAFT.into();
+    let mut context = NativeContextUiState {
+        workspace: Some(workspace),
+        provider: state.native_provider_id.clone(),
+        model: state.model.clone(),
+        window: Some(100_000),
+        conversation_usage: Some(usage(240_000, 60_000)),
+        reported_responses: 10,
+        measurement_status: NativeContextMeasurementStatus::Measured,
+        last_usage: Some(match name {
+            "tiny" => usage(300, 100),
+            "near-full-95" => usage(80_000, 15_000),
+            "input-only" => usage(30_000, 8_000),
+            _ => usage(24_000, 6_000),
+        }),
+        ..Default::default()
+    };
+    match name {
+        "unknown" => {
+            context.last_usage = None;
+            context.measurement_status = NativeContextMeasurementStatus::NoResponse;
+        }
+        "compacted" => {
+            context.last_usage = None;
+            context.checkpoint_sequence = Some(42);
+            context.measurement_status = NativeContextMeasurementStatus::AfterCheckpoint;
+        }
+        "error" => {
+            context.error = Some("No se puede verificar el journal de esta conversación".into());
+        }
+        "input-only" => {
+            context.window = None;
+            context.input_limit = Some(100_000);
+        }
+        _ => {}
+    }
+    context.remaining_percent = context
+        .used_fraction()
+        .map(|fraction| ((1.0 - fraction) * 100.0).round() as u8);
+    let values = if name == "five-long-sources" {
+        [
+            "84 296 bytes de instrucciones combinadas y verificadas",
+            "12 documentos · 96 512 bytes del proyecto seleccionado",
+            "24 skills seleccionadas · 188 765 bytes renderizados",
+            "Catálogo congelado · cantidad y tokens no registrados",
+            "12 servidores habilitados · 384 herramientas observadas",
+        ]
+    } else {
+        [
+            "8 192 bytes",
+            "3 docs · 4 096 bytes",
+            "4 locales · 2 048 bytes",
+            "Cantidad desconocida",
+            "2 servidores",
+        ]
+    };
+    for ((id, label), value) in ["system", "project", "skills", "tools", "mcp"]
+        .into_iter()
+        .zip(SOURCES)
+        .zip(values)
+    {
+        context.breakdown.push(NativeContextCategory::new(id, label, value,
+            "Observación con unidades propias. No representa una atribución de tokens ni se suma al contexto medido."));
+    }
+    context.sections.push(NativeContextSection {
+        title: "Procedencia de la medición".into(),
+        rows: vec![NativeContextRow::new(
+            "Identidad de la ruta",
+            DETAIL_MARKER,
+            "Coincidencia exacta de proveedor, modelo, endpoint y perfil de petición.",
+        )],
+    });
+    state.native_context = context;
+    if matches!(name, "ready-to-compact" | "compacting") {
+        state.selected_session = Some("context-conversation".into());
+        state.native_context.owner = state.selected_session.clone();
+        state.sessions.push(view::SessionView {
+            id: "context-conversation".into(),
+            title: "Conversación con historial".into(),
+            project: state.workspace.clone(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+            native_automation: None,
+        });
+        if name == "compacting" {
+            state
+                .conversation_activity
+                .begin_compaction("context-conversation", Path::new(&state.workspace));
+        }
+    }
+    state
+}
+
+fn root(state: &view::ViewState, size: Size) -> Element {
+    let props =
+        ComposerProps::from_state(state, size.width, false, None, "Escribí una tarea", None);
+    Element::column(vec![Element::spacer().flex(1.0), build_composer(&props)])
+        .background(theme::BACKGROUND)
+        .size(Some(size.width), Some(size.height))
+}
+
+fn native_tree(element: Element, size: Size) -> (egui::Context, UiTree) {
+    let ctx = egui::Context::default();
+    crate::fonts::install(&ctx);
+    ctx.begin_pass(egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(size.width, size.height),
+        )),
+        ..Default::default()
+    });
+    let measure = ctx.clone();
+    let mut tree = UiTree::new(element);
+    tree.set_reduced_motion(true);
+    tree.set_text_measurer(move |text, size, family| {
+        measure.fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap(
+                    text.to_owned(),
+                    egui::FontId::new(
+                        size,
+                        match family {
+                            FontFamily::Sans => egui::FontFamily::Proportional,
+                            FontFamily::Monospace => egui::FontFamily::Monospace,
+                        },
+                    ),
+                    egui::Color32::WHITE,
+                )
+                .size()
+                .x
+        })
+    });
+    (ctx, tree)
+}
+
+fn region(frame: &Frame, id: &str) -> Rect {
+    frame
+        .regions
+        .iter()
+        .find(|region| region.id == id)
+        .unwrap_or_else(|| panic!("missing context control {id}"))
+        .rect
+}
+
+fn assert_popup_bounds(frame: &Frame, size: Size) {
+    let popup = region(frame, "popover_surface:composer_context_dismiss");
+    assert!(popup.width > 0.0 && popup.height > 0.0);
+    assert!(popup.x >= 0.0 && popup.y >= 0.0, "{popup:?}");
+    assert!(
+        popup.x + popup.width <= size.width + 0.1 && popup.y + popup.height <= size.height + 0.1,
+        "popup {popup:?} must fit {size:?}"
+    );
+    for scroll in frame.regions.iter().filter(|region| {
+        matches!(
+            region.id.as_str(),
+            "composer_context_summary" | "composer_context_details"
+        )
+    }) {
+        let rect = scroll.rect;
+        assert!(
+            rect.x >= popup.x
+                && rect.y >= popup.y
+                && rect.x + rect.width <= popup.x + popup.width + 0.1
+                && rect.y + rect.height <= popup.y + popup.height + 0.1,
+            "scroll {rect:?} must remain inside popup {popup:?}"
+        );
+    }
+}
+
+fn visible_text(frame: &Frame, size: Size) -> Vec<String> {
+    let mut clips = vec![Rect::new(0.0, 0.0, size.width, size.height)];
+    let mut text = Vec::new();
+    for command in &frame.commands {
+        match command {
+            DrawCommand::PushClip(rect) => {
+                let parent = clips.last().unwrap();
+                let x = parent.x.max(rect.x);
+                let y = parent.y.max(rect.y);
+                clips.push(Rect::new(
+                    x,
+                    y,
+                    (parent.x + parent.width).min(rect.x + rect.width) - x,
+                    (parent.y + parent.height).min(rect.y + rect.height) - y,
+                ));
+            }
+            DrawCommand::PopClip if clips.len() > 1 => {
+                clips.pop();
+            }
+            DrawCommand::Text {
+                position,
+                text: value,
+                font_size,
+                ..
+            } => {
+                let clip = clips.last().unwrap();
+                let middle_y = position.y + font_size / 2.0;
+                if position.x >= clip.x
+                    && position.x < clip.x + clip.width
+                    && middle_y >= clip.y
+                    && middle_y < clip.y + clip.height
+                {
+                    text.push(value.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    text
+}
+
+fn activate(tree: &mut UiTree, id: &str) {
+    assert!(tree.focus(id), "focus {id}");
+    assert_eq!(
+        tree.handle_event(UiEvent::Key {
+            key: Key::Enter,
+            shift: false,
+            ctrl: false
+        }),
+        vec![UiAction::Clicked { id: id.into() }]
+    );
+}
+
+#[test]
+fn context_popup_real_composer_preserves_exact_usage_and_short_window_bounds() {
+    for name in CASES {
+        for size in [Size::new(360.0, 320.0), Size::new(900.0, 420.0)] {
+            let mut state = fixture(name);
+            let expected = state.native_context.used_fraction();
+            let (ctx, mut tree) = native_tree(root(&state, size), size);
+            let before = tree.layout(size);
+            let editor = region(&before, "prompt");
+            assert!(
+                before.commands.iter().any(|command| matches!(command,
+                DrawCommand::ProgressRing { fraction, .. } if *fraction == expected)),
+                "{name}"
+            );
+            assert!(
+                expected != Some(1.0),
+                "fixture cumulative use is 300%, current use must differ"
+            );
+            activate(&mut tree, "composer_context_toggle");
+            state.composer_context_open = true;
+            tree.set_root(root(&state, size));
+            let frame = tree.layout(size);
+            assert_popup_bounds(&frame, size);
+            assert_eq!(
+                region(&frame, "prompt"),
+                editor,
+                "popover cannot move the composer"
+            );
+            let text = visible_text(&frame, size).join("\n");
+            assert!(
+                !text.contains(DETAIL_MARKER),
+                "technical details are opt-in"
+            );
+            assert!(
+                !text.contains("300%"),
+                "accumulated consumption is not current occupancy"
+            );
+            assert!(tree
+                .handle_event(UiEvent::Key {
+                    key: Key::Escape,
+                    shift: false,
+                    ctrl: false
+                })
+                .contains(&UiAction::Clicked {
+                    id: "composer_context_dismiss".into()
+                }));
+            state.composer_context_open = false;
+            tree.set_root(root(&state, size));
+            let closed = tree.layout(size);
+            assert!(!closed
+                .regions
+                .iter()
+                .any(|region| region.id == "popover_surface:composer_context_dismiss"));
+            assert_eq!(tree.input_value("prompt"), Some(DRAFT));
+            ctx.end_pass().textures_delta.clear();
+        }
+    }
+}
+
+#[test]
+fn context_long_source_rows_and_details_remain_reachable_at_native_font_widths() {
+    for width in [360.0, 900.0] {
+        let size = Size::new(width, 420.0);
+        let mut state = fixture("five-long-sources");
+        state.composer_context_open = true;
+        let (ctx, mut tree) = native_tree(root(&state, size), size);
+        let summary = tree.layout(size);
+        assert_popup_bounds(&summary, size);
+        let summary_text = visible_text(&summary, size);
+        for label in SOURCES {
+            assert!(
+                !summary_text.iter().any(|text| text == label),
+                "source lists are opt-in"
+            );
+        }
+        assert!(summary_text.iter().any(|text| text == "Detalles"));
+        assert!(region(&summary, "popover_surface:composer_context_dismiss").height <= 220.0);
+        activate(&mut tree, "composer_context_details_toggle");
+        state.composer_context_details_open = true;
+        tree.set_root(root(&state, size));
+        let mut seen = BTreeSet::new();
+        for _ in 0..24 {
+            let frame = tree.layout(size);
+            assert_popup_bounds(&frame, size);
+            seen.extend(visible_text(&frame, size));
+            let scroll = region(&frame, "composer_context_details");
+            tree.handle_event(UiEvent::Scroll {
+                position: Point::new(
+                    scroll.x + scroll.width / 2.0,
+                    scroll.y + scroll.height / 2.0,
+                ),
+                delta_y: -60.0,
+            });
+        }
+        for label in SOURCES {
+            assert!(
+                seen.contains(label),
+                "source {label} is reachable in details at {width}px: {seen:?}"
+            );
+        }
+        tree.scroll_to_end("composer_context_details");
+        let details = tree.layout(size);
+        assert!(
+            visible_text(&details, size)
+                .join("")
+                .contains(DETAIL_MARKER),
+            "provenance is reachable only after opening and scrolling details"
+        );
+        assert_eq!(tree.input_value("prompt"), Some(DRAFT));
+        ctx.end_pass().textures_delta.clear();
+    }
+}
+
+#[test]
+fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() {
+    const ACTION: &str = "composer_context_compact:context-conversation";
+    for width in [280.0, 360.0, 900.0] {
+        let size = Size::new(width, 420.0);
+        let mut state = fixture("ready-to-compact");
+        state.composer_context_open = true;
+        let (ctx, mut tree) = native_tree(root(&state, size), size);
+        let frame = tree.layout(size);
+        assert_popup_bounds(&frame, size);
+        let compact = region(&frame, ACTION);
+        let details = region(&frame, "composer_context_details_toggle");
+        let popup = region(&frame, "popover_surface:composer_context_dismiss");
+        assert!(compact.width > 0.0 && compact.height >= 28.0);
+        assert!(compact.x >= popup.x && compact.x + compact.width <= details.x);
+        assert!(compact.y + compact.height <= popup.y + popup.height);
+        assert!(visible_text(&frame, size)
+            .iter()
+            .any(|text| text == "Compactar"));
+        activate(&mut tree, ACTION);
+        assert_eq!(tree.input_value("prompt"), Some(DRAFT));
+
+        state
+            .conversation_activity
+            .begin_compaction("context-conversation", Path::new(&state.workspace));
+        tree.set_root(root(&state, size));
+        let busy = tree.layout(size);
+        assert!(visible_text(&busy, size)
+            .iter()
+            .any(|text| text == "Compactando"));
+        assert!(
+            !tree.focus(ACTION),
+            "disabled compaction cannot receive keyboard activation"
+        );
+        let actions = tree.handle_event(UiEvent::Key {
+            key: Key::Enter,
+            ctrl: false,
+            shift: false,
+        });
+        assert!(!actions.contains(&UiAction::Clicked { id: ACTION.into() }));
+        activate(&mut tree, "composer_context_details_toggle");
+
+        state = fixture("unknown");
+        state.composer_context_open = true;
+        tree.set_root(root(&state, size));
+        let home = tree.layout(size);
+        assert!(!home
+            .regions
+            .iter()
+            .any(|region| region.id.starts_with("composer_context_compact:")));
+        assert_eq!(tree.input_value("prompt"), Some(DRAFT));
+        ctx.end_pass().textures_delta.clear();
+    }
+}
+
+#[test]
+fn failed_context_keeps_its_error_visible_without_reusing_old_measurements() {
+    let size = Size::new(360.0, 420.0);
+    let mut state = fixture("measured-30");
+    state.native_context.error =
+        Some("No se puede verificar el journal de esta conversación".into());
+    state.composer_context_open = true;
+    let (ctx, mut tree) = native_tree(root(&state, size), size);
+    let frame = tree.layout(size);
+    let summary = visible_text(&frame, size).join("\n");
+    assert!(summary.contains("Consulta no disponible"));
+    assert!(!summary.contains("30%"));
+    assert!(frame
+        .commands
+        .iter()
+        .any(|command| matches!(command, DrawCommand::ProgressRing { fraction: None, .. })));
+    state.composer_context_details_open = true;
+    tree.set_root(root(&state, size));
+    let details = tree.layout(size);
+    assert_popup_bounds(&details, size);
+    let error = state.native_context.error.as_deref().unwrap();
+    let block = details
+        .text_layouts()
+        .into_iter()
+        .find(|block| block.source == error)
+        .expect("the complete error is retained as selectable, wrapped text");
+    assert!(!block.runs.is_empty());
+    assert!(
+        block.runs.iter().all(|run| run
+            .visible
+            .is_some_and(|visible| visible.width >= run.rect.width - 0.1
+                && visible.height >= run.rect.height - 0.1)),
+        "every error line must be visible on the first details page"
+    );
+    let painted = visible_text(&details, size).join(" ");
+    let normalized = painted.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized.contains(error),
+        "full error must be painted: {normalized}"
+    );
+    ctx.end_pass().textures_delta.clear();
+}
+
+fn export(frame: &Frame, directory: &Path, name: &str, size: Size) {
+    let path = directory.join(format!(
+        "context-{name}-{:.0}x{:.0}.svg",
+        size.width, size.height
+    ));
+    crate::settings_ui::visual_qa::write_native_frame_svg(frame, &path, size.width, size.height)
+        .unwrap();
+    let svg = resvg::usvg::Tree::from_str(
+        &std::fs::read_to_string(&path).unwrap(),
+        &crate::settings_ui::visual_qa::native_svg_options(),
+    )
+    .unwrap();
+    let mut image = resvg::tiny_skia::Pixmap::new(size.width as u32, size.height as u32).unwrap();
+    resvg::render(
+        &svg,
+        resvg::tiny_skia::Transform::identity(),
+        &mut image.as_mut(),
+    );
+    image.save_png(path.with_extension("png")).unwrap();
+}
+
+#[test]
+#[ignore = "opt-in real-composer context SVG/PNG review with native fonts"]
+fn export_context_visual_review() {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/context-visual-qa");
+    std::fs::create_dir_all(&directory).unwrap();
+    for name in CASES {
+        for width in [360.0, 900.0] {
+            for height in [320.0, 420.0] {
+                let size = Size::new(width, height);
+                let mut state = fixture(name);
+                state.composer_context_open = true;
+                let (ctx, mut tree) = native_tree(root(&state, size), size);
+                let frame = tree.layout(size);
+                assert_popup_bounds(&frame, size);
+                assert!(frame.commands.iter().any(|command| matches!(command,
+                    DrawCommand::ProgressRing { fraction, .. } if *fraction == state.native_context.used_fraction())));
+                export(&frame, &directory, name, size);
+                if matches!(name, "five-long-sources" | "error") {
+                    tree.scroll_to_end("composer_context_summary");
+                    export(
+                        &tree.layout(size),
+                        &directory,
+                        "five-long-sources-bottom",
+                        size,
+                    );
+                    state.composer_context_details_open = true;
+                    tree.set_root(root(&state, size));
+                    let details = tree.layout(size);
+                    assert_popup_bounds(&details, size);
+                    export(
+                        &details,
+                        &directory,
+                        if name == "error" {
+                            "error-details"
+                        } else {
+                            "details"
+                        },
+                        size,
+                    );
+                }
+                ctx.end_pass().textures_delta.clear();
+            }
+        }
+    }
+}

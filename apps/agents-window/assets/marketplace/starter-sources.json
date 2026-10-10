@@ -1,0 +1,542 @@
+[
+  {
+    "id": "starter-anthropic:frontend-design",
+    "name": "frontend-design",
+    "description": "Diseño de interfaces con tipografía, composición e identidad visual intencionales.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/frontend-design",
+    "category": "Diseño y frontend",
+    "compatibility": "Guía de diseño portable; no incluye frameworks ni herramientas de vista previa.",
+    "upstream_notices": [
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  {
+    "id": "starter-anthropic:algorithmic-art",
+    "name": "algorithmic-art",
+    "description": "Arte generativo reproducible con p5.js, parámetros interactivos y plantillas HTML.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/algorithmic-art",
+    "category": "Diseño y frontend",
+    "compatibility": "Necesita navegador y p5.js; la plantilla carga p5.js desde CDN. Las funciones de artefactos de Claude no están incluidas.",
+    "upstream_notices": [
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  {
+    "id": "starter-anthropic:brand-guidelines",
+    "name": "brand-guidelines",
+    "description": "Colores y tipografía de la identidad de Anthropic para piezas que requieran esa marca.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/brand-guidelines",
+    "category": "Diseño y frontend",
+    "compatibility": "Específica de la marca Anthropic, no un sistema de diseño universal. Ejemplos PPTX requieren python-pptx.",
+    "upstream_notices": [
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  {
+    "id": "starter-anthropic:internal-comms",
+    "name": "internal-comms",
+    "description": "Plantillas para informes de estado, novedades, preguntas frecuentes y comunicación interna.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/internal-comms",
+    "category": "Documentación",
+    "compatibility": "Guía de redacción con ejemplos; sus formatos internos deben adaptarse a la organización.",
+    "upstream_notices": [
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  {
+    "id": "starter-anthropic:mcp-builder",
+    "name": "mcp-builder",
+    "description": "Diseño e implementación de servidores MCP con TypeScript o Python.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/mcp-builder",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Node/TypeScript o Python y el SDK MCP para construir y probar servidores. Incluye scripts; instalar no los ejecuta ni conecta servicios.",
+    "upstream_notices": [
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  {
+    "id": "starter-anthropic:webapp-testing",
+    "name": "webapp-testing",
+    "description": "Pruebas de aplicaciones web locales con Playwright y captura de evidencias.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/webapp-testing",
+    "category": "Calidad y pruebas",
+    "compatibility": "Requiere Python, Playwright y sus navegadores, además del entorno de la aplicación. Incluye scripts de prueba y arranque; instalar no los ejecuta.",
+    "upstream_notices": [
+      "THIRD_PARTY_NOTICES.md"
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-react-best-practices",
+    "name": "vercel-react-best-practices",
+    "description": "Rendimiento de React y Next.js: renderizado, cargas, datos y tamaño del paquete.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/react-best-practices",
+    "category": "Diseño y frontend",
+    "compatibility": "Para proyectos React/Next.js. Incluye AGENTS.md y todas las reglas originales; no requiere una cuenta Vercel para consultar la guía.",
+    "upstream_notices": [
+      "README.md"
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-composition-patterns",
+    "name": "vercel-composition-patterns",
+    "description": "Composición de componentes React y APIs reutilizables sin exceso de propiedades booleanas.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/composition-patterns",
+    "category": "Diseño y frontend",
+    "compatibility": "Para React; algunas recomendaciones usan APIs de React 19. Incluye todas las reglas y referencias.",
+    "upstream_notices": [
+      "README.md"
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-react-native-skills",
+    "name": "vercel-react-native-skills",
+    "description": "Rendimiento, listas, animaciones y módulos nativos en React Native y Expo.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/react-native-skills",
+    "category": "Diseño y frontend",
+    "compatibility": "Requiere un proyecto React Native/Expo y sus herramientas para ejecutar ejemplos; instalar la guía no prepara Android ni iOS.",
+    "upstream_notices": [
+      "README.md"
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-react-view-transitions",
+    "name": "vercel-react-view-transitions",
+    "description": "Transiciones de navegación y elementos compartidos con las APIs de React View Transition.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/react-view-transitions",
+    "category": "Diseño y frontend",
+    "compatibility": "Depende de la versión de React/Next.js y del soporte de View Transition. Algunas APIs son experimentales; incluye sus limitaciones y referencias.",
+    "upstream_notices": [
+      "README.md"
+    ]
+  },
+  {
+    "id": "starter-supabase:supabase-postgres-best-practices",
+    "name": "supabase-postgres-best-practices",
+    "description": "Diseño, consultas, índices, RLS y rendimiento de Postgres, mantenido por Supabase.",
+    "publisher": "Supabase",
+    "license": "MIT",
+    "repository": "supabase/agent-skills",
+    "revision": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+    "directory": "skills/supabase-postgres-best-practices",
+    "category": "Datos",
+    "compatibility": "Aplicable a Postgres dentro o fuera de Supabase. Ejecutar consultas o migraciones requiere una base autorizada; no se configura ninguna conexión.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:agents-md",
+    "name": "agents-md",
+    "description": "Instrucciones de repositorio AGENTS.md concisas y basadas en referencias reales.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/agents-md",
+    "category": "Documentación",
+    "compatibility": "Guía portable de documentación; las convenciones de atribución y CLAUDE.md se adaptan al proyecto.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:code-review",
+    "name": "code-review",
+    "description": "Revisión de cambios con criterios de seguridad, rendimiento, diseño y pruebas de Sentry.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/code-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Guía de revisión portable; aplicar sus convenciones según las reglas del repositorio.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:code-simplifier",
+    "name": "code-simplifier",
+    "description": "Refactorización para mejorar claridad y mantenimiento sin alterar el comportamiento.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/code-simplifier",
+    "category": "Calidad y pruebas",
+    "compatibility": "Incluye convenciones de Sentry y ejemplos TypeScript/React; deben adaptarse al lenguaje y a las reglas del proyecto.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:commit",
+    "name": "commit",
+    "description": "Mensajes de commit convencionales siguiendo las prácticas de Sentry.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/commit",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Git para crear commits. Los tipos, referencias y convenciones son de Sentry; no realiza commits al instalarse.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:create-branch",
+    "name": "create-branch",
+    "description": "Creación de ramas Git con nombres coherentes y prevención de colisiones.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/create-branch",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Git; sigue convenciones de Sentry y puede crear o cambiar una rama cuando se use. Instalar no modifica el repositorio.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:django-access-review",
+    "name": "django-access-review",
+    "description": "Revisión de autorización, aislamiento de usuarios e IDOR en Django y Django REST Framework.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/django-access-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Requiere código Django/DRF para analizar. Los nombres de herramientas del autor se adaptan al agente; no concede permisos adicionales.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:django-perf-review",
+    "name": "django-perf-review",
+    "description": "Detección de consultas N+1 y problemas de rendimiento del ORM de Django.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/django-perf-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Orientada a Python/Django. Ejecutar validaciones requiere las dependencias y una base de pruebas del proyecto.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:document-api-endpoint",
+    "name": "document-api-endpoint",
+    "description": "Documentación y tipos de endpoints Sentry con Django REST Framework y drf-spectacular.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/document-api-endpoint",
+    "category": "Documentación",
+    "compatibility": "Específica del backend Sentry y sus convenciones de esquema; no es una guía universal de OpenAPI. Las consultas a servicios necesitan herramientas y acceso propios.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:find-bugs",
+    "name": "find-bugs",
+    "description": "Auditoría del diff de una rama para detectar errores y vulnerabilidades con evidencia.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/find-bugs",
+    "category": "Calidad y pruebas",
+    "compatibility": "El flujo original usa Git y GitHub CLI (gh) autenticado para obtener la rama base. No incluye esas herramientas ni cambia código automáticamente.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:security-review",
+    "name": "security-review",
+    "description": "Revisión de seguridad con guías por lenguaje, vulnerabilidad y cadena de suministro.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/security-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Guía portable para revisar código con referencias completas. Las herramientas y comandos citados dependen del proyecto y de sus permisos.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-sentry:pr-writer",
+    "name": "pr-writer",
+    "description": "Títulos y descripciones de pull requests centrados en el cambio que debe revisar el equipo.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/pr-writer",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Git y GitHub CLI (gh) autenticado para crear o actualizar PR. Instalar no publica nada ni habilita credenciales.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-identity-rust",
+    "name": "azure-identity-rust",
+    "description": "Autenticación Microsoft Entra ID con Azure Identity para Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-identity-rust",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Rust/Cargo y azure_identity; probar autenticación requiere credenciales Azure adecuadas. No instala SDK ni conecta cuentas.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-storage-blob-rust",
+    "name": "azure-storage-blob-rust",
+    "description": "Contenedores, cargas, descargas y streaming de Azure Blob Storage en Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-storage-blob-rust",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Rust/Cargo, SDK Azure y una cuenta Storage para operaciones reales. No crea recursos ni concede acceso.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-keyvault-secrets-rust",
+    "name": "azure-keyvault-secrets-rust",
+    "description": "Almacenamiento y consulta de secretos con Azure Key Vault en Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-keyvault-secrets-rust",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Rust/Cargo, SDK Key Vault, un vault y permisos explícitos. No incluye ni solicita secretos durante la instalación.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-cosmos-rust",
+    "name": "azure-cosmos-rust",
+    "description": "Documentos, contenedores y claves de partición de Azure Cosmos DB desde Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-cosmos-rust",
+    "category": "Datos",
+    "compatibility": "Requiere Rust/Cargo, azure_data_cosmos y una cuenta Cosmos DB autorizada para ejecutar ejemplos.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:fastapi-router-py",
+    "name": "fastapi-router-py",
+    "description": "Rutas FastAPI con operaciones CRUD, autenticación y modelos de respuesta.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/fastapi-router-py",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Python y FastAPI. Las plantillas y rutas de ejemplo deben adaptarse a la estructura del proyecto.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:pydantic-models-py",
+    "name": "pydantic-models-py",
+    "description": "Modelos Pydantic para creación, actualización, validación y respuestas de API.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/pydantic-models-py",
+    "category": "Datos",
+    "compatibility": "Para Python con Pydantic v2; los modelos y plantillas no se generan ni ejecutan al instalar.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-identity-py",
+    "name": "azure-identity-py",
+    "description": "Credenciales, identidades administradas y caché de tokens con Azure Identity en Python.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/azure-identity-py",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Python compatible y azure-identity. Autenticación real requiere una identidad Azure autorizada.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-storage-blob-py",
+    "name": "azure-storage-blob-py",
+    "description": "Gestión de blobs, contenedores y transferencias de Azure Storage con Python.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/azure-storage-blob-py",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Python, azure-storage-blob, azure-identity y una cuenta Storage con acceso autorizado.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:zustand-store-ts",
+    "name": "zustand-store-ts",
+    "description": "Estado global TypeScript con Zustand, selectores y separación de acciones.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/zustand-store-ts",
+    "category": "Diseño y frontend",
+    "compatibility": "Para proyectos TypeScript/React con Zustand; las plantillas se adaptan al proyecto y no se ejecutan al instalar.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:react-flow-node-ts",
+    "name": "react-flow-node-ts",
+    "description": "Nodos tipados, conectores y estado para editores visuales con React Flow.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/react-flow-node-ts",
+    "category": "Diseño y frontend",
+    "compatibility": "Requiere React, TypeScript, React Flow y Zustand. Incluye una plantilla TSX; no instala dependencias.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-identity-ts",
+    "name": "azure-identity-ts",
+    "description": "Autenticación Azure con identidades administradas y credenciales en JavaScript/TypeScript.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/azure-identity-ts",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere @azure/identity y un runtime compatible. Los ejemplos de autenticación necesitan credenciales o una identidad administrada.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-storage-blob-ts",
+    "name": "azure-storage-blob-ts",
+    "description": "Blobs, SAS, contenedores y streaming de Azure Storage en JavaScript/TypeScript.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/azure-storage-blob-ts",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere @azure/storage-blob y un runtime compatible; algunos ejemplos son sólo Node.js. Las operaciones requieren acceso a una cuenta Storage.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-cloudflare:workers-best-practices",
+    "name": "workers-best-practices",
+    "description": "Patrones de producción, seguridad y observabilidad para Cloudflare Workers.",
+    "publisher": "Cloudflare",
+    "license": "Apache-2.0",
+    "repository": "cloudflare/skills",
+    "revision": "41e0d19858946d18af9ee2c2feebbe2e11d829ff",
+    "directory": "skills/workers-best-practices",
+    "category": "Nube y despliegue",
+    "compatibility": "Guía para proyectos Workers; comprobar APIs actuales puede requerir acceso a documentación. Desplegar requiere herramientas y cuenta Cloudflare propias.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "id": "starter-cloudflare:wrangler",
+    "name": "wrangler",
+    "description": "Configuración, desarrollo local y uso de Wrangler para proyectos Cloudflare Workers.",
+    "publisher": "Cloudflare",
+    "license": "Apache-2.0",
+    "repository": "cloudflare/skills",
+    "revision": "41e0d19858946d18af9ee2c2feebbe2e11d829ff",
+    "directory": "skills/wrangler",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Node.js, Wrangler y las dependencias del proyecto. Operaciones remotas necesitan una cuenta o token autorizado; instalar no despliega ni inicia sesión.",
+    "upstream_notices": [
+      "LICENSE"
+    ]
+  }
+]

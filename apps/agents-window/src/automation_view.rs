@@ -4,9 +4,9 @@
 
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ControlSize, DateTimePicker, Element, Empty,
-    FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Step, Stepper, Switch, Tab, Tabs,
-    TextArea, TextField, TimePicker, Tooltip,
+    Alert, AlertTone, Button, ButtonVariant, Color, Component, ControlSize, DateTimePicker,
+    Element, Empty, FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Step, Stepper,
+    Switch, Tab, Tabs, TextArea, TextField, TimePicker, Tooltip,
 };
 
 use crate::{
@@ -14,6 +14,7 @@ use crate::{
         parse_local_once, Automation, AutomationDraft, AutomationError, AutomationRun,
         AutomationRunStatus, AutomationSchedule,
     },
+    native_automation_result::NativeAutomationOutcome,
     native_provider::NativeProviderSettings,
     theme,
 };
@@ -104,7 +105,7 @@ impl AutomationFilter {
             Self::All => "Todas",
             Self::Active => "Activas",
             Self::Paused => "Pausadas",
-            Self::Completed => "Completadas",
+            Self::Completed => "Sin próximas",
             Self::Failed => "Con errores",
         }
     }
@@ -349,6 +350,9 @@ pub struct AutomationViewState {
     pub pending_delete_id: Option<String>,
     pub notice: Option<String>,
     pub error: Option<String>,
+    /// Fresh verification errors are separate from confirmed results and
+    /// historical dispatch diagnostics. Supplied only for this workspace.
+    pub native_result_errors: Vec<String>,
 }
 
 impl AutomationViewState {
@@ -376,6 +380,7 @@ impl AutomationViewState {
             pending_delete_id: None,
             notice: None,
             error: None,
+            native_result_errors: Vec::new(),
         }
     }
 
@@ -442,7 +447,7 @@ impl AutomationStatus {
         match self {
             Self::Active => "Activa",
             Self::Paused => "Pausada",
-            Self::Completed => "Completada",
+            Self::Completed => "Sin próximas",
             Self::Failed => "Con error",
         }
     }
@@ -453,10 +458,24 @@ fn status_for(item: &Automation, runs: &[AutomationRun]) -> AutomationStatus {
         .iter()
         .filter(|run| run.automation_id == item.id)
         .max_by_key(|run| run.created_at);
-    if matches!(
-        last.map(|run| run.status),
-        Some(AutomationRunStatus::Failed | AutomationRunStatus::Interrupted)
-    ) {
+    let has_error = last.is_some_and(|run| {
+        run.native_result.as_ref().map_or_else(
+            || {
+                matches!(
+                    run.status,
+                    AutomationRunStatus::Failed | AutomationRunStatus::Interrupted
+                )
+            },
+            |result| {
+                result.recovery_required()
+                    || matches!(
+                        result.outcome(),
+                        NativeAutomationOutcome::Failed | NativeAutomationOutcome::Interrupted
+                    )
+            },
+        )
+    });
+    if has_error {
         AutomationStatus::Failed
     } else if item.enabled {
         AutomationStatus::Active
@@ -556,9 +575,9 @@ fn action(
     icon: Option<Icon>,
     variant: ButtonVariant,
 ) -> Element {
-    let mut button = Button::new(id, title, theme::component_palette())
+    let mut button = Button::new(id, title, theme::interactive_palette())
         .variant(variant)
-        .size(ControlSize::Compact);
+        .size(ControlSize::Regular);
     if let Some(icon) = icon {
         button = button.icon(icon);
     }
@@ -566,9 +585,9 @@ fn action(
 }
 
 fn icon_action(id: String, icon: Icon, tooltip: &str, enabled: bool) -> Element {
-    IconButton::new(id, icon, theme::component_palette())
+    IconButton::new(id, icon, theme::interactive_palette())
         .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Compact)
+        .size(ControlSize::Regular)
         .tooltip(tooltip)
         .enabled(enabled)
         .render()
@@ -708,7 +727,7 @@ fn template_card(template: &AutomationTemplate, width: f32) -> Element {
         }
         _ => String::new(),
     };
-    Element::clickable(
+    theme::interactive_surface(Element::clickable(
         format!("automation_template:{}", template.id),
         Element::column(vec![
             Element::row(vec![
@@ -727,13 +746,9 @@ fn template_card(template: &AutomationTemplate, width: f32) -> Element {
             text(schedule, 10.0, theme::FOREGROUND_SUBTLE),
         ])
         .gap(5.0),
-    )
+    ))
     .background(theme::BACKGROUND)
-    .hover_background(theme::HOVER)
-    .pressed_background(theme::SELECTED)
-    .transition_ms(140)
     .border(theme::BORDER, 1.0)
-    .radius(10.0)
     .padding(10.0)
     .size(Some(width), Some(94.0))
 }
@@ -1037,11 +1052,16 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
             Element::row(backend_options).gap(4.0)
         }
     };
-    let mut backend_rows = vec![
-        section_label("Motor del agente"),
-        muted("Elige quién iniciará cada ejecución."),
-        backend_controls,
-    ];
+    // With a single way to run a task there is nothing to choose.
+    let mut backend_rows = if state.backends.len() == 1 {
+        vec![section_label("Modelo del agente")]
+    } else {
+        vec![
+            section_label("Motor del agente"),
+            muted("Elige quién iniciará cada ejecución."),
+            backend_controls,
+        ]
+    };
     if state.form.backend == "native" {
         let selected = state
             .form
@@ -1101,9 +1121,21 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
         .gap(9.0),
         AutomationEditorStep::Agent => editor_agent_step(state, width),
     };
-    Element::column(vec![stepper, divider(), form])
-        .gap(14.0)
-        .size(Some(width), None)
+    let mut content = vec![stepper, divider()];
+    if let Some(error) = &state.error {
+        content.push(
+            Alert::new(
+                "Revisa la automatización",
+                error,
+                theme::component_palette(),
+            )
+            .tone(AlertTone::Error)
+            .compact(true)
+            .render(),
+        );
+    }
+    content.push(form);
+    Element::column(content).gap(14.0).size(Some(width), None)
 }
 
 pub fn editor_modal_footer(state: &AutomationViewState) -> Element {
@@ -1142,20 +1174,7 @@ pub fn editor_modal_footer(state: &AutomationViewState) -> Element {
             ButtonVariant::Default,
         ));
     }
-    let actions = Element::row(controls).gap(6.0);
-    if let Some(error) = &state.error {
-        Element::column(vec![
-            Element::panel(text(error, 12.0, theme::DESTRUCTIVE))
-                .background(theme::CARD)
-                .border(theme::DESTRUCTIVE, 1.0)
-                .padding(9.0)
-                .radius(8.0),
-            actions,
-        ])
-        .gap(8.0)
-    } else {
-        actions
-    }
+    Element::row(controls).gap(6.0)
 }
 
 fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
@@ -1196,8 +1215,20 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
             .font_family(FontFamily::Sans)
             .font_size(22.0)
             .foreground(theme::FOREGROUND),
-        muted("Cada ejecución queda asociada a una sesión; los fallos conservan su diagnóstico."),
+        muted("El despacho y el resultado del agente se registran por separado. Los resultados nativos se verifican contra el origen y el journal de la sesión."),
     ];
+    for error in &state.native_result_errors {
+        body.push(
+            Alert::new(
+                "Resultado nativo no verificable",
+                error,
+                theme::component_palette(),
+            )
+            .tone(AlertTone::Error)
+            .compact(content_width < 640.0)
+            .render(),
+        );
+    }
     if runs.is_empty() {
         body.push(
             Empty::new(
@@ -1213,24 +1244,83 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
         );
     } else {
         for run in runs {
-            let (status, color) = match run.status {
-                AutomationRunStatus::Pending => ("Iniciando", theme::FOREGROUND_SUBTLE),
-                AutomationRunStatus::Dispatched => ("Sesión creada", theme::FOREGROUND),
-                AutomationRunStatus::Failed => ("Falló", theme::DESTRUCTIVE),
-                AutomationRunStatus::Skipped => ("Omitida", theme::FOREGROUND_SUBTLE),
-                AutomationRunStatus::Interrupted => ("Interrumpida", theme::DESTRUCTIVE),
+            let (dispatch_status, dispatch_color, dispatch_explanation) =
+                match (run.status, run.session_id.is_some()) {
+                    (AutomationRunStatus::Pending, true) => (
+                        "Sesión vinculada",
+                        theme::FOREGROUND_SUBTLE,
+                        "Inicio del agente aún no confirmado.",
+                    ),
+                    (AutomationRunStatus::Pending, false) => (
+                        "Despacho pendiente",
+                        theme::FOREGROUND_SUBTLE,
+                        "Aún no hay una sesión vinculada.",
+                    ),
+                    (AutomationRunStatus::Dispatched, _) => (
+                        "Despacho confirmado",
+                        theme::FOREGROUND,
+                        "El resultado final se consulta en la sesión.",
+                    ),
+                    (AutomationRunStatus::Failed, true) => (
+                        "Falló el despacho",
+                        theme::DESTRUCTIVE,
+                        "La sesión vinculada conserva su diagnóstico.",
+                    ),
+                    (AutomationRunStatus::Failed, false) => (
+                        "Falló el despacho",
+                        theme::DESTRUCTIVE,
+                        "No hay una sesión vinculada.",
+                    ),
+                    (AutomationRunStatus::Skipped, _) => (
+                        "Omitida",
+                        theme::FOREGROUND_SUBTLE,
+                        "No se inició esta ejecución.",
+                    ),
+                    (AutomationRunStatus::Interrupted, true) => (
+                        "Sesión vinculada",
+                        theme::DESTRUCTIVE,
+                        "Despacho interrumpido; revisa la sesión para continuar.",
+                    ),
+                    (AutomationRunStatus::Interrupted, false) => (
+                        "Despacho interrumpido",
+                        theme::DESTRUCTIVE,
+                        "Sin sesión vinculada; no se repite automáticamente.",
+                    ),
+                };
+            let (status, color, explanation) = match run.native_result.as_ref() {
+                Some(result) => {
+                    let (status, color) = match result.outcome() {
+                        NativeAutomationOutcome::Completed => ("Completada", theme::FOREGROUND),
+                        NativeAutomationOutcome::Failed => ("Fallida", theme::DESTRUCTIVE),
+                        NativeAutomationOutcome::Cancelled => {
+                            ("Cancelada", theme::FOREGROUND_SUBTLE)
+                        }
+                        NativeAutomationOutcome::Interrupted => {
+                            ("Interrumpida", theme::DESTRUCTIVE)
+                        }
+                    };
+                    (status, color, "Último resultado guardado de la sesión.")
+                }
+                None => (dispatch_status, dispatch_color, dispatch_explanation),
             };
             let when = Local
                 .timestamp_millis_opt(run.scheduled_at)
                 .single()
                 .map(|time| time.format("%d/%m/%Y %H:%M").to_string())
                 .unwrap_or_else(|| "Fecha desconocida".to_owned());
-            let mut details = vec![
+            let status_line = if content_width < 520.0 {
+                Element::column(vec![text(status, 13.0, color), muted(when).font_size(11.0)])
+                    .gap(3.0)
+            } else {
                 Element::row(vec![
                     text(status, 13.0, color),
                     Element::spacer().flex(1.0),
                     muted(when).font_size(11.0),
-                ]),
+                ])
+            };
+            let mut details = vec![
+                status_line,
+                muted(explanation).font_size(11.0),
                 muted(if run.manual {
                     "Inicio manual"
                 } else {
@@ -1238,8 +1328,37 @@ fn history_page(state: &AutomationViewState, content_width: f32) -> Vec<Element>
                 })
                 .font_size(11.0),
             ];
+            if let Some(result) = &run.native_result {
+                details.push(muted(format!("Despacho: {dispatch_status}")).font_size(11.0));
+                details.push(
+                    muted(format!(
+                        "Journal observado hasta el evento {}{}",
+                        result.last_sequence(),
+                        result
+                            .terminal_sequence()
+                            .map(|sequence| format!(" · terminal {sequence}"))
+                            .unwrap_or_default(),
+                    ))
+                    .font_size(11.0),
+                );
+                if result.recovery_required() {
+                    details.push(text(
+                        "Requiere resolución en la sesión",
+                        11.0,
+                        theme::DESTRUCTIVE,
+                    ));
+                }
+            }
             if let Some(error) = &run.error {
-                details.push(text(error, 11.0, theme::DESTRUCTIVE));
+                details.push(text(
+                    if run.native_result.is_some() {
+                        format!("Diagnóstico de despacho: {error}")
+                    } else {
+                        error.clone()
+                    },
+                    11.0,
+                    theme::DESTRUCTIVE,
+                ));
             }
             if let Some(session_id) = &run.session_id {
                 details.push(action(
@@ -1274,22 +1393,28 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
     if let Some(notice) = &state.notice {
         body.insert(
             0,
-            Element::panel(text(notice, 12.0, theme::FOREGROUND))
-                .padding(8.0)
-                .background(theme::CARD)
-                .border(theme::BORDER, 1.0)
-                .radius(7.0),
+            Alert::new(
+                "Aviso de automatizaciones",
+                notice,
+                theme::component_palette(),
+            )
+            .tone(AlertTone::Info)
+            .compact(content_width < 640.0)
+            .render(),
         );
     }
     if state.screen != AutomationScreen::Edit {
         if let Some(error) = &state.error {
             body.insert(
                 0,
-                Element::panel(text(error, 12.0, theme::DESTRUCTIVE))
-                    .padding(8.0)
-                    .background(theme::CARD)
-                    .border(theme::DESTRUCTIVE, 1.0)
-                    .radius(7.0),
+                Alert::new(
+                    "Error de automatizaciones",
+                    error,
+                    theme::component_palette(),
+                )
+                .tone(AlertTone::Error)
+                .compact(content_width < 640.0)
+                .render(),
             );
         }
     }
@@ -1343,7 +1468,7 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{Key, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{Key, Point, Size, UiAction, UiEvent, UiTree};
 
     fn state() -> AutomationViewState {
         AutomationViewState::new(
@@ -1485,13 +1610,13 @@ mod tests {
         state.editor_step = AutomationEditorStep::Agent;
         tree.set_root(build_automations(&state, 960.0));
         let agent = tree.layout(Size::new(960.0, 780.0));
-        for id in [
-            "automation_backend:codex",
-            "automation_previous",
-            "automation_save",
-        ] {
+        for id in ["automation_previous", "automation_save"] {
             assert!(agent.regions.iter().any(|r| r.id == id), "missing {id}");
         }
+        assert!(
+            !agent.regions.iter().any(|r| r.id.starts_with("automation_backend:")),
+            "a single engine leaves nothing to choose"
+        );
         assert_eq!(
             tree.handle_event(UiEvent::Key {
                 key: Key::Escape,
@@ -1522,6 +1647,276 @@ mod tests {
         state.screen = AutomationScreen::History;
         let history = UiTree::new(build_automations(&state, 760.0)).layout(Size::new(760.0, 720.0));
         assert!(history.regions.iter().any(|r| r.id == "automation_back"));
+    }
+
+    #[test]
+    fn history_distinguishes_recovered_links_from_dispatch_and_opens_session_at_small_and_large_widths(
+    ) {
+        for width in [320.0, 960.0] {
+            let mut state = state();
+            state.items.push(sample());
+            state.selected_id = Some("one".into());
+            state.screen = AutomationScreen::History;
+            state.runs = [
+                (
+                    AutomationRunStatus::Interrupted,
+                    "recovered-native-session",
+                    3,
+                ),
+                (
+                    AutomationRunStatus::Dispatched,
+                    "dispatched-native-session",
+                    2,
+                ),
+                (
+                    AutomationRunStatus::Failed,
+                    "failed-linked-native-session",
+                    1,
+                ),
+            ]
+            .into_iter()
+            .map(|(status, session_id, created_at)| AutomationRun {
+                run_id: format!("one:{created_at}"),
+                automation_id: "one".into(),
+                scheduled_at: 2_000_000,
+                manual: false,
+                status,
+                session_id: Some(session_id.into()),
+                native_result: None,
+                error: None,
+                created_at,
+                updated_at: created_at,
+            })
+            .collect();
+            let viewport = Size::new(width, 900.0);
+            let mut tree = UiTree::new(build_automations(&state, width));
+            let frame = tree.layout(viewport);
+            let rendered = frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    openide_ui::DrawCommand::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            let rendered = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+            for label in [
+                "Sesión vinculada",
+                "Despacho confirmado",
+                "Falló el despacho",
+                "Despacho interrumpido; revisa la sesión para continuar.",
+                "El resultado final se consulta en la sesión.",
+            ] {
+                assert!(
+                    rendered.contains(label),
+                    "missing {label} at {width}: {rendered}"
+                );
+            }
+            assert!(!rendered.contains("Completada"));
+            for region in &frame.regions {
+                assert!(
+                    region.rect.x >= -0.5,
+                    "{} starts outside at {width}",
+                    region.id
+                );
+                assert!(
+                    region.rect.x + region.rect.width <= width + 0.5,
+                    "{} ends outside at {width}",
+                    region.id
+                );
+            }
+            let id = "automation_open_session:recovered-native-session";
+            let button = frame
+                .regions
+                .iter()
+                .find(|region| region.id == id)
+                .unwrap()
+                .rect;
+            assert!(button.y >= 0.0 && button.y + button.height <= viewport.height);
+            let point = Point::new(
+                button.x + button.width / 2.0,
+                button.y + button.height / 2.0,
+            );
+            tree.handle_event(UiEvent::PointerDown(point));
+            assert_eq!(
+                tree.handle_event(UiEvent::PointerUp(point)),
+                vec![UiAction::Clicked { id: id.into() }]
+            );
+        }
+    }
+
+    #[test]
+    fn history_prioritizes_verified_native_outcomes_and_preserves_dispatch_diagnostics_and_actions()
+    {
+        use crate::automations::tests::{native_result_fixture, observed_result};
+        use openide_core::{AgentEvent, AgentEventKind};
+
+        for (terminal, label, requires_resolution) in [
+            (None, "Interrumpida", true),
+            (
+                Some(AgentEventKind::TurnFailed {
+                    error: "Failed before model request".into(),
+                }),
+                "Fallida",
+                false,
+            ),
+            (Some(AgentEventKind::TurnCancelled), "Cancelada", false),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let workspace = directory.path().join("project");
+            let (mut store, sessions, checkpoints, dispatch, session) =
+                native_result_fixture(directory.path(), &workspace, true);
+            sessions
+                .append_native_event(&AgentEvent::new(
+                    &session.id,
+                    2,
+                    AgentEventKind::TurnStarted {
+                        prompt: dispatch.prompt.clone(),
+                    },
+                ))
+                .unwrap();
+            if let Some(terminal) = terminal {
+                sessions
+                    .append_native_event(&AgentEvent::new(&session.id, 3, terminal))
+                    .unwrap();
+            }
+            let (record, result) = observed_result(&sessions, &checkpoints, &session.id);
+            store
+                .complete_run(
+                    &dispatch.run_id,
+                    Err("Dispatch receipt was interrupted".into()),
+                    2_000_010,
+                )
+                .unwrap();
+            store
+                .record_native_result(&record, &result, 2_000_020)
+                .unwrap();
+            for width in [360.0, 900.0] {
+                let mut state = state();
+                state.items = store.automations().to_vec();
+                state.runs = store.runs().to_vec();
+                state.selected_id = Some(dispatch.automation_id.clone());
+                state.screen = AutomationScreen::History;
+                let viewport = Size::new(width, 900.0);
+                let mut tree = UiTree::new(build_automations(&state, width));
+                let frame = tree.layout(viewport);
+                let text = frame
+                    .commands
+                    .iter()
+                    .filter_map(|command| match command {
+                        openide_ui::DrawCommand::Text { text, .. } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                assert!(text.contains(label), "{width}: {text}");
+                assert!(text.contains("Último resultado guardado de la sesión."));
+                assert!(text.contains("Despacho: Falló el despacho"));
+                assert!(text.contains("Diagnóstico de despacho: Dispatch receipt was interrupted"));
+                assert_eq!(
+                    text.contains("Requiere resolución en la sesión"),
+                    requires_resolution
+                );
+                assert_eq!(
+                    status_for(&state.items[0], &state.runs) == AutomationStatus::Failed,
+                    label != "Cancelada"
+                );
+                assert!(!text.contains("Completada"));
+                for region in &frame.regions {
+                    assert!(
+                        region.rect.x >= -0.5 && region.rect.x + region.rect.width <= width + 0.5,
+                        "{} outside {width}: {:?}",
+                        region.id,
+                        region.rect
+                    );
+                }
+                let id = format!("automation_open_session:{}", session.id);
+                let button = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == id)
+                    .unwrap()
+                    .rect;
+                assert!(button.y >= 0.0 && button.y + button.height <= viewport.height);
+                let point = Point::new(
+                    button.x + button.width / 2.0,
+                    button.y + button.height / 2.0,
+                );
+                tree.handle_event(UiEvent::PointerDown(point));
+                assert_eq!(
+                    tree.handle_event(UiEvent::PointerUp(point)),
+                    vec![UiAction::Clicked { id }]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn history_shows_current_verification_error_without_overwriting_confirmed_result() {
+        use crate::automations::tests::{native_result_fixture, observed_result};
+
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("project");
+        let (mut store, sessions, checkpoints, dispatch, session) =
+            native_result_fixture(directory.path(), &workspace, false);
+        let (record, result) = observed_result(&sessions, &checkpoints, &session.id);
+        store
+            .record_native_result(&record, &result, 2_000_010)
+            .unwrap();
+        let diagnostic = format!(
+            "Resultado de {} no verificable: falta el checkpoint original; el resultado confirmado conserva el journal observado hasta el evento 1. No se admitió ni repitió una solicitud.",
+            dispatch.run_id,
+        );
+        for width in [360.0, 900.0] {
+            let mut state = state();
+            state.items = store.automations().to_vec();
+            state.runs = store.runs().to_vec();
+            state.selected_id = Some(dispatch.automation_id.clone());
+            state.screen = AutomationScreen::History;
+            state.native_result_errors.push(diagnostic.clone());
+            let frame =
+                UiTree::new(build_automations(&state, width)).layout(Size::new(width, 900.0));
+            let rendered = frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    openide_ui::DrawCommand::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            let rendered = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                rendered.contains("Resultado nativo no verificable"),
+                "{width}: {rendered}"
+            );
+            // A long exact run ID wraps inside its word on narrow surfaces.
+            // Verify every diagnostic character survives, including its tail.
+            let compact_rendered: String =
+                rendered.chars().filter(|c| !c.is_whitespace()).collect();
+            let compact_diagnostic: String =
+                diagnostic.chars().filter(|c| !c.is_whitespace()).collect();
+            assert!(
+                compact_rendered.contains(&compact_diagnostic),
+                "{width}: {rendered}"
+            );
+            assert!(rendered.contains("Interrumpida"));
+            assert_eq!(
+                state.runs[0].native_result.as_ref(),
+                Some(result.snapshot())
+            );
+            assert!(state.runs[0].error.is_none());
+            for region in &frame.regions {
+                assert!(
+                    region.rect.x >= -0.5 && region.rect.x + region.rect.width <= width + 0.5,
+                    "{} outside {width}: {:?}",
+                    region.id,
+                    region.rect
+                );
+            }
+        }
     }
 
     #[test]
@@ -1580,7 +1975,7 @@ mod tests {
     fn short_viewport_keeps_editor_actions_visible() {
         let mut state = state();
         state.screen = AutomationScreen::Edit;
-        state.error = Some("Escribe un título".into());
+        state.error = Some("Escribe un título y revisa las instrucciones. La fecha elegida no está disponible; elige otra fecha y comprueba el horario local antes de continuar.".into());
         let viewport = Size::new(320.0, 240.0);
         for (step, expected_action) in [
             (AutomationEditorStep::Content, "automation_next"),
@@ -1613,6 +2008,29 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn editor_validation_alert_belongs_to_the_scrolling_body() {
+        let mut state = state();
+        state.screen = AutomationScreen::Edit;
+        state.error = Some("Escribe un título".into());
+        let body = UiTree::new(editor_modal_body(&state, 280.0)).layout(Size::new(280.0, 720.0));
+        assert!(body.commands.iter().any(|command| matches!(command,
+            openide_ui::DrawCommand::Text { text, .. } if text == "Escribe un título"
+        )));
+        let footer = UiTree::new(editor_modal_footer(&state)).layout(Size::new(280.0, 32.0));
+        assert!(!footer.commands.iter().any(|command| matches!(command,
+            openide_ui::DrawCommand::Text { text, .. } if text == "Escribe un título"
+        )));
+        assert!(footer
+            .regions
+            .iter()
+            .any(|region| region.id == "automation_next"));
+        assert!(footer
+            .regions
+            .iter()
+            .any(|region| region.id == "automation_cancel"));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! Choices are stored separately from the visible tree so changing a dock
 //! does not silently reset the configuration of the selected runner.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -28,6 +28,8 @@ pub(crate) struct ComposerPreferences {
     choices: BTreeMap<String, ComposerChoice>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     selected_backend: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    collapsed_model_providers: BTreeSet<String>,
 }
 
 impl ComposerPreferences {
@@ -61,12 +63,23 @@ impl ComposerPreferences {
         self.choices.insert(backend.to_owned(), choice);
     }
 
+    #[cfg(test)]
     pub fn selected_backend(&self) -> Option<&str> {
         self.selected_backend.as_deref()
     }
 
     pub fn set_selected_backend(&mut self, backend: &str) {
         self.selected_backend = Some(backend.to_owned());
+    }
+
+    pub fn collapsed_model_providers(&self) -> &BTreeSet<String> {
+        &self.collapsed_model_providers
+    }
+
+    pub fn toggle_model_provider(&mut self, provider: &str) {
+        if !self.collapsed_model_providers.remove(provider) {
+            self.collapsed_model_providers.insert(provider.to_owned());
+        }
     }
 
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
@@ -320,17 +333,25 @@ pub(crate) fn model_route_options_with_discovery_at(
     root: &std::path::Path,
 ) -> Result<Vec<ModelRouteOption>, String> {
     let registry = native_provider::ProviderRegistry::load(root)?;
-    Ok(model_route_options_with_keys_and_registry(
+    let mut options = model_route_options_with_keys_and_registry(
         catalog,
         settings,
         discoveries,
         &registry,
         |provider| {
             registry.adapter(provider).is_some_and(|adapter| {
-                std::env::var(&adapter.key_env).is_ok_and(|key| !key.trim().is_empty())
+                crate::provider_connections::read_key(root, &adapter.key_env).is_some()
             })
         },
-    ))
+    );
+    // The legacy native defaults are execution fallbacks, not a connection
+    // the user added to the picker. Explicit custom connections stay visible.
+    if !settings.has_explicit_configuration(root) {
+        options.retain(|route| {
+            route.provider_id != "custom" || route.source != RouteSource::UserConfigured
+        });
+    }
+    Ok(options)
 }
 
 /// Replace the bundled Codex fallback with the authenticated app-server
@@ -442,6 +463,25 @@ fn model_route_options_with_keys_and_registry(
     registry: &native_provider::ProviderRegistry,
     has_key: impl Fn(&str) -> bool,
 ) -> Vec<ModelRouteOption> {
+    let credential_for = |provider_id: &str, model_id: &str| {
+        if has_key(provider_id) {
+            return CredentialAvailability::EnvPresentUnverified;
+        }
+        let mut route_settings = settings.clone();
+        route_settings.provider_id = provider_id.to_owned();
+        route_settings.model_id = model_id.to_owned();
+        if registry
+            .adapter(provider_id)
+            .is_some_and(|adapter| adapter.key_optional)
+            && route_settings
+                .resolve_with_registry(registry, |name| std::env::var(name).ok())
+                .is_ok()
+        {
+            CredentialAvailability::NoKeyRequired
+        } else {
+            CredentialAvailability::MissingCredential
+        }
+    };
     let mut options = Vec::new();
     options.push(ModelRouteOption {
         route_id: "codex:codex:default".to_owned(),
@@ -484,6 +524,11 @@ fn model_route_options_with_keys_and_registry(
         let discovery = discoveries
             .iter()
             .find(|entry| entry.provider_id == provider_id);
+        // The account response is the complete Codex picker, including its
+        // order. A reviewed seed must not reintroduce an omitted/hidden ID.
+        if provider_id == "codex" && discovery.is_some() {
+            continue;
+        }
         options.push(ModelRouteOption {
             route_id: format!("native:{provider_id}:{model_id}"),
             backend: "native".to_owned(),
@@ -495,12 +540,14 @@ fn model_route_options_with_keys_and_registry(
                 .map(|model| model.name.clone())
                 .or_else(|| metadata.map(|model| model.name.clone()))
                 .unwrap_or_else(|| display_model(model_id)),
-            credential: if has_key(provider_id) {
-                CredentialAvailability::EnvPresentUnverified
-            } else {
-                CredentialAvailability::MissingCredential
-            },
-            execution: if native_provider::native_route_execution(provider_id, model_id, false)
+            credential: credential_for(provider_id, model_id),
+            execution: if discovery
+                .and_then(|entry| entry.models.get(model_id))
+                .is_some_and(|model| {
+                    model.tool_call_declared == Some(false) || !model.text_input_output
+                }) {
+                ExecutionSupport::Unsupported
+            } else if native_provider::native_route_execution(provider_id, model_id, false)
                 == NativeRouteExecution::Verified
             {
                 ExecutionSupport::Verified
@@ -525,10 +572,11 @@ fn model_route_options_with_keys_and_registry(
         let Some(adapter) = registry.adapter(&discovery.provider_id) else {
             continue;
         };
-        for model in discovery.models.values() {
-            if model.tool_call_declared == Some(false) || !model.text_input_output {
-                continue;
-            }
+        let mut models = discovery.models.values().collect::<Vec<_>>();
+        if discovery.provider_id == "codex" {
+            models.sort_by_key(|model| model.listing_index.unwrap_or(usize::MAX));
+        }
+        for model in models {
             if options.iter().any(|route| {
                 route.backend == "native"
                     && route.provider_id == discovery.provider_id
@@ -545,12 +593,13 @@ fn model_route_options_with_keys_and_registry(
                 provider_name: adapter.name.clone(),
                 model_id: model.id.clone(),
                 model_name: model.name.clone(),
-                credential: if has_key(&discovery.provider_id) {
-                    CredentialAvailability::EnvPresentUnverified
-                } else {
-                    CredentialAvailability::MissingCredential
-                },
-                execution: if model.provider_reports_tools {
+                credential: credential_for(&discovery.provider_id, &model.id),
+                execution: if model.tool_call_declared == Some(false)
+                    || !model.text_input_output
+                    || adapter.for_model(&model.id).is_err()
+                {
+                    ExecutionSupport::Unsupported
+                } else if model.provider_reports_tools {
                     ExecutionSupport::ProviderAdvertisedUnverified
                 } else {
                     ExecutionSupport::ProviderListedUnverified
@@ -584,21 +633,29 @@ fn model_route_options_with_keys_and_registry(
             let discovery = discoveries
                 .iter()
                 .find(|entry| entry.provider_id == provider_id);
-            let execution = match native_provider::native_route_execution_with_registry(
-                registry,
-                provider_id,
-                model_id,
-                true,
-            ) {
-                NativeRouteExecution::Verified => ExecutionSupport::Verified,
-                NativeRouteExecution::ExplicitUnverified
-                    if settings
-                        .resolve_with_registry(registry, |name| std::env::var(name).ok())
-                        .is_ok() =>
-                {
-                    ExecutionSupport::UnverifiedUserChoice
+            let execution = if discovery
+                .and_then(|entry| entry.models.get(model_id))
+                .is_some_and(|model| {
+                    model.tool_call_declared == Some(false) || !model.text_input_output
+                }) {
+                ExecutionSupport::Unsupported
+            } else {
+                match native_provider::native_route_execution_with_registry(
+                    registry,
+                    provider_id,
+                    model_id,
+                    true,
+                ) {
+                    NativeRouteExecution::Verified => ExecutionSupport::Verified,
+                    NativeRouteExecution::ExplicitUnverified
+                        if credential_for(provider_id, model_id)
+                            != CredentialAvailability::MissingCredential
+                            && settings.validated_endpoint_in(registry).is_ok() =>
+                    {
+                        ExecutionSupport::UnverifiedUserChoice
+                    }
+                    _ => ExecutionSupport::Unsupported,
                 }
-                _ => ExecutionSupport::Unsupported,
             };
             options.push(ModelRouteOption {
                 route_id: format!("native:{provider_id}:{model_id}"),
@@ -609,17 +666,7 @@ fn model_route_options_with_keys_and_registry(
                 model_name: metadata
                     .map(|model| model.name.clone())
                     .unwrap_or_else(|| display_model(model_id)),
-                credential: if has_key(provider_id) {
-                    CredentialAvailability::EnvPresentUnverified
-                } else if adapter.key_optional
-                    && settings
-                        .resolve_with_registry(registry, |name| std::env::var(name).ok())
-                        .is_ok()
-                {
-                    CredentialAvailability::NoKeyRequired
-                } else {
-                    CredentialAvailability::MissingCredential
-                },
+                credential: credential_for(provider_id, model_id),
                 execution,
                 source: RouteSource::UserConfigured,
                 catalog_present: metadata.is_some(),
@@ -695,20 +742,68 @@ fn effort_options_for_discovered_provider_with_registry(
     if backend != "native" {
         return effort_options_for_provider(backend, model, native_provider_id);
     }
-    let wire_supports_effort = registry.adapter(native_provider_id).is_some_and(|adapter| {
-        adapter.wire_api == native_provider::NativeWireApi::Responses
-            || adapter.reasoning_effort_field.is_some()
-    });
+    let wire_supports_effort = registry
+        .adapter(native_provider_id)
+        .and_then(|adapter| adapter.for_model(model).ok())
+        .is_some_and(|adapter| {
+            matches!(
+                adapter.wire_api,
+                native_provider::NativeWireApi::Responses
+                    | native_provider::NativeWireApi::AnthropicMessages
+            ) || adapter.reasoning_effort_field.is_some()
+        });
+    let discovered_model = discoveries
+        .iter()
+        .find(|d| d.provider_id == native_provider_id)
+        .and_then(|d| d.models.get(model));
+    let effort_supported = match discovered_model {
+        Some(discovered)
+            if discovered.capabilities_declared
+                || !discovered.declared_capabilities.is_empty()
+                || registry.adapter(native_provider_id).is_some_and(|adapter| {
+                    !adapter.catalog.capability_support_paths.is_empty()
+                }) =>
+        {
+            discovered.declared_capabilities.get("effort").copied()
+        }
+        _ => discovered_model
+            .and_then(|m| m.declared_capabilities.get("effort"))
+            .copied()
+            .or_else(|| {
+                catalog
+                    .and_then(|s| s.model(native_provider_id, model))
+                    .and_then(|m| m.declared_capabilities.get("effort"))
+                    .copied()
+            }),
+    };
+    if effort_supported == Some(false) {
+        return Vec::new();
+    }
     let listed = discoveries
         .iter()
         .find(|discovery| discovery.provider_id == native_provider_id)
         .and_then(|discovery| discovery.models.get(model))
-        .filter(|model| wire_supports_effort && !model.supported_efforts.is_empty());
+        .filter(|model| {
+            wire_supports_effort
+                && (model.efforts_declared
+                    || model.capabilities_declared
+                    || registry.adapter(native_provider_id).is_some_and(|adapter| {
+                        !adapter.catalog.capability_support_paths.is_empty()
+                    })
+                    || model.declared_capabilities.contains_key("effort")
+                    || !model.supported_efforts.is_empty())
+        });
     if let Some(listed) = listed {
         effort_options_from_levels(listed.supported_efforts.iter().map(String::as_str))
     } else if let Some(model) = catalog
         .and_then(|catalog| catalog.model(native_provider_id, model))
-        .filter(|model| wire_supports_effort && !model.provider_efforts.is_empty())
+        .filter(|model| {
+            wire_supports_effort
+                && (model.provider_efforts_declared
+                    || model.capabilities_declared
+                    || model.declared_capabilities.contains_key("effort")
+                    || !model.provider_efforts.is_empty())
+        })
     {
         effort_options_from_levels(model.provider_efforts.iter().map(String::as_str))
     } else if wire_supports_effort {
@@ -774,6 +869,70 @@ mod tests {
             .unwrap();
         assert_eq!(route.credential, CredentialAvailability::NoKeyRequired);
         assert!(route.selectable());
+    }
+
+    #[test]
+    fn discovered_local_model_keeps_declared_optional_credentials_and_valid_endpoint() {
+        let model_id = "local/model:exact";
+        let discovery = ProviderModelDiscovery {
+            provider_id: "custom".into(),
+            models: BTreeMap::from([(
+                model_id.into(),
+                DiscoveredModel {
+                    listing_index: None,
+                    limits_declared: false,
+                    efforts_declared: false,
+                    capabilities_declared: false,
+                    max_input_tokens: None,
+                    declared_capabilities: Default::default(),
+                    id: model_id.into(),
+                    name: model_id.into(),
+                    provider_reports_tools: true,
+                    tool_call_declared: Some(true),
+                    text_input_output: true,
+                    supported_efforts: Vec::new(),
+                    context_window_tokens: None,
+                    max_output_tokens: None,
+                },
+            )]),
+        };
+        for (endpoint, expected) in [
+            (
+                "http://127.0.0.1:1234/v1",
+                CredentialAvailability::NoKeyRequired,
+            ),
+            (
+                "not a valid endpoint",
+                CredentialAvailability::MissingCredential,
+            ),
+        ] {
+            let settings = NativeProviderSettings {
+                provider_id: "custom".into(),
+                model_id: model_id.into(),
+                custom_endpoint: endpoint.into(),
+            };
+            let routes = model_route_options_with_keys(
+                None,
+                &settings,
+                std::slice::from_ref(&discovery),
+                |_| false,
+            );
+            let matches: Vec<_> = routes
+                .iter()
+                .filter(|route| {
+                    route.backend == "native"
+                        && route.provider_id == "custom"
+                        && route.model_id == model_id
+                })
+                .collect();
+            assert_eq!(matches.len(), 1);
+            assert_eq!(matches[0].credential, expected);
+            assert_eq!(matches[0].source, RouteSource::ProviderDiscovery);
+            assert_eq!(
+                matches[0].selectable(),
+                expected == CredentialAvailability::NoKeyRequired
+            );
+        }
     }
     use crate::native_provider::DiscoveredModel;
     use serde_json::json;
@@ -957,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn authenticated_listing_keeps_unknown_capabilities_but_excludes_explicit_denials() {
+    fn authenticated_listing_keeps_unknown_capabilities_but_disables_explicit_denials() {
         let settings = NativeProviderSettings {
             provider_id: "openrouter".into(),
             model_id: "vendor/manual".into(),
@@ -967,34 +1126,58 @@ mod tests {
             (
                 "vendor/agent",
                 DiscoveredModel {
+                    listing_index: None,
+                    limits_declared: false,
+                    efforts_declared: false,
+                    capabilities_declared: false,
+                    max_input_tokens: None,
+                    declared_capabilities: Default::default(),
                     id: "vendor/agent".into(),
                     name: "Agent".into(),
                     provider_reports_tools: true,
                     tool_call_declared: Some(true),
                     text_input_output: true,
                     supported_efforts: Vec::new(),
+                    context_window_tokens: None,
+                    max_output_tokens: None,
                 },
             ),
             (
                 "vendor/no-tools",
                 DiscoveredModel {
+                    listing_index: None,
+                    limits_declared: false,
+                    efforts_declared: false,
+                    capabilities_declared: false,
+                    max_input_tokens: None,
+                    declared_capabilities: Default::default(),
                     id: "vendor/no-tools".into(),
                     name: "No tools".into(),
                     provider_reports_tools: false,
                     tool_call_declared: Some(false),
                     text_input_output: true,
                     supported_efforts: Vec::new(),
+                    context_window_tokens: None,
+                    max_output_tokens: None,
                 },
             ),
             (
                 "vendor/unknown-tools",
                 DiscoveredModel {
+                    listing_index: None,
+                    limits_declared: false,
+                    efforts_declared: false,
+                    capabilities_declared: false,
+                    max_input_tokens: None,
+                    declared_capabilities: Default::default(),
                     id: "vendor/unknown-tools".into(),
                     name: "Unknown tools".into(),
                     provider_reports_tools: false,
                     tool_call_declared: None,
                     text_input_output: true,
                     supported_efforts: Vec::new(),
+                    context_window_tokens: None,
+                    max_output_tokens: None,
                 },
             ),
         ]
@@ -1015,7 +1198,11 @@ mod tests {
         assert_eq!(agent.provider_listed, Some(true));
         assert!(agent.selectable());
         assert!(agent.effort_options.is_empty());
-        assert!(model_route_option_by_id(&routes, "native:openrouter:vendor/no-tools").is_none());
+        let denied =
+            model_route_option_by_id(&routes, "native:openrouter:vendor/no-tools").unwrap();
+        assert_eq!(denied.execution, ExecutionSupport::Unsupported);
+        assert_eq!(denied.provider_listed, Some(true));
+        assert!(!denied.selectable());
         let unknown =
             model_route_option_by_id(&routes, "native:openrouter:vendor/unknown-tools").unwrap();
         assert_eq!(
@@ -1026,6 +1213,26 @@ mod tests {
         let stale = model_route_option_by_id(&routes, "native:openrouter:vendor/manual").unwrap();
         assert_eq!(stale.provider_listed, Some(false));
         assert!(!stale.selectable());
+    }
+
+    #[test]
+    fn codex_native_routes_preserve_official_order_and_do_not_resurrect_hidden_or_selected_ids() {
+        let discovery = native_provider::parse_connected_models_for_adapter(
+            &native_provider::adapter("codex").unwrap(), &serde_json::to_vec(&native_provider::tests::codex_ordered_listing()).unwrap(),
+        ).unwrap();
+        for selected in ["model-beta", "hidden-first", "model-omitted"] {
+            let settings = NativeProviderSettings {
+                provider_id: "codex".into(), model_id: selected.into(),
+                ..NativeProviderSettings::default()
+            };
+            let routes = model_route_options_with_keys(None, &settings, std::slice::from_ref(&discovery), |_| true);
+            let visible = routes.iter().filter(|route| route.backend == "native" && route.provider_id == "codex" && route.provider_listed != Some(false)).collect::<Vec<_>>();
+            assert_eq!(visible.iter().map(|route| route.model_id.as_str()).collect::<Vec<_>>(),
+                ["model-zulu", "model-alpha", "model-middle", "model-beta"]);
+            assert_eq!(visible[0].model_name, "Modelo Zulu");
+            assert!(visible.iter().all(|route| route.execution == ExecutionSupport::ProviderListedUnverified));
+            assert!(routes.iter().filter(|route| route.backend == "native" && route.provider_id == "codex" && route.provider_listed == Some(false)).all(|route| !route.selectable()));
+        }
     }
 
     #[test]
@@ -1040,12 +1247,20 @@ mod tests {
             models: [(
                 "gpt-6-sol".into(),
                 DiscoveredModel {
+                    listing_index: None,
+                    limits_declared: false,
+                    efforts_declared: false,
+                    capabilities_declared: false,
+                    max_input_tokens: None,
+                    declared_capabilities: Default::default(),
                     id: "gpt-6-sol".into(),
                     name: "Provider Sol".into(),
                     provider_reports_tools: false,
                     tool_call_declared: None,
                     text_input_output: false,
                     supported_efforts: Vec::new(),
+                    context_window_tokens: None,
+                    max_output_tokens: None,
                 },
             )]
             .into_iter()
@@ -1054,11 +1269,69 @@ mod tests {
         let routes = model_route_options_with_keys(None, &settings, &[discovery], |_| true);
         let listed = model_route_option_by_id(&routes, "native:openai:gpt-6-sol").unwrap();
         assert_eq!(listed.model_name, "Provider Sol");
-        assert!(listed.selectable());
+        assert_eq!(listed.execution, ExecutionSupport::Unsupported);
+        assert!(!listed.selectable());
         let unlisted = model_route_option_by_id(&routes, "native:openai:gpt-6-astra").unwrap();
         assert_eq!(unlisted.execution, ExecutionSupport::Verified);
         assert_eq!(unlisted.provider_listed, Some(false));
         assert!(!unlisted.selectable());
+    }
+
+    #[test]
+    fn account_discovery_denials_override_reviewed_and_explicit_current_models() {
+        for model_id in ["gpt-4.1", "gpt-4.1-future"] {
+            let settings = NativeProviderSettings {
+                provider_id: "openai".into(),
+                model_id: model_id.into(),
+                ..NativeProviderSettings::default()
+            };
+            for (tool_call_declared, text_input_output) in
+                [(Some(false), true), (None, false), (None, true)]
+            {
+                let discovery = ProviderModelDiscovery {
+                    provider_id: "openai".into(),
+                    models: [(
+                        model_id.to_owned(),
+                        DiscoveredModel {
+                            listing_index: None,
+                            limits_declared: false,
+                            efforts_declared: false,
+                            capabilities_declared: false,
+                            max_input_tokens: None,
+                            declared_capabilities: Default::default(),
+                            id: model_id.into(),
+                            name: model_id.into(),
+                            provider_reports_tools: false,
+                            tool_call_declared,
+                            text_input_output,
+                            supported_efforts: Vec::new(),
+                            context_window_tokens: None,
+                            max_output_tokens: None,
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                };
+                let routes = model_route_options_with_keys(None, &settings, &[discovery], |_| true);
+                let route = model_route_option_by_id(&routes, &format!("native:openai:{model_id}"))
+                    .unwrap();
+                assert_eq!(route.provider_listed, Some(true));
+                if tool_call_declared == Some(false) || !text_input_output {
+                    assert_eq!(route.execution, ExecutionSupport::Unsupported);
+                    assert!(!route.selectable());
+                } else {
+                    assert!(route.selectable());
+                    assert_eq!(
+                        route.execution,
+                        if model_id == "gpt-4.1" {
+                            ExecutionSupport::Verified
+                        } else {
+                            ExecutionSupport::ProviderListedUnverified
+                        }
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -1087,7 +1360,7 @@ mod tests {
         let routes = model_route_options_with_keys_and_registry(
             None,
             &settings,
-            &[discovery],
+            std::slice::from_ref(&discovery),
             &registry,
             |_| true,
         );
@@ -1114,20 +1387,57 @@ mod tests {
                 "id":"new-provider", "name":"New Provider",
                 "models":{"reasoner-123":{
                     "id":"reasoner-123", "name":"Reasoner",
-                    "provider_efforts":["tier1", "tier2"]
+                    "provider_efforts":["tier1", "tier2"],
+                    "declared_capabilities":{"effort":false}
                 }}
             }))
             .unwrap(),
         );
+        let refreshed = model_route_options_with_keys_and_registry(
+            Some(&catalog),
+            &settings,
+            &[discovery],
+            &registry,
+            |_| true,
+        );
+        let route =
+            model_route_option_by_id(&refreshed, "native:new-provider:reasoner-123").unwrap();
+        assert_eq!(
+            route
+                .effort_options
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>(),
+            ["default", "low", "high"]
+        );
+        catalog
+            .providers
+            .get_mut("new-provider")
+            .unwrap()
+            .models
+            .get_mut("reasoner-123")
+            .unwrap()
+            .declared_capabilities
+            .clear();
         let basic_listing = native_provider::parse_connected_models_for_adapter(
             registry.adapter("new-provider").unwrap(),
             br#"{"data":[{"id":"reasoner-123","input_modalities":["text"],"output_modalities":["text"],"capabilities":{"tools":true}}]}"#,
         )
         .unwrap();
-        let from_catalog = model_route_options_with_keys_and_registry(
+        let fresh_unknown = model_route_options_with_keys_and_registry(
             Some(&catalog),
             &settings,
             &[basic_listing],
+            &registry,
+            |_| true,
+        );
+        let route =
+            model_route_option_by_id(&fresh_unknown, "native:new-provider:reasoner-123").unwrap();
+        assert!(route.effort_options.is_empty());
+        let from_catalog = model_route_options_with_keys_and_registry(
+            Some(&catalog),
+            &settings,
+            &[],
             &registry,
             |_| true,
         );
@@ -1164,6 +1474,8 @@ mod tests {
         let models = [openide_cli::DiscoveredCodexModel {
             id: "gpt-6-luna".into(),
             display_name: "Luna actual".into(),
+            description: None,
+            input_modalities: Vec::new(),
             supported_efforts: vec!["low".into(), "ultra".into()],
             is_default: true,
         }];

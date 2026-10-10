@@ -38,6 +38,15 @@ pub(crate) struct NativeSkillCatalogEntry {
     pub origin: SkillOrigin,
     pub document: PathBuf,
     pub selection: SkillSelection,
+    /// Complete SKILL.md text from the same bounded read as its observed hash.
+    /// It is retained for review in RAM and is never saved in the selection file.
+    pub instructions: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeSkillsClearSnapshot {
+    pub workspace: PathBuf,
+    pub selections: Vec<SkillSelection>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -51,6 +60,11 @@ pub(crate) struct NativeSkillsUiState {
     pub catalog_error: Option<String>,
     pub activation_error: Option<String>,
     pub reset_confirm_open: bool,
+    /// Exact catalog observation being reviewed; never an activation snapshot.
+    pub preview: Option<SkillSelection>,
+    pub preview_return_focus: Option<String>,
+    pub clear_workspace_confirm_open: bool,
+    pub clear_workspace_snapshot: Option<NativeSkillsClearSnapshot>,
 }
 
 impl NativeSkillsUiState {
@@ -86,6 +100,10 @@ impl NativeSkillsUiState {
     }
 
     pub fn refresh(&mut self, settings: &NativeSkillsSettings, data_root: &Path) {
+        self.preview = None;
+        self.preview_return_focus = None;
+        self.clear_workspace_confirm_open = false;
+        self.clear_workspace_snapshot = None;
         if self.load_error.is_some() {
             return;
         }
@@ -104,6 +122,7 @@ impl NativeSkillsUiState {
                             origin: skill.provenance.origin,
                             document: skill.provenance.document,
                             selection,
+                            instructions: skill.instructions,
                         }
                     })
                     .collect();
@@ -151,6 +170,68 @@ impl NativeSkillsUiState {
         }
         next.remove(index);
         Ok(next)
+    }
+
+    pub fn open_preview(&mut self, index: usize) -> Result<(), String> {
+        self.ensure_editable()?;
+        let entry = self
+            .available
+            .get(index)
+            .ok_or_else(|| "El documento ya no está disponible para revisar".to_owned())?;
+        self.preview = Some(entry.selection.clone());
+        self.preview_return_focus = Some(format!("native_skill_preview:{index}"));
+        Ok(())
+    }
+
+    /// A stale selection reviews the freshly observed document of the same
+    /// name, showing both hashes. Missing documents have nothing to preview.
+    pub fn open_selected_preview(&mut self, index: usize) -> Result<(), String> {
+        self.ensure_editable()?;
+        let selection = self
+            .selected
+            .get(index)
+            .ok_or_else(|| "La selección ya no existe".to_owned())?;
+        let available_index = self
+            .available
+            .iter()
+            .position(|entry| entry.name.eq_ignore_ascii_case(&selection.name))
+            .ok_or_else(|| {
+                "El documento seleccionado ya no está disponible; puedes quitar su selección"
+                    .to_owned()
+            })?;
+        self.open_preview(available_index)?;
+        self.preview_return_focus = Some(format!("native_skill_preview_selected:{index}"));
+        Ok(())
+    }
+
+    pub fn close_preview(&mut self) {
+        self.preview = None;
+        self.preview_return_focus = None;
+    }
+
+    pub fn preview_entry(&self) -> Option<&NativeSkillCatalogEntry> {
+        let preview = self.preview.as_ref()?;
+        self.available
+            .iter()
+            .find(|entry| entry.selection == *preview)
+    }
+
+    /// Use only the exact document currently displayed in the preview. Saving
+    /// this proposal still invokes fresh activation and rejects a disk change.
+    pub fn toggle_preview(&self) -> Result<Vec<SkillSelection>, String> {
+        self.ensure_editable()?;
+        let preview = self
+            .preview
+            .as_ref()
+            .ok_or_else(|| "Abre el documento antes de cambiar su selección".to_owned())?;
+        let index = self
+            .available
+            .iter()
+            .position(|entry| entry.selection == *preview)
+            .ok_or_else(|| {
+                "El documento observado cambió; actualiza y vuelve a revisarlo".to_owned()
+            })?;
+        self.toggle(index)
     }
 
     fn ensure_editable(&self) -> Result<(), String> {
@@ -343,7 +424,7 @@ fn load_document(data_root: &Path) -> Result<Document, String> {
         Err(error) => {
             return Err(format!(
                 "No se pudo inspeccionar las skills locales: {error}"
-            ))
+            ));
         }
     };
     if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > MAX_FILE_BYTES {
@@ -518,6 +599,81 @@ mod tests {
             .unwrap()
             .instructions
             .contains("Changed"));
+    }
+
+    #[test]
+    fn preview_retains_full_observed_document_and_revalidates_exact_hash_before_save() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        skill(
+            &project.join(".agents/skills"),
+            "review",
+            "Contenido completo ñ\nFIN-OBSERVADO",
+        );
+        let settings = NativeSkillsSettings::load(&data, &project).unwrap();
+        let mut view = NativeSkillsUiState::from_settings(&settings, &data);
+        let document = fs::read_to_string(&view.available[0].document).unwrap();
+        view.open_preview(0).unwrap();
+        assert_eq!(view.preview_entry().unwrap().instructions, document);
+        assert_eq!(
+            view.preview.as_ref().unwrap(),
+            &settings.discover(&data).unwrap()[0].selection()
+        );
+        assert!(
+            !data.join(FILE_NAME).exists(),
+            "review cannot save a selection"
+        );
+        let selected = settings.with_selections(view.toggle_preview().unwrap());
+        selected.save(&data).unwrap();
+        let saved = fs::read(data.join(FILE_NAME)).unwrap();
+        assert!(
+            !String::from_utf8(saved.clone())
+                .unwrap()
+                .contains("FIN-OBSERVADO"),
+            "the complete document is not persisted in selections"
+        );
+        let mut view = NativeSkillsUiState::from_settings(&selected, &data);
+        view.open_selected_preview(0).unwrap();
+        assert!(
+            view.toggle_preview().unwrap().is_empty(),
+            "reviewing an exact selected skill permits explicit removal"
+        );
+        let changed = document.replace("FIN-OBSERVADO", "FIN-CAMBIADO");
+        fs::write(&view.available[0].document, &changed).unwrap();
+        // The preview stays an honest old observation; saving its exact hash
+        // rejects the changed disk document rather than accepting unseen text.
+        assert_eq!(view.preview_entry().unwrap().instructions, document);
+        let stale = settings.with_selections(vec![view.preview.clone().unwrap()]);
+        assert!(stale.save(&data).is_err());
+        assert_eq!(fs::read(data.join(FILE_NAME)).unwrap(), saved);
+        view.refresh(&selected, &data);
+        assert!(view.preview.is_none());
+        assert!(view.preview_return_focus.is_none());
+        assert!(view.activation_error.is_some());
+        view.open_selected_preview(0).unwrap();
+        assert_eq!(view.preview_entry().unwrap().instructions, changed);
+        assert_ne!(view.preview.as_ref().unwrap(), &selected.selections[0]);
+        let accepted = selected.with_selections(view.toggle_preview().unwrap());
+        accepted.save(&data).unwrap();
+        let reopened = NativeSkillsSettings::load(&data, &project).unwrap();
+        assert_eq!(reopened.selections, accepted.selections);
+        assert!(reopened
+            .activate(&data)
+            .unwrap()
+            .instructions
+            .contains("FIN-CAMBIADO"));
+        assert!(!fs::read_to_string(data.join(FILE_NAME))
+            .unwrap()
+            .contains("FIN-CAMBIADO"));
+        let mut view = NativeSkillsUiState::from_settings(&reopened, &data);
+        view.open_selected_preview(0).unwrap();
+        fs::remove_file(&view.available[0].document).unwrap();
+        view.refresh(&reopened, &data);
+        assert!(view.available.is_empty());
+        assert!(view.open_selected_preview(0).is_err());
+        assert!(view.preview.is_none());
     }
 
     #[test]

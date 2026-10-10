@@ -121,6 +121,14 @@ pub enum McpError {
     LegacyHttpRequired,
     #[error("HTTP MCP session expired")]
     SessionExpired,
+    #[error(
+        "MCP HTTP handshake failed: {handshake}; session cleanup failed: {cleanup}; the remote session may remain active"
+    )]
+    HandshakeCleanupFailed {
+        #[source]
+        handshake: Box<McpError>,
+        cleanup: Box<McpError>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -698,7 +706,7 @@ where
                 _ => {
                     return Err(McpError::Protocol(
                         "response must contain result or error".to_owned(),
-                    ))
+                    ));
                 }
             }
         }

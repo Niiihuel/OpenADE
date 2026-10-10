@@ -3,12 +3,32 @@ resolver = "2"
 members = [
     "apps/agents-window",
     "crates/openide-core",
+    "crates/openide-debug",
     "crates/openide-harness",
     "crates/openide-cli",
     "crates/openide-ui",
+    "crates/openide-preview",
+    "crates/openide-remote",
+    "crates/openide-bridge",
+    "crates/openide-connections",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
+
+# Keep development builds small while reusing the incremental compilation cache.
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+[profile.dev.package."*"]
+debug = false
+
+# The interactive desktop runs optimized, while cargo test/check keep the
+# fast development profile. Keep assertions and useful backtrace locations.
+[profile.desktop]
+inherits = "dev"
+opt-level = 2
+codegen-units = 16

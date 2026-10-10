@@ -1,0 +1,15 @@
+{
+  "source": "User-owned OpenIDE project branding, imported for the native editor empty state",
+  "assets": [
+    {
+      "file": "openide.svg",
+      "source": "/home/nihuel/projects/personal/openide/icons/openide.svg",
+      "sha256": "ed15d2e44ea1009b289f1eaca2361f267d77c1a7f2f898e08491caceb978ed7e"
+    },
+    {
+      "file": "openide-editor.svg",
+      "source": "/home/nihuel/projects/personal/openide/vscode/src/vs/workbench/browser/media/code-icon.svg",
+      "sha256": "46c070730c9fa4fa1a2cb61dc1c56381900c62dd24a77d8f33c650971eaa7289"
+    }
+  ]
+}

@@ -1,0 +1,2414 @@
+[
+  {
+    "id": "starter-anthropic:frontend-design",
+    "name": "frontend-design",
+    "description": "Diseño de interfaces con tipografía, composición e identidad visual intencionales.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/frontend-design",
+    "category": "Diseño y frontend",
+    "compatibility": "Guía de diseño portable; no incluye frameworks ni herramientas de vista previa.",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "repository_path": "skills/frontend-design/LICENSE.txt",
+        "bytes": 10174,
+        "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/frontend-design/SKILL.md",
+        "bytes": 9390,
+        "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3"
+      },
+      {
+        "path": "_upstream/THIRD_PARTY_NOTICES.md",
+        "repository_path": "THIRD_PARTY_NOTICES.md",
+        "bytes": 46162,
+        "sha256": "a8ff7a84dee9dfb42ab448de281784387ceafdf63881b7c070ee2de7f6ed865c"
+      }
+    ]
+  },
+  {
+    "id": "starter-anthropic:algorithmic-art",
+    "name": "algorithmic-art",
+    "description": "Arte generativo reproducible con p5.js, parámetros interactivos y plantillas HTML.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/algorithmic-art",
+    "category": "Diseño y frontend",
+    "compatibility": "Necesita navegador y p5.js; la plantilla carga p5.js desde CDN. Las funciones de artefactos de Claude no están incluidas.",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "repository_path": "skills/algorithmic-art/LICENSE.txt",
+        "bytes": 11345,
+        "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/algorithmic-art/SKILL.md",
+        "bytes": 19769,
+        "sha256": "3bc4092c09804853186524c826bc0621b940bb6122c05b84496dff95388e6eef"
+      },
+      {
+        "path": "_upstream/THIRD_PARTY_NOTICES.md",
+        "repository_path": "THIRD_PARTY_NOTICES.md",
+        "bytes": 46162,
+        "sha256": "a8ff7a84dee9dfb42ab448de281784387ceafdf63881b7c070ee2de7f6ed865c"
+      },
+      {
+        "path": "templates/generator_template.js",
+        "repository_path": "skills/algorithmic-art/templates/generator_template.js",
+        "bytes": 7826,
+        "sha256": "9ee0f1da52ef8f7bbfde1917123654880890d43f2d388642d71eab6dd78f94c4"
+      },
+      {
+        "path": "templates/viewer.html",
+        "repository_path": "skills/algorithmic-art/templates/viewer.html",
+        "bytes": 20844,
+        "sha256": "86c79d7ce97d2599ebe4bd9b97fdeb7295c9d3ed61ceeb513cbe1b2bb5d1ce29"
+      }
+    ]
+  },
+  {
+    "id": "starter-anthropic:brand-guidelines",
+    "name": "brand-guidelines",
+    "description": "Colores y tipografía de la identidad de Anthropic para piezas que requieran esa marca.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/brand-guidelines",
+    "category": "Diseño y frontend",
+    "compatibility": "Específica de la marca Anthropic, no un sistema de diseño universal. Ejemplos PPTX requieren python-pptx.",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "repository_path": "skills/brand-guidelines/LICENSE.txt",
+        "bytes": 11345,
+        "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/brand-guidelines/SKILL.md",
+        "bytes": 2235,
+        "sha256": "1120b3769e2985cefb3d25be981b1f914abeba57ae079b83c20c666c164fa9fe"
+      },
+      {
+        "path": "_upstream/THIRD_PARTY_NOTICES.md",
+        "repository_path": "THIRD_PARTY_NOTICES.md",
+        "bytes": 46162,
+        "sha256": "a8ff7a84dee9dfb42ab448de281784387ceafdf63881b7c070ee2de7f6ed865c"
+      }
+    ]
+  },
+  {
+    "id": "starter-anthropic:internal-comms",
+    "name": "internal-comms",
+    "description": "Plantillas para informes de estado, novedades, preguntas frecuentes y comunicación interna.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/internal-comms",
+    "category": "Documentación",
+    "compatibility": "Guía de redacción con ejemplos; sus formatos internos deben adaptarse a la organización.",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "repository_path": "skills/internal-comms/LICENSE.txt",
+        "bytes": 11345,
+        "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/internal-comms/SKILL.md",
+        "bytes": 1511,
+        "sha256": "067b7587a344a928fc6534ef66b1bcd591fc7c26d207ea7ca3334aeb678d6475"
+      },
+      {
+        "path": "_upstream/THIRD_PARTY_NOTICES.md",
+        "repository_path": "THIRD_PARTY_NOTICES.md",
+        "bytes": 46162,
+        "sha256": "a8ff7a84dee9dfb42ab448de281784387ceafdf63881b7c070ee2de7f6ed865c"
+      },
+      {
+        "path": "examples/3p-updates.md",
+        "repository_path": "skills/internal-comms/examples/3p-updates.md",
+        "bytes": 3274,
+        "sha256": "087e4363c0f3513728a7e695eeb9ead5c3ecd12a4681b59340691180e65b68fc"
+      },
+      {
+        "path": "examples/company-newsletter.md",
+        "repository_path": "skills/internal-comms/examples/company-newsletter.md",
+        "bytes": 3295,
+        "sha256": "30f81cfbdb03858a006169c72169024089c7c5d3d32611d337782da4f38c86b5"
+      },
+      {
+        "path": "examples/faq-answers.md",
+        "repository_path": "skills/internal-comms/examples/faq-answers.md",
+        "bytes": 2366,
+        "sha256": "5ecd3356cd6666937f2ebefa753253edfdbdca15e368d07baf398bfcced72484"
+      },
+      {
+        "path": "examples/general-comms.md",
+        "repository_path": "skills/internal-comms/examples/general-comms.md",
+        "bytes": 602,
+        "sha256": "4d3a4bb198a77626bcf018e96b2b45a2dbabed172d4ade0fcd70d23ae8a47a47"
+      }
+    ]
+  },
+  {
+    "id": "starter-anthropic:mcp-builder",
+    "name": "mcp-builder",
+    "description": "Diseño e implementación de servidores MCP con TypeScript o Python.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/mcp-builder",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Node/TypeScript o Python y el SDK MCP para construir y probar servidores. Incluye scripts; instalar no los ejecuta ni conecta servicios.",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "repository_path": "skills/mcp-builder/LICENSE.txt",
+        "bytes": 11345,
+        "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/mcp-builder/SKILL.md",
+        "bytes": 9092,
+        "sha256": "0f4592dcb53cf2b5d6b7febee6b4152018b565551a1c29e3c612f57b218ab295"
+      },
+      {
+        "path": "_upstream/THIRD_PARTY_NOTICES.md",
+        "repository_path": "THIRD_PARTY_NOTICES.md",
+        "bytes": 46162,
+        "sha256": "a8ff7a84dee9dfb42ab448de281784387ceafdf63881b7c070ee2de7f6ed865c"
+      },
+      {
+        "path": "reference/evaluation.md",
+        "repository_path": "skills/mcp-builder/reference/evaluation.md",
+        "bytes": 21663,
+        "sha256": "8c99479f8a2d22a636c38e274537aac3610879e26f34e0709825077c4576f427"
+      },
+      {
+        "path": "reference/mcp_best_practices.md",
+        "repository_path": "skills/mcp-builder/reference/mcp_best_practices.md",
+        "bytes": 7330,
+        "sha256": "80fb4369a349447cf18ecdd7494fe7938b6065377e9f08c077cec411093a3007"
+      },
+      {
+        "path": "reference/node_mcp_server.md",
+        "repository_path": "skills/mcp-builder/reference/node_mcp_server.md",
+        "bytes": 28550,
+        "sha256": "c3ba35a4f599dd53be9c6555ae72c19a7bf412cd5426576c2c08d42755482c66"
+      },
+      {
+        "path": "reference/python_mcp_server.md",
+        "repository_path": "skills/mcp-builder/reference/python_mcp_server.md",
+        "bytes": 25099,
+        "sha256": "2da52f77e675191014ca2e146a4b95aa04d0ca7dd7e2b100322df15ade685e80"
+      },
+      {
+        "path": "scripts/connections.py",
+        "repository_path": "skills/mcp-builder/scripts/connections.py",
+        "bytes": 4875,
+        "sha256": "9403668a2041568772082a8b334122c1f88daf0541fb393af4522d0094a47a6e"
+      },
+      {
+        "path": "scripts/evaluation.py",
+        "repository_path": "skills/mcp-builder/scripts/evaluation.py",
+        "bytes": 12579,
+        "sha256": "49ed1d17cdce5da101b210197740713f49b935c29d4f339542a14b132658e6f7"
+      },
+      {
+        "path": "scripts/example_evaluation.xml",
+        "repository_path": "skills/mcp-builder/scripts/example_evaluation.xml",
+        "bytes": 1194,
+        "sha256": "9272b348ddcc4b06ba562367ccd0770e018158c0068ac5116d5e34aaeff8777a"
+      },
+      {
+        "path": "scripts/requirements.txt",
+        "repository_path": "skills/mcp-builder/scripts/requirements.txt",
+        "bytes": 29,
+        "sha256": "d5d7558b2368ecea9dfeed7d1fbc71ee9e0750bebd1282faa527d528a344c3c7"
+      }
+    ]
+  },
+  {
+    "id": "starter-anthropic:webapp-testing",
+    "name": "webapp-testing",
+    "description": "Pruebas de aplicaciones web locales con Playwright y captura de evidencias.",
+    "publisher": "Anthropic",
+    "license": "Apache-2.0",
+    "repository": "anthropics/skills",
+    "revision": "683bc88e56f3e09ba94f7055977f3d3aa499f202",
+    "directory": "skills/webapp-testing",
+    "category": "Calidad y pruebas",
+    "compatibility": "Requiere Python, Playwright y sus navegadores, además del entorno de la aplicación. Incluye scripts de prueba y arranque; instalar no los ejecuta.",
+    "files": [
+      {
+        "path": "LICENSE.txt",
+        "repository_path": "skills/webapp-testing/LICENSE.txt",
+        "bytes": 11345,
+        "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/webapp-testing/SKILL.md",
+        "bytes": 3913,
+        "sha256": "51b7349e77ec63b7744a6f63647e7566a0b4d2e301121cc10e8c2113af6556a2"
+      },
+      {
+        "path": "_upstream/THIRD_PARTY_NOTICES.md",
+        "repository_path": "THIRD_PARTY_NOTICES.md",
+        "bytes": 46162,
+        "sha256": "a8ff7a84dee9dfb42ab448de281784387ceafdf63881b7c070ee2de7f6ed865c"
+      },
+      {
+        "path": "examples/console_logging.py",
+        "repository_path": "skills/webapp-testing/examples/console_logging.py",
+        "bytes": 1027,
+        "sha256": "ea46877289acb82da7e7ce59d0bc37c8977cd57e2a006d0c88d7a1c625bf95da"
+      },
+      {
+        "path": "examples/element_discovery.py",
+        "repository_path": "skills/webapp-testing/examples/element_discovery.py",
+        "bytes": 1463,
+        "sha256": "d63c89604a22f8845d724e95dda45db49b1bf57c25ce0a83afbb7b8da3d402f0"
+      },
+      {
+        "path": "examples/static_html_automation.py",
+        "repository_path": "skills/webapp-testing/examples/static_html_automation.py",
+        "bytes": 953,
+        "sha256": "9d533aafb875ee3ab8b8ebf8f5b9003ac8d999da3d09b285cce252e623140064"
+      },
+      {
+        "path": "scripts/with_server.py",
+        "repository_path": "skills/webapp-testing/scripts/with_server.py",
+        "bytes": 3693,
+        "sha256": "b0dcf4918935b795f4eda9821579b9902119235ff4447f687a30286e7d0925fd"
+      }
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-react-best-practices",
+    "name": "vercel-react-best-practices",
+    "description": "Rendimiento de React y Next.js: renderizado, cargas, datos y tamaño del paquete.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/react-best-practices",
+    "category": "Diseño y frontend",
+    "compatibility": "Para proyectos React/Next.js. Incluye AGENTS.md y todas las reglas originales; no requiere una cuenta Vercel para consultar la guía.",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "repository_path": "skills/react-best-practices/AGENTS.md",
+        "bytes": 108261,
+        "sha256": "fc93e7421177bbf869cce892bc60a6c83a4517d974bc3bf65c4e2c1e58a6ccf6"
+      },
+      {
+        "path": "README.md",
+        "repository_path": "skills/react-best-practices/README.md",
+        "bytes": 3360,
+        "sha256": "9eafb2123d3b8b2aef41fba0db2648a3f4f49996f8c7c8bb2c86263befd8b48a"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/react-best-practices/SKILL.md",
+        "bytes": 7251,
+        "sha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355"
+      },
+      {
+        "path": "_upstream/README.md",
+        "repository_path": "README.md",
+        "bytes": 7838,
+        "sha256": "7c02f64b08fc6c4eef03c01d64f3e2ed478193ccfcbd14edba379abe23304651"
+      },
+      {
+        "path": "metadata.json",
+        "repository_path": "skills/react-best-practices/metadata.json",
+        "bytes": 921,
+        "sha256": "c4e18bac3290fbe1b471a605867d4df68b03144ea26b8befdbe8f9d8fd124354"
+      },
+      {
+        "path": "rules/_sections.md",
+        "repository_path": "skills/react-best-practices/rules/_sections.md",
+        "bytes": 1554,
+        "sha256": "01c59969e4e867f0708c8f8ef9c6d87fab9a07d0586244f429ff84013db8a115"
+      },
+      {
+        "path": "rules/_template.md",
+        "repository_path": "skills/react-best-practices/rules/_template.md",
+        "bytes": 631,
+        "sha256": "99df2a3ea088c6c22de2484ddc7e964d0e9923846f44c63380343ecc64455442"
+      },
+      {
+        "path": "rules/advanced-effect-event-deps.md",
+        "repository_path": "skills/react-best-practices/rules/advanced-effect-event-deps.md",
+        "bytes": 1802,
+        "sha256": "55ed8f9f27a1bff803d6fa55828176207714b02123cbb97ddb8a90d88024a723"
+      },
+      {
+        "path": "rules/advanced-event-handler-refs.md",
+        "repository_path": "skills/react-best-practices/rules/advanced-event-handler-refs.md",
+        "bytes": 1483,
+        "sha256": "a3097edeecfb2ff6851cd66ed8cdf0617c3c88180504bee824aa6e75a215bbbc"
+      },
+      {
+        "path": "rules/advanced-init-once.md",
+        "repository_path": "skills/react-best-practices/rules/advanced-init-once.md",
+        "bytes": 958,
+        "sha256": "3e4dc22173eb0e2b6dcf583e3babd862b8696328f8f59aee7c4d746c5bc05f6c"
+      },
+      {
+        "path": "rules/advanced-use-latest.md",
+        "repository_path": "skills/react-best-practices/rules/advanced-use-latest.md",
+        "bytes": 1072,
+        "sha256": "8a3f64dfe5a77d1564248faf17fe662ae75b55d497a243cb30b38eb07ccbbf9a"
+      },
+      {
+        "path": "rules/async-api-routes.md",
+        "repository_path": "skills/react-best-practices/rules/async-api-routes.md",
+        "bytes": 1125,
+        "sha256": "523338540d73427dc14c0cbb19f2741ebccdf8b105a7b2c1b33d2905cf237a42"
+      },
+      {
+        "path": "rules/async-cheap-condition-before-await.md",
+        "repository_path": "skills/react-best-practices/rules/async-cheap-condition-before-await.md",
+        "bytes": 1220,
+        "sha256": "03107c1f70a293cd58a8abc5474c5548e20ea4efdf01b6d45aae7ad0ac1cb32c"
+      },
+      {
+        "path": "rules/async-defer-await.md",
+        "repository_path": "skills/react-best-practices/rules/async-defer-await.md",
+        "bytes": 2208,
+        "sha256": "f3c142d090615abdcc99d31c123be37b31f0f1ed8d9ec9f7789a3bc6883ae0fb"
+      },
+      {
+        "path": "rules/async-dependencies.md",
+        "repository_path": "skills/react-best-practices/rules/async-dependencies.md",
+        "bytes": 1293,
+        "sha256": "16ef469f877e30c6b8e1e1b4bc3e527312fa3c6318cb785a4eca186ea236131a"
+      },
+      {
+        "path": "rules/async-parallel.md",
+        "repository_path": "skills/react-best-practices/rules/async-parallel.md",
+        "bytes": 654,
+        "sha256": "6d2f841896279e976dfcdc1ac89e70771ac188baadfd43c096b5706cb838b961"
+      },
+      {
+        "path": "rules/async-suspense-boundaries.md",
+        "repository_path": "skills/react-best-practices/rules/async-suspense-boundaries.md",
+        "bytes": 2510,
+        "sha256": "de05fedac2eb7ae563b887b5a424464ec3dfaf84e5b7797467ebe2a796ac8afc"
+      },
+      {
+        "path": "rules/bundle-analyzable-paths.md",
+        "repository_path": "skills/react-best-practices/rules/bundle-analyzable-paths.md",
+        "bytes": 2382,
+        "sha256": "62090b5c815fd71bf1133dce754f51abc16a9456d0ccd025fd627de27726e92a"
+      },
+      {
+        "path": "rules/bundle-barrel-imports.md",
+        "repository_path": "skills/react-best-practices/rules/bundle-barrel-imports.md",
+        "bytes": 2795,
+        "sha256": "e648f6d54525f07a691357040ca5bff6ea3424788a91ff63812adb29622a671b"
+      },
+      {
+        "path": "rules/bundle-conditional.md",
+        "repository_path": "skills/react-best-practices/rules/bundle-conditional.md",
+        "bytes": 949,
+        "sha256": "09c8259c3efb04fc0abb8e412ccbda217c222ae8118516283e571c995fe3a7d4"
+      },
+      {
+        "path": "rules/bundle-defer-third-party.md",
+        "repository_path": "skills/react-best-practices/rules/bundle-defer-third-party.md",
+        "bytes": 920,
+        "sha256": "3719fb47b191e8db4fe22686ec88448ad5af9e6838585425abbe103d0b642e37"
+      },
+      {
+        "path": "rules/bundle-dynamic-imports.md",
+        "repository_path": "skills/react-best-practices/rules/bundle-dynamic-imports.md",
+        "bytes": 791,
+        "sha256": "401817a7369f315fc5a68a1095742ff7d53d0461906880dc9d64a41495ee1986"
+      },
+      {
+        "path": "rules/bundle-preload.md",
+        "repository_path": "skills/react-best-practices/rules/bundle-preload.md",
+        "bytes": 1149,
+        "sha256": "d1f7cc28da7cd5ab249acd287edc5b761afcfb194e9cb62cd44c5f3543db2de2"
+      },
+      {
+        "path": "rules/client-event-listeners.md",
+        "repository_path": "skills/react-best-practices/rules/client-event-listeners.md",
+        "bytes": 1969,
+        "sha256": "242a873349febc1ce685e85617994784dbab92c2eaa68aed7fed5a83e7680e93"
+      },
+      {
+        "path": "rules/client-localstorage-schema.md",
+        "repository_path": "skills/react-best-practices/rules/client-localstorage-schema.md",
+        "bytes": 1950,
+        "sha256": "0fb7cdf9dc93fdf22f87e3669f953fb9d4ac9b0be42eec4a29fe9a2560610b88"
+      },
+      {
+        "path": "rules/client-passive-event-listeners.md",
+        "repository_path": "skills/react-best-practices/rules/client-passive-event-listeners.md",
+        "bytes": 1644,
+        "sha256": "1f35016f9053de69e884ee9be00654e37979c2ca85f5e57764dc2626ff7acb4b"
+      },
+      {
+        "path": "rules/client-swr-dedup.md",
+        "repository_path": "skills/react-best-practices/rules/client-swr-dedup.md",
+        "bytes": 1159,
+        "sha256": "644652c39c6cc00de8d1c77a7273612e868dc3f7edda30764164c12ec0f764a3"
+      },
+      {
+        "path": "rules/js-batch-dom-css.md",
+        "repository_path": "skills/react-best-practices/rules/js-batch-dom-css.md",
+        "bytes": 3266,
+        "sha256": "480b891b9eaf96e929dc1e964274a4828e3a78009b7d00ccd965a0d425215959"
+      },
+      {
+        "path": "rules/js-cache-function-results.md",
+        "repository_path": "skills/react-best-practices/rules/js-cache-function-results.md",
+        "bytes": 1949,
+        "sha256": "3daaa11d24f4295cb6be8bc6f407f2ce83cc7b5bd1f0e68891ea8ab835721dc7"
+      },
+      {
+        "path": "rules/js-cache-property-access.md",
+        "repository_path": "skills/react-best-practices/rules/js-cache-property-access.md",
+        "bytes": 532,
+        "sha256": "73e47431e74878a927061bf0ddc7cd91a7556cb35d2573f3421e82300d9ae311"
+      },
+      {
+        "path": "rules/js-cache-storage.md",
+        "repository_path": "skills/react-best-practices/rules/js-cache-storage.md",
+        "bytes": 1651,
+        "sha256": "11b826b0433898c1ece2d3547010d8e77db9fb240185748c45db91493de9b6cc"
+      },
+      {
+        "path": "rules/js-combine-iterations.md",
+        "repository_path": "skills/react-best-practices/rules/js-combine-iterations.md",
+        "bytes": 753,
+        "sha256": "71add08aeeb43091d4ff4c0b2842cce8b4bdef8ad3e732cc034bb5a84827e746"
+      },
+      {
+        "path": "rules/js-early-exit.md",
+        "repository_path": "skills/react-best-practices/rules/js-early-exit.md",
+        "bytes": 1133,
+        "sha256": "925ce5ce87f3347186ca62212f29cc6baa2b8c85a96d2720ad07c3d0abf781c0"
+      },
+      {
+        "path": "rules/js-flatmap-filter.md",
+        "repository_path": "skills/react-best-practices/rules/js-flatmap-filter.md",
+        "bytes": 1411,
+        "sha256": "9e5b166a41914d975bef7635467f8fb32cd98b5c3126c0bc6f163490812fb5f0"
+      },
+      {
+        "path": "rules/js-hoist-regexp.md",
+        "repository_path": "skills/react-best-practices/rules/js-hoist-regexp.md",
+        "bytes": 1028,
+        "sha256": "f9e9aef2f7c2307dd7310f283df85dcada45fc43e9bb941b0c3aa414dec21ec4"
+      },
+      {
+        "path": "rules/js-index-maps.md",
+        "repository_path": "skills/react-best-practices/rules/js-index-maps.md",
+        "bytes": 837,
+        "sha256": "5df1bdc2cfabb2c98abd55d26762e5c18189535c2e686184f426082e62920391"
+      },
+      {
+        "path": "rules/js-length-check-first.md",
+        "repository_path": "skills/react-best-practices/rules/js-length-check-first.md",
+        "bytes": 1747,
+        "sha256": "8b54a311c826b299272f29187fc58bc55772a04c4a72eeb29456ee96dc9fc624"
+      },
+      {
+        "path": "rules/js-min-max-loop.md",
+        "repository_path": "skills/react-best-practices/rules/js-min-max-loop.md",
+        "bytes": 2290,
+        "sha256": "87dfb67e2f39df6ad8bcfb5b78c5fb364d3c07554ad188a202408d99f3763421"
+      },
+      {
+        "path": "rules/js-request-idle-callback.md",
+        "repository_path": "skills/react-best-practices/rules/js-request-idle-callback.md",
+        "bytes": 2647,
+        "sha256": "ee08f83905b4011abbc33d594033157d77561b5bbd9b36b04f0f409581ffec32"
+      },
+      {
+        "path": "rules/js-set-map-lookups.md",
+        "repository_path": "skills/react-best-practices/rules/js-set-map-lookups.md",
+        "bytes": 532,
+        "sha256": "a7fd781a6ba9ad49065961b6f9a90ef486bf6b648390e1a08704025f98e1642b"
+      },
+      {
+        "path": "rules/js-tosorted-immutable.md",
+        "repository_path": "skills/react-best-practices/rules/js-tosorted-immutable.md",
+        "bytes": 1782,
+        "sha256": "d0a5e1b0fec48a0a81397957e2f068e224329f7c42cb5feeed8aae6fa64025e8"
+      },
+      {
+        "path": "rules/rendering-activity.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-activity.md",
+        "bytes": 564,
+        "sha256": "1e5e7eaf3555e61d6a2e900089c676527d26259501db5594f59544b6c664f85a"
+      },
+      {
+        "path": "rules/rendering-animate-svg-wrapper.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-animate-svg-wrapper.md",
+        "bytes": 1185,
+        "sha256": "9c6ae0ca7a51434e803887c64cded760956579a1452ccb80a461a03f9c937c77"
+      },
+      {
+        "path": "rules/rendering-conditional-render.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-conditional-render.md",
+        "bytes": 980,
+        "sha256": "2ec2fa23c4148285144687050c52369adba3da2fbe3d486f8d3e0aad8f06f2bc"
+      },
+      {
+        "path": "rules/rendering-content-visibility.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-content-visibility.md",
+        "bytes": 815,
+        "sha256": "64eee6d5b916fe74df33363994b27fc7f71bea3bcedc7ee04bda23107ca3e6e4"
+      },
+      {
+        "path": "rules/rendering-hoist-jsx.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-hoist-jsx.md",
+        "bytes": 1039,
+        "sha256": "93b229560fae92005ed9a2a829064607b39b2e984e92d221d05b2d41df2b7c0e"
+      },
+      {
+        "path": "rules/rendering-hydration-no-flicker.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-hydration-no-flicker.md",
+        "bytes": 2308,
+        "sha256": "dc7ab358c67c177bca6e6f360fbc935ebe4efa928c0ba3ebd3f9f3d9e2000ca3"
+      },
+      {
+        "path": "rules/rendering-hydration-suppress-warning.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-hydration-suppress-warning.md",
+        "bytes": 872,
+        "sha256": "915bacb934e2927d84b37a3f3d225a47b309ac8f9e494ed2bcb66ce07c5676a2"
+      },
+      {
+        "path": "rules/rendering-resource-hints.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-resource-hints.md",
+        "bytes": 2549,
+        "sha256": "351b1095d641717b930f1b2253282b7120af3023bc74e06c17675168d4286864"
+      },
+      {
+        "path": "rules/rendering-script-defer-async.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-script-defer-async.md",
+        "bytes": 1868,
+        "sha256": "4cea07b7875ba7fc2c7465ff23b63a2bb334f90aaf2d9293d38d67b05fdb32ab"
+      },
+      {
+        "path": "rules/rendering-svg-precision.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-svg-precision.md",
+        "bytes": 588,
+        "sha256": "ed468533f6e95f622859c884b122cf21f9f593ed6bb3d500a54de4b9f9bcb9fb"
+      },
+      {
+        "path": "rules/rendering-usetransition-loading.md",
+        "repository_path": "skills/react-best-practices/rules/rendering-usetransition-loading.md",
+        "bytes": 2074,
+        "sha256": "3a1249c3f13026b6f54ab5712c388df219d6af01b12aa542749acd99a46f4bc1"
+      },
+      {
+        "path": "rules/rerender-defer-reads.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-defer-reads.md",
+        "bytes": 973,
+        "sha256": "234050a77faf50cb306be10a9e15bd4421134ab5907e75f13e6d78e2bd262dc9"
+      },
+      {
+        "path": "rules/rerender-dependencies.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-dependencies.md",
+        "bytes": 824,
+        "sha256": "17eb5830956fb56486fd3cfc7431f5849d39751730c05ad9e77dd4f0c27169c5"
+      },
+      {
+        "path": "rules/rerender-derived-state-no-effect.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-derived-state-no-effect.md",
+        "bytes": 1201,
+        "sha256": "cb11ec76f50aa7b6847269f02d79b120c889a30d9ecd2c1d578f75144419c77a"
+      },
+      {
+        "path": "rules/rerender-derived-state.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-derived-state.md",
+        "bytes": 728,
+        "sha256": "1c326bb67b01fb084eb00c8911b0a7cff54681c2315b629f88e49b64eaa6481d"
+      },
+      {
+        "path": "rules/rerender-functional-setstate.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-functional-setstate.md",
+        "bytes": 2968,
+        "sha256": "5e68df6b2ae8058e67f476ff1ac67bde159f5a9d18df439e46eabcdeb7b52e58"
+      },
+      {
+        "path": "rules/rerender-lazy-state-init.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-lazy-state-init.md",
+        "bytes": 2016,
+        "sha256": "4ae844740f266fc8cbf050701230286624a2440ec5be67b9a63d9edc3c580573"
+      },
+      {
+        "path": "rules/rerender-memo-with-default-value.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-memo-with-default-value.md",
+        "bytes": 1173,
+        "sha256": "81c47476564ad8a79fc68fc442734255ca7d6829424359464503fda0a9f9a0dd"
+      },
+      {
+        "path": "rules/rerender-memo.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-memo.md",
+        "bytes": 1148,
+        "sha256": "1f258990c2f27ff6256b3cc5c43300631bb3f0d81f749aed08d07fcdcc131dd1"
+      },
+      {
+        "path": "rules/rerender-move-effect-to-event.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-move-effect-to-event.md",
+        "bytes": 1268,
+        "sha256": "abc2cbf167bee056743023351e96806a411d3398da8802093620aecf0721f029"
+      },
+      {
+        "path": "rules/rerender-no-inline-components.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-no-inline-components.md",
+        "bytes": 2135,
+        "sha256": "1cc32907a770272524ba682eef9e7efdd8ad4533b6f89b718a1fcd7d1d0eb6a3"
+      },
+      {
+        "path": "rules/rerender-simple-expression-in-memo.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-simple-expression-in-memo.md",
+        "bytes": 1018,
+        "sha256": "5bdcf2d1558ba5204e643c887b7b4060f89630969425651eb68e96427d97f800"
+      },
+      {
+        "path": "rules/rerender-split-combined-hooks.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-split-combined-hooks.md",
+        "bytes": 1844,
+        "sha256": "6f45d703343484ef9acef9388397f3642966ae6a5a258899a0cf1f9977cfbf6c"
+      },
+      {
+        "path": "rules/rerender-transitions.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-transitions.md",
+        "bytes": 1055,
+        "sha256": "60f4033909a62df5e5b8c601494f9e50a562e2f8c1c2d81eac24f38142265f1c"
+      },
+      {
+        "path": "rules/rerender-use-deferred-value.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-use-deferred-value.md",
+        "bytes": 1846,
+        "sha256": "8c3579576a61a949884167745dcfaf1d5426ba305cc61fd0a79602d70fda4909"
+      },
+      {
+        "path": "rules/rerender-use-ref-transient-values.md",
+        "repository_path": "skills/react-best-practices/rules/rerender-use-ref-transient-values.md",
+        "bytes": 1742,
+        "sha256": "f1a649af9d1d0b5c762f6c9c4c1c70c90d7df82aa10296ee87aadb78c1b76c54"
+      },
+      {
+        "path": "rules/server-after-nonblocking.md",
+        "repository_path": "skills/react-best-practices/rules/server-after-nonblocking.md",
+        "bytes": 2012,
+        "sha256": "d0b8d24a3db9f0f65f9e2bddbf230b0e03a5f60e1229d93a4a18f5e7a991c7c2"
+      },
+      {
+        "path": "rules/server-auth-actions.md",
+        "repository_path": "skills/react-best-practices/rules/server-auth-actions.md",
+        "bytes": 2649,
+        "sha256": "a2ca8aa102839251c7971ec784560fab943c20b36fe6f80365d4110c13260c23"
+      },
+      {
+        "path": "rules/server-cache-lru.md",
+        "repository_path": "skills/react-best-practices/rules/server-cache-lru.md",
+        "bytes": 1353,
+        "sha256": "1924b64561841923b88a657085097a0aeba3e0ba2d5470b9f5c15cc10d6ae70f"
+      },
+      {
+        "path": "rules/server-cache-react.md",
+        "repository_path": "skills/react-best-practices/rules/server-cache-react.md",
+        "bytes": 2228,
+        "sha256": "fddeea6c870bb3da4134b61d54b7d09b83d2603f929b7547cd3dc1dc269edd5c"
+      },
+      {
+        "path": "rules/server-dedup-props.md",
+        "repository_path": "skills/react-best-practices/rules/server-dedup-props.md",
+        "bytes": 2060,
+        "sha256": "c2747424cdac46be62f835f245a0aa887b0090b416d28e2ac8676702645eeb37"
+      },
+      {
+        "path": "rules/server-hoist-static-io.md",
+        "repository_path": "skills/react-best-practices/rules/server-hoist-static-io.md",
+        "bytes": 4423,
+        "sha256": "5abea4dd882b13661bd5f7dfb93f9e547d5f08176c61c448ade91b210ed5d49f"
+      },
+      {
+        "path": "rules/server-no-shared-module-state.md",
+        "repository_path": "skills/react-best-practices/rules/server-no-shared-module-state.md",
+        "bytes": 1766,
+        "sha256": "4d869bf1cd2f1632e5ca4c0e64b1cf0e71c5f5a0f940bc8a22174d205e735ed7"
+      },
+      {
+        "path": "rules/server-parallel-fetching.md",
+        "repository_path": "skills/react-best-practices/rules/server-parallel-fetching.md",
+        "bytes": 1554,
+        "sha256": "569a2e9fc04f9606686cd75c5894ef8781b502786a7fffe241396846c7733472"
+      },
+      {
+        "path": "rules/server-parallel-nested-fetching.md",
+        "repository_path": "skills/react-best-practices/rules/server-parallel-nested-fetching.md",
+        "bytes": 992,
+        "sha256": "ad5d9656984d4a959997a2367bf59cc6632297b4634a1dd13a087939d83f30b3"
+      },
+      {
+        "path": "rules/server-serialization.md",
+        "repository_path": "skills/react-best-practices/rules/server-serialization.md",
+        "bytes": 996,
+        "sha256": "f4c7d68b29c82381baad059c4a7f09e868e71ec9c3115a26ad3ae7d24c0dfe1f"
+      }
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-composition-patterns",
+    "name": "vercel-composition-patterns",
+    "description": "Composición de componentes React y APIs reutilizables sin exceso de propiedades booleanas.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/composition-patterns",
+    "category": "Diseño y frontend",
+    "compatibility": "Para React; algunas recomendaciones usan APIs de React 19. Incluye todas las reglas y referencias.",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "repository_path": "skills/composition-patterns/AGENTS.md",
+        "bytes": 22627,
+        "sha256": "89e3ddd58fcf99a53a50e25dfd21b8cde1be5f10b7df6bacd3dfa6796932f516"
+      },
+      {
+        "path": "README.md",
+        "repository_path": "skills/composition-patterns/README.md",
+        "bytes": 2140,
+        "sha256": "85915a43a6f0b4efe525e3cf6398dd866166da2025837c4460468a24a940da94"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/composition-patterns/SKILL.md",
+        "bytes": 2886,
+        "sha256": "e38e0eaa609316b10423a9a138ed95e35099accd3f735585295c8a8f165c28a3"
+      },
+      {
+        "path": "_upstream/README.md",
+        "repository_path": "README.md",
+        "bytes": 7838,
+        "sha256": "7c02f64b08fc6c4eef03c01d64f3e2ed478193ccfcbd14edba379abe23304651"
+      },
+      {
+        "path": "metadata.json",
+        "repository_path": "skills/composition-patterns/metadata.json",
+        "bytes": 530,
+        "sha256": "49262ed5cb4186f31ee980cf8d990be0170c51efed4908d0464a1cff9905bd05"
+      },
+      {
+        "path": "rules/_sections.md",
+        "repository_path": "skills/composition-patterns/rules/_sections.md",
+        "bytes": 829,
+        "sha256": "a174213b87e6911e2b766995a2cbaf8d1534057076e82fb79fe3f0ecb38047df"
+      },
+      {
+        "path": "rules/_template.md",
+        "repository_path": "skills/composition-patterns/rules/_template.md",
+        "bytes": 329,
+        "sha256": "587f7d16b0660eb61fee4a4d3d7df2b3077d6835de170602c7d6e60bee559131"
+      },
+      {
+        "path": "rules/architecture-avoid-boolean-props.md",
+        "repository_path": "skills/composition-patterns/rules/architecture-avoid-boolean-props.md",
+        "bytes": 2267,
+        "sha256": "007555ebb020f4d552582a2c4db194db71a1fd33094012e5187bcfa4f8c392d5"
+      },
+      {
+        "path": "rules/architecture-compound-components.md",
+        "repository_path": "skills/composition-patterns/rules/architecture-compound-components.md",
+        "bytes": 2600,
+        "sha256": "f246af13dc269b521cf20eb8ad99a0cb645beac381c8c9b117262c34612c8457"
+      },
+      {
+        "path": "rules/patterns-children-over-render-props.md",
+        "repository_path": "skills/composition-patterns/rules/patterns-children-over-render-props.md",
+        "bytes": 1886,
+        "sha256": "7c45a0d21b3c4126a32cba916ee31adeae195386ad1dbbe6634aedb7457aa0ad"
+      },
+      {
+        "path": "rules/patterns-explicit-variants.md",
+        "repository_path": "skills/composition-patterns/rules/patterns-explicit-variants.md",
+        "bytes": 2395,
+        "sha256": "8c19e596e61807549d01ce8c6954c6358199f97a8511c0c02c625ec0efda8c0e"
+      },
+      {
+        "path": "rules/react19-no-forwardref.md",
+        "repository_path": "skills/composition-patterns/rules/react19-no-forwardref.md",
+        "bytes": 953,
+        "sha256": "881830adb7534c4b2d70db426556646ad9837f5478f744f35641f635ada22227"
+      },
+      {
+        "path": "rules/state-context-interface.md",
+        "repository_path": "skills/composition-patterns/rules/state-context-interface.md",
+        "bytes": 4974,
+        "sha256": "09e73afbf9285fa416679cc864a287b9e8b821d0969272ab784295386d8c9bc3"
+      },
+      {
+        "path": "rules/state-decouple-implementation.md",
+        "repository_path": "skills/composition-patterns/rules/state-decouple-implementation.md",
+        "bytes": 2699,
+        "sha256": "76a8c1eb29a70d8996ab3f71260345af2f7bc89deab815a421d6c87c6591a9c3"
+      },
+      {
+        "path": "rules/state-lift-state.md",
+        "repository_path": "skills/composition-patterns/rules/state-lift-state.md",
+        "bytes": 3224,
+        "sha256": "74c54038a6c554c748fe31cec673b80861b5d920b7553cf78cdf10d18b4b759b"
+      }
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-react-native-skills",
+    "name": "vercel-react-native-skills",
+    "description": "Rendimiento, listas, animaciones y módulos nativos en React Native y Expo.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/react-native-skills",
+    "category": "Diseño y frontend",
+    "compatibility": "Requiere un proyecto React Native/Expo y sus herramientas para ejecutar ejemplos; instalar la guía no prepara Android ni iOS.",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "repository_path": "skills/react-native-skills/AGENTS.md",
+        "bytes": 73771,
+        "sha256": "72996343b8260800fbeb9af63ddaed91f14b65dc547e0922f9f8e9bd72076cbf"
+      },
+      {
+        "path": "README.md",
+        "repository_path": "skills/react-native-skills/README.md",
+        "bytes": 5064,
+        "sha256": "d60d7623005a833b928be6a109ed9d14dea43d7217fb534e8f2e4de5fc1f0ddf"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/react-native-skills/SKILL.md",
+        "bytes": 4439,
+        "sha256": "4012750a5ccbe064ca04af3835d5d1b011979d2d09d9b6df1c8128fac58e0a66"
+      },
+      {
+        "path": "_upstream/README.md",
+        "repository_path": "README.md",
+        "bytes": 7838,
+        "sha256": "7c02f64b08fc6c4eef03c01d64f3e2ed478193ccfcbd14edba379abe23304651"
+      },
+      {
+        "path": "metadata.json",
+        "repository_path": "skills/react-native-skills/metadata.json",
+        "bytes": 896,
+        "sha256": "59ee2274cadbd95b2220727028f0dbc26d3e0251e7937226edc9e7640756ba21"
+      },
+      {
+        "path": "rules/_sections.md",
+        "repository_path": "skills/react-native-skills/rules/_sections.md",
+        "bytes": 2228,
+        "sha256": "21d7445e92bd7d393b420118c3fb9ebbf30aaf123a15143afb6c0b1b562cfdfd"
+      },
+      {
+        "path": "rules/_template.md",
+        "repository_path": "skills/react-native-skills/rules/_template.md",
+        "bytes": 631,
+        "sha256": "99df2a3ea088c6c22de2484ddc7e964d0e9923846f44c63380343ecc64455442"
+      },
+      {
+        "path": "rules/animation-derived-value.md",
+        "repository_path": "skills/react-native-skills/rules/animation-derived-value.md",
+        "bytes": 1373,
+        "sha256": "689228e9d59227934f296563963951aa9368be0afb2a188f650de161203b1862"
+      },
+      {
+        "path": "rules/animation-gesture-detector-press.md",
+        "repository_path": "skills/react-native-skills/rules/animation-gesture-detector-press.md",
+        "bytes": 2559,
+        "sha256": "69408d4be669e74689d865c5f50a22fc3a802d521fe493371761abd20526e58e"
+      },
+      {
+        "path": "rules/animation-gpu-properties.md",
+        "repository_path": "skills/react-native-skills/rules/animation-gpu-properties.md",
+        "bytes": 2059,
+        "sha256": "f885e4179445da27cbc225e0a4aa3ed9016fc3507ca6f864392ba7a9d0bd7516"
+      },
+      {
+        "path": "rules/design-system-compound-components.md",
+        "repository_path": "skills/react-native-skills/rules/design-system-compound-components.md",
+        "bytes": 1625,
+        "sha256": "dcb10900a58fcf57cca2e27c062d02df2325a7949e08fb45e9e05cc2b132b1a6"
+      },
+      {
+        "path": "rules/fonts-config-plugin.md",
+        "repository_path": "skills/react-native-skills/rules/fonts-config-plugin.md",
+        "bytes": 1393,
+        "sha256": "b92568774064a604e7a479d4c8d7263aed5609740e9161d2f2764bfff761905d"
+      },
+      {
+        "path": "rules/imports-design-system-folder.md",
+        "repository_path": "skills/react-native-skills/rules/imports-design-system-folder.md",
+        "bytes": 1418,
+        "sha256": "aa6337f7f2869a46a9141ec65e02c3da5c3bf051023899b82e0f0aef5bff8423"
+      },
+      {
+        "path": "rules/js-hoist-intl.md",
+        "repository_path": "skills/react-native-skills/rules/js-hoist-intl.md",
+        "bytes": 1645,
+        "sha256": "b4b08622465ffcd5e5961878eb8c6d7359aa242d16c990b59941c9111962fe46"
+      },
+      {
+        "path": "rules/list-performance-callbacks.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-callbacks.md",
+        "bytes": 1059,
+        "sha256": "db800e9dfe0080eb4954b96e2a362ee8344d08e08b1ed06bc8059450f3e6f0dd"
+      },
+      {
+        "path": "rules/list-performance-function-references.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-function-references.md",
+        "bytes": 4133,
+        "sha256": "b54470e41d578b207ee3223f6853efb7fbf8e5f83d9aecf8da16989072f99544"
+      },
+      {
+        "path": "rules/list-performance-images.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-images.md",
+        "bytes": 1417,
+        "sha256": "e88f16ac113c29230d674b7aa2c66c31d5772a74b1ea378d48a97b1143fe6c19"
+      },
+      {
+        "path": "rules/list-performance-inline-objects.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-inline-objects.md",
+        "bytes": 2308,
+        "sha256": "e2a80aac0f29c6abaf0163c1cc273d09cc8a0030ec077ca2022bbf5c309e4625"
+      },
+      {
+        "path": "rules/list-performance-item-expensive.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-item-expensive.md",
+        "bytes": 2466,
+        "sha256": "a68cc8ec5dba3c55761bd5df9dfd3d98485f63076868d3e03af15f1e58907ce3"
+      },
+      {
+        "path": "rules/list-performance-item-memo.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-item-memo.md",
+        "bytes": 2250,
+        "sha256": "38ec1d149ee485434d11c2b9e2101dfc914afadae4a0738ca905f26b05f708c1"
+      },
+      {
+        "path": "rules/list-performance-item-types.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-item-types.md",
+        "bytes": 2749,
+        "sha256": "eed225f4e9e504bfa7db01f5395d1402545cc47de8adf1829a9408cd5d158cf6"
+      },
+      {
+        "path": "rules/list-performance-virtualize.md",
+        "repository_path": "skills/react-native-skills/rules/list-performance-virtualize.md",
+        "bytes": 1742,
+        "sha256": "98cad308118acb4d6e8e975c0168ce56e2d48ca52ed47f23bc9a30667c066ada"
+      },
+      {
+        "path": "rules/monorepo-native-deps-in-app.md",
+        "repository_path": "skills/react-native-skills/rules/monorepo-native-deps-in-app.md",
+        "bytes": 1091,
+        "sha256": "8368b109027fcec1b8a81bfb99718aef2b64edaba77107f73d7c465cc5a14217"
+      },
+      {
+        "path": "rules/monorepo-single-dependency-versions.md",
+        "repository_path": "skills/react-native-skills/rules/monorepo-single-dependency-versions.md",
+        "bytes": 1351,
+        "sha256": "61c01b9eaab1e319bf078204231fb573bdfea3c43a6eb99e7ef73ee95d474ccc"
+      },
+      {
+        "path": "rules/navigation-native-navigators.md",
+        "repository_path": "skills/react-native-skills/rules/navigation-native-navigators.md",
+        "bytes": 4941,
+        "sha256": "6642dedb57e72f0b56df5fbc3d5b8aaa91fc4456932c12712cfd076d393f32c6"
+      },
+      {
+        "path": "rules/react-compiler-destructure-functions.md",
+        "repository_path": "skills/react-native-skills/rules/react-compiler-destructure-functions.md",
+        "bytes": 1274,
+        "sha256": "8048926a4fa3fbd28fc0ecf4ba4c383a2f0ed06c2fd7330dd4a15d7f4e548044"
+      },
+      {
+        "path": "rules/react-compiler-reanimated-shared-values.md",
+        "repository_path": "skills/react-native-skills/rules/react-compiler-reanimated-shared-values.md",
+        "bytes": 1268,
+        "sha256": "3174303a72b6849ff0eda5cd9f9650f26baa5f31ed28d35a75076af714fb2ffc"
+      },
+      {
+        "path": "rules/react-state-dispatcher.md",
+        "repository_path": "skills/react-native-skills/rules/react-state-dispatcher.md",
+        "bytes": 2255,
+        "sha256": "7ec5b653e3ff8d9ca97d8d66981cce5590c0e49fa79ab708fd6324542b588870"
+      },
+      {
+        "path": "rules/react-state-fallback.md",
+        "repository_path": "skills/react-native-skills/rules/react-state-fallback.md",
+        "bytes": 1735,
+        "sha256": "eb76e386d71680bfdfc0ab64dba1221f4d3d0fdcb4980bb4a871381d58e9e58b"
+      },
+      {
+        "path": "rules/react-state-minimize.md",
+        "repository_path": "skills/react-native-skills/rules/react-state-minimize.md",
+        "bytes": 1740,
+        "sha256": "31b989de61defda1c61d8578c4700efd64a427218c3f3dbb7062a1666e1cbe43"
+      },
+      {
+        "path": "rules/rendering-no-falsy-and.md",
+        "repository_path": "skills/react-native-skills/rules/rendering-no-falsy-and.md",
+        "bytes": 1812,
+        "sha256": "7300fa45ac3a4968db144727a21052421bc62de9b5e9f6f59e28bd16d2fff001"
+      },
+      {
+        "path": "rules/rendering-text-in-text-component.md",
+        "repository_path": "skills/react-native-skills/rules/rendering-text-in-text-component.md",
+        "bytes": 697,
+        "sha256": "fc67897b6126b6b5574f4d284a6c5b2282528fe89de8ec08e6cfd2a86ab5b235"
+      },
+      {
+        "path": "rules/scroll-position-no-state.md",
+        "repository_path": "skills/react-native-skills/rules/scroll-position-no-state.md",
+        "bytes": 1936,
+        "sha256": "70aa1ee679e755556d7b01b326431fe898d3c23ddba40d0da6bdac23c87a1525"
+      },
+      {
+        "path": "rules/state-ground-truth.md",
+        "repository_path": "skills/react-native-skills/rules/state-ground-truth.md",
+        "bytes": 2172,
+        "sha256": "9f3efc73d2e66a5deb3199c9774f42524cd6a0f69784af38301946be5d747cb5"
+      },
+      {
+        "path": "rules/ui-expo-image.md",
+        "repository_path": "skills/react-native-skills/rules/ui-expo-image.md",
+        "bytes": 1648,
+        "sha256": "c3c13cce3dd2cc7f8a9b4861e5743af98f62e28f5699f72f492e79a335cfae55"
+      },
+      {
+        "path": "rules/ui-image-gallery.md",
+        "repository_path": "skills/react-native-skills/rules/ui-image-gallery.md",
+        "bytes": 2546,
+        "sha256": "b34d1ba03710ed9622187716541ae618968e7d03bc28895c2ac918d3cc5853f1"
+      },
+      {
+        "path": "rules/ui-measure-views.md",
+        "repository_path": "skills/react-native-skills/rules/ui-measure-views.md",
+        "bytes": 2232,
+        "sha256": "170d058abc4900ea9e851e54f5e8b437ffffc2c9d3847ae35e30a515c8990c3d"
+      },
+      {
+        "path": "rules/ui-menus.md",
+        "repository_path": "skills/react-native-skills/rules/ui-menus.md",
+        "bytes": 4598,
+        "sha256": "5964adbecfe9aeb28d736a4eaacec6469a1c4ca3f48779d243eb38b6d181cfe9"
+      },
+      {
+        "path": "rules/ui-native-modals.md",
+        "repository_path": "skills/react-native-skills/rules/ui-native-modals.md",
+        "bytes": 1859,
+        "sha256": "d803493b3046ad31cbb2c189f1fffb948fd0055050e3c322589bd548421e23a8"
+      },
+      {
+        "path": "rules/ui-pressable.md",
+        "repository_path": "skills/react-native-skills/rules/ui-pressable.md",
+        "bytes": 1534,
+        "sha256": "52cdbad127d713d7d32c59ef74ab1bbd6dca211edc9b25993453f7f4545e79fa"
+      },
+      {
+        "path": "rules/ui-safe-area-scroll.md",
+        "repository_path": "skills/react-native-skills/rules/ui-safe-area-scroll.md",
+        "bytes": 1579,
+        "sha256": "3dd776caef2344d73529010940b50042861d06d31a192122a4df64bc06aed0e8"
+      },
+      {
+        "path": "rules/ui-scrollview-content-inset.md",
+        "repository_path": "skills/react-native-skills/rules/ui-scrollview-content-inset.md",
+        "bytes": 1317,
+        "sha256": "89e4bbe5e9a602660f4155e9d4c0dee09db1adf21c73f47213cd67ec896e5a13"
+      },
+      {
+        "path": "rules/ui-styling.md",
+        "repository_path": "skills/react-native-skills/rules/ui-styling.md",
+        "bytes": 2212,
+        "sha256": "cdef4d8b1a097b844e5992ab78e66a2dc604faf1e90f8d325a0eb116e8ef6a7e"
+      }
+    ]
+  },
+  {
+    "id": "starter-vercel:vercel-react-view-transitions",
+    "name": "vercel-react-view-transitions",
+    "description": "Transiciones de navegación y elementos compartidos con las APIs de React View Transition.",
+    "publisher": "Vercel",
+    "license": "MIT",
+    "repository": "vercel-labs/agent-skills",
+    "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "directory": "skills/react-view-transitions",
+    "category": "Diseño y frontend",
+    "compatibility": "Depende de la versión de React/Next.js y del soporte de View Transition. Algunas APIs son experimentales; incluye sus limitaciones y referencias.",
+    "files": [
+      {
+        "path": "AGENTS.md",
+        "repository_path": "skills/react-view-transitions/AGENTS.md",
+        "bytes": 58993,
+        "sha256": "83fd29aec273cf4318a4f428ed2725f2cd3b6adbd76640e495c31f0a2521c702"
+      },
+      {
+        "path": "README.md",
+        "repository_path": "skills/react-view-transitions/README.md",
+        "bytes": 2231,
+        "sha256": "aba31b4ac31c1b13d2a8054179604abd4498b0d7324746635ff0e3b0aea9d608"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/react-view-transitions/SKILL.md",
+        "bytes": 14407,
+        "sha256": "1520343c8814c972fee001cac6d6185976d6eb3f4edcac33afe95c10f3b3228b"
+      },
+      {
+        "path": "_upstream/README.md",
+        "repository_path": "README.md",
+        "bytes": 7838,
+        "sha256": "7c02f64b08fc6c4eef03c01d64f3e2ed478193ccfcbd14edba379abe23304651"
+      },
+      {
+        "path": "metadata.json",
+        "repository_path": "skills/react-view-transitions/metadata.json",
+        "bytes": 852,
+        "sha256": "b1a5ae09f3904dc83dab79f518d033bd98f1e2f55caabfdb5beeeaaf0ca5e4c2"
+      },
+      {
+        "path": "references/css-recipes.md",
+        "repository_path": "skills/react-view-transitions/references/css-recipes.md",
+        "bytes": 8337,
+        "sha256": "f4a5b92a7aad6befd2779e498ab04311277f179b240d2170f0a68a1444024d51"
+      },
+      {
+        "path": "references/implementation.md",
+        "repository_path": "skills/react-view-transitions/references/implementation.md",
+        "bytes": 9280,
+        "sha256": "87687de5fa2f775a6b5134ee02863ebede9ee6bc42ea8ed99bd53aa5325e78f4"
+      },
+      {
+        "path": "references/nextjs.md",
+        "repository_path": "skills/react-view-transitions/references/nextjs.md",
+        "bytes": 10700,
+        "sha256": "f926a645d5e4c62fcc2d5832be0f3ad048f2ee1d17f8476324e2bc407e4b3a07"
+      },
+      {
+        "path": "references/patterns.md",
+        "repository_path": "skills/react-view-transitions/references/patterns.md",
+        "bytes": 11941,
+        "sha256": "da24d7f37c7e6b8ecbcf05525ef613d8f5be94655c233d6fa62833c8a746604f"
+      },
+      {
+        "path": "references/troubleshooting.md",
+        "repository_path": "skills/react-view-transitions/references/troubleshooting.md",
+        "bytes": 4940,
+        "sha256": "aa6811d276dcf06dcc9aba90d1e11e1d0a29146604bf7c89a9e93a6fa8883c7a"
+      }
+    ]
+  },
+  {
+    "id": "starter-supabase:supabase-postgres-best-practices",
+    "name": "supabase-postgres-best-practices",
+    "description": "Diseño, consultas, índices, RLS y rendimiento de Postgres, mantenido por Supabase.",
+    "publisher": "Supabase",
+    "license": "MIT",
+    "repository": "supabase/agent-skills",
+    "revision": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+    "directory": "skills/supabase-postgres-best-practices",
+    "category": "Datos",
+    "compatibility": "Aplicable a Postgres dentro o fuera de Supabase. Ejecutar consultas o migraciones requiere una base autorizada; no se configura ninguna conexión.",
+    "files": [
+      {
+        "path": "CHANGELOG.md",
+        "repository_path": "skills/supabase-postgres-best-practices/CHANGELOG.md",
+        "bytes": 5684,
+        "sha256": "751ad110037c85d400018c9894716a04fa46357ff55c22b1169b280752e19e88"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/supabase-postgres-best-practices/SKILL.md",
+        "bytes": 3231,
+        "sha256": "ad65e776f45e761bafc609d3f506c77c1032225aa65e0c4c02f241b8071e5855"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1065,
+        "sha256": "b65e575eb4f04a13c187d64e958321298e2ab84d67aa8428819f362056ba292c"
+      },
+      {
+        "path": "references/_contributing.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/_contributing.md",
+        "bytes": 4113,
+        "sha256": "191e039e7d94764e6073410b513b559f9a594e0fdf0252a30c2a2986df2ab3bc"
+      },
+      {
+        "path": "references/_sections.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/_sections.md",
+        "bytes": 1682,
+        "sha256": "c9e992612b422c7122de0b7542ebc2450db283edaab08cfe86c6d657fcccccd5"
+      },
+      {
+        "path": "references/_template.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/_template.md",
+        "bytes": 1040,
+        "sha256": "6299954250f212caabe339d752c3e5313a8e07d1a182a4e4b425baee91df1bd2"
+      },
+      {
+        "path": "references/advanced-full-text-search.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/advanced-full-text-search.md",
+        "bytes": 1468,
+        "sha256": "40c2606bbb4c4dce31308f201b24cc7f58c7df05b1d9c6856fe2b888d3b7cf28"
+      },
+      {
+        "path": "references/advanced-jsonb-indexing.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md",
+        "bytes": 1444,
+        "sha256": "24cacf6a8bc35901dd566d24502ce8e57f810a5c196b897e61d52726e521d106"
+      },
+      {
+        "path": "references/conn-idle-timeout.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/conn-idle-timeout.md",
+        "bytes": 1282,
+        "sha256": "630588902c00fcec59a5988cc5d042f76dcf2c923a535abfd8c47dca205eaed5"
+      },
+      {
+        "path": "references/conn-limits.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/conn-limits.md",
+        "bytes": 1325,
+        "sha256": "11b2a67a7c7679cbbc5d807bbb17e69c98484a581d0c8b929c03408f412b81b2"
+      },
+      {
+        "path": "references/conn-pooling.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/conn-pooling.md",
+        "bytes": 1382,
+        "sha256": "88cf086bf98ba865d2e9d0579974e1366b14157619d6a93e7da77be91084e4a5"
+      },
+      {
+        "path": "references/conn-prepared-statements.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/conn-prepared-statements.md",
+        "bytes": 1529,
+        "sha256": "174e9332fe3dda5c99b2b00159fb1915ae36c00bab3a7882c14e73e4344e946e"
+      },
+      {
+        "path": "references/data-batch-inserts.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/data-batch-inserts.md",
+        "bytes": 1287,
+        "sha256": "531933b82d6a622d0fae29e0ea80be6fe5d78655adf2804c271ea84a1930de37"
+      },
+      {
+        "path": "references/data-n-plus-one.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/data-n-plus-one.md",
+        "bytes": 1361,
+        "sha256": "21a44905e5b16a42741892ec34bb1bfef124d049b140a76934a9acd0f46f5fc2"
+      },
+      {
+        "path": "references/data-pagination.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/data-pagination.md",
+        "bytes": 1358,
+        "sha256": "73c9fa10a3d439bedea0e11b640bd25bf30dd50f0d9006cf85baf7c3151543fa"
+      },
+      {
+        "path": "references/data-upsert.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/data-upsert.md",
+        "bytes": 1390,
+        "sha256": "2612af83b20a2701dde30ef1f8d7efd26b7e9eef84717226b8f038a2d2150ff7"
+      },
+      {
+        "path": "references/lock-advisory.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/lock-advisory.md",
+        "bytes": 1531,
+        "sha256": "c88d259dbf81c3771438f59a165f7eab8acd09999dd370bdf807521c73f35aab"
+      },
+      {
+        "path": "references/lock-deadlock-prevention.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/lock-deadlock-prevention.md",
+        "bytes": 1855,
+        "sha256": "09aee46f51d7178c8e55fe056cd5a94a64ba2c122fe418e6900cd99f297b2347"
+      },
+      {
+        "path": "references/lock-short-transactions.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/lock-short-transactions.md",
+        "bytes": 1350,
+        "sha256": "5aa7f61095916986d39644b446cdbcd2bacca7ef698a3bb50b3f82dd60207602"
+      },
+      {
+        "path": "references/lock-skip-locked.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/lock-skip-locked.md",
+        "bytes": 1353,
+        "sha256": "6c45077f430f29cd9cd8f448c94d578e827e7bd023fcdaf717a756acb116fa4b"
+      },
+      {
+        "path": "references/monitor-explain-analyze.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/monitor-explain-analyze.md",
+        "bytes": 1441,
+        "sha256": "4cb67ffbf8e57f2e5b380b0beb4242528b513723ce314a2c2ffcf083bd4203d7"
+      },
+      {
+        "path": "references/monitor-pg-stat-statements.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md",
+        "bytes": 1418,
+        "sha256": "89dca99d4e894fcbdcac136be7ad9fbc03d1342904f065c1b198dc9cf495f098"
+      },
+      {
+        "path": "references/monitor-vacuum-analyze.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md",
+        "bytes": 1506,
+        "sha256": "2892272011710eb49b3f185ec12f15ce9ce4c365792c672f6e2a9c90da426a1a"
+      },
+      {
+        "path": "references/query-composite-indexes.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/query-composite-indexes.md",
+        "bytes": 1454,
+        "sha256": "73e42424e671f0266e74fdb220db3196790f69fb43e2b19c7b9483eb4971b554"
+      },
+      {
+        "path": "references/query-covering-indexes.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/query-covering-indexes.md",
+        "bytes": 1287,
+        "sha256": "daf2a7f0477fb7357b62b5fb5b185b1995a77a186347e45cb780e25e7a7589b6"
+      },
+      {
+        "path": "references/query-index-types.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/query-index-types.md",
+        "bytes": 1521,
+        "sha256": "472a74f22c2df203bd0154999b3a5a0187cca2ab3d9a3978e305bb7c32f1a282"
+      },
+      {
+        "path": "references/query-missing-indexes.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/query-missing-indexes.md",
+        "bytes": 1218,
+        "sha256": "91ad8b0ff4365704b4830a7f077c6f140f7140fd5d3ce5cd0b92b160cf9e25f1"
+      },
+      {
+        "path": "references/query-partial-indexes.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/query-partial-indexes.md",
+        "bytes": 1347,
+        "sha256": "6448982bc8558c6555284958edc331b29239c6a0130e6b4501dd6d4da607a6dd"
+      },
+      {
+        "path": "references/schema-constraints.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/schema-constraints.md",
+        "bytes": 1880,
+        "sha256": "90e8efda3e9e81095e642911ad4aae2809d160f29414338fa997253238f510f8"
+      },
+      {
+        "path": "references/schema-data-types.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/schema-data-types.md",
+        "bytes": 1453,
+        "sha256": "e01b58c14c7f3f65d8ead580b9a4fcf70b83baaab0f9a5f83c569c9fd113e8c8"
+      },
+      {
+        "path": "references/schema-foreign-key-indexes.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md",
+        "bytes": 1679,
+        "sha256": "7587713d12a65a212365459b3d39e4717d8a79e4073b10bd62f1054d8192c0dd"
+      },
+      {
+        "path": "references/schema-lowercase-identifiers.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md",
+        "bytes": 1728,
+        "sha256": "4bc80f70865f2390872591f326c8a6be6456a0aeb5a7e5a2475d7cd9d43059ab"
+      },
+      {
+        "path": "references/schema-partitioning.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/schema-partitioning.md",
+        "bytes": 1548,
+        "sha256": "541e13fbeaf4bb1485c9059d4c9417dbdb766cf16f4237cd63a04ada7ec45b90"
+      },
+      {
+        "path": "references/schema-primary-keys.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/schema-primary-keys.md",
+        "bytes": 1821,
+        "sha256": "3c8beabef82066f9a0838b926da0885117fd2d9a263aaf84cb5ca9e5f0d400e9"
+      },
+      {
+        "path": "references/security-privileges.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/security-privileges.md",
+        "bytes": 1566,
+        "sha256": "095909274a4fb43df785d7144cf674eeb40284d2d45628f14af4108737b93663"
+      },
+      {
+        "path": "references/security-rls-basics.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/security-rls-basics.md",
+        "bytes": 1372,
+        "sha256": "e04dd1a3a382aafdaaa73fe9f7976352acdde6e90c2a2470d281b94d4f44b096"
+      },
+      {
+        "path": "references/security-rls-performance.md",
+        "repository_path": "skills/supabase-postgres-best-practices/references/security-rls-performance.md",
+        "bytes": 2103,
+        "sha256": "2e1faeca7d5746e246b1c78f9492fe2a9cfa41c4d7fa1e23c402d58fa18ea014"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:agents-md",
+    "name": "agents-md",
+    "description": "Instrucciones de repositorio AGENTS.md concisas y basadas en referencias reales.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/agents-md",
+    "category": "Documentación",
+    "compatibility": "Guía portable de documentación; las convenciones de atribución y CLAUDE.md se adaptan al proyecto.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/agents-md/SKILL.md",
+        "bytes": 3188,
+        "sha256": "8a91ada35068f43ef7ee03e38937863bac4f407878b06f0a4f1ddb4af24bec7e"
+      },
+      {
+        "path": "SOURCES.md",
+        "repository_path": "skills/agents-md/SOURCES.md",
+        "bytes": 4307,
+        "sha256": "14ac842801b7bc938dfbb9efee072fc4e9ab43b456e40f3235fee503544a0721"
+      },
+      {
+        "path": "SPEC.md",
+        "repository_path": "skills/agents-md/SPEC.md",
+        "bytes": 4160,
+        "sha256": "4f8cff992ca96fa4d369227051cd3f5aa8b34974c81bf814aa3a1cf18541e74a"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:code-review",
+    "name": "code-review",
+    "description": "Revisión de cambios con criterios de seguridad, rendimiento, diseño y pruebas de Sentry.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/code-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Guía de revisión portable; aplicar sus convenciones según las reglas del repositorio.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/code-review/SKILL.md",
+        "bytes": 2768,
+        "sha256": "ec5fc8855cb4648b4f2c79b608f8c8824a2da6a683330524c4d6283e4a3954c4"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:code-simplifier",
+    "name": "code-simplifier",
+    "description": "Refactorización para mejorar claridad y mantenimiento sin alterar el comportamiento.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/code-simplifier",
+    "category": "Calidad y pruebas",
+    "compatibility": "Incluye convenciones de Sentry y ejemplos TypeScript/React; deben adaptarse al lenguaje y a las reglas del proyecto.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/code-simplifier/SKILL.md",
+        "bytes": 3963,
+        "sha256": "ad4ce00d2759e0773bee88f267f4ae0f52684979d7fbceb14dffd5efefbce141"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:commit",
+    "name": "commit",
+    "description": "Mensajes de commit convencionales siguiendo las prácticas de Sentry.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/commit",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Git para crear commits. Los tipos, referencias y convenciones son de Sentry; no realiza commits al instalarse.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/commit/SKILL.md",
+        "bytes": 1865,
+        "sha256": "0307d3ecfe3b3e70246cbd88b19dc5853340b624b6ee3cd935c7bffc45b64279"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:create-branch",
+    "name": "create-branch",
+    "description": "Creación de ramas Git con nombres coherentes y prevención de colisiones.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/create-branch",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Git; sigue convenciones de Sentry y puede crear o cambiar una rama cuando se use. Instalar no modifica el repositorio.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/create-branch/SKILL.md",
+        "bytes": 2528,
+        "sha256": "0e017d30c6031477fe147a39e7f40603acb6588ed2a00145c5cd46980a43c6cf"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:django-access-review",
+    "name": "django-access-review",
+    "description": "Revisión de autorización, aislamiento de usuarios e IDOR en Django y Django REST Framework.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/django-access-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Requiere código Django/DRF para analizar. Los nombres de herramientas del autor se adaptan al agente; no concede permisos adicionales.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/django-access-review/SKILL.md",
+        "bytes": 10269,
+        "sha256": "0b0891f6335b84bd557e92022db197ed7d948406e2389ed6d09fd2f45b695a03"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      },
+      {
+        "path": "references/django-orm.md",
+        "repository_path": "skills/django-access-review/references/django-orm.md",
+        "bytes": 1786,
+        "sha256": "49a020090e74bf62e7a56e01d26014ee90f0ac7e2307b5e98a4e17b7b60cf040"
+      },
+      {
+        "path": "references/django-views.md",
+        "repository_path": "skills/django-access-review/references/django-views.md",
+        "bytes": 1800,
+        "sha256": "bad2439e5dcc09da183ebaf057f30c7b4dbcf815eac752c7ab2b8e262a80671a"
+      },
+      {
+        "path": "references/drf-permissions.md",
+        "repository_path": "skills/django-access-review/references/drf-permissions.md",
+        "bytes": 2035,
+        "sha256": "784771b0007ea7aa5b3592ea880fa6956cee11c3acc490666a43799b064f431a"
+      },
+      {
+        "path": "references/tenant-isolation.md",
+        "repository_path": "skills/django-access-review/references/tenant-isolation.md",
+        "bytes": 1565,
+        "sha256": "eda676bb7923a86769fc26e92ef0370761ebc2d210ff931e4319f451b81eb0ab"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:django-perf-review",
+    "name": "django-perf-review",
+    "description": "Detección de consultas N+1 y problemas de rendimiento del ORM de Django.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/django-perf-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Orientada a Python/Django. Ejecutar validaciones requiere las dependencias y una base de pruebas del proyecto.",
+    "files": [
+      {
+        "path": "LICENSE",
+        "repository_path": "skills/django-perf-review/LICENSE",
+        "bytes": 102,
+        "sha256": "6498709ced00a7f52d527da0af674d5c83ac4f6364e2197ecdc0057834f6151a"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/django-perf-review/SKILL.md",
+        "bytes": 11426,
+        "sha256": "52283bff7b23f06f94bbb413d174fd1cbcf497f8e8a63d4f0d569ba6bfd949d4"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:document-api-endpoint",
+    "name": "document-api-endpoint",
+    "description": "Documentación y tipos de endpoints Sentry con Django REST Framework y drf-spectacular.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/document-api-endpoint",
+    "category": "Documentación",
+    "compatibility": "Específica del backend Sentry y sus convenciones de esquema; no es una guía universal de OpenAPI. Las consultas a servicios necesitan herramientas y acceso propios.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/document-api-endpoint/SKILL.md",
+        "bytes": 4473,
+        "sha256": "40c7592cdfbef2e02bf004133446d7a9c85e98f9fd653d3cee689f3bba4bf7a9"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:find-bugs",
+    "name": "find-bugs",
+    "description": "Auditoría del diff de una rama para detectar errores y vulnerabilidades con evidencia.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/find-bugs",
+    "category": "Calidad y pruebas",
+    "compatibility": "El flujo original usa Git y GitHub CLI (gh) autenticado para obtener la rama base. No incluye esas herramientas ni cambia código automáticamente.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/find-bugs/SKILL.md",
+        "bytes": 2830,
+        "sha256": "08664c3698f89116a4b04d12f699f95cff1aadb725da353b7f24f8ad73b02003"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:security-review",
+    "name": "security-review",
+    "description": "Revisión de seguridad con guías por lenguaje, vulnerabilidad y cadena de suministro.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/security-review",
+    "category": "Calidad y pruebas",
+    "compatibility": "Guía portable para revisar código con referencias completas. Las herramientas y comandos citados dependen del proyecto y de sus permisos.",
+    "files": [
+      {
+        "path": "LICENSE",
+        "repository_path": "skills/security-review/LICENSE",
+        "bytes": 884,
+        "sha256": "0fc858d87f467971ee612fc183896257a1c160a1610a443896b33ae4d2a44ef7"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/security-review/SKILL.md",
+        "bytes": 11771,
+        "sha256": "56a0f507ac82d7003f06103b7443472a0c4e6a5007a84f7b4d29b240359d0f9e"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      },
+      {
+        "path": "infrastructure/docker.md",
+        "repository_path": "skills/security-review/infrastructure/docker.md",
+        "bytes": 9400,
+        "sha256": "84bd49469c5a0cbd42fecdcce752de98cf6821b601dfef6a1920df61f030ae62"
+      },
+      {
+        "path": "languages/javascript.md",
+        "repository_path": "skills/security-review/languages/javascript.md",
+        "bytes": 10028,
+        "sha256": "f4226c82de13da9dec9be7b509932d74a4ade2c8d46b98a078a5b38bf8aa3319"
+      },
+      {
+        "path": "languages/python.md",
+        "repository_path": "skills/security-review/languages/python.md",
+        "bytes": 9492,
+        "sha256": "32d0b1304d132fc582320d584d54bbaea566d51700cd16b3f0be723ed834a556"
+      },
+      {
+        "path": "references/api-security.md",
+        "repository_path": "skills/security-review/references/api-security.md",
+        "bytes": 12741,
+        "sha256": "65b2456b4c5ae0d6d9849eac8196ac03fbefbf88657c5e069a8aa5063dd6afbf"
+      },
+      {
+        "path": "references/authentication.md",
+        "repository_path": "skills/security-review/references/authentication.md",
+        "bytes": 9071,
+        "sha256": "7bc598cd4af33bb62406f5a0e8ff7adebff83c04e5fb449e6738f96ae0e26be6"
+      },
+      {
+        "path": "references/authorization.md",
+        "repository_path": "skills/security-review/references/authorization.md",
+        "bytes": 10007,
+        "sha256": "5ccfd579a1eca4d9d374eb00b04ba33cc9a2918e14e5cb7620c136a6feaeffff"
+      },
+      {
+        "path": "references/business-logic.md",
+        "repository_path": "skills/security-review/references/business-logic.md",
+        "bytes": 12660,
+        "sha256": "fc8ec30eb19f73759e8901e58d7ca66fc87035703325cc8a844298102fa6298a"
+      },
+      {
+        "path": "references/cryptography.md",
+        "repository_path": "skills/security-review/references/cryptography.md",
+        "bytes": 8703,
+        "sha256": "1e1301624e0c9b1699e1d95af11df06a67d104ff06443e93711bb656152f364c"
+      },
+      {
+        "path": "references/csrf.md",
+        "repository_path": "skills/security-review/references/csrf.md",
+        "bytes": 9943,
+        "sha256": "7b57ba0a45a291eee24578af8b0c69515c76e452c33d8c2d717c66ee3bbdda20"
+      },
+      {
+        "path": "references/data-protection.md",
+        "repository_path": "skills/security-review/references/data-protection.md",
+        "bytes": 9565,
+        "sha256": "920b7dfb86dc696002d31022c1f7665ef602dd1ed76f1124ad937d488ce2b381"
+      },
+      {
+        "path": "references/deserialization.md",
+        "repository_path": "skills/security-review/references/deserialization.md",
+        "bytes": 10234,
+        "sha256": "be9946daf389ad594fbc4065246ff334c389da1e2cf593180ca150b0204287fb"
+      },
+      {
+        "path": "references/error-handling.md",
+        "repository_path": "skills/security-review/references/error-handling.md",
+        "bytes": 11632,
+        "sha256": "e12d3c9f713614223ce797935f3a4c2ac1a7f1fcf0ea24e865a1a70efeab4fb9"
+      },
+      {
+        "path": "references/file-security.md",
+        "repository_path": "skills/security-review/references/file-security.md",
+        "bytes": 12344,
+        "sha256": "a0a001fb79fe9f1169fa3ba523225164744c42d8779341f15d3d0fc349185f2a"
+      },
+      {
+        "path": "references/injection.md",
+        "repository_path": "skills/security-review/references/injection.md",
+        "bytes": 6813,
+        "sha256": "d3989e97af773f521170b430a0e629b26c6ff2051cd826fa62a895523f268178"
+      },
+      {
+        "path": "references/logging.md",
+        "repository_path": "skills/security-review/references/logging.md",
+        "bytes": 12012,
+        "sha256": "acca4eeebfc451bb62a7c085d1121ffa443e8cd0831548c2ae6f7fc606056cbc"
+      },
+      {
+        "path": "references/misconfiguration.md",
+        "repository_path": "skills/security-review/references/misconfiguration.md",
+        "bytes": 10305,
+        "sha256": "919c44e309eaa6427a8bb44a2ed645fbf2b46d9dfe86a0fcdb2d084201898390"
+      },
+      {
+        "path": "references/modern-threats.md",
+        "repository_path": "skills/security-review/references/modern-threats.md",
+        "bytes": 13269,
+        "sha256": "d2ac69d91ade6df9c4bf89b2be0d203651d1a0cc5a67d03db8013af52c8ffe6b"
+      },
+      {
+        "path": "references/ssrf.md",
+        "repository_path": "skills/security-review/references/ssrf.md",
+        "bytes": 10734,
+        "sha256": "646a8244fa61997b9b4f093169be1af4f94e6a3d04dcae8d426bb821870b2bff"
+      },
+      {
+        "path": "references/supply-chain.md",
+        "repository_path": "skills/security-review/references/supply-chain.md",
+        "bytes": 9149,
+        "sha256": "ef3000d91763ccdddfbce2660943c4090b4c16b3b33afe980f4e10947729e1f1"
+      },
+      {
+        "path": "references/xss.md",
+        "repository_path": "skills/security-review/references/xss.md",
+        "bytes": 7599,
+        "sha256": "4735df1e581b757b078605fbc27d37e85cfe182c45ab326c9e536c71a930680c"
+      }
+    ]
+  },
+  {
+    "id": "starter-sentry:pr-writer",
+    "name": "pr-writer",
+    "description": "Títulos y descripciones de pull requests centrados en el cambio que debe revisar el equipo.",
+    "publisher": "Sentry",
+    "license": "Apache-2.0",
+    "repository": "getsentry/skills",
+    "revision": "d18b7aa8ba878354e5c348310230e652f7690f9c",
+    "directory": "skills/pr-writer",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Git y GitHub CLI (gh) autenticado para crear o actualizar PR. Instalar no publica nada ni habilita credenciales.",
+    "files": [
+      {
+        "path": "EVAL.md",
+        "repository_path": "skills/pr-writer/EVAL.md",
+        "bytes": 1589,
+        "sha256": "12230c3aa3a8a8ca5a26a00b9b9113709f897bf9a85a32eb097390c6cdf879d3"
+      },
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/pr-writer/SKILL.md",
+        "bytes": 5302,
+        "sha256": "785a2b1f084407e42f61661f83c7b0c621889865a483774f44c893c0cbcf57bc"
+      },
+      {
+        "path": "SPEC.md",
+        "repository_path": "skills/pr-writer/SPEC.md",
+        "bytes": 12584,
+        "sha256": "e566e80684b4eec9433200816cf61dd1e93c7b6c1612f6271d076acf110969f6"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 10785,
+        "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+      },
+      {
+        "path": "evals/axis.config.json",
+        "repository_path": "skills/pr-writer/evals/axis.config.json",
+        "bytes": 318,
+        "sha256": "55bee95f6d59923b2a52765989324a0ed9af9762f7d860a101e9708f6ac8363d"
+      },
+      {
+        "path": "evals/scenarios/concise-docs-pr.json",
+        "repository_path": "skills/pr-writer/evals/scenarios/concise-docs-pr.json",
+        "bytes": 1753,
+        "sha256": "ecc431edd40f4cd7541ce2f00a4821e8f6a4d8ed660e3d63551968cc372edeac"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-identity-rust",
+    "name": "azure-identity-rust",
+    "description": "Autenticación Microsoft Entra ID con Azure Identity para Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-identity-rust",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Rust/Cargo y azure_identity; probar autenticación requiere credenciales Azure adecuadas. No instala SDK ni conecta cuentas.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-rust/skills/azure-identity-rust/SKILL.md",
+        "bytes": 6358,
+        "sha256": "a8012a1c4324eee8b38daf43ce1f6400ecb3fa8c64763399f4247155627024ac"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-storage-blob-rust",
+    "name": "azure-storage-blob-rust",
+    "description": "Contenedores, cargas, descargas y streaming de Azure Blob Storage en Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-storage-blob-rust",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Rust/Cargo, SDK Azure y una cuenta Storage para operaciones reales. No crea recursos ni concede acceso.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-rust/skills/azure-storage-blob-rust/SKILL.md",
+        "bytes": 10824,
+        "sha256": "6750e050df436fe23223dfe4cacaf9067f3d16ed10f6b9137453b0cb7bcd0b9b"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-keyvault-secrets-rust",
+    "name": "azure-keyvault-secrets-rust",
+    "description": "Almacenamiento y consulta de secretos con Azure Key Vault en Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-keyvault-secrets-rust",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Rust/Cargo, SDK Key Vault, un vault y permisos explícitos. No incluye ni solicita secretos durante la instalación.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-rust/skills/azure-keyvault-secrets-rust/SKILL.md",
+        "bytes": 5976,
+        "sha256": "d246f8bf17b28cca1e9d06548bb64e71b0945ea5aadfdfb3e1327e7bff30c7a2"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-cosmos-rust",
+    "name": "azure-cosmos-rust",
+    "description": "Documentos, contenedores y claves de partición de Azure Cosmos DB desde Rust.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-rust/skills/azure-cosmos-rust",
+    "category": "Datos",
+    "compatibility": "Requiere Rust/Cargo, azure_data_cosmos y una cuenta Cosmos DB autorizada para ejecutar ejemplos.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-rust/skills/azure-cosmos-rust/SKILL.md",
+        "bytes": 6571,
+        "sha256": "1e50ff1d6b290ba30644fb6c501802d0c689b2df0e8ed8aaab14f4f57fa5e4cd"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:fastapi-router-py",
+    "name": "fastapi-router-py",
+    "description": "Rutas FastAPI con operaciones CRUD, autenticación y modelos de respuesta.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/fastapi-router-py",
+    "category": "Flujo de desarrollo",
+    "compatibility": "Requiere Python y FastAPI. Las plantillas y rutas de ejemplo deben adaptarse a la estructura del proyecto.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/fastapi-router-py/SKILL.md",
+        "bytes": 2276,
+        "sha256": "a8c5911b2c67af768af99d0a1972e16c364ddd8194506d574ae90f375dca6bdf"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "assets/template.py",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/fastapi-router-py/assets/template.py",
+        "bytes": 4660,
+        "sha256": "07b9d0fcd49887f17109441bce7fa3aac872c1751a566355085ddc5c432cb96c"
+      },
+      {
+        "path": "references/capabilities.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/fastapi-router-py/references/capabilities.md",
+        "bytes": 934,
+        "sha256": "fce023b29fd31ca6d44e0f197f04a3e65af8e29e78355dfce1fbd1636b126a96"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:pydantic-models-py",
+    "name": "pydantic-models-py",
+    "description": "Modelos Pydantic para creación, actualización, validación y respuestas de API.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/pydantic-models-py",
+    "category": "Datos",
+    "compatibility": "Para Python con Pydantic v2; los modelos y plantillas no se generan ni ejecutan al instalar.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/pydantic-models-py/SKILL.md",
+        "bytes": 1987,
+        "sha256": "a0d914a4de405961e793895e027c43f34ef9306dc544de14ed5d17570c01a315"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "assets/template.py",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/pydantic-models-py/assets/template.py",
+        "bytes": 1495,
+        "sha256": "bc589a21973eeca69d8f0cf08bca4671af01dec0bac2c0f1738f445392104ab3"
+      },
+      {
+        "path": "references/capabilities.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/pydantic-models-py/references/capabilities.md",
+        "bytes": 1129,
+        "sha256": "058b0c69796b409f2e8aa174f7fc3978c078eabdd9f2a2e0534a40d9ed824ba1"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-identity-py",
+    "name": "azure-identity-py",
+    "description": "Credenciales, identidades administradas y caché de tokens con Azure Identity en Python.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/azure-identity-py",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Python compatible y azure-identity. Autenticación real requiere una identidad Azure autorizada.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/azure-identity-py/SKILL.md",
+        "bytes": 17698,
+        "sha256": "b10709c8cadc23134bfee415010f9f0292e39f06c216df3f3dd6fc826897414c"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "references/capabilities.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/azure-identity-py/references/capabilities.md",
+        "bytes": 2234,
+        "sha256": "294c3cb8b688c5a435acfd5633ecea51cd07845363fc893fa29efcc418f597b0"
+      },
+      {
+        "path": "references/non-hero-scenarios.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/azure-identity-py/references/non-hero-scenarios.md",
+        "bytes": 4355,
+        "sha256": "3c3fdd62c8a3bc43e71b7bd4010a51d8d2809b5458eb898426523e28466bbdd1"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-storage-blob-py",
+    "name": "azure-storage-blob-py",
+    "description": "Gestión de blobs, contenedores y transferencias de Azure Storage con Python.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-python/skills/azure-storage-blob-py",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Python, azure-storage-blob, azure-identity y una cuenta Storage con acceso autorizado.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/azure-storage-blob-py/SKILL.md",
+        "bytes": 9154,
+        "sha256": "036cde228f87b9e6aacbd3ec317bd504cb5639e04aec81f1b3ef631a9b240622"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "references/capabilities.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/azure-storage-blob-py/references/capabilities.md",
+        "bytes": 1310,
+        "sha256": "5f07b3f4925a40b16c7f5aaa4ad7e61524142a72a7d88de4031773297d67b942"
+      },
+      {
+        "path": "references/non-hero-scenarios.md",
+        "repository_path": ".github/plugins/azure-sdk-python/skills/azure-storage-blob-py/references/non-hero-scenarios.md",
+        "bytes": 1621,
+        "sha256": "b0ad5f98350ef38460ebda48b5ae2299b24a7b93dec149610ee5b10911533db6"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:zustand-store-ts",
+    "name": "zustand-store-ts",
+    "description": "Estado global TypeScript con Zustand, selectores y separación de acciones.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/zustand-store-ts",
+    "category": "Diseño y frontend",
+    "compatibility": "Para proyectos TypeScript/React con Zustand; las plantillas se adaptan al proyecto y no se ejecutan al instalar.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/zustand-store-ts/SKILL.md",
+        "bytes": 1761,
+        "sha256": "dd69536e2f18a09eac999d036f963dbbf6874f44fe4ac73a6df89170de4a542b"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "assets/template.ts",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/zustand-store-ts/assets/template.ts",
+        "bytes": 3335,
+        "sha256": "532f21cb1ed04b6abfef86586670ea6037370869a5c460b45408b03c151ad6d0"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:react-flow-node-ts",
+    "name": "react-flow-node-ts",
+    "description": "Nodos tipados, conectores y estado para editores visuales con React Flow.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/react-flow-node-ts",
+    "category": "Diseño y frontend",
+    "compatibility": "Requiere React, TypeScript, React Flow y Zustand. Incluye una plantilla TSX; no instala dependencias.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/react-flow-node-ts/SKILL.md",
+        "bytes": 2011,
+        "sha256": "f0a4f37df3e8e7ed9645e947c08470fd78483f18b9587ae8cd20720022110781"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "assets/template.tsx",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/react-flow-node-ts/assets/template.tsx",
+        "bytes": 3253,
+        "sha256": "d3cfad93e265243c2ecb142d056272cdb5db94a0bb9835c3203f32bfdd0f90f5"
+      },
+      {
+        "path": "assets/types.template.ts",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/react-flow-node-ts/assets/types.template.ts",
+        "bytes": 853,
+        "sha256": "7766f607f7a640534372246ab93cf72329865724d75b4c187a1167e08ba432ef"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-identity-ts",
+    "name": "azure-identity-ts",
+    "description": "Autenticación Azure con identidades administradas y credenciales en JavaScript/TypeScript.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/azure-identity-ts",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere @azure/identity y un runtime compatible. Los ejemplos de autenticación necesitan credenciales o una identidad administrada.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/azure-identity-ts/SKILL.md",
+        "bytes": 7954,
+        "sha256": "779d1684a34a4a051e23835b99ce51909d4485d88db44df9508e3a4debdf729b"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "references/browser-auth.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/azure-identity-ts/references/browser-auth.md",
+        "bytes": 10691,
+        "sha256": "ae12c4dfb043b5122cbc0ce7789dfda130b8688f94963dd1a298537de6e9c9a9"
+      },
+      {
+        "path": "references/credential-types.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/azure-identity-ts/references/credential-types.md",
+        "bytes": 10136,
+        "sha256": "88a305a18093f1a825b378251b6ab74cb556fdb8086c6691eadef0c4d7655a2e"
+      }
+    ]
+  },
+  {
+    "id": "starter-microsoft:azure-storage-blob-ts",
+    "name": "azure-storage-blob-ts",
+    "description": "Blobs, SAS, contenedores y streaming de Azure Storage en JavaScript/TypeScript.",
+    "publisher": "Microsoft",
+    "license": "MIT",
+    "repository": "microsoft/skills",
+    "revision": "354361d83247c76a1c21e802e0d4887c4d8323a3",
+    "directory": ".github/plugins/azure-sdk-typescript/skills/azure-storage-blob-ts",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere @azure/storage-blob y un runtime compatible; algunos ejemplos son sólo Node.js. Las operaciones requieren acceso a una cuenta Storage.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/azure-storage-blob-ts/SKILL.md",
+        "bytes": 13154,
+        "sha256": "180a75a03963329bd2671651ab1b90ab7e21c1307e7f822a3f649d5bebf367d1"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 1140,
+        "sha256": "d9a1b1e30d633d5732ea18e3cba9538d293ebc53e1a9e4e96ab739e0c5c4f1cb"
+      },
+      {
+        "path": "references/sas-tokens.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/azure-storage-blob-ts/references/sas-tokens.md",
+        "bytes": 12987,
+        "sha256": "3cf8e1419061494c9d97f827df7de0da55a2e19c58d3bb01d8683f26b621ee68"
+      },
+      {
+        "path": "references/streaming.md",
+        "repository_path": ".github/plugins/azure-sdk-typescript/skills/azure-storage-blob-ts/references/streaming.md",
+        "bytes": 10493,
+        "sha256": "6313cd1edaa8189ae974439d65cb95b5b8785699bcc3b7b0ff3e89def13d9653"
+      }
+    ]
+  },
+  {
+    "id": "starter-cloudflare:workers-best-practices",
+    "name": "workers-best-practices",
+    "description": "Patrones de producción, seguridad y observabilidad para Cloudflare Workers.",
+    "publisher": "Cloudflare",
+    "license": "Apache-2.0",
+    "repository": "cloudflare/skills",
+    "revision": "41e0d19858946d18af9ee2c2feebbe2e11d829ff",
+    "directory": "skills/workers-best-practices",
+    "category": "Nube y despliegue",
+    "compatibility": "Guía para proyectos Workers; comprobar APIs actuales puede requerir acceso a documentación. Desplegar requiere herramientas y cuenta Cloudflare propias.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/workers-best-practices/SKILL.md",
+        "bytes": 5547,
+        "sha256": "8ae8c6e7359171ba6a1688503850fa05ce47199c4e288343bf55b5e277351bae"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 11357,
+        "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+      },
+      {
+        "path": "references/configuration.md",
+        "repository_path": "skills/workers-best-practices/references/configuration.md",
+        "bytes": 5657,
+        "sha256": "cdb5c9cd5168231373523332c0e7a5cf8811dc244c48298823e3ccc5eb7157c1"
+      },
+      {
+        "path": "references/platform-apis.md",
+        "repository_path": "skills/workers-best-practices/references/platform-apis.md",
+        "bytes": 3876,
+        "sha256": "9ca9f5a7a82f92de45d310f5e2ee05aa464ddb7a63a737529caa17fff3660f28"
+      },
+      {
+        "path": "references/runtime-patterns.md",
+        "repository_path": "skills/workers-best-practices/references/runtime-patterns.md",
+        "bytes": 13644,
+        "sha256": "704ce8d4ff62c7655eb1d15f804ad566ed2012d11c2086e0d94bd3addb4d2c07"
+      }
+    ]
+  },
+  {
+    "id": "starter-cloudflare:wrangler",
+    "name": "wrangler",
+    "description": "Configuración, desarrollo local y uso de Wrangler para proyectos Cloudflare Workers.",
+    "publisher": "Cloudflare",
+    "license": "Apache-2.0",
+    "repository": "cloudflare/skills",
+    "revision": "41e0d19858946d18af9ee2c2feebbe2e11d829ff",
+    "directory": "skills/wrangler",
+    "category": "Nube y despliegue",
+    "compatibility": "Requiere Node.js, Wrangler y las dependencias del proyecto. Operaciones remotas necesitan una cuenta o token autorizado; instalar no despliega ni inicia sesión.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "repository_path": "skills/wrangler/SKILL.md",
+        "bytes": 11176,
+        "sha256": "9d9bd78c79823cdad36a88dbece8e48d8512c7262c66546ccbfac64ae08d310f"
+      },
+      {
+        "path": "_upstream/LICENSE",
+        "repository_path": "LICENSE",
+        "bytes": 11357,
+        "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+      }
+    ]
+  }
+]

@@ -1,25 +1,34 @@
 //! Local marketplace inventory for portable `SKILL.md` capabilities.
 //!
-//! OpenIDE installs skill folders from explicit local or GitHub sources. It
-//! never evaluates plugin code or starts MCP servers while browsing them.
+//! OpenIDE offers a small offline starter catalog and explicit local/GitHub
+//! sources. Downloads happen only on install; browsing never executes code.
 
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::{self, ErrorKind},
+    io::{self, ErrorKind, Read},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::child_process::command_no_window;
 
-const MAX_SKILL_FILE_BYTES: u64 = 512 * 1024;
+#[path = "marketplace_catalog.rs"]
+mod catalog;
+pub use catalog::{is_starter_source, starter_details};
+
+#[path = "marketplace_remote.rs"]
+mod remote;
+pub use remote::{RemoteSearchPage, RemoteSkill, SkillProvenance, SkillUpdate};
+
+// Match the native read_file ceiling so every advertised SKILL.md can be loaded.
+const MAX_SKILL_FILE_BYTES: u64 = 256 * 1024;
 const MAX_BUNDLE_FILES: usize = 512;
 const MAX_BUNDLE_DIRECTORIES: usize = 512;
 const MAX_BUNDLE_BYTES: u64 = 20 * 1024 * 1024;
-const MAX_ACTIVE_SKILLS: usize = 32;
-const MAX_ACTIVE_INSTRUCTIONS_BYTES: usize = 96 * 1024;
+const MAX_ACTIVE_SKILLS: usize = 128;
+const MAX_ACTIVE_INSTRUCTIONS_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -82,6 +91,8 @@ struct Installation {
     scope: InstallScope,
     workspace: Option<String>,
     enabled: bool,
+    #[serde(default)]
+    provenance: Option<SkillProvenance>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -168,6 +179,22 @@ impl MarketplaceStore {
                     .push(format!("{}: {error}", source.name)),
             }
         }
+        for mut item in catalog::items() {
+            seen.insert(item.id.clone());
+            if let Some(installed) = registry
+                .installed
+                .iter()
+                .find(|entry| entry.item_id == item.id && self.applies(entry))
+            {
+                item.installed_scope = Some(installed.scope);
+                item.enabled = installed.enabled;
+                // Keep the installed provenance even if a future release
+                // updates the revision available in the starter catalog.
+                item.source_name = installed.source_name.clone();
+                item.license = installed.license.clone();
+            }
+            snapshot.items.push(item);
+        }
         for installed in registry
             .installed
             .iter()
@@ -182,7 +209,8 @@ impl MarketplaceStore {
                 source_kind: installed.source_kind,
                 installed_scope: Some(installed.scope),
                 enabled: installed.enabled,
-                source_available: false,
+                source_available: installed.provenance.is_some()
+                    && remote::remote_identity(&installed.item_id).is_some(),
             });
         }
         snapshot.items.sort_by(|left, right| {
@@ -386,6 +414,20 @@ impl MarketplaceStore {
     }
 
     pub fn install(&self, item_id: &str, scope: InstallScope) -> io::Result<()> {
+        if item_id.starts_with("skills-sh:") {
+            let skill = self.cached_remote_skill(item_id)?
+                .ok_or_else(|| not_found("La búsqueda de esta skill ya no está en caché"))?;
+            return self.install_remote(&skill, scope);
+        }
+        self.install_with_downloader(item_id, scope, catalog::download)
+    }
+
+    fn install_with_downloader(
+        &self,
+        item_id: &str,
+        scope: InstallScope,
+        download: impl FnOnce(&catalog::StarterEntry, &Path) -> io::Result<()>,
+    ) -> io::Result<()> {
         let mut registry = self.load_registry()?;
         if registry
             .installed
@@ -394,15 +436,26 @@ impl MarketplaceStore {
         {
             return Err(already_exists("La skill ya está instalada"));
         }
-        let skill = registry
-            .sources
-            .iter()
-            .filter_map(|source| self.scan_source(source).ok())
-            .flatten()
-            .find(|skill| skill.item.id == item_id)
-            .ok_or_else(|| not_found("La skill no está disponible en los orígenes"))?;
+        let starter = catalog::entry(item_id);
+        let skill = if starter.is_none() {
+            Some(
+                registry
+                    .sources
+                    .iter()
+                    .filter_map(|source| self.scan_source(source).ok())
+                    .flatten()
+                    .find(|skill| skill.item.id == item_id)
+                    .ok_or_else(|| not_found("La skill no está disponible en los orígenes"))?,
+            )
+        } else {
+            None
+        };
+        let item = starter
+            .map(catalog::StarterEntry::item)
+            .or_else(|| skill.as_ref().map(|skill| skill.item.clone()))
+            .ok_or_else(|| not_found("La skill no está disponible"))?;
         if registry.installed.iter().any(|entry| {
-            entry.name == skill.item.name
+            entry.name == item.name
                 && entry.scope == scope
                 && (scope == InstallScope::User
                     || entry.workspace.as_deref() == Some(self.workspace_key().as_str()))
@@ -411,28 +464,44 @@ impl MarketplaceStore {
                 "Ya hay una skill con este nombre en el ámbito",
             ));
         }
-        let destination = self.destination(&skill.item.name, scope);
-        if destination.exists() {
-            return Err(already_exists("La carpeta destino ya existe"));
+        let destination = self.destination(&item.name, scope);
+        match fs::symlink_metadata(&destination) {
+            Ok(_) => return Err(already_exists("La carpeta destino ya existe")),
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
         }
         let parent = destination
             .parent()
             .ok_or_else(|| invalid("Destino sin carpeta padre"))?;
-        fs::create_dir_all(parent)?;
-        let staging = parent.join(format!(".staging-{}-{}", skill.item.name, nonce()));
+        self.ensure_install_parent(parent)?;
+        let staging = parent.join(format!(".staging-{}-{}", item.name, nonce()));
         let result = (|| {
-            copy_bundle(&skill.directory, &staging)?;
+            if let Some(starter) = starter {
+                download(starter, &staging)?;
+            } else if let Some(skill) = &skill {
+                copy_bundle(&skill.directory, &staging)?;
+            }
+            match fs::symlink_metadata(&destination) {
+                Ok(_) => {
+                    return Err(already_exists(
+                        "La carpeta destino apareció durante la instalación",
+                    ))
+                }
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
             fs::rename(&staging, &destination)?;
             registry.installed.push(Installation {
-                item_id: skill.item.id,
-                name: skill.item.name,
-                description: skill.item.description,
-                license: skill.item.license,
-                source_name: skill.item.source_name,
-                source_kind: skill.item.source_kind,
+                item_id: item.id,
+                name: item.name,
+                description: item.description,
+                license: item.license,
+                source_name: item.source_name,
+                source_kind: item.source_kind,
                 scope,
                 workspace: (scope == InstallScope::Workspace).then(|| self.workspace_key()),
                 enabled: true,
+                provenance: remote::starter_provenance(item_id),
             });
             if let Err(error) = self.save_registry(&registry) {
                 let _ = fs::remove_dir_all(&destination);
@@ -444,6 +513,31 @@ impl MarketplaceStore {
             let _ = fs::remove_dir_all(staging);
         }
         result
+    }
+
+    fn ensure_install_parent(&self, parent: &Path) -> io::Result<()> {
+        fs::create_dir_all(&self.data_root)?;
+        let relative = parent
+            .strip_prefix(&self.data_root)
+            .map_err(|_| invalid("Destino fuera del marketplace"))?;
+        let mut directory = self.data_root.clone();
+        for component in relative.components() {
+            if !matches!(component, std::path::Component::Normal(_)) {
+                return Err(invalid("Destino de instalación inválido"));
+            }
+            directory.push(component.as_os_str());
+            match fs::symlink_metadata(&directory) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+                Ok(_) => {
+                    return Err(invalid(
+                        "La carpeta de instalación contiene un enlace o archivo",
+                    ))
+                }
+                Err(error) if error.kind() == ErrorKind::NotFound => fs::create_dir(&directory)?,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
     }
 
     pub fn set_enabled(&self, item_id: &str, enabled: bool) -> io::Result<()> {
@@ -557,55 +651,11 @@ impl MarketplaceStore {
     }
 }
 
-/// Bounded, explicit prompt material for the native harness. External CLIs
-/// retain their own skill discovery rules and are not affected by this text.
-pub fn active_skill_instructions(data_root: &Path, workspace: &Path) -> io::Result<String> {
-    let store = MarketplaceStore::new(data_root.to_path_buf(), workspace.to_path_buf());
-    let registry = store.load_registry()?;
-    let mut selected = HashMap::<String, &Installation>::new();
-    for entry in registry
-        .installed
-        .iter()
-        .filter(|entry| entry.enabled && store.applies(entry))
-    {
-        // Workspace definitions override global definitions of the same name.
-        if entry.scope == InstallScope::Workspace || !selected.contains_key(&entry.name) {
-            selected.insert(entry.name.clone(), entry);
-        }
-    }
-    let mut entries: Vec<_> = selected.into_iter().collect();
-    entries.sort_by(|left, right| left.0.cmp(&right.0));
-    let mut output = String::new();
-    for (_, entry) in entries.into_iter().take(MAX_ACTIVE_SKILLS) {
-        let installed_root = store.destination(&entry.name, entry.scope);
-        let skill_path = installed_root.join("SKILL.md");
-        if !skill_path.is_file()
-            || fs::symlink_metadata(&installed_root)?
-                .file_type()
-                .is_symlink()
-            || !installed_root
-                .canonicalize()?
-                .starts_with(store.store_root().canonicalize()?)
-            || fs::symlink_metadata(&skill_path)?.file_type().is_symlink()
-            || !skill_path
-                .canonicalize()?
-                .starts_with(installed_root.canonicalize()?)
-            || fs::metadata(&skill_path)?.len() > MAX_SKILL_FILE_BYTES
-        {
-            continue;
-        }
-        let body = fs::read_to_string(skill_path)?;
-        let next = format!(
-            "\n\n<openide_skill name=\"{}\">\n{}\n</openide_skill>",
-            entry.name, body
-        );
-        if output.len() + next.len() > MAX_ACTIVE_INSTRUCTIONS_BYTES {
-            break;
-        }
-        output.push_str(&next);
-    }
-    Ok(output)
-}
+// Metadata is exposed first; full instructions and resources are read only
+// when the agent selects a relevant installed skill.
+#[path = "marketplace_skill_index.rs"]
+mod skill_index;
+pub use skill_index::{active_skill_directories, active_skill_instructions};
 
 fn applies_to(workspace_key: &str, entry: &Installation) -> bool {
     entry.scope == InstallScope::User || entry.workspace.as_deref() == Some(workspace_key)
@@ -685,28 +735,58 @@ fn parse_frontmatter(content: &str) -> Option<(String, String, Option<String>)> 
     if lines.next()?.trim() != "---" {
         return None;
     }
-    let mut name = None;
-    let mut description = None;
-    let mut license = None;
+    let mut fields = HashMap::<String, String>::new();
+    let mut continuation: Option<String> = None;
     let mut closed = false;
     for line in lines {
         if line.trim() == "---" {
             closed = true;
             break;
         }
+        if line.starts_with(char::is_whitespace) {
+            if let Some(key) = &continuation {
+                let value = fields.get_mut(key)?;
+                if !value.is_empty() {
+                    value.push(' ');
+                }
+                value.push_str(line.trim());
+            }
+            continue;
+        }
+        continuation = None;
         let Some((key, value)) = line.split_once(':') else {
             continue;
         };
-        let value = value.trim().trim_matches('"').trim_matches('\'').to_owned();
-        match key.trim() {
-            "name" => name = Some(value),
-            "description" => description = Some(value),
-            "license" if !value.is_empty() => license = Some(value),
-            _ => {}
+        if !matches!(key, "name" | "description" | "license") {
+            continue;
+        }
+        if fields.contains_key(key) {
+            return None;
+        }
+        let value = value.trim();
+        let folded = value.is_empty() || matches!(value, ">" | ">-" | "|" | "|-");
+        let value = if folded {
+            String::new()
+        } else {
+            value
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .or_else(|| {
+                    value
+                        .strip_prefix('\'')
+                        .and_then(|value| value.strip_suffix('\''))
+                })
+                .unwrap_or(value)
+                .to_owned()
+        };
+        fields.insert(key.to_owned(), value);
+        if folded {
+            continuation = Some(key.to_owned());
         }
     }
-    let name = name?;
-    let description = description?;
+    let name = fields.remove("name")?;
+    let description = fields.remove("description")?;
+    let license = fields.remove("license").filter(|value| !value.is_empty());
     (closed && valid_skill_name(&name) && !description.is_empty() && description.len() <= 1024)
         .then_some((name, description, license))
 }
@@ -741,14 +821,31 @@ fn validate_registry(registry: &Registry) -> io::Result<()> {
         }
     }
     for installation in &registry.installed {
-        let Some((source_id, name)) = installation.item_id.split_once(':') else {
-            return Err(invalid("ID de skill inválido en el registro"));
-        };
-        if !valid_source_id(source_id)
-            || !valid_skill_name(&installation.name)
-            || name != installation.name
-        {
+        if !valid_skill_name(&installation.name) {
             return Err(invalid("Nombre de skill inválido en el registro"));
+        }
+        if let Some(remote) = remote::remote_identity(&installation.item_id) {
+            if remote.name != installation.name || installation.source_kind != SourceKind::Github {
+                return Err(invalid("Identidad remota inválida en el registro"));
+            }
+            if let Some(provenance) = &installation.provenance {
+                provenance.validate()?;
+                if provenance.repository != remote.source {
+                    return Err(invalid("El repositorio instalado no coincide con su identidad"));
+                }
+            }
+        } else {
+            let Some((source_id, name)) = installation.item_id.split_once(':') else {
+                return Err(invalid("ID de skill inválido en el registro"));
+            };
+            if !(valid_source_id(source_id) || is_starter_source(source_id))
+                || name != installation.name
+            {
+                return Err(invalid("Nombre de skill inválido en el registro"));
+            }
+            if let Some(provenance) = &installation.provenance {
+                provenance.validate()?;
+            }
         }
     }
     Ok(())
@@ -885,19 +982,34 @@ mod tests {
         let store = MarketplaceStore::new(temp.path().join("data"), workspace.clone());
         let source_id = store.add_local_source(&sample_source(temp.path())).unwrap();
         let item_id = format!("{source_id}:git-review");
-        let item = &store.snapshot().unwrap().items[0];
+        let snapshot = store.snapshot().unwrap();
+        let item = snapshot
+            .items
+            .iter()
+            .find(|item| item.id == item_id)
+            .unwrap();
         assert_eq!(item.name, "git-review");
         assert_eq!(item.license.as_deref(), Some("MIT"));
         store.install(&item_id, InstallScope::Workspace).unwrap();
         assert!(active_skill_instructions(&store.data_root, &workspace)
             .unwrap()
-            .contains("Read the diff"));
+            .contains("Review changes in a Git repository"));
         store.set_enabled(&item_id, false).unwrap();
         assert!(active_skill_instructions(&store.data_root, &workspace)
             .unwrap()
             .is_empty());
         store.uninstall(&item_id).unwrap();
-        assert_eq!(store.snapshot().unwrap().items[0].installed_scope, None);
+        assert_eq!(
+            store
+                .snapshot()
+                .unwrap()
+                .items
+                .iter()
+                .find(|item| item.id == item_id)
+                .unwrap()
+                .installed_scope,
+            None
+        );
     }
 
     #[test]
@@ -960,6 +1072,7 @@ mod tests {
             scope: InstallScope::User,
             workspace: None,
             enabled: true,
+            provenance: None,
         });
         fs::write(
             store.registry_path(),
@@ -982,7 +1095,16 @@ mod tests {
         fs::write(invalid.join("SKILL.md"), [0xff, 0xfe]).unwrap();
         let store = MarketplaceStore::new(temp.path().join("data"), temp.path().to_path_buf());
         store.add_local_source(&source).unwrap();
-        assert_eq!(store.snapshot().unwrap().items.len(), 1);
+        assert_eq!(
+            store
+                .snapshot()
+                .unwrap()
+                .items
+                .iter()
+                .filter(|item| item.id.starts_with("source-"))
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -994,8 +1116,84 @@ mod tests {
         store.install(&item_id, InstallScope::User).unwrap();
         store.remove_source(&source_id).unwrap();
         let snapshot = store.snapshot().unwrap();
-        assert_eq!(snapshot.items.len(), 1);
-        assert!(!snapshot.items[0].source_available);
-        assert!(snapshot.items[0].enabled);
+        let custom = snapshot
+            .items
+            .iter()
+            .filter(|item| item.id.starts_with("source-"))
+            .collect::<Vec<_>>();
+        assert_eq!(custom.len(), 1);
+        assert!(!custom[0].source_available);
+        assert!(custom[0].enabled);
+    }
+
+    #[test]
+    fn portable_frontmatter_supports_folded_descriptions_without_nested_field_spoofing() {
+        let parsed = parse_frontmatter("---\nname: portable\ndescription:\n  First line\n  and second line.\nlicense: MIT\nmetadata:\n  name: not-the-name\n  description: not-the-description\n---\nbody").unwrap();
+        assert_eq!(
+            parsed,
+            (
+                "portable".into(),
+                "First line and second line.".into(),
+                Some("MIT".into())
+            )
+        );
+        assert!(
+            parse_frontmatter("---\nmetadata:\n  name: nested\n  description: nested\n---\n")
+                .is_none()
+        );
+        assert!(
+            parse_frontmatter("---\nname: first\nname: second\ndescription: Ambiguous\n---\n")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn active_resource_roots_share_metadata_budget_and_enabled_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("project");
+        fs::create_dir(&workspace).unwrap();
+        let store = MarketplaceStore::new(temp.path().join("data"), workspace.clone());
+        let source = temp.path().join("source");
+        for name in ["first-skill", "second-skill"] {
+            fs::create_dir_all(source.join(name)).unwrap();
+            fs::write(
+                source.join(name).join("SKILL.md"),
+                format!(
+                    "---\nname: {name}\ndescription: Budget fixture\n---\n{}",
+                    "x".repeat(60_000)
+                ),
+            )
+            .unwrap();
+        }
+        let id = store.add_local_source(&source).unwrap();
+        store
+            .install(&format!("{id}:first-skill"), InstallScope::User)
+            .unwrap();
+        store
+            .install(&format!("{id}:second-skill"), InstallScope::Workspace)
+            .unwrap();
+        let roots = active_skill_directories(&store.data_root, &workspace).unwrap();
+        let instructions = active_skill_instructions(&store.data_root, &workspace).unwrap();
+        assert_eq!(roots.len(), 2);
+        assert_eq!(
+            roots[0],
+            store
+                .destination("first-skill", InstallScope::User)
+                .canonicalize()
+                .unwrap()
+        );
+        assert!(instructions.len() <= MAX_ACTIVE_INSTRUCTIONS_BYTES);
+        assert!(instructions.contains("\"name\":\"first-skill\""));
+        assert!(instructions.contains("\"name\":\"second-skill\""));
+        store
+            .set_enabled(&format!("{id}:first-skill"), false)
+            .unwrap();
+        assert_eq!(
+            active_skill_directories(&store.data_root, &workspace).unwrap(),
+            [store
+                .destination("second-skill", InstallScope::Workspace)
+                .canonicalize()
+                .unwrap()]
+        );
     }
 }

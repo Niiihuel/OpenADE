@@ -1,5 +1,198 @@
+#[path = "marketplace_app.rs"]
+mod marketplace_app;
+#[path = "plugins_app.rs"]
+mod plugins_app;
+use marketplace_app::{MarketplaceOperation, MarketplaceResponse, MarketplaceRemoteHost};
+#[cfg(test)]
+#[path = "browser_host_tests.rs"]
+mod browser_host_tests;
+#[path = "browser_input_app.rs"]
+mod browser_input_app;
+#[cfg(test)]
+#[path = "conversation_marker_app_tests.rs"]
+mod conversation_marker_app_tests;
+#[path = "dock_navigation_app.rs"]
+mod dock_navigation_app;
+#[path = "command_center_interaction_app.rs"]
+mod command_center_interaction_app;
+#[path = "ide_workspace_app.rs"]
+mod ide_workspace_app;
+#[path = "ide_activity_app.rs"]
+mod ide_activity_app;
+#[path = "ide_activity_key_app.rs"]
+mod ide_activity_key_app;
+#[path = "ide_search_app.rs"]
+mod ide_search_app;
+#[path = "document_preview_app.rs"]
+mod document_preview_app;
+#[path = "markdown_preview_app.rs"]
+mod markdown_preview_app;
+#[path = "ide_status_app.rs"]
+mod ide_status_app;
+#[path = "dock_file_actions_app.rs"]
+mod dock_file_actions_app;
+#[path = "ide_bottom_app.rs"]
+mod ide_bottom_app;
+#[path = "keymap_app.rs"]
+mod keymap_app;
+#[path = "ide_menu_app.rs"]
+mod ide_menu_app;
+#[path = "ide_new_file_app.rs"]
+mod ide_new_file_app;
+#[path = "workspace_mode_app.rs"]
+mod workspace_mode_app;
+#[path = "environment_git_app.rs"]
+mod environment_git_app;
+#[path = "github_account_app.rs"]
+mod github_account_app;
+#[path = "git_actions_app.rs"]
+mod git_actions_app;
+#[cfg(test)]
+#[path = "mcp_inspection_app_tests.rs"]
+mod mcp_inspection_tests;
+#[cfg(test)]
+#[path = "native_anthropic_app_tests.rs"]
+mod native_anthropic_app_tests;
+#[cfg(test)]
+#[path = "native_automation_app_tests.rs"]
+mod native_automation_app_tests;
+#[cfg(test)]
+#[path = "native_automation_result_app_tests.rs"]
+mod native_automation_result_app_tests;
+#[cfg(all(test, unix))]
+#[path = "native_automation_scope_tests.rs"]
+mod native_automation_scope_tests;
+#[cfg(all(test, unix))]
+#[path = "native_child_commands_app_tests.rs"]
+mod native_child_commands_app_tests;
+#[cfg(test)]
+#[path = "native_codex_live_app_tests.rs"]
+mod native_codex_live_app_tests;
+#[cfg(test)]
+#[path = "plan_history_app_tests.rs"]
+mod plan_history_app_tests;
+#[path = "project_actions_app.rs"]
+mod project_actions_app;
+#[path = "provider_usage_app.rs"]
+mod provider_usage_app;
+#[cfg(test)]
+#[path = "session_delete_app_tests.rs"]
+mod session_delete_app_tests;
+#[path = "terminal_controls_app.rs"]
+mod terminal_controls_app;
+#[path = "external_bridge_app.rs"]
+pub(crate) mod external_bridge_app;
+#[path = "text_context_app.rs"]
+mod text_context_app;
+#[cfg(test)]
+#[path = "text_context_visual_tests.rs"]
+mod text_context_visual_tests;
+#[path = "text_input_app.rs"]
+mod text_input_app;
+
+#[cfg(test)]
+#[path = "native_codex_stream_live_tests.rs"]
+mod native_codex_stream_live_tests;
+
+#[path = "native_command_control_app.rs"]
+mod native_command_control_app;
+#[cfg(test)]
+#[path = "native_command_control_app_tests.rs"]
+mod native_command_control_app_tests;
+#[path = "native_command_history_app.rs"]
+mod native_command_history_app;
+#[cfg(test)]
+#[path = "native_command_history_app_tests.rs"]
+mod native_command_history_app_tests;
+#[cfg(test)]
+#[path = "native_command_output_app_tests.rs"]
+mod native_command_output_app_tests;
+#[cfg(test)]
+#[path = "native_composer_app_tests.rs"]
+mod native_composer_app_tests;
+#[cfg(test)]
+#[path = "native_composer_child_tests.rs"]
+mod native_composer_child_tests;
+#[cfg(test)]
+#[path = "native_context_app_tests.rs"]
+mod native_context_app_tests;
+#[cfg(test)]
+#[path = "native_effort_discovery_app_tests.rs"]
+mod native_effort_discovery_app_tests;
+#[cfg(test)]
+#[path = "native_full_access_app_tests.rs"]
+mod native_full_access_app_tests;
+#[cfg(test)]
+#[path = "native_initial_instructions_app_tests.rs"]
+mod native_initial_instructions_app_tests;
+#[cfg(all(test, target_os = "linux"))]
+#[path = "native_linux_command_app_tests.rs"]
+mod native_linux_command_app_tests;
+#[cfg(test)]
+#[path = "native_model_connection_app_tests.rs"]
+mod native_model_connection_app_tests;
+#[cfg(test)]
+#[path = "native_settings_choice_app_tests.rs"]
+mod native_settings_choice_app_tests;
+#[cfg(test)]
+#[path = "native_streaming_app_tests.rs"]
+mod native_streaming_app_tests;
+#[cfg(test)]
+#[path = "native_streaming_queue_tests.rs"]
+mod native_streaming_queue_tests;
+#[cfg(test)]
+#[path = "native_subagent_stream_app_tests.rs"]
+mod native_subagent_stream_app_tests;
+#[cfg(test)]
+#[path = "streaming_perf_tests.rs"]
+mod streaming_perf_tests;
+#[cfg(test)]
+#[path = "tool_disclosure_app_tests.rs"]
+mod tool_disclosure_app_tests;
+#[path = "tool_navigation_app.rs"]
+mod tool_navigation_app;
+
+#[path = "composer_interaction_app.rs"]
+mod composer_interaction_app;
+#[path = "composer_model_transition_app.rs"]
+mod composer_model_transition_app;
+#[path = "composer_pending_app.rs"]
+mod composer_pending_app;
+
+#[path = "activity_navigation_app.rs"]
+mod activity_navigation_app;
+#[path = "approvals_app.rs"]
+mod approvals_app;
+#[path = "chat_diff_app.rs"]
+mod chat_diff_app;
+#[path = "editor_review_app.rs"]
+mod editor_review_app;
+#[path = "code_editor_app.rs"]
+mod code_editor_app;
+#[cfg(test)]
+#[path = "code_editor_host_actions_tests.rs"]
+mod code_editor_host_actions_tests;
+#[path = "code_snapshot_app.rs"]
+mod code_snapshot_app;
+#[path = "editor_language_app.rs"]
+mod editor_language_app;
+#[path = "editor_workbench_app.rs"]
+mod editor_workbench_app;
+#[path = "debug_host.rs"]
+mod debug_host;
+#[cfg(test)]
+#[path = "editor_workbench_e2e_tests.rs"]
+mod editor_workbench_e2e_tests;
+#[cfg(test)]
+#[path = "editor_workbench_visual_tests.rs"]
+mod editor_workbench_visual_tests;
+
+#[cfg(test)]
+use crate::view::build_view;
+
 use crate::{
     agent_tool_settings::AgentToolSettings,
+    external_agent_settings::{ExternalAgentSettings, ExternalPermissionMode, ExternalTool},
     automation_view::{
         template_form, AutomationFilter, AutomationFrequency, AutomationScreen, AutomationViewState,
     },
@@ -10,16 +203,20 @@ use crate::{
     dock::{DockOwner, DockScope, DockState, DockTabId, DockTabKind},
     exec_policy_settings::{ExecPolicySettings, ExecPolicyUiState},
     files::FileExplorer,
+    folder_dialog::choose_folder as choose_workspace_folder,
+    git_branches::{BranchOperation, BranchPickerView, BranchRequest, BranchWorker},
     git_review::DiffStage,
     github::GithubStatus,
-    github_account::{GithubAccountStatus, GithubAccountWorker},
+    github_account::{
+        GithubAccountEvent, GithubAccountStatus, GithubAccountWorker, GithubSignInView,
+    },
+    github_contributions::{GithubContributionsStatus, GithubContributionsWorker},
     github_worker::{GithubRequest, GithubWorker},
     marketplace::{InstallScope, MarketplaceStore, SourceKind},
     marketplace_view::MarketplaceViewState,
     mcp_oauth_controller::{
         forget_oauth_registration, oauth_registration_changed, McpOAuthController, McpOAuthEvent,
     },
-    mcp_runtime::McpToolPreparation,
     mcp_settings::{McpHttpOAuthSettings, McpSettings},
     model_catalog::{self, CatalogSnapshot},
     native_command_sessions::NativeCommandSessions,
@@ -27,6 +224,7 @@ use crate::{
     native_provider::{self, NativeProviderSettings, NativeWireApi, RuntimeConnection},
     native_skills_settings::{NativeSkillsSettings, NativeSkillsUiState},
     navigation::{NavigationHistory, NavigationTarget},
+    provider_settings::{self, CatalogModelsFilter, CatalogSettingsTab},
     render,
     resume_worker::{ResumeUpdate, ResumeWorkerHandle, ResumeWorkerRequest},
     review_worker::{ReviewRequest, ReviewWorker},
@@ -38,14 +236,14 @@ use crate::{
         SubagentRecoveryHandle, SubagentRecoveryRequest, SubagentRecoveryUpdate,
     },
     terminal::TerminalSession,
-    transcript::TranscriptProjection,
+    transcript::{TranscriptItem, TranscriptProjection},
     view::{
-        build_command_center, build_view, dock_layout, AbortedToolBatchView,
-        ComposerAttachmentView, DockLayout, DockRecentlyClosedView, DockTabView, FilePreviewView,
-        FileRowView, MainPage, McpOAuthViewPhase, McpOAuthViewStatus, PermissionView,
-        ProviderModelStatus, ReviewDetailView, SessionApprovalGrantView, SessionOrganization,
-        SessionPlanView, SessionRecoveryView, SessionView, SideTab, SubagentPermissionView,
-        SubagentRunView, ToolVerificationView, ViewState,
+        build_command_center, dock_layout, AbortedToolBatchView, ComposerAttachmentView,
+        DockLayout, DockRecentlyClosedView, DockTabView, FilePreviewView, FileRowView, MainPage,
+        McpOAuthViewPhase, McpOAuthViewStatus, PermissionView, ProviderModelStatus,
+        ReviewDetailView, SessionApprovalGrantView, SessionOrganization, SessionPlanView,
+        SessionRecoveryView, SessionView, SideTab, SubagentPermissionView, SubagentRunView,
+        ToolVerificationView, ViewState,
     },
     voice::{self, VoiceEvent, VoiceHandle},
 };
@@ -59,20 +257,22 @@ use openide_core::{
 };
 use openide_harness::{
     discard_aborted_tool_batch, finalize_resolved_subagent, load_project_instructions,
-    AgentRunHandle, AgentRunner, CheckpointCoordinator, CommandIsolation, ExecDecision, HookPhase,
-    HostedWebSearchConfig, HostedWebSearchMode, LocalTools, ModelBackend, ModelRequestCapabilities,
-    OpenAiCompatibleBackend, PermissionChoice, PermissionMode, PermissionPolicy,
-    PersistentCommandManager, PersistentCommandSessionInfo, ProjectInstructionLimits,
-    ResponsesBackend, ResumeDisposition, RunLimits, SubagentBridgeEvent, SubagentCoordinator,
-    SubagentEventBridge, SubagentLimits, SubagentRecoveryPause, SubagentRecoveryState,
-    SubagentStatus, SubagentToolExecutor, SubagentToolLimits, SubagentWorker, ToolExecutor,
-    ToolOutput,
+    AgentRunHandle, AgentRunner, AnthropicMessagesBackend, CheckpointCoordinator, CommandHooks,
+    CommandIsolation, ExecDecision, HookPhase, HostedWebSearchConfig, HostedWebSearchMode,
+    LocalTools, ModelBackend, ModelRequestCapabilities, OpenAiCompatibleBackend, PermissionChoice,
+    PermissionMode, PermissionPolicy, PersistentCommandManager, PersistentCommandSessionInfo,
+    ProjectInstructionLimits, ResponsesBackend, ResumeDisposition, RunLimits, SubagentBridgeEvent,
+    SubagentCoordinator, SubagentEventBridge, SubagentLimits, SubagentRecoveryPause,
+    SubagentRecoveryState, SubagentStatus, SubagentToolExecutor, SubagentToolLimits,
+    SubagentWorker, TokenBudgetPolicy, ToolExecutor, ToolOutput,
+    DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS,
 };
 use openide_ui::{
     DatePicker, Easing, Element, FontFamily, FontMetrics, Frame as UiFrame, ScalarTransition, Size,
     TimePicker, UiAction, UiEvent, UiTree,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -97,10 +297,37 @@ type NativeCommandTerminationResponse = (
     Arc<PersistentCommandManager>,
     Result<(), String>,
 );
+type NativeCommandOutputResponse = (
+    String,
+    String,
+    String,
+    Arc<PersistentCommandManager>,
+    Result<crate::native_command_output_ui::NativeCommandOutputSnapshot, String>,
+);
 
 enum ActiveRun {
     Native(AgentRunHandle),
     Cli(CliRunHandle),
+}
+
+/// Bound work pulled into one UI frame. Keeping the unread tail in the channel
+/// lets input and painting run between bursts without dropping journal events.
+/// A large individual event can still be expensive; this is a record budget,
+/// not a wall-clock or channel-memory guarantee.
+const MAX_RUN_UPDATES_PER_FRAME: usize = 64;
+
+fn drain_ui_updates<T>(receiver: &Receiver<T>) -> (Vec<T>, bool) {
+    let mut updates = Vec::new();
+    while updates.len() < MAX_RUN_UPDATES_PER_FRAME {
+        match receiver.try_recv() {
+            Ok(update) => updates.push(update),
+            Err(TryRecvError::Empty) => return (updates, false),
+            Err(TryRecvError::Disconnected) => return (updates, true),
+        }
+    }
+    // Do not probe/drop the next record or infer closure from a terminal event.
+    // A disconnected sender can still have an ordered unread tail.
+    (updates, false)
 }
 
 fn subagent_status_label(status: &SubagentStatus) -> &'static str {
@@ -120,7 +347,7 @@ struct ActiveCompact {
     cancel: CancellationToken,
 }
 
-fn native_model_backend(
+pub(crate) fn native_model_backend(
     connection: RuntimeConnection,
     provider_id: &str,
     effort: Option<&str>,
@@ -129,13 +356,55 @@ fn native_model_backend(
     catalog: Option<&CatalogSnapshot>,
     discoveries: &[native_provider::ProviderModelDiscovery],
 ) -> Result<Arc<dyn ModelBackend>, String> {
-    let adapter = native_provider::adapter_at(data_root, provider_id)?
-        .ok_or_else(|| format!("Proveedor nativo no registrado: {provider_id}"))?;
+    let adapter =
+        native_provider::adapter_for_model_at(data_root, provider_id, &connection.model_id)?
+            .ok_or_else(|| format!("Proveedor nativo no registrado: {provider_id}"))?;
     if adapter.wire_api != connection.wire_api {
         return Err("El protocolo del proveedor cambió durante la conexión".to_owned());
     }
+    if adapter.auth != connection.auth || adapter.headers != connection.headers {
+        return Err(
+            "La autenticación o los headers del proveedor cambiaron durante la conexión".into(),
+        );
+    }
+    if let Some(discovery) = discoveries
+        .iter()
+        .find(|discovery| discovery.provider_id == adapter.id)
+    {
+        let Some(model) = discovery.models.get(&connection.model_id) else {
+            return Err(format!(
+                "El modelo {} no figura en el listado autenticado de {}. Actualiza los modelos o selecciona una ruta disponible.",
+                connection.model_id, adapter.name
+            ));
+        };
+        if !model.text_input_output {
+            return Err(format!(
+                "El proveedor declara que {} no admite entrada y salida de texto en esta ruta nativa",
+                connection.model_id
+            ));
+        }
+    }
     let capabilities =
         native_request_capabilities(&adapter, &connection.model_id, catalog, discoveries);
+    let output_limit = if provider_id == "codex" {
+        None
+    } else {
+        native_provider::configured_output_limit(
+            data_root,
+            provider_id,
+            &connection.model_id,
+            connection.wire_api,
+        )?
+    };
+    if let Some(limit) = &output_limit {
+        if native_output_maximum(&adapter, &connection.model_id, catalog, discoveries)
+            .is_some_and(|maximum| limit.tokens > maximum)
+        {
+            return Err(
+                "El límite de salida supera el máximo declarado para el modelo exacto".into(),
+            );
+        }
+    }
     if !capabilities.tool_calls {
         return Err(format!(
             "El proveedor declara que {} no admite herramientas en esta ruta nativa",
@@ -159,12 +428,22 @@ fn native_model_backend(
         NativeWireApi::Responses => {
             let mut model =
                 ResponsesBackend::new(connection.endpoint, connection.api_key, connection.model_id);
+            if provider_id == "codex" {
+                model = model.with_chatgpt_plan().with_bearer_token_provider(
+                    crate::provider_connections::codex_token_source(data_root.to_path_buf())?,
+                );
+            }
+            if let Some(limit) = &output_limit {
+                model = model
+                    .with_max_output_tokens(limit.tokens)
+                    .map_err(|error| error.to_string())?;
+            }
             if let Some(effort) = effort {
                 model = model
                     .with_reasoning_effort(effort)
                     .map_err(|error| error.to_string())?;
             }
-            if let Some(mode) = hosted_web_search_mode {
+            if let Some(mode) = hosted_web_search_mode.filter(|_| provider_id != "codex") {
                 model = model
                     .with_hosted_web_search(HostedWebSearchConfig::new(mode))
                     .map_err(|error| error.to_string())?;
@@ -179,6 +458,18 @@ fn native_model_backend(
             )
             .with_capabilities(capabilities)
             .map_err(|error| error.to_string())?;
+            if let Some(limit) = &output_limit {
+                if adapter
+                    .chat_request_fields
+                    .keys()
+                    .any(|field| matches!(field.as_str(), "max_tokens" | "max_completion_tokens"))
+                {
+                    return Err("Hay dos configuraciones de límite de salida para esta ruta".into());
+                }
+                model = model
+                    .with_request_field(&limit.field, serde_json::json!(limit.tokens))
+                    .map_err(|error| error.to_string())?;
+            }
             for (field, value) in adapter.chat_request_fields {
                 model = model
                     .with_request_field(field, value)
@@ -191,15 +482,95 @@ fn native_model_backend(
             }
             Ok(Arc::new(model))
         }
+        NativeWireApi::AnthropicMessages => {
+            let maximum =
+                native_output_maximum(&adapter, &connection.model_id, catalog, discoveries);
+            let tokens = output_limit
+                .as_ref()
+                .map(|limit| limit.tokens)
+                .unwrap_or_else(|| {
+                    maximum.map_or(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS, |max| {
+                        max.min(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
+                    })
+                });
+            let image_input =
+                native_image_input_supported(&adapter, &connection.model_id, catalog, discoveries);
+            if let Some(kind) = adapter
+                .chat_request_fields
+                .get("thinking")
+                .and_then(|v| v.get("type"))
+                .and_then(Value::as_str)
+                .filter(|kind| matches!(*kind, "enabled" | "adaptive"))
+            {
+                let capability = if kind == "adaptive" {
+                    "adaptive_thinking"
+                } else {
+                    "enabled_thinking"
+                };
+                if native_declared_capability(
+                    &adapter,
+                    &connection.model_id,
+                    catalog,
+                    discoveries,
+                    capability,
+                ) != Some(true)
+                {
+                    return Err(format!(
+                        "El modelo exacto no anuncia thinking {kind} para esta ruta"
+                    ));
+                }
+            }
+            if let Some(configured_effort) = adapter
+                .chat_request_fields
+                .get("output_config")
+                .and_then(|v| v.get("effort"))
+                .and_then(Value::as_str)
+            {
+                if !capabilities
+                    .reasoning_efforts
+                    .iter()
+                    .any(|level| level == configured_effort)
+                {
+                    return Err(
+                        "El esfuerzo configurado no está anunciado por el modelo exacto".into(),
+                    );
+                }
+            }
+            let mut fields = adapter.chat_request_fields;
+            if let Some(effort) = effort {
+                if fields.contains_key("output_config") {
+                    return Err("Hay dos configuraciones de esfuerzo para esta ruta".into());
+                }
+                fields.insert(
+                    "output_config".into(),
+                    serde_json::json!({"effort": effort}),
+                );
+            }
+            let model = AnthropicMessagesBackend::new(
+                connection.endpoint,
+                connection.api_key,
+                connection.model_id,
+            )
+            .with_max_output_tokens(tokens)
+            .map_err(|e| e.to_string())?
+            .with_headers(connection.headers)
+            .map_err(|e| e.to_string())?
+            .with_image_input_enabled(image_input)
+            .with_request_fields(fields)
+            .map_err(|e| e.to_string())?;
+            Ok(Arc::new(model))
+        }
     }
 }
 
-fn native_request_capabilities(
+pub(crate) fn native_request_capabilities(
     adapter: &native_provider::Adapter,
     model_id: &str,
     catalog: Option<&CatalogSnapshot>,
     discoveries: &[native_provider::ProviderModelDiscovery],
 ) -> ModelRequestCapabilities {
+    let selected_adapter = adapter.for_model(model_id).ok();
+    let adapter = selected_adapter.as_ref().unwrap_or(adapter);
     let reviewed = native_provider::native_model_capabilities(&adapter.id, model_id)
         .filter(|capabilities| capabilities.wire_api == adapter.wire_api);
     let discovered = discoveries
@@ -208,31 +579,45 @@ fn native_request_capabilities(
         .and_then(|discovery| discovery.models.get(model_id));
     let listed = catalog.and_then(|snapshot| snapshot.model(&adapter.id, model_id));
     let reported_tool_calls = discovered
-        .and_then(|model| model.tool_call_declared)
-        .or_else(|| listed.and_then(|model| model.tool_call_declared));
+        .map(|model| model.tool_call_declared)
+        .unwrap_or_else(|| listed.and_then(|model| model.tool_call_declared));
     // Missing provider metadata leaves an explicitly configured route free to
     // try tools. A provider that reports a tools field may explicitly deny it.
-    let tool_calls = reviewed.map_or_else(
-        || {
-            if adapter.catalog.tool_call_path.is_some() {
-                reported_tool_calls.unwrap_or(true)
-            } else {
-                true
-            }
-        },
-        |capabilities| capabilities.function_tools && capabilities.streaming,
-    );
-    let wire_supports_effort = adapter.wire_api == NativeWireApi::Responses
-        || adapter.reasoning_effort_field.as_deref() == Some("reasoning_effort");
+    let tool_calls = reported_tool_calls != Some(false)
+        && reviewed
+            .is_none_or(|capabilities| capabilities.function_tools && capabilities.streaming);
+    let wire_supports_effort = matches!(
+        adapter.wire_api,
+        NativeWireApi::Responses | NativeWireApi::AnthropicMessages
+    ) || adapter.reasoning_effort_field.as_deref()
+        == Some("reasoning_effort");
+    let wire_supports_effort = wire_supports_effort
+        && native_declared_capability(adapter, model_id, catalog, discoveries, "effort")
+            != Some(false);
     let raw_efforts = wire_supports_effort
         .then(|| {
             discovered
                 .map(|model| model.supported_efforts.as_slice())
-                .filter(|efforts| !efforts.is_empty())
+                .filter(|efforts| {
+                    !efforts.is_empty()
+                        || discovered.is_some_and(|model| {
+                            model.efforts_declared
+                                || model.capabilities_declared
+                                || !adapter.catalog.capability_support_paths.is_empty()
+                                || model.declared_capabilities.contains_key("effort")
+                        })
+                })
                 .or_else(|| {
                     listed
                         .map(|model| model.provider_efforts.as_slice())
-                        .filter(|efforts| !efforts.is_empty())
+                        .filter(|efforts| {
+                            !efforts.is_empty()
+                                || listed.is_some_and(|model| {
+                                    model.provider_efforts_declared
+                                        || model.capabilities_declared
+                                        || model.declared_capabilities.contains_key("effort")
+                                })
+                        })
                 })
         })
         .flatten();
@@ -264,6 +649,225 @@ fn native_request_capabilities(
     }
 }
 
+pub(crate) fn native_output_maximum(
+    adapter: &native_provider::Adapter,
+    model_id: &str,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
+) -> Option<u64> {
+    let selected_adapter = adapter.for_model(model_id).ok()?;
+    let adapter = &selected_adapter;
+    if let Some(model) = discoveries
+        .iter()
+        .find(|discovery| discovery.provider_id == adapter.id)
+        .and_then(|discovery| discovery.models.get(model_id))
+        .filter(|model| {
+            model.limits_declared
+                || model.context_window_tokens.is_some()
+                || model.max_input_tokens.is_some()
+                || model.max_output_tokens.is_some()
+        })
+    {
+        return model.max_output_tokens;
+    }
+    if let Some(model) = catalog
+        .filter(|snapshot| {
+            snapshot
+                .provider_status
+                .get(&adapter.id)
+                .is_some_and(|status| {
+                    status.source == crate::model_catalog::CatalogSource::OfficialApi
+                        && status.verified_at_ms > 0
+                })
+        })
+        .and_then(|snapshot| snapshot.model(&adapter.id, model_id))
+        .filter(|model| {
+            model.provider_limits_declared
+                || model.limit.as_ref().is_some_and(|limit| {
+                    limit.context.is_some() || limit.input.is_some() || limit.output.is_some()
+                })
+        })
+    {
+        return model.limit.as_ref().and_then(|limit| limit.output);
+    }
+    native_provider::native_model_capabilities(&adapter.id, model_id)
+        .filter(|model| model.wire_api == adapter.wire_api)
+        .and_then(|model| model.max_output_tokens)
+}
+
+pub(crate) fn native_image_input_supported(
+    adapter: &native_provider::Adapter,
+    model_id: &str,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
+) -> bool {
+    let Ok(selected_adapter) = adapter.for_model(model_id) else {
+        return false;
+    };
+    let adapter = &selected_adapter;
+    if let Some(model) = discoveries
+        .iter()
+        .find(|d| d.provider_id == adapter.id)
+        .and_then(|d| d.models.get(model_id))
+    {
+        if model.capabilities_declared
+            || !model.declared_capabilities.is_empty()
+            || !adapter.catalog.capability_support_paths.is_empty()
+        {
+            return model.declared_capabilities.get("image_input") == Some(&true);
+        }
+    }
+    if let Some(value) =
+        native_declared_capability(adapter, model_id, catalog, discoveries, "image_input")
+    {
+        return value;
+    }
+    if let Some(model) = catalog.and_then(|s| s.model(&adapter.id, model_id)) {
+        if model.capabilities_declared {
+            return model.declared_capabilities.get("image_input") == Some(&true);
+        }
+        if let Some(value) = model.declared_capabilities.get("image_input") {
+            return *value;
+        }
+        if let Some(modalities) = &model.modalities {
+            if !modalities.input.is_empty() {
+                return modalities.input.iter().any(|kind| kind == "image");
+            }
+        }
+    }
+    native_provider::native_model_capabilities(&adapter.id, model_id)
+        .is_some_and(|m| m.wire_api == adapter.wire_api && m.image_input)
+}
+
+fn native_declared_capability(
+    adapter: &native_provider::Adapter,
+    model_id: &str,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
+    capability: &str,
+) -> Option<bool> {
+    if let Some(model) = discoveries
+        .iter()
+        .find(|d| d.provider_id == adapter.id)
+        .and_then(|d| d.models.get(model_id))
+    {
+        if model.capabilities_declared
+            || !model.declared_capabilities.is_empty()
+            || !adapter.catalog.capability_support_paths.is_empty()
+        {
+            return model.declared_capabilities.get(capability).copied();
+        }
+    }
+    discoveries
+        .iter()
+        .find(|d| d.provider_id == adapter.id)
+        .and_then(|d| d.models.get(model_id))
+        .and_then(|m| m.declared_capabilities.get(capability))
+        .copied()
+        .or_else(|| {
+            catalog
+                .and_then(|s| s.model(&adapter.id, model_id))
+                .and_then(|m| m.declared_capabilities.get(capability))
+                .copied()
+        })
+}
+
+/// Use one exact model's declared pair of limits. Do not combine a partial
+/// account listing with a different/stale catalog or a reviewed output cap.
+pub(crate) fn native_token_budget(
+    adapter: &native_provider::Adapter,
+    model_id: &str,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
+) -> Option<TokenBudgetPolicy> {
+    let selected_adapter = adapter.for_model(model_id).ok()?;
+    let adapter = &selected_adapter;
+    if !native_request_capabilities(adapter, model_id, catalog, discoveries).tool_calls {
+        return None;
+    }
+    let discovered = discoveries
+        .iter()
+        .find(|discovery| discovery.provider_id == adapter.id)
+        .and_then(|discovery| discovery.models.get(model_id));
+    let discovered_limits = discovered
+        .filter(|model| {
+            model.limits_declared
+                || model.context_window_tokens.is_some()
+                || model.max_input_tokens.is_some()
+                || model.max_output_tokens.is_some()
+        })
+        .map(|model| {
+            (
+                model.context_window_tokens,
+                model.max_input_tokens,
+                model.max_output_tokens,
+            )
+        });
+    let listed_limits = catalog
+        .filter(|snapshot| {
+            snapshot
+                .provider_status
+                .get(&adapter.id)
+                .is_some_and(|status| {
+                    status.source == crate::model_catalog::CatalogSource::OfficialApi
+                        && status.verified_at_ms > 0
+                })
+        })
+        .and_then(|snapshot| snapshot.model(&adapter.id, model_id))
+        .filter(|model| {
+            model.provider_limits_declared
+                || model.limit.as_ref().is_some_and(|limit| {
+                    limit.context.is_some() || limit.input.is_some() || limit.output.is_some()
+                })
+        })
+        .map(|model| {
+            model.limit.as_ref().map_or((None, None, None), |limits| {
+                (limits.context, limits.input, limits.output)
+            })
+        });
+    if let Some((context, input, output)) = discovered_limits.or(listed_limits) {
+        let input_limit_tokens = input.filter(|limit| *limit > 0);
+        let context_window_tokens = context.filter(|limit| *limit > 0).unwrap_or(0);
+        if context_window_tokens == 0 && input_limit_tokens.is_none() {
+            return None;
+        }
+        let maximum = output
+            .filter(|limit| {
+                *limit > 0 && (context_window_tokens == 0 || *limit <= context_window_tokens)
+            })
+            .or_else(|| {
+                (adapter.wire_api == NativeWireApi::AnthropicMessages)
+                    .then_some(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
+            })?;
+        let output_reserve_tokens = if adapter.wire_api == NativeWireApi::AnthropicMessages {
+            maximum.min(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
+        } else {
+            maximum
+        };
+        return Some(TokenBudgetPolicy {
+            input_limit_tokens,
+            context_window_tokens,
+            output_reserve_tokens,
+            tool_schema_reserve_tokens: 1_000,
+            auto_compact_token_limit: None,
+        });
+    }
+    native_provider::native_model_capabilities(&adapter.id, model_id)
+        .filter(|capabilities| capabilities.wire_api == adapter.wire_api)?;
+    native_provider::verified_token_budget(&adapter.id, model_id)
+}
+
+/// The one rule every turn path uses to decide whether a provider can
+/// authenticate: a new turn carrying its own model, a resumed turn, a
+/// recovered subagent and a compaction.
+fn provider_ready_at(data_root: &Path, provider_id: &str, connection: &RuntimeConnection) -> bool {
+    match provider_id {
+        "custom" => true,
+        "codex" => crate::provider_connections::codex_token_source(data_root.to_path_buf()).is_ok(),
+        _ => connection.api_key.is_some(),
+    }
+}
+
 fn native_key_available_at(settings: &NativeProviderSettings, data_root: &Path) -> bool {
     settings
         .resolve_at(data_root)
@@ -281,11 +885,13 @@ fn native_checkpoint_compatibility(
         context_format_key: match wire_api {
             NativeWireApi::Responses => "responses-v1",
             NativeWireApi::ChatCompletions => "chat-completions-v1",
+            NativeWireApi::AnthropicMessages => "anthropic-messages-v1",
         }
         .to_owned(),
     }
 }
 
+#[cfg(test)]
 fn context_remaining_percent(used_tokens: u64, context_window_tokens: u64) -> Option<u8> {
     // Match Codex's status meaning: percentage of usable context remaining.
     // The baseline is reserved for fixed prompt/tool overhead.
@@ -302,13 +908,13 @@ fn context_remaining_percent(used_tokens: u64, context_window_tokens: u64) -> Op
 /// Only report a measurement tied to the currently selected verified model.
 /// A checkpoint replaces the old context, so its earlier usage is no longer
 /// representative until the provider commits another response.
+#[cfg(test)]
 fn committed_context_percent(
     events: &[AgentEvent],
-    provider_id: &str,
+    budget: Option<TokenBudgetPolicy>,
     model_id: &str,
 ) -> Option<u8> {
-    let window =
-        native_provider::verified_token_budget(provider_id, model_id)?.context_window_tokens;
+    let window = budget?.context_window_tokens;
     let (response_index, usage) =
         events
             .iter()
@@ -345,23 +951,15 @@ struct BackgroundAutomationRun {
     run: ActiveRun,
 }
 
-enum MarketplaceOperation {
-    Load,
-    Refresh,
-    AddLocal(PathBuf),
-    AddGithub(String),
-    Install(String, InstallScope),
-    SetEnabled(String, bool),
-    Uninstall(String),
-    RemoveSource(String),
-}
-
-type MarketplaceResponse = (
-    PathBuf,
-    Result<(crate::marketplace::MarketplaceSnapshot, String), String>,
-);
-
 fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
+    let height_context = context.clone();
+    tree.set_text_height_measurer(move |size, family| {
+        let family = match family {
+            FontFamily::Monospace => egui::FontFamily::Monospace,
+            FontFamily::Sans => egui::FontFamily::Proportional,
+        };
+        height_context.fonts_mut(|fonts| fonts.row_height(&egui::FontId::new(size, family)))
+    });
     let context = context.clone();
     tree.set_text_measurer(move |value, size, family| {
         let family = match family {
@@ -385,6 +983,7 @@ fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
 enum DockDrag {
     Left,
     Right,
+    Bottom,
 }
 
 /// Layout widths stay in the host, not in a rebuilt visual element. This
@@ -392,7 +991,13 @@ enum DockDrag {
 struct DockMotion {
     left: ScalarTransition,
     right: ScalarTransition,
+    content_left: f32,
+    content_right: f32,
+    bottom: Option<ScalarTransition>,
     viewport_width: f32,
+    viewport_height: Option<f32>,
+    bottom_maximized: bool,
+    ide: bool,
 }
 
 impl DockMotion {
@@ -402,7 +1007,13 @@ impl DockMotion {
         Self {
             left: ScalarTransition::new(left, now).easing(Easing::OutCubic),
             right: ScalarTransition::new(right, now).easing(Easing::OutCubic),
+            content_left: left,
+            content_right: right,
+            bottom: None,
             viewport_width,
+            viewport_height: None,
+            bottom_maximized: false,
+            ide: false,
         }
     }
 
@@ -416,16 +1027,25 @@ impl DockMotion {
     ) -> (Option<f32>, Option<f32>) {
         let resized = (self.viewport_width - viewport_width).abs() > 0.5;
         self.viewport_width = viewport_width;
-        for (transition, target) in [
-            (&mut self.left, target_left),
-            (&mut self.right, target_right),
+        let visibility_changed = (self.left.target() > 0.5) != (target_left > 0.5)
+            || (self.right.target() > 0.5) != (target_right > 0.5);
+        for (transition, content_width, target) in [
+            (&mut self.left, &mut self.content_left, target_left),
+            (&mut self.right, &mut self.content_right, target_right),
         ] {
-            let visibility_changed = (transition.target() > 0.5) != (target > 0.5);
-            if visibility_changed {
+            if reduced_motion || resized {
+                transition.snap_to(target, now);
+            } else if visibility_changed {
+                // A toggle can resize the other visible dock at responsive
+                // boundaries. Interpolate both allocations together.
+                *content_width = (*content_width).max(transition.value(now)).max(target);
                 transition.retarget_with_motion(target, now, Self::DURATION, reduced_motion);
-            } else if resized || (transition.target() - target).abs() > 0.5 {
+            } else if (transition.target() - target).abs() > 0.5 {
                 // Resizing or dragging a divider follows the pointer immediately.
                 transition.snap_to(target, now);
+            }
+            if !transition.is_active(now) {
+                *content_width = target;
             }
         }
         (
@@ -434,23 +1054,67 @@ impl DockMotion {
         )
     }
 
+    fn update_bottom(
+        &mut self,
+        target: f32,
+        viewport_height: f32,
+        maximized: bool,
+        now: Instant,
+        reduced_motion: bool,
+    ) -> Option<f32> {
+        let resized = self
+            .viewport_height
+            .is_some_and(|height| (height - viewport_height).abs() > 0.5);
+        self.viewport_height = Some(viewport_height);
+        let maximize_changed = self.bottom_maximized != maximized;
+        self.bottom_maximized = maximized;
+        let transition = self.bottom.get_or_insert_with(|| {
+            ScalarTransition::new(target, now).easing(Easing::OutCubic)
+        });
+        if reduced_motion || resized {
+            transition.snap_to(target, now);
+        } else if (transition.target() > 0.5) != (target > 0.5) || maximize_changed {
+            transition.retarget_with_motion(target, now, Self::DURATION, false);
+        } else if (transition.target() - target).abs() > 0.5 {
+            // Size preferences and the Environment dock already follow their
+            // own geometry. Only toggling/maximizing adds a bottom transition.
+            transition.snap_to(target, now);
+        }
+        transition.is_active(now).then(|| transition.value(now))
+    }
+
     fn is_active(&self, now: Instant) -> bool {
-        self.left.is_active(now) || self.right.is_active(now)
+        self.left.is_active(now)
+            || self.right.is_active(now)
+            || self
+                .bottom
+                .as_ref()
+                .is_some_and(|motion| motion.is_active(now))
     }
 }
+
+#[cfg(test)]
+#[path = "dock_motion_tests.rs"]
+mod dock_motion_tests;
 
 /// Keep the already measured frame on idle or animation-only ticks. Building
 /// and measuring the entire tree again is only necessary when an action or
 /// asynchronous response changes it after the hit-test layout.
+/// Visual input can refresh UiTree's hover, focus or scroll without rebuilding.
 fn relayout_after_updates(
     tree: &mut UiTree,
     current: UiFrame,
     viewport: Size,
     changed: bool,
+    visual_input_changed: bool,
     rebuild: impl FnOnce() -> Element,
 ) -> UiFrame {
     if !changed {
-        return current;
+        return if visual_input_changed {
+            tree.layout(viewport)
+        } else {
+            current
+        };
     }
     tree.set_root(rebuild());
     tree.layout(viewport)
@@ -483,14 +1147,7 @@ impl ActiveRun {
             Self::Native(run) => &run.events,
             Self::Cli(run) => &run.events,
         };
-        let mut events = Vec::new();
-        loop {
-            match receiver.try_recv() {
-                Ok(event) => events.push(event),
-                Err(TryRecvError::Empty) => return (events, false),
-                Err(TryRecvError::Disconnected) => return (events, true),
-            }
-        }
+        drain_ui_updates(receiver)
     }
 }
 
@@ -498,18 +1155,41 @@ pub struct AgentsWindow {
     data_root: PathBuf,
     view: ViewState,
     composer_preferences: ComposerPreferences,
+    pending_composer_selections: HashMap<
+        crate::composer_pending::ComposerScope,
+        crate::composer_pending::PendingComposerSelection,
+    >,
     settings_preferences: SettingsPreferences,
     agent_tool_settings: AgentToolSettings,
+    external_agent_settings: ExternalAgentSettings,
     exec_policy_settings: ExecPolicySettings,
     exec_policy_load_error: Option<String>,
     native_command_sessions: NativeCommandSessions,
+    native_command_actors: HashMap<String, Arc<openide_harness::NativeManualCommandActor>>,
+    native_command_control_response:
+        Option<Receiver<native_command_control_app::ControlObservation>>,
+    native_manual_command_response:
+        Option<Receiver<native_command_control_app::CommandLedgerResponse>>,
+    native_command_prepared_request: Option<openide_core::NativeCommandOperationRequest>,
+    last_native_manual_command_poll: Option<Instant>,
+    native_command_poll_cursor: Option<String>,
+    native_command_poll_owners: BTreeSet<String>,
+    native_manual_command_cancel: CancellationToken,
     native_command_snapshot_response: Option<Receiver<NativeCommandSnapshotResponse>>,
     native_command_termination_response: Option<Receiver<NativeCommandTerminationResponse>>,
+    native_command_output_response: Option<Receiver<NativeCommandOutputResponse>>,
+    native_command_output_manager: Option<Arc<PersistentCommandManager>>,
+    native_command_history_response: Option<Receiver<native_command_history_app::HistoryResponse>>,
     last_native_command_snapshot: Option<Instant>,
     tree: UiTree,
+    native_text_measurer: Option<(egui::Context, u32)>,
+    workspace_frame_size: Option<Size>,
+    workspace_frame_built_at: Option<Instant>,
+    transcript_layout_session: Option<String>,
     projection: TranscriptProjection,
     profiles: Vec<CliProfile>,
     store: Option<Arc<SessionStore>>,
+    native_goal_recovery: openide_core::NativeGoalRecoveryReport,
     /// Project paths from every stored session, before sidebar archive filtering.
     known_project_paths: Vec<String>,
     active_run: Option<ActiveRun>,
@@ -520,19 +1200,40 @@ pub struct AgentsWindow {
     active_child_recovery: Option<SubagentRecoveryHandle>,
     pending_child_recovery_permission: Option<SubagentPermissionView>,
     active_mcp_oauth: Option<McpOAuthController>,
+    active_mcp_inspection: Option<crate::mcp_inspection::McpInspectionController>,
     subagent_bridge: Arc<SubagentEventBridge>,
     subagent_events: Receiver<SubagentBridgeEvent>,
     last_subagent_poll: Instant,
     subagent_poll_needed: bool,
+    startup_subagent_candidates: HashSet<String>,
+    subagent_dispatches: HashMap<String, crate::subagent_dispatch_worker::SubagentDispatchHandle>,
+    subagent_dispatch_errors: HashMap<String, String>,
     automation_stores: Vec<AutomationStore>,
     automation_last_poll: Instant,
     background_automation_runs: Vec<BackgroundAutomationRun>,
+    native_automation_result_errors: HashMap<(PathBuf, String), String>,
     automation_queue: VecDeque<(usize, AutomationDispatch)>,
     marketplace_response: Option<Receiver<MarketplaceResponse>>,
+    plugin_response: Option<Receiver<plugins_app::PluginResponse>>,
+    plugin_removal_pending: bool,
+    marketplace_remote: MarketplaceRemoteHost,
+    ide_search_worker: Option<crate::ide_search::IdeSearchWorker>,
+    document_preview: document_preview_app::PreviewHost,
+    markdown_preview: markdown_preview_app::MarkdownPreviewHost,
     workspace_folder_response: Option<Receiver<Result<Option<PathBuf>, String>>>,
     composer_folder_response: Option<Receiver<ComposerFolderResponse>>,
-    catalog_response: Option<Receiver<Result<CatalogSnapshot, String>>>,
+    catalog_response: Option<model_catalog::CatalogRefreshJob>,
     catalog_last_refresh: Instant,
+    provider_connection_worker: Option<crate::provider_connections::ConnectionWorker>,
+    provider_connection_id: Option<String>,
+    provider_refresh_worker: Option<crate::provider_connections::ConnectionWorker>,
+    provider_refresh_last_poll: Instant,
+    provider_usage_worker: Option<crate::provider_usage::UsageWorker>,
+    provider_usage_last_refresh: Instant,
+    provider_usage_last_identity_check: Instant,
+    provider_usage_identities: provider_usage_app::UsageIdentities,
+    provider_key_draft: String,
+    provider_browser_url: Option<String>,
     model_discovery_response: Option<
         Receiver<(
             String,
@@ -546,17 +1247,63 @@ pub struct AgentsWindow {
     history: Vec<AgentMessage>,
     last_sequence: u64,
     dock_drag: Option<DockDrag>,
+    dock_tab_drag: Option<dock_navigation_app::TabDrag>,
     dock_motion: Option<DockMotion>,
+    workspace_mode_motion: workspace_mode_app::WorkspaceModeMotion,
+    environment_motion: Option<ScalarTransition>,
+    agent_list_motion: Option<ScalarTransition>,
     reduced_motion: bool,
     pending_prompt: Option<String>,
     pending_attachments: Vec<ComposerAttachmentView>,
+    attachment_worker: Option<crate::composer_attachments::AttachmentWorker>,
+    attachment_visuals_pending: HashSet<String>,
+    attachment_pastes_pending: HashSet<crate::composer_attachments::DraftKey>,
+    keyboard_paste_handled: bool,
+    pending_text_paste: Option<text_input_app::TextPasteRequest>,
+    attachment_viewer_generation: u64,
     run_has_output: bool,
     viewport_width: f32,
     viewport_height: f32,
     dock: DockState,
     terminals: HashMap<u64, TerminalSession>,
+    terminal_controls_host: terminal_controls_app::TerminalControlsHost,
+    external_bridge: external_bridge_app::ExternalBridgeHost,
+    /// Where Claude Code hooks are discovered. Tests set it; they never read the real one.
+    compat_hook_source: Option<PathBuf>,
+    agent_cli_paths: crate::agent_cli_definitions::AgentCliPaths,
+    turn_check_settings: crate::turn_check::TurnCheckSettings,
+    /// Whether the turn in progress used a tool that can change the project.
+    turn_had_effects: bool,
+    turn_check_run: Option<Receiver<(String, Result<(), String>)>>,
+    /// Session-start hook output, by (conversation, project, hook set).
+    session_start_context: Option<((Option<String>, String, String), String)>,
+    /// Model for the next turn only; see `start_run`.
+    turn_model_override: Option<NativeProviderSettings>,
+    window_focused: bool,
+    toast_shown: bool,
+    /// The Settings notice on screen and when it appeared.
+    settings_notice_seen: Option<(String, Instant)>,
+    review_model_settings: crate::review_model::ReviewModelSettings,
+    /// The user's shell search path, filled in by a start-up probe.
+    login_path: Arc<std::sync::Mutex<Option<std::ffi::OsString>>>,
+    terminal_focus_pending: bool,
+    browsers: HashMap<u64, crate::browser_runtime::BrowserRuntime>,
+    browser_starts: HashMap<u64, Receiver<Result<crate::browser_runtime::BrowserRuntime, String>>>,
+    browser_requests: HashMap<u64, Vec<crate::browser_runtime::BrowserRequest>>,
+    browser_inputs: HashMap<u64, browser_input_app::BrowserInputQueue>,
+    // Explicit retry preserves only navigation intent, never page mutations.
+    browser_restart_urls: HashMap<u64, String>,
+    browser_install_response: Option<Receiver<Result<(), String>>>,
+    browser_installing: bool,
+    session_changes_worker: Option<crate::session_changes::SessionChangesWorker>,
+    environment_dirty: bool,
+    environment_last_refresh: Instant,
     dock_seeded_workspaces: HashSet<String>,
     file_explorer: Option<FileExplorer>,
+    file_watcher: Option<crate::file_watch::TreeWatcher>,
+    file_tree_refreshed: Instant,
+    /// The search path the list of installed agent CLIs was last built from.
+    agent_clis_path: Option<Option<std::ffi::OsString>>,
     drafts: HashMap<(String, Option<String>), String>,
     attachment_drafts: HashMap<(String, Option<String>), Vec<ComposerAttachmentView>>,
     composer_goals: HashMap<(String, Option<String>), String>,
@@ -568,7 +1315,13 @@ pub struct AgentsWindow {
     command_center_attaches_file: bool,
     command_focus_pending: bool,
     prompt_focus_pending: bool,
+    github_sign_in_focus_pending: Option<&'static str>,
     composer_model_search_focus_pending: bool,
+    composer_selector_focus_pending: Option<&'static str>,
+    composer_suggestion_worker: Option<crate::composer_suggestions::FileSuggestionWorker>,
+    composer_suggestion_pending_at: Option<Instant>,
+    composer_cursor_pending: Option<usize>,
+    settings_terminal_path_focus_pending: bool,
     rename_focus_pending: bool,
     group_focus_pending: bool,
     search_worker: Option<SearchWorker>,
@@ -577,16 +1330,70 @@ pub struct AgentsWindow {
     search_response: Option<SearchResponse>,
     search_in_flight: bool,
     review_worker: Option<ReviewWorker>,
+    branch_worker: Option<BranchWorker>,
+    branch_revision: u64,
     review_generation: u64,
     review_active_workspace: Option<PathBuf>,
     review_in_flight: bool,
+    git_action_worker: Option<crate::git_actions::GitActionWorker>,
+    git_action_request: Option<crate::git_actions::GitActionRequest>,
+    git_action_generation: u64,
+    project_actions: project_actions_app::ProjectActionsHost,
+    environment_git_worker: Option<crate::environment_git::Worker>,
+    environment_git_workspace: Option<PathBuf>,
+    environment_git_revision: u64,
     detail_worker: Option<DetailWorker>,
+    code_editor: code_editor_app::CodeEditorHost,
+    editor_services: editor_workbench_app::EditorServices,
+    debugger: debug_host::DebugHost,
+    code_snapshots: BTreeMap<u64, crate::code_snapshot_ui::CodeSnapshotView>,
+    chat_diffs: chat_diff_app::ChatDiffHost,
+    editor_review: editor_review_app::EditorReviewHost,
     detail_generation: u64,
     detail_request: Option<DetailRequest>,
     github_worker: Option<GithubWorker>,
     github_status: GithubStatus,
     github_in_flight: bool,
     github_account_worker: Option<GithubAccountWorker>,
+    github_account_previous: Option<GithubAccountStatus>,
+    github_contributions_worker: Option<GithubContributionsWorker>,
+    github_contributions_generation: u64,
+}
+
+fn browser_scroll_delta(event: &UiEvent) -> Option<(openide_ui::Point, f32, f32)> {
+    let (position, x, y) = match event {
+        UiEvent::Scroll { position, delta_y } | UiEvent::ScrollDirect { position, delta_y } => {
+            (*position, 0.0, *delta_y)
+        }
+        UiEvent::Scroll2D {
+            position,
+            delta_x,
+            delta_y,
+            shift,
+            ..
+        } => {
+            if *shift && *delta_x == 0.0 {
+                (*position, *delta_y, 0.0)
+            } else {
+                (*position, *delta_x, *delta_y)
+            }
+        }
+        _ => return None,
+    };
+    (x.is_finite() && y.is_finite()).then_some((position, x, y))
+}
+
+fn browser_restart_url(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value == "about:blank" {
+        return None;
+    }
+    crate::browser_runtime::BrowserCommand::Navigate {
+        url: value.to_owned(),
+    }
+    .validate()
+    .ok()?;
+    Some(value.to_owned())
 }
 
 fn data_root() -> PathBuf {
@@ -610,71 +1417,8 @@ fn data_root() -> PathBuf {
 
 fn command_center_rect(area: egui::Rect) -> egui::Rect {
     let width = (area.width() - 32.0).clamp(0.0, 560.0);
-    let height = (area.height() - 48.0).clamp(0.0, 500.0);
+    let height = (area.height() - 48.0).clamp(0.0, 420.0);
     egui::Rect::from_center_size(area.center(), egui::vec2(width, height))
-}
-
-/// Runs off the UI thread. PowerShell hosts the Windows folder dialog without
-/// opening a console; the selected path is passed back over stdout as UTF-8.
-#[cfg(windows)]
-fn choose_workspace_folder(initial: &Path, description: &str) -> Result<Option<PathBuf>, String> {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
-
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const SCRIPT: &str = r#"
-$ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = $env:OPENIDE_PICKER_DESCRIPTION
-$dialog.ShowNewFolderButton = $true
-if ([System.IO.Directory]::Exists($env:OPENIDE_INITIAL_FOLDER)) {
-    $dialog.SelectedPath = $env:OPENIDE_INITIAL_FOLDER
-}
-try {
-    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        [Console]::Out.Write($dialog.SelectedPath)
-    }
-} finally {
-    $dialog.Dispose()
-}
-"#;
-
-    let output = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Sta",
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            SCRIPT,
-        ])
-        .env("OPENIDE_INITIAL_FOLDER", initial)
-        .env("OPENIDE_PICKER_DESCRIPTION", description)
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map_err(|error| format!("No se pudo abrir el selector de carpetas: {error}"))?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "No se pudo abrir el selector de carpetas: {}",
-            detail.trim()
-        ));
-    }
-    let selected = String::from_utf8(output.stdout)
-        .map_err(|_| "El selector devolvió una ruta con codificación inválida".to_owned())?;
-    if selected.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(PathBuf::from(selected)))
-    }
-}
-
-#[cfg(not(windows))]
-fn choose_workspace_folder(_initial: &Path, _description: &str) -> Result<Option<PathBuf>, String> {
-    Err("El selector de carpetas del sistema no está disponible aquí".to_owned())
 }
 
 fn validate_workspace_folder(path: &Path) -> Result<String, String> {
@@ -1102,6 +1846,167 @@ fn system_instructions_with_goal(skills: String, goal: Option<&str>) -> String {
     }
 }
 
+/// A ledger goal owns the task objective; old composer text remains durable
+/// but cannot shadow it or be copied into the child reservation base. Completed
+/// goals also do not silently reactivate an older text-only objective.
+pub(crate) fn native_task_instructions(
+    project: String,
+    legacy_goal: Option<&str>,
+    native_goal: Option<&openide_core::NativeGoal>,
+) -> Result<(String, String), String> {
+    let base = if native_goal.is_some() {
+        project
+    } else {
+        system_instructions_with_goal(project, legacy_goal)
+    };
+    let full = openide_harness::native_goal_system_instructions(&base, native_goal)
+        .map_err(|e| e.to_string())?;
+    Ok((base, full))
+}
+
+struct NativeContextNextTurnObservations {
+    sections: Vec<crate::native_context_ui::NativeContextSection>,
+    categories: Vec<crate::native_context_ui::NativeContextCategory>,
+    mcp_enabled_servers: Option<usize>,
+}
+
+fn native_context_next_turn_sections(
+    data_root: &Path,
+    workspace: &Path,
+) -> NativeContextNextTurnObservations {
+    use crate::native_context_ui::{NativeContextCategory, NativeContextRow, NativeContextSection};
+    let mut categories = Vec::new();
+    let mut rows = Vec::new();
+    match load_project_instructions(workspace, workspace, ProjectInstructionLimits::default()) {
+        Ok(project) => {
+            let bytes = project
+                .entries
+                .iter()
+                .map(|entry| entry.content.len())
+                .sum::<usize>();
+            categories.push(NativeContextCategory::new("project", "Proyecto", format!("{} docs · {bytes} bytes", project.entries.len()), "Documentos iniciales actuales para el próximo turno. Bytes UTF-8 de contenido, sin formatos añadidos ni tokens atribuidos. Instrucciones por directorio pueden incorporarse después durante herramientas."));
+            rows.push(NativeContextRow::new("Documentos del proyecto", project.entries.len().to_string(), "Lectura actual para un próximo turno. Sólo observa la jerarquía inicial del workspace; documentos adicionales por directorio pueden incorporarse durante herramientas. No es una copia guardada ni un conteo de tokens."));
+            for entry in project.entries {
+                rows.push(NativeContextRow::new(
+                    entry.path.display().to_string(),
+                    format!("{} bytes UTF-8", entry.content.len()),
+                    format!("SHA-256 observado: {}", entry.sha256_hex),
+                ));
+            }
+        }
+        Err(error) => {
+            categories.push(NativeContextCategory::new(
+                "project",
+                "Proyecto",
+                "No disponible",
+                error.to_string(),
+            ));
+            rows.push(NativeContextRow::new(
+                "Documentos del proyecto",
+                "Lectura no disponible",
+                error.to_string(),
+            ));
+        }
+    }
+    let mut skills_category = match NativeSkillsSettings::load(data_root, workspace) {
+        Ok(settings) => match settings.activate(data_root) {
+            Ok(skills) => {
+                let category = NativeContextCategory::new("skills", "Skills", format!("{} locales · {} bytes", skills.selected.len(), skills.instructions.len()), format!("Selección guardada y revalidada para el próximo turno; bytes del texto renderizado con formato. SHA-256: {}. No son tokens ni una copia congelada.", skills.sha256_hex));
+                rows.push(NativeContextRow::new("Skills locales seleccionadas", format!("{} skills · {} bytes renderizados", skills.selected.len(), skills.instructions.len()), format!("Selección revalidada al leer para un próximo turno; no sustituye una copia congelada. Digest de procedencia y texto renderizado: {}\nLos bytes incluyen el formato de activación y no equivalen a tokens.", skills.sha256_hex)));
+                for selection in skills.selected {
+                    rows.push(NativeContextRow::new(
+                        selection.name,
+                        match selection.provenance.origin {
+                            openide_harness::SkillOrigin::Project => "Proyecto",
+                            openide_harness::SkillOrigin::User => "Usuario",
+                        },
+                        format!(
+                            "Documento: {}\nSHA-256 guardado y revalidado: {}",
+                            selection.provenance.document.display(),
+                            selection.provenance.sha256_hex
+                        ),
+                    ));
+                }
+                category
+            }
+            Err(error) => {
+                rows.push(NativeContextRow::new("Skills locales seleccionadas", "Activación no disponible", format!("{error}\nLa selección o los documentos pueden haber cambiado. No se acepta un digest nuevo automáticamente.")));
+                NativeContextCategory::new("skills", "Skills", format!("{} seleccionadas · no activadas", settings.selections.len()), format!("{error}. No se acepta un digest nuevo automáticamente ni se mide texto activado desde una selección inválida."))
+            }
+        },
+        Err(error) => {
+            rows.push(NativeContextRow::new(
+                "Skills locales seleccionadas",
+                "Activación no disponible",
+                error.clone(),
+            ));
+            NativeContextCategory::new("skills", "Skills", "No disponibles", error)
+        }
+    };
+    match crate::marketplace::active_skill_instructions(data_root, workspace) {
+        Ok(skills) => {
+            skills_category.detail.push_str(&format!(" Índice de skills instaladas: {} bytes de metadatos. Las instrucciones completas se leen bajo demanda con read_file. SHA-256 del índice: {}. No se suman estos bytes como tokens.", skills.len(), openide_core::system_instructions_digest(&skills).unwrap_or_else(|| "no disponible: texto fuera del límite de snapshot".into())));
+            rows.push(NativeContextRow::new("Skills instaladas del marketplace", format!("{} bytes de metadatos", skills.len()), format!("Índice observado para un próximo turno; las instrucciones completas se leen bajo demanda con read_file. SHA-256 del índice: {}\nNo se atribuyen tokens ni se infiere el número de skills desde el texto renderizado.", openide_core::system_instructions_digest(&skills).unwrap_or_else(|| "no disponible: texto fuera del límite de snapshot".into()))));
+        }
+        Err(error) => {
+            skills_category
+                .detail
+                .push_str(&format!(" Skills instaladas no disponibles: {error}"));
+            rows.push(NativeContextRow::new(
+                "Skills instaladas del marketplace",
+                "Lectura no disponible",
+                error.to_string(),
+            ));
+        }
+    }
+    categories.push(skills_category);
+    let mut sections = vec![NativeContextSection {
+        title: "Proyecto y skills para un próximo turno".into(),
+        rows,
+    }];
+    let (rows, mcp_enabled_servers) = match crate::mcp_settings::McpSettings::load(
+        data_root, workspace,
+    ) {
+        Ok(settings) => {
+            let enabled = settings
+                .servers
+                .iter()
+                .filter(|server| server.enabled)
+                .collect::<Vec<_>>();
+            categories.push(NativeContextCategory::new("mcp", "MCP", format!("{} servidores · herramientas no observadas", enabled.len()), "Preferencias guardadas habilitadas para próximos turnos, sin conectar servidores. No prueban el catálogo congelado ni cantidad o tokens de herramientas."));
+            let mut rows = vec![NativeContextRow::new("Servidores MCP habilitados", enabled.len().to_string(), "Registro guardado actual, sin abrir conexiones. Build descubrirá y congelará sus herramientas; Plan no activa estos servidores. No se infiere el número ni los tokens de herramientas desde este registro.")];
+            let count = enabled.len();
+            rows.extend(enabled.into_iter().map(|server| NativeContextRow::new(server.id.clone(), if server.url.is_some() {"HTTP"} else {"stdio"}, "Preferencia para próximos turnos, no evidencia del catálogo de un turno anterior.")));
+            (rows, Some(count))
+        }
+        Err(error) => {
+            categories.push(NativeContextCategory::new(
+                "mcp",
+                "MCP",
+                "Registro no disponible",
+                error.clone(),
+            ));
+            (
+                vec![NativeContextRow::new(
+                    "Servidores MCP habilitados",
+                    "Registro no disponible",
+                    error,
+                )],
+                None,
+            )
+        }
+    };
+    sections.push(NativeContextSection {
+        title: "MCP configurado para próximos turnos".into(),
+        rows,
+    });
+    NativeContextNextTurnObservations {
+        sections,
+        categories,
+        mcp_enabled_servers,
+    }
+}
+
 fn native_workspace_instructions(data_root: &Path, workspace: &Path) -> Result<String, String> {
     let project =
         load_project_instructions(workspace, workspace, ProjectInstructionLimits::default())
@@ -1278,11 +2183,22 @@ struct NativeAttachmentPayload {
     path_attachments: Vec<ComposerAttachmentView>,
 }
 
+#[cfg(test)]
 fn prepare_native_attachments(
     workspace: &Path,
     attachments: &[ComposerAttachmentView],
     provider_id: &str,
     model_id: &str,
+) -> Result<NativeAttachmentPayload, String> {
+    let supported = native_provider::native_model_capabilities(provider_id, model_id)
+        .is_some_and(|capability| capability.image_input);
+    prepare_native_attachments_with_image_support(workspace, attachments, supported)
+}
+
+fn prepare_native_attachments_with_image_support(
+    workspace: &Path,
+    attachments: &[ComposerAttachmentView],
+    supported: bool,
 ) -> Result<NativeAttachmentPayload, String> {
     let mut payload = NativeAttachmentPayload {
         images: Vec::new(),
@@ -1301,8 +2217,6 @@ fn prepare_native_attachments(
         }
     }
     if !payload.image_attachments.is_empty() {
-        let supported = native_provider::native_model_capabilities(provider_id, model_id)
-            .is_some_and(|capability| capability.image_input);
         if !supported {
             return Err(
                 "El modelo nativo seleccionado no tiene entrada de imágenes verificada".to_owned(),
@@ -1367,59 +2281,6 @@ fn composer_project_options(workspace: &str, project_paths: &[String]) -> Vec<(S
         }
     }
     options
-}
-
-fn terminal_key_bytes(key: openide_ui::Key, shift: bool, ctrl: bool) -> Option<&'static [u8]> {
-    use openide_ui::Key;
-    if ctrl {
-        let sequence = match key {
-            Key::A => Some(b"\x01".as_slice()),
-            Key::B => Some(b"\x02".as_slice()),
-            Key::C => Some(b"\x03".as_slice()),
-            Key::D => Some(b"\x04".as_slice()),
-            Key::E => Some(b"\x05".as_slice()),
-            Key::F => Some(b"\x06".as_slice()),
-            Key::G => Some(b"\x07".as_slice()),
-            Key::H => Some(b"\x08".as_slice()),
-            Key::I => Some(b"\x09".as_slice()),
-            Key::J => Some(b"\x0a".as_slice()),
-            Key::K => Some(b"\x0b".as_slice()),
-            Key::L => Some(b"\x0c".as_slice()),
-            Key::M => Some(b"\x0d".as_slice()),
-            Key::N => Some(b"\x0e".as_slice()),
-            Key::O => Some(b"\x0f".as_slice()),
-            Key::P => Some(b"\x10".as_slice()),
-            Key::Q => Some(b"\x11".as_slice()),
-            Key::R => Some(b"\x12".as_slice()),
-            Key::S => Some(b"\x13".as_slice()),
-            Key::T => Some(b"\x14".as_slice()),
-            Key::U => Some(b"\x15".as_slice()),
-            Key::V => Some(b"\x16".as_slice()),
-            Key::W => Some(b"\x17".as_slice()),
-            Key::X => Some(b"\x18".as_slice()),
-            Key::Y => Some(b"\x19".as_slice()),
-            Key::Z => Some(b"\x1a".as_slice()),
-            _ => None,
-        };
-        if sequence.is_some() {
-            return sequence;
-        }
-    }
-    match key {
-        Key::Enter => Some(b"\r"),
-        Key::Tab if !shift => Some(b"\t"),
-        Key::Tab => None, // Keep Shift+Tab available for focus navigation.
-        Key::Escape => Some(b"\x1b"),
-        Key::Backspace => Some(b"\x7f"),
-        Key::Delete => Some(b"\x1b[3~"),
-        Key::ArrowUp => Some(b"\x1b[A"),
-        Key::ArrowDown => Some(b"\x1b[B"),
-        Key::ArrowRight => Some(b"\x1b[C"),
-        Key::ArrowLeft => Some(b"\x1b[D"),
-        Key::Home => Some(b"\x1b[H"),
-        Key::End => Some(b"\x1b[F"),
-        _ => None,
-    }
 }
 
 fn catalog_status(snapshot: &CatalogSnapshot) -> String {
@@ -1786,8 +2647,20 @@ fn native_session_views(
     data_root: &Path,
     stored: &StoredSession,
 ) -> (Option<SessionRecoveryView>, Option<SessionPlanView>) {
-    if stored.session.backend != "native" || stored.events.is_empty() {
+    if stored.session.backend != "native" {
         return (None, None);
+    }
+    let automation = match crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
+        &stored.session,
+    ) {
+        Ok(automation) => automation,
+        Err(error) => return (Some(SessionRecoveryView::InvalidJournal(error)), None),
+    };
+    if stored.events.is_empty() {
+        return (
+            automation.map(|_| SessionRecoveryView::StartAutomation),
+            None,
+        );
     }
     match replay_stored_native(data_root, stored) {
         Ok(replay) => {
@@ -1804,7 +2677,8 @@ fn native_session_views(
                 matches!(event.kind, AgentEventKind::PlanProposed { .. }).then_some(event.sequence)
             });
             let can_build = last_plan_sequence.is_some_and(|sequence| {
-                recovery.is_none()
+                automation.is_none()
+                    && recovery.is_none()
                     && !stored.events.iter().any(|event| {
                         event.sequence > sequence
                             && matches!(
@@ -1834,7 +2708,79 @@ fn native_session_views(
     }
 }
 
+/// The conversation name inside a terminal title: without the status glyphs a
+/// CLI animates in front of it, and nothing when the title is only the CLI's
+/// own name, a path or a shell prompt.
+fn cli_conversation_title(raw: &str, agent_id: &str) -> Option<String> {
+    let title = raw
+        .trim_start_matches(|character: char| !character.is_alphanumeric())
+        .trim();
+    let lowered = title.to_lowercase();
+    let label = crate::agent_cli_definitions::profile(agent_id)
+        .map(|(agent, _)| agent.label.to_lowercase())
+        .unwrap_or_default();
+    let generic = title.chars().count() < 3
+        || lowered == agent_id
+        || lowered == label
+        || title.contains('/')
+        || title.contains('@');
+    (!generic).then(|| title.chars().take(80).collect())
+}
+
 impl AgentsWindow {
+    fn selected_native_image_input_supported(&self) -> bool {
+        native_provider::adapter_at(&self.data_root, &self.view.native_provider_id)
+            .ok()
+            .flatten()
+            .is_some_and(|adapter| {
+                native_image_input_supported(
+                    &adapter,
+                    &self.view.model,
+                    self.view.catalog.as_deref(),
+                    &self.model_discoveries,
+                )
+            })
+    }
+
+    fn token_budget_for_native_model(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Option<TokenBudgetPolicy> {
+        let adapter = native_provider::adapter_for_model_at(&self.data_root, provider_id, model_id)
+            .ok()??;
+        let mut budget = native_token_budget(
+            &adapter,
+            model_id,
+            self.view.catalog.as_deref(),
+            &self.model_discoveries,
+        )?;
+        if provider_id == "codex" {
+            return Some(budget);
+        }
+        if let Some(limit) = native_provider::configured_output_limit(
+            &self.data_root,
+            provider_id,
+            model_id,
+            adapter.wire_api,
+        )
+        .ok()?
+        {
+            if native_output_maximum(
+                &adapter,
+                model_id,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )
+            .is_some_and(|maximum| limit.tokens > maximum)
+            {
+                return None;
+            }
+            budget.output_reserve_tokens = limit.tokens;
+        }
+        Some(budget)
+    }
+
     fn draft_key(&self) -> (String, Option<String>) {
         (
             self.view.workspace.clone(),
@@ -1842,7 +2788,271 @@ impl AgentsWindow {
         )
     }
 
+    fn refresh_native_goal(&mut self) {
+        let recovery = self.native_goal_recovery.clone();
+        let empty = || crate::native_goal_ui::NativeGoalUiState {
+            recovery: recovery.clone(),
+            ..Default::default()
+        };
+        let id = self.view.selected_session.clone();
+        if self.view.native_goal.session_id != id {
+            self.view.native_goal = empty();
+        }
+        let Some((store, id)) = self.store.as_ref().zip(id) else {
+            self.view.native_goal = empty();
+            return;
+        };
+        match store.load(&id) {
+            Ok(Some(record)) if record.session.backend == "native" => {
+                self.view.native_goal.session_id = Some(id.clone());
+                match openide_core::NativeGoalStore::new(store.clone()).list(&id) {
+                    Ok(mut goals) => {
+                        self.view.native_goal.goal = goals.pop();
+                        self.view.native_goal.error = None;
+                    }
+                    Err(error) => {
+                        self.view.native_goal.goal = None;
+                        self.view.native_goal.error = Some(error.to_string());
+                    }
+                }
+            }
+            Ok(_) => self.view.native_goal = empty(),
+            Err(error) => {
+                self.view.native_goal.goal = None;
+                self.view.native_goal.error = Some(error.to_string());
+            }
+        }
+        self.view.native_goal.recovery = recovery;
+    }
+    fn open_composer_goal_editor(&mut self) {
+        if !self.interactive_native_session_ready() {
+            return;
+        }
+        if self.view.running || self.view.background_run_selected || self.active_compact.is_some() {
+            return;
+        }
+        self.view.composer_add_menu_open = true;
+        self.view.composer_goal_draft = self.view.composer_goal.clone().unwrap_or_default();
+        self.tree
+            .set_input_value("composer_goal_draft", self.view.composer_goal_draft.clone());
+        self.refresh_native_goal();
+        if let Some(goal) = &self.view.native_goal.goal {
+            self.view.composer_goal_draft = goal.objective.clone();
+            self.tree
+                .set_input_value("composer_goal_draft", goal.objective.clone());
+        }
+        self.tree.set_input_value(
+            "native_goal_criteria",
+            self.view.native_goal.criteria_draft.clone(),
+        );
+        self.view.composer_goal_editor_open = true;
+    }
+
+    /// Settings controls are only entry points. Recheck the durable owner and
+    /// recovery here before opening an editor or starting the existing service.
+    fn settings_native_session_ready(&mut self, allow_automation: bool) -> bool {
+        let result = (|| -> Result<(), String> {
+            if !self.view.show_settings || self.view.settings_page != SettingsPage::Memory {
+                return Err("Abre Memoria para usar este control".into());
+            }
+            if self.view.running
+                || self.view.background_run_selected
+                || self.active_run.is_some()
+                || self.active_resume.is_some()
+                || self.active_compact.is_some()
+            {
+                return Err("Espera a que termine la ejecución".into());
+            }
+            if self.view.selected_backend != "native" {
+                return Err("Selecciona una conversación nativa de OpenIDE".into());
+            }
+            let id = self
+                .view
+                .selected_session
+                .as_deref()
+                .ok_or_else(|| "Selecciona una conversación nativa de OpenIDE".to_owned())?;
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| "El historial no está disponible".to_owned())?;
+            let stored = store
+                .load(id)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "La conversación ya no existe".to_owned())?;
+            if stored.session.backend != "native" {
+                return Err("Esta conversación usa una CLI externa".into());
+            }
+            if stored.session.native_automation.is_some() && !allow_automation {
+                return Err("Esta automatización conserva su perfil de lectura. Abre una nueva tarea nativa para editar objetivos.".into());
+            }
+            if self.view.session_recovery.contains_key(id) {
+                return Err("Resuelve la recuperación pendiente de esta conversación".into());
+            }
+            let replay = replay_stored_native(&self.data_root, &stored)?;
+            if !replay.can_start_new_turn {
+                return Err(recovery_status(&replay.recovery).to_owned());
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                self.set_settings_notice(error, true);
+                false
+            }
+        }
+    }
+
+    fn retry_native_goal_maintenance(&mut self) {
+        if !self.view.composer_goal_editor_open || self.view.running || self.active_resume.is_some()
+        {
+            self.view.status =
+                "Abre el editor de Goal con la ejecución detenida para revisar temporales".into();
+            return;
+        }
+        let Some(store) = self.store.clone() else {
+            self.view.status = "El historial no está disponible para revisar goals".into();
+            return;
+        };
+        self.native_goal_recovery = openide_core::NativeGoalStore::new(store)
+            .recover_idle_sessions()
+            .unwrap_or_else(|error| openide_core::NativeGoalRecoveryReport {
+                diagnostics: vec![openide_core::NativeGoalRecoveryDiagnostic {
+                    session_id: String::new(),
+                    error: error.to_string(),
+                }],
+                ..Default::default()
+            });
+        self.refresh_native_goal();
+        self.refresh_sessions();
+        self.view.status = format!(
+            "Revisión de goals: {} temporales eliminados, {} sesiones ocupadas, {} errores",
+            self.native_goal_recovery.removed_temporaries,
+            self.native_goal_recovery.busy_session_ids.len(),
+            self.native_goal_recovery.diagnostics.len()
+        );
+    }
+
+    fn activate_native_goal(&mut self) {
+        if !self.interactive_native_session_ready() {
+            return;
+        }
+        let result = (|| -> Result<(), String> {
+            if !self.view.composer_goal_editor_open
+                || self.view.running
+                || self.view.background_run_selected
+            {
+                return Err("Abrí el editor en una sesión sin ejecución activa".into());
+            }
+            let id = self
+                .view
+                .selected_session
+                .as_deref()
+                .ok_or("Seleccioná una sesión nativa")?;
+            if self.view.native_goal.session_id.as_deref() != Some(id)
+                || self.view.selected_backend != "native"
+            {
+                return Err("El editor no pertenece a la sesión nativa seleccionada".into());
+            }
+            let store = self.store.as_ref().ok_or("Store no disponible")?;
+            let lease = store
+                .try_acquire_native_lease(id)
+                .map_err(|e| e.to_string())?;
+            let criteria = self
+                .view
+                .native_goal
+                .criteria_draft
+                .lines()
+                .filter(|s| !s.trim().is_empty())
+                .enumerate()
+                .map(|(i, description)| openide_core::NativeGoalCriterion {
+                    id: format!("criterion-{}", i + 1),
+                    description: description.trim().into(),
+                    evidence: None,
+                })
+                .collect();
+            openide_core::NativeGoalStore::new(store.clone())
+                .create(
+                    &lease,
+                    &Uuid::new_v4().to_string(),
+                    &self.view.composer_goal_draft,
+                    criteria,
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.refresh_native_goal();
+                self.view.status = "Goal nativo activado con todos sus criterios".into();
+            }
+            Err(error) => {
+                self.view.native_goal.error = Some(error.clone());
+                self.view.status = error;
+            }
+        }
+    }
+    fn control_native_goal(&mut self, payload: &str) {
+        if !self.interactive_native_session_ready() {
+            return;
+        }
+        let result = (|| -> Result<(), String> {
+            if !self.view.composer_goal_editor_open
+                || self.view.running
+                || self.view.background_run_selected
+            {
+                return Err("El control de goal requiere una sesión sin ejecución activa".into());
+            }
+            let (session_id, goal_id, revision, pause): (String, String, u64, bool) =
+                serde_json::from_str(payload).map_err(|e| e.to_string())?;
+            let state = &self.view.native_goal;
+            let goal = state.goal.as_ref().ok_or("No hay goal nativo")?;
+            if self.view.selected_session.as_deref() != Some(&session_id)
+                || state.session_id.as_deref() != Some(&session_id)
+                || goal.id != goal_id
+                || goal.revision != revision
+                || self.view.selected_backend != "native"
+                || (pause && goal.status != openide_core::NativeGoalStatus::Active)
+                || (!pause && goal.status != openide_core::NativeGoalStatus::Paused)
+            {
+                return Err("El control del goal cambió; reabrí el editor".into());
+            }
+            let store = self.store.as_ref().ok_or("Store no disponible")?;
+            let lease = store
+                .try_acquire_native_lease(&session_id)
+                .map_err(|e| e.to_string())?;
+            let mutation = if pause {
+                openide_core::NativeGoalMutation::PauseByUser
+            } else {
+                openide_core::NativeGoalMutation::ResumeByUser
+            };
+            openide_core::NativeGoalStore::new(store.clone())
+                .update(
+                    &lease,
+                    &goal_id,
+                    &Uuid::new_v4().to_string(),
+                    revision,
+                    mutation,
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.refresh_native_goal();
+                self.view.status = "Estado del goal nativo guardado".into();
+            }
+            Err(error) => {
+                self.view.native_goal.error = Some(error.clone());
+                self.view.status = error;
+            }
+        }
+    }
+
     fn set_composer_goal(&mut self, objective: Option<String>) {
+        if !self.interactive_native_session_ready() {
+            return;
+        }
         if self.view.running || self.view.background_run_selected {
             self.view.status = "Espera a que termine la tarea para cambiar la meta".to_owned();
             return;
@@ -1952,6 +3162,7 @@ impl AgentsWindow {
     }
 
     fn restore_draft(&mut self) {
+        self.refresh_native_goal();
         let key = self.draft_key();
         self.view.composer_goal = self.composer_goals.get(&key).cloned();
         self.view.composer_goal_draft = self.view.composer_goal.clone().unwrap_or_default();
@@ -2291,13 +3502,196 @@ impl AgentsWindow {
     }
 
     fn cancel_subagent(&mut self, child_id: &str) {
-        if self.subagent_bridge.cancel_child(child_id) {
-            self.view
-                .pending_subagent_permissions
-                .retain(|permission| permission.child_session_id != child_id);
-            self.view.status = "Cancelando subagente...".to_owned();
-        } else {
-            self.view.status = "El subagente ya no está en ejecución".to_owned();
+        // A stale or forged UI action must not cancel an unrelated lineage.
+        let Some(child) = self
+            .view
+            .subagent_sessions
+            .iter()
+            .find(|child| {
+                child.child_session_id == child_id
+                    && self
+                        .view
+                        .selected_session
+                        .as_deref()
+                        .is_some_and(|selected| {
+                            selected == child.child_session_id
+                                || selected == child.parent_session_id
+                        })
+            })
+            .cloned()
+        else {
+            self.view.status = "El subagente no pertenece a la sesión seleccionada".into();
+            return;
+        };
+        match self.subagent_bridge.cancel_child(child_id) {
+            Ok(true) => {
+                self.view
+                    .pending_subagent_permissions
+                    .retain(|permission| permission.child_session_id != child_id);
+                self.refresh_sessions();
+                self.view.status = "Cancelación persistida; deteniendo subagente...".into();
+                return;
+            }
+            Ok(false) => {}
+            Err(error) => {
+                self.view.status =
+                    format!("No se pudo completar la cancelación del subagente: {error}");
+                return;
+            }
+        }
+        if child.status == SubagentStatus::Interrupted {
+            self.view.status =
+                "Revisá la recuperación del subagente interrumpido antes de cancelarlo".into();
+            return;
+        }
+        let result = (|| -> Result<_, String> {
+            let store = self
+                .store
+                .clone()
+                .ok_or("El historial no está disponible")?;
+            let coordinator = SubagentCoordinator::new(store.clone(), SubagentLimits::default())
+                .map_err(|error| error.to_string())?;
+            let lease = store
+                .try_acquire_native_lease(&child.parent_session_id)
+                .map_err(|error| format!("La sesión padre está en uso: {error}"))?;
+            coordinator
+                .request_cancel_from_ui_with_affected(&lease, child_id)
+                .map_err(|error| error.to_string())
+        })();
+        match result {
+            Ok((record, affected)) => {
+                for owner in affected {
+                    self.native_command_sessions.revoke_session(&owner);
+                }
+                self.refresh_sessions();
+                self.view.status = if record.status == SubagentStatus::Running {
+                    "Cancelación persistida; esperando que el subagente se detenga".into()
+                } else {
+                    "Cancelación persistida del subagente y sus entradas pendientes".into()
+                };
+            }
+            Err(error) => {
+                self.refresh_sessions();
+                self.view.status = format!("No se pudo cancelar el subagente: {error}");
+            }
+        }
+    }
+
+    fn skip_subagent_input(&mut self, child_id: &str, input_id: &str, revision: u64) {
+        let result = (|| -> Result<(), String> {
+            let child = self
+                .view
+                .subagent_sessions
+                .iter()
+                .find(|child| {
+                    child.child_session_id == child_id
+                        && self
+                            .view
+                            .selected_session
+                            .as_deref()
+                            .is_some_and(|selected| {
+                                selected == child.child_session_id
+                                    || selected == child.parent_session_id
+                            })
+                })
+                .ok_or("La entrada no pertenece a la sesión seleccionada")?;
+            let store = self
+                .store
+                .clone()
+                .ok_or("El historial no está disponible")?;
+            let lease = store
+                .try_acquire_native_lease(&child.parent_session_id)
+                .map_err(|error| format!("La sesión padre está en uso: {error}"))?;
+            let coordinator = SubagentCoordinator::new(store, SubagentLimits::default())
+                .map_err(|error| error.to_string())?;
+            coordinator
+                .skip_pending_input(&lease, child_id, input_id, revision)
+                .map_err(|error| match error {
+                    openide_harness::SubagentError::InputEditConflict => {
+                        "La entrada cambió o ya fue reclamada; revisá su estado antes de omitirla"
+                            .to_owned()
+                    }
+                    error => error.to_string(),
+                })?;
+            Ok(())
+        })();
+        if result.is_ok()
+            && self.view.subagent_input_edit.as_ref().is_some_and(|draft| {
+                draft.child_session_id == child_id && draft.input_id == input_id
+            })
+        {
+            self.view.subagent_input_edit = None;
+        }
+        self.refresh_sessions();
+        self.view.status = match result {
+            Ok(()) => "Entrada omitida; las demás entradas siguen disponibles".into(),
+            Err(error) => format!("No se pudo omitir la entrada: {error}"),
+        };
+    }
+
+    fn save_subagent_input_edit(&mut self) {
+        let Some(draft) = self.view.subagent_input_edit.clone() else {
+            return;
+        };
+        let result = (|| -> Result<(), String> {
+            let child = self
+                .view
+                .subagent_sessions
+                .iter()
+                .find(|child| {
+                    child.child_session_id == draft.child_session_id
+                        && self
+                            .view
+                            .selected_session
+                            .as_deref()
+                            .is_some_and(|selected| {
+                                selected == child.child_session_id
+                                    || selected == child.parent_session_id
+                            })
+                })
+                .ok_or("La sesión seleccionada cambió; volvé a abrir la entrada")?;
+            let store = self
+                .store
+                .clone()
+                .ok_or("El historial no está disponible")?;
+            let lease = store
+                .try_acquire_native_lease(&child.parent_session_id)
+                .map_err(|error| format!("La sesión padre está en uso: {error}"))?;
+            let coordinator = SubagentCoordinator::new(store, SubagentLimits::default())
+                .map_err(|error| error.to_string())?;
+            coordinator
+                .edit_pending_input(
+                    &lease,
+                    &draft.child_session_id,
+                    &draft.input_id,
+                    draft.expected_revision,
+                    &draft.prompt,
+                )
+                .map_err(|error| match error {
+                    openide_harness::SubagentError::InputEditConflict => {
+                        "La entrada cambió o ya fue reclamada; abrila nuevamente para editar"
+                            .to_owned()
+                    }
+                    openide_harness::SubagentError::InvalidInput => {
+                        "La entrada necesita texto y admite hasta 16 KiB".to_owned()
+                    }
+                    openide_harness::SubagentError::InputClosed(_) => {
+                        "El subagente ya no acepta cambios en su cola".to_owned()
+                    }
+                    error => error.to_string(),
+                })?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.view.subagent_input_edit = None;
+                self.refresh_sessions();
+                self.view.status = "Entrada pendiente actualizada; se usará al reclamarla".into();
+            }
+            Err(error) => {
+                self.refresh_sessions();
+                self.view.status = format!("No se pudo guardar la entrada: {error}");
+            }
         }
     }
 
@@ -2311,78 +3705,127 @@ impl AgentsWindow {
     fn active_terminal_id(&self) -> Option<u64> {
         let scope = self.dock_scope();
         self.dock
-            .active_tab(&scope)
-            .filter(|tab| matches!(tab.kind, DockTabKind::Terminal))
+            .active_terminal(&scope)
             .map(|tab| tab.id.get())
     }
 
-    fn terminal_dimensions(&self) -> (u16, u16) {
-        let width = self.view.right_dock_width.unwrap_or(420.0);
-        let columns = ((width - 42.0).max(40.0) / 7.3).floor() as u16;
-        let rows = ((self.viewport_height - 182.0).max(128.0) / 16.0).floor() as u16;
-        (columns.clamp(12, 240), rows.clamp(8, 80))
+    fn terminal_dimensions_for(&self, id: u64) -> (u16, u16) {
+        use crate::terminal::{CELL_WIDTH, LINE_HEIGHT, MAX_COLUMNS, MAX_ROWS, SCREEN_PADDING_X, SCREEN_PADDING_Y};
+        let screen_id = self.terminal_screen_id(id);
+        let screen = self.tree.frame().regions.iter().find(|region| region.id == screen_id).map(|region| region.rect);
+        let panes = self.visible_terminal_ids().len().max(1) as f32;
+        let dock = dock_layout(&self.view, self.viewport_width);
+        let fallback_width = if self.ide_workspace_active() {
+            dock.center
+        } else {
+            (self.viewport_width - dock.left - 12.0).max(320.0)
+        };
+        let width = screen.map_or((fallback_width - (panes - 1.0)) / panes, |rect| rect.width);
+        let screen_height = screen.map_or((crate::view::terminal_panel_height(&self.view, self.viewport_height)
+            - crate::terminal_dock_ui::HEADER_HEIGHT).max(80.0), |rect| rect.height);
+        let columns = ((width - SCREEN_PADDING_X * 2.0).max(40.0) / CELL_WIDTH).floor() as u16;
+        let rows = ((screen_height - SCREEN_PADDING_Y * 2.0).max(LINE_HEIGHT) / LINE_HEIGHT).floor() as u16;
+        (columns.clamp(2, MAX_COLUMNS), rows.clamp(1, MAX_ROWS))
     }
 
     fn ensure_terminal_session(&mut self, id: u64) -> bool {
-        if self.terminals.contains_key(&id) {
+        if self.terminals.contains_key(&id) || !self.terminal_id_in_scope(id) {
             return false;
         }
-        // A failed launch should not spawn a process again on every repaint.
-        // Reopening the tab or pressing Retry clears this error and tries again.
-        if self.view.terminal_error.is_some() {
-            return false;
-        }
-        let (columns, rows) = self.terminal_dimensions();
-        let launch = match self.settings_preferences.terminal_command() {
+        // Failed launches are scoped to the PTY identity. A failed split pane
+        // must not block its neighbor or retry on every repaint.
+        if self.terminal_controls_host.errors.contains_key(&id) { return false; }
+        let (columns, rows) = self.terminal_dimensions_for(id);
+        let profile = self.terminal_profile_for(id);
+        let launch = match self.agent_terminal_command(id) {
+            Some(command) => command.and_then(|(program, args, env)| {
+                TerminalSession::spawn_with_env(
+                    Path::new(&self.view.workspace), columns, rows, &program, &args, &env,
+                )
+            }),
+            None => match profile.command() {
             Ok(None) => TerminalSession::spawn(Path::new(&self.view.workspace), columns, rows),
             Ok(Some((program, args))) => TerminalSession::spawn_with_command(
-                Path::new(&self.view.workspace),
-                columns,
-                rows,
-                &program,
-                &args,
+                Path::new(&self.view.workspace), columns, rows, &program, &args,
             ),
             Err(error) => Err(std::io::Error::other(error)),
+            },
         };
         match launch {
             Ok(session) => {
-                self.view.terminal_snapshot = Some(session.snapshot());
-                self.view.terminal_error = None;
+                self.terminal_controls_host.errors.remove(&id);
+                if self.active_terminal_id() == Some(id) {
+                    self.view.terminal_snapshot = Some(session.snapshot());
+                    self.view.terminal_error = None;
+                }
                 self.terminals.insert(id, session);
+                self.refresh_terminal_titles();
             }
             Err(error) => {
-                self.view.terminal_snapshot = None;
-                self.view.terminal_error = Some(format!("No se pudo iniciar la terminal: {error}"));
+                let error = format!("No se pudo iniciar la terminal: {error}");
+                self.terminal_controls_host.errors.insert(id, error.clone());
+                if self.active_terminal_id() == Some(id) {
+                    self.view.terminal_snapshot = None;
+                    self.view.terminal_error = Some(error);
+                }
             }
         }
         true
     }
 
-    fn update_terminal(&mut self) -> bool {
-        let active = self.active_terminal_id();
+    fn update_terminal(&mut self, ctx: &egui::Context) -> bool {
+        let visible = self.view.show_terminal_panel
+            && !self.view.show_settings && self.view.main_page == MainPage::Workspace;
+        let ids = if visible { self.visible_terminal_ids() } else { Vec::new() };
         for (id, session) in &mut self.terminals {
-            if Some(*id) != active {
-                session.poll();
-            }
+            let presented = ids.contains(id);
+            session.set_visible(presented);
+            if !presented { session.poll(); }
         }
-        let Some(id) = active else {
-            return false;
+        let mut changed = false;
+        let cell_width = if ids.is_empty() { 0.0 } else {
+            ctx.fonts_mut(|fonts| fonts.glyph_width(&egui::FontId::monospace(crate::terminal::FONT_SIZE), 'M'))
         };
-        let mut changed = self.ensure_terminal_session(id);
-        let (columns, rows) = self.terminal_dimensions();
-        if let Some(session) = self.terminals.get_mut(&id) {
-            match session.resize(columns, rows) {
-                Ok(resized) => changed |= resized,
-                Err(error) => {
-                    self.view.terminal_error =
-                        Some(format!("No se pudo ajustar la terminal: {error}"));
-                    changed = true;
+        for id in ids {
+            let mut pane_changed = self.ensure_terminal_session(id);
+            let (mut columns, rows) = self.terminal_dimensions_for(id);
+            let screen_id = self.terminal_screen_id(id);
+            if let Some(screen) = self.tree.frame().regions.iter().find(|region| region.id == screen_id) {
+                if cell_width > 0.0 {
+                    columns = ((screen.rect.width - crate::terminal::SCREEN_PADDING_X * 2.0)
+                        .max(cell_width * 2.0) / cell_width).floor()
+                        .min(f32::from(crate::terminal::MAX_COLUMNS)) as u16;
                 }
             }
-            changed |= session.poll();
-            if changed {
-                self.view.terminal_snapshot = Some(session.snapshot());
+            if let Some(session) = self.terminals.get_mut(&id) {
+                session.set_visible(true);
+                let repaint = ctx.clone();
+                session.set_repaint_callback(move || repaint.request_repaint());
+                match session.resize(columns, rows) {
+                    Ok(resized) => pane_changed |= resized,
+                    Err(error) => {
+                        let error = format!("No se pudo ajustar la terminal: {error}");
+                        if self.terminal_controls_host.errors.get(&id) != Some(&error) {
+                            self.terminal_controls_host.errors.insert(id, error);
+                            pane_changed = true;
+                        }
+                    }
+                }
+                pane_changed |= session.poll();
             }
+            if pane_changed {
+                let snapshot = self.terminals.get(&id).map(TerminalSession::snapshot);
+                let error = self.terminal_controls_host.errors.get(&id).cloned();
+                if self.active_terminal_id() == Some(id) {
+                    self.view.terminal_snapshot = snapshot.clone();
+                    self.view.terminal_error = error.clone();
+                }
+                if let Some(pane) = self.view.terminal_controls.panes.iter_mut().find(|pane| pane.id == id) {
+                    pane.snapshot = snapshot;
+                    pane.error = error;
+                }
+            }
+            changed |= pane_changed;
         }
         changed
     }
@@ -2411,8 +3854,15 @@ impl AgentsWindow {
             return;
         };
         if let Some(session) = self.terminals.get_mut(&id) {
-            if let Err(error) = session.write(bytes) {
-                self.view.terminal_error = Some(format!("No se pudo escribir: {error}"));
+            match session.write(bytes) {
+                Ok(()) => {
+                    self.view.terminal_error = None;
+                    // write() invalidates the session revision; update_terminal
+                    // snapshots once after the input batch instead of per character.
+                }
+                Err(error) => {
+                    self.view.terminal_error = Some(format!("No se pudo escribir: {error}"));
+                }
             }
         }
     }
@@ -2428,32 +3878,266 @@ impl AgentsWindow {
         }
     }
 
-    fn handle_terminal_event(&mut self, event: &UiEvent) -> bool {
-        if self.active_terminal_id().is_none() || !self.view.show_side_pane {
+    fn terminal_panel_interactive(&self) -> bool {
+        let screen_id = self.active_terminal_screen_id();
+        self.view.show_terminal_panel
+            && !self.view.show_settings
+            && !self.view.show_command_center
+            && self.view.main_page == MainPage::Workspace
+            && self.tree.frame().regions.iter().any(|region| region.id == screen_id)
+    }
+
+    fn handle_terminal_clipboard(&mut self, ctx: &egui::Context) -> bool {
+        if !self.terminal_panel_interactive()
+            || self.active_terminal_id().is_none()
+            || self.tree.focused_id() != Some(self.active_terminal_screen_id().as_str())
+        {
             return false;
         }
-        if let UiEvent::Scroll { position, delta_y } = event {
-            if self.tree.frame().hit_test(*position) == Some("terminal_screen") {
-                let rows = (*delta_y / 22.0).round() as i32;
-                self.terminal_scroll(rows.clamp(-24, 24));
+        // egui-winit emits clipboard events instead of key-down for Ctrl+C
+        // and Ctrl+X, so these cannot be handled in the ordinary key mapper.
+        let (copy, cut, shift) = ctx.input(|input| {
+            (
+                input
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, egui::Event::Copy)),
+                input
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, egui::Event::Cut)),
+                input.modifiers.shift,
+            )
+        });
+        if copy {
+            if let Some(selection) = self
+                .view
+                .terminal_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.selection.as_ref())
+            {
+                ctx.copy_text(selection.clone());
+            } else if shift {
+                if let Some(snapshot) = &self.view.terminal_snapshot {
+                    ctx.copy_text(snapshot.lines.join("\n").trim_end().to_owned());
+                }
+            } else {
+                self.terminal_write(&[3]);
+            }
+        }
+        if cut {
+            self.terminal_write(&[24]);
+        }
+        if copy || cut {
+            ctx.input_mut(|input| {
+                input
+                    .events
+                    .retain(|event| !matches!(event, egui::Event::Copy | egui::Event::Cut))
+            });
+        }
+        copy || cut
+    }
+
+    fn handle_terminal_event(&mut self, event: &UiEvent, ctx: &egui::Context) -> bool {
+        if !self.view.show_terminal_panel || self.view.show_settings || self.view.show_command_center
+            || self.view.main_page != MainPage::Workspace || self.tree.has_open_popover() {
+            return false;
+        }
+        if let UiEvent::PointerDown(position)
+            | UiEvent::PointerDownModified { position, .. }
+            | UiEvent::PointerDownEditor { position, .. }
+            | UiEvent::ContextMenu { position } = event {
+            if let Some(target) = self.tree.frame().hit_test(*position)
+                .and_then(|hit| hit.strip_prefix("terminal_screen:"))
+                .and_then(|raw| raw.parse::<u64>().ok()) {
+                if self.activate_terminal_pane(target) && matches!(event, UiEvent::ContextMenu { .. }) {
+                    // Opening the core menu itself emits no host action. Mark
+                    // this event handled so the newly active header rebuilds.
+                    self.tree.handle_event(event.clone());
+                    return true;
+                }
+            }
+        }
+        // Tab navigation between pane viewports changes the keyboard target too.
+        if let Some(target) = self.tree.focused_id()
+            .and_then(|hit| hit.strip_prefix("terminal_screen:"))
+            .and_then(|raw| raw.parse::<u64>().ok()) {
+            self.activate_terminal_pane(target);
+        }
+        if self.active_terminal_id().is_none()
+            || !self.terminal_panel_interactive()
+        {
+            return false;
+        }
+        let Some(id) = self.active_terminal_id() else {
+            return false;
+        };
+        let screen_id = self.active_terminal_screen_id();
+        let screen = self
+            .tree
+            .frame()
+            .regions
+            .iter()
+            .find(|region| region.id == screen_id)
+            .map(|region| region.rect);
+        let cell_width = ctx
+            .fonts_mut(|fonts| {
+                fonts.glyph_width(&egui::FontId::monospace(crate::terminal::FONT_SIZE), 'M')
+            })
+            .max(1.0);
+        let cell_at = |point: openide_ui::Point| {
+            screen.map(|rect| {
+                let row = ((point.y - rect.y - crate::terminal::SCREEN_PADDING_Y)
+                    / crate::terminal::LINE_HEIGHT)
+                    .floor()
+                    .max(0.0) as u16;
+                let col = ((point.x - rect.x - crate::terminal::SCREEN_PADDING_X) / cell_width)
+                    .round()
+                    .max(0.0) as u16;
+                (row, col)
+            })
+        };
+        match event {
+            UiEvent::PointerDown(position) | UiEvent::PointerDownModified { position, .. }
+            | UiEvent::PointerDownEditor { position, .. }
+                if self.tree.frame().hit_test(*position) == Some(screen_id.as_str()) =>
+            {
+                self.tree.focus(&screen_id);
+                if let (Some(session), Some((row, col))) =
+                    (self.terminals.get_mut(&id), cell_at(*position))
+                {
+                    session.begin_selection(row, col);
+                    self.view.terminal_snapshot = Some(session.snapshot());
+                }
+                return true;
+            }
+            UiEvent::PointerMove(position) => {
+                if let (Some(session), Some((row, col))) =
+                    (self.terminals.get_mut(&id), cell_at(*position))
+                {
+                    if session.extend_selection(row, col) {
+                        self.view.terminal_snapshot = Some(session.snapshot());
+                        return true;
+                    }
+                }
+            }
+            UiEvent::PointerUp(_) | UiEvent::PointerLeave => {
+                if self
+                    .terminals
+                    .get_mut(&id)
+                    .is_some_and(|session| session.end_selection())
+                {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        if let UiEvent::Scroll { position, delta_y }
+            | UiEvent::ScrollDirect { position, delta_y }
+            | UiEvent::Scroll2D { position, delta_y, .. } = event {
+            let target = self.tree.frame().hit_test(*position).and_then(|hit| {
+                if hit == "terminal_screen" { Some(id) }
+                else { hit.strip_prefix("terminal_screen:").and_then(|raw| raw.parse::<u64>().ok()) }
+            }).filter(|target| self.visible_terminal_ids().contains(target));
+            if let Some(target) = target {
+                if let Some(session) = self.terminals.get_mut(&target) {
+                    if session.scroll_pixels(*delta_y) {
+                        let snapshot = session.snapshot();
+                        if target == id { self.view.terminal_snapshot = Some(snapshot.clone()); }
+                        if let Some(pane) = self.view.terminal_controls.panes.iter_mut().find(|pane| pane.id == target) {
+                            pane.snapshot = Some(snapshot);
+                        }
+                    }
+                }
                 return true;
             }
         }
-        if self.tree.focused_id() != Some("terminal_screen") {
+        if self.tree.focused_id() != Some(screen_id.as_str()) {
             return false;
         }
         match event {
+            UiEvent::Paste(value) => {
+                if let Some(session) = self.terminals.get_mut(&id) {
+                    match session.paste(value) {
+                        Ok(()) => {
+                            self.view.terminal_error = None;
+                        }
+                        Err(error) => {
+                            self.view.terminal_error = Some(format!("No se pudo pegar: {error}"))
+                        }
+                    }
+                }
+                true
+            }
             UiEvent::Text(value) => {
                 self.terminal_write(value.as_bytes());
                 true
             }
-            UiEvent::Key { key, shift, ctrl } => {
-                if let Some(bytes) = terminal_key_bytes(*key, *shift, *ctrl) {
-                    self.terminal_write(bytes);
-                    true
-                } else {
-                    false
+            UiEvent::Key {
+                key: openide_ui::Key::C,
+                shift: true,
+                ctrl: true,
+            } => {
+                if let Some(text) = self
+                    .view
+                    .terminal_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.selection.as_ref())
+                {
+                    ctx.copy_text(text.clone());
                 }
+                true
+            }
+            UiEvent::Key {
+                key: openide_ui::Key::PageUp,
+                shift: true,
+                ..
+            } => {
+                let rows = self
+                    .view
+                    .terminal_snapshot
+                    .as_ref()
+                    .map_or(10, |snapshot| i32::from(snapshot.rows));
+                self.terminal_scroll(rows);
+                true
+            }
+            UiEvent::Key {
+                key: openide_ui::Key::PageDown,
+                shift: true,
+                ..
+            } => {
+                let rows = self
+                    .view
+                    .terminal_snapshot
+                    .as_ref()
+                    .map_or(10, |snapshot| i32::from(snapshot.rows));
+                self.terminal_scroll(-rows);
+                true
+            }
+            UiEvent::Key {
+                key: openide_ui::Key::End,
+                shift: true,
+                ctrl: true,
+            } => {
+                self.terminal_scroll(i32::MIN);
+                true
+            }
+            UiEvent::Key { key, shift, ctrl } => {
+                if let Some(session) = self.terminals.get_mut(&id) {
+                    match session.key(*key, *shift, *ctrl) {
+                        Ok(true) => {
+                            self.view.terminal_error = None;
+                            return true;
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            self.view.terminal_error =
+                                Some(format!("No se pudo escribir: {error}"));
+                            return true;
+                        }
+                    }
+                }
+                false
             }
             _ => false,
         }
@@ -2468,6 +4152,736 @@ impl AgentsWindow {
         layout
     }
 
+    fn active_browser_id(&self) -> Option<u64> {
+        let scope = self.dock_scope();
+        self.dock
+            .active_tab(&scope)
+            .filter(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)
+            .map(|tab| tab.id.get())
+    }
+
+    fn browser_dimensions(&self) -> (u32, u32) {
+        let viewport = self.tree.frame().regions.iter()
+            .find(|region| region.id == "browser_viewport").map(|region| region.rect);
+        let dock = dock_layout(&self.view, self.viewport_width);
+        let resource_width = if self.ide_workspace_active() {
+            dock.center
+        } else {
+            dock.right.unwrap_or(420.0)
+        };
+        let width = viewport.map_or(resource_width, |rect| rect.width);
+        let workspace_chrome = if self.ide_workspace_active() {
+            crate::ide_workspace::OUTER_INSET * 2.0
+                + crate::ide_workspace::TITLEBAR_HEIGHT
+                + crate::ide_workspace::STATUSBAR_HEIGHT
+        } else {
+            8.0
+        };
+        let height = viewport.map_or(
+            self.viewport_height
+                - workspace_chrome
+                - crate::dock_tab_ui::HEADER_HEIGHT
+                - crate::browser_ui::TOOLBAR_HEIGHT
+                - 1.0
+                - crate::browser_ui::STATUS_HEIGHT
+                - crate::view::terminal_panel_height(&self.view, self.viewport_height),
+            |rect| rect.height,
+        );
+        (width.round().clamp(320.0, 1600.0) as u32,
+         height.round().clamp(240.0, 1200.0) as u32)
+    }
+
+    fn browser_client_for_current_scope(&self) -> Option<crate::browser_runtime::BrowserMcpClient> {
+        let scope = self.dock_scope();
+        let workspace = std::fs::canonicalize(&self.view.workspace).ok()?;
+        let tab = self
+            .dock
+            .tabs(&scope.workspace_id)
+            .iter()
+            .find(|tab| tab.kind == DockTabKind::Browser && tab.owner == scope.owner)?;
+        let runtime = self.browsers.get(&tab.id.get())?;
+        if runtime.scope().workspace != workspace || !runtime.snapshot().started {
+            return None;
+        }
+        let valid_owner = match &tab.owner {
+            DockOwner::Task(session) => {
+                runtime.scope().session_id == *session
+                    || runtime.scope().session_id == format!("draft:{}", tab.id.get())
+            }
+            DockOwner::Draft => runtime.scope().session_id == format!("draft:{}", tab.id.get()),
+            DockOwner::Workspace => false,
+        };
+        valid_owner.then(|| runtime.mcp_client())
+    }
+
+    fn sync_browser_tab(&mut self) {
+        let active = self.active_browser_id();
+        let visible = self.resource_pane_visible()
+            && !self.view.show_settings
+            && self.view.main_page == MainPage::Workspace;
+        for (id, runtime) in &self.browsers {
+            runtime.set_visible(visible && Some(*id) == active);
+        }
+        if self.view.browser.tab_id != active {
+            let draft = active
+                .and_then(|id| {
+                    self.browser_restart_urls
+                        .get(&id)
+                        .cloned()
+                        .or_else(|| {
+                            self.browser_inputs
+                                .get(&id)
+                                .and_then(|queue| queue.navigation_url().map(str::to_owned))
+                        })
+                        .or_else(|| {
+                            self.browser_requests.get(&id).and_then(|requests| {
+                                requests
+                                    .iter()
+                                    .rev()
+                                    .find_map(|request| request.navigation_url().map(str::to_owned))
+                            })
+                        })
+                })
+                .unwrap_or_default();
+            self.view.browser = crate::browser_ui::BrowserUiState {
+                tab_id: active,
+                url_draft: draft.clone(),
+                installing: self.browser_installing,
+                ..Default::default()
+            };
+            self.tree.set_input_value("browser_url", draft);
+        }
+        let Some(id) = active else {
+            return;
+        };
+        if let Some(runtime) = self.browsers.get(&id) {
+            let snapshot = runtime.snapshot();
+            self.apply_browser_snapshot(id, snapshot);
+            return;
+        }
+        if self.browser_starts.contains_key(&id) || self.view.browser.error.is_some() || !visible {
+            return;
+        }
+        if self.browsers.len() + self.browser_starts.len() >= 4 {
+            self.view.browser.loading = false;
+            self.view.browser.error = Some("Hay cuatro navegadores abiertos. Cerrá una pestaña de navegador para iniciar otra.".into());
+            return;
+        }
+        let scope = self.dock_scope();
+        let session_id = match scope.owner {
+            DockOwner::Task(session) => session,
+            DockOwner::Draft => format!("draft:{id}"),
+            DockOwner::Workspace => return,
+        };
+        let launch_scope = crate::browser_runtime::BrowserScope {
+            workspace: PathBuf::from(scope.workspace_id),
+            session_id,
+        };
+        let data_root = self.data_root.clone();
+        let (viewport_width, viewport_height) = self.browser_dimensions();
+        let launch_options = crate::browser_runtime::BrowserLaunchOptions {
+            viewport_width,
+            viewport_height,
+            ..Default::default()
+        };
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.view.browser.loading = true;
+        self.view.browser.error = None;
+        match std::thread::Builder::new()
+            .name("openide-browser-start".into())
+            .spawn(move || {
+                let result = crate::browser_runtime::BrowserRuntime::start(
+                    launch_scope,
+                    &data_root,
+                    launch_options,
+                );
+                if let Ok(runtime) = &result {
+                    runtime.set_visible(false);
+                }
+                let _ = sender.send(result);
+            }) {
+            Ok(_) => {
+                self.browser_starts.insert(id, receiver);
+            }
+            Err(error) => {
+                self.view.browser.loading = false;
+                self.view.browser.error = Some(format!("No se pudo iniciar el navegador: {error}"));
+            }
+        }
+    }
+
+    fn apply_browser_snapshot(
+        &mut self,
+        id: u64,
+        snapshot: crate::browser_runtime::BrowserSnapshot,
+    ) -> bool {
+        if self.view.browser.tab_id != Some(id) {
+            return false;
+        }
+        let pending = self.browser_requests.get(&id);
+        let loading = snapshot.loading || pending.is_some_and(|requests| !requests.is_empty());
+        let navigating = snapshot.navigating
+            || pending.is_some_and(|requests| {
+                requests
+                    .iter()
+                    .any(crate::browser_runtime::BrowserRequest::document_navigation)
+            });
+        if self.view.browser.generation == snapshot.generation {
+            let changed =
+                self.view.browser.loading != loading || self.view.browser.navigating != navigating;
+            self.view.browser.loading = loading;
+            self.view.browser.navigating = navigating;
+            return changed;
+        }
+        let url_changed = self.view.browser.url != snapshot.url;
+        if url_changed
+            && snapshot.error.is_none()
+            && self.tree.focused_id() != Some("browser_url")
+            && !self.browser_restart_urls.contains_key(&id)
+            && !(navigating && snapshot.url == "about:blank")
+        {
+            self.view.browser.url_draft = snapshot.url.clone();
+            self.tree.set_input_value("browser_url", &snapshot.url);
+        }
+        let image = snapshot.screenshot.as_ref().and_then(|image| {
+            if self
+                .view
+                .browser
+                .image
+                .as_ref()
+                .is_some_and(|current| current.sha256() == image.sha256)
+            {
+                return self.view.browser.image.clone();
+            }
+            openide_ui::RasterImage::new(
+                image.sha256.clone(),
+                openide_ui::RasterImageFormat::Png,
+                u32::try_from(image.size_bytes).ok()?,
+                image.base64.clone(),
+                "Vista del navegador del proyecto",
+            )
+            .map(openide_ui::RasterImage::full_resolution)
+        });
+        // None removes a failed/stale viewport instead of keeping it clickable.
+        self.view.browser.image = image;
+        self.view.browser.generation = snapshot.generation;
+        self.view.browser.url = snapshot.url;
+        self.view.browser.title = snapshot.title;
+        self.view.browser.viewport_width = snapshot.viewport_width;
+        self.view.browser.viewport_height = snapshot.viewport_height;
+        self.view.browser.loading = loading;
+        self.view.browser.navigating = navigating;
+        self.view.browser.started = snapshot.started;
+        self.view.browser.error = snapshot.error;
+        self.view.browser.dependency_missing = snapshot.dependency_missing;
+        self.view.browser.can_go_back = snapshot.can_go_back;
+        self.view.browser.can_go_forward = snapshot.can_go_forward;
+        self.view.browser.installing = self.browser_installing;
+        true
+    }
+
+    fn update_browser(&mut self, ctx: &egui::Context) -> bool {
+        let mut changed = false;
+        self.browser_inputs
+            .retain(|id, _| self.dock.contains_tab(*id));
+        self.browsers.retain(|id, _| self.dock.contains_tab(*id));
+        self.browser_starts
+            .retain(|id, _| self.dock.contains_tab(*id));
+        self.browser_requests
+            .retain(|id, _| self.dock.contains_tab(*id));
+        self.browser_restart_urls
+            .retain(|id, _| self.dock.contains_tab(*id));
+        let starts: Vec<_> = self
+            .browser_starts
+            .iter()
+            .filter_map(|(id, receiver)| match receiver.try_recv() {
+                Ok(result) => Some((*id, result)),
+                Err(TryRecvError::Disconnected) => {
+                    Some((*id, Err("El worker de navegador cerró la solicitud".into())))
+                }
+                Err(TryRecvError::Empty) => None,
+            })
+            .collect();
+        for (id, result) in starts {
+            self.browser_starts.remove(&id);
+            if !self.dock.contains_tab(id) {
+                continue;
+            }
+            match result {
+                Ok(runtime) => {
+                    self.browsers.insert(id, runtime);
+                }
+                Err(error) if self.view.browser.tab_id == Some(id) => {
+                    self.view.browser.loading = false;
+                    self.view.browser.error = Some(error);
+                }
+                Err(_) => {}
+            }
+            changed = true;
+        }
+        // Startup runs asynchronously. Reopen the address only after the new
+        // context is ready, including if another browser tab became active.
+        let ready: Vec<_> = self
+            .browser_restart_urls
+            .keys()
+            .copied()
+            .filter(|id| {
+                self.browsers
+                    .get(id)
+                    .is_some_and(|runtime| runtime.snapshot().started)
+            })
+            .collect();
+        for id in ready {
+            if let (Some(url), Some(runtime)) = (
+                self.browser_restart_urls.remove(&id),
+                self.browsers.get(&id),
+            ) {
+                match runtime.submit_ui(crate::browser_runtime::BrowserCommand::Navigate { url }) {
+                    Ok(request) => self.browser_requests.entry(id).or_default().push(request),
+                    Err(error) if self.view.browser.tab_id == Some(id) => {
+                        self.view.browser.error = Some(error)
+                    }
+                    Err(_) => {}
+                }
+                changed = true;
+            }
+        }
+        let active = self.active_browser_id();
+        let mut clipboard_results = Vec::new();
+        for (id, requests) in &mut self.browser_requests {
+            requests.retain_mut(|request| match request.poll() {
+                Some(Err(error)) => {
+                    if Some(*id) == active {
+                        self.view.browser.error = Some(error);
+                        changed = true;
+                    }
+                    false
+                }
+                Some(Ok(snapshot)) => {
+                    if request.clipboard_operation().is_some() {
+                        clipboard_results.push((*id, request.clipboard_operation(), snapshot));
+                    }
+                    false
+                }
+                None => true,
+            });
+        }
+        self.browser_requests
+            .retain(|_, requests| !requests.is_empty());
+        for (id, operation, snapshot) in clipboard_results {
+            self.complete_browser_clipboard(id, operation, &snapshot, ctx);
+        }
+        let queued: Vec<_> = self.browser_inputs.keys().copied().collect();
+        for id in queued {
+            self.drain_browser_inputs(id);
+        }
+        if let Some(receiver) = &self.browser_install_response {
+            let result = match receiver.try_recv() {
+                Ok(result) => Some(result),
+                Err(TryRecvError::Disconnected) => Some(Err(
+                    "El instalador de navegador terminó sin resultado".into(),
+                )),
+                Err(TryRecvError::Empty) => None,
+            };
+            if let Some(result) = result {
+                self.browser_install_response = None;
+                self.browser_installing = false;
+                self.view.browser.installing = false;
+                match result {
+                    Ok(()) => {
+                        self.view.status = "Navegador instalado".into();
+                        // Retry only dependency startup, never a modifying page
+                        // action whose result could already have taken effect.
+                        let ids: Vec<_> = self
+                            .browsers
+                            .iter()
+                            .filter(|(_, runtime)| runtime.snapshot().dependency_missing)
+                            .map(|(id, _)| *id)
+                            .collect();
+                        for id in ids {
+                            if self
+                                .browser_requests
+                                .get(&id)
+                                .is_some_and(|requests| requests.len() >= 16)
+                            {
+                                continue;
+                            }
+                            if let Some(runtime) = self.browsers.get(&id) {
+                                if let Ok(request) =
+                                    runtime.submit(crate::browser_runtime::BrowserCommand::Snapshot)
+                                {
+                                    self.browser_requests.entry(id).or_default().push(request);
+                                }
+                            }
+                        }
+                        self.view.browser.error = None;
+                        self.sync_browser_tab();
+                    }
+                    Err(error) => {
+                        self.view.status = format!("No se pudo instalar el navegador: {error}");
+                        if !self.view.browser.started || self.view.browser.dependency_missing {
+                            self.view.browser.error = Some(error);
+                        }
+                    }
+                }
+                changed = true;
+            }
+        }
+        let previous_tab = self.view.browser.tab_id;
+        let previous_generation = self.view.browser.generation;
+        let previous_loading = self.view.browser.loading;
+        let previous_navigating = self.view.browser.navigating;
+        let previous_queued_inputs = self.view.browser.queued_inputs;
+        self.sync_browser_tab();
+        self.update_browser_queue_count();
+        changed |= previous_tab != self.view.browser.tab_id
+            || previous_queued_inputs != self.view.browser.queued_inputs
+            || previous_generation != self.view.browser.generation
+            || previous_loading != self.view.browser.loading
+            || previous_navigating != self.view.browser.navigating;
+        if self.resource_pane_visible()
+            && !self.view.show_settings
+            && self.view.main_page == MainPage::Workspace
+        {
+            if let Some(id) = active {
+                let (width, height) = self.browser_dimensions();
+                let idle = self
+                    .browser_requests
+                    .get(&id)
+                    .is_none_or(|requests| requests.is_empty());
+                let resize = idle
+                    && self.browsers.get(&id).is_some_and(|runtime| {
+                        let snapshot = runtime.snapshot();
+                        snapshot.started
+                            && !snapshot.loading
+                            && (snapshot.viewport_width != width
+                                || snapshot.viewport_height != height)
+                    });
+                if resize {
+                    // One in-flight resize at most. After it completes, compare
+                    // the confirmed viewport against the latest dock bounds.
+                    self.submit_browser_command(crate::browser_runtime::BrowserCommand::Resize {
+                        width,
+                        height,
+                    });
+                    changed = true;
+                }
+            }
+        }
+        if !self.browser_starts.is_empty()
+            || !self.browser_requests.is_empty()
+            || !self.browser_inputs.is_empty()
+            || self.browser_installing
+        {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        } else if active.is_some()
+            && self.resource_pane_visible()
+            && !self.view.show_settings
+            && self.view.main_page == MainPage::Workspace
+        {
+            ctx.request_repaint_after(Duration::from_millis(150));
+        }
+        changed
+    }
+
+    fn submit_browser_command(&mut self, command: crate::browser_runtime::BrowserCommand) {
+        let _ = self.try_submit_browser_command(command);
+    }
+
+    fn try_submit_browser_command(
+        &mut self,
+        command: crate::browser_runtime::BrowserCommand,
+    ) -> bool {
+        let Some(id) = self.active_browser_id() else {
+            return false;
+        };
+        self.enqueue_browser_input(id, command)
+    }
+
+    fn navigate_browser(&mut self, value: &str) {
+        let value = value.trim();
+        if value.is_empty() {
+            return;
+        }
+        let url = if value == "about:blank" || value.contains("://") {
+            value.to_owned()
+        } else if value.starts_with("localhost")
+            || value.starts_with("127.")
+            || value.starts_with("[::1]")
+        {
+            format!("http://{value}")
+        } else {
+            format!("https://{value}")
+        };
+        self.view.browser.url_draft = url.clone();
+        self.tree.set_input_value("browser_url", &url);
+        self.submit_browser_command(crate::browser_runtime::BrowserCommand::Navigate { url });
+    }
+
+    fn restart_browser(&mut self) {
+        let Some(id) = self.active_browser_id() else {
+            return;
+        };
+        self.browser_requests.remove(&id);
+        self.browser_inputs.remove(&id);
+        self.browser_starts.remove(&id);
+        self.browsers.remove(&id);
+        let draft = self.view.browser.url_draft.clone();
+        let target = if draft.trim().is_empty() {
+            &self.view.browser.url
+        } else {
+            &draft
+        };
+        if let Some(url) = browser_restart_url(target) {
+            self.browser_restart_urls.insert(id, url);
+        } else {
+            self.browser_restart_urls.remove(&id);
+        }
+        self.view.browser = crate::browser_ui::BrowserUiState {
+            tab_id: Some(id),
+            url_draft: draft,
+            installing: self.browser_installing,
+            ..Default::default()
+        };
+        self.sync_browser_tab();
+    }
+
+    fn install_browser(&mut self) {
+        if self.browser_installing || self.active_browser_id().is_none() {
+            return;
+        }
+        let root = self.data_root.clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        match std::thread::Builder::new()
+            .name("openide-browser-install".into())
+            .spawn(move || {
+                let _ = sender.send(crate::browser_runtime::install_runtime(&root));
+            }) {
+            Ok(_) => {
+                self.browser_installing = true;
+                self.view.browser.installing = true;
+                self.browser_install_response = Some(receiver);
+            }
+            Err(error) => {
+                self.view.browser.error = Some(format!("No pudo iniciar el instalador: {error}"));
+            }
+        }
+    }
+
+    fn copy_browser_mcp_config(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.active_browser_id() else {
+            return;
+        };
+        let Some(runtime) = self.browsers.get(&id) else {
+            return;
+        };
+        let config = runtime.external_mcp_config();
+        let env: BTreeMap<_, _> = config
+            .env
+            .iter()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().into_owned(),
+                    value.to_string_lossy().into_owned(),
+                )
+            })
+            .collect();
+        let args: Vec<_> = config
+            .args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let value = serde_json::json!({"mcpServers":{"openide_browser":{
+            "command":config.command.to_string_lossy(), "args":args, "env":env,
+        }}});
+        if let Ok(value) = serde_json::to_string_pretty(&value) {
+            // The capability token reaches the clipboard only after this
+            // explicit button action. Never include it in status/journal/logs.
+            ctx.copy_text(value);
+            self.view.status =
+                "Conexión MCP copiada; estará disponible mientras esta pestaña permanezca abierta"
+                    .into();
+        }
+    }
+
+    fn browser_viewport_rect(&self) -> Option<openide_ui::Rect> {
+        let current = self.view.browser.image.as_ref()?;
+        self.tree
+            .frame()
+            .commands
+            .iter()
+            .rev()
+            .find_map(|command| match command {
+                openide_ui::DrawCommand::RasterImage { rect, image, .. }
+                    if image.sha256() == current.sha256() =>
+                {
+                    let width = self.view.browser.viewport_width.max(1) as f32;
+                    let height = self.view.browser.viewport_height.max(1) as f32;
+                    let scale = (rect.width / width).min(rect.height / height).min(1.0);
+                    let fitted_width = width * scale;
+                    let fitted_height = height * scale;
+                    Some(openide_ui::Rect::new(
+                        rect.x + (rect.width - fitted_width) * 0.5,
+                        rect.y + (rect.height - fitted_height) * 0.5,
+                        fitted_width,
+                        fitted_height,
+                    ))
+                }
+                _ => None,
+            })
+    }
+
+    fn handle_browser_event(&mut self, event: &UiEvent) -> bool {
+        use crate::browser_runtime::BrowserCommand;
+        use openide_ui::Key;
+        if self.active_browser_id().is_none()
+            || !self.resource_pane_visible()
+            || self.view.show_settings
+            || self.view.show_command_center
+            || self.view.main_page != MainPage::Workspace
+            || self.tree.has_open_popover()
+            || !self.tree.frame().regions.iter().any(|region| region.id == "browser_viewport")
+            || self.view.browser.image.is_none()
+            || !self.view.browser.started
+        {
+            return false;
+        }
+        let backend = self
+            .active_browser_id()
+            .and_then(|id| self.browsers.get(&id))
+            .map(|runtime| runtime.snapshot());
+        let navigating = self.view.browser.navigating
+            || backend.as_ref().is_some_and(|snapshot| {
+                snapshot.navigating || snapshot.url != self.view.browser.url
+            });
+        if let UiEvent::PointerDown(position)
+        | UiEvent::PointerDownModified { position, .. }
+        | UiEvent::PointerDownEditor { position, .. } = event
+        {
+            if self.tree.frame().hit_test(*position) == Some("browser_viewport") {
+                if navigating {
+                    return true;
+                }
+                let painted = self
+                    .view
+                    .browser
+                    .image
+                    .as_ref()
+                    .map(openide_ui::RasterImage::sha256);
+                if backend
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.screenshot.as_ref())
+                    .map(|image| image.sha256.as_str())
+                    != painted
+                {
+                    return true;
+                }
+                // Hit regions are clipped by the containing ScrollArea. The
+                // painted raster's original bounds retain the page origin.
+                let Some(rect) = self.browser_viewport_rect() else {
+                    return false;
+                };
+                if rect.width <= 0.0 || rect.height <= 0.0 {
+                    return false;
+                }
+                let x = f64::from((position.x - rect.x) / rect.width)
+                    * f64::from(self.view.browser.viewport_width);
+                let y = f64::from((position.y - rect.y) / rect.height)
+                    * f64::from(self.view.browser.viewport_height);
+                if !x.is_finite()
+                    || !y.is_finite()
+                    || x < 0.0
+                    || y < 0.0
+                    || x >= f64::from(self.view.browser.viewport_width)
+                    || y >= f64::from(self.view.browser.viewport_height)
+                {
+                    return true;
+                }
+                self.tree.focus("browser_viewport");
+                return self.try_submit_browser_command(BrowserCommand::Click { x, y });
+            }
+        }
+        if let UiEvent::PointerUp(position) = event {
+            if self.tree.frame().hit_test(*position) == Some("browser_viewport") {
+                return true;
+            }
+        }
+        if let Some((position, delta_x, delta_y)) = browser_scroll_delta(event) {
+            if self.tree.frame().hit_test(position) == Some("browser_viewport") {
+                if navigating {
+                    return true;
+                }
+                let Some(painted) = self.browser_viewport_rect().filter(|rect| rect.contains(position)) else { return true; };
+                let scale = Some(painted)
+                    .map(|rect| {
+                        f64::from(self.view.browser.viewport_width) / f64::from(rect.width.max(1.0))
+                    })
+                    .unwrap_or(1.0);
+                return self.try_submit_browser_command(BrowserCommand::Scroll {
+                    dx: (-f64::from(delta_x) * scale).clamp(-100_000.0, 100_000.0),
+                    dy: (-f64::from(delta_y) * scale).clamp(-100_000.0, 100_000.0),
+                });
+            }
+        }
+        if self.tree.focused_id() != Some("browser_viewport") {
+            return false;
+        }
+        if navigating {
+            return matches!(
+                event,
+                UiEvent::Text(_) | UiEvent::Paste(_) | UiEvent::ImeCommit(_) | UiEvent::Key { .. }
+            );
+        }
+        match event {
+            UiEvent::Text(text) | UiEvent::Paste(text) | UiEvent::ImeCommit(text) => {
+                self.try_submit_browser_command(BrowserCommand::Type { text: text.clone() })
+            }
+            UiEvent::Key { key, shift, ctrl } => {
+                if *ctrl && matches!(key, Key::C | Key::X) {
+                    return self.try_submit_browser_command(if *key == Key::C {
+                        BrowserCommand::CopySelection
+                    } else {
+                        BrowserCommand::PrepareCut
+                    });
+                }
+                let basic = match key {
+                    Key::Escape => Some("Escape"),
+                    Key::Tab => Some("Tab"),
+                    Key::ArrowLeft => Some("ArrowLeft"),
+                    Key::ArrowRight => Some("ArrowRight"),
+                    Key::ArrowUp => Some("ArrowUp"),
+                    Key::ArrowDown => Some("ArrowDown"),
+                    Key::Home => Some("Home"),
+                    Key::End => Some("End"),
+                    Key::PageUp => Some("PageUp"),
+                    Key::PageDown => Some("PageDown"),
+                    Key::Backspace => Some("Backspace"),
+                    Key::Delete => Some("Delete"),
+                    Key::Enter => Some("Enter"),
+                    // Ordinary printable characters arrive as UiEvent::Text;
+                    // forwarding both would duplicate letters and spaces.
+                    Key::Space if *ctrl => Some("Space"),
+                    _ => None,
+                };
+                let letter = if *ctrl && basic.is_none() {
+                    Some(format!("{key:?}"))
+                } else {
+                    None
+                };
+                if let Some(value) = basic.map(str::to_owned).or(letter) {
+                    let key = format!(
+                        "{}{}{value}",
+                        if *ctrl { "Control+" } else { "" },
+                        if *shift { "Shift+" } else { "" }
+                    );
+                    return self.try_submit_browser_command(BrowserCommand::Press { key });
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn ensure_dock_tabs(&mut self) {
         self.view.show_dock_add_menu = false;
         let scope = self.dock_scope();
@@ -2477,52 +4891,93 @@ impl AgentsWindow {
         {
             let collapsed = self.dock.is_collapsed(&scope);
             let workspace_scope = DockScope::new(scope.workspace_id.clone(), DockOwner::Workspace);
-            let context = self.dock.open(&workspace_scope, DockTabKind::Context);
-            self.dock.open(&workspace_scope, DockTabKind::Files);
-            self.dock.open(&scope, DockTabKind::Activity);
-            self.dock.open(&workspace_scope, DockTabKind::CodeReview);
-            self.dock.activate(&scope, context);
+            let files = self.dock.open(&workspace_scope, DockTabKind::Files);
+            self.dock.activate(&scope, files);
+            self.refresh_file_rows();
             self.dock.set_collapsed(&scope, collapsed);
         }
         self.sync_dock_view();
     }
 
     fn sync_dock_view(&mut self) {
+        self.view.show_dock_tabs_menu = false;
         let scope = self.dock_scope();
-        let live_terminals: HashSet<u64> = self
-            .dock
-            .visible_tabs(&scope)
-            .into_iter()
-            .filter(|tab| matches!(tab.kind, DockTabKind::Terminal))
-            .map(|tab| tab.id.get())
-            .collect();
-        self.terminals.retain(|id, _| live_terminals.contains(id));
+        self.terminals.retain(|id, _| self.dock.contains_tab(*id));
+        self.prune_external_grants();
+        self.browsers.retain(|id, _| self.dock.contains_tab(*id));
+        self.browser_starts
+            .retain(|id, _| self.dock.contains_tab(*id));
+        self.browser_requests
+            .retain(|id, _| self.dock.contains_tab(*id));
+        self.browser_restart_urls
+            .retain(|id, _| self.dock.contains_tab(*id));
         let active = self.dock.active_tab(&scope).cloned();
         let previous_terminal = self
             .view
-            .dock_tabs
+            .terminal_tabs
             .iter()
-            .find(|tab| tab.active && matches!(tab.kind, SideTab::Terminal))
+            .find(|tab| tab.active)
             .map(|tab| tab.id);
-        let next_terminal = active
-            .as_ref()
-            .filter(|tab| matches!(tab.kind, DockTabKind::Terminal))
+        let next_terminal = self.dock.active_terminal(&scope)
             .map(|tab| tab.id.get());
         if previous_terminal != next_terminal {
+            self.terminal_focus_pending = next_terminal.is_some();
             self.view.terminal_input.clear();
             self.tree.set_input_value("terminal_input", "");
         }
-        let active_review_workspace = active.as_ref().and_then(|tab| {
-            matches!(tab.kind, DockTabKind::CodeReview).then(|| PathBuf::from(&scope.workspace_id))
-        });
-        let review_changed = active_review_workspace != self.review_active_workspace;
+        let active_review_workspace = Some(PathBuf::from(&scope.workspace_id));
+        let review_changed = active_review_workspace != self.review_active_workspace
+            || active
+                .as_ref()
+                .is_some_and(|tab| matches!(tab.kind, DockTabKind::CodeReview))
+                && self.view.side_tab != SideTab::CodeReview;
+        let mut title_counts = HashMap::<String, usize>::new();
+        for tab in self.dock.right_tabs(&scope) {
+            if matches!(tab.kind, DockTabKind::FilePreview { .. }) {
+                *title_counts.entry(tab.title()).or_default() += 1;
+            }
+        }
         self.view.dock_tabs = self
             .dock
-            .visible_tabs(&scope)
+            .right_tabs(&scope)
             .into_iter()
             .map(|tab| DockTabView {
+                full_path: match &tab.kind {
+                    DockTabKind::FilePreview { path } => Some(
+                        Path::new(&scope.workspace_id)
+                            .join(path)
+                            .to_string_lossy()
+                            .into_owned(),
+                    ),
+                    _ => None,
+                },
                 id: tab.id.get(),
-                title: tab.title(),
+                title: match &tab.kind {
+                    DockTabKind::FilePreview { path }
+                        if title_counts.get(&tab.title()).copied().unwrap_or(0) > 1 =>
+                    {
+                        format!(
+                            "{} · {}",
+                            tab.title(),
+                            path.parent()
+                                .filter(|p| !p.as_os_str().is_empty())
+                                .map(|p| p.to_string_lossy())
+                                .unwrap_or_else(|| "Raíz".into())
+                        )
+                    }
+                    // In the IDE a diff is a document named after its file.
+                    DockTabKind::CodeReview if crate::ide_workspace::active(&self.view) => self
+                        .view
+                        .review_detail
+                        .as_ref()
+                        .and_then(|detail| {
+                            Path::new(&detail.path)
+                                .file_name()
+                                .map(|name| name.to_string_lossy().into_owned())
+                        })
+                        .unwrap_or_else(|| tab.title()),
+                    _ => tab.title(),
+                },
                 active: active
                     .as_ref()
                     .is_some_and(|selected| selected.id == tab.id),
@@ -2531,15 +4986,36 @@ impl AgentsWindow {
                     DockTabKind::Files => SideTab::Files,
                     DockTabKind::Activity => SideTab::Activity,
                     DockTabKind::CodeReview => SideTab::CodeReview,
+                    DockTabKind::SessionChanges => SideTab::SessionChanges,
                     DockTabKind::Terminal => SideTab::Terminal,
+                    DockTabKind::Browser => SideTab::Browser,
                     DockTabKind::FilePreview { .. } => SideTab::FilePreview,
+                    DockTabKind::CodeSnapshot { .. } => SideTab::CodeSnapshot,
                 },
-                closable: matches!(
-                    tab.kind,
-                    DockTabKind::FilePreview { .. } | DockTabKind::Terminal
-                ),
+                closable: true,
             })
             .collect();
+        self.view.terminal_tabs = self.dock.terminal_tabs(&scope).into_iter().enumerate().map(|(index, tab)| DockTabView {
+            id: tab.id.get(),
+            title: format!("Terminal {}", index + 1),
+            full_path: Some(scope.workspace_id.clone()),
+            kind: SideTab::Terminal,
+            active: next_terminal == Some(tab.id.get()),
+            closable: true,
+        }).collect();
+        self.sync_terminal_controls_view();
+        // A CLI task has nothing else to show, so its terminal cannot be hidden.
+        self.view.show_terminal_panel = next_terminal.is_some()
+            && (!self.dock.is_terminal_collapsed(&scope) || crate::view::cli_task(&self.view));
+        if self.view.show_terminal_panel {
+            // All terminal entry points (profiles, restore, project actions)
+            // select its shared bottom surface without leaving Problems open.
+            self.view.ide.bottom_panel = crate::ide_workspace::IdeBottomPanel::Terminal;
+            self.view.ide.bottom_open = false;
+        }
+        self.view.terminal_maximized = self.dock.is_terminal_maximized(&scope);
+        self.view.terminal_panel_height = self.dock.preferred_terminal_height_px(&scope.workspace_id);
+        self.view.terminal_menu_open = false;
         self.view.dock_recently_closed = self
             .dock
             .recently_closed(&scope)
@@ -2552,18 +5028,26 @@ impl AgentsWindow {
                     DockTabKind::Files => SideTab::Files,
                     DockTabKind::Activity => SideTab::Activity,
                     DockTabKind::CodeReview => SideTab::CodeReview,
+                    DockTabKind::SessionChanges => SideTab::SessionChanges,
                     DockTabKind::Terminal => SideTab::Terminal,
+                    DockTabKind::Browser => SideTab::Browser,
                     DockTabKind::FilePreview { .. } => SideTab::FilePreview,
+                    DockTabKind::CodeSnapshot { .. } => SideTab::CodeSnapshot,
                 },
                 restorable: entry.restorable,
             })
             .collect();
         self.view.show_side_pane = !self.dock.is_collapsed(&scope);
-        let available = self.viewport_width - self.nominal_dock_layout().left - 12.0;
+        if self.view.show_side_pane && self.view.environment.open {
+            // Utility panes and the environment occupy the same side of chat.
+            // Keep this in dock synchronization so every open/restore path agrees.
+            self.close_environment();
+        }
+        let available = self.viewport_width - dock_layout(&self.view, self.viewport_width).left - 12.0;
         self.view.right_dock_width = Some(self.dock.width_px(&scope.workspace_id, available));
         let previous_preview = self.view.file_preview.take();
         self.view.terminal_snapshot = None;
-        self.view.terminal_error = None;
+        if previous_terminal != next_terminal { self.view.terminal_error = None; }
         if active_review_workspace.is_none() {
             self.review_active_workspace = None;
             self.review_in_flight = false;
@@ -2585,7 +5069,10 @@ impl AgentsWindow {
                 DockTabKind::Files => SideTab::Files,
                 DockTabKind::Activity => SideTab::Activity,
                 DockTabKind::CodeReview => SideTab::CodeReview,
+                DockTabKind::SessionChanges => SideTab::SessionChanges,
                 DockTabKind::Terminal => SideTab::Terminal,
+                DockTabKind::Browser => SideTab::Browser,
+                DockTabKind::CodeSnapshot { .. } => SideTab::CodeSnapshot,
                 DockTabKind::FilePreview { path } => {
                     let path_text = path.to_string_lossy().into_owned();
                     self.view.file_preview = match previous_preview {
@@ -2601,26 +5088,28 @@ impl AgentsWindow {
                             content: None,
                         }),
                     };
-                    if self.view.file_preview.as_ref().is_some_and(|preview| preview.content.is_none())
-                        && self.detail_request.as_ref().is_none_or(|request| !matches!(&request.kind, DetailKind::Preview { path: requested, page } if requested == path && *page == self.view.file_preview.as_ref().unwrap().page_index))
-                    {
-                        self.request_file_preview();
-                    }
+                    // The document worker owns file reads and rope construction.
+                    // Do not also scan the same file into the retired paged preview.
                     SideTab::FilePreview
                 }
             };
         }
-        if let Some(id) = self.active_terminal_id() {
-            self.ensure_terminal_session(id);
-            if let Some(session) = self.terminals.get(&id) {
-                self.view.terminal_snapshot = Some(session.snapshot());
+        if self.view.show_terminal_panel {
+            for id in self.visible_terminal_ids() { self.ensure_terminal_session(id); }
+            if let Some(id) = self.active_terminal_id() {
+                self.view.terminal_snapshot = self.terminals.get(&id).map(TerminalSession::snapshot);
+                self.view.terminal_error = self.terminal_controls_host.errors.get(&id).cloned();
             }
         }
+        self.refresh_terminal_panes();
         if review_changed {
             if let Some(workspace) = active_review_workspace {
                 self.request_git_review(workspace);
             }
         }
+        self.sync_browser_tab();
+        self.sync_code_editor();
+        self.sync_code_snapshots();
     }
 
     fn queue_detail(&mut self, kind: DetailKind) {
@@ -2669,7 +5158,8 @@ impl AgentsWindow {
         let Some(detail) = &mut self.view.review_detail else {
             return;
         };
-        detail.content = None;
+        // Retain the current virtualized editor while refreshing this file;
+        // the generation check replaces it only with the matching result.
         let path = PathBuf::from(&detail.path);
         let stage = detail.stage;
         self.queue_detail(DetailKind::Diff { path, stage });
@@ -2708,6 +5198,10 @@ impl AgentsWindow {
     }
 
     fn open_files_dock(&mut self) {
+        if self.ide_workspace_active() {
+            self.open_ide_explorer();
+            return;
+        }
         self.view.show_dock_add_menu = false;
         self.refresh_file_rows();
         let scope = self.dock_scope();
@@ -2730,21 +5224,34 @@ impl AgentsWindow {
     }
 
     fn request_git_review(&mut self, workspace: PathBuf) {
-        self.view.review_detail = None;
+        let same_workspace = self.review_active_workspace.as_ref() == Some(&workspace);
+        // Keep the visible list and its scroll position while a background
+        // refresh runs. Switching repositories must still clear stale data.
+        if !same_workspace {
+            self.view.review_detail = None;
+            self.view.git_review = None;
+            self.view.review_page = 0;
+        }
         self.review_generation = self.review_generation.wrapping_add(1);
         self.review_active_workspace = Some(workspace.clone());
-        self.view.git_review = None;
-        self.view.review_page = 0;
-        self.github_status = GithubStatus::Loading;
-        self.github_in_flight = self.github_worker.as_ref().is_some_and(|worker| {
-            worker
-                .submit(GithubRequest {
-                    workspace: workspace.clone(),
-                    generation: self.review_generation,
-                })
-                .is_ok()
-        });
-        if !self.github_in_flight {
+        if !same_workspace {
+            self.github_status = if self.view.side_tab == SideTab::CodeReview {
+                GithubStatus::Loading
+            } else {
+                GithubStatus::NoRemote
+            };
+        }
+        self.github_in_flight = self.view.side_tab == SideTab::CodeReview
+            && self.github_worker.as_ref().is_some_and(|worker| {
+                worker
+                    .submit(GithubRequest {
+                        workspace: workspace.clone(),
+                        generation: self.review_generation,
+                        account: self.github_query_account().map(str::to_owned),
+                    })
+                    .is_ok()
+            });
+        if self.view.side_tab == SideTab::CodeReview && !self.github_in_flight {
             self.github_status =
                 GithubStatus::Unavailable("No se pudo iniciar la consulta de GitHub".to_owned());
         }
@@ -2762,21 +5269,154 @@ impl AgentsWindow {
         }
     }
 
+    fn request_session_changes(&mut self) {
+        let selected = self.view.selected_session.clone();
+        self.view.session_changes.generation = self.view.session_changes.generation.wrapping_add(1);
+        self.view.session_changes.workspace = Some(PathBuf::from(&self.view.workspace));
+        self.view.session_changes.session_id = selected.clone();
+        let Some(session_id) = selected else {
+            self.view.session_changes.loading = false;
+            self.view.session_changes.result = None;
+            self.view.environment.changes = crate::environment_ui::SessionChangesSummaryView {
+                notice: Some("Inicia una conversación para ver sus cambios".into()),
+                ..Default::default()
+            };
+            return;
+        };
+        let request =
+            self.store
+                .as_ref()
+                .map(|store| crate::session_changes::SessionChangesRequest {
+                    storage_root: store.storage_root().to_path_buf(),
+                    workspace: PathBuf::from(&self.view.workspace),
+                    session_id,
+                    generation: self.view.session_changes.generation,
+                    events: None,
+                });
+        let submitted = request
+            .and_then(|request| {
+                self.session_changes_worker
+                    .as_ref()
+                    .map(|worker| worker.submit(request))
+            })
+            .unwrap_or_else(|| {
+                Err(std::io::Error::other(
+                    "El registro de cambios no está disponible",
+                ))
+            });
+        match submitted {
+            Ok(()) => {
+                self.view.session_changes.loading = true;
+                self.view.environment.changes.loading = true;
+            }
+            Err(error) => {
+                self.view.session_changes.loading = false;
+                self.view.session_changes.result = Some(Err(error.to_string()));
+                self.view.environment.changes = crate::environment_ui::SessionChangesSummaryView {
+                    notice: Some(error.to_string()),
+                    ..Default::default()
+                };
+            }
+        }
+        self.environment_last_refresh = Instant::now();
+    }
+
+    fn update_environment(&mut self, ctx: &egui::Context) -> bool {
+        let workspace = PathBuf::from(&self.view.workspace);
+        let scope_changed = self.view.session_changes.workspace.as_ref() != Some(&workspace)
+            || self.view.session_changes.session_id != self.view.selected_session;
+        let mut changed = false;
+        if self.view.environment.open
+            && (self.view.show_settings
+                || self.view.show_command_center
+                || self.view.main_page != MainPage::Workspace)
+        {
+            self.close_environment();
+            changed = true;
+        }
+        if scope_changed {
+            self.view.session_changes.result = None;
+            self.view.session_changes.selected_file = None;
+            self.view.session_changes.page = 0;
+            self.view.environment.changes = Default::default();
+            self.close_composer_floating_controls();
+            self.composer_suggestion_pending_at = None;
+            self.composer_cursor_pending = None;
+            self.request_session_changes();
+            self.environment_dirty = false;
+            changed = true;
+        } else if self.environment_dirty
+            && self.environment_last_refresh.elapsed() >= Duration::from_millis(250)
+        {
+            self.environment_dirty = false;
+            self.request_session_changes();
+            if !self.review_in_flight {
+                self.request_git_review(workspace.clone());
+            }
+            changed = true;
+        }
+        let response = self
+            .view
+            .selected_session
+            .as_deref()
+            .and_then(|session_id| {
+                self.session_changes_worker.as_ref().and_then(|worker| {
+                    worker.poll_latest(self.view.session_changes.generation, session_id, &workspace)
+                })
+            });
+        if let Some(response) = response {
+            use crate::session_changes::ChangesAvailability;
+            self.view.session_changes.loading = false;
+            self.view.environment.changes = match &response.result {
+                Ok(changes) => crate::environment_ui::SessionChangesSummaryView {
+                    loading: false,
+                    available: !matches!(
+                        changes.availability,
+                        ChangesAvailability::Unavailable { .. }
+                    ),
+                    partial: matches!(changes.availability, ChangesAvailability::Limited)
+                        || !changes.totals.exact,
+                    files: changes.totals.files,
+                    additions: changes.totals.additions,
+                    deletions: changes.totals.deletions,
+                    notice: match &changes.availability {
+                        ChangesAvailability::Unavailable { reason } => Some(reason.clone()),
+                        ChangesAvailability::Limited => {
+                            Some("Registro parcial de cambios confirmados".into())
+                        }
+                        ChangesAvailability::Complete => None,
+                    },
+                },
+                Err(error) => crate::environment_ui::SessionChangesSummaryView {
+                    notice: Some(error.clone()),
+                    ..Default::default()
+                },
+            };
+            self.view.session_changes.result = Some(response.result.map(Arc::new));
+            changed = true;
+        }
+        if self.view.session_changes.loading || self.environment_dirty {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+        changed
+    }
+
     fn update_git_review(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
+        let mut refresh_detail = false;
         if let Some(worker) = &self.github_worker {
             let workspace = self
                 .review_active_workspace
                 .as_deref()
                 .unwrap_or_else(|| Path::new(""));
-            if let Some(response) = worker.poll_latest(self.review_generation, workspace) {
+            if let Some(response) = worker.poll_latest(self.review_generation, workspace, self.github_query_account()) {
                 self.github_in_flight = false;
                 self.github_status = response
                     .overview
                     .map(GithubStatus::Ready)
                     .unwrap_or(GithubStatus::NoRemote);
                 if let Some(Ok(review)) = &mut self.view.git_review {
-                    review.github = self.github_status.clone();
+                    Arc::make_mut(review).github = self.github_status.clone();
                     changed = true;
                 }
             }
@@ -2787,20 +5427,36 @@ impl AgentsWindow {
                 .as_deref()
                 .unwrap_or_else(|| Path::new(""));
             if let Some(response) = worker.poll_latest(self.review_generation, workspace) {
-                if self.review_active_workspace.is_some()
-                    && self.view.side_tab == SideTab::CodeReview
-                {
+                if self.review_active_workspace.is_some() {
                     changed = true;
                     self.view.git_review = Some(response.result.map(|mut review| {
                         review.github = self.github_status.clone();
-                        review
+                        Arc::new(review)
                     }));
                     if let Some(Ok(review)) = &self.view.git_review {
                         self.view.project_branch = Some(review.branch.clone());
+                        // A successful fresh Git review is an observation,
+                        // never evidence inferred from command stdout.
+                        if let Some(workspace) = &self.review_active_workspace {
+                            if workspace.canonicalize().ok()
+                                == Path::new(&self.view.workspace).canonicalize().ok()
+                            {
+                                self.view.conversation_activity.observe_branch(
+                                    workspace,
+                                    self.view.selected_session.as_deref(),
+                                    &review.branch,
+                                );
+                            }
+                        }
                     }
                     self.review_in_flight = false;
+                    refresh_detail = self.view.review_detail.is_some()
+                        && matches!(self.view.git_review, Some(Ok(_)));
                 }
             }
+        }
+        if refresh_detail {
+            self.request_review_detail();
         }
         if self.review_in_flight || self.github_in_flight {
             ctx.request_repaint_after(Duration::from_millis(80));
@@ -2810,38 +5466,121 @@ impl AgentsWindow {
 
     fn update_github_account(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
-        if let Some(worker) = &self.github_account_worker {
-            if let Some((initial_probe, status)) = worker.poll_latest() {
-                // A startup probe may finish after the user has already
-                // started browser sign-in or explicit verification. It must
-                // not replace that in-flight state with a cached-account list.
-                if !(initial_probe
-                    && matches!(
-                        self.view.github_account,
-                        GithubAccountStatus::Connecting | GithubAccountStatus::Verifying(_)
-                    ))
-                {
-                    let connected = matches!(&status, GithubAccountStatus::Connected(_));
-                    changed = self.view.github_account != status
-                        || self.view.github_account_menu_open
-                        || (connected && self.review_active_workspace.is_some());
-                    self.view.github_account = status;
-                    self.view.github_account_menu_open = false;
-                    if connected {
-                        if let Some(workspace) = self.review_active_workspace.clone() {
-                            self.request_git_review(workspace);
-                        }
-                    }
-                }
-            }
-            if matches!(
+        let response = self
+            .github_account_worker
+            .as_ref()
+            .and_then(GithubAccountWorker::poll_latest);
+        if let Some((_, event)) = response {
+            changed = true;
+            self.apply_github_account_event(event);
+        }
+        if self.github_account_worker.is_some() {
+            if self.view.github_account_refreshing || matches!(
+                self.view.github_sign_in,
+                Some(
+                    GithubSignInView::Preparing
+                        | GithubSignInView::Code { .. }
+                        | GithubSignInView::Browser
+                )
+            ) || matches!(
                 self.view.github_account,
-                GithubAccountStatus::Checking
-                    | GithubAccountStatus::Connecting
-                    | GithubAccountStatus::Verifying(_)
+                GithubAccountStatus::Checking | GithubAccountStatus::Verifying(_)
             ) {
                 ctx.request_repaint_after(Duration::from_millis(80));
             }
+        }
+        changed
+    }
+
+    fn start_github_sign_in(&mut self) {
+        self.close_composer_floating_controls();
+        self.view.github_account_menu_open = false;
+        self.view.provider_usage_open = false;
+        if self.github_account_previous.is_none() {
+            self.github_account_previous = Some(self.view.github_account.clone());
+        }
+        self.view.github_account_notice = None;
+        self.view.github_account_refreshing = true;
+        self.github_sign_in_focus_pending = None;
+        self.ensure_github_account_worker();
+        self.view.github_sign_in = Some(
+            if self
+                .github_account_worker
+                .as_ref()
+                .is_some_and(GithubAccountWorker::connect)
+            {
+                GithubSignInView::Preparing
+            } else {
+                GithubSignInView::Error("No se pudo iniciar la conexión con GitHub".to_owned())
+            },
+        );
+        if matches!(self.view.github_sign_in, Some(GithubSignInView::Error(_))) {
+            self.view.github_account_refreshing = false;
+        }
+    }
+
+    fn invalidate_github_contributions(&mut self) {
+        self.github_contributions_generation = self.github_contributions_generation.wrapping_add(1);
+        self.view.github_contributions = GithubContributionsStatus::Idle;
+    }
+
+    fn request_github_contributions(&mut self) {
+        let GithubAccountStatus::Connected(identity) = &self.view.github_account else {
+            self.invalidate_github_contributions();
+            return;
+        };
+        self.github_contributions_generation = self.github_contributions_generation.wrapping_add(1);
+        self.view.github_contributions =
+            if self
+                .github_contributions_worker
+                .as_ref()
+                .is_some_and(|worker| {
+                    worker.request(&identity.login, self.github_contributions_generation)
+                })
+            {
+                GithubContributionsStatus::Loading
+            } else {
+                GithubContributionsStatus::Unavailable(
+                    "No se pudo iniciar la consulta de contribuciones".to_owned(),
+                )
+            };
+    }
+
+    fn update_github_contributions(&mut self, ctx: &egui::Context) -> bool {
+        let mut changed = false;
+        // Load on the first visit and retain the result across navigation.
+        // Reconnection and explicit refresh invalidate the request generation.
+        if self.view.show_settings
+            && self.view.settings_page == SettingsPage::Github
+            && matches!(self.view.github_account, GithubAccountStatus::Connected(_))
+            && matches!(
+                self.view.github_contributions,
+                GithubContributionsStatus::Idle
+            )
+        {
+            self.request_github_contributions();
+            changed = true;
+        }
+        let login = match &self.view.github_account {
+            GithubAccountStatus::Connected(identity) => identity.login.as_str(),
+            _ => "",
+        };
+        if let Some(response) = self
+            .github_contributions_worker
+            .as_ref()
+            .and_then(|worker| worker.poll_latest(login, self.github_contributions_generation))
+        {
+            self.view.github_contributions = match response.result {
+                Ok(calendar) => GithubContributionsStatus::Ready(calendar),
+                Err(error) => GithubContributionsStatus::Unavailable(error),
+            };
+            changed = true;
+        }
+        if matches!(
+            self.view.github_contributions,
+            GithubContributionsStatus::Loading
+        ) {
+            ctx.request_repaint_after(Duration::from_millis(80));
         }
         changed
     }
@@ -2901,11 +5640,20 @@ impl AgentsWindow {
 
     fn with_data_root(root: PathBuf) -> Self {
         let settings_preferences = SettingsPreferences::load(&root);
+        let ide = crate::ide_workspace::IdeWorkspaceState::load(&root);
         let (agent_tool_settings, agent_tool_settings_error) = match AgentToolSettings::load(&root)
         {
             Ok(settings) => (settings, None),
             Err(error) => (AgentToolSettings::default(), Some(error)),
         };
+        // An unreadable file keeps the bridge closed; the error is shared with
+        // the agent tool notice so it is visible on the first Settings visit.
+        let (external_agent_settings, external_agent_settings_error) =
+            match ExternalAgentSettings::load(&root) {
+                Ok(settings) => (settings, None),
+                Err(error) => (ExternalAgentSettings::default(), Some(error)),
+            };
+        let agent_tool_settings_error = agent_tool_settings_error.or(external_agent_settings_error);
         let (exec_policy_settings, exec_policy_load_error) = match ExecPolicySettings::load(&root) {
             Ok(settings) => (settings, None),
             Err(error) => (ExecPolicySettings::default(), Some(error)),
@@ -2918,14 +5666,21 @@ impl AgentsWindow {
             choice.model = native_settings.model_id.clone();
             composer_preferences.set("native", choice);
         }
+        // Keep the durable engine route intact for recovery and registered
+        // adapters. The picker filters the four public connection flows below;
+        // hiding a route must not replace its execution identity with blanks.
         let (catalog, catalog_load_error) = match model_catalog::load_cache(&root) {
             Ok(Some(snapshot)) => (Some(snapshot), None),
             Ok(None) => (Some(model_catalog::reviewed_seed_snapshot()), None),
             Err(error) => (Some(model_catalog::reviewed_seed_snapshot()), Some(error)),
         };
-        let catalog_should_refresh = catalog
-            .as_ref()
-            .is_none_or(|snapshot| snapshot.is_stale(Duration::from_secs(3_600)));
+        #[cfg(not(test))]
+        let catalog_should_refresh = catalog.as_ref().is_none_or(|snapshot| {
+            snapshot.is_stale(Duration::from_secs(3_600))
+                || crate::provider_connections::PROVIDERS
+                    .iter()
+                    .any(|(id, _, _)| !snapshot.providers.contains_key(*id))
+        });
         let catalog_status = catalog_load_error.map_or_else(
             || {
                 catalog.as_ref().map_or_else(
@@ -2935,6 +5690,11 @@ impl AgentsWindow {
             },
             |error| format!("Caché local inválida ({error}); usando base revisada"),
         );
+        let (native_provider_definitions, native_provider_registry_error) =
+            match provider_settings::connection_views(&root, &native_settings) {
+                Ok(definitions) => (definitions, None),
+                Err(error) => (Default::default(), Some(error)),
+            };
         let workspace = settings_preferences
             .startup_workspace()
             .map(Path::to_path_buf)
@@ -2958,7 +5718,7 @@ impl AgentsWindow {
             Ok(settings) => (settings, None),
             Err(error) => (McpSettings::default(), Some(error)),
         };
-        let (store, status) = match SessionStore::open(root.join("sessions")) {
+        let (store, mut status) = match SessionStore::open(root.join("sessions")) {
             Ok(store) => match store.recover_pending_native_deletions() {
                 Ok(0) => (Some(Arc::new(store)), "Listo".to_owned()),
                 Ok(count) => (
@@ -2972,32 +5732,60 @@ impl AgentsWindow {
             },
             Err(error) => (None, format!("No se pudo abrir el historial: {error}")),
         };
+        if let Some(store) = &store {
+            match SubagentCoordinator::new(store.clone(), SubagentLimits::default())
+                .and_then(|coordinator| coordinator.recover_registry_temporaries())
+            {
+                Ok(0) => {}
+                Ok(count) => {
+                    status = format!("{status}; se recuperaron {count} temporales de subagentes")
+                }
+                Err(error) => {
+                    status = format!("No se pudieron recuperar temporales de subagentes: {error}")
+                }
+            }
+        }
+        let native_goal_recovery = store
+            .as_ref()
+            .map(|store| {
+                openide_core::NativeGoalStore::new(store.clone())
+                    .recover_idle_sessions()
+                    .unwrap_or_else(|error| openide_core::NativeGoalRecoveryReport {
+                        diagnostics: vec![openide_core::NativeGoalRecoveryDiagnostic {
+                            session_id: String::new(),
+                            error: error.to_string(),
+                        }],
+                        ..Default::default()
+                    })
+            })
+            .unwrap_or_default();
+        if native_goal_recovery.removed_temporaries > 0 {
+            status = format!(
+                "{status}; se recuperaron {} temporales de goals",
+                native_goal_recovery.removed_temporaries
+            );
+        }
+        if !native_goal_recovery.busy_session_ids.is_empty() {
+            status = format!(
+                "{status}; mantenimiento de goals pendiente en {} sesiones ocupadas",
+                native_goal_recovery.busy_session_ids.len()
+            );
+        }
+        if !native_goal_recovery.diagnostics.is_empty() {
+            status = format!(
+                "{status}; {} goals necesitan revisión del historial",
+                native_goal_recovery.diagnostics.len()
+            );
+        }
         let (composer_goals, composer_goals_error) = match load_composer_goals(&root) {
             Ok(goals) => (goals, None),
             Err(error) => (HashMap::new(), Some(error)),
         };
         let profiles = load_profiles(&root);
-        let mut backend_options = vec![("native".to_owned(), "Nativo".to_owned())];
-        backend_options.extend(profiles.iter().filter_map(|profile| {
-            profile.detect_executable()?;
-            let short = match profile.id.as_str() {
-                "codex" => "Codex",
-                "claude" => "Claude",
-                "gemini" => "Gemini",
-                "zcode" => "ZCode",
-                _ => &profile.label,
-            };
-            Some((profile.id.clone(), short.to_owned()))
-        }));
-        let selected_backend = composer_preferences
-            .selected_backend()
-            .filter(|preferred| {
-                backend_options
-                    .iter()
-                    .any(|(available, _)| available == preferred)
-            })
-            .map(str::to_owned)
-            .unwrap_or_else(|| "native".to_owned());
+        // Old CLI sessions remain readable. Every new conversation uses our
+        // harness, independently of installed executables or old preferences.
+        let backend_options = vec![("native".to_owned(), "Nativo".to_owned())];
+        let selected_backend = "native".to_owned();
         let native_model = if root.join("native-provider.json").exists() {
             native_settings.model_id.clone()
         } else {
@@ -3017,12 +5805,6 @@ impl AgentsWindow {
         )
         .unwrap_or_else(|_| {
             composer_selection::model_route_options(catalog.as_ref(), &native_settings)
-        });
-        selected_routes.retain(|route| {
-            route.backend == "native"
-                || backend_options
-                    .iter()
-                    .any(|(backend, _)| backend == &route.backend)
         });
         let selected_effort_options = selected_routes
             .iter()
@@ -3051,43 +5833,82 @@ impl AgentsWindow {
                 .map(|(effort, _)| effort.clone())
                 .unwrap_or_else(|| "default".to_owned())
         };
+        selected_routes.retain(|route| {
+            route.backend == "native" && crate::provider_connections::supported(&route.provider_id)
+        });
+        let composer_model_metadata =
+            crate::model_metadata::for_routes(&selected_routes, catalog.as_ref(), &[], &[]);
         let view = ViewState {
             workspace: workspace.clone(),
             workspace_draft: workspace.clone(),
             project_branch: project_branch_for_workspace(&workspace),
+            composer_branches: Default::default(),
             prompt: String::new(),
             composer_attachments: Vec::new(),
+            composer_attachment_visuals: Default::default(),
+            composer_attachment_loading: false,
+            composer_image_viewer: None,
             composer_add_menu_open: false,
             composer_listening: false,
+            composer_expanded: false,
             composer_goal: None,
             composer_goal_editor_open: false,
             composer_goal_draft: String::new(),
+            native_goal: Default::default(),
+            native_instructions: Default::default(),
+            native_context: Default::default(),
+            composer_permissions_open: false,
+            composer_full_access_confirm: None,
+            composer_suggestions: Default::default(),
             composer_project_menu_open: false,
+            environment: Default::default(),
+            environment_presentation_progress: None,
+            project_actions: Default::default(),
             composer_project_options: composer_project_options(&workspace, &[]),
             endpoint: native_settings.custom_endpoint.clone(),
             model: native_choice.model,
             native_provider_id: native_settings.provider_id.clone(),
+            native_output_limit_draft: String::new(),
+            native_output_limit_field: String::new(),
+            native_output_limit_responses: false,
+            native_output_limit_messages: false,
+            native_output_limit_load_error: None,
             hosted_web_search_mode: settings_preferences.hosted_web_search_mode,
             catalog: catalog.map(Arc::new),
             catalog_status,
             catalog_refreshing: false,
-            catalog_browse_provider: if native_settings.provider_id == "custom" {
-                "openai".to_owned()
-            } else {
-                native_settings.provider_id.clone()
-            },
+            provider_connections: crate::provider_connections::summaries(&root),
+            provider_usage: crate::provider_usage::initial_snapshots(
+                &root,
+                &native_provider_definitions,
+            ),
+            provider_usage_open: false,
+            provider_usage_refreshing: false,
+            provider_connect: None,
+            catalog_browse_provider: String::new(),
             catalog_provider_query: String::new(),
             catalog_model_query: String::new(),
+            catalog_models_filter: CatalogModelsFilter::All,
+            catalog_settings_tab: CatalogSettingsTab::Models,
+            catalog_expanded_model: None,
+            catalog_provider_menu_open: false,
+            native_provider_definitions,
+            native_provider_registry_error,
             backend_options: backend_options.clone(),
             selected_backend,
             backend_menu_open: false,
             composer_model: selected_choice.model,
             composer_model_options: selected_model_options,
             composer_routes: selected_routes,
+            composer_model_metadata,
             composer_provider_status: Default::default(),
             composer_model_menu_open: false,
             composer_model_list_open: false,
             composer_model_query: String::new(),
+            composer_collapsed_model_providers: composer_preferences
+                .collapsed_model_providers()
+                .clone(),
+            composer_search_collapsed_model_providers: Default::default(),
             composer_advanced_open: false,
             composer_effort: selected_effort,
             composer_effort_options: selected_effort_options,
@@ -3095,6 +5916,9 @@ impl AgentsWindow {
             composer_effort_preview: None,
             composer_effort_hovered: false,
             composer_context_percent: None,
+            composer_context_open: false,
+            composer_context_details_open: false,
+            composer_error: None,
             turn_mode: TurnMode::Build,
             sessions: Vec::new(),
             session_plans: Default::default(),
@@ -3121,9 +5945,22 @@ impl AgentsWindow {
             workspace_writes_enabled: agent_tool_settings.permissions().write_file
                 && agent_tool_settings.permissions().run_command,
             native_tool_permissions: agent_tool_settings.permissions(),
+            native_full_access: agent_tool_settings.full_access(),
             native_command_isolation: agent_tool_settings.command_isolation(),
+            external_agents: external_agent_settings,
+            external_approval: None,
+            compat_hooks: Vec::new(),
+            plugin_skills: Vec::new(),
+            agent_clis: Vec::new(),
+            turn_check_command: String::new(),
+            turn_check_failure: None,
+            review_model: Default::default(),
+            compat_hooks_error: None,
             native_commands: Vec::new(),
             native_commands_error: None,
+            native_command_output: Default::default(),
+            native_command_history: Default::default(),
+            native_command_control: Default::default(),
             pending_native_command_termination: None,
             native_command_terminating: None,
             native_exec_rules: {
@@ -3132,6 +5969,7 @@ impl AgentsWindow {
                 state
             },
             native_skills,
+            plugins: Default::default(),
             native_hooks: HookUiState::from_load(NativeHookSettings::load(&root)),
             mcp_servers: mcp_settings.servers,
             mcp_selected_id: None,
@@ -3146,18 +5984,28 @@ impl AgentsWindow {
             mcp_draft_oauth_issuer: String::new(),
             mcp_draft_oauth_scopes: String::new(),
             mcp_oauth_status: None,
+            mcp_inspection: Default::default(),
+            conversation_activity: Default::default(),
+            conversation_details: Default::default(),
+            stream_presentation: Default::default(),
             mcp_draft_program: String::new(),
             mcp_draft_args: "[]".to_owned(),
             mcp_draft_cwd: String::new(),
             mcp_draft_env_names: String::new(),
             mcp_load_error,
-            settings_reduced_motion: settings_preferences.reduced_motion,
+            keymap_profile: settings_preferences.keymap_profile,
+            vim_mode: settings_preferences.vim_mode,
+                settings_keymap_menu_open: false,
+                settings_reduced_motion: settings_preferences.reduced_motion,
             settings_reopen_last_workspace: settings_preferences.reopen_last_workspace,
             settings_terminal_shell: settings_preferences.terminal_shell.clone(),
             settings_terminal_shell_draft: match &settings_preferences.terminal_shell {
                 TerminalShell::Custom(path) => path.to_string_lossy().into_owned(),
                 _ => String::new(),
             },
+            settings_terminal_shell_menu_open: false,
+            settings_choice_menu_open: None,
+            settings_terminal_shell_editing: false,
             show_settings: false,
             main_page: MainPage::Workspace,
             automations: AutomationViewState::new(
@@ -3169,6 +6017,7 @@ impl AgentsWindow {
             settings_page: SettingsPage::from_action_id(&settings_preferences.last_settings_page)
                 .unwrap_or(SettingsPage::General),
             settings_nav_open: false,
+            settings_nav_query: String::new(),
             can_go_back: false,
             can_go_forward: false,
             show_command_center: false,
@@ -3179,12 +6028,18 @@ impl AgentsWindow {
             command_search_loading: false,
             command_search_errors: Vec::new(),
             command_search_truncated: false,
+            ide,
+            ide_search: crate::ide_search::IdeSearchState::default(),
+            document_preview: None,
+            markdown_preview: None,
+            ide_status: Default::default(),
             show_side_pane: false,
             sidebar_collapsed: sidebar_preferences.sidebar_collapsed,
             left_dock_width: None,
             right_dock_width: None,
             left_presentation_width: None,
             right_presentation_width: None,
+            bottom_presentation_height: None,
             side_tab: SideTab::Context,
             activity_page: 0,
             review_page: 0,
@@ -3193,15 +6048,43 @@ impl AgentsWindow {
             dock_overview_query: String::new(),
             show_dock_overview: false,
             show_dock_add_menu: false,
+            notifications: crate::notifications::NotificationCenter::with_settings(
+                crate::notifications::NotificationSettings::load(&root),
+            ),
+            show_dock_tabs_menu: false,
             file_preview: None,
+            code_editor: None,
+            editor_workbench: Default::default(),
+            debug: Default::default(),
+            debug_open: false,
+            code_snapshot: None,
+            code_editor_quit_confirm: false,
+            code_editor_pending_saves: false,
+            chat_diffs: Default::default(),
+            code_editor_reload_confirm: None,
             git_review: None,
+            git_action_pending: false,
+            git_action_error: None,
+            session_changes: Default::default(),
+            browser: Default::default(),
             review_detail: None,
+            terminal_tabs: Vec::new(),
+            terminal_controls: Default::default(),
+            terminal_menu_open: false,
+            terminal_maximized: false,
+            show_terminal_panel: false,
+            terminal_panel_height: 240.0,
             terminal_snapshot: None,
             terminal_input: String::new(),
             terminal_error: None,
             pending_permissions: Vec::new(),
+            approval_ui: Default::default(),
+            composer_pending: None,
             pending_subagent_permissions: Vec::new(),
             active_subagents: Vec::new(),
+            subagent_sessions: Vec::new(),
+            expanded_subagent_inputs: None,
+            subagent_input_edit: None,
             recoverable_subagent: None,
             pending_tool_verification: None,
             pending_batch_discard: None,
@@ -3226,47 +6109,81 @@ impl AgentsWindow {
             rename_draft: String::new(),
             pending_archive_session_id: None,
             pending_delete_session_id: None,
-            github_account: GithubAccountStatus::Checking,
+            github_account: match &settings_preferences.github_account {
+                crate::settings_preferences::GithubAccountPreference::Disconnected => GithubAccountStatus::Disconnected,
+                crate::settings_preferences::GithubAccountPreference::Selected(login) => GithubAccountStatus::Verifying(login.clone()),
+                crate::settings_preferences::GithubAccountPreference::Automatic => GithubAccountStatus::Checking,
+            },
+            github_account_refreshing: !matches!(settings_preferences.github_account, crate::settings_preferences::GithubAccountPreference::Disconnected),
+            github_account_notice: None,
             github_account_menu_open: false,
+            github_sign_in: None,
+            github_contributions: GithubContributionsStatus::Idle,
         };
         let mut dock = DockState::default();
         let draft_scope = DockScope::for_owner(Path::new(&view.workspace), "");
         let workspace_scope =
             DockScope::new(draft_scope.workspace_id.clone(), DockOwner::Workspace);
-        let context_tab = dock.open(&workspace_scope, DockTabKind::Context);
-        dock.open(&workspace_scope, DockTabKind::Files);
-        dock.open(&draft_scope, DockTabKind::Activity);
-        dock.open(&workspace_scope, DockTabKind::CodeReview);
-        dock.activate(&draft_scope, context_tab);
+        let files_tab = dock.open(&workspace_scope, DockTabKind::Files);
+        dock.activate(&draft_scope, files_tab);
         dock.set_collapsed(&draft_scope, true);
         let mut navigation = NavigationHistory::default();
         navigation.visit(NavigationTarget::Draft {
             workspace: PathBuf::from(&view.workspace),
         });
         let reduced_motion = settings_preferences.reduced_motion;
+        let text_menu_palette = openide_ui::ComponentPalette {
+            hover: crate::theme::INPUT,
+            selected: crate::theme::SELECTED,
+            ..crate::theme::menu_palette()
+        };
         let mut tree = UiTree::new(Element::spacer());
         tree.set_reduced_motion(reduced_motion);
+        tree.set_context_menu_palette(text_menu_palette);
         let mut command_tree = UiTree::new(Element::spacer());
         command_tree.set_reduced_motion(reduced_motion);
+        command_tree.set_context_menu_palette(text_menu_palette);
         let seeded_workspace = view.workspace.clone();
         let subagent_bridge = Arc::new(SubagentEventBridge::new());
         let subagent_events = subagent_bridge.subscribe();
+        let github_preference = settings_preferences.github_account.clone();
         let mut app = Self {
             data_root: root.clone(),
             view,
             composer_preferences,
+            pending_composer_selections: HashMap::new(),
             settings_preferences,
             agent_tool_settings,
+            external_agent_settings,
             exec_policy_settings,
             exec_policy_load_error,
-            native_command_sessions: NativeCommandSessions::default(),
+            native_command_sessions: NativeCommandSessions::with_session_store(
+                store.clone(),
+                native_command_control_app::native_manual_command_policy_source(root.clone()),
+            ),
+            native_command_actors: HashMap::new(),
+            native_command_control_response: None,
+            native_manual_command_response: None,
+            native_command_prepared_request: None,
+            last_native_manual_command_poll: None,
+            native_command_poll_cursor: None,
+            native_command_poll_owners: BTreeSet::new(),
+            native_manual_command_cancel: CancellationToken::new(),
             native_command_snapshot_response: None,
             native_command_termination_response: None,
+            native_command_output_response: None,
+            native_command_output_manager: None,
+            native_command_history_response: None,
             last_native_command_snapshot: None,
             tree,
+            native_text_measurer: None,
+            workspace_frame_size: None,
+            workspace_frame_built_at: None,
+            transcript_layout_session: None,
             projection: TranscriptProjection::new(),
             profiles,
             store,
+            native_goal_recovery,
             known_project_paths: Vec::new(),
             active_run: None,
             dictation: None,
@@ -3276,19 +6193,40 @@ impl AgentsWindow {
             active_child_recovery: None,
             pending_child_recovery_permission: None,
             active_mcp_oauth: None,
+            active_mcp_inspection: None,
             subagent_bridge,
             subagent_events,
             last_subagent_poll: Instant::now(),
             subagent_poll_needed: false,
+            startup_subagent_candidates: HashSet::new(),
+            subagent_dispatches: HashMap::new(),
+            subagent_dispatch_errors: HashMap::new(),
             automation_stores: Vec::new(),
             automation_last_poll: Instant::now() - Duration::from_secs(31),
             background_automation_runs: Vec::new(),
+            native_automation_result_errors: HashMap::new(),
             automation_queue: VecDeque::new(),
             marketplace_response: None,
+            plugin_response: None,
+            plugin_removal_pending: false,
+            marketplace_remote: MarketplaceRemoteHost::default(),
+            ide_search_worker: None,
+            document_preview: document_preview_app::PreviewHost::default(),
+            markdown_preview: markdown_preview_app::MarkdownPreviewHost::default(),
             workspace_folder_response: None,
             composer_folder_response: None,
             catalog_response: None,
             catalog_last_refresh: Instant::now(),
+            provider_connection_worker: None,
+            provider_connection_id: None,
+            provider_refresh_worker: None,
+            provider_refresh_last_poll: Instant::now() - Duration::from_secs(60),
+            provider_usage_worker: None,
+            provider_usage_last_refresh: Instant::now() - Duration::from_secs(300),
+            provider_usage_last_identity_check: Instant::now(),
+            provider_usage_identities: Default::default(),
+            provider_key_draft: String::new(),
+            provider_browser_url: None,
             model_discovery_response: None,
             model_discovery_pending: 0,
             model_discoveries: Vec::new(),
@@ -3297,17 +6235,79 @@ impl AgentsWindow {
             history: Vec::new(),
             last_sequence: 0,
             dock_drag: None,
+            dock_tab_drag: None,
             dock_motion: None,
+            workspace_mode_motion: Default::default(),
+            environment_motion: None,
+            agent_list_motion: None,
             reduced_motion,
             pending_prompt: None,
             pending_attachments: Vec::new(),
+            attachment_worker: crate::composer_attachments::AttachmentWorker::start(),
+            attachment_visuals_pending: HashSet::new(),
+            attachment_pastes_pending: HashSet::new(),
+            keyboard_paste_handled: false,
+            pending_text_paste: None,
+            attachment_viewer_generation: 0,
             run_has_output: false,
             viewport_width: 900.0,
             viewport_height: 620.0,
             dock,
             terminals: HashMap::new(),
+            terminal_controls_host: Default::default(),
+            external_bridge: external_bridge_app::ExternalBridgeHost::new(external_agent_settings),
+            // An unreadable file means no check runs, never a guessed command.
+            turn_check_settings: crate::turn_check::TurnCheckSettings::load(&root).unwrap_or_default(),
+            turn_had_effects: false,
+            turn_check_run: None,
+            session_start_context: None,
+            turn_model_override: None,
+            window_focused: true,
+            toast_shown: false,
+            settings_notice_seen: None,
+            // An unreadable file reviews with the selected model.
+            review_model_settings: crate::review_model::ReviewModelSettings::load(&root).unwrap_or_default(),
+            // An unreadable file falls back to automatic detection.
+            agent_cli_paths: crate::agent_cli_definitions::AgentCliPaths::load(&root)
+                .unwrap_or_default(),
+            login_path: {
+                let slot = Arc::new(std::sync::Mutex::new(None));
+                // Tests must not depend on the developer's shell start-up files.
+                if let Some(shell) = std::env::var_os("SHELL").filter(|_| !cfg!(test)) {
+                    let slot = slot.clone();
+                    let _ = std::thread::Builder::new()
+                        .name("openide-login-path".into())
+                        .spawn(move || {
+                            let found = crate::login_shell_path::probe(&shell, Duration::from_secs(5));
+                            if let (Some(found), Ok(mut slot)) = (found, slot.lock()) {
+                                let process = std::env::var_os("PATH");
+                                *slot = Some(crate::login_shell_path::merged(&found, process.as_deref()));
+                            }
+                        });
+                }
+                slot
+            },
+            compat_hook_source: if cfg!(test) {
+                None
+            } else {
+                crate::compat_hook_settings::claude_settings_path()
+            },
+            terminal_focus_pending: false,
+            browsers: HashMap::new(),
+            browser_starts: HashMap::new(),
+            browser_requests: HashMap::new(),
+            browser_inputs: HashMap::new(),
+            browser_restart_urls: HashMap::new(),
+            browser_install_response: None,
+            browser_installing: false,
+            session_changes_worker: crate::session_changes::SessionChangesWorker::spawn().ok(),
+            environment_dirty: true,
+            environment_last_refresh: Instant::now(),
             dock_seeded_workspaces: HashSet::from([seeded_workspace]),
             file_explorer: None,
+            file_watcher: None,
+            file_tree_refreshed: Instant::now(),
+            agent_clis_path: None,
             drafts: HashMap::new(),
             attachment_drafts: HashMap::new(),
             composer_goals,
@@ -3319,7 +6319,13 @@ impl AgentsWindow {
             command_center_attaches_file: false,
             command_focus_pending: false,
             prompt_focus_pending: false,
+            github_sign_in_focus_pending: None,
             composer_model_search_focus_pending: false,
+            composer_selector_focus_pending: None,
+            composer_suggestion_worker: None,
+            composer_suggestion_pending_at: None,
+            composer_cursor_pending: None,
+            settings_terminal_path_focus_pending: false,
             rename_focus_pending: false,
             group_focus_pending: false,
             search_worker: SearchWorker::spawn(root.join("sessions")).ok(),
@@ -3328,37 +6334,75 @@ impl AgentsWindow {
             search_response: None,
             search_in_flight: false,
             review_worker: ReviewWorker::spawn().ok(),
+            branch_worker: BranchWorker::spawn().ok(),
+            branch_revision: 0,
             review_generation: 0,
             review_active_workspace: None,
             review_in_flight: false,
+            git_action_worker: None,
+            git_action_request: None,
+            git_action_generation: 0,
+            project_actions: project_actions_app::ProjectActionsHost::default(),
+            environment_git_worker: None,
+            environment_git_workspace: None,
+            environment_git_revision: 0,
             detail_worker: DetailWorker::spawn().ok(),
+            code_editor: code_editor_app::CodeEditorHost::default(),
+            editor_services: Default::default(),
+            debugger: Default::default(),
+            code_snapshots: BTreeMap::new(),
+            chat_diffs: chat_diff_app::ChatDiffHost::default(),
+            editor_review: Default::default(),
             detail_generation: 0,
             detail_request: None,
             github_worker: GithubWorker::spawn().ok(),
             github_status: GithubStatus::Loading,
             github_in_flight: false,
-            github_account_worker: GithubAccountWorker::spawn().ok(),
+            github_account_worker: GithubAccountWorker::spawn(github_preference).ok(),
+            github_account_previous: None,
+            github_contributions_worker: GithubContributionsWorker::spawn().ok(),
+            github_contributions_generation: 0,
         };
         if app.github_account_worker.is_none() {
-            app.view.github_account = GithubAccountStatus::Unavailable(
-                "No se pudo consultar la cuenta de GitHub".to_owned(),
-            );
+            app.view.github_account_refreshing = false;
+            if !matches!(app.view.github_account, GithubAccountStatus::Disconnected) {
+                app.view.github_account = GithubAccountStatus::Unavailable(
+                    "No se pudo consultar la cuenta de GitHub".to_owned(),
+                );
+            }
         }
+        app.init_code_editor_recovery();
+        app.init_editor_preferences();
         app.sync_dock_view();
+        app.refresh_file_rows();
         app.load_automation_stores();
+        app.reconcile_native_automation_results();
         app.refresh_automation_view();
         app.restore_draft();
         if let Some(error) = composer_goals_error {
             app.view.status = error;
         }
+        app.refresh_output_limit_editor();
+        app.sync_provider_usage();
         app.refresh_sessions();
-        if catalog_should_refresh {
-            app.begin_catalog_refresh();
-        }
+        app.startup_subagent_candidates = app
+            .view
+            .subagent_sessions
+            .iter()
+            .filter(|child| {
+                (child.status == SubagentStatus::Ready
+                    || (child.status == SubagentStatus::Completed && child.open_inputs > 0))
+                    && !child.cancellation_requested
+            })
+            .map(|child| child.child_session_id.clone())
+            .collect();
         #[cfg(not(test))]
         {
+            if catalog_should_refresh {
+                app.begin_catalog_refresh();
+            }
             app.begin_model_discovery();
-            app.begin_codex_model_discovery();
+            app.begin_provider_usage_refresh();
         }
         app
     }
@@ -3416,6 +6460,20 @@ impl AgentsWindow {
         if let Some(index) = self.ensure_current_automation_store() {
             self.view.automations.items = self.automation_stores[index].automations().to_vec();
             self.view.automations.runs = self.automation_stores[index].runs().to_vec();
+            self.view.automations.native_result_errors = self
+                .view
+                .automations
+                .runs
+                .iter()
+                .filter_map(|run| {
+                    self.native_automation_result_errors
+                        .get(&(
+                            self.automation_stores[index].workspace_path().to_path_buf(),
+                            run.run_id.clone(),
+                        ))
+                        .cloned()
+                })
+                .collect();
             self.view.automations.busy_id = self
                 .background_automation_runs
                 .iter()
@@ -3436,242 +6494,404 @@ impl AgentsWindow {
         } else {
             self.view.automations.items.clear();
             self.view.automations.runs.clear();
+            self.view.automations.native_result_errors.clear();
         }
     }
 
-    fn marketplace_operation(&mut self, operation: MarketplaceOperation) {
-        if self.marketplace_response.is_some() {
-            return;
+    /// Reconcile only retained claims. The journal remains the authority and a
+    /// deleted/trimmed ledger entry is never recreated from session history.
+    fn reconcile_native_automation_results(&mut self) -> bool {
+        let claims = self
+            .automation_stores
+            .iter()
+            .enumerate()
+            .flat_map(|(index, store)| {
+                store
+                    .runs()
+                    .iter()
+                    .map(move |run| (index, run.run_id.clone()))
+            })
+            .collect::<Vec<_>>();
+        let mut changed = false;
+        for (index, run_id) in claims {
+            changed |= self.reconcile_native_automation_claim(index, &run_id);
         }
-        let workspace = PathBuf::from(&self.view.workspace);
-        let store = MarketplaceStore::new(self.data_root.clone(), workspace.clone());
-        let (sender, receiver) = mpsc::channel();
-        self.view.marketplace.busy = true;
-        self.view.marketplace.status = Some("Actualizando Marketplace…".to_owned());
-        self.marketplace_response = Some(receiver);
-        std::thread::spawn(move || {
-            let operation_result = match operation {
-                MarketplaceOperation::Load => Ok("Catálogo cargado".to_owned()),
-                MarketplaceOperation::Refresh => {
-                    store.refresh_github_sources().map(|diagnostics| {
-                        if diagnostics.is_empty() {
-                            "Catálogo actualizado".to_owned()
-                        } else {
-                            format!("Actualización parcial: {}", diagnostics.join(" · "))
-                        }
-                    })
-                }
-                MarketplaceOperation::AddLocal(path) => store
-                    .add_local_source(&path)
-                    .map(|_| "Origen local agregado".to_owned()),
-                MarketplaceOperation::AddGithub(url) => store
-                    .add_github_source(&url)
-                    .map(|_| "Repositorio agregado".to_owned()),
-                MarketplaceOperation::Install(id, scope) => store
-                    .install(&id, scope)
-                    .map(|_| "Skill instalada".to_owned()),
-                MarketplaceOperation::SetEnabled(id, enabled) => {
-                    store.set_enabled(&id, enabled).map(|_| {
-                        if enabled {
-                            "Skill activada"
-                        } else {
-                            "Skill desactivada"
-                        }
-                        .to_owned()
-                    })
-                }
-                MarketplaceOperation::Uninstall(id) => store
-                    .uninstall(&id)
-                    .map(|_| "Skill desinstalada".to_owned()),
-                MarketplaceOperation::RemoveSource(id) => store
-                    .remove_source(&id)
-                    .map(|_| "Origen eliminado".to_owned()),
-            }
-            .and_then(|message| store.snapshot().map(|snapshot| (snapshot, message)))
-            .map_err(|error| error.to_string());
-            let _ = sender.send((workspace, operation_result));
-        });
+        changed
     }
 
-    fn poll_marketplace(&mut self) -> bool {
-        let Some(receiver) = &self.marketplace_response else {
+    fn reconcile_native_automation_session(&mut self, session_id: &str) -> bool {
+        let claims = self
+            .automation_stores
+            .iter()
+            .enumerate()
+            .flat_map(|(index, store)| {
+                store.runs().iter().filter_map(move |run| {
+                    let matches = run.session_id.as_deref() == Some(session_id)
+                        || openide_core::native_automation_session_id(
+                            store.workspace_path(),
+                            &run.run_id,
+                        )
+                        .is_ok_and(|id| id == session_id);
+                    matches.then(|| (index, run.run_id.clone()))
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut changed = false;
+        for (index, run_id) in claims {
+            changed |= self.reconcile_native_automation_claim(index, &run_id);
+        }
+        changed
+    }
+
+    fn reconcile_native_automation_claim(&mut self, index: usize, run_id: &str) -> bool {
+        let Some(store) = self.automation_stores.get(index) else {
             return false;
         };
-        let response = match receiver.try_recv() {
-            Ok(response) => Some(response),
-            Err(TryRecvError::Empty) => return false,
-            Err(TryRecvError::Disconnected) => {
-                self.view.marketplace.busy = false;
-                self.view.marketplace.status = Some("No se pudo completar la operación".to_owned());
-                self.marketplace_response = None;
-                return true;
+        let key = (store.workspace_path().to_path_buf(), run_id.to_owned());
+        let result = self.observe_native_automation_claim(index, run_id);
+        let changed = match result {
+            Ok(Some(changed)) => {
+                self.native_automation_result_errors.remove(&key).is_some() || changed
+            }
+            Ok(None) => false, // Busy or not a native claim: no new proof
+            Err(error) => {
+                let diagnostic = format!("Resultado de {run_id} no verificable: {error}");
+                let previous = self
+                    .native_automation_result_errors
+                    .insert(key, diagnostic.clone());
+                previous.as_ref() != Some(&diagnostic)
             }
         };
-        self.marketplace_response = None;
-        if let Some((workspace, result)) = response {
-            self.view.marketplace.busy = false;
-            if workspace == Path::new(&self.view.workspace) {
-                match result {
-                    Ok((snapshot, message)) => {
-                        self.view.marketplace.snapshot = snapshot;
-                        self.view.marketplace.status = Some(message);
-                        self.view.marketplace.add_source_kind = None;
-                        self.view.marketplace.source_draft.clear();
-                        self.view.marketplace.add_menu_open = false;
-                    }
-                    Err(error) => self.view.marketplace.status = Some(error),
-                }
-            } else if self.view.main_page == MainPage::Marketplace {
-                self.marketplace_operation(MarketplaceOperation::Load);
-            }
+        if changed {
+            self.refresh_automation_view();
         }
-        true
+        changed
+    }
+
+    fn observe_native_automation_claim(
+        &mut self,
+        index: usize,
+        run_id: &str,
+    ) -> Result<Option<bool>, String> {
+        let automation_store = self
+            .automation_stores
+            .get(index)
+            .ok_or("Registro de automatizaciones ausente")?;
+        let Some(run) = automation_store
+            .runs()
+            .iter()
+            .find(|run| run.run_id == run_id)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        if run.status == crate::automations::AutomationRunStatus::Skipped {
+            return Ok(None);
+        }
+        let id = match run.session_id.clone() {
+            Some(id) => id,
+            None => match openide_core::native_automation_session_id(
+                automation_store.workspace_path(),
+                run_id,
+            ) {
+                Ok(id) => id,
+                Err(_) => return Ok(None), // old CLI claim IDs have no native occurrence
+            },
+        };
+        let Some(store) = self.store.clone() else {
+            return Err("El historial no está disponible".into());
+        };
+        let Some(record) = store.load_strict(&id).map_err(|error| error.to_string())? else {
+            let native_id = openide_core::native_automation_session_id(
+                automation_store.workspace_path(),
+                run_id,
+            )
+            .ok();
+            return if run.session_id.is_some()
+                && (run.native_result.is_some() || native_id.as_deref() == Some(id.as_str()))
+            {
+                Err("La sesión del resultado registrado ya no existe".into())
+            } else {
+                Ok(None)
+            };
+        };
+        if record.session.native_automation.is_none() {
+            return if run.native_result.is_some() {
+                Err("La sesión perdió su origen de automatización".into())
+            } else {
+                Ok(None)
+            };
+        }
+        crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&record.session)?;
+        let lease = match store.try_acquire_native_lease(&id) {
+            Ok(lease) => lease,
+            Err(openide_core::StoreError::NativeSessionBusy(_)) => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let session = store
+            .native_session_for_lease(&lease)
+            .map_err(|error| error.to_string())?;
+        let record = store
+            .load_strict(&id)
+            .map_err(|error| error.to_string())?
+            .ok_or("La sesión de automatización ya no existe")?;
+        if record.session.id != session.id
+            || record.session.workspace != session.workspace
+            || record.session.backend != session.backend
+            || record.session.native_automation != session.native_automation
+            || record.session.subagent != session.subagent
+        {
+            return Err("La metadata cambió durante la consulta del resultado".into());
+        }
+        if record.events.is_empty() {
+            if run.native_result.is_some() {
+                return Err("Falta el journal del resultado registrado".into());
+            }
+            // An origin registered before admission is a linked session, not
+            // an Interrupted model execution. Preserve the dispatch state.
+            return self.automation_stores[index]
+                .attach_existing_native_session(
+                    run_id,
+                    &record.session,
+                    chrono::Utc::now().timestamp_millis(),
+                )
+                .map(Some)
+                .map_err(|error| error.to_string());
+        }
+        let checkpoints = CheckpointFileStore::new(self.data_root.join("sessions"))
+            .map_err(|error| error.to_string())?;
+        let result = crate::native_automation_result::NativeAutomationResultV1::derive(
+            &record,
+            &checkpoints,
+        )?;
+        self.automation_stores[index]
+            .record_native_result(&record, &result, chrono::Utc::now().timestamp_millis())
+            .map(Some)
+            .map_err(|error| error.to_string())
     }
 
     fn dispatch_automation(&mut self, store_index: usize, dispatch: AutomationDispatch) {
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let automation_id = dispatch.automation_id.clone();
-        let result = (|| -> Result<String, String> {
-            if !dispatch.workspace_path.is_dir() {
-                return Err("El proyecto ya no está disponible".to_owned());
-            }
-            let native_settings = if dispatch.backend == "native" {
-                Some(
-                    dispatch
-                        .native_provider
-                        .clone()
-                        .unwrap_or_else(|| self.native_settings()),
-                )
-            } else {
-                None
-            };
-            let native_connection = native_settings
-                .as_ref()
-                .map(|settings| settings.resolve_at(&self.data_root))
-                .transpose()?;
-            let native_provider_id = native_settings
-                .as_ref()
-                .map(|settings| settings.provider_id.as_str())
-                .unwrap_or("");
-            let instructions = if dispatch.backend == "native" {
-                if native_connection
-                    .as_ref()
-                    .is_some_and(|connection| connection.api_key.is_none())
-                    && native_provider_id != "custom"
-                {
-                    let key_env = native_provider::adapter_at(&self.data_root, native_provider_id)?
-                        .map(|adapter| adapter.key_env)
-                        .unwrap_or_else(|| "API_KEY".to_owned());
-                    return Err(format!("Define {key_env} para ejecutar el agente nativo"));
-                }
-                native_workspace_instructions(&self.data_root, &dispatch.workspace_path)?
-            } else {
-                let profile = self
-                    .profiles
-                    .iter()
-                    .find(|profile| profile.id == dispatch.backend)
-                    .ok_or("Perfil de agente desconocido")?;
-                if profile.detect_executable().is_none() {
-                    return Err(format!("Instala {} o configura su ruta", profile.label));
-                }
-                String::new()
-            };
-            let store = self
-                .store
-                .as_ref()
-                .ok_or("El historial no está disponible")?;
-            let session = store
-                .create(&dispatch.workspace_path, &dispatch.backend)
-                .map_err(|error| error.to_string())?;
-            let mut request = AgentRunRequest {
-                session_id: Some(session.id.clone()),
-                sequence_start: 0,
-                workspace: dispatch.workspace_path.clone(),
-                history: Vec::new(),
-                prompt: dispatch.prompt,
-                mode: TurnMode::Build,
-            };
-            let run = if dispatch.backend == "native" {
-                let connection = native_connection.expect("validated native connection");
-                let model_id = connection.model_id.clone();
-                let endpoint = connection.endpoint.clone();
-                let wire_api = connection.wire_api;
-                let model = native_model_backend(
-                    connection,
-                    native_provider_id,
-                    None,
-                    self.view.hosted_web_search_mode,
-                    &self.data_root,
-                    self.view.catalog.as_deref(),
-                    &self.model_discoveries,
-                )?;
-                let token_budget =
-                    native_provider::verified_token_budget(native_provider_id, &model_id);
-                let auto_checkpoints = token_budget
-                    .map(|_| CheckpointFileStore::new(self.data_root.join("sessions")))
-                    .transpose()
-                    .map_err(|error| format!("No se pudo abrir checkpoints: {error}"))?
-                    .map(Arc::new);
-                let lease = store
-                    .try_acquire_native_lease(&session.id)
-                    .map_err(|error| format!("La sesión nativa ya está en uso: {error}"))?;
-                let admission = store
-                    .admit_native_turn(
-                        &session.id,
-                        &Uuid::new_v4().to_string(),
-                        &request.prompt,
-                        &model_id,
-                        request.mode,
-                    )
-                    .map_err(|error| format!("No se pudo admitir el turno: {error}"))?;
-                request.sequence_start = admission.sequence;
-                let tools = Arc::new(LocalTools::new().with_write_access(false));
-                let mut runner = AgentRunner::new(model, tools)
-                    .with_permission_policy(PermissionPolicy::new())
-                    .with_system_instructions(instructions)
-                    .with_native_runtime_identity(native_provider_id, endpoint)
-                    .with_event_journal(store.clone());
-                if let (Some(budget), Some(checkpoints)) = (token_budget, auto_checkpoints) {
-                    runner = runner
-                        .with_token_budget_policy(budget)
-                        .with_auto_compaction(
-                            store.clone(),
-                            checkpoints,
-                            native_checkpoint_compatibility(
-                                native_provider_id,
-                                &model_id,
-                                wire_api,
-                            ),
-                        );
-                }
-                ActiveRun::Native(runner.start_with_lease(request, lease))
-            } else {
-                let profile = self
-                    .profiles
-                    .iter()
-                    .find(|profile| profile.id == dispatch.backend)
-                    .cloned()
-                    .ok_or("Perfil de agente desconocido")?;
-                if profile.detect_executable().is_none() {
-                    return Err(format!("Instala {} o configura su ruta", profile.label));
-                }
-                ActiveRun::Cli(CliRunner::start(profile, request))
-            };
-            self.background_automation_runs
-                .push(BackgroundAutomationRun {
-                    automation_id,
-                    session_id: session.id.clone(),
-                    run,
-                });
-            Ok(session.id)
-        })();
+        let result = if dispatch.backend == "native" {
+            self.dispatch_native_automation(store_index, &dispatch, now_ms)
+        } else {
+            self.dispatch_cli_automation(&dispatch)
+        };
+        let native_session = (dispatch.backend == "native")
+            .then(|| result.as_ref().ok().cloned())
+            .flatten();
         if let Err(error) =
             self.automation_stores[store_index].complete_run(&dispatch.run_id, result, now_ms)
         {
             self.view.automations.error = Some(error.to_string());
         }
+        if let Some(id) = native_session {
+            self.reconcile_native_automation_session(&id);
+        }
         self.refresh_automation_view();
         self.refresh_sessions();
+    }
+
+    fn dispatch_native_automation(
+        &mut self,
+        store_index: usize,
+        dispatch: &AutomationDispatch,
+        now_ms: i64,
+    ) -> Result<String, String> {
+        if !dispatch.workspace_path.is_dir() {
+            return Err("El proyecto ya no está disponible".into());
+        }
+        let store = self
+            .store
+            .clone()
+            .ok_or("El historial no está disponible")?;
+        let occurrence_id =
+            openide_core::native_automation_session_id(&dispatch.workspace_path, &dispatch.run_id)
+                .map_err(|error| error.to_string())?;
+        let (session, frozen) = if let Some(recorded) = store
+            .load(&occurrence_id)
+            .map_err(|error| error.to_string())?
+        {
+            let frozen = crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
+                &recorded.session,
+            )?
+            .ok_or("La ejecución no tiene un origen nativo verificable")?;
+            (recorded.session, frozen)
+        } else {
+            let settings = dispatch
+                .native_provider
+                .clone()
+                .unwrap_or_else(|| self.native_settings());
+            let connection = settings.resolve_at(&self.data_root)?;
+            let budget =
+                self.token_budget_for_native_model(&settings.provider_id, &connection.model_id);
+            let instructions =
+                native_workspace_instructions(&self.data_root, &dispatch.workspace_path)?;
+            let frozen = crate::native_automation::FrozenNativeAutomationAuthorityV1::freeze(
+                connection,
+                &settings.provider_id,
+                &self.data_root,
+                &dispatch.workspace_path,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+                self.view.hosted_web_search_mode,
+                budget,
+                instructions,
+                dispatch.prompt.clone(),
+                &dispatch.run_id,
+            )?;
+            // Validate credentials before metadata publication. This makes no
+            // backend request and stores only the variable name, never its key.
+            frozen.model()?;
+            let origin = frozen.to_origin(
+                &dispatch.automation_id,
+                &dispatch.run_id,
+                dispatch.scheduled_at,
+                dispatch.manual,
+            )?;
+            let session = store
+                .create_native_automation(&dispatch.workspace_path, origin)
+                .map_err(|error| error.to_string())?;
+            (session, frozen)
+        };
+        if crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&session)?
+            .as_ref()
+            != Some(&frozen)
+        {
+            return Err("La sesión no coincide con el perfil registrado".into());
+        }
+        self.automation_stores[store_index]
+            .attach_existing_native_session(&dispatch.run_id, &session, now_ms)
+            .map_err(|error| error.to_string())?;
+        let recorded = store
+            .load(&session.id)
+            .map_err(|error| error.to_string())?
+            .ok_or("La ejecución registrada ya no existe")?;
+        if !recorded.events.is_empty() {
+            // An exact occurrence retry never launches an admitted turn again.
+            // Interrupted work is recovered explicitly through its own session.
+            return Ok(session.id);
+        }
+        let model = frozen.model()?;
+        let lease = store
+            .try_acquire_native_lease(&session.id)
+            .map_err(|error| format!("La ejecución registrada está en uso: {error}"))?;
+        let admission = store
+            .admit_native_turn(
+                &session.id,
+                frozen.first_turn_id(),
+                frozen.prompt(),
+                frozen.model_id(),
+                TurnMode::Build,
+            )
+            .map_err(|error| error.to_string())?;
+        let run = self.start_frozen_automation_runner(
+            &session,
+            &frozen,
+            model,
+            admission.sequence,
+            lease,
+        )?;
+        self.background_automation_runs
+            .push(BackgroundAutomationRun {
+                automation_id: dispatch.automation_id.clone(),
+                session_id: session.id.clone(),
+                run,
+            });
+        Ok(session.id)
+    }
+
+    fn start_frozen_automation_runner(
+        &self,
+        session: &openide_core::Session,
+        frozen: &crate::native_automation::FrozenNativeAutomationAuthorityV1,
+        model: Arc<dyn ModelBackend>,
+        sequence_start: u64,
+        lease: openide_core::NativeSessionLease,
+    ) -> Result<ActiveRun, String> {
+        frozen.validate_workspace_for_execution()?;
+        frozen.verify_model(model.as_ref())?;
+        let store = self
+            .store
+            .clone()
+            .ok_or("El historial no está disponible")?;
+        let current = store
+            .native_session_for_lease(&lease)
+            .map_err(|error| error.to_string())?;
+        if current.id != session.id
+            || crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&current)?
+                .as_ref()
+                != Some(frozen)
+        {
+            return Err("La ejecución no coincide con el origen registrado".into());
+        }
+        let mut runner = AgentRunner::new(model, frozen.tools())
+            .with_permission_policy(frozen.policy())
+            .with_system_instructions(frozen.instructions().to_owned())
+            .with_native_runtime_identity(frozen.provider_id(), frozen.endpoint())
+            .with_event_journal(store.clone())
+            .with_native_steering(store.clone())
+            .with_limits(frozen.limits());
+        if let Some(budget) = frozen.budget() {
+            let checkpoints = Arc::new(
+                CheckpointFileStore::new(self.data_root.join("sessions"))
+                    .map_err(|error| error.to_string())?,
+            );
+            runner = runner
+                .with_token_budget_policy(budget)
+                .with_auto_compaction(store, checkpoints, frozen.compatibility());
+        }
+        Ok(ActiveRun::Native(runner.start_with_lease(
+            AgentRunRequest {
+                session_id: Some(session.id.clone()),
+                sequence_start,
+                workspace: session.workspace.clone(),
+                history: Vec::new(),
+                prompt: frozen.prompt().to_owned(),
+                mode: TurnMode::Build,
+            },
+            lease,
+        )))
+    }
+
+    fn dispatch_cli_automation(&mut self, dispatch: &AutomationDispatch) -> Result<String, String> {
+        if !dispatch.workspace_path.is_dir() {
+            return Err("El proyecto ya no está disponible".into());
+        }
+        let profile = self
+            .profiles
+            .iter()
+            .find(|profile| profile.id == dispatch.backend)
+            .cloned()
+            .ok_or("Perfil de agente desconocido")?;
+        if profile.detect_executable().is_none() {
+            return Err(format!("Instala {} o configura su ruta", profile.label));
+        }
+        let store = self
+            .store
+            .as_ref()
+            .ok_or("El historial no está disponible")?;
+        let session = store
+            .create(&dispatch.workspace_path, &dispatch.backend)
+            .map_err(|error| error.to_string())?;
+        let run = ActiveRun::Cli(CliRunner::start(
+            profile,
+            AgentRunRequest {
+                session_id: Some(session.id.clone()),
+                sequence_start: 0,
+                workspace: dispatch.workspace_path.clone(),
+                history: Vec::new(),
+                prompt: dispatch.prompt.clone(),
+                mode: TurnMode::Build,
+            },
+        ));
+        self.background_automation_runs
+            .push(BackgroundAutomationRun {
+                automation_id: dispatch.automation_id.clone(),
+                session_id: session.id.clone(),
+                run,
+            });
+        Ok(session.id)
     }
 
     fn poll_automations(&mut self) -> bool {
@@ -3679,6 +6899,7 @@ impl AgentsWindow {
         let mut changed = false;
         if now.duration_since(self.automation_last_poll) >= Duration::from_secs(30) {
             self.automation_last_poll = now;
+            changed |= self.reconcile_native_automation_results();
             let now_ms = chrono::Utc::now().timestamp_millis();
             let mut dispatches = Vec::new();
             for (index, store) in self.automation_stores.iter_mut().enumerate() {
@@ -3687,7 +6908,7 @@ impl AgentsWindow {
                     Err(error) => self.view.automations.error = Some(error.to_string()),
                 }
             }
-            changed = !dispatches.is_empty();
+            changed |= !dispatches.is_empty();
             self.automation_queue.extend(dispatches);
             if self.view.main_page == MainPage::Automations {
                 self.refresh_automation_view();
@@ -3721,7 +6942,7 @@ impl AgentsWindow {
                 if self.view.selected_session.as_deref() == Some(event.session_id.as_str()) {
                     self.last_sequence = self.last_sequence.max(event.sequence);
                     if self.projection.apply_event(&event) {
-                        self.view.transcript = self.projection.items().to_vec();
+                        self.publish_transcript();
                     }
                     if native_run
                         && matches!(
@@ -3747,11 +6968,16 @@ impl AgentsWindow {
                             store.load(&self.background_automation_runs[index].session_id)
                         {
                             self.projection = TranscriptProjection::from_events(&stored.events);
-                            self.view.transcript = self.projection.items().to_vec();
+                            self.publish_transcript();
                         }
                     }
                 }
-                self.background_automation_runs.remove(index);
+                let finished = self.background_automation_runs.remove(index);
+                let session_id = finished.session_id.clone();
+                drop(finished);
+                if native_run {
+                    self.reconcile_native_automation_session(&session_id);
+                }
                 self.rebuild_history();
                 self.refresh_sessions();
                 changed = true;
@@ -3759,7 +6985,8 @@ impl AgentsWindow {
                 index += 1;
             }
         }
-        while self.background_automation_runs.len() < 2 {
+        while self.background_automation_runs.len() < 2 && !self.view.composer_branches.switching()
+        {
             let Some((store_index, dispatch)) = self.automation_queue.pop_front() else {
                 break;
             };
@@ -4054,116 +7281,6 @@ impl AgentsWindow {
         }
     }
 
-    fn handle_marketplace_action(&mut self, id: &str) {
-        let state = &mut self.view.marketplace;
-        match id {
-            "marketplace_filter_all" => state.installed_only = false,
-            "marketplace_filter_installed" => state.installed_only = true,
-            "marketplace_scope_user" => state.install_scope = InstallScope::User,
-            "marketplace_scope_workspace" => state.install_scope = InstallScope::Workspace,
-            "marketplace_add_menu" | "marketplace_empty_add_menu" => {
-                state.add_menu_open = !state.add_menu_open;
-            }
-            "marketplace_add_menu_dismiss" => state.add_menu_open = false,
-            "marketplace_source_kind:local" => {
-                state.add_source_kind = Some(SourceKind::Local);
-                state.add_menu_open = false;
-                state.source_draft.clear();
-                state.status = None;
-            }
-            "marketplace_source_kind:github" => {
-                state.add_source_kind = Some(SourceKind::Github);
-                state.add_menu_open = false;
-                state.source_draft.clear();
-                state.status = None;
-            }
-            "marketplace_source_cancel" => {
-                if !state.busy {
-                    state.add_source_kind = None;
-                    state.source_draft.clear();
-                    state.status = None;
-                }
-            }
-            "marketplace_alert_cancel" => {
-                state.pending_uninstall_id = None;
-                state.pending_remove_source_id = None;
-            }
-            "marketplace_source_submit" => {
-                if state.busy {
-                    return;
-                }
-                let value = state.source_draft.trim().to_owned();
-                if value.is_empty() {
-                    state.status = Some("Indica la carpeta o URL del origen".to_owned());
-                    return;
-                }
-                let operation = match state.add_source_kind {
-                    Some(SourceKind::Local) => MarketplaceOperation::AddLocal(PathBuf::from(value)),
-                    Some(SourceKind::Github) => MarketplaceOperation::AddGithub(value),
-                    None => return,
-                };
-                self.marketplace_operation(operation);
-            }
-            "marketplace_refresh" => self.marketplace_operation(MarketplaceOperation::Refresh),
-            _ => {
-                if let Some(item) = id.strip_prefix("marketplace_install:") {
-                    let scope = state.install_scope;
-                    self.marketplace_operation(MarketplaceOperation::Install(
-                        item.to_owned(),
-                        scope,
-                    ));
-                } else if let Some(item) = id.strip_prefix("marketplace_toggle:") {
-                    if let Some(enabled) = state
-                        .snapshot
-                        .items
-                        .iter()
-                        .find(|entry| entry.id == item)
-                        .map(|entry| !entry.enabled)
-                    {
-                        self.marketplace_operation(MarketplaceOperation::SetEnabled(
-                            item.to_owned(),
-                            enabled,
-                        ));
-                    }
-                } else if let Some(item) = id.strip_prefix("marketplace_uninstall:") {
-                    if !state.busy
-                        && state
-                            .snapshot
-                            .items
-                            .iter()
-                            .any(|entry| entry.id == item && entry.installed_scope.is_some())
-                    {
-                        state.pending_uninstall_id = Some(item.to_owned());
-                    }
-                } else if let Some(source) = id.strip_prefix("marketplace_remove_source:") {
-                    if !state.busy
-                        && state
-                            .snapshot
-                            .sources
-                            .iter()
-                            .any(|entry| entry.id == source)
-                    {
-                        state.pending_remove_source_id = Some(source.to_owned());
-                    }
-                } else if let Some(item) = id.strip_prefix("marketplace_uninstall_confirm:") {
-                    if state.pending_uninstall_id.as_deref() == Some(item) && !state.busy {
-                        state.pending_uninstall_id = None;
-                        self.marketplace_operation(MarketplaceOperation::Uninstall(
-                            item.to_owned(),
-                        ));
-                    }
-                } else if let Some(source) = id.strip_prefix("marketplace_remove_source_confirm:") {
-                    if state.pending_remove_source_id.as_deref() == Some(source) && !state.busy {
-                        state.pending_remove_source_id = None;
-                        self.marketplace_operation(MarketplaceOperation::RemoveSource(
-                            source.to_owned(),
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
     fn refresh_selected_session_approvals(&mut self) {
         self.view.session_approval_grants.clear();
         let (Some(store), Some(session_id)) =
@@ -4193,6 +7310,9 @@ impl AgentsWindow {
 
     fn refresh_sessions(&mut self) {
         if let Some(store) = self.store.clone() {
+            // A durable journal is intentionally incomplete while its worker is
+            // alive. Only offer recovery once that worker has actually stopped.
+            let live_children = self.subagent_bridge.active_child_ids();
             match store.list_with_diagnostics() {
                 Ok(listing) => {
                     self.view.sessions_status = (!listing.diagnostics.is_empty()).then(|| {
@@ -4210,7 +7330,9 @@ impl AgentsWindow {
                                 .background_automation_runs
                                 .iter()
                                 .any(|run| run.session_id == record.session.id);
-                            if !selected_running && !background_running {
+                            let child_running = record.session.subagent.is_some()
+                                && live_children.contains(&record.session.id);
+                            if !selected_running && !background_running && !child_running {
                                 recoveries.insert(record.session.id.clone(), recovery);
                             }
                         }
@@ -4243,13 +7365,48 @@ impl AgentsWindow {
                         })
                         .collect::<BTreeSet<_>>();
                     let mut child_statuses = HashMap::new();
+                    self.view.subagent_sessions.clear();
                     if !parents_with_children.is_empty() {
                         match SubagentCoordinator::new(store.clone(), SubagentLimits::default()) {
                             Ok(coordinator) => {
                                 for parent_id in parents_with_children {
-                                    match coordinator.list_children_for_ui(&parent_id) {
+                                    match coordinator.list_children_snapshot_for_ui(&parent_id) {
                                         Ok(children) => {
-                                            for child in children {
+                                            for snapshot in children {
+                                                let child = snapshot.agent;
+                                                if let Some(link) = &child.session.subagent {
+                                                    let title = child.session.title.clone().or_else(|| {
+                                                        listing.sessions.iter().find(|record| record.session.id == child.session.id)
+                                                            .and_then(|record| record.events.iter().find_map(|event| match &event.kind {
+                                                                AgentEventKind::TurnAdmitted {prompt, ..}
+                                                                | AgentEventKind::TurnAdmittedWithImages {prompt, ..}
+                                                                | AgentEventKind::TurnStarted {prompt} => Some(prompt.lines().next().unwrap_or(prompt).to_owned()),
+                                                                _ => None,
+                                                            }))
+                                                    }).unwrap_or_else(|| "Subagente".into());
+                                                    self.view.subagent_sessions.push(
+                                                        crate::view::SubagentSessionView {
+                                                            child_session_id: child
+                                                                .session
+                                                                .id
+                                                                .clone(),
+                                                            parent_session_id: link
+                                                                .parent_session_id
+                                                                .clone(),
+                                                            title,
+                                                            status: child.status,
+                                                            cancellation_requested: child
+                                                                .cancellation_requested,
+                                                            open_inputs: snapshot.open_inputs,
+                                                            inputs: snapshot.inputs,
+                                                            dispatch_error: self
+                                                                .subagent_dispatch_errors
+                                                                .get(&child.session.id)
+                                                                .cloned(),
+                                                            depth: link.depth,
+                                                        },
+                                                    );
+                                                }
                                                 child_statuses
                                                     .insert(child.session.id, child.status);
                                             }
@@ -4352,6 +7509,15 @@ impl AgentsWindow {
                                     None
                                 }
                             });
+                            let frozen = crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&record.session)
+                                .ok().flatten();
+                            let native_automation = record.session.native_automation.as_ref()
+                                .map(|origin| crate::view::NativeAutomationSessionView {
+                                    automation_id: origin.automation_id.clone(), run_id: origin.run_id.clone(),
+                                    provider_id: frozen.as_ref().map(|frozen| frozen.provider_id()).unwrap_or("No verificable").to_owned(),
+                                    model_id: frozen.as_ref().map(|frozen| frozen.model_id()).unwrap_or("No verificable").to_owned(),
+                                    manual: origin.manual, scheduled_at_ms: origin.scheduled_at_ms,
+                                });
                             let session = record.session;
                             let is_subagent = session.subagent.is_some();
                             let subagent_status = child_statuses
@@ -4361,6 +7527,7 @@ impl AgentsWindow {
                             let title = session
                                 .title
                                 .or_else(|| title.filter(|text| !text.is_empty()))
+                                .or_else(|| frozen.as_ref().map(|frozen| frozen.prompt().lines().next().unwrap_or("Ejecución registrada").trim().to_owned()))
                                 .unwrap_or_else(|| "Nueva tarea".to_owned());
                             (
                                 activity_at_ms,
@@ -4374,6 +7541,7 @@ impl AgentsWindow {
                                     },
                                     project: session.workspace.to_string_lossy().into_owned(),
                                     backend: session.backend,
+                                    native_automation,
                                     pinned: session.pinned,
                                     archived: session.archived,
                                     unread: session.unread_at_ms.is_some(),
@@ -4402,6 +7570,7 @@ impl AgentsWindow {
                 Err(error) => {
                     self.subagent_poll_needed = false;
                     self.view.recoverable_subagent = None;
+                    self.view.subagent_sessions.clear();
                     self.view.session_plans.clear();
                     self.view.session_recovery.clear();
                     self.view.sessions_status = Some(format!("Error al leer sesiones: {error}"));
@@ -4409,8 +7578,99 @@ impl AgentsWindow {
                 }
             }
         }
+        if !self.native_goal_recovery.diagnostics.is_empty() {
+            let goal_errors = self
+                .native_goal_recovery
+                .diagnostics
+                .iter()
+                .map(|diagnostic| {
+                    format!(
+                        "Goal al iniciar {}: {}",
+                        if diagnostic.session_id.is_empty() {
+                            "historial"
+                        } else {
+                            &diagnostic.session_id
+                        },
+                        diagnostic.error
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.view.sessions_status = Some(match self.view.sessions_status.take() {
+                Some(existing) => format!("{existing}\n{goal_errors}"),
+                None => goal_errors,
+            });
+        }
         self.refresh_composer_projects();
         self.refresh_selected_session_approvals();
+    }
+
+    fn start_subagent_mailbox_dispatch(&mut self, child_id: &str) {
+        if self.view.composer_branches.switching() {
+            self.view.status = "Espera a que termine el cambio de rama".to_owned();
+            return;
+        }
+        if self.subagent_dispatches.contains_key(child_id) {
+            return;
+        }
+        let result = (|| -> Result<_, String> {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or("El historial no está disponible")?;
+            let stored = store
+                .load(child_id)
+                .map_err(|error| error.to_string())?
+                .ok_or("El subagente ya no existe")?;
+            if replay_stored_native(&self.data_root, &stored)?.recovery != ReplayRecovery::Idle {
+                return Err("El journal necesita recuperación antes de procesar la cola".into());
+            }
+            let request = self.child_worker_request(&stored)?;
+            crate::subagent_dispatch_worker::SubagentDispatchHandle::start(request)
+        })();
+        match result {
+            Ok(handle) => {
+                self.subagent_dispatch_errors.remove(child_id);
+                self.subagent_dispatches.insert(child_id.to_owned(), handle);
+            }
+            Err(error) => {
+                self.subagent_dispatch_errors
+                    .insert(child_id.to_owned(), error);
+            }
+        }
+        self.refresh_sessions();
+    }
+
+    fn poll_subagent_dispatches(&mut self) -> bool {
+        let mut changed = false;
+        let finished = self
+            .subagent_dispatches
+            .iter()
+            .filter_map(|(child, handle)| match handle.updates.try_recv() {
+                Ok(result) => Some((child.clone(), result)),
+                Err(TryRecvError::Disconnected) => Some((
+                    child.clone(),
+                    Err("El dispatcher terminó sin resultado; revisá el journal".into()),
+                )),
+                Err(TryRecvError::Empty) => None,
+            })
+            .collect::<Vec<_>>();
+        for (child, result) in finished {
+            self.subagent_dispatches.remove(&child);
+            if let Err(error) = result {
+                self.subagent_dispatch_errors.insert(child, error);
+            }
+            changed = true;
+        }
+        let candidates = self.startup_subagent_candidates.drain().collect::<Vec<_>>();
+        for child in candidates {
+            self.start_subagent_mailbox_dispatch(&child);
+            changed = true;
+        }
+        if changed {
+            self.refresh_sessions();
+        }
+        changed
     }
 
     fn poll_subagent_sessions(&mut self) -> bool {
@@ -4525,10 +7785,16 @@ impl AgentsWindow {
     }
 
     fn poll_subagent_events(&mut self) -> bool {
+        // Keep the old layout's scroll intent before journal replacement or
+        // approval/liveness changes alter the selected child's viewport.
+        let follow_tail = self.following_selected_transcript();
         let mut changed = false;
         let mut refresh_status = false;
         let mut selected_child_changed = false;
-        loop {
+        let mut bridge_disconnected = false;
+        // A live producer can refill a bounded subscriber while we poll it.
+        // Give painting and input the same event budget as the main stream.
+        for _ in 0..MAX_RUN_UPDATES_PER_FRAME {
             match self.subagent_events.try_recv() {
                 Ok(SubagentBridgeEvent::Event {
                     child_session_id,
@@ -4548,26 +7814,44 @@ impl AgentsWindow {
                             | AgentEventKind::TurnCancelled
                     );
                 }
-                Ok(SubagentBridgeEvent::Closed { .. }) => {
+                Ok(SubagentBridgeEvent::Closed { child_session_id }) => {
                     changed = true;
                     refresh_status = true;
+                    selected_child_changed |=
+                        self.view.selected_session.as_deref() == Some(child_session_id.as_str());
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     self.subagent_events = self.subagent_bridge.subscribe();
                     changed = true;
+                    refresh_status = true;
+                    bridge_disconnected = true;
                     break;
                 }
             }
         }
         if changed {
             self.rebuild_live_subagent_views();
-            if selected_child_changed {
+            if selected_child_changed || bridge_disconnected {
+                // Snapshot liveness before loading the journal. A bounded
+                // subscriber can miss a terminal event before reconnecting;
+                // the journal recovers that tail even if no new event arrives.
+                let live_children = self.subagent_bridge.active_child_ids();
                 if let (Some(store), Some(child_id)) = (&self.store, &self.view.selected_session) {
                     if let Ok(Some(stored)) = store.load(child_id) {
-                        self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
-                        self.projection = TranscriptProjection::from_events(&stored.events);
-                        self.view.transcript = self.projection.items().to_vec();
+                        if stored.session.subagent.is_some() {
+                            self.last_sequence =
+                                stored.events.last().map_or(0, |event| event.sequence);
+                            self.projection = if live_children.contains(child_id) {
+                                TranscriptProjection::from_live_events(&stored.events)
+                            } else {
+                                TranscriptProjection::from_events(&stored.events)
+                            };
+                            self.publish_transcript();
+                            if follow_tail {
+                                self.tree.scroll_to_end("transcript");
+                            }
+                        }
                     }
                 }
             }
@@ -4576,6 +7860,214 @@ impl AgentsWindow {
             }
         }
         changed
+    }
+
+    fn branch_change_blocked_reason(&self) -> Option<&'static str> {
+        if self.view.environment.workflow.busy.is_some() || self.git_action_request.is_some() {
+            return Some("Espera a que termine la operación de Git.");
+        }
+        (self.view.running
+            || self.view.background_run_selected
+            || self.active_run.is_some()
+            || self.active_compact.is_some()
+            || self.active_resume.is_some()
+            || self.active_child_recovery.is_some()
+            || !self.view.active_subagents.is_empty()
+            || !self.subagent_dispatches.is_empty()
+            || !self.background_automation_runs.is_empty())
+        .then_some("Espera a que termine el agente para cambiar de rama.")
+    }
+
+    fn request_composer_branches(&mut self, operation: BranchOperation, ctx: &egui::Context) {
+        self.branch_revision = self.branch_revision.wrapping_add(1);
+        self.view.composer_branches.revision = self.branch_revision;
+        self.view.composer_branches.workspace = Some(PathBuf::from(&self.view.workspace));
+        self.view.composer_branches.error = None;
+        match &operation {
+            BranchOperation::List => self.view.composer_branches.loading = true,
+            BranchOperation::Switch { branch, .. } => {
+                self.view.composer_branches.switching = Some(branch.name.clone());
+            }
+        }
+        let result = (|| {
+            if self.branch_worker.is_none() {
+                self.branch_worker =
+                    Some(BranchWorker::spawn().map_err(|error| error.to_string())?);
+            }
+            self.branch_worker.as_ref().unwrap().submit(BranchRequest {
+                workspace: PathBuf::from(&self.view.workspace),
+                revision: self.branch_revision,
+                operation,
+            })
+        })();
+        if let Err(error) = result {
+            self.view.composer_branches.loading = false;
+            self.view.composer_branches.switching = None;
+            self.view.composer_branches.error = Some(error);
+        }
+        ctx.request_repaint_after(Duration::from_millis(80));
+    }
+
+    fn toggle_composer_branches(&mut self, ctx: &egui::Context) {
+        if self.view.composer_branches.switching() {
+            return;
+        }
+        if self.view.composer_branches.open {
+            self.view.composer_branches.open = false;
+            return;
+        }
+        self.view.composer_branches = BranchPickerView {
+            open: true,
+            blocked_reason: self.branch_change_blocked_reason(),
+            ..Default::default()
+        };
+        self.tree.set_input_value("composer_branch_search", "");
+        self.view.composer_project_menu_open = false;
+        self.view.composer_context_open = false;
+        self.view.composer_add_menu_open = false;
+        self.view.composer_model_menu_open = false;
+        self.view.composer_effort_menu_open = false;
+        self.prompt_focus_pending = false;
+        self.composer_model_search_focus_pending = false;
+        self.request_composer_branches(BranchOperation::List, ctx);
+    }
+
+    fn select_composer_branch(&mut self, selection: &str, ctx: &egui::Context) {
+        let Some((revision, index)) = selection.split_once(':').and_then(|(revision, index)| {
+            Some((revision.parse::<u64>().ok()?, index.parse::<usize>().ok()?))
+        }) else {
+            return;
+        };
+        let picker = &self.view.composer_branches;
+        if !picker.open
+            || picker.loading
+            || picker.switching()
+            || picker.revision != revision
+            || picker.workspace.as_deref() != Some(Path::new(&self.view.workspace))
+        {
+            return;
+        }
+        let Some(snapshot) = picker.snapshot.clone() else {
+            return;
+        };
+        let Some(branch) = snapshot.branches.get(index).cloned() else {
+            return;
+        };
+        if branch.current {
+            self.view.composer_branches.open = false;
+            return;
+        }
+        let blocked = self
+            .branch_change_blocked_reason()
+            .map(str::to_owned)
+            .or_else(|| {
+                match self
+                    .native_command_sessions
+                    .has_running_in_worktree(snapshot.worktree_root())
+                {
+                    Ok(false) => None,
+                    Ok(true) => Some(
+                        "Detén los comandos activos en este proyecto antes de cambiar de rama."
+                            .into(),
+                    ),
+                    Err(error) => Some(format!(
+                        "No se pudo comprobar el estado de los comandos: {error}"
+                    )),
+                }
+            });
+        if let Some(error) = blocked {
+            self.view.composer_branches.error = Some(error);
+            return;
+        }
+        self.request_composer_branches(BranchOperation::Switch { snapshot, branch }, ctx);
+    }
+
+    fn poll_composer_branches(&mut self, ctx: &egui::Context) -> bool {
+        let mut changed = false;
+        let workspace = PathBuf::from(&self.view.workspace);
+        if self
+            .view
+            .composer_branches
+            .workspace
+            .as_ref()
+            .is_some_and(|path| path != &workspace)
+        {
+            self.view.composer_branches = Default::default();
+            changed = true;
+        }
+        let blocked_reason = self.branch_change_blocked_reason();
+        if self.view.composer_branches.blocked_reason != blocked_reason {
+            self.view.composer_branches.blocked_reason = blocked_reason;
+            changed = true;
+        }
+        if !self.view.composer_branches.loading && !self.view.composer_branches.switching() {
+            return changed;
+        }
+        let response = self
+            .branch_worker
+            .as_ref()
+            .ok_or_else(|| "El selector de ramas no está disponible".to_owned())
+            .and_then(|worker| {
+                worker.poll_latest(self.view.composer_branches.revision, &workspace)
+            });
+        let response = match response {
+            Ok(Some(response)) => response,
+            Ok(None) => {
+                ctx.request_repaint_after(Duration::from_millis(80));
+                return changed;
+            }
+            Err(error) => {
+                self.branch_worker = None;
+                self.view.composer_branches.loading = false;
+                self.view.composer_branches.switching = None;
+                self.view.composer_branches.error = Some(error);
+                return true;
+            }
+        };
+        self.view.composer_branches.loading = false;
+        self.view.composer_branches.switching = None;
+        self.view.composer_branches.error = response
+            .switch_result
+            .as_ref()
+            .and_then(|result| result.as_ref().err())
+            .cloned();
+        match response.snapshot {
+            Ok(snapshot) => {
+                self.view.project_branch = Some(snapshot.label.clone());
+                self.view.conversation_activity.observe_branch(
+                    &workspace,
+                    self.view.selected_session.as_deref(),
+                    &snapshot.label,
+                );
+                self.view.composer_branches.snapshot = Some(snapshot);
+            }
+            Err(error) => {
+                self.view.project_branch = None;
+                self.view.composer_branches.snapshot = None;
+                self.view.composer_branches.error.get_or_insert(error);
+            }
+        }
+        if let Some(result) = response.switch_result {
+            if result.is_ok() {
+                self.view.composer_branches.open = false;
+                self.view.status = format!(
+                    "Rama activa: {}",
+                    self.view.project_branch.as_deref().unwrap_or("HEAD")
+                );
+            }
+            self.invalidate_workspace_files();
+            if self.view.side_tab == SideTab::Files || self.ide_workspace_active() {
+                self.refresh_file_rows();
+            }
+            self.request_git_review(workspace);
+            if self.view.environment.open {
+                self.request_environment_git(crate::environment_git::Operation::Refresh, ctx);
+            }
+            self.refresh_mcp_settings();
+            self.refresh_native_skills();
+            self.refresh_composer_context_percent();
+        }
+        true
     }
 
     fn refresh_composer_projects(&mut self) {
@@ -4600,6 +8092,16 @@ impl AgentsWindow {
         }
     }
 
+    /// Whether a turn can authenticate with this provider right now.
+    ///
+    /// A missing key is not the test for Codex: its access token is short
+    /// lived and is renewed when a request is made, so between renewals the
+    /// stored key reads as absent while the account is still connected. For
+    /// Codex the account record decides; this neither renews nor connects.
+    fn provider_ready_for_turn(&self, provider_id: &str, connection: &RuntimeConnection) -> bool {
+        provider_ready_at(&self.data_root, provider_id, connection)
+    }
+
     fn native_settings(&self) -> NativeProviderSettings {
         NativeProviderSettings {
             provider_id: self.view.native_provider_id.clone(),
@@ -4611,6 +8113,34 @@ impl AgentsWindow {
     fn set_settings_notice(&mut self, message: impl Into<String>, is_error: bool) {
         self.view.settings_notice = Some(message.into());
         self.view.settings_notice_error = is_error;
+    }
+
+    /// A confirmation leaves by itself after a few seconds. An error stays
+    /// until it is dismissed or replaced.
+    fn expire_settings_notice(&mut self, ctx: &egui::Context) -> bool {
+        const SHOWN_FOR: Duration = Duration::from_secs(5);
+        let Some(message) = self.view.settings_notice.clone() else {
+            self.settings_notice_seen = None;
+            return false;
+        };
+        let since = match &self.settings_notice_seen {
+            Some((seen, since)) if *seen == message => *since,
+            _ => {
+                let now = Instant::now();
+                self.settings_notice_seen = Some((message, now));
+                now
+            }
+        };
+        if self.view.settings_notice_error {
+            return false;
+        }
+        let shown = since.elapsed();
+        if shown < SHOWN_FOR {
+            ctx.request_repaint_after(SHOWN_FOR - shown);
+            return false;
+        }
+        self.clear_settings_notice();
+        true
     }
 
     fn clear_settings_notice(&mut self) {
@@ -5057,6 +8587,119 @@ impl AgentsWindow {
         changed
     }
 
+    fn start_mcp_inspection(&mut self, id: &str) {
+        use crate::mcp_inspection::{
+            McpInspectionController, McpInspectionPhase, McpInspectionUiState,
+        };
+        if !self.view.show_settings || self.view.settings_page != SettingsPage::Mcp {
+            return;
+        }
+        if self.view.running || self.active_resume.is_some() || self.active_mcp_inspection.is_some()
+        {
+            self.set_settings_notice(
+                "Esperá que termine la operación actual antes de inspeccionar MCP",
+                true,
+            );
+            return;
+        }
+        let result = (|| {
+            let saved = McpSettings::load(&self.data_root, Path::new(&self.view.workspace))?;
+            let server = saved
+                .servers
+                .iter()
+                .find(|server| server.id == id)
+                .cloned()
+                .ok_or_else(|| {
+                    "El servidor MCP ya no está en la configuración guardada".to_owned()
+                })?;
+            if self.view.mcp_servers.iter().find(|server| server.id == id) != Some(&server) {
+                self.view.mcp_servers = saved.servers;
+                return Err("La configuración MCP guardada cambió. Revisá la fila actual y volvé a inspeccionar.".to_owned());
+            }
+            McpInspectionController::start(server, Path::new(&self.view.workspace))
+        })();
+        match result {
+            Ok(controller) => {
+                self.view.mcp_inspection.begin(controller.scope().clone());
+                self.active_mcp_inspection = Some(controller);
+                self.clear_settings_notice();
+            }
+            Err(error) => {
+                self.view.mcp_inspection = McpInspectionUiState {
+                    phase: McpInspectionPhase::Failed,
+                    error: Some(error),
+                    ..Default::default()
+                };
+            }
+        }
+    }
+
+    fn cancel_mcp_inspection(&mut self) {
+        if let Some(controller) = &self.active_mcp_inspection {
+            controller.cancel();
+            self.view.mcp_inspection.phase = crate::mcp_inspection::McpInspectionPhase::Cancelling;
+        }
+    }
+
+    fn poll_mcp_inspection(&mut self) -> bool {
+        use crate::mcp_inspection::McpInspectionPhase;
+        let Some(controller) = self.active_mcp_inspection.as_mut() else {
+            if self.view.show_settings
+                && self.view.settings_page == SettingsPage::Mcp
+                && matches!(
+                    self.view.mcp_inspection.phase,
+                    McpInspectionPhase::Completed | McpInspectionPhase::Failed
+                )
+            {
+                if let Some(scope) = &self.view.mcp_inspection.scope {
+                    let saved = McpSettings::load(&self.data_root, Path::new(&self.view.workspace));
+                    if !saved.as_ref().is_ok_and(|saved| {
+                        scope.matches_saved(Path::new(&self.view.workspace), saved)
+                    }) {
+                        self.view.mcp_inspection.phase = McpInspectionPhase::Discarded;
+                        self.view.mcp_inspection.snapshot = None;
+                        self.view.mcp_inspection.error = Some("La configuración guardada o el proyecto cambió después de esta inspección. Repetí la consulta para el alcance actual.".to_owned());
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        let workspace = Path::new(&self.view.workspace);
+        let saved = McpSettings::load(&self.data_root, workspace);
+        let stale = !saved
+            .as_ref()
+            .is_ok_and(|saved| controller.scope().matches_saved(workspace, saved));
+        let mut changed = false;
+        if stale && self.view.mcp_inspection.phase != McpInspectionPhase::Cancelling {
+            controller.cancel();
+            self.view.mcp_inspection.phase = McpInspectionPhase::Cancelling;
+            self.view.mcp_inspection.error =
+                Some("El alcance guardado cambió; cancelando la inspección anterior…".to_owned());
+            changed = true;
+        }
+        let Some(result) = controller.try_recv() else {
+            return changed;
+        };
+        self.active_mcp_inspection = None;
+        match saved {
+            Ok(saved) => {
+                self.view
+                    .mcp_inspection
+                    .apply_result(result, workspace, &saved);
+            }
+            Err(error) => {
+                if self.view.mcp_inspection.scope.as_ref() == Some(&result.scope) {
+                    self.view.mcp_inspection.phase = McpInspectionPhase::Discarded;
+                    self.view.mcp_inspection.snapshot = None;
+                    self.view.mcp_inspection.error = Some(format!("No se pudo revisar la configuración MCP guardada; resultado descartado: {error}"));
+                    self.view.mcp_inspection.shutdown_error = result.shutdown_error;
+                }
+            }
+        }
+        true
+    }
+
     fn commit_settings_preferences(&mut self, next: SettingsPreferences, message: &str) -> bool {
         if let Err(error) = next.save(&self.data_root) {
             self.set_settings_notice(error, true);
@@ -5169,6 +8812,47 @@ impl AgentsWindow {
         }
     }
 
+    fn clear_native_skill_workspace_selection(&mut self) {
+        if !self.view.show_settings
+            || self.view.settings_page != SettingsPage::Skills
+            || !self.view.native_skills.clear_workspace_confirm_open
+        {
+            return;
+        }
+        self.view.native_skills.clear_workspace_confirm_open = false;
+        let Some(expected) = self.view.native_skills.clear_workspace_snapshot.take() else {
+            self.set_settings_notice(
+                "Abre de nuevo la confirmación de la selección de skills",
+                true,
+            );
+            return;
+        };
+        let result = NativeSkillsSettings::load(&self.data_root, Path::new(&self.view.workspace))
+            .and_then(|settings| {
+                if settings.workspace != expected.workspace
+                    || settings.workspace != Path::new(&self.view.native_skills.workspace) {
+                    return Err("La selección confirmada pertenece a otro proyecto".to_owned());
+                }
+                if settings.selections != expected.selections {
+                    return Err("La selección cambió desde que abriste la confirmación; revisa de nuevo antes de vaciarla".to_owned());
+                }
+                let updated = settings.with_selections(Vec::new());
+                updated.save(&self.data_root)?;
+                Ok(updated)
+            });
+        match result {
+            Ok(settings) => {
+                self.view.native_skills =
+                    NativeSkillsUiState::from_settings(&settings, &self.data_root);
+                self.set_settings_notice("Se vació la selección de skills de este proyecto", false);
+            }
+            Err(error) => {
+                self.refresh_native_skills();
+                self.set_settings_notice(error, true);
+            }
+        }
+    }
+
     fn reset_native_skills(&mut self) {
         let result =
             NativeSkillsSettings::reset_all(&self.data_root, Path::new(&self.view.workspace));
@@ -5182,6 +8866,18 @@ impl AgentsWindow {
         }
     }
 
+    fn commit_external_agent_settings(&mut self, next: ExternalAgentSettings, message: &str) {
+        match next.save(&self.data_root) {
+            Ok(()) => {
+                self.external_agent_settings = next;
+                self.external_bridge.set_policy(next);
+                self.view.external_agents = next;
+                self.set_settings_notice(message, false);
+            }
+            Err(error) => self.set_settings_notice(error, true),
+        }
+    }
+
     fn commit_agent_tool_settings(&mut self, next: AgentToolSettings, message: &str) -> bool {
         if let Err(error) = next.save(&self.data_root) {
             self.set_settings_notice(error, true);
@@ -5189,6 +8885,7 @@ impl AgentsWindow {
         }
         let command_access_revoked = next.command_isolation()
             != self.agent_tool_settings.command_isolation()
+            || next.full_access() != self.agent_tool_settings.full_access()
             || !next.permissions().run_command;
         if command_access_revoked {
             self.native_command_sessions.revoke_all();
@@ -5196,6 +8893,7 @@ impl AgentsWindow {
         }
         self.agent_tool_settings = next;
         self.view.native_tool_permissions = next.permissions();
+        self.view.native_full_access = next.full_access();
         self.view.native_command_isolation = next.command_isolation();
         self.view.workspace_writes_enabled =
             next.permissions().write_file && next.permissions().run_command;
@@ -5208,6 +8906,16 @@ impl AgentsWindow {
             self.set_settings_notice(message, false);
         }
         true
+    }
+
+    fn native_local_tools(&self, workspace: &Path) -> Result<LocalTools, String> {
+        let skill_roots = crate::marketplace::active_skill_directories(&self.data_root, workspace)
+            .map_err(|error| format!("No se pudieron validar las referencias de skills: {error}"))?;
+        Ok(LocalTools::new()
+            .with_permissions(self.agent_tool_settings.permissions())
+            .with_command_isolation(self.agent_tool_settings.command_isolation())
+            .with_elevated_commands(self.agent_tool_settings.full_access())
+            .with_read_only_roots(skill_roots))
     }
 
     fn native_parent_tools(
@@ -5223,9 +8931,7 @@ impl AgentsWindow {
             isolation,
             permissions.run_command,
         )?;
-        let mut tools = LocalTools::new()
-            .with_permissions(permissions)
-            .with_command_isolation(isolation);
+        let mut tools = self.native_local_tools(workspace)?;
         if let Some(commands) = commands {
             tools = tools.with_persistent_commands(commands);
         }
@@ -5233,6 +8939,9 @@ impl AgentsWindow {
     }
 
     fn clear_native_command_ui(&mut self) {
+        self.view.native_command_control.open = false;
+        self.native_command_control_response = None;
+        self.native_command_prepared_request = None;
         self.view.native_commands.clear();
         self.view.native_commands_error = None;
         self.view.pending_native_command_termination = None;
@@ -5240,13 +8949,165 @@ impl AgentsWindow {
         self.native_command_snapshot_response = None;
         self.native_command_termination_response = None;
         self.last_native_command_snapshot = None;
+        self.view.native_command_output = Default::default();
+        self.native_command_output_response = None;
+        self.native_command_output_manager = None;
+    }
+
+    fn inspect_native_command_output(&mut self, command_id: &str) {
+        if self.view.show_settings
+            || self.view.main_page != MainPage::Workspace
+            || !self.resource_pane_visible()
+            || self.view.side_tab != SideTab::Activity
+            || self.native_command_output_response.is_some()
+        {
+            return;
+        }
+        let Some(owner) = self.view.selected_session.clone() else {
+            return;
+        };
+        let Some(manager) = self.native_command_sessions.manager(&owner) else {
+            return;
+        };
+        if Path::new(&self.view.workspace)
+            .canonicalize()
+            .ok()
+            .as_deref()
+            != Some(manager.workspace())
+        {
+            return;
+        }
+        let is_refresh = self
+            .view
+            .native_command_output
+            .matches_scope(Some(&owner), Path::new(&self.view.workspace))
+            && self.view.native_command_output.command_id.as_deref() == Some(command_id)
+            && self
+                .native_command_output_manager
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &manager));
+        if !is_refresh
+            && !self
+                .view
+                .native_commands
+                .iter()
+                .any(|command| command.id == command_id)
+        {
+            return;
+        }
+        let request_id = Uuid::new_v4().to_string();
+        self.view.native_command_output =
+            crate::native_command_output_ui::NativeCommandOutputUiState {
+                owner_session_id: Some(owner.clone()),
+                command_id: Some(command_id.into()),
+                workspace: Some(manager.workspace().to_owned()),
+                request_id: Some(request_id.clone()),
+                loading: true,
+                ..Default::default()
+            };
+        self.native_command_output_manager = Some(manager.clone());
+        let command_id = command_id.to_owned();
+        let (sender, receiver) = mpsc::channel();
+        self.native_command_output_response = Some(receiver);
+        std::thread::spawn(move || {
+            let result = manager
+                .inspect_pending_output(&command_id)
+                .map(crate::native_command_output_ui::NativeCommandOutputSnapshot::new)
+                .map_err(|error| error.to_string());
+            let _ = sender.send((owner, command_id, request_id, manager, result));
+        });
+    }
+
+    fn poll_native_command_output(&mut self) -> bool {
+        let local = &self.view.native_command_output;
+        if local.owner_session_id.is_some()
+            && (self.view.show_settings
+                || self.view.main_page != MainPage::Workspace
+                || !self.resource_pane_visible()
+                || self.view.side_tab != SideTab::Activity
+                || !local.matches_scope(
+                    self.view.selected_session.as_deref(),
+                    Path::new(&self.view.workspace),
+                )
+                || local.owner_session_id.as_deref().is_none_or(|owner| {
+                    let current = self.native_command_sessions.manager(owner);
+                    !current
+                        .as_ref()
+                        .zip(self.native_command_output_manager.as_ref())
+                        .is_some_and(|(current, expected)| Arc::ptr_eq(current, expected))
+                }))
+        {
+            self.view.native_command_output = Default::default();
+            self.native_command_output_response = None;
+            self.native_command_output_manager = None;
+            return true;
+        }
+        match self
+            .native_command_output_response
+            .as_ref()
+            .map(Receiver::try_recv)
+        {
+            Some(Ok((owner, command_id, request_id, manager, result))) => {
+                self.native_command_output_response = None;
+                let local = &mut self.view.native_command_output;
+                if local.owner_session_id.as_deref() == Some(&owner)
+                    && self.view.selected_session.as_deref() == Some(&owner)
+                    && local.command_id.as_deref() == Some(&command_id)
+                    && local.request_id.as_deref() == Some(&request_id)
+                    && self
+                        .native_command_sessions
+                        .manager(&owner)
+                        .is_some_and(|current| Arc::ptr_eq(&current, &manager))
+                    && self
+                        .native_command_output_manager
+                        .as_ref()
+                        .is_some_and(|expected| Arc::ptr_eq(expected, &manager))
+                {
+                    local.loading = false;
+                    match result {
+                        Ok(snapshot) if snapshot.inspection.id == command_id => {
+                            local.snapshot = Some(snapshot);
+                            local.error = None;
+                        }
+                        Ok(_) => {
+                            local.snapshot = None;
+                            local.error = Some(
+                                "La copia recibida no corresponde al comando consultado".into(),
+                            );
+                        }
+                        Err(error) => {
+                            local.snapshot = None;
+                            local.error = Some(error);
+                        }
+                    }
+                    return true;
+                }
+                self.view.native_command_output.loading = false;
+                self.view.native_command_output.snapshot = None;
+                self.view.native_command_output.error =
+                    Some("Se descartó una respuesta de otra consulta; actualiza la copia".into());
+                return true;
+            }
+            Some(Err(TryRecvError::Disconnected)) => {
+                self.native_command_output_response = None;
+                self.view.native_command_output.loading = false;
+                self.view.native_command_output.snapshot = None;
+                self.view.native_command_output.error =
+                    Some("Se interrumpió la copia de salida pendiente".into());
+                return true;
+            }
+            _ => {}
+        }
+        false
     }
 
     /// A command listing reads registry state without draining stdout/stderr.
     /// Both listing and termination run off the UI thread; only small channel
     /// results are applied during a frame.
     fn poll_native_command_sessions(&mut self) -> bool {
-        let mut changed = false;
+        let mut changed = self.poll_native_command_output()
+            | self.poll_native_manual_commands()
+            | self.poll_native_command_history();
         match self
             .native_command_termination_response
             .as_ref()
@@ -5349,7 +9210,7 @@ impl AgentsWindow {
         };
         if self.view.show_settings
             || self.view.main_page != MainPage::Workspace
-            || !self.view.show_side_pane
+            || !self.resource_pane_visible()
             || self.view.side_tab != SideTab::Activity
             || self.native_command_snapshot_response.is_some()
             || self
@@ -5370,46 +9231,10 @@ impl AgentsWindow {
     }
 
     fn confirm_native_command_termination(&mut self, command_id: &str) {
-        if self.view.pending_native_command_termination.as_deref() != Some(command_id) {
-            return;
-        }
+        // Legacy action IDs may arrive from an old frame. Open the current
+        // scoped controls; only their exact durable confirmation can dispatch.
         self.view.pending_native_command_termination = None;
-        if self.native_command_termination_response.is_some() {
-            self.view.status = "Ya se está terminando un proceso".into();
-            return;
-        }
-        let Some(owner) = self.view.selected_session.clone() else {
-            return;
-        };
-        if !self
-            .view
-            .native_commands
-            .iter()
-            .any(|command| command.id == command_id && command.exit.is_none())
-        {
-            self.view.status = "Ese proceso ya no está en ejecución".into();
-            return;
-        }
-        let Some(manager) = self.native_command_sessions.manager(&owner) else {
-            self.view.status = "La sesión de comandos ya no está disponible".into();
-            return;
-        };
-        let command_id = command_id.to_owned();
-        let (sender, receiver) = mpsc::channel();
-        self.native_command_termination_response = Some(receiver);
-        self.view.native_command_terminating = Some(command_id.clone());
-        std::thread::spawn(move || {
-            let result = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| error.to_string())
-                .and_then(|runtime| {
-                    runtime
-                        .block_on(manager.terminate(&command_id))
-                        .map_err(|error| error.to_string())
-                });
-            let _ = sender.send((owner, command_id, manager, result));
-        });
+        self.open_native_command_controls(command_id);
     }
 
     fn native_permission_policy(&self) -> Result<PermissionPolicy, String> {
@@ -5496,6 +9321,141 @@ impl AgentsWindow {
         Ok(())
     }
 
+    fn refresh_output_limit_editor(&mut self) {
+        if self.view.native_provider_id == "codex" {
+            self.view.native_output_limit_draft.clear();
+            self.view.native_output_limit_field.clear();
+            self.view.native_output_limit_responses = false;
+            self.view.native_output_limit_messages = false;
+            self.view.native_output_limit_load_error = None;
+            self.tree.set_input_value("native_output_limit_tokens", "");
+            return;
+        }
+        let result = (|| {
+            let adapter = native_provider::adapter_for_model_at(
+                &self.data_root,
+                &self.view.native_provider_id,
+                &self.view.model,
+            )?
+            .ok_or_else(|| "Proveedor no registrado".to_owned())?;
+            self.view.native_output_limit_responses = adapter.wire_api == NativeWireApi::Responses;
+            self.view.native_output_limit_messages =
+                adapter.wire_api == NativeWireApi::AnthropicMessages;
+            let limit = native_provider::configured_output_limit(
+                &self.data_root,
+                &adapter.id,
+                &self.view.model,
+                adapter.wire_api,
+            )?;
+            Ok::<_, String>(limit)
+        })();
+        match result {
+            Ok(limit) => {
+                self.view.native_output_limit_draft = limit
+                    .as_ref()
+                    .map(|limit| limit.tokens.to_string())
+                    .unwrap_or_default();
+                self.view.native_output_limit_field =
+                    limit.map(|limit| limit.field).unwrap_or_else(|| {
+                        if self.view.native_output_limit_responses {
+                            "max_output_tokens".into()
+                        } else if self.view.native_output_limit_messages {
+                            "max_tokens".into()
+                        } else {
+                            String::new()
+                        }
+                    });
+                self.view.native_output_limit_load_error = None;
+            }
+            Err(error) => {
+                self.view.native_output_limit_draft.clear();
+                self.view.native_output_limit_field.clear();
+                self.view.native_output_limit_load_error = Some(error);
+            }
+        }
+        self.tree.set_input_value(
+            "native_output_limit_tokens",
+            &self.view.native_output_limit_draft,
+        );
+    }
+
+    fn save_output_limit_editor(&mut self, reset: bool) {
+        if self.view.running {
+            return;
+        }
+        let result = (|| -> Result<(), String> {
+            if self.view.native_provider_id == "codex" {
+                return Err(
+                    "Los límites de esta conexión se administran en tu plan de ChatGPT".into(),
+                );
+            }
+            if let Some(error) = &self.view.native_output_limit_load_error {
+                return Err(error.clone());
+            }
+            let adapter = native_provider::adapter_for_model_at(
+                &self.data_root,
+                &self.view.native_provider_id,
+                &self.view.model,
+            )?
+            .ok_or_else(|| "Proveedor no registrado".to_owned())?;
+            let limit = if reset {
+                None
+            } else {
+                let tokens = self
+                    .view
+                    .native_output_limit_draft
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|_| "Escribe una cantidad entera positiva de tokens".to_owned())?;
+                if native_output_maximum(
+                    &adapter,
+                    &self.view.model,
+                    self.view.catalog.as_deref(),
+                    &self.model_discoveries,
+                )
+                .is_some_and(|maximum| tokens > maximum)
+                {
+                    return Err("El tope supera el máximo publicado para este modelo exacto".into());
+                }
+                if adapter
+                    .chat_request_fields
+                    .keys()
+                    .any(|field| matches!(field.as_str(), "max_tokens" | "max_completion_tokens"))
+                {
+                    return Err("El registro del proveedor ya fija un límite de salida".into());
+                }
+                Some(native_provider::NativeOutputLimit {
+                    provider_id: adapter.id.clone(),
+                    model_id: self.view.model.clone(),
+                    wire_api: adapter.wire_api,
+                    field: self.view.native_output_limit_field.clone(),
+                    tokens,
+                })
+            };
+            native_provider::save_output_limit(
+                &self.data_root,
+                &adapter.id,
+                &self.view.model,
+                limit,
+            )
+        })();
+        match result {
+            Ok(()) => {
+                self.refresh_output_limit_editor();
+                self.refresh_composer_context_percent();
+                self.set_settings_notice(
+                    if reset {
+                        "Tope de salida retirado para este modelo"
+                    } else {
+                        "Tope de salida guardado para los próximos turnos de este modelo"
+                    },
+                    false,
+                );
+            }
+            Err(error) => self.set_settings_notice(error, true),
+        }
+    }
+
     fn persist_native_settings(&mut self) -> bool {
         let settings = self.native_settings();
         self.view.native_key_available = native_key_available_at(&settings, &self.data_root);
@@ -5503,6 +9463,7 @@ impl AgentsWindow {
             let message = format!("No se pudo guardar el proveedor: {error}");
             self.view.status = message.clone();
             self.set_settings_notice(message, true);
+            self.refresh_composer_context_percent();
             return false;
         }
         self.clear_settings_notice();
@@ -5516,23 +9477,310 @@ impl AgentsWindow {
         } else {
             self.refresh_composer_routes();
         }
+        self.refresh_output_limit_editor();
+        self.refresh_composer_context_percent();
         true
+    }
+
+    /// Settings "Usar modelo" commits the native route and selected backend
+    /// before changing the active composer. Failed writes leave its route intact.
+    fn select_catalog_native_model(&mut self, provider_id: &str, model_id: &str) -> bool {
+        let previous_settings = self.native_settings();
+        let settings = NativeProviderSettings {
+            provider_id: provider_id.to_owned(),
+            model_id: model_id.to_owned(),
+            custom_endpoint: previous_settings.custom_endpoint.clone(),
+        };
+        if let Err(error) = settings.save(&self.data_root) {
+            self.set_settings_notice(format!("No se pudo guardar el proveedor: {error}"), true);
+            return false;
+        }
+        let mut preferences = self.composer_preferences.clone();
+        let mut choice = preferences.choice("native", model_id);
+        choice.model = model_id.to_owned();
+        preferences.set("native", choice);
+        preferences.set_selected_backend("native");
+        if let Err(error) = preferences.save(&self.data_root) {
+            let rollback = previous_settings.save(&self.data_root);
+            let message = match rollback {
+                Ok(()) => format!("No se pudo guardar el selector de modelo: {error}"),
+                Err(rollback_error) => format!(
+                    "No se pudo guardar el selector de modelo: {error}. No se pudo restaurar el perfil nativo anterior: {rollback_error}"
+                ),
+            };
+            self.set_settings_notice(message, true);
+            return false;
+        }
+        if self.view.selected_backend != "native" {
+            self.new_session();
+        }
+        self.view.native_key_available = native_key_available_at(&settings, &self.data_root);
+        self.view.native_provider_id = settings.provider_id;
+        self.view.model = settings.model_id;
+        self.view.selected_backend = "native".to_owned();
+        self.composer_preferences = preferences;
+        self.refresh_composer_selection();
+        self.refresh_output_limit_editor();
+        self.refresh_composer_context_percent();
+        // Codex retains the provider's order after selection. Reveal the
+        // actual filtered row so the details modal can restore its focus.
+        if let Some(index) = settings_ui::catalog_model_row_index(&self.view, provider_id, model_id) {
+            self.tree
+                .scroll_to_index(format!("catalog_models:{provider_id}").as_str(), index);
+        }
+        true
+    }
+
+    fn cancel_provider_connect(&mut self) {
+        self.provider_connection_worker = None;
+        self.provider_connection_id = None;
+        self.provider_browser_url = None;
+        self.provider_key_draft.clear();
+        self.tree.set_input_value("provider_api_key", "");
+        self.view.provider_connect = None;
+        self.refresh_composer_routes();
+    }
+
+    fn begin_provider_connect(&mut self, id: &str) {
+        if self.view.running
+            || self.provider_connection_worker.is_some()
+            || !crate::provider_connections::supported(id)
+        {
+            return;
+        }
+        self.provider_key_draft.clear();
+        self.tree.set_input_value("provider_api_key", "");
+        self.provider_browser_url = None;
+        self.view.catalog_expanded_model = None;
+        let service = self
+            .view
+            .provider_connections
+            .get(id)
+            .map(|c| c.service.as_str())
+            .filter(|s| *s == "go")
+            .unwrap_or("zen");
+        self.view.provider_connect =
+            Some(crate::provider_connections::ConnectView::new(id, service));
+        self.clear_settings_notice();
+    }
+
+    fn start_provider_connect(&mut self) {
+        use crate::provider_connections::{ConnectPhase, ConnectionWorker};
+        if self.view.running || self.provider_connection_worker.is_some() {
+            return;
+        }
+        let Some(connect) = &mut self.view.provider_connect else {
+            return;
+        };
+        if !matches!(connect.phase, ConnectPhase::Entry | ConnectPhase::Error) {
+            return;
+        }
+        let id = connect.provider_id.clone();
+        let worker = if matches!(id.as_str(), "codex" | "openrouter") {
+            ConnectionWorker::oauth(self.data_root.clone(), id.clone())
+        } else if !self.provider_key_draft.trim().is_empty() {
+            ConnectionWorker::api_key(
+                self.data_root.clone(),
+                id.clone(),
+                std::mem::take(&mut self.provider_key_draft),
+                connect.service.clone(),
+            )
+        } else {
+            return;
+        };
+        connect.phase = ConnectPhase::Preparing;
+        connect.error = None;
+        connect.key_entered = false;
+        self.tree.set_input_value("provider_api_key", "");
+        self.provider_connection_id = Some(id);
+        self.provider_connection_worker = Some(worker);
+    }
+
+    fn poll_provider_connections(&mut self, ctx: &egui::Context) -> bool {
+        use crate::provider_connections::{self, ConnectPhase, ConnectionEvent, ConnectionWorker};
+        let mut changed = false;
+        if self.provider_refresh_last_poll.elapsed() >= Duration::from_secs(60)
+            && self.provider_refresh_worker.is_none()
+            && self.provider_connection_worker.is_none()
+        {
+            self.provider_refresh_last_poll = Instant::now();
+            let summaries = provider_connections::summaries(&self.data_root);
+            if summaries != self.view.provider_connections {
+                self.refresh_composer_routes();
+                changed = true;
+            }
+            if provider_connections::refresh_due(&self.data_root) {
+                self.provider_refresh_worker =
+                    Some(ConnectionWorker::refresh(self.data_root.clone()));
+            }
+        }
+        let refreshed =
+            self.provider_refresh_worker
+                .as_ref()
+                .and_then(|w| match w.receiver.try_recv() {
+                    Ok(event) => Some(event),
+                    Err(TryRecvError::Disconnected) => Some(ConnectionEvent::Failed(
+                        "No se pudo renovar la conexión".into(),
+                    )),
+                    Err(TryRecvError::Empty) => None,
+                });
+        if let Some(event) = refreshed {
+            self.provider_refresh_worker = None;
+            self.refresh_composer_routes();
+            if let ConnectionEvent::Failed(error) = event {
+                self.view.status = error;
+            } else {
+                // Settings reads the persistent catalog rather than account
+                // discovery. Replace a startup request that may have captured
+                // the expired token, then refresh both sources immediately.
+                self.catalog_response = None;
+                self.model_discovery_response = None;
+                self.model_discovery_pending = 0;
+                self.begin_catalog_refresh();
+                self.begin_model_discovery();
+            }
+            changed = true;
+        }
+        loop {
+            let event = self.provider_connection_worker.as_ref().and_then(|w| {
+                match w.receiver.try_recv() {
+                    Ok(event) => Some(event),
+                    Err(TryRecvError::Disconnected) => Some(ConnectionEvent::Failed(
+                        "La conexión se interrumpió. Inténtalo de nuevo.".into(),
+                    )),
+                    Err(TryRecvError::Empty) => None,
+                }
+            });
+            let Some(event) = event else {
+                break;
+            };
+            changed = true;
+            match event {
+                ConnectionEvent::Browser(url) => {
+                    self.provider_browser_url = Some(url.clone());
+                    if let Some(connect) = &mut self.view.provider_connect {
+                        connect.phase = ConnectPhase::Browser;
+                    }
+                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+                ConnectionEvent::Checking => {
+                    if let Some(connect) = &mut self.view.provider_connect {
+                        connect.phase = ConnectPhase::Checking;
+                    }
+                }
+                ConnectionEvent::Connected { provider_id: id, discovery, welcome } => {
+                    let listed = discovery.is_some();
+                    // Replies from the previous credential may already be
+                    // queued. Drop both owners before publishing the new one.
+                    self.catalog_response = None;
+                    self.model_discovery_response = None;
+                    self.model_discovery_pending = 0;
+                    self.view.composer_provider_status.retain(|_, status| {
+                        *status != ProviderModelStatus::Checking
+                    });
+                    if let Some(catalog) = &mut self.view.catalog {
+                        Arc::make_mut(catalog).clear_account_models(&id);
+                        self.view.catalog_status = catalog_status(catalog);
+                    }
+                    self.provider_usage_identities.remove(&id);
+                    self.model_discoveries.retain(|d| d.provider_id != id);
+                    if let Some(discovery) = discovery {
+                        self.model_discoveries.push(discovery);
+                    }
+                    self.provider_connection_worker = None;
+                    self.provider_connection_id = None;
+                    self.provider_browser_url = None;
+                    self.view.catalog_browse_provider = id.clone();
+                    self.view.composer_provider_status.remove(&id);
+                    self.refresh_composer_routes();
+                    self.begin_catalog_refresh();
+                    self.begin_model_discovery();
+                    if welcome {
+                        if let Some(connect) = &mut self.view.provider_connect {
+                            connect.phase = ConnectPhase::Welcome;
+                        }
+                    } else {
+                        self.view.provider_connect = None;
+                    }
+                    self.set_settings_notice(
+                        if listed {
+                            format!("{} conectado. Elige un modelo para empezar.", provider_connections::name(&id))
+                        } else {
+                            format!("Clave de {} guardada. El acceso se comprobará al usar un modelo.", provider_connections::name(&id))
+                        },
+                        false,
+                    );
+                    break;
+                }
+                ConnectionEvent::Disconnected { warning } => {
+                    self.catalog_response = None;
+                    self.model_discovery_response = None;
+                    self.model_discovery_pending = 0;
+                    self.view.composer_provider_status.retain(|_, status| {
+                        *status != ProviderModelStatus::Checking
+                    });
+                    if let Some(id) = self.provider_connection_id.take() {
+                        if let Some(catalog) = &mut self.view.catalog {
+                            Arc::make_mut(catalog).clear_account_models(&id);
+                            self.view.catalog_status = catalog_status(catalog);
+                        }
+                        self.model_discoveries.retain(|d| d.provider_id != id);
+                        self.view.composer_provider_status.remove(&id);
+                    }
+                    self.provider_connection_worker = None;
+                    self.view.provider_connect = None;
+                    self.refresh_composer_routes();
+                    self.begin_catalog_refresh();
+                    self.begin_model_discovery();
+                    self.set_settings_notice(
+                        warning
+                            .clone()
+                            .unwrap_or_else(|| "Proveedor desconectado".into()),
+                        warning.is_some(),
+                    );
+                    break;
+                }
+                ConnectionEvent::Failed(error) => {
+                    self.provider_connection_worker = None;
+                    self.provider_connection_id = None;
+                    self.provider_browser_url = None;
+                    self.provider_key_draft.clear();
+                    self.tree.set_input_value("provider_api_key", "");
+                    if let Some(connect) = &mut self.view.provider_connect {
+                        connect.phase = ConnectPhase::Error;
+                        connect.key_entered = false;
+                        connect.error = Some(error);
+                    } else {
+                        self.set_settings_notice(error, true);
+                    }
+                    self.refresh_composer_routes();
+                    break;
+                }
+                ConnectionEvent::Refreshed => break,
+            }
+        }
+        changed
     }
 
     fn begin_catalog_refresh(&mut self) {
         if self.catalog_response.is_some() {
             return;
         }
-        let root = self.data_root.clone();
-        let previous = self.view.catalog.clone();
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let result = model_catalog::refresh(&root, previous.as_deref());
-            let _ = sender.send(result);
-        });
-        self.catalog_response = Some(receiver);
         self.catalog_last_refresh = Instant::now();
-        self.view.catalog_refreshing = true;
+        match model_catalog::CatalogRefreshJob::start(
+            self.data_root.clone(),
+            self.view.catalog.clone(),
+        ) {
+            Ok(job) => {
+                self.catalog_response = Some(job);
+                self.view.catalog_refreshing = true;
+            }
+            Err(error) => {
+                self.view.catalog_refreshing = false;
+                self.view.catalog_status =
+                    format!("Sin actualización ({error}); se conserva la última copia válida");
+            }
+        }
     }
 
     fn begin_model_discovery(&mut self) {
@@ -5551,7 +9799,9 @@ impl AgentsWindow {
             .iter()
             .filter(|adapter| {
                 adapter.model_list_path.is_some()
-                    && std::env::var(&adapter.key_env).is_ok_and(|key| !key.trim().is_empty())
+                    && (adapter.key_optional
+                        || crate::provider_connections::read_key(&self.data_root, &adapter.key_env)
+                            .is_some())
             })
             .map(|adapter| adapter.id.clone())
             .collect();
@@ -5563,8 +9813,9 @@ impl AgentsWindow {
                 .composer_provider_status
                 .insert(provider.clone(), ProviderModelStatus::Checking);
         }
-        self.model_discoveries
-            .retain(|entry| !providers.contains(&entry.provider_id));
+        // Keep the last successful account metadata during a refresh. A new
+        // listing replaces it atomically in poll_model_discovery; Checking or
+        // a transport failure must not erase the chosen model's effort levels.
         self.refresh_composer_routes();
         let (sender, receiver) = mpsc::channel();
         self.model_discovery_pending = providers.len();
@@ -5619,32 +9870,10 @@ impl AgentsWindow {
         if self.model_discovery_pending == 0 {
             self.model_discovery_response = None;
         }
-        changed
-    }
-
-    fn begin_codex_model_discovery(&mut self) {
-        if self.codex_model_response.is_some() {
-            return;
+        if changed {
+            self.refresh_composer_context_percent();
         }
-        let Some(executable) = self
-            .profiles
-            .iter()
-            .find(|profile| profile.id == "codex")
-            .and_then(CliProfile::detect_executable)
-        else {
-            return;
-        };
-        self.codex_models.clear();
-        self.view
-            .composer_provider_status
-            .insert("codex".to_owned(), ProviderModelStatus::Checking);
-        self.refresh_composer_routes();
-        let (sender, receiver) = mpsc::channel();
-        self.codex_model_response = Some(receiver);
-        std::thread::spawn(move || {
-            let result = openide_cli::discover_codex_models_with_executable(&executable);
-            let _ = sender.send(result);
-        });
+        changed
     }
 
     fn poll_codex_model_discovery(&mut self) -> bool {
@@ -5691,17 +9920,21 @@ impl AgentsWindow {
     }
 
     fn poll_catalog(&mut self) -> bool {
-        if self.catalog_response.is_none()
-            && self.catalog_last_refresh.elapsed() >= Duration::from_secs(3_600)
-        {
+        let refresh_started = self.catalog_response.is_none()
+            && self.catalog_last_refresh.elapsed() >= Duration::from_secs(3_600);
+        if refresh_started {
             self.begin_catalog_refresh();
+            // Keep account availability in the composer in sync with the
+            // periodic metadata refresh shown in provider settings.
+            self.begin_model_discovery();
         }
         let Some(receiver) = &self.catalog_response else {
-            return false;
+            // A failed start updates the visible status without a response.
+            return refresh_started;
         };
         let result = match receiver.try_recv() {
             Ok(result) => result,
-            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Empty) => return refresh_started,
             Err(TryRecvError::Disconnected) => {
                 self.catalog_response = None;
                 self.view.catalog_refreshing = false;
@@ -5717,6 +9950,7 @@ impl AgentsWindow {
                 self.view.catalog_status = catalog_status(&snapshot);
                 self.view.catalog = Some(Arc::new(snapshot));
                 self.refresh_composer_routes();
+                self.refresh_composer_context_percent();
             }
             Err(error) => {
                 self.view.catalog_status =
@@ -5727,6 +9961,8 @@ impl AgentsWindow {
     }
 
     fn refresh_composer_selection(&mut self) {
+        self.sync_pending_composer_selection();
+        self.view.composer_error = None;
         self.refresh_composer_routes();
         let choice = self
             .composer_preferences
@@ -5745,6 +9981,21 @@ impl AgentsWindow {
     }
 
     fn refresh_composer_routes(&mut self) {
+        self.view.provider_connections = crate::provider_connections::summaries(&self.data_root);
+        match provider_settings::connection_views(&self.data_root, &self.native_settings()) {
+            Ok(definitions) => {
+                self.view.native_provider_definitions = definitions;
+                self.view.native_provider_registry_error = None;
+            }
+            Err(error) => {
+                self.view.native_provider_definitions.clear();
+                self.view.native_provider_registry_error = Some(error.clone());
+                self.view.status = format!("Registro de proveedores: {error}");
+                self.sync_provider_usage();
+                return;
+            }
+        }
+        self.sync_provider_usage();
         let mut routes = match composer_selection::model_route_options_with_codex_discovery_at(
             self.view.catalog.as_deref(),
             &self.native_settings(),
@@ -5759,14 +10010,70 @@ impl AgentsWindow {
             }
         };
         routes.retain(|route| {
-            route.backend == "native"
-                || self
-                    .view
-                    .backend_options
-                    .iter()
-                    .any(|(backend, _)| backend == &route.backend)
+            route.backend == "native" && crate::provider_connections::supported(&route.provider_id)
         });
+        self.view.composer_model_metadata = crate::model_metadata::for_routes(
+            &routes,
+            self.view.catalog.as_deref(),
+            &self.model_discoveries,
+            &self.codex_models,
+        );
         self.view.composer_routes = routes;
+        self.refresh_native_composer_choice_metadata();
+    }
+
+    /// Account discovery and catalog refresh arrive after the composer is
+    /// created. Re-project its exact route without replacing a running choice
+    /// or persisting an automatic fallback while metadata is still loading.
+    fn refresh_native_composer_choice_metadata(&mut self) {
+        if self.view.selected_backend != "native"
+            || self.view.running
+            || self.view.background_run_selected
+        {
+            return;
+        }
+        let saved_choice = (self.view.composer_effort == "default").then(|| {
+            self.composer_preferences
+                .choice("native", &self.view.composer_model)
+        });
+        let previous_options = self.view.composer_effort_options.clone();
+        self.refresh_composer_choice_options();
+        if let Some(choice) = saved_choice.filter(|choice| {
+            choice.model == self.view.composer_model
+                && self.view.model == self.view.composer_model
+                && self
+                    .view
+                    .composer_effort_options
+                    .iter()
+                    .any(|(id, _)| id == &choice.effort)
+        }) {
+            self.view.composer_effort = choice.effort;
+        }
+        if previous_options != self.view.composer_effort_options {
+            self.view.composer_effort_preview = None;
+            if !self
+                .view
+                .composer_effort_options
+                .iter()
+                .any(|(id, _)| id != "default")
+            {
+                self.view.composer_advanced_open = false;
+                self.view.composer_effort_menu_open = false;
+            }
+        }
+    }
+
+    /// The configured palette shortcut searches the current Settings surface.
+    fn settings_search_target(&mut self) -> &'static str {
+        if self.view.settings_page == SettingsPage::Providers
+            && self.view.catalog_settings_tab == CatalogSettingsTab::Models
+            && self.view.catalog_browse_provider != "custom"
+        {
+            "catalog_model_query"
+        } else {
+            self.view.settings_nav_open = true;
+            "settings_search"
+        }
     }
 
     fn refresh_composer_choice_options(&mut self) {
@@ -5813,6 +10120,24 @@ impl AgentsWindow {
                         && route.model_id == self.view.composer_model
                 })
                 .map(|route| route.effort_options.clone())
+                .or_else(|| {
+                    // A saved engine route can be hidden by the public account
+                    // picker. Its exact effort remains part of recovery identity.
+                    composer_selection::model_route_options_with_discovery_at(
+                        self.view.catalog.as_deref(),
+                        &self.native_settings(),
+                        &self.model_discoveries,
+                        &self.data_root,
+                    )
+                    .ok()?
+                    .into_iter()
+                    .find(|route| {
+                        route.backend == "native"
+                            && route.provider_id == self.view.native_provider_id
+                            && route.model_id == self.view.composer_model
+                    })
+                    .map(|route| route.effort_options)
+                })
                 .unwrap_or_default()
         } else {
             composer_selection::effort_options_for_provider(
@@ -5837,25 +10162,219 @@ impl AgentsWindow {
     }
 
     fn refresh_composer_context_percent(&mut self) {
-        self.view.composer_context_percent = None;
-        if self.view.selected_backend != "native" {
+        self.refresh_native_context();
+        self.view.composer_context_percent = self.view.native_context.remaining_percent;
+    }
+
+    fn refresh_native_context(&mut self) {
+        use crate::native_context_ui::{
+            NativeContextRow, NativeContextSection, NativeContextUiState,
+        };
+        self.view.native_context = Default::default();
+        if self.view.selected_backend == "native" && self.refresh_native_automation_context() {
             return;
         }
-        let (Some(store), Some(session_id)) = (&self.store, self.view.selected_session.as_deref())
-        else {
+        if self.view.selected_backend != "native"
+            || !self
+                .native_settings()
+                .has_explicit_configuration(&self.data_root)
+        {
             return;
-        };
-        if let Ok(Some(stored)) = store.load(session_id) {
-            if stored.session.backend == "native"
-                && stored.session.workspace == Path::new(&self.view.workspace)
-            {
-                self.view.composer_context_percent = committed_context_percent(
-                    &stored.events,
+        }
+        let workspace = match Path::new(&self.view.workspace).canonicalize() {
+            Ok(workspace) => workspace,
+            Err(error) => {
+                self.view.native_context = NativeContextUiState::failed_scope(
+                    self.view.selected_session.as_deref(),
+                    Path::new(&self.view.workspace),
                     &self.view.native_provider_id,
                     &self.view.model,
+                    format!("No se pudo verificar el proyecto seleccionado: {error}"),
                 );
+                return;
+            }
+        };
+        let provider = self.view.native_provider_id.clone();
+        let model = self.view.model.clone();
+        let budget = self.token_budget_for_native_model(&provider, &model);
+        let maximum = native_provider::adapter_at(&self.data_root, &provider)
+            .ok()
+            .flatten()
+            .and_then(|adapter| {
+                native_output_maximum(
+                    &adapter,
+                    &model,
+                    self.view.catalog.as_deref(),
+                    &self.model_discoveries,
+                )
+            });
+        let current_route =
+            self.native_settings()
+                .resolve_at(&self.data_root)
+                .and_then(|connection| {
+                    let endpoint = connection.endpoint.clone();
+                    let backend = native_model_backend(
+                        connection,
+                        &provider,
+                        Some(&self.view.composer_effort),
+                        self.view.hosted_web_search_mode,
+                        &self.data_root,
+                        self.view.catalog.as_deref(),
+                        &self.model_discoveries,
+                    )?;
+                    let profile = backend.request_profile_fingerprint().ok_or_else(|| {
+                        "El perfil de petición del modelo no tiene identidad verificable".to_owned()
+                    })?;
+                    openide_core::ModelRouteSnapshot::new(&provider, &model, &endpoint, profile)
+                        .ok_or_else(|| {
+                            "La identidad de la ruta seleccionada no es válida".to_owned()
+                        })
+                });
+        let mut observations = native_context_next_turn_sections(&self.data_root, &workspace);
+        if let Ok(saved) = crate::mcp_settings::McpSettings::load(&self.data_root, &workspace) {
+            if let (Some(scope), Some(snapshot)) = (
+                &self.view.mcp_inspection.scope,
+                &self.view.mcp_inspection.snapshot,
+            ) {
+                if scope.matches_saved(&workspace, &saved) {
+                    observations.categories.push(crate::native_context_ui::NativeContextCategory::new("mcp", "MCP", format!("{} servidores · {} herramientas observadas", observations.mcp_enabled_servers.map_or_else(|| "?".into(), |count| count.to_string()), snapshot.tools.len()), format!("Inspección de {}: {} bytes JSON, Unix ms {}, SHA-256 {}. Sólo coincide con el registro actual de este workspace; no certifica catálogo congelado ni tokens. {}", scope.server.id, snapshot.details_json.len(), snapshot.observed_at_unix_ms, snapshot.metadata_digest, if snapshot.catalog_changed {"El catálogo cambió durante la inspección."} else {"Sin cambio observado de catálogo."})));
+                    observations.sections.push(NativeContextSection { title:"Metadatos MCP inspeccionados".into(), rows:vec![NativeContextRow::new(
+                        scope.server.id.clone(), format!("{} herramientas · {} bytes JSON", snapshot.tools.len(), snapshot.details_json.len()),
+                        format!("Observación Unix ms: {}\nSHA-256 de metadatos: {}\n{}\nEsta inspección no es el catálogo congelado del turno ni un conteo de tokens.", snapshot.observed_at_unix_ms, snapshot.metadata_digest, if snapshot.catalog_changed {"El catálogo cambió durante la inspección."} else {"Sin cambio de catálogo observado en esta inspección."}),
+                    )] });
+                }
             }
         }
+        let mut projected = NativeContextUiState::selected_route(
+            &provider,
+            &model,
+            workspace,
+            budget,
+            maximum,
+            observations.sections,
+        );
+        for category in observations.categories {
+            projected.set_category(category);
+        }
+        if let Err(error) = &current_route {
+            projected.error = Some(error.clone());
+        }
+        let Some(session_id) = self.view.selected_session.as_deref() else {
+            self.view.native_context = projected;
+            return;
+        };
+        projected.owner = Some(session_id.to_owned());
+        let stored = self
+            .store
+            .as_ref()
+            .ok_or_else(|| "El historial de conversaciones no está disponible".to_owned())
+            .and_then(|store| {
+                store
+                    .load(session_id)
+                    .map_err(|error| format!("No se pudo leer el historial: {error}"))
+            })
+            .and_then(|stored| {
+                stored.ok_or_else(|| "La conversación seleccionada ya no existe".to_owned())
+            });
+        self.view.native_context = match stored {
+            Ok(stored) => {
+                let replay = replay_stored_native(&self.data_root, &stored);
+                projected.apply_validated(&stored, replay, current_route.as_ref().ok())
+            }
+            Err(error) => {
+                projected.error = Some(error);
+                projected
+            }
+        };
+    }
+
+    fn refresh_native_automation_context(&mut self) -> bool {
+        use crate::native_context_ui::{
+            NativeContextCategory, NativeContextRow, NativeContextSection, NativeContextUiState,
+        };
+        let Some(id) = self.view.selected_session.clone() else {
+            return false;
+        };
+        let Some(store) = self.store.as_ref() else {
+            return false;
+        };
+        // Display-only origin identifies the failed lookup, never a measured
+        // route. Successful projections still require the frozen authority.
+        let (provider, model) = self
+            .view
+            .sessions
+            .iter()
+            .find(|session| session.id == id && session.project == self.view.workspace)
+            .and_then(|session| session.native_automation.as_ref())
+            .map(|origin| (origin.provider_id.as_str(), origin.model_id.as_str()))
+            .unwrap_or((&self.view.native_provider_id, &self.view.model));
+        let failed_scope = |error: String| {
+            NativeContextUiState::failed_scope(
+                Some(&id),
+                Path::new(&self.view.workspace),
+                provider,
+                model,
+                error,
+            )
+        };
+        let stored = match store.load(&id) {
+            Ok(Some(stored)) if stored.session.native_automation.is_some() => stored,
+            Ok(_) => return false,
+            Err(error) => {
+                self.view.native_context = failed_scope(error.to_string());
+                return true;
+            }
+        };
+        let result = (|| -> Result<NativeContextUiState, String> {
+            let frozen = crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
+                &stored.session,
+            )?
+            .ok_or("No se pudo verificar el origen de la automatización")?;
+            let route = frozen.route_snapshot()?;
+            let catalog = frozen.catalog()?;
+            let sections = vec![NativeContextSection { title: "Perfil de la automatización".into(), rows: vec![
+                NativeContextRow::new("Permisos", "Sólo lectura", "Perfil original: lectura local y actualización de plan; sin comandos, escritura, hooks, MCP ni subagentes."),
+                NativeContextRow::new("Instrucciones registradas", format!("{} bytes", frozen.instructions().len()), "Copia combinada guardada antes del primer turno. No hay atribución de tokens por documento o skill; no se releen los ajustes actuales."),
+            ] }];
+            let mut projected = NativeContextUiState::selected_route(
+                frozen.provider_id(),
+                frozen.model_id(),
+                stored.session.workspace.clone(),
+                frozen.budget(),
+                frozen.max_output(),
+                sections,
+            );
+            if let Some(section) = projected.sections.first_mut() {
+                section.title = "Ruta y límites registrados".into();
+                if let Some(row) = section.rows.first_mut() {
+                    row.detail = "Ruta original guardada en la sesión; cambiar Settings no modifica esta ejecución. El uso histórico requiere la misma ruta y perfil.".into();
+                }
+            }
+            projected = projected.apply_validated(
+                &stored,
+                replay_stored_native(&self.data_root, &stored),
+                Some(&route),
+            );
+            if let Some(error) = projected.error.take() {
+                return Err(error);
+            }
+            for category in [
+                NativeContextCategory::new("project", "Proyecto", "Incluido en sistema", "La autoridad conserva las instrucciones combinadas originales, sin contar documentos o tokens por categoría."),
+                NativeContextCategory::new("skills", "Skills", "Sin desglose", "El texto seleccionado al despachar se conserva en la copia de instrucciones; las selecciones actuales no cambian esa copia."),
+                NativeContextCategory::new("mcp", "MCP", "No habilitado", "El perfil de lectura original no prepara servidores MCP."),
+                NativeContextCategory::new("subagents", "Subagentes", "No habilitados", "El perfil original no incluye herramientas de subagentes."),
+                NativeContextCategory::new("tools", "Herramientas", format!("{} definiciones", catalog.definitions().len()), format!("Catálogo original de sólo lectura y update_plan. SHA-256 {}. No es un conteo de tokens.", catalog.digest_hex())),
+            ] { projected.set_category(category); }
+            if stored.events.is_empty() {
+                projected.set_category(NativeContextCategory::new("system", "Sistema", format!("{} bytes registrados", frozen.instructions().len()), "Snapshot previo a la admisión; aún no fue enviado al modelo. No equivale a uso reportado."));
+            }
+            Ok(projected)
+        })();
+        self.view.native_context = match result {
+            Ok(projected) => projected,
+            Err(error) => failed_scope(error),
+        };
+        true
     }
 
     fn remember_composer_selection(&mut self, save: bool) {
@@ -5876,7 +10395,31 @@ impl AgentsWindow {
     }
 
     fn select_composer_model(&mut self, model: &str) {
-        if self.view.running
+        if self.composer_choices_editable() && model != "openide:configure-model" {
+            let provider = self
+                .view
+                .composer_pending
+                .as_ref()
+                .and_then(|pending| pending.model.as_ref())
+                .map_or(self.view.native_provider_id.as_str(), |pending| {
+                    pending.route.provider_id.as_str()
+                });
+            if let Some(route) = self
+                .view
+                .composer_routes
+                .iter()
+                .find(|route| route.provider_id == provider && route.model_id == model)
+                .cloned()
+            {
+                self.select_composer_route(&route.route_id);
+                return;
+            }
+            if self.composer_selection_busy() || self.view.composer_pending.is_some() {
+                return;
+            }
+        }
+        if self.view.selected_backend != "native"
+            || self.view.running
             || !self
                 .view
                 .composer_model_options
@@ -5917,16 +10460,59 @@ impl AgentsWindow {
         self.refresh_composer_context_percent();
     }
 
-    fn select_composer_effort(&mut self, effort: &str) {
-        if self.view.running
-            || !self
-                .view
-                .composer_effort_options
-                .iter()
-                .any(|(candidate, _)| candidate == effort)
+    fn select_composer_effort(&mut self, effort: &str) -> bool {
+        if self.composer_choices_editable()
+            && (self.composer_selection_busy() || self.view.composer_pending.is_some())
         {
-            return;
+            let route = self
+                .view
+                .composer_pending
+                .as_ref()
+                .and_then(|pending| pending.model.as_ref())
+                .map(|model| model.route.clone())
+                .or_else(|| {
+                    self.view
+                        .composer_routes
+                        .iter()
+                        .find(|route| {
+                            route.provider_id == self.view.native_provider_id
+                                && route.model_id == self.view.composer_model
+                        })
+                        .cloned()
+                });
+            if let Some(route) = route {
+                if effort == "default" || route.effort_options.iter().any(|(id, _)| id == effort) {
+                    self.queue_composer_model(route, effort.to_owned());
+                    return true;
+                }
+            }
+            return false;
         }
+        if self.view.selected_backend != "native"
+            || self.view.running
+            || (effort != "default"
+                && !self
+                    .view
+                    .composer_effort_options
+                    .iter()
+                    .any(|(candidate, _)| candidate == effort))
+        {
+            return false;
+        }
+        let mut preferences = self.composer_preferences.clone();
+        preferences.set_selected_backend(&self.view.selected_backend);
+        preferences.set(
+            &self.view.selected_backend,
+            ComposerChoice {
+                model: self.view.composer_model.clone(),
+                effort: effort.to_owned(),
+            },
+        );
+        if let Err(error) = preferences.save(&self.data_root) {
+            self.view.status = format!("No se pudo guardar el esfuerzo elegido: {error}");
+            return false;
+        }
+        self.composer_preferences = preferences;
         self.view.composer_effort = effort.to_owned();
         self.view.composer_effort_menu_open = false;
         self.view.composer_model_menu_open = false;
@@ -5935,13 +10521,13 @@ impl AgentsWindow {
         self.composer_model_search_focus_pending = false;
         self.view.composer_advanced_open = false;
         self.view.composer_effort_preview = None;
-        self.remember_composer_selection(true);
+        self.refresh_composer_context_percent();
+        true
     }
 
     fn composer_slider_effort(&self, fraction: f32) -> Option<String> {
         let levels: Vec<_> = self
-            .view
-            .composer_effort_options
+            .composer_effort_options_for_selection()
             .iter()
             .filter(|(id, _)| id != "default")
             .collect();
@@ -5957,23 +10543,26 @@ impl AgentsWindow {
         Some(levels[index].0.clone())
     }
 
-    fn select_composer_route(&mut self, route_id: &str) {
-        if self.view.running || self.view.background_run_selected {
-            return;
+    fn select_composer_route(&mut self, route_id: &str) -> bool {
+        if !self.composer_choices_editable() {
+            return false;
         }
         let Some(route) =
             composer_selection::model_route_option_by_id(&self.view.composer_routes, route_id)
                 .cloned()
         else {
-            return;
+            return false;
         };
+        if route.backend != "native" {
+            return false;
+        }
         let provider_status = self
             .view
             .composer_provider_status
             .get(&route.provider_id)
             .copied();
         if provider_status == Some(ProviderModelStatus::Checking) {
-            return;
+            return false;
         }
         if !route.selectable() || provider_status == Some(ProviderModelStatus::CheckFailed) {
             if route.credential == composer_selection::CredentialAvailability::MissingCredential
@@ -5987,6 +10576,9 @@ impl AgentsWindow {
                 self.view.show_settings = true;
                 self.view.settings_page = SettingsPage::Providers;
                 self.view.catalog_browse_provider = route.provider_id.clone();
+                self.view.catalog_settings_tab = CatalogSettingsTab::Connection;
+                self.view.catalog_provider_menu_open = false;
+                self.view.catalog_expanded_model = None;
                 let key_env = native_provider::adapter_at(&self.data_root, &route.provider_id)
                     .ok()
                     .flatten()
@@ -6008,7 +10600,32 @@ impl AgentsWindow {
                 );
                 self.visit_navigation();
             }
-            return;
+            return false;
+        }
+        if self.composer_selection_busy() || self.view.composer_pending.is_some() {
+            let desired_effort = self
+                .view
+                .composer_pending
+                .as_ref()
+                .and_then(|pending| pending.model.as_ref())
+                .map(|model| model.effort.as_str())
+                .unwrap_or(&self.view.composer_effort);
+            let effort = if route
+                .effort_options
+                .iter()
+                .any(|(id, _)| id == desired_effort)
+            {
+                desired_effort.to_owned()
+            } else {
+                "default".to_owned()
+            };
+            self.queue_composer_model(route, effort);
+            return true;
+        }
+        if let Err(error) = self.prepare_composer_model_transition(&route) {
+            self.view.composer_error = Some(error.clone());
+            self.view.status = error;
+            return false;
         }
         if route.backend == "native" {
             let previous_provider = self.view.native_provider_id.clone();
@@ -6020,7 +10637,7 @@ impl AgentsWindow {
                 self.view.model = previous_model;
                 self.view.native_key_available =
                     native_key_available_at(&self.native_settings(), &self.data_root);
-                return;
+                return false;
             }
         }
         if self.view.selected_backend != route.backend {
@@ -6047,21 +10664,36 @@ impl AgentsWindow {
             route.provider_name, route.model_name
         );
         self.remember_composer_selection(true);
+        true
     }
 
     fn new_session(&mut self) {
+        self.close_composer_floating_controls();
+        self.composer_cursor_pending = None;
+        if self.view.composer_branches.switching() {
+            self.view.status = "Espera a que termine el cambio de rama".to_owned();
+            return;
+        }
         if self.view.running {
             self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
             return;
         }
+        self.reveal_ide_agent();
+        self.view.composer_error = None;
         self.save_draft();
+        self.view.composer_expanded = false;
+        self.view.composer_branches.open = false;
         self.view.main_page = MainPage::Workspace;
         self.view.background_run_selected = false;
         self.view.selected_session = None;
         self.view.selected_session_title = None;
+        self.view.selected_backend = "native".to_owned();
+        self.refresh_composer_selection();
         self.view.session_approval_grants.clear();
         self.clear_native_command_ui();
         self.view.composer_context_percent = None;
+        self.view.composer_context_open = false;
+        self.view.native_context = Default::default();
         self.view.transcript.clear();
         self.view.selected_tool_id = None;
         self.view.activity_page = 0;
@@ -6090,9 +10722,40 @@ impl AgentsWindow {
     }
 
     fn focus_prompt_if_pending(&mut self) {
+        if self.ide_workspace_active() {
+            let requested = self.view.ide.agent_open
+                && (crate::ide_workspace::nominal_layout(&self.view, self.viewport_width)
+                    .right
+                    .is_some()
+                    || self.view.ide.compact_panel
+                        == Some(crate::ide_workspace::IdePanel::Agent));
+            if !requested {
+                // Closing the pane or dismissing its compact drawer cancels
+                // the old focus/caret request, even while its content remains
+                // mounted for the closing animation.
+                self.prompt_focus_pending = false;
+                self.composer_cursor_pending = None;
+                return;
+            }
+            let usable_input = self.tree.frame().regions.iter().any(|region| {
+                region.id == "prompt"
+                    && region.rect.width >= crate::sidebar_chrome::TOOL_SIZE * 2.0
+                    && region.rect.height >= crate::sidebar_chrome::TOOL_SIZE
+            });
+            if !usable_input {
+                // UiTree retains focusable IDs behind clipped viewports. Keep
+                // this request until the actual editor surface is usable.
+                return;
+            }
+        }
         if self.prompt_focus_pending && !self.view.show_command_center && self.tree.focus("prompt")
         {
             self.prompt_focus_pending = false;
+        }
+        if self.tree.focused_id() == Some("prompt") {
+            if let Some(cursor) = self.composer_cursor_pending.take() {
+                self.tree.set_input_cursor("prompt", cursor);
+            }
         }
     }
 
@@ -6104,6 +10767,20 @@ impl AgentsWindow {
             && self.tree.focus("composer_model_search")
         {
             self.composer_model_search_focus_pending = false;
+        }
+    }
+
+    fn focus_settings_terminal_path_if_pending(&mut self) {
+        if !self.view.show_settings || self.view.settings_page != SettingsPage::Terminal {
+            self.settings_terminal_path_focus_pending = false;
+            return;
+        }
+        if self.settings_terminal_path_focus_pending
+            && self.view.settings_terminal_shell_editing
+            && !self.view.show_command_center
+            && self.tree.focus("settings_terminal_shell_path")
+        {
+            self.settings_terminal_path_focus_pending = false;
         }
     }
 
@@ -6197,6 +10874,27 @@ impl AgentsWindow {
         self.view.pending_delete_session_id = None;
     }
 
+    fn session_deletion_blocked_reason(&self, session_id: &str) -> Option<&'static str> {
+        // Deleting the selected chat must be followed by new_session, which
+        // cannot change ownership while the workspace is switching branches.
+        if self.view.composer_branches.switching() {
+            return Some("Espera a que termine el cambio de rama antes de eliminar esta tarea");
+        }
+        if self.view.running && self.view.selected_session.as_deref() == Some(session_id) {
+            return Some("Detén el agente antes de eliminar esta tarea");
+        }
+        // CLI automation handles have no native session lease. Keep their
+        // journal until polling retires the handle, including its queued tail.
+        if self
+            .background_automation_runs
+            .iter()
+            .any(|run| run.session_id == session_id)
+        {
+            return Some("Espera a que termine la automatización antes de eliminar esta tarea");
+        }
+        None
+    }
+
     fn commit_session_rename(&mut self, session_id: &str) {
         if self.view.renaming_session_id.as_deref() != Some(session_id) {
             return;
@@ -6227,11 +10925,20 @@ impl AgentsWindow {
     }
 
     fn open_session(&mut self, id: &str) {
+        if self.view.composer_branches.switching() {
+            self.view.status = "Espera a que termine el cambio de rama".to_owned();
+            return;
+        }
         if self.view.running {
             self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
             return;
         }
         self.prompt_focus_pending = false;
+        let live_child = self
+            .subagent_bridge
+            .active_child_ids()
+            .iter()
+            .any(|child_id| child_id == id);
         let Some(store) = &self.store else { return };
         let loaded = store.load(id);
         match loaded {
@@ -6263,20 +10970,24 @@ impl AgentsWindow {
                 self.view.workspace = stored.session.workspace.to_string_lossy().into_owned();
                 self.view.workspace_draft = self.view.workspace.clone();
                 if workspace_changed {
+                    self.reset_marketplace_workspace();
+                    self.view.composer_branches = Default::default();
                     self.view.project_branch = project_branch_for_workspace(&self.view.workspace);
                     self.invalidate_workspace_files();
                     self.refresh_mcp_settings();
+                    self.refresh_native_skills();
                 }
                 self.refresh_composer_projects();
                 self.restore_draft();
                 self.ensure_dock_tabs();
-                if self.view.side_tab == SideTab::Files {
+                if self.view.side_tab == SideTab::Files || self.ide_workspace_active() {
                     self.refresh_file_rows();
                 }
                 self.tree
                     .set_input_value("workspace", self.view.workspace.clone());
                 self.view.selected_backend = stored.session.backend.clone();
                 self.refresh_composer_selection();
+                self.ensure_cli_terminal();
                 self.view.turn_mode = stored
                     .events
                     .iter()
@@ -6294,13 +11005,21 @@ impl AgentsWindow {
                     .map(|event| event.sequence)
                     .max()
                     .unwrap_or(0);
-                self.projection = TranscriptProjection::from_events(&stored.events);
-                self.view.transcript = self.projection.items().to_vec();
+                self.projection = if live_child && stored.session.subagent.is_some() {
+                    TranscriptProjection::from_live_events(&stored.events)
+                } else {
+                    TranscriptProjection::from_events(&stored.events)
+                };
+                self.publish_transcript();
                 let replay_status = if stored.session.backend == "native" {
                     match replay_stored_native(&self.data_root, &stored) {
                         Ok(replay) => {
                             self.history = replay.history;
-                            recovery_status(&replay.recovery).to_owned()
+                            if live_child && stored.session.subagent.is_some() {
+                                "Subagente en curso".to_owned()
+                            } else {
+                                recovery_status(&replay.recovery).to_owned()
+                            }
                         }
                         Err(error) => {
                             self.history.clear();
@@ -6413,7 +11132,48 @@ impl AgentsWindow {
         changed
     }
 
+    fn handle_composer_key(&mut self, event: &UiEvent) -> bool {
+        if self.tree.focused_id() != Some("prompt")
+            || self.composer_popup_blocks_input()
+            || self.view.show_settings
+            || self.view.main_page != MainPage::Workspace
+        {
+            return false;
+        }
+        let UiEvent::Key {
+            key: openide_ui::Key::Enter,
+            shift: false,
+            ctrl,
+        } = event
+        else {
+            return false;
+        };
+        if *ctrl {
+            if self.view.running {
+                self.queue_native_steer();
+            } else {
+                self.view.status = "La cola está disponible mientras la IA responde".to_owned();
+            }
+        } else {
+            self.start_run();
+        }
+        true
+    }
+
     fn queue_native_steer(&mut self) {
+        if !self.interactive_native_session_ready() {
+            return;
+        }
+        if crate::composer_suggestions::leading_mode_command(&self.view.prompt).is_some() {
+            self.show_composer_error(
+                "El modo del turno está fijado. Espera a que termine para usar /plan o /agent.",
+            );
+            return;
+        }
+        if self.attachment_pastes_pending.contains(&self.draft_key()) {
+            self.view.status = "Espera a que se preparen los adjuntos".to_owned();
+            return;
+        }
         let Some(session_id) = self.view.selected_session.as_deref() else {
             self.view.status = "Selecciona la sesión activa para intervenir".to_owned();
             return;
@@ -6435,11 +11195,10 @@ impl AgentsWindow {
             return;
         }
         let workspace = PathBuf::from(self.view.workspace.trim());
-        let payload = match prepare_native_attachments(
+        let payload = match prepare_native_attachments_with_image_support(
             &workspace,
             &attachments,
-            &self.view.native_provider_id,
-            &self.view.model,
+            self.selected_native_image_input_supported(),
         ) {
             Ok(payload) => payload,
             Err(error) => {
@@ -6530,7 +11289,75 @@ impl AgentsWindow {
         }
     }
 
+    fn show_composer_error(&mut self, error: impl Into<String>) {
+        let error = error.into();
+        self.view.composer_error = Some(error.clone());
+        self.view.status = error;
+    }
+
+    fn interactive_native_session_ready(&mut self) -> bool {
+        let result = (|| -> Result<(), String> {
+            let Some(id) = self.view.selected_session.as_deref() else {
+                return Ok(());
+            };
+            let store = self
+                .store
+                .as_ref()
+                .ok_or("El historial no está disponible")?;
+            let record = store
+                .load(id)
+                .map_err(|error| format!("No se pudo leer la sesión nativa: {error}"))?
+                .ok_or("La conversación ya no existe")?;
+            if record.session.native_automation.is_some() {
+                return Err("Esta automatización conserva su perfil de lectura. Abre una nueva tarea nativa para continuar.".into());
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                self.show_composer_error(error);
+                false
+            }
+        }
+    }
+
     fn start_run(&mut self) {
+        // A turn may carry its own model (a review, for one) without touching
+        // the user's selection. Taken here so every early return discards it
+        // and it can never reach a later turn.
+        let turn_model_overridden = self.turn_model_override.is_some();
+        let turn_settings = self
+            .turn_model_override
+            .take()
+            .unwrap_or_else(|| self.native_settings());
+        if self.plugin_removal_pending {
+            self.view.status = "Espera a que termine la desinstalación del plugin".to_owned();
+            return;
+        }
+        if let Some(confirmation) = &self.view.composer_full_access_confirm {
+            if confirmation.matches_view(&self.view) {
+                return;
+            }
+            self.view.composer_full_access_confirm = None;
+        }
+        if !self.interactive_native_session_ready() {
+            return;
+        }
+        if self.view.composer_branches.switching() {
+            self.view.status =
+                "Espera a que termine el cambio de rama para enviar el mensaje".to_owned();
+            return;
+        }
+        if self.view.selected_backend != "native" {
+            self.show_composer_error("Esta conversación es un historial de una CLI externa. Crea una nueva tarea para usar el harness nativo.");
+            return;
+        }
+        if self.attachment_pastes_pending.contains(&self.draft_key()) {
+            self.view.status = "Espera a que se preparen los adjuntos".to_owned();
+            return;
+        }
+        self.view.composer_error = None;
         self.stop_dictation();
         if self.view.running {
             if self.view.selected_backend == "native" {
@@ -6559,8 +11386,17 @@ impl AgentsWindow {
             self.view.status = "Finalizando turno anterior...".to_owned();
             return;
         }
+        self.poll_pending_composer_selection();
+        if self.view.composer_pending.is_some() {
+            self.view.status =
+                "Revisa la selección pendiente antes de enviar el próximo mensaje".into();
+            return;
+        }
         if self.persistence_error.is_some() {
             self.show_persistence_error();
+            return;
+        }
+        if self.prepare_composer_mode_command() {
             return;
         }
         let visible_prompt = self.view.prompt.trim().to_owned();
@@ -6568,22 +11404,30 @@ impl AgentsWindow {
         if visible_prompt.is_empty() && attachments.is_empty() {
             return;
         }
+        if !self
+            .native_settings()
+            .has_explicit_configuration(&self.data_root)
+        {
+            self.show_composer_error(
+                "No hay modelos disponibles. Conecta un proveedor en Configuración.",
+            );
+            return;
+        }
         let workspace = PathBuf::from(self.view.workspace.trim());
         if !workspace.is_dir() {
-            self.view.status = "El directorio de trabajo no existe".to_owned();
+            self.show_composer_error("El directorio de trabajo no existe");
             return;
         }
         let backend = self.view.selected_backend.clone();
         let native_attachments = if backend == "native" {
-            match prepare_native_attachments(
+            match prepare_native_attachments_with_image_support(
                 &workspace,
                 &attachments,
-                &self.view.native_provider_id,
-                &self.view.model,
+                self.selected_native_image_input_supported(),
             ) {
                 Ok(payload) => Some(payload),
                 Err(error) => {
-                    self.view.status = error;
+                    self.show_composer_error(error);
                     return;
                 }
             }
@@ -6594,18 +11438,18 @@ impl AgentsWindow {
                         if current.path == attachment.path
                             && current.is_dir == attachment.is_dir => {}
                     Ok(_) => {
-                        self.view.status = "Un adjunto cambió de ubicación o tipo".to_owned();
+                        self.show_composer_error("Un adjunto cambió de ubicación o tipo");
                         return;
                     }
                     Err(error) => {
-                        self.view.status = format!("Adjunto no disponible: {error}");
+                        self.show_composer_error(format!("Adjunto no disponible: {error}"));
                         return;
                     }
                 }
             }
             None
         };
-        let prompt = if let Some(payload) = &native_attachments {
+        let mut prompt = if let Some(payload) = &native_attachments {
             native_prompt_with_images(
                 &visible_prompt,
                 &payload.path_attachments,
@@ -6618,23 +11462,24 @@ impl AgentsWindow {
             .map(|payload| payload.images)
             .unwrap_or_default();
         let submitted_draft_key = self.draft_key();
+        let submitted_dock_collapsed = self.dock.is_collapsed(&self.dock_scope());
         let active_goal = self.view.composer_goal.clone();
         let native_connection = if backend == "native" {
-            let connection = match self.native_settings().resolve_at(&self.data_root) {
+            let connection = match turn_settings.resolve_at(&self.data_root) {
                 Ok(connection) => connection,
                 Err(error) => {
-                    self.view.status = error;
+                    self.show_composer_error(error);
                     return;
                 }
             };
-            if connection.api_key.is_none() && self.view.native_provider_id != "custom" {
-                let key_env =
-                    native_provider::adapter_at(&self.data_root, &self.view.native_provider_id)
-                        .ok()
-                        .flatten()
-                        .map(|adapter| adapter.key_env)
-                        .unwrap_or_else(|| "API_KEY".to_owned());
-                self.view.status = format!("Define {key_env} para usar el harness nativo");
+            // A selected model was checked when the user selected it. A model
+            // handed to this turn was not, so it gets the check the resume and
+            // recovery paths apply.
+            if turn_model_overridden && !self.provider_ready_for_turn(&turn_settings.provider_id, &connection) {
+                self.show_composer_error(format!(
+                    "El proveedor {} no está conectado; no se puede usar su modelo en este turno",
+                    turn_settings.provider_id
+                ));
                 return;
             }
             Some(connection)
@@ -6680,11 +11525,14 @@ impl AgentsWindow {
             }
             Some(profile)
         };
-        let native_instructions = if backend == "native" {
+        // Before the skill index is read: an updated plugin is followed and
+        // one removed from Claude Code is dropped.
+        self.sync_plugin_approvals();
+        let mut native_instructions = if backend == "native" {
             match native_workspace_instructions(&self.data_root, &workspace) {
                 Ok(instructions) => instructions,
                 Err(error) => {
-                    self.view.status = error;
+                    self.show_composer_error(error);
                     return;
                 }
             }
@@ -6693,9 +11541,9 @@ impl AgentsWindow {
         };
         let native_mcp_servers = if backend == "native" && self.view.turn_mode == TurnMode::Build {
             match McpSettings::load(&self.data_root, &workspace) {
-                Ok(settings) => settings.enabled_servers().cloned().collect::<Vec<_>>(),
+                Ok(settings) => settings.servers,
                 Err(error) => {
-                    self.view.status = error;
+                    self.show_composer_error(error);
                     return;
                 }
             }
@@ -6703,19 +11551,46 @@ impl AgentsWindow {
             Vec::new()
         };
         let native_hooks = if backend == "native" {
-            match NativeHookSettings::load(&self.data_root).and_then(|settings| settings.registry())
-            {
+            match NativeHookSettings::load(&self.data_root).and_then(|settings| {
+                settings.registry_for(
+                    &self.data_root,
+                    Path::new(&self.view.workspace),
+                    self.compat_hook_source.as_deref(),
+                )
+            }) {
                 Ok(hooks) => Some(Arc::new(hooks)),
                 Err(error) => {
-                    self.view.status = error;
+                    self.show_composer_error(error);
                     return;
                 }
             }
         } else {
             None
         };
+        let mut subagent_hook_context = String::new();
+        if let Some(hooks) = &native_hooks {
+            match self.turn_start_hook_context(hooks, &visible_prompt) {
+                Ok((session_context, prompt_context, subagent_context)) => {
+                    subagent_hook_context = subagent_context;
+                    // Both are labelled so the model and the transcript show
+                    // where the text came from.
+                    if !session_context.is_empty() {
+                        native_instructions.push_str("\n\nContexto de hooks de inicio de sesión:\n");
+                        native_instructions.push_str(&session_context);
+                    }
+                    if !prompt_context.is_empty() {
+                        prompt.push_str("\n\n[Contexto agregado por un hook]\n");
+                        prompt.push_str(&prompt_context);
+                    }
+                }
+                Err(refusal) => {
+                    self.show_composer_error(refusal);
+                    return;
+                }
+            }
+        }
         let Some(store) = self.store.clone() else {
-            self.view.status = "El historial no está disponible".to_owned();
+            self.show_composer_error("El historial no está disponible");
             return;
         };
         let id = match &self.view.selected_session {
@@ -6731,6 +11606,7 @@ impl AgentsWindow {
                 }
             },
         };
+        self.bind_session_start_context(&id);
         if submitted_draft_key.1.is_none() {
             if let Err(error) = self.transfer_draft_goal_to_session(&submitted_draft_key, &id) {
                 self.view.status = error;
@@ -6756,7 +11632,7 @@ impl AgentsWindow {
             let wire_api = connection.wire_api;
             let model = match native_model_backend(
                 connection,
-                &self.view.native_provider_id,
+                &turn_settings.provider_id,
                 Some(&self.view.composer_effort),
                 self.view.hosted_web_search_mode,
                 &self.data_root,
@@ -6765,7 +11641,7 @@ impl AgentsWindow {
             ) {
                 Ok(model) => model,
                 Err(error) => {
-                    self.view.status = error;
+                    self.show_composer_error(error);
                     return;
                 }
             };
@@ -6781,7 +11657,7 @@ impl AgentsWindow {
                     return;
                 }
             };
-            let stored = match store.load(
+            let mut stored = match store.load(
                 request
                     .session_id
                     .as_deref()
@@ -6803,7 +11679,7 @@ impl AgentsWindow {
                         .to_owned();
                 return;
             }
-            let replay = match replay_stored_native(&self.data_root, &stored) {
+            let mut replay = match replay_stored_native(&self.data_root, &stored) {
                 Ok(replay) => replay,
                 Err(error) => {
                     self.view.status = error;
@@ -6814,41 +11690,58 @@ impl AgentsWindow {
                 self.view.status = recovery_status(&replay.recovery).to_owned();
                 return;
             }
-            if replay.checkpoint.as_ref().is_some_and(|checkpoint| {
-                checkpoint.compatibility
-                    != native_checkpoint_compatibility(
-                        &self.view.native_provider_id,
-                        &model_id,
-                        wire_api,
-                    )
-            }) {
-                self.view.status =
-                    "El checkpoint pertenece a otro proveedor o modelo; requiere migración explícita"
-                        .to_owned();
-                return;
-            }
+            let target_compatibility =
+                native_checkpoint_compatibility(&turn_settings.provider_id, &model_id, wire_api);
             if replay
-                .history
-                .iter()
-                .any(|message| !message.provider_output_items.is_empty())
-                && stored
-                    .events
-                    .iter()
-                    .rev()
-                    .find_map(|event| match &event.kind {
-                        AgentEventKind::TurnAdmitted { model, .. }
-                        | AgentEventKind::TurnAdmittedWithImages { model, .. } => {
-                            Some(model.as_str())
-                        }
-                        _ => None,
-                    })
-                    != Some(model_id.as_str())
+                .checkpoint
+                .as_ref()
+                .is_some_and(|checkpoint| checkpoint.compatibility != target_compatibility)
             {
-                self.view.status =
-                    "El historial Responses usa otro modelo; compactalo antes de cambiar de modelo"
-                        .to_owned();
-                return;
+                match composer_model_transition_app::migrate_checkpoint_for_model(
+                    &self.data_root,
+                    &store,
+                    &lease,
+                    &target_compatibility,
+                ) {
+                    Ok(Some(marker)) => {
+                        self.last_sequence = marker.sequence;
+                        self.projection.apply_event(&marker);
+                        self.publish_transcript();
+                        stored.events.push(marker);
+                        replay = match replay_stored_native(&self.data_root, &stored) {
+                            Ok(replay) => replay,
+                            Err(error) => {
+                                self.show_composer_error(error);
+                                return;
+                            }
+                        };
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.show_composer_error(error);
+                        return;
+                    }
+                }
             }
+            let target_route = model.request_profile_fingerprint().and_then(|profile| {
+                openide_core::ModelRouteSnapshot::new(
+                    &turn_settings.provider_id,
+                    &model_id,
+                    &endpoint,
+                    profile,
+                )
+            });
+            let Some(target_route) = target_route else {
+                self.show_composer_error(
+                    "El modelo no tiene una identidad de petición verificable",
+                );
+                return;
+            };
+            openide_core::reconcile_model_history_route(
+                &mut replay.history,
+                replay.history_model_route.as_ref(),
+                &target_route,
+            );
             let plan_snapshot = if request.mode == TurnMode::Build {
                 replay.latest_plan.clone()
             } else {
@@ -6857,7 +11750,7 @@ impl AgentsWindow {
             request.history = replay.history;
             request.sequence_start = replay.last_sequence;
             let token_budget =
-                native_provider::verified_token_budget(&self.view.native_provider_id, &model_id);
+                self.token_budget_for_native_model(&turn_settings.provider_id, &model_id);
             let auto_checkpoints = if token_budget.is_some() {
                 match CheckpointFileStore::new(self.data_root.join("sessions")) {
                     Ok(checkpoints) => Some(Arc::new(checkpoints)),
@@ -6882,11 +11775,10 @@ impl AgentsWindow {
                     return;
                 }
             };
-            let child_tools: Arc<dyn ToolExecutor> = Arc::new(
-                LocalTools::new()
-                    .with_permissions(self.agent_tool_settings.permissions())
-                    .with_command_isolation(self.agent_tool_settings.command_isolation()),
-            );
+            let child_tools: Arc<dyn ToolExecutor> = match self.native_local_tools(&stored.session.workspace) {
+                Ok(tools) => Arc::new(tools),
+                Err(error) => { self.view.status = error; return; }
+            };
             let policy = match self.native_permission_policy() {
                 Ok(policy) => policy,
                 Err(error) => {
@@ -6894,8 +11786,29 @@ impl AgentsWindow {
                     return;
                 }
             };
-            let instructions =
-                system_instructions_with_goal(native_instructions, active_goal.as_deref());
+            let native_goals = match openide_core::NativeGoalStore::new(store.clone()).list(
+                request
+                    .session_id
+                    .as_deref()
+                    .expect("session id was assigned"),
+            ) {
+                Ok(goals) => goals,
+                Err(error) => {
+                    self.view.status = error.to_string();
+                    return;
+                }
+            };
+            let (instructions, full_instructions) = match native_task_instructions(
+                native_instructions,
+                active_goal.as_deref(),
+                native_goals.last(),
+            ) {
+                Ok(instructions) => instructions,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
             let command_hooks = native_hooks.expect("native hooks were validated");
             let coordinator =
                 match SubagentCoordinator::new(store.clone(), SubagentLimits::default()) {
@@ -6911,7 +11824,7 @@ impl AgentsWindow {
                 store.clone(),
                 model.clone(),
                 child_tools,
-                self.view.native_provider_id.clone(),
+                turn_settings.provider_id.clone(),
                 endpoint.clone(),
             )
             .with_permission_policy(policy.clone())
@@ -6919,7 +11832,24 @@ impl AgentsWindow {
             .with_event_bridge(self.subagent_bridge.clone())
             .with_command_hooks(command_hooks.clone())
             .with_nested_subagents(SubagentToolLimits::default())
-            .with_system_instructions(instructions.clone());
+            .with_native_goals()
+            .with_system_instructions(crate::turn_check::child_instructions(
+                &instructions,
+                &subagent_hook_context,
+            ));
+            match self.native_command_sessions.command_profile(
+                self.agent_tool_settings.command_isolation(),
+                self.agent_tool_settings.permissions().run_command,
+            ) {
+                Ok(Some(profile)) => {
+                    child_worker = child_worker.with_persistent_commands(profile);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            }
             if let Some(budget) = token_budget {
                 child_worker = child_worker.with_token_budget_policy(budget);
             }
@@ -6927,7 +11857,7 @@ impl AgentsWindow {
                 child_worker = child_worker.with_auto_compaction(
                     checkpoints.clone(),
                     native_checkpoint_compatibility(
-                        &self.view.native_provider_id,
+                        &turn_settings.provider_id,
                         &model_id,
                         wire_api,
                     ),
@@ -6949,6 +11879,7 @@ impl AgentsWindow {
                     return;
                 }
             };
+            let instructions = full_instructions;
             let turn_id = Uuid::new_v4().to_string();
             let session_id = request
                 .session_id
@@ -6970,19 +11901,52 @@ impl AgentsWindow {
             };
             request.sequence_start = admission.sequence;
             self.last_sequence = admission.sequence;
+            let tools: Arc<dyn ToolExecutor> = match openide_harness::NativeGoalToolExecutor::new(
+                tools,
+                store.clone(),
+                lease.clone(),
+                &turn_id,
+            ) {
+                Ok(tools) => Arc::new(tools),
+                Err(error) => {
+                    self.view.status =
+                        format!("No se pudieron preparar las herramientas de goals: {error}");
+                    return;
+                }
+            };
             let mut runner = AgentRunner::new(model, tools)
                 .with_command_hooks(command_hooks)
                 .with_permission_policy(policy)
                 .with_session_approvals(store.clone(), self.agent_tool_settings.command_isolation())
                 .with_plan_snapshot(plan_snapshot)
                 .with_system_instructions(instructions)
-                .with_native_runtime_identity(&self.view.native_provider_id, endpoint)
+                .with_native_runtime_identity(&turn_settings.provider_id, endpoint)
                 .with_event_journal(store.clone())
-                .with_native_steering(store.clone());
-            if !native_mcp_servers.is_empty() {
-                runner = runner
-                    .with_tool_preparation(Arc::new(McpToolPreparation::new(native_mcp_servers)));
+                .with_native_steering(store.clone())
+                .with_external_controls(store.clone());
+            let command_actor = match self.native_command_actor_for(session_id) {
+                Ok(actor) => actor,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
+            runner = runner.with_manual_command_actor(command_actor);
+            if submitted_draft_key.1.is_none() {
+                self.dock.promote_draft(&self.view.workspace, session_id);
             }
+            let browser = self.browser_client_for_current_scope();
+            let mut environment = crate::environment_runtime::EnvironmentToolPreparation::new(
+                store.storage_root().to_path_buf(),
+                session_id.to_owned(),
+                Arc::new(stored.events.clone()),
+                native_mcp_servers,
+                browser,
+            );
+            if self.view.turn_mode == TurnMode::Build {
+                environment = environment.with_plugins(self.data_root.clone());
+            }
+            runner = runner.with_tool_preparation(Arc::new(environment));
             if let (Some(budget), Some(checkpoints)) = (token_budget, auto_checkpoints) {
                 runner = runner
                     .with_token_budget_policy(budget)
@@ -6990,7 +11954,7 @@ impl AgentsWindow {
                         store.clone(),
                         checkpoints,
                         native_checkpoint_compatibility(
-                            &self.view.native_provider_id,
+                            &turn_settings.provider_id,
                             &model_id,
                             wire_api,
                         ),
@@ -7010,11 +11974,15 @@ impl AgentsWindow {
             ))
         };
         self.active_run = Some(active);
-        if let Some(session_id) = &self.view.selected_session {
-            self.dock.promote_draft(&self.view.workspace, session_id);
+        if submitted_draft_key.1.is_none() {
+            if let Some(session_id) = &self.view.selected_session {
+                self.dock.promote_draft(&self.view.workspace, session_id);
+            }
         }
         let scope = self.dock_scope();
-        self.dock.set_collapsed(&scope, false);
+        // Sending preserves the user's visibility choice even when the draft
+        // becomes a task and acquires a new dock owner.
+        self.dock.set_collapsed(&scope, submitted_dock_collapsed);
         self.ensure_dock_tabs();
         self.visit_navigation();
         self.pending_prompt = Some(visible_prompt);
@@ -7034,11 +12002,218 @@ impl AgentsWindow {
         self.show_persistence_error();
     }
 
+    /// Lists the installed agent CLIs again when the shell's search path
+    /// becomes known, so the home screen offers them without a visit to Settings.
+    fn follow_agent_clis(&mut self) -> bool {
+        let path = self.agent_search_path();
+        if self.agent_clis_path.as_ref() == Some(&path) {
+            return false;
+        }
+        self.agent_clis_path = Some(path);
+        self.refresh_agent_clis();
+        true
+    }
+
+    /// Creates a task whose agent is an installed CLI running in a terminal.
+    fn start_cli_task(&mut self, agent_id: &str) {
+        let Some((agent, _)) = crate::agent_cli_definitions::profile(agent_id) else {
+            return;
+        };
+        if self.view.running {
+            self.view.status = "Detén el agente antes de cambiar de sesión".to_owned();
+            return;
+        }
+        if self.resolve_agent_cli(agent).is_none() {
+            self.view.status = format!("{} no está instalado en este equipo", agent.label);
+            return;
+        }
+        let Some(store) = &self.store else {
+            self.view.status = "No se pudo abrir el historial de tareas".to_owned();
+            return;
+        };
+        let created = store
+            .create(
+                PathBuf::from(&self.view.workspace),
+                format!("{}{}", crate::view::CLI_BACKEND, agent.id),
+            )
+            .and_then(|session| store.rename(&session.id, Some(&agent.label)));
+        match created {
+            Ok(session) => {
+                self.refresh_sessions();
+                self.open_session(&session.id);
+            }
+            Err(error) => self.view.status = format!("No se pudo crear la tarea: {error}"),
+        }
+    }
+
+    /// A CLI names its conversation through the terminal's window title. The
+    /// task starts with the CLI's name and takes that title once there is one.
+    fn follow_cli_task_title(&mut self) -> bool {
+        if !crate::view::cli_task(&self.view) {
+            return false;
+        }
+        let Some(session) = self.view.selected_session.clone() else {
+            return false;
+        };
+        let agent = self.view.selected_backend[crate::view::CLI_BACKEND.len()..].to_owned();
+        let Some(title) = self
+            .active_terminal_id()
+            .and_then(|id| self.terminals.get(&id))
+            .and_then(|terminal| cli_conversation_title(&terminal.title(), &agent))
+        else {
+            return false;
+        };
+        if self.view.selected_session_title.as_deref() == Some(title.as_str()) {
+            return false;
+        }
+        let Some(store) = &self.store else {
+            return false;
+        };
+        if store.rename(&session, Some(&title)).is_err() {
+            return false;
+        }
+        self.view.selected_session_title = Some(title);
+        self.refresh_sessions();
+        true
+    }
+
+    /// A CLI task is its terminal: one is started when the task has none,
+    /// which is also how a task from an earlier run of the app comes back.
+    fn ensure_cli_terminal(&mut self) {
+        let Some(agent_id) = self
+            .view
+            .selected_backend
+            .strip_prefix(crate::view::CLI_BACKEND)
+            .filter(|_| self.view.selected_session.is_some())
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        let scope = self.dock_scope();
+        if self.dock.terminal_tabs(&scope).is_empty() {
+            let Some(agent) = crate::agent_cli_definitions::profile(&agent_id) else {
+                return;
+            };
+            self.new_agent_terminal(agent);
+        }
+        self.dock.set_terminal_collapsed(&scope, false);
+        self.sync_dock_view();
+        self.terminal_focus_pending = true;
+    }
+
+    /// Keeps the file tree equal to the folders on disk. Bursts of changes,
+    /// such as a build or a checkout, are folded into a few refreshes.
+    fn follow_file_tree(&mut self, ctx: &egui::Context) -> bool {
+        const SETTLE: Duration = Duration::from_millis(120);
+        let Some(explorer) = &mut self.file_explorer else {
+            self.file_watcher = None;
+            return false;
+        };
+        if self.file_watcher.is_none() {
+            self.file_watcher = crate::file_watch::TreeWatcher::new();
+        }
+        let Some(watcher) = &mut self.file_watcher else {
+            return false;
+        };
+        let repaint = ctx.clone();
+        watcher.on_change(move || repaint.request_repaint_after(SETTLE));
+        watcher.watch(explorer.shown_directories());
+        let waited = self.file_tree_refreshed.elapsed();
+        if waited < SETTLE {
+            ctx.request_repaint_after(SETTLE - waited);
+            return false;
+        }
+        if !watcher.take_changed() {
+            return false;
+        }
+        self.file_tree_refreshed = Instant::now();
+        if let Err(error) = explorer.refresh() {
+            self.view.files_status = format!("No se pudo actualizar: {error}");
+        }
+        self.refresh_file_rows();
+        true
+    }
+
+    /// Records a session event the user is not watching: the window is in
+    /// the background or another task is on screen.
+    fn notify_session(
+        &mut self,
+        event: crate::notifications::Event,
+        title: &str,
+        session_id: &str,
+    ) {
+        let selected = self.view.selected_session.as_deref() == Some(session_id);
+        if self.window_focused && selected || !self.view.notifications.settings.allows(event) {
+            return;
+        }
+        let task = self
+            .view
+            .sessions
+            .iter()
+            .find(|session| session.id == session_id)
+            .map(|session| session.title.clone())
+            .or_else(|| {
+                self.view
+                    .selected_session_title
+                    .clone()
+                    .filter(|_| selected)
+            })
+            .unwrap_or_else(|| "Tarea".to_owned());
+        if !self.window_focused && self.view.notifications.settings.uses_system() {
+            crate::notifications::notify_system(title, &task);
+        }
+        self.view.notifications.push(
+            event.severity(),
+            title,
+            task,
+            Some(crate::notifications::Target::Session(session_id.to_owned())),
+        );
+    }
+
     fn process_event(&mut self, event: AgentEvent) -> bool {
-        let follow_tail = self.tree.is_scroll_at_end("transcript", 24.0);
-        self.last_sequence = self.last_sequence.max(event.sequence);
         let native_run =
             self.active_resume.is_some() || matches!(&self.active_run, Some(ActiveRun::Native(_)));
+        if let AgentEventKind::PlanProposed { plan } | AgentEventKind::PlanUpdated { plan, .. } =
+            &event.kind
+        {
+            // Live plan publications belong to the selected native worker.
+            // Reject stale/foreign/invalid events before advancing the cursor
+            // or persisting anything. Replay loads durable history separately.
+            if !native_run
+                || self.view.selected_session.as_deref() != Some(event.session_id.as_str())
+                || !plan.is_valid()
+                || event.sequence <= self.last_sequence
+            {
+                return false;
+            }
+        }
+        let follow_tail = self.following_selected_transcript()
+            && self.view.selected_session.as_deref() == Some(event.session_id.as_str());
+        let following_tool_output = match &event.kind {
+            AgentEventKind::ToolOutputDelta { tool_call_id, .. }
+                if self.view.selected_session.as_deref() == Some(event.session_id.as_str()) =>
+            {
+                let id = format!("tool-result:{}:{tool_call_id}:capture", event.session_id);
+                let first_visible_output = !self.projection.has_live_tool_output(tool_call_id)
+                    && self
+                        .view
+                        .conversation_details
+                        .is_expanded(&format!("tool:{tool_call_id}"), false);
+                (first_visible_output || self.tree.is_scroll_at_end(&id, 24.0)).then_some(id)
+            }
+            _ => None,
+        };
+        self.last_sequence = self.last_sequence.max(event.sequence);
+        if matches!(
+            event.kind,
+            AgentEventKind::ToolFinished { .. }
+                | AgentEventKind::TurnCompleted { .. }
+                | AgentEventKind::TurnFailed { .. }
+                | AgentEventKind::TurnCancelled
+                | AgentEventKind::ModelRequestStarted { .. }
+        ) {
+            self.environment_dirty = true;
+        }
         let persisted = if native_run {
             true
         } else if let Some(store) = &self.store {
@@ -7058,17 +12233,41 @@ impl AgentsWindow {
                 }
             }
         }
-        let changed = self.projection.apply_event(&event);
+        let mut changed = self.projection.apply_event(&event);
         if matches!(
             &event.kind,
             AgentEventKind::AssistantDelta { .. }
                 | AgentEventKind::AssistantMessage { .. }
                 | AgentEventKind::ToolStarted { .. }
+                | AgentEventKind::ToolOutputDelta { .. }
+                | AgentEventKind::ToolResultMedia { .. }
                 | AgentEventKind::ProcessOutput { .. }
         ) {
             self.run_has_output = true;
         }
+        if let AgentEventKind::ToolStarted { tool_call } = &event.kind {
+            self.turn_had_effects |= crate::turn_check::tool_has_effects(&tool_call.name);
+        }
         match &event.kind {
+            AgentEventKind::PlanProposed { plan } | AgentEventKind::PlanUpdated { plan, .. }
+                if native_run
+                    && persisted
+                    && self.view.selected_session.as_deref() == Some(event.session_id.as_str())
+                    && plan.is_valid() =>
+            {
+                // Live snapshots describe progress. Replay alone decides
+                // whether a completed, persisted plan can start a Build turn.
+                let live_plan = SessionPlanView {
+                    snapshot: plan.clone(),
+                    can_build: false,
+                };
+                if self.view.session_plans.get(&event.session_id) != Some(&live_plan) {
+                    self.view
+                        .session_plans
+                        .insert(event.session_id.clone(), live_plan);
+                    changed = true;
+                }
+            }
             AgentEventKind::PermissionRequested {
                 request_id,
                 tool_call,
@@ -7086,6 +12285,11 @@ impl AgentsWindow {
                         arguments: serde_json::to_string_pretty(&tool_call.arguments)
                             .unwrap_or_default(),
                     });
+                    self.notify_session(
+                        crate::notifications::Event::Approval,
+                        &format!("Permiso pendiente: {}", tool_call.name),
+                        &event.session_id,
+                    );
                 }
                 self.view.status = format!("Esperando permiso para {}", tool_call.name);
             }
@@ -7117,17 +12321,34 @@ impl AgentsWindow {
                 self.refresh_composer_context_percent();
             }
             AgentEventKind::TurnCompleted { .. } => {
+                self.notify_session(
+                    crate::notifications::Event::TurnCompleted,
+                    "Turno completado",
+                    &event.session_id,
+                );
                 self.view.running = false;
                 self.view.status = "Turno completado".to_owned();
                 self.pending_prompt = None;
                 self.pending_attachments.clear();
+                self.start_turn_check();
             }
             AgentEventKind::TurnFailed { .. } => {
+                // A failed or cancelled turn is not checked: its own error is
+                // what the user needs to see.
+                self.notify_session(
+                    crate::notifications::Event::TurnFailed,
+                    "Turno fallido",
+                    &event.session_id,
+                );
+                self.turn_had_effects = false;
                 self.view.running = false;
                 self.view.status = "Turno fallido".to_owned();
                 self.restore_pending_prompt();
+                // The projection already contains the failure notice. Composer
+                // errors are reserved for local failures before turn admission.
             }
             AgentEventKind::TurnCancelled => {
+                self.turn_had_effects = false;
                 self.view.running = false;
                 self.view.status = "Turno cancelado".to_owned();
                 self.restore_pending_prompt();
@@ -7138,20 +12359,189 @@ impl AgentsWindow {
         if changed && follow_tail {
             self.tree.scroll_to_end("transcript");
         }
+        if let Some(id) = following_tool_output.filter(|_| changed) {
+            self.tree.scroll_to_end(&id);
+        }
         changed
     }
 
-    fn poll_run(&mut self) {
-        let Some(run) = &self.active_run else { return };
+    fn publish_transcript(&mut self) {
+        self.view
+            .conversation_details
+            .sync(self.view.selected_session.as_deref());
+        for (previous, current) in self.projection.take_tool_disclosure_aliases() {
+            self.view.conversation_details.migrate(&previous, &current);
+        }
+        self.projection.sync_into(&mut self.view.transcript);
+    }
+
+    /// Animation changes only the rendered prefix. Persisted/live transcript
+    /// remains complete, including during a tool, error or cancellation boundary.
+    fn sync_stream_presentation(&mut self, now: Instant) -> bool {
+        let stale_image_gallery = self
+            .view
+            .composer_image_viewer
+            .as_ref()
+            .is_some_and(|gallery| !gallery.is_current(&self.view));
+        if stale_image_gallery {
+            self.view.composer_image_viewer = None;
+        }
+        self.view
+            .conversation_details
+            .sync(self.view.selected_session.as_deref());
+        if !crate::conversation_source_ui::available(&self.view) {
+            self.view.conversation_details.close_source();
+        }
+        let following = self.following_selected_transcript();
+        // The reasoning body has its own reading position. Capture its old
+        // extent before revealing more text, independently of the main chat.
+        if self.view.selected_session.is_some()
+            && self.transcript_layout_session == self.view.selected_session
+        {
+            if let Some(TranscriptItem::Reasoning {
+                id,
+                status: crate::transcript::ModelStreamStatus::Receiving,
+                ..
+            }) = self.view.transcript.iter().rev().find(|item| {
+                !matches!(
+                    item,
+                    TranscriptItem::PlanSnapshot { .. } | TranscriptItem::ModelUsage { .. }
+                )
+            }) {
+                let default_open =
+                    crate::session_surface::conversation_detail_default_open(&self.view, id);
+                if self.view.conversation_details.is_expanded(id, default_open) {
+                    let body = format!(
+                        "reasoning-body:{}:{id}",
+                        self.view.selected_session.as_deref().unwrap()
+                    );
+                    if self.tree.is_scroll_at_end(&body, 24.0) {
+                        self.tree.scroll_to_end(&body);
+                    }
+                }
+            }
+        }
+        let mut changed = self.view.stream_presentation.sync(
+            self.view.selected_session.as_deref(),
+            &self.view.transcript,
+            now,
+        );
+        changed |= stale_image_gallery;
+        if self.reduced_motion {
+            changed |= self.view.stream_presentation.flush();
+        }
+        if changed && following {
+            self.tree.scroll_to_end("transcript");
+        }
+        changed
+    }
+
+    fn following_selected_transcript(&self) -> bool {
+        self.view.selected_session.is_some()
+            && self.transcript_layout_session == self.view.selected_session
+            && self.tree.is_scroll_at_end("transcript", 24.0)
+    }
+
+    fn preserve_streaming_tail_before_layout(&mut self) {
+        // The old extent is the user's intent before measuring a larger plan
+        // or a smaller viewport. Scroll targets reflect manual wheel/drag input
+        // immediately, even while its visual offset is still animating.
+        let selected = self.view.selected_session.as_deref();
+        let selected_run = self.view.running
+            && (self.active_run.as_ref().is_some_and(|run| {
+                selected
+                    == Some(match run {
+                        ActiveRun::Native(run) => run.session_id.as_str(),
+                        ActiveRun::Cli(run) => run.session_id.as_str(),
+                    })
+            }) || self
+                .active_resume
+                .as_ref()
+                .is_some_and(|run| selected == Some(run.session_id.as_str())));
+        let selected_child = self
+            .view
+            .active_subagents
+            .iter()
+            .any(|child| selected == Some(child.child_session_id.as_str()));
+        if (selected_run || self.view.background_run_selected || selected_child)
+            && self.following_selected_transcript()
+        {
+            self.tree.scroll_to_end("transcript");
+        }
+    }
+
+    fn record_transcript_layout_session(&mut self) {
+        let has_transcript = self.tree.frame().regions.iter().any(|region| {
+            region.id == "transcript" && matches!(region.kind, openide_ui::HitKind::Scroll)
+        });
+        if !has_transcript {
+            self.transcript_layout_session = None;
+        } else if self.transcript_layout_session != self.view.selected_session {
+            self.transcript_layout_session = self.view.selected_session.clone();
+        }
+    }
+
+    fn ensure_native_text_measurers(&mut self, context: &egui::Context) -> bool {
+        let scale = context.pixels_per_point().to_bits();
+        if self
+            .native_text_measurer
+            .as_ref()
+            .is_some_and(|(installed, previous_scale)| {
+                installed == context && *previous_scale == scale
+            })
+        {
+            return false;
+        }
+        // Fonts are installed once when creating the native context. Retain
+        // its callbacks across frames so the tree can reuse measured history;
+        // changing monitor scale or replacing the context discards widths.
+        install_text_measurer(&mut self.tree, context);
+        install_text_measurer(&mut self.command_tree, context);
+        self.native_text_measurer = Some((context.clone(), scale));
+        true
+    }
+
+    fn layout_workspace_frame(&mut self, viewport: Size) -> UiFrame {
+        self.preserve_streaming_tail_before_layout();
+        self.tree.set_root(crate::view::build_window_view(
+            &self.view,
+            viewport.width,
+            viewport.height,
+        ));
+        let frame = self.tree.layout(viewport);
+        self.workspace_frame_size = Some(viewport);
+        self.workspace_frame_built_at = Some(Instant::now());
+        self.record_transcript_layout_session();
+        frame
+    }
+
+    /// Input targets the frame already visible on screen. On pointer/animation
+    /// ticks, retain that tree until applying input and paint exactly once.
+    fn prepare_workspace_frame(&mut self, viewport: Size, changed: bool) -> (UiFrame, bool) {
+        let refresh_clock = self
+            .workspace_frame_built_at
+            .is_none_or(|built| built.elapsed() >= Duration::from_secs(30));
+        if changed || refresh_clock || self.workspace_frame_size != Some(viewport) {
+            (self.layout_workspace_frame(viewport), true)
+        } else {
+            (self.tree.frame().clone(), false)
+        }
+    }
+
+    fn poll_run(&mut self) -> bool {
+        let Some(run) = &self.active_run else {
+            return false;
+        };
         let native_run = matches!(run, ActiveRun::Native(_));
         let (events, disconnected) = run.drain();
+        let changed = !events.is_empty() || disconnected;
         let journal_error = disconnected.then(|| run.journal_error()).flatten();
         let mut transcript_changed = false;
         for event in events {
             transcript_changed |= self.process_event(event);
         }
         if transcript_changed {
-            self.view.transcript = self.projection.items().to_vec();
+            self.publish_transcript();
         }
         if disconnected {
             if let Some(error) = journal_error {
@@ -7161,7 +12551,7 @@ impl AgentsWindow {
                 if let (Some(store), Some(id)) = (&self.store, &self.view.selected_session) {
                     if let Ok(Some(stored)) = store.load(id) {
                         self.projection = TranscriptProjection::from_events(&stored.events);
-                        self.view.transcript = self.projection.items().to_vec();
+                        self.publish_transcript();
                     }
                 }
             }
@@ -7172,14 +12562,32 @@ impl AgentsWindow {
                 self.restore_pending_prompt();
             }
             self.active_run = None;
+            if native_run {
+                if let Some(id) = self.view.selected_session.clone() {
+                    self.reconcile_native_automation_session(&id);
+                }
+            }
             self.rebuild_history();
             self.refresh_sessions();
             self.show_persistence_error();
         }
+        changed
     }
 
     fn start_resume(&mut self) {
-        if self.view.running || self.active_run.is_some() || self.active_compact.is_some() {
+        if self.plugin_removal_pending {
+            self.view.status = "Espera a que termine la desinstalación del plugin".to_owned();
+            return;
+        }
+        if self.view.composer_branches.switching() {
+            self.view.status = "Espera a que termine el cambio de rama".to_owned();
+            return;
+        }
+        if self.view.running
+            || self.active_run.is_some()
+            || self.active_resume.is_some()
+            || self.active_compact.is_some()
+        {
             self.view.status = "Espera a que termine la operación activa".to_owned();
             return;
         }
@@ -7214,6 +12622,20 @@ impl AgentsWindow {
                 return;
             }
         };
+        let automation =
+            match crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
+                &stored.session,
+            ) {
+                Ok(automation) => automation,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            };
+        if let Some(frozen) = automation.as_ref().filter(|_| stored.events.is_empty()) {
+            self.start_registered_native_automation(&stored.session, frozen);
+            return;
+        }
         let replay = match replay_stored_native(&self.data_root, &stored) {
             Ok(replay) => replay,
             Err(error) => {
@@ -7222,6 +12644,7 @@ impl AgentsWindow {
             }
         };
         if replay.recovery == ReplayRecovery::Idle {
+            self.reconcile_native_automation_session(&session_id);
             if stored.session.subagent.is_some() {
                 self.finalize_resolved_child(&stored.session.id);
             } else {
@@ -7254,11 +12677,13 @@ impl AgentsWindow {
         }
         if let ReplayRecovery::ToolOutcomeUncertain { tool_call } = &replay.recovery {
             self.view.pending_tool_verification = Some(ToolVerificationView {
+                goal_receipt: None,
                 session_id,
                 call_id: tool_call.id.clone(),
                 name: tool_call.name.clone(),
                 arguments: serde_json::to_string_pretty(&tool_call.arguments).unwrap_or_default(),
                 error: None,
+                hooks: crate::transcript::hooks_for_tool(&stored.events, &tool_call.id),
             });
             self.view.tool_verification_output.clear();
             self.view.tool_verification_is_error = false;
@@ -7271,6 +12696,10 @@ impl AgentsWindow {
         }
         if stored.session.subagent.is_some() {
             self.start_child_resume(stored, replay);
+            return;
+        }
+        if let Some(frozen) = automation {
+            self.start_native_automation_resume(&stored.session, frozen);
             return;
         }
         let connection = match self.native_settings().resolve_at(&self.data_root) {
@@ -7304,8 +12733,8 @@ impl AgentsWindow {
         }
         // A model without a verified window can still resume. It follows the
         // same no-auto-compaction behavior as its original native run.
-        let budget_policy = native_provider::verified_token_budget(&provider_id, &model_id);
-        if connection.api_key.is_none() && provider_id != "custom" {
+        let budget_policy = self.token_budget_for_native_model(&provider_id, &model_id);
+        if !self.provider_ready_for_turn(&provider_id, &connection) {
             self.view.status = "Falta la clave API del proveedor nativo".to_owned();
             return;
         }
@@ -7329,16 +12758,36 @@ impl AgentsWindow {
             workspace.to_string_lossy().into_owned(),
             Some(session_id.clone()),
         );
-        let system_instructions = match native_resume_instructions(
-            &self.data_root,
-            workspace,
-            self.composer_goals.get(&goal_key).map(String::as_str),
-            replay.active_system_instructions.as_deref(),
-        ) {
-            Ok(instructions) => instructions,
-            Err(error) => {
-                self.view.status = error;
-                return;
+        let pre_context_instructions = if replay.active_system_instructions.is_none()
+            && replay.active_model_context_digest.is_none()
+        {
+            match native_workspace_instructions(&self.data_root, workspace) {
+                Ok(project) => Some((project, self.composer_goals.get(&goal_key).cloned())),
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        let system_instructions = match &pre_context_instructions {
+            Some((project, legacy)) => {
+                system_instructions_with_goal(project.clone(), legacy.as_deref())
+            }
+            None => {
+                match native_resume_instructions(
+                    &self.data_root,
+                    workspace,
+                    self.composer_goals.get(&goal_key).map(String::as_str),
+                    replay.active_system_instructions.as_deref(),
+                ) {
+                    Ok(instructions) => instructions,
+                    Err(error) => {
+                        self.view.status = error;
+                        return;
+                    }
+                }
             }
         };
         let tool_preparation = if replay
@@ -7347,13 +12796,18 @@ impl AgentsWindow {
             .is_some_and(|turn| turn.mode == TurnMode::Build)
         {
             match McpSettings::load(&self.data_root, workspace) {
-                Ok(settings) => {
-                    let enabled = settings.enabled_servers().cloned().collect::<Vec<_>>();
-                    (!enabled.is_empty()).then(|| {
-                        Arc::new(McpToolPreparation::new(enabled))
-                            as Arc<dyn openide_harness::ToolPreparation>
-                    })
-                }
+                Ok(settings) => Some(
+                    Arc::new(
+                        crate::environment_runtime::EnvironmentToolPreparation::new(
+                            store.storage_root().to_path_buf(),
+                            session_id.clone(),
+                            Arc::new(stored.events.clone()),
+                            settings.servers,
+                            self.browser_client_for_current_scope(),
+                        )
+                        .with_plugins(self.data_root.clone()),
+                    ) as Arc<dyn openide_harness::ToolPreparation>,
+                ),
                 Err(error) => {
                     self.view.status = error;
                     return;
@@ -7369,9 +12823,13 @@ impl AgentsWindow {
                 return;
             }
         };
-        let command_hooks = match NativeHookSettings::load(&self.data_root)
-            .and_then(|settings| settings.registry())
-        {
+        let command_hooks = match NativeHookSettings::load(&self.data_root).and_then(|settings| {
+            settings.registry_for(
+                &self.data_root,
+                Path::new(&self.view.workspace),
+                self.compat_hook_source.as_deref(),
+            )
+        }) {
             Ok(hooks) => Arc::new(hooks),
             Err(error) => {
                 self.view.status = error;
@@ -7393,6 +12851,7 @@ impl AgentsWindow {
             }
         };
         let request = ResumeWorkerRequest {
+            native_automation: None,
             session_id,
             sessions: store,
             checkpoints,
@@ -7401,11 +12860,20 @@ impl AgentsWindow {
             provider: provider_id,
             endpoint,
             base_tools,
-            child_tools: Arc::new(
-                LocalTools::new()
-                    .with_permissions(self.agent_tool_settings.permissions())
-                    .with_command_isolation(self.agent_tool_settings.command_isolation()),
-            ),
+            child_tools: match self.native_local_tools(workspace) {
+                Ok(tools) => Arc::new(tools),
+                Err(error) => { self.view.status = error; return; }
+            },
+            child_command_profile: match self.native_command_sessions.command_profile(
+                self.agent_tool_settings.command_isolation(),
+                self.agent_tool_settings.permissions().run_command,
+            ) {
+                Ok(profile) => profile,
+                Err(error) => {
+                    self.view.status = error;
+                    return;
+                }
+            },
             event_bridge: Some(self.subagent_bridge.clone()),
             tool_preparation,
             permission_policy,
@@ -7413,9 +12881,17 @@ impl AgentsWindow {
             command_hooks,
             budget_policy,
             system_instructions,
+            pre_context_instructions,
             limits: RunLimits::default(),
         };
-        match ResumeWorkerHandle::start(request) {
+        let command_actor = match self.native_command_actor_for(&request.session_id) {
+            Ok(actor) => actor,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
+        match ResumeWorkerHandle::start_with_command_actor(request, Some(command_actor)) {
             Ok(handle) => {
                 self.active_resume = Some(handle);
                 self.view.running = true;
@@ -7431,16 +12907,141 @@ impl AgentsWindow {
         }
     }
 
-    fn start_child_resume(&mut self, stored: StoredSession, replay: NativeReplay) {
+    fn start_registered_native_automation(
+        &mut self,
+        session: &openide_core::Session,
+        frozen: &crate::native_automation::FrozenNativeAutomationAuthorityV1,
+    ) {
+        let result = (|| -> Result<ActiveRun, String> {
+            let store = self
+                .store
+                .clone()
+                .ok_or("El historial no está disponible")?;
+            let lease = store
+                .try_acquire_native_lease(&session.id)
+                .map_err(|error| error.to_string())?;
+            let current = store
+                .native_session_for_lease(&lease)
+                .map_err(|error| error.to_string())?;
+            if crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&current)?
+                .as_ref()
+                != Some(frozen)
+            {
+                return Err("El origen de la ejecución cambió".into());
+            }
+            let recorded = store
+                .load(&session.id)
+                .map_err(|error| error.to_string())?
+                .ok_or("La ejecución ya no existe")?;
+            if !recorded.events.is_empty() {
+                return Err(
+                    "La ejecución ya tiene un turno registrado; actualiza su recuperación".into(),
+                );
+            }
+            let model = frozen.model()?;
+            let admission = store
+                .admit_native_turn(
+                    &session.id,
+                    frozen.first_turn_id(),
+                    frozen.prompt(),
+                    frozen.model_id(),
+                    TurnMode::Build,
+                )
+                .map_err(|error| error.to_string())?;
+            self.start_frozen_automation_runner(&current, frozen, model, admission.sequence, lease)
+        })();
+        match result {
+            Ok(run) => {
+                self.active_run = Some(run);
+                self.view.running = true;
+                self.view.pending_permissions.clear();
+                self.run_has_output = false;
+                self.view.show_settings = false;
+                self.visit_navigation();
+                self.view.status =
+                    "Iniciando la ejecución registrada con su perfil original...".into();
+            }
+            Err(error) => self.view.status = error,
+        }
+        self.refresh_sessions();
+    }
+
+    fn start_native_automation_resume(
+        &mut self,
+        session: &openide_core::Session,
+        frozen: crate::native_automation::FrozenNativeAutomationAuthorityV1,
+    ) {
+        let result = (|| -> Result<ResumeWorkerHandle, String> {
+            let sessions = self
+                .store
+                .clone()
+                .ok_or("El historial no está disponible")?;
+            let checkpoints = Arc::new(
+                CheckpointFileStore::new(self.data_root.join("sessions"))
+                    .map_err(|error| error.to_string())?,
+            );
+            let request = ResumeWorkerRequest {
+                session_id: session.id.clone(),
+                model: frozen.model()?,
+                provider: frozen.provider_id().to_owned(),
+                endpoint: frozen.endpoint().to_owned(),
+                compatibility: frozen.compatibility(),
+                base_tools: frozen.tools(),
+                child_tools: frozen.tools(),
+                child_command_profile: None,
+                event_bridge: None,
+                tool_preparation: None,
+                permission_policy: frozen.policy(),
+                command_isolation: CommandIsolation::HostUnrestricted,
+                command_hooks: Arc::new(CommandHooks::default()),
+                budget_policy: frozen.budget(),
+                system_instructions: frozen.instructions().to_owned(),
+                pre_context_instructions: None,
+                limits: frozen.limits(),
+                native_automation: Some(frozen),
+                sessions,
+                checkpoints,
+            };
+            ResumeWorkerHandle::start_with_command_actor(request, None)
+        })();
+        match result {
+            Ok(handle) => {
+                self.active_resume = Some(handle);
+                self.view.running = true;
+                self.view.pending_permissions.clear();
+                self.view.pending_tool_verification = None;
+                self.view.tool_verification_output.clear();
+                self.run_has_output = false;
+                self.view.show_settings = false;
+                self.visit_navigation();
+                self.view.status = "Recuperando la automatización con su perfil original...".into();
+            }
+            Err(error) => self.view.status = error,
+        }
+    }
+
+    fn child_worker_request(
+        &self,
+        stored: &StoredSession,
+    ) -> Result<SubagentRecoveryRequest, String> {
         let child_id = stored.session.id.clone();
-        let Some(link) = stored.session.subagent.as_ref() else {
-            self.view.status = "La sesión seleccionada no es un subagente".to_owned();
-            return;
-        };
-        let admissions = stored
+        let link = stored
+            .session
+            .subagent
+            .as_ref()
+            .ok_or("La sesión seleccionada no es un subagente")?;
+        // The immutable first admission identifies the spawn. Follow-up turns
+        // are validated against the mailbox by the worker, never treated as a
+        // second spawn or silently discarded by the desktop.
+        let sessions = self
+            .store
+            .clone()
+            .ok_or("El historial no está disponible")?;
+        let mut reserved_instructions = None;
+        let (spawn_id, prompt, admitted_model, mode) = stored
             .events
             .iter()
-            .filter_map(|event| match &event.kind {
+            .find_map(|event| match &event.kind {
                 AgentEventKind::TurnAdmitted {
                     turn_id,
                     prompt,
@@ -7453,41 +13054,36 @@ impl AgentsWindow {
                     model,
                     mode,
                     ..
-                } => Some((turn_id, prompt, model, *mode)),
+                } => Some((turn_id.clone(), prompt.clone(), model.clone(), *mode)),
                 _ => None,
             })
-            .collect::<Vec<_>>();
-        let [(spawn_id, prompt, admitted_model, mode)] = admissions.as_slice() else {
-            self.view.status =
-                "El journal del subagente no tiene un único turno admitido".to_owned();
-            return;
-        };
-        if *spawn_id != &link.spawn_id {
-            self.view.status =
-                "El turno admitido no coincide con el spawn del subagente".to_owned();
-            return;
+            .map(Ok)
+            .unwrap_or_else(|| {
+                let parent = sessions
+                    .load(&link.parent_session_id)
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "El padre del subagente ya no existe".to_owned())?;
+                let (prompt, model, instructions, mode) =
+                    SubagentToolExecutor::reserved_spawn_request(&parent.events, &link.spawn_id)
+                        .map_err(|error| error.to_string())?;
+                reserved_instructions = Some(instructions);
+                Ok::<_, String>((link.spawn_id.clone(), prompt, model, mode))
+            })?;
+        if spawn_id != link.spawn_id {
+            return Err("El turno admitido no coincide con el spawn del subagente".into());
         }
-        let connection = match self.native_settings().resolve_at(&self.data_root) {
-            Ok(connection) => connection,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
+        let connection = self.native_settings().resolve_at(&self.data_root)?;
         let provider = self.view.native_provider_id.clone();
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
         let wire_api = connection.wire_api;
-        if *admitted_model != &model_id {
-            self.view.status =
-                "Selecciona el modelo original del subagente interrumpido".to_owned();
-            return;
+        if admitted_model != model_id {
+            return Err("Selecciona el modelo original del subagente".into());
         }
-        if connection.api_key.is_none() && provider != "custom" {
-            self.view.status = "Falta la clave API del proveedor nativo".to_owned();
-            return;
+        if !self.provider_ready_for_turn(&provider, &connection) {
+            return Err("Falta la clave API del proveedor nativo".into());
         }
-        let model = match native_model_backend(
+        let model = native_model_backend(
             connection,
             &provider,
             Some(&self.view.composer_effort),
@@ -7495,65 +13091,39 @@ impl AgentsWindow {
             &self.data_root,
             self.view.catalog.as_deref(),
             &self.model_discoveries,
-        ) {
-            Ok(model) => model,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
-        let workspace = &stored.session.workspace;
+        )?;
         let parent_id = link.parent_session_id.clone();
+        let frozen_instructions = stored.events.iter().find_map(|event| match &event.kind {
+            AgentEventKind::SystemInstructionsCommitted { content, .. } => Some(content.as_str()),
+            _ => None,
+        });
         let goal_key = (
-            workspace.to_string_lossy().into_owned(),
+            stored.session.workspace.to_string_lossy().into_owned(),
             Some(parent_id.clone()),
         );
-        let instructions = match native_resume_instructions(
-            &self.data_root,
-            workspace,
-            self.composer_goals.get(&goal_key).map(String::as_str),
-            replay.active_system_instructions.as_deref(),
-        ) {
-            Ok(instructions) => instructions,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
+        let instructions = match reserved_instructions {
+            Some(instructions) => instructions,
+            None => native_resume_instructions(
+                &self.data_root,
+                &stored.session.workspace,
+                self.composer_goals.get(&goal_key).map(String::as_str),
+                frozen_instructions,
+            )?,
         };
-        let Some(sessions) = self.store.clone() else {
-            self.view.status = "El historial no está disponible".to_owned();
-            return;
-        };
-        let coordinator =
-            match SubagentCoordinator::new(sessions.clone(), SubagentLimits::default()) {
-                Ok(coordinator) => Arc::new(coordinator),
-                Err(error) => {
-                    self.view.status =
-                        format!("No se pudo abrir la coordinación de subagentes: {error}");
-                    return;
-                }
-            };
-        let command_hooks = match NativeHookSettings::load(&self.data_root)
-            .and_then(|settings| settings.registry())
-        {
-            Ok(hooks) => Arc::new(hooks),
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
-        let child_tools: Arc<dyn ToolExecutor> = Arc::new(
-            LocalTools::new()
-                .with_permissions(self.agent_tool_settings.permissions())
-                .with_command_isolation(self.agent_tool_settings.command_isolation()),
+        let sessions = self
+            .store
+            .clone()
+            .ok_or("El historial no está disponible")?;
+        let coordinator = Arc::new(
+            SubagentCoordinator::new(sessions.clone(), SubagentLimits::default())
+                .map_err(|error| error.to_string())?,
         );
-        let policy = match self.native_permission_policy() {
-            Ok(policy) => policy,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
+        let hooks = Arc::new(NativeHookSettings::load(&self.data_root)?.registry_for(
+            &self.data_root,
+            &stored.session.workspace,
+            self.compat_hook_source.as_deref(),
+        )?);
+        let child_tools: Arc<dyn ToolExecutor> = Arc::new(self.native_local_tools(&stored.session.workspace)?);
         let mut worker = SubagentWorker::new(
             coordinator,
             sessions.clone(),
@@ -7562,20 +13132,24 @@ impl AgentsWindow {
             provider.clone(),
             endpoint,
         )
-        .with_permission_policy(policy)
+        .with_permission_policy(self.native_permission_policy()?)
         .with_session_approvals(self.agent_tool_settings.command_isolation())
         .with_event_bridge(self.subagent_bridge.clone())
-        .with_command_hooks(command_hooks)
+        .with_command_hooks(hooks)
         .with_nested_subagents(SubagentToolLimits::default())
+        .with_native_goals()
         .with_system_instructions(instructions);
-        if let Some(budget) = native_provider::verified_token_budget(&provider, &model_id) {
-            let checkpoints = match CheckpointFileStore::new(self.data_root.join("sessions")) {
-                Ok(checkpoints) => Arc::new(checkpoints),
-                Err(error) => {
-                    self.view.status = format!("No se pudo abrir checkpoints: {error}");
-                    return;
-                }
-            };
+        if let Some(profile) = self.native_command_sessions.command_profile(
+            self.agent_tool_settings.command_isolation(),
+            self.agent_tool_settings.permissions().run_command,
+        )? {
+            worker = worker.with_persistent_commands(profile);
+        }
+        if let Some(budget) = self.token_budget_for_native_model(&provider, &model_id) {
+            let checkpoints = Arc::new(
+                CheckpointFileStore::new(self.data_root.join("sessions"))
+                    .map_err(|error| error.to_string())?,
+            );
             worker = worker
                 .with_token_budget_policy(budget)
                 .with_auto_compaction(
@@ -7583,14 +13157,28 @@ impl AgentsWindow {
                     native_checkpoint_compatibility(&provider, &model_id, wire_api),
                 );
         }
-        let request = SubagentRecoveryRequest {
+        Ok(SubagentRecoveryRequest {
             sessions,
             worker,
             parent_id,
-            child_id: child_id.clone(),
-            spawn_id: (*spawn_id).clone(),
-            prompt: (*prompt).clone(),
-            mode: *mode,
+            child_id,
+            spawn_id: spawn_id.clone(),
+            prompt: prompt.clone(),
+            mode,
+        })
+    }
+
+    fn start_child_resume(&mut self, stored: StoredSession, _replay: NativeReplay) {
+        if self.view.composer_branches.switching() {
+            self.view.status = "Espera a que termine el cambio de rama".to_owned();
+            return;
+        }
+        let request = match self.child_worker_request(&stored) {
+            Ok(request) => request,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
         };
         match SubagentRecoveryHandle::start(request) {
             Ok(handle) => {
@@ -7600,7 +13188,7 @@ impl AgentsWindow {
                 self.view.recoverable_subagent = None;
                 self.view.show_settings = false;
                 self.visit_navigation();
-                self.view.status = "Recuperando subagente interrumpido...".to_owned();
+                self.view.status = "Recuperando subagente interrumpido...".into();
             }
             Err(error) => self.view.status = error,
         }
@@ -7686,6 +13274,18 @@ impl AgentsWindow {
                 return;
             }
         };
+        let automation = match store
+            .native_session_for_lease(&lease)
+            .map_err(|error| error.to_string())
+            .and_then(|session| {
+                crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&session)
+            }) {
+            Ok(automation) => automation,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
         let step =
             match discard_aborted_tool_batch(store, &checkpoints, &lease, &batch.next_call_id) {
                 Ok(step) => step,
@@ -7711,15 +13311,20 @@ impl AgentsWindow {
         };
         self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
         self.projection = TranscriptProjection::from_events(&stored.events);
-        self.view.transcript = self.projection.items().to_vec();
+        self.publish_transcript();
         self.history = step.replay.history;
         self.view.pending_batch_discard = None;
+        self.reconcile_native_automation_session(&batch.session_id);
         self.refresh_sessions();
         if stored.session.subagent.is_some() && step.replay.can_start_new_turn {
             self.finalize_resolved_child(&batch.session_id);
         } else {
-            self.view.status =
-                "Llamadas pendientes descartadas; la sesión acepta otro turno".to_owned();
+            self.view.status = if automation.is_some() {
+                "Llamadas pendientes descartadas; abre una nueva tarea nativa para continuar"
+                    .to_owned()
+            } else {
+                "Llamadas pendientes descartadas; la sesión acepta otro turno".to_owned()
+            };
         }
     }
 
@@ -7746,13 +13351,28 @@ impl AgentsWindow {
                 return;
             }
         };
+        let output_limit = match store
+            .native_session_for_lease(&lease)
+            .map_err(|error| error.to_string())
+            .and_then(|session| {
+                crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(&session)
+            }) {
+            Ok(automation) => automation.map_or_else(
+                || RunLimits::default().max_tool_output_chars,
+                |frozen| frozen.limits().max_tool_output_chars,
+            ),
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
         let step = match openide_harness::record_verified_tool_outcome(
             &store,
             &checkpoints,
             &lease,
             &pending.call_id,
             result,
-            RunLimits::default().max_tool_output_chars,
+            output_limit,
         ) {
             Ok(step) => step,
             Err(error) => {
@@ -7777,10 +13397,11 @@ impl AgentsWindow {
         };
         self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
         self.projection = TranscriptProjection::from_events(&stored.events);
-        self.view.transcript = self.projection.items().to_vec();
+        self.publish_transcript();
         self.history = step.replay.history;
         self.view.pending_tool_verification = None;
         self.view.tool_verification_output.clear();
+        self.reconcile_native_automation_session(&pending.session_id);
         self.refresh_sessions();
         if matches!(
             step.replay.recovery,
@@ -7801,15 +13422,7 @@ impl AgentsWindow {
             let Some(active) = &self.active_resume else {
                 return false;
             };
-            let mut updates = Vec::new();
-            let disconnected = loop {
-                match active.updates.try_recv() {
-                    Ok(update) => updates.push(update),
-                    Err(TryRecvError::Empty) => break false,
-                    Err(TryRecvError::Disconnected) => break true,
-                }
-            };
-            (updates, disconnected)
+            drain_ui_updates(&active.updates)
         };
         if updates.is_empty() && !disconnected {
             return false;
@@ -7845,8 +13458,38 @@ impl AgentsWindow {
                 ResumeUpdate::NeedsVerification {
                     tool_call,
                     executor_error,
+                    goal_receipt,
                 } => {
+                    let session_id = self
+                        .active_resume
+                        .as_ref()
+                        .expect("recovery is active while polling")
+                        .session_id
+                        .clone();
+                    let hooks = match self
+                        .store
+                        .as_ref()
+                        .ok_or_else(|| "El historial no está disponible".to_owned())
+                        .and_then(|store| {
+                            store.load(&session_id).map_err(|error| error.to_string())
+                        })
+                        .and_then(|stored| {
+                            stored.ok_or_else(|| {
+                                "La sesión de recuperación no está disponible".to_owned()
+                            })
+                        }) {
+                        Ok(stored) => {
+                            crate::transcript::hooks_for_tool(&stored.events, &tool_call.id)
+                        }
+                        Err(error) => {
+                            self.persistence_error = Some(format!(
+                                "No se pudieron cargar los hooks para verificación: {error}"
+                            ));
+                            vec![]
+                        }
+                    };
                     self.view.pending_tool_verification = Some(ToolVerificationView {
+                        goal_receipt,
                         session_id: self
                             .active_resume
                             .as_ref()
@@ -7858,6 +13501,7 @@ impl AgentsWindow {
                         arguments: serde_json::to_string_pretty(&tool_call.arguments)
                             .unwrap_or_default(),
                         error: executor_error.clone(),
+                        hooks,
                     });
                     self.view.tool_verification_output.clear();
                     self.view.tool_verification_is_error = false;
@@ -7871,7 +13515,7 @@ impl AgentsWindow {
             }
         }
         if transcript_changed {
-            self.view.transcript = self.projection.items().to_vec();
+            self.publish_transcript();
         }
         if finished.is_none() && !disconnected {
             // A terminal journal event may precede MCP shutdown; keep the
@@ -7897,7 +13541,7 @@ impl AgentsWindow {
         {
             self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
             self.projection = TranscriptProjection::from_events(&stored.events);
-            self.view.transcript = self.projection.items().to_vec();
+            self.publish_transcript();
         }
         self.rebuild_history();
         self.refresh_sessions();
@@ -7910,6 +13554,7 @@ impl AgentsWindow {
             Ok(other) => format!("Recuperación pausada: {other:?}"),
             Err(error) => format!("No se pudo recuperar el turno: {error}"),
         };
+        self.reconcile_native_automation_session(&active.session_id);
         true
     }
 
@@ -7974,7 +13619,7 @@ impl AgentsWindow {
                 if let Ok(Some(stored)) = store.load(&active.child_id) {
                     self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
                     self.projection = TranscriptProjection::from_events(&stored.events);
-                    self.view.transcript = self.projection.items().to_vec();
+                    self.publish_transcript();
                     if let Ok(replay) = replay_stored_native(&self.data_root, &stored) {
                         self.history = replay.history;
                     }
@@ -8009,6 +13654,10 @@ impl AgentsWindow {
     }
 
     fn start_compact(&mut self) {
+        if self.view.composer_branches.switching() {
+            self.view.status = "Espera a que termine el cambio de rama".to_owned();
+            return;
+        }
         if self.active_compact.is_some() {
             self.view.status = "Ya se está compactando una sesión".to_owned();
             return;
@@ -8070,45 +13719,60 @@ impl AgentsWindow {
             self.view.status = "No hay historial nuevo para compactar".to_owned();
             return;
         }
-        let connection = match self.native_settings().resolve_at(&self.data_root) {
-            Ok(connection) => connection,
+        let resolved = (|| -> Result<_, String> {
+            if let Some(frozen) =
+                crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
+                    &stored.session,
+                )?
+            {
+                let current = store
+                    .native_session_for_lease(&lease)
+                    .map_err(|error| error.to_string())?;
+                if crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
+                    &current,
+                )?
+                .as_ref()
+                    != Some(&frozen)
+                {
+                    return Err("El origen de la automatización cambió".into());
+                }
+                return Ok((frozen.model()?, frozen.compatibility(), frozen.budget()));
+            }
+            let connection = self.native_settings().resolve_at(&self.data_root)?;
+            let provider_id = self.view.native_provider_id.clone();
+            let model_id = connection.model_id.clone();
+            let compatibility =
+                native_checkpoint_compatibility(&provider_id, &model_id, connection.wire_api);
+            let policy = self.token_budget_for_native_model(&provider_id, &model_id);
+            if !self.provider_ready_for_turn(&provider_id, &connection) {
+                return Err("Falta la clave API del proveedor nativo".into());
+            }
+            let model = native_model_backend(
+                connection,
+                &provider_id,
+                Some(&self.view.composer_effort),
+                self.view.hosted_web_search_mode,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )?;
+            Ok((model, compatibility, policy))
+        })();
+        let (model, compatibility, policy) = match resolved {
+            Ok(resolved) => resolved,
             Err(error) => {
                 self.view.status = error;
                 return;
             }
         };
-        let provider_id = self.view.native_provider_id.clone();
-        let model_id = connection.model_id.clone();
-        let wire_api = connection.wire_api;
-        let compatibility = native_checkpoint_compatibility(&provider_id, &model_id, wire_api);
         if replay
             .checkpoint
             .as_ref()
             .is_some_and(|checkpoint| checkpoint.compatibility != compatibility)
         {
-            self.view.status = "El checkpoint pertenece a otro proveedor o modelo".to_owned();
+            self.view.status = "El checkpoint pertenece a otro proveedor o modelo".into();
             return;
         }
-        let policy = native_provider::verified_token_budget(&provider_id, &model_id);
-        if connection.api_key.is_none() && provider_id != "custom" {
-            self.view.status = "Falta la clave API del proveedor nativo".to_owned();
-            return;
-        }
-        let model = match native_model_backend(
-            connection,
-            &provider_id,
-            Some(&self.view.composer_effort),
-            self.view.hosted_web_search_mode,
-            &self.data_root,
-            self.view.catalog.as_deref(),
-            &self.model_discoveries,
-        ) {
-            Ok(model) => model,
-            Err(error) => {
-                self.view.status = error;
-                return;
-            }
-        };
         let observed_input_tokens = stored.events.iter().rev().find_map(|event| {
             if let AgentEventKind::ModelResponseCommitted {
                 usage: Some(usage), ..
@@ -8130,6 +13794,7 @@ impl AgentsWindow {
             .fold(0u64, u64::saturating_add);
         let budget = match policy {
             Some(policy) => CheckpointBudgetSnapshot {
+                input_limit_tokens: policy.input_limit_tokens,
                 context_window_tokens: policy.context_window_tokens,
                 estimated_input_tokens,
                 observed_input_tokens,
@@ -8173,6 +13838,9 @@ impl AgentsWindow {
             });
         match result {
             Ok(_) => {
+                self.view
+                    .conversation_activity
+                    .begin_compaction(&session_id, &stored.session.workspace);
                 self.active_compact = Some(ActiveCompact {
                     session_id,
                     receiver,
@@ -8199,16 +13867,35 @@ impl AgentsWindow {
             .active_compact
             .take()
             .expect("compact operation was active");
+        self.view.conversation_activity.end_compaction();
         self.refresh_sessions();
         if self.view.selected_session.as_deref() == Some(active.session_id.as_str()) {
             match outcome {
-                Ok(_) => {
-                    self.rebuild_history();
-                    self.view.status = "Contexto compactado y checkpoint confirmado".to_owned();
+                Ok(sequence) => {
+                    let committed = self
+                        .store
+                        .as_ref()
+                        .and_then(|store| store.load(&active.session_id).ok().flatten());
+                    if let Some(stored) = committed.filter(|stored| {
+                        stored.events.iter().any(|event| {
+                            event.sequence == sequence
+                                && matches!(&event.kind, AgentEventKind::CheckpointCommitted { .. })
+                        })
+                    }) {
+                        self.projection = TranscriptProjection::from_events(&stored.events);
+                        self.publish_transcript();
+                        self.rebuild_history();
+                        self.view.status = "Contexto compactado y checkpoint confirmado".to_owned();
+                    } else {
+                        self.view.status =
+                            "No se pudo confirmar el checkpoint guardado después de compactar"
+                                .to_owned();
+                    }
                 }
                 Err(error) => self.view.status = format!("No se pudo compactar: {error}"),
             }
         }
+        self.reconcile_native_automation_session(&active.session_id);
         true
     }
 
@@ -8361,7 +14048,7 @@ impl AgentsWindow {
         );
         let display_limited = results.len() > limit;
         results.truncate(limit);
-        self.view.command_results = results;
+        self.set_command_results(results);
         let scope =
             command_center::parse_query(&self.view.command_query, self.view.command_scope).scope;
         self.view.command_search_truncated = display_limited
@@ -8369,10 +14056,6 @@ impl AgentsWindow {
                 (matches!(scope, Scope::All | Scope::Sessions) && response.session_has_more)
                     || (matches!(scope, Scope::All | Scope::Files) && response.files_truncated)
             });
-        self.view.command_selected_index = self
-            .view
-            .command_selected_index
-            .min(self.view.command_results.len().saturating_sub(1));
     }
 
     fn request_command_search(&mut self) {
@@ -8470,13 +14153,17 @@ impl AgentsWindow {
     }
 
     fn open_command_center(&mut self) {
+        self.view.ide.menu_open = None;
+        self.view.ide.compact_panel = None;
+        self.view.ide.sessions_open = false;
+        self.close_composer_floating_controls();
         self.command_center_attaches_file = false;
         self.view.composer_add_menu_open = false;
         self.view.composer_project_menu_open = false;
         self.view.show_command_center = true;
         self.view.command_query.clear();
         self.view.command_scope = Scope::All;
-        self.view.command_selected_index = 0;
+        self.reset_command_navigation();
         self.command_tree.set_input_value("command_query", "");
         self.request_command_search();
         self.command_focus_pending = true;
@@ -8490,7 +14177,11 @@ impl AgentsWindow {
     }
 
     fn open_composer_folder_picker(&mut self, ctx: &egui::Context) {
-        if self.composer_folder_response.is_some() || self.view.running {
+        if self.composer_folder_response.is_some()
+            || self.workspace_folder_response.is_some()
+            || self.view.running
+            || self.view.composer_branches.switching()
+        {
             return;
         }
         self.view.composer_add_menu_open = false;
@@ -8530,7 +14221,7 @@ impl AgentsWindow {
             match result.1 {
                 Ok(Some(path)) => self.attach_composer_file(&path),
                 Ok(None) => {}
-                Err(error) => self.view.status = error,
+                Err(error) => self.show_composer_error(error),
             }
         }
         true
@@ -8567,6 +14258,295 @@ impl AgentsWindow {
             }
             Err(error) => self.view.status = error,
         }
+    }
+
+    fn request_composer_attachment_paste(
+        &mut self,
+        hint: Option<String>,
+        ctx: &egui::Context,
+    ) -> bool {
+        if self.view.running || self.view.background_run_selected {
+            return false;
+        }
+        let key = self.draft_key();
+        if self.attachment_pastes_pending.contains(&key) {
+            self.view.status = "El pegado anterior todavía se está preparando".to_owned();
+            return false;
+        }
+        let available =
+            MAX_COMPOSER_ATTACHMENTS.saturating_sub(self.view.composer_attachments.len());
+        if available == 0 {
+            self.view.composer_error =
+                Some(format!("Máximo de {MAX_COMPOSER_ATTACHMENTS} adjuntos"));
+            return false;
+        }
+        let queued = self
+            .attachment_worker
+            .as_ref()
+            .is_some_and(|worker| worker.paste(key.clone(), hint, available));
+        if queued {
+            self.attachment_pastes_pending.insert(key);
+            self.view.composer_error = None;
+            self.view.composer_attachment_loading = true;
+            self.view.status = "Preparando adjuntos…".to_owned();
+            self.view.composer_add_menu_open = false;
+            self.prompt_focus_pending = true;
+            ctx.request_repaint_after(Duration::from_millis(50));
+        } else {
+            self.view.composer_error = Some("No se pudo iniciar el pegado de adjuntos".to_owned());
+        }
+        queued
+    }
+
+    fn poll_composer_attachments(&mut self, ctx: &egui::Context) -> bool {
+        let responses: Vec<_> = self
+            .attachment_worker
+            .as_ref()
+            .map(|worker| std::iter::from_fn(|| worker.poll()).collect())
+            .unwrap_or_default();
+        let mut changed = !responses.is_empty();
+        for response in responses {
+            match response {
+                crate::composer_attachments::Response::Image { generation, result } => {
+                    if let Some(viewer) = self
+                        .view
+                        .composer_image_viewer
+                        .as_mut()
+                        .filter(|viewer| viewer.generation == generation)
+                    {
+                        viewer.loading = false;
+                        match result {
+                            Ok(image) => viewer.image = Some(image),
+                            Err(error) => viewer.error = Some(error),
+                        }
+                    }
+                }
+                crate::composer_attachments::Response::Visual { key, visual } => {
+                    self.attachment_visuals_pending.remove(&key);
+                    self.view.composer_attachment_visuals.insert(key, visual);
+                }
+                crate::composer_attachments::Response::Pasted { key, result } => {
+                    self.attachment_pastes_pending.remove(&key);
+                    match result {
+                        Ok(paths) if key == self.draft_key() => {
+                            for path in paths {
+                                self.attach_composer_file(&path);
+                            }
+                        }
+                        Ok(paths) => {
+                            // A paste belongs to the draft that requested it, even
+                            // if navigation changed before the worker completed.
+                            let attachments =
+                                self.attachment_drafts.entry(key.clone()).or_default();
+                            for path in paths {
+                                if attachments.len() >= MAX_COMPOSER_ATTACHMENTS {
+                                    break;
+                                }
+                                if let Ok(file) =
+                                    composer_attachment_for_path(Path::new(&key.0), &path)
+                                {
+                                    if !attachments
+                                        .iter()
+                                        .any(|existing| existing.path == file.path)
+                                    {
+                                        attachments.push(file);
+                                    }
+                                }
+                            }
+                        }
+                        Err(error) if key == self.draft_key() => {
+                            self.view.status = error.clone();
+                            self.view.composer_error = Some(error);
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+        }
+        let loading = self.attachment_pastes_pending.contains(&self.draft_key());
+        changed |= self.view.composer_attachment_loading != loading;
+        self.view.composer_attachment_loading = loading;
+        let current_keys: HashSet<_> = self
+            .view
+            .composer_attachments
+            .iter()
+            .map(|file| crate::composer_attachments::visual_key(&self.view.workspace, &file.path))
+            .collect();
+        if let Some(worker) = &self.attachment_worker {
+            for file in &self.view.composer_attachments {
+                let key = crate::composer_attachments::visual_key(&self.view.workspace, &file.path);
+                if !self.view.composer_attachment_visuals.contains_key(&key)
+                    && !self.attachment_visuals_pending.contains(&key)
+                    && worker.inspect(&self.view.workspace, &file.path, file.is_dir)
+                {
+                    self.attachment_visuals_pending.insert(key);
+                }
+            }
+        }
+        if self.view.composer_attachment_visuals.len() > 128 {
+            self.view
+                .composer_attachment_visuals
+                .retain(|key, _| current_keys.contains(key));
+        }
+        if !self.attachment_visuals_pending.is_empty()
+            || !self.attachment_pastes_pending.is_empty()
+            || self
+                .view
+                .composer_image_viewer
+                .as_ref()
+                .is_some_and(|viewer| viewer.loading)
+        {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+        changed
+    }
+
+    fn open_composer_image(&mut self, attachment_index: usize, ctx: &egui::Context) {
+        let Some(clicked) = self.view.composer_attachments.get(attachment_index) else {
+            return;
+        };
+        let attachments: Vec<_> = self
+            .view
+            .composer_attachments
+            .iter()
+            .filter(|file| {
+                crate::composer_attachments::fallback_visual(&file.path, file.is_dir).is_image
+            })
+            .cloned()
+            .collect();
+        let Some(selected) = attachments
+            .iter()
+            .position(|file| file.path == clicked.path)
+        else {
+            return;
+        };
+        self.close_composer_floating_controls();
+        self.view.composer_image_viewer = Some(crate::composer_attachments::ImageGalleryView {
+            workspace: self.view.workspace.clone(),
+            attachments,
+            tool_source: None,
+            selected,
+            generation: 0,
+            image: None,
+            error: None,
+            loading: true,
+        });
+        self.view.composer_add_menu_open = false;
+        self.view.composer_model_menu_open = false;
+        self.view.composer_project_menu_open = false;
+        self.view.backend_menu_open = false;
+        self.prompt_focus_pending = false;
+        self.dock_drag = None;
+        self.request_composer_viewer_image(ctx);
+    }
+
+    fn request_composer_viewer_image(&mut self, ctx: &egui::Context) {
+        let Some(viewer) = self.view.composer_image_viewer.as_mut() else {
+            return;
+        };
+        self.attachment_viewer_generation = self.attachment_viewer_generation.wrapping_add(1);
+        viewer.generation = self.attachment_viewer_generation;
+        viewer.image = None;
+        viewer.error = None;
+        if let Some(source) = &viewer.tool_source {
+            viewer.image = source.images.get(viewer.selected).cloned();
+            viewer.loading = false;
+            if viewer.image.is_none() {
+                viewer.error = Some("La imagen ya no está disponible".into());
+            }
+            ctx.request_repaint();
+            return;
+        }
+        let Some(file) = viewer.attachments.get(viewer.selected) else {
+            return;
+        };
+        viewer.loading = self
+            .attachment_worker
+            .as_ref()
+            .is_some_and(|worker| worker.image(&viewer.workspace, &file.path, viewer.generation));
+        if !viewer.loading {
+            viewer.error = Some("No se pudo iniciar la vista de la imagen".into());
+        }
+        ctx.request_repaint_after(Duration::from_millis(50));
+    }
+
+    fn navigate_composer_images(&mut self, direction: isize, ctx: &egui::Context) -> bool {
+        let Some(viewer) = self.view.composer_image_viewer.as_mut() else {
+            return false;
+        };
+        let Some(selected) = viewer
+            .selected
+            .checked_add_signed(direction)
+            .filter(|index| *index < viewer.image_count())
+        else {
+            return false;
+        };
+        if selected == viewer.selected {
+            return false;
+        }
+        viewer.selected = selected;
+        self.request_composer_viewer_image(ctx);
+        true
+    }
+
+    fn handle_composer_clipboard_input(&mut self, ctx: &egui::Context, modal_open: bool) -> bool {
+        let allowed = !modal_open
+            && self.pending_text_paste.is_none()
+            && !self.tree.context_menu_open()
+            && !self.view.show_command_center
+            && !self.view.show_settings
+            && self.view.main_page == MainPage::Workspace
+            && !self.view.running
+            && !self.view.background_run_selected
+            && self.tree.focused_id() == Some("prompt");
+        let (pastes, released_v, command_held) = ctx.input(|input| {
+            let pastes: Vec<_> = input
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::Paste(text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect();
+            let released_v = input.events.iter().find_map(|event| match event {
+                egui::Event::Key {
+                    key: egui::Key::V,
+                    pressed: false,
+                    modifiers,
+                    ..
+                } => Some(modifiers.command),
+                _ => None,
+            });
+            (pastes, released_v, input.modifiers.command)
+        });
+        let mut changed = false;
+        if allowed {
+            for text in &pastes {
+                if crate::composer_attachments::is_file_paste(text) {
+                    self.request_composer_attachment_paste(Some(text.clone()), ctx);
+                    changed = true;
+                    ctx.input_mut(|input| {
+                        input.events.retain(
+                            |event| !matches!(event, egui::Event::Paste(value) if value == text),
+                        )
+                    });
+                }
+            }
+            if !pastes.is_empty() && (command_held || released_v == Some(true)) {
+                self.keyboard_paste_handled = true;
+            }
+            // egui-winit consumes Ctrl+V on key-down, but emits no Paste
+            // event for an image. Its key-up event lets the host read images
+            // without reading the clipboard for ordinary text pastes.
+            if released_v == Some(true) && pastes.is_empty() && !self.keyboard_paste_handled {
+                self.request_composer_attachment_paste(None, ctx);
+                changed = true;
+            }
+        }
+        if released_v.is_some() || !command_held || !allowed {
+            self.keyboard_paste_handled = false;
+        }
+        changed
     }
 
     fn activate_command_result(&mut self, index: usize) {
@@ -8643,8 +14623,12 @@ impl AgentsWindow {
                 self.view.show_settings = false;
                 self.view.main_page = MainPage::Workspace;
                 let scope = self.dock_scope();
-                self.dock.set_collapsed(&scope, self.view.show_side_pane);
-                self.sync_dock_view();
+                if self.ide_workspace_active() {
+                    self.toggle_ide_panel(crate::ide_workspace::IdePanel::Agent);
+                } else {
+                    self.dock.set_collapsed(&scope, self.view.show_side_pane);
+                    self.sync_dock_view();
+                }
                 if changed_page {
                     self.visit_navigation();
                 }
@@ -8664,6 +14648,7 @@ impl AgentsWindow {
                 let workspace = Path::new(&self.view.workspace);
                 let owner = self.view.selected_session.as_deref().unwrap_or("");
                 if self.dock.open_file(workspace, owner, &path).is_some() {
+                    self.view.ide.extensions_open = false;
                     let changed_page =
                         self.view.show_settings || self.view.main_page != MainPage::Workspace;
                     self.view.show_settings = false;
@@ -8701,6 +14686,11 @@ impl AgentsWindow {
             self.view.status = "Detén el agente antes de cambiar de tarea".to_owned();
             return false;
         }
+        if self.view.composer_branches.switching() && changes_context {
+            self.view.status = "Espera a que termine el cambio de rama".to_owned();
+            return false;
+        }
+        self.close_composer_floating_controls();
         if let Some(session_id) = desired_session {
             if self.view.selected_session.as_deref() != Some(session_id)
                 || Path::new(&self.view.workspace) != target.workspace()
@@ -8721,6 +14711,10 @@ impl AgentsWindow {
             self.change_workspace(target.workspace().to_string_lossy().into_owned());
         }
         self.view.show_settings = matches!(target, NavigationTarget::Settings { .. });
+        self.view.settings_terminal_shell_menu_open = false;
+                    self.view.settings_keymap_menu_open = false;
+        self.view.settings_choice_menu_open = None;
+        self.view.settings_terminal_shell_editing = false;
         self.clear_settings_notice();
         self.view.main_page = match target {
             NavigationTarget::Automations { .. } => MainPage::Automations,
@@ -8755,8 +14749,16 @@ impl AgentsWindow {
     }
 
     fn change_workspace(&mut self, value: String) {
-        if self.view.running {
-            self.view.status = "Detén el agente antes de cambiar de proyecto".to_owned();
+        if self.view.environment.workflow.busy.is_some() {
+            return;
+        }
+        if self.view.running || self.view.composer_branches.switching() {
+            self.view.status = if self.view.composer_branches.switching() {
+                "Espera a que termine el cambio de rama"
+            } else {
+                "Detén el agente antes de cambiar de proyecto"
+            }
+            .to_owned();
             self.view.workspace_draft = self.view.workspace.clone();
             self.tree
                 .set_input_value("workspace", self.view.workspace.clone());
@@ -8771,8 +14773,12 @@ impl AgentsWindow {
             self.save_draft();
         }
         self.view.workspace = value;
+        self.reset_marketplace_workspace();
+        self.view.composer_branches = Default::default();
         self.view.workspace_draft = self.view.workspace.clone();
         self.view.composer_context_percent = None;
+        self.view.composer_context_open = false;
+        self.view.native_context = Default::default();
         self.refresh_mcp_settings();
         self.refresh_native_skills();
         self.view.project_branch = project_branch_for_workspace(&self.view.workspace);
@@ -8794,7 +14800,7 @@ impl AgentsWindow {
                 }
             }
             self.ensure_dock_tabs();
-            if self.view.side_tab == SideTab::Files {
+            if self.view.side_tab == SideTab::Files || self.ide_workspace_active() {
                 self.refresh_file_rows();
             }
         }
@@ -8802,10 +14808,15 @@ impl AgentsWindow {
     }
 
     fn open_workspace_folder_picker(&mut self, ctx: &egui::Context) {
-        if self.workspace_folder_response.is_some() || self.view.running {
+        if self.workspace_folder_response.is_some()
+            || self.composer_folder_response.is_some()
+            || self.view.running
+            || self.view.composer_branches.switching()
+        {
             return;
         }
         self.view.composer_project_menu_open = false;
+        self.view.composer_branches.open = false;
         let initial = Path::new(&self.view.workspace)
             .ancestors()
             .find(|path| path.is_dir())
@@ -8841,9 +14852,9 @@ impl AgentsWindow {
                     }
                 }
                 Ok(_) => {}
-                Err(error) => self.view.status = error,
+                Err(error) => self.show_composer_error(error),
             },
-            Err(error) => self.view.status = error,
+            Err(error) => self.show_composer_error(error),
         }
     }
 
@@ -8863,15 +14874,496 @@ impl AgentsWindow {
         true
     }
 
-    fn apply_action(&mut self, action: UiAction, ctx: &egui::Context) {
+    fn close_environment(&mut self) {
+        use crate::environment_ui::EnvironmentMenu;
+        if self.view.environment.menu == EnvironmentMenu::Project {
+            self.view.composer_project_menu_open = false;
+        } else if self.view.environment.menu == EnvironmentMenu::Branch {
+            self.view.composer_branches.open = false;
+        }
+        self.view.environment.open = false;
+        self.view.environment.composer_local_open = false;
+        self.view.environment.menu = EnvironmentMenu::None;
+    }
+
+    fn dismiss_environment_level(&mut self, ctx: &egui::Context) -> bool {
+        use crate::environment_git_ui::EnvironmentGitPanel;
+        use crate::environment_ui::EnvironmentMenu;
+        if self.view.environment.composer_local_open {
+            self.apply_action(
+                UiAction::Clicked { id: "composer_environment_dismiss".into() },
+                ctx,
+            );
+            return true;
+        }
+        if !self.view.environment.open {
+            return false;
+        }
+        let action = if self.view.environment.workflow.remote_menu_open {
+            "environment_git_remote_dismiss"
+        } else if self.view.environment.workflow.compare_menu_open {
+            "environment_git_compare_dismiss"
+        } else {
+            match self.view.environment.menu {
+                EnvironmentMenu::Project => "composer_project_dismiss",
+                EnvironmentMenu::Branch => "composer_branch_dismiss",
+                EnvironmentMenu::Local => "environment_local_dismiss",
+                EnvironmentMenu::None
+                    if self.view.environment.workflow.panel != EnvironmentGitPanel::Overview =>
+                {
+                    "environment_git_back"
+                }
+                EnvironmentMenu::None => "environment_dismiss",
+            }
+        };
+        self.apply_action(UiAction::Clicked { id: action.into() }, ctx);
+        true
+    }
+
+    fn toggle_environment(&mut self) {
+        if self.view.environment.open {
+            self.close_environment();
+        } else {
+            self.open_environment();
+        }
+    }
+
+    pub(super) fn open_environment(&mut self) {
+        if !self.view.show_settings && self.view.main_page == MainPage::Workspace {
+            // Collapse presentation only: keep tabs, editor buffers, terminals
+            // and browser sessions alive for the next sidebar opening.
+            let scope = self.dock_scope();
+            self.dock.set_collapsed(&scope, true);
+            self.sync_dock_view();
+            if self.ide_workspace_active() {
+                self.view.ide.agent_open = false;
+                if self.view.ide.compact_panel == Some(crate::ide_workspace::IdePanel::Agent) {
+                    self.view.ide.compact_panel = None;
+                }
+                self.persist_ide_workspace();
+            }
+            self.view.composer_project_menu_open = false;
+            self.view.composer_branches.open = false;
+            self.view.composer_model_menu_open = false;
+            self.view.composer_effort_menu_open = false;
+            self.view.composer_context_open = false;
+            self.view.composer_add_menu_open = false;
+            self.view.composer_permissions_open = false;
+            self.view.composer_suggestions.dismiss();
+            self.view.show_dock_add_menu = false;
+            self.view.environment.composer_local_open = false;
+            self.view.environment.menu = crate::environment_ui::EnvironmentMenu::None;
+            self.view.environment.open = true;
+        }
+    }
+
+    fn apply_environment_action(&mut self, action: &UiAction, ctx: &egui::Context) -> bool {
+        use crate::browser_runtime::BrowserCommand;
+        use crate::environment_ui::EnvironmentMenu;
         match action {
+            UiAction::InputChanged { id, value } if id == "browser_url" => {
+                self.view.browser.url_draft = value.chars().take(4096).collect();
+            }
+            UiAction::Submitted { id, value } if id == "browser_url" => {
+                self.navigate_browser(value);
+            }
+            UiAction::Clicked { id } => match id.as_str() {
+                "browser_navigate" => self.navigate_browser(&self.view.browser.url_draft.clone()),
+                "browser_back" => self.submit_browser_command(BrowserCommand::Back),
+                "browser_forward" => self.submit_browser_command(BrowserCommand::Forward),
+                "browser_reload" => self.submit_browser_command(BrowserCommand::Reload),
+                "browser_more_toggle" => self.view.browser.more_open = !self.view.browser.more_open,
+                "browser_more_dismiss" => self.view.browser.more_open = false,
+                "browser_focus_url" => { self.view.browser.more_open = false; self.tree.focus("browser_url"); },
+                "browser_copy_url" => {
+                    self.view.browser.more_open = false;
+                    ctx.copy_text(if self.view.browser.url_draft.is_empty() { self.view.browser.url.clone() } else { self.view.browser.url_draft.clone() });
+                },
+                "browser_snapshot" => { self.view.browser.more_open = false; self.submit_browser_command(BrowserCommand::Snapshot); },
+                "browser_restart" => { self.view.browser.more_open = false; self.restart_browser(); },
+                "browser_install" => self.install_browser(),
+                "browser_mcp_config" => { self.view.browser.more_open = false; self.copy_browser_mcp_config(ctx); },
+                "environment_open" | "dock_open:context" | "side_tab:context" => {
+                    self.toggle_environment();
+                    if self.view.environment.open && !self.view.environment.workflow.loading {
+                        self.request_environment_git(
+                            crate::environment_git::Operation::Refresh,
+                            ctx,
+                        );
+                    }
+                }
+                "environment_dismiss" => self.close_environment(),
+                "environment_changes_open" => {
+                    self.close_environment();
+                    self.apply_action(
+                        UiAction::Clicked {
+                            id: "dock_open:changes".into(),
+                        },
+                        ctx,
+                    );
+                }
+                "environment_project_toggle" => {
+                    if !self.view.running && !self.view.composer_branches.switching() {
+                        let open = self.view.environment.menu != EnvironmentMenu::Project;
+                        self.refresh_composer_projects();
+                        self.view.environment.menu = if open {
+                            EnvironmentMenu::Project
+                        } else {
+                            EnvironmentMenu::None
+                        };
+                        self.view.composer_project_menu_open = open;
+                        self.composer_selector_focus_pending =
+                            open.then_some("composer_project_search");
+                        self.view.composer_branches.open = false;
+                        self.view.composer_model_menu_open = false;
+                        self.view.composer_context_open = false;
+                        self.view.environment.project_query.clear();
+                        self.tree.set_input_value("composer_project_search", "");
+                    }
+                }
+                "environment_branch_toggle" => {
+                    let was_open = self.view.environment.menu == EnvironmentMenu::Branch
+                        && self.view.composer_branches.open;
+                    self.view.composer_branches.open = was_open;
+                    self.toggle_composer_branches(ctx);
+                    self.composer_selector_focus_pending = self
+                        .view
+                        .composer_branches
+                        .open
+                        .then_some("composer_branch_search");
+                    self.view.environment.menu = if self.view.composer_branches.open {
+                        EnvironmentMenu::Branch
+                    } else {
+                        EnvironmentMenu::None
+                    };
+                }
+                "session_changes_refresh" => self.request_session_changes(),
+                "session_change_back" => {
+                    self.view.session_changes.selected_file = None;
+                    self.view.session_changes.page = 0;
+                    self.tree.scroll_to_start("side_pane_session_changes");
+                }
+                "session_change_previous" | "session_change_next" => {
+                    let changes = &mut self.view.session_changes;
+                    let pages = changes
+                        .result
+                        .as_ref()
+                        .and_then(|result| result.as_ref().ok())
+                        .and_then(|result| {
+                            result.files.iter().find(|file| {
+                                Some(&file.file.path) == changes.selected_file.as_ref()
+                            })
+                        })
+                        .map_or(1, |file| file.file.lines.len().div_ceil(100).max(1));
+                    changes.page = if id == "session_change_previous" {
+                        changes.page.saturating_sub(1)
+                    } else {
+                        changes.page.saturating_add(1).min(pages - 1)
+                    };
+                    self.tree.scroll_to_start("side_pane_session_changes");
+                }
+                _ if id.starts_with("session_change_file:") => {
+                    let selected = id
+                        .strip_prefix("session_change_file:")
+                        .and_then(|value| value.split_once(':'))
+                        .and_then(|(generation, index)| {
+                            Some((
+                                generation.parse::<u64>().ok()?,
+                                index.parse::<usize>().ok()?,
+                            ))
+                        })
+                        .filter(|(generation, _)| {
+                            *generation == self.view.session_changes.generation
+                        })
+                        .and_then(|(_, index)| {
+                            self.view
+                                .session_changes
+                                .result
+                                .as_ref()
+                                .and_then(|result| result.as_ref().ok())
+                                .and_then(|result| result.files.get(index))
+                                .map(|file| file.file.path.clone())
+                        });
+                    if let Some(path) = selected {
+                        self.view.session_changes.selected_file = Some(path);
+                        self.view.session_changes.page = 0;
+                        self.tree.scroll_to_start("side_pane_session_changes");
+                    }
+                }
+                _ if id.starts_with("source:attachment:draft:") => {
+                    if let Some((index, attachment)) = id
+                        .strip_prefix("source:attachment:draft:")
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .and_then(|index| {
+                            self.view
+                                .composer_attachments
+                                .get(index)
+                                .cloned()
+                                .map(|attachment| (index, attachment))
+                        })
+                    {
+                        self.close_environment();
+                        if crate::composer_attachments::fallback_visual(
+                            &attachment.path,
+                            attachment.is_dir,
+                        )
+                        .is_image
+                        {
+                            self.open_composer_image(index, ctx);
+                        } else {
+                            let path = PathBuf::from(&attachment.path);
+                            let path = if path.is_absolute() {
+                                path
+                            } else {
+                                Path::new(&self.view.workspace).join(path)
+                            };
+                            if attachment.is_dir {
+                                self.open_files_dock();
+                            } else if let Ok(relative) =
+                                path.strip_prefix(Path::new(&self.view.workspace))
+                            {
+                                let owner = self.view.selected_session.as_deref().unwrap_or("");
+                                if self
+                                    .dock
+                                    .open_file(Path::new(&self.view.workspace), owner, relative)
+                                    .is_some()
+                                {
+                                    self.sync_dock_view();
+                                }
+                            } else if let Ok(url) = reqwest::Url::from_file_path(&path) {
+                                ctx.open_url(egui::OpenUrl::new_tab(url.to_string()));
+                            }
+                        }
+                    }
+                }
+                _ if id.starts_with("environment_source_file:") => {
+                    let source = id
+                        .strip_prefix("environment_source_file:")
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .and_then(|index| self.view.transcript.get(index))
+                        .and_then(crate::environment_ui::transcript_file_source)
+                        .map(PathBuf::from);
+                    if let Some(source) = source {
+                        let workspace = Path::new(&self.view.workspace);
+                        let relative = workspace.canonicalize().ok().and_then(|root| {
+                            let path = workspace.join(source).canonicalize().ok()?;
+                            if !path.is_file() {
+                                return None;
+                            }
+                            path.strip_prefix(root).ok().map(Path::to_path_buf)
+                        });
+                        self.close_environment();
+                        if let Some(relative) = relative {
+                            let owner = self.view.selected_session.as_deref().unwrap_or("");
+                            if self
+                                .dock
+                                .open_file(Path::new(&self.view.workspace), owner, &relative)
+                                .is_some()
+                            {
+                                self.view.show_dock_overview = false;
+                                self.sync_dock_view();
+                            }
+                        } else {
+                            self.view.status =
+                                "El archivo ya no está disponible dentro del proyecto".into();
+                        }
+                    }
+                }
+                _ => return false,
+            },
+            _ => return false,
+        }
+        true
+    }
+
+    fn apply_action(&mut self, action: UiAction, ctx: &egui::Context) {
+        let mut action = action;
+        if matches!(&action, UiAction::Clicked { id } if id == "editor_menu")
+            && !self.view.ide.is_active()
+        {
+            if let Some(review) = self.view.editor_workbench.review.as_ref() {
+                let id = crate::editor_review_ui::action(&review.token, "menu_toggle");
+                self.view.editor_workbench.menu_open = false;
+                action = UiAction::Clicked { id };
+            }
+        }
+        // The review overflow can also contain ordinary editor actions. Close
+        // it before dispatch so early-returning handlers (such as preview) do
+        // not leave it open. Let the destination action choose its own focus.
+        if matches!(&action, UiAction::Clicked { id } if !id.starts_with("editor_review:")) {
+            self.dismiss_editor_review_menu();
+        }
+        if matches!(&action, UiAction::Clicked { id } if id != "ide_agent_new_toggle") {
+            self.view.ide.agent_new_open = false;
+        }
+        if self.apply_plugin_action(&action) {
+            return;
+        }
+        if self.apply_dock_file_action(&action, ctx)
+            || self.apply_ide_status_action(&action, ctx)
+            || self.apply_markdown_preview_action(&action, ctx)
+            || self.apply_document_preview_action(&action, ctx)
+            || self.apply_ide_search_action(&action, ctx)
+            || self.apply_ide_activity_action(&action, ctx)
+            || self.apply_keymap_settings_action(&action)
+            || self.apply_ide_bottom_action(&action, ctx)
+        {
+            return;
+        }
+        if self.apply_ide_new_file_action(&action, ctx) {
+            return;
+        }
+        if self.apply_ide_menu_action(&action, ctx) {
+            return;
+        }
+        if self.apply_ide_workspace_action(&action) {
+            return;
+        }
+        if self.apply_editor_review_action(&action, ctx) {
+            return;
+        }
+        if self.apply_file_activity_open(&action) {
+            return;
+        }
+        if self.handle_terminal_controls_action(&action, ctx) {
+            return;
+        }
+        if self.handle_terminal_context_action(&action, ctx) {
+            return;
+        }
+        if self.apply_approval_action(&action, ctx) {
+            return;
+        }
+        if self.apply_project_actions_action(&action, ctx) {
+            return;
+        }
+        if self.apply_tool_navigation_action(&action, ctx) {
+            return;
+        }
+        if self.apply_activity_navigation(&action, ctx) {
+            return;
+        }
+        if self.apply_chat_diff_action(&action) {
+            return;
+        }
+        if self.apply_debug_action(&action, ctx) { return; }
+        if self.apply_editor_workbench_action(&action, ctx) {
+            return;
+        }
+        if self.apply_code_editor_action(&action, ctx) {
+            return;
+        }
+        if self.apply_composer_interaction_action(&action, ctx) {
+            return;
+        }
+        if self.apply_environment_git_action(&action, ctx) {
+            return;
+        }
+        if self.apply_environment_action(&action, ctx) {
+            return;
+        }
+        if let UiAction::Clicked { id } = &action {
+            if matches!(
+                id.as_str(),
+                "composer_add_context"
+                    | "composer_model_toggle"
+                    | "composer_effort_toggle"
+                    | "composer_context_toggle"
+                    | "composer_project_toggle"
+                    | "home_workspace_settings"
+                    | "composer_branch_toggle"
+            ) {
+                self.close_environment();
+                self.view.composer_permissions_open = false;
+                self.view.composer_suggestions.dismiss();
+            }
+            if self.apply_native_command_history_action(id) {
+                return;
+            }
+        }
+        if self.apply_native_command_control_action(&action) {
+            return;
+        }
+        match action {
+            UiAction::Clicked { id } if id.starts_with("chat_link_open:") => {
+                if let Some(url) = crate::rich_text::web_link_url_from_action(&id) {
+                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
             UiAction::CopyRequested { text } => ctx.copy_text(text),
+            UiAction::PasteRequested { id } => self.request_text_paste(id, ctx),
+            UiAction::Clicked { id } if id.starts_with("conversation_source:") => {
+                if crate::conversation_source_ui::apply_action(&mut self.view, &id) {
+                    self.close_composer_floating_controls();
+                    if let Some(scroll_id) = crate::conversation_source_ui::scroll_id(&self.view) {
+                        self.tree.scroll_to_start(&scroll_id);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("conversation_detail:") => {
+                let prefix = format!(
+                    "conversation_detail:{}:",
+                    self.view.selected_session.as_deref().unwrap_or("draft")
+                );
+                if let Some(detail_id) = id.strip_prefix(&prefix) {
+                    let exists = self.view.transcript.iter().any(|item| match item {
+                        TranscriptItem::Reasoning { id, .. }
+                        | TranscriptItem::PlanSnapshot { id, .. }
+                        | TranscriptItem::WebSearch { id, .. } => id == detail_id,
+                        TranscriptItem::ToolPreview { id, call_id, .. } => {
+                            id == detail_id
+                                || call_id
+                                    .as_ref()
+                                    .is_some_and(|call_id| detail_id == format!("tool:{call_id}")
+                                        || detail_id == format!("work:{call_id}"))
+                        }
+                        TranscriptItem::Tool { id, .. } => {
+                            detail_id == format!("work:{id}") || detail_id == format!("tool:{id}")
+                                || (detail_id == format!("results:{id}") && matches!(item, TranscriptItem::Tool { name, .. } if name == "list_files"))
+                        }
+                        _ => false,
+                    });
+                    if exists {
+                        self.view
+                            .conversation_details
+                            .sync(self.view.selected_session.as_deref());
+                        let default = crate::session_surface::conversation_detail_default_open(
+                            &self.view, detail_id,
+                        );
+                        self.view.conversation_details.toggle(detail_id, default);
+                        if !self.view.conversation_details.is_expanded(detail_id, default)
+                            && self.tree.focused_id() == Some(format!("{id}:collapse").as_str())
+                        {
+                            // Return to the retained header when collapsing from
+                            // the bottom, instead of leaving focus on removed content.
+                            if self.tree.has_keyboard_focus() {
+                                self.tree.focus(&id);
+                            } else {
+                                self.tree.focus_from_pointer(&id);
+                            }
+                        }
+                        if let Some(call_id) = detail_id.strip_prefix("tool:").filter(|call_id| {
+                            self.view.conversation_details.is_expanded(detail_id, default)
+                                && self.view.transcript.iter().any(|item| matches!(item,
+                                    TranscriptItem::ToolOutput { tool_call_id, .. } if tool_call_id.as_str() == *call_id
+                                ))
+                        }) {
+                            self.tree.scroll_to_end(&format!(
+                                "tool-result:{}:{call_id}:capture",
+                                self.view.selected_session.as_deref().unwrap_or("draft"),
+                            ));
+                        }
+                    }
+                }
+            }
             UiAction::SliderChanged {
                 id,
                 fraction,
                 committed,
             } if id == "composer_effort_slider" => {
-                if !self.view.running && self.composer_slider_effort(fraction).is_some() {
+                if self.composer_choices_editable()
+                    && self.composer_slider_effort(fraction).is_some()
+                {
                     if committed {
                         let effort = self.composer_slider_effort(fraction).unwrap();
                         self.select_composer_effort(&effort);
@@ -8891,8 +15383,163 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "open_command_center" => {
                 self.open_command_center();
             }
+            UiAction::Clicked { id } if id == "settings_engine_open" => {
+                if self.view.show_settings
+                    && self.view.settings_page == SettingsPage::Agent
+                    && !self.view.running
+                    && !self.view.background_run_selected
+                    && self.active_compact.is_none()
+                {
+                    self.view.show_settings = false;
+                    self.view.main_page = MainPage::Workspace;
+                    self.view.composer_model_menu_open = true;
+                    self.view.composer_model_list_open = true;
+                    self.view.composer_model_query.clear();
+                    self.view.composer_advanced_open = false;
+                    self.view.backend_menu_open = false;
+                    self.composer_model_search_focus_pending = true;
+                    self.visit_navigation();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("settings_native_instructions_open:") => {
+                let target = id.trim_start_matches("settings_native_instructions_open:");
+                if self.view.show_settings
+                    && self.view.settings_page == SettingsPage::Memory
+                    && self.view.selected_session.as_deref() == Some(target)
+                {
+                    let inspected = self.store.as_ref()
+                        .ok_or_else(|| "El historial de conversaciones no está disponible".to_string())
+                        .and_then(|store| store.load(target).map_err(|error| format!("No se pudo leer la conversación: {error}")))
+                        .and_then(|stored| stored.ok_or_else(|| "La conversación ya no está disponible".to_string()))
+                        .and_then(|stored| {
+                            let current = Path::new(&self.view.workspace).canonicalize().map_err(|error| format!("No se pudo verificar el proyecto seleccionado: {error}"))?;
+                            let saved = stored.session.workspace.canonicalize().map_err(|error| format!("No se pudo verificar el proyecto de la conversación: {error}"))?;
+                            if current != saved || stored.session.backend != "native" {
+                                return Err("La conversación nativa no pertenece al proyecto seleccionado".to_string());
+                            }
+                            let replay = replay_stored_native(&self.data_root, &stored);
+                            Ok(crate::native_instruction_ui::NativeInstructionUiState::from_validated(&stored, replay))
+                        });
+                    self.view.native_instructions = inspected.unwrap_or_else(|error| {
+                        crate::native_instruction_ui::NativeInstructionUiState::scoped_error(
+                            target,
+                            PathBuf::from(&self.view.workspace),
+                            error,
+                        )
+                    });
+                    if let Some(error) = &self.view.native_instructions.error {
+                        self.set_settings_notice(error.clone(), true);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "settings_native_instructions_dismiss" => {
+                if self.view.show_settings
+                    && self.view.settings_page == SettingsPage::Memory
+                    && self.view.native_instructions.matches_scope(
+                        self.view.selected_session.as_deref(),
+                        Path::new(&self.view.workspace),
+                    )
+                {
+                    self.view.native_instructions = Default::default();
+                }
+            }
+            UiAction::Clicked { id }
+                if id == "settings_native_instructions_selector_toggle"
+                    || id == "settings_native_instructions_selector_dismiss" =>
+            {
+                if self.view.show_settings
+                    && self.view.settings_page == SettingsPage::Memory
+                    && self.view.native_instructions.matches_scope(
+                        self.view.selected_session.as_deref(),
+                        Path::new(&self.view.workspace),
+                    )
+                    && self.view.native_instructions.error.is_none()
+                {
+                    self.view.native_instructions.selector_open = id
+                        == "settings_native_instructions_selector_toggle"
+                        && !self.view.native_instructions.selector_open;
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("settings_native_instructions_select:") => {
+                if self.view.show_settings
+                    && self.view.settings_page == SettingsPage::Memory
+                    && self.view.native_instructions.matches_scope(
+                        self.view.selected_session.as_deref(),
+                        Path::new(&self.view.workspace),
+                    )
+                    && self.view.native_instructions.error.is_none()
+                {
+                    if let Ok((owner, sequence)) = serde_json::from_str::<(String, u64)>(
+                        id.trim_start_matches("settings_native_instructions_select:"),
+                    ) {
+                        if self.view.selected_session.as_deref() == Some(owner.as_str())
+                            && self
+                                .view
+                                .native_instructions
+                                .snapshots
+                                .iter()
+                                .any(|snapshot| snapshot.sequence == sequence)
+                        {
+                            self.view.native_instructions.selected_sequence = Some(sequence);
+                            self.view.native_instructions.selector_open = false;
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "settings_native_goal_open" => {
+                if self.settings_native_session_ready(false) {
+                    self.refresh_native_goal();
+                    if let Some(error) = &self.view.native_goal.error {
+                        self.set_settings_notice(error.clone(), true);
+                    } else {
+                        self.view.show_settings = false;
+                        self.view.main_page = MainPage::Workspace;
+                        self.open_composer_goal_editor();
+                        self.visit_navigation();
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "settings_native_compact" => {
+                if self.settings_native_session_ready(true) {
+                    self.start_compact();
+                    if self.active_compact.is_some() {
+                        self.view.show_settings = false;
+                        self.view.main_page = MainPage::Workspace;
+                        self.visit_navigation();
+                    } else {
+                        self.set_settings_notice(self.view.status.clone(), true);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("settings_session_open:") => {
+                let target = id.trim_start_matches("settings_session_open:");
+                if self.view.show_settings
+                    && self.view.settings_page == SettingsPage::Memory
+                    && self.view.selected_session.as_deref() == Some(target)
+                {
+                    let native = self
+                        .store
+                        .as_ref()
+                        .and_then(|store| store.load(target).ok().flatten())
+                        .is_some_and(|stored| stored.session.backend == "native");
+                    if native {
+                        self.open_session(target);
+                        if self.view.selected_session.as_deref() == Some(target) {
+                            self.view.show_settings = false;
+                            self.view.main_page = MainPage::Workspace;
+                            self.visit_navigation();
+                        }
+                    } else {
+                        self.set_settings_notice(
+                            "La conversación nativa ya no está disponible",
+                            true,
+                        );
+                    }
+                }
+            }
             UiAction::Clicked { id } if id == "composer_add_context" => {
                 if !self.view.running && !self.view.background_run_selected {
+                    self.view.composer_context_open = false;
                     self.view.composer_add_menu_open = !self.view.composer_add_menu_open;
                     if !self.view.composer_add_menu_open {
                         self.view.composer_goal_editor_open = false;
@@ -8908,16 +15555,17 @@ impl AgentsWindow {
                 self.view.composer_goal_editor_open = false;
             }
             UiAction::Clicked { id } if id == "composer_goal_open" => {
-                if !self.view.running && !self.view.background_run_selected {
-                    self.view.composer_add_menu_open = true;
-                    self.view.composer_goal_draft =
-                        self.view.composer_goal.clone().unwrap_or_default();
-                    self.tree.set_input_value(
-                        "composer_goal_draft",
-                        self.view.composer_goal_draft.clone(),
-                    );
-                    self.view.composer_goal_editor_open = true;
-                }
+                self.open_composer_goal_editor();
+            }
+            UiAction::Clicked { id } if id == "native_goal_maintenance_retry" => {
+                self.retry_native_goal_maintenance()
+            }
+            UiAction::Clicked { id } if id == "native_goal_activate" => self.activate_native_goal(),
+            UiAction::Clicked { id } if id.starts_with("native_goal_control:") => {
+                self.control_native_goal(
+                    id.strip_prefix("native_goal_control:")
+                        .expect("prefix checked"),
+                );
             }
             UiAction::Clicked { id } if id == "composer_goal_save" => {
                 if self.view.composer_goal_editor_open {
@@ -8942,13 +15590,17 @@ impl AgentsWindow {
                 };
                 if let Some(query) = query {
                     self.view.composer_add_menu_open = false;
-                    self.view.marketplace.query = query.to_owned();
+                    self.set_marketplace_tab(crate::marketplace_view::MarketplaceTab::Recommended);
+                    self.set_marketplace_query(query.to_owned());
                     self.view.marketplace.installed_only = false;
                     self.view.show_settings = false;
                     self.view.main_page = MainPage::Marketplace;
                     self.marketplace_operation(MarketplaceOperation::Load);
                     self.visit_navigation();
                 }
+            }
+            UiAction::Clicked { id } if id == "composer_add_paste" => {
+                self.request_composer_attachment_paste(None, ctx);
             }
             UiAction::Clicked { id } if id == "composer_add_files" || id == "composer_add_file" => {
                 if !self.view.running && !self.view.background_run_selected {
@@ -8966,6 +15618,24 @@ impl AgentsWindow {
                     self.view.command_scope = Scope::Files;
                     self.request_command_search();
                 }
+            }
+            UiAction::Clicked { id } if id.starts_with("composer_attachment_open:") => {
+                if let Ok(index) = id
+                    .trim_start_matches("composer_attachment_open:")
+                    .parse::<usize>()
+                {
+                    self.open_composer_image(index, ctx);
+                }
+            }
+            UiAction::Clicked { id } if id == "composer_image_close" => {
+                self.view.composer_image_viewer = None;
+                self.prompt_focus_pending = true;
+            }
+            UiAction::Clicked { id } if id == "composer_image_previous" => {
+                self.navigate_composer_images(-1, ctx);
+            }
+            UiAction::Clicked { id } if id == "composer_image_next" => {
+                self.navigate_composer_images(1, ctx);
             }
             UiAction::Clicked { id } if id.starts_with("composer_attachment_remove:") => {
                 if let Ok(index) = id
@@ -9001,6 +15671,12 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("automation_") => {
                 self.handle_automation_action(&id);
             }
+            UiAction::Clicked { id } if id.starts_with("marketplace_open_source:") => {
+                let item_id = id.trim_start_matches("marketplace_open_source:");
+                if let Some(url) = self.marketplace_source_url(item_id) {
+                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("marketplace_") => {
                 self.handle_marketplace_action(&id);
             }
@@ -9008,19 +15684,32 @@ impl AgentsWindow {
                 self.view.show_command_center = false;
             }
             UiAction::Clicked { id } if id.starts_with("command_scope:") => {
+                if !self.view.show_command_center {
+                    return;
+                }
                 self.view.command_scope = match id.trim_start_matches("command_scope:") {
                     "commands" => Scope::Commands,
                     "sessions" => Scope::Sessions,
                     "files" => Scope::Files,
-                    _ => Scope::All,
+                    "all" => Scope::All,
+                    _ => return,
                 };
-                self.view.command_selected_index = 0;
+                let parsed = command_center::parse_query(
+                    &self.view.command_query,
+                    self.view.command_scope,
+                );
+                if parsed.explicit_scope {
+                    // An explicit filter click takes precedence over a typed prefix,
+                    // retaining its search terms in both the model and native input.
+                    self.view.command_query = parsed.text;
+                    self.command_tree
+                        .set_input_value("command_query", self.view.command_query.clone());
+                }
+                self.reset_command_navigation();
                 self.request_command_search();
             }
-            UiAction::Clicked { id } if id.starts_with("command_result:") => {
-                if let Ok(index) = id.trim_start_matches("command_result:").parse::<usize>() {
-                    self.activate_command_result(index);
-                }
+            UiAction::Clicked { id } if id.starts_with("command_pick:") => {
+                self.activate_scoped_command_result(&id);
             }
             UiAction::Clicked { id } if id.starts_with("permission_allow:") => {
                 let request_id = id.trim_start_matches("permission_allow:");
@@ -9060,6 +15749,105 @@ impl AgentsWindow {
                     .split_once(':')
                 {
                     self.answer_subagent_permission(child_id, request_id, PermissionChoice::Deny);
+                }
+            }
+            UiAction::Clicked { id } if id == "subagent_input_save" => {
+                self.save_subagent_input_edit()
+            }
+            UiAction::Clicked { id } if id == "subagent_input_cancel" => {
+                self.view.subagent_input_edit = None;
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_input_skip:") => {
+                let mut parts = id.trim_start_matches("subagent_input_skip:").splitn(3, ':');
+                if let (Some(child_id), Some(revision), Some(input_id)) =
+                    (parts.next(), parts.next(), parts.next())
+                {
+                    if let Ok(revision) = revision.parse::<u64>() {
+                        self.skip_subagent_input(child_id, input_id, revision);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_input_edit:") => {
+                if let Some((child_id, input_id)) = id
+                    .trim_start_matches("subagent_input_edit:")
+                    .split_once(':')
+                {
+                    if let Some(input) =
+                        self.view
+                            .subagent_sessions
+                            .iter()
+                            .filter(|child| {
+                                child.child_session_id == child_id
+                                    && !child.cancellation_requested
+                                    && self.view.selected_session.as_deref().is_some_and(
+                                        |selected| {
+                                            selected == child.child_session_id
+                                                || selected == child.parent_session_id
+                                        },
+                                    )
+                            })
+                            .flat_map(|child| &child.inputs)
+                            .find(|input| {
+                                input.id == input_id
+                                    && input.status == openide_harness::SubagentInputStatus::Pending
+                            })
+                    {
+                        self.view.subagent_input_edit = Some(crate::view::SubagentInputEditView {
+                            child_session_id: child_id.to_owned(),
+                            input_id: input_id.to_owned(),
+                            expected_revision: input.revision,
+                            prompt: input.prompt.clone(),
+                        });
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_dispatch:") => {
+                let child_id = id.trim_start_matches("subagent_dispatch:");
+                if self.view.subagent_sessions.iter().any(|child| {
+                    child.child_session_id == child_id
+                        && self
+                            .view
+                            .selected_session
+                            .as_deref()
+                            .is_some_and(|selected| {
+                                selected == child.child_session_id
+                                    || selected == child.parent_session_id
+                            })
+                }) {
+                    self.start_subagent_mailbox_dispatch(child_id);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_inputs:") => {
+                let child_id = id.trim_start_matches("subagent_inputs:");
+                if self.view.subagent_sessions.iter().any(|child| {
+                    child.child_session_id == child_id
+                        && self
+                            .view
+                            .selected_session
+                            .as_deref()
+                            .is_some_and(|selected| {
+                                selected == child.child_session_id
+                                    || selected == child.parent_session_id
+                            })
+                }) {
+                    self.view.expanded_subagent_inputs =
+                        if self.view.expanded_subagent_inputs.as_deref() == Some(child_id) {
+                            None
+                        } else {
+                            Some(child_id.to_owned())
+                        };
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("subagent_open:") => {
+                let session_id = id.trim_start_matches("subagent_open:");
+                let selected = self.view.selected_session.as_deref();
+                if self.view.subagent_sessions.iter().any(|agent| {
+                    (selected == Some(agent.parent_session_id.as_str())
+                        || selected == Some(agent.child_session_id.as_str()))
+                        && (session_id == agent.parent_session_id
+                            || session_id == agent.child_session_id)
+                }) {
+                    self.open_session(session_id);
                 }
             }
             UiAction::Clicked { id } if id.starts_with("subagent_cancel:") => {
@@ -9182,6 +15970,11 @@ impl AgentsWindow {
                     self.visit_navigation();
                 }
             }
+            UiAction::Clicked { id } if id == "files_search" => {
+                self.open_command_center();
+                self.view.command_scope = Scope::Files;
+                self.request_command_search();
+            }
             UiAction::Clicked { id } if id == "files_refresh" => {
                 if let Some(explorer) = &mut self.file_explorer {
                     if let Err(error) = explorer.refresh() {
@@ -9218,18 +16011,38 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "activity_page_next" => {
                 self.view.activity_page = self.view.activity_page.saturating_add(1);
             }
+            UiAction::Clicked { id } if id.starts_with("native_command_output_open:") => {
+                if let Ok((owner, command_id)) = serde_json::from_str::<(String, String)>(
+                    id.trim_start_matches("native_command_output_open:"),
+                ) {
+                    if self.view.selected_session.as_deref() == Some(owner.as_str()) {
+                        self.inspect_native_command_output(&command_id);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "native_command_output_refresh" => {
+                if self.view.native_command_output.matches_scope(
+                    self.view.selected_session.as_deref(),
+                    Path::new(&self.view.workspace),
+                ) {
+                    if let Some(command_id) = self.view.native_command_output.command_id.clone() {
+                        self.inspect_native_command_output(&command_id);
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "native_command_output_dismiss" => {
+                if self.view.native_command_output.matches_scope(
+                    self.view.selected_session.as_deref(),
+                    Path::new(&self.view.workspace),
+                ) {
+                    self.view.native_command_output = Default::default();
+                    self.native_command_output_response = None;
+                    self.native_command_output_manager = None;
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("native_command_terminate:") => {
                 let command_id = id.trim_start_matches("native_command_terminate:");
-                if self.view.selected_session.is_some()
-                    && self.view.native_command_terminating.is_none()
-                    && self
-                        .view
-                        .native_commands
-                        .iter()
-                        .any(|command| command.id == command_id && command.exit.is_none())
-                {
-                    self.view.pending_native_command_termination = Some(command_id.to_owned());
-                }
+                self.open_native_command_controls(command_id);
             }
             UiAction::Clicked { id } if id.starts_with("native_command_terminate_confirm:") => {
                 let command_id = id.trim_start_matches("native_command_terminate_confirm:");
@@ -9238,6 +16051,7 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "native_command_terminate_cancel" => {
                 self.view.pending_native_command_termination = None;
             }
+            UiAction::Clicked { ref id } if self.handle_git_action(id) => {}
             UiAction::Clicked { id } if id == "review_page_previous" => {
                 self.view.review_page = self.view.review_page.saturating_sub(1);
             }
@@ -9276,7 +16090,33 @@ impl AgentsWindow {
                             content: None,
                         });
                         self.request_review_detail();
+                        self.sync_dock_view();
                     }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("review_untracked_open:") => {
+                let path = id
+                    .strip_prefix("review_untracked_open:")
+                    .and_then(|raw| raw.parse::<usize>().ok())
+                    .and_then(|index| {
+                        self.view
+                            .git_review
+                            .as_ref()?
+                            .as_ref()
+                            .ok()?
+                            .untracked
+                            .get(index)
+                            .cloned()
+                    });
+                if let Some(path) = path {
+                    self.view.review_detail = Some(ReviewDetailView {
+                        path,
+                        stage: DiffStage::Unstaged,
+                        page_index: 0,
+                        content: None,
+                    });
+                    self.request_review_detail();
+                    self.sync_dock_view();
                 }
             }
             UiAction::Clicked { id } if id == "review_detail_back" => {
@@ -9332,48 +16172,55 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id == "github_account_connect" => {
-                self.view.github_account_menu_open = false;
-                self.view.github_account = if self
-                    .github_account_worker
-                    .as_ref()
-                    .is_some_and(GithubAccountWorker::connect)
+                self.start_github_sign_in();
+            }
+            UiAction::Clicked { id } if id == "github_sign_in_retry" => {
+                self.start_github_sign_in();
+            }
+            UiAction::Clicked { id } if id == "github_sign_in_cancel" => {
+                self.cancel_github_sign_in();
+            }
+            UiAction::Clicked { id } if id == "github_account_manage" => {
+                self.manage_github_account();
+            }
+            UiAction::Clicked { id } if id == "github_account_refresh" => {
+                self.refresh_github_account();
+            }
+            UiAction::Clicked { id } if id == "github_account_disconnect" => {
+                self.disconnect_github_account();
+            }
+            UiAction::Clicked { id } if id == "github_sign_in_continue" => {
+                if let Some(GithubSignInView::Code { code, continued }) =
+                    &mut self.view.github_sign_in
                 {
-                    GithubAccountStatus::Connecting
-                } else {
-                    GithubAccountStatus::Unavailable(
-                        "No se pudo iniciar la conexión con GitHub".to_owned(),
-                    )
-                };
+                    if !*continued {
+                        ctx.copy_text(code.clone());
+                    }
+                    ctx.open_url(egui::OpenUrl::new_tab(
+                        crate::github_account::DEVICE_VERIFICATION_URL,
+                    ));
+                    *continued = true;
+                }
+            }
+            UiAction::Clicked { id } if id == "github_sign_in_copy" => {
+                if let Some(GithubSignInView::Code { code, .. }) = &self.view.github_sign_in {
+                    ctx.copy_text(code.clone());
+                }
             }
             UiAction::Clicked { id } if id == "github_account_menu_toggle" => {
-                self.view.github_account_menu_open = !self.view.github_account_menu_open;
+                let open = !self.view.github_account_menu_open;
+                self.close_composer_floating_controls();
+                self.view.provider_usage_open = false;
+                self.view.github_account_menu_open = open;
             }
             UiAction::Clicked { id } if id == "github_account_menu_dismiss" => {
                 self.view.github_account_menu_open = false;
             }
             UiAction::Clicked { id } if id.starts_with("github_account_verify:") => {
-                let account = id.trim_start_matches("github_account_verify:");
-                let listed = matches!(
-                    &self.view.github_account,
-                    GithubAccountStatus::Unverified { accounts, .. }
-                        if accounts.iter().any(|known| known.eq_ignore_ascii_case(account))
-                );
-                if listed {
-                    self.view.github_account_menu_open = false;
-                    self.view.github_account = if self
-                        .github_account_worker
-                        .as_ref()
-                        .is_some_and(|worker| worker.verify(account))
-                    {
-                        GithubAccountStatus::Verifying(account.to_owned())
-                    } else {
-                        GithubAccountStatus::Unavailable(
-                            "No se pudo verificar la cuenta de GitHub".to_owned(),
-                        )
-                    };
-                }
+                self.verify_github_account(id.trim_start_matches("github_account_verify:"));
             }
             UiAction::Clicked { id } if id == "github_account_open" => {
+                self.view.github_account_menu_open = false;
                 if let GithubAccountStatus::Connected(identity) = &self.view.github_account {
                     ctx.open_url(egui::OpenUrl::new_tab(format!(
                         "https://github.com/{}",
@@ -9381,7 +16228,16 @@ impl AgentsWindow {
                     )));
                 }
             }
+            UiAction::Clicked { id } if id == "github_contributions_refresh" => {
+                self.request_github_contributions();
+            }
+            UiAction::Clicked { id } if id == "github_contributions_help" => {
+                ctx.open_url(egui::OpenUrl::new_tab(
+                    "https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference",
+                ));
+            }
             UiAction::Clicked { id } if id.starts_with("web_citation_open:") => {
+                self.close_environment();
                 if let Some(url) = id
                     .trim_start_matches("web_citation_open:")
                     .parse::<usize>()
@@ -9445,6 +16301,9 @@ impl AgentsWindow {
                                 .is_some()
                             {
                                 self.view.show_dock_overview = false;
+                                if self.view.ide.compact_panel == Some(crate::ide_workspace::IdePanel::Explorer) {
+                                    self.view.ide.compact_panel = None;
+                                }
                                 self.sync_dock_view();
                             }
                         }
@@ -9453,6 +16312,7 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("dock_open:") => {
                 let kind = id.trim_start_matches("dock_open:");
+                if kind != "terminal" { self.close_environment(); }
                 self.view.show_dock_add_menu = false;
                 if kind == "files" {
                     self.open_files_dock();
@@ -9464,54 +16324,30 @@ impl AgentsWindow {
                         "context" => Some(self.dock.open(&workspace_scope, DockTabKind::Context)),
                         "activity" => Some(self.dock.open(&scope, DockTabKind::Activity)),
                         "review" => Some(self.dock.open(&workspace_scope, DockTabKind::CodeReview)),
-                        "terminal" => Some(self.dock.open(&scope, DockTabKind::Terminal)),
+                        "changes" => Some(self.dock.open(&scope, DockTabKind::SessionChanges)),
+                        "terminal" => Some(self.dock.new_terminal(&scope)),
+                        "browser" => Some(self.dock.open(&scope, DockTabKind::Browser)),
                         _ => None,
                     };
                     if let Some(tab) = tab {
                         self.dock.activate(&scope, tab);
-                        self.dock.set_collapsed(&scope, false);
+                        if kind != "terminal" { self.dock.set_collapsed(&scope, false); }
                         self.sync_dock_view();
                     }
                 }
                 self.view.show_dock_overview = false;
             }
             UiAction::Clicked { id }
-                if matches!(id.as_str(), "dock_tab_page_previous" | "dock_tab_page_next") =>
+                if id.starts_with("dock_tab:") || id.starts_with("dock_tab_menu:") =>
             {
-                let width = self.view.right_dock_width.unwrap_or(320.0);
-                let page_size = crate::view::dock_tab_page_size(width);
-                let active_index = self
-                    .view
-                    .dock_tabs
-                    .iter()
-                    .position(|tab| tab.active)
-                    .unwrap_or(0);
-                let page = active_index / page_size;
-                let target_page = if id == "dock_tab_page_previous" {
-                    page.checked_sub(1)
-                } else {
-                    Some(page + 1)
-                };
-                let target = target_page
-                    .and_then(|page| self.view.dock_tabs.get(page * page_size))
-                    .and_then(|tab| DockTabId::from_raw(tab.id));
-                if let Some(target) = target {
-                    let scope = self.dock_scope();
-                    if self.dock.activate(&scope, target) {
-                        if self
-                            .dock
-                            .active_tab(&scope)
-                            .is_some_and(|tab| tab.kind == DockTabKind::Files)
-                        {
-                            self.refresh_file_rows();
-                        }
-                        self.sync_dock_view();
-                    }
-                }
-            }
-            UiAction::Clicked { id } if id.starts_with("dock_tab:") => {
                 self.view.show_dock_add_menu = false;
-                if let Ok(raw) = id.trim_start_matches("dock_tab:").parse::<u64>() {
+                self.view.show_dock_tabs_menu = false;
+                if let Ok(raw) = id
+                    .split_once(':')
+                    .map(|(_, raw)| raw)
+                    .unwrap_or("")
+                    .parse::<u64>()
+                {
                     if let Some(tab_id) = DockTabId::from_raw(raw) {
                         let scope = self.dock_scope();
                         if self.dock.activate(&scope, tab_id) {
@@ -9531,6 +16367,10 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "dock_close_all" => {
                 self.view.show_dock_add_menu = false;
                 let scope = self.dock_scope();
+                for tab in self.dock.right_tabs(&scope) {
+                    self.tree
+                        .forget_code_view(&crate::code_editor_ui::view_id(tab.id.get()));
+                }
                 self.dock.close_all_visible(&scope);
                 self.view.show_dock_overview = false;
                 self.sync_dock_view();
@@ -9539,6 +16379,13 @@ impl AgentsWindow {
                 if let Ok(raw) = id.trim_start_matches("dock_close_others:").parse::<u64>() {
                     if let Some(tab_id) = DockTabId::from_raw(raw) {
                         let scope = self.dock_scope();
+                        for tab in self.dock.right_tabs(&scope) {
+                            if tab.id != tab_id {
+                                self.tree.forget_code_view(&crate::code_editor_ui::view_id(
+                                    tab.id.get(),
+                                ));
+                            }
+                        }
                         self.dock.close_others(&scope, tab_id);
                         self.view.show_dock_overview = false;
                         self.sync_dock_view();
@@ -9551,7 +16398,7 @@ impl AgentsWindow {
                         let scope = self.dock_scope();
                         let ids: Vec<DockTabId> = self
                             .dock
-                            .visible_tabs(&scope)
+                            .right_tabs(&scope)
                             .iter()
                             .map(|tab| tab.id)
                             .collect();
@@ -9569,7 +16416,7 @@ impl AgentsWindow {
                         let scope = self.dock_scope();
                         let ids: Vec<DockTabId> = self
                             .dock
-                            .visible_tabs(&scope)
+                            .right_tabs(&scope)
                             .iter()
                             .map(|tab| tab.id)
                             .collect();
@@ -9599,30 +16446,153 @@ impl AgentsWindow {
                     if let Some(tab_id) = DockTabId::from_raw(raw) {
                         let scope = self.dock_scope();
                         if self.dock.close(&scope, tab_id).is_some() {
+                            self.tree
+                                .forget_code_view(&crate::code_editor_ui::view_id(raw));
                             self.sync_dock_view();
                         }
                     }
                 }
             }
+            UiAction::Clicked { id } if id == "dock_tabs_menu" => {
+                self.view.show_dock_tabs_menu = !self.view.show_dock_tabs_menu;
+                self.view.show_dock_add_menu = false;
+            }
+            UiAction::Clicked { id } if id == "dock_tabs_menu_dismiss" => {
+                self.view.show_dock_tabs_menu = false;
+            }
             UiAction::Clicked { id } if id == "dock_overview_toggle" => {
+                self.view.show_dock_tabs_menu = false;
                 self.view.show_dock_overview = !self.view.show_dock_overview;
                 self.view.show_dock_add_menu = false;
             }
             UiAction::Clicked { id } if id == "dock_add_tab" => {
+                self.view.show_dock_tabs_menu = false;
                 self.view.show_dock_add_menu = !self.view.show_dock_add_menu;
                 self.view.show_dock_overview = false;
             }
             UiAction::Clicked { id } if id == "dock_add_dismiss" => {
                 self.view.show_dock_add_menu = false;
             }
+            UiAction::Clicked { id } if id == "cli_task_restart" => {
+                if crate::view::cli_task(&self.view) {
+                    let scope = self.dock_scope();
+                    let terminals: Vec<_> =
+                        self.dock.terminal_tabs(&scope).iter().map(|tab| tab.id).collect();
+                    for terminal in terminals {
+                        self.dock.close(&scope, terminal);
+                    }
+                    self.sync_dock_view();
+                    self.ensure_cli_terminal();
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("cli_task:") => {
+                self.start_cli_task(&id["cli_task:".len()..]);
+            }
+            UiAction::Clicked { id } if id == "notifications_toggle" => {
+                self.view.notifications.toggle();
+            }
+            UiAction::Clicked { id } if id == "notifications_dismiss" => {
+                self.view.notifications.close();
+            }
+            UiAction::Clicked { id } if id == "notifications_clear" => {
+                self.view.notifications.clear();
+            }
+            UiAction::Clicked { id } if id == "settings_notice_dismiss" => {
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "notification_toast_dismiss" => {
+                self.view.notifications.dismiss_toast();
+            }
+            UiAction::Clicked { id } if id.starts_with("notification_setting:") => {
+                let mut next = self.view.notifications.settings;
+                if next.toggle(&id["notification_setting:".len()..]) {
+                    match next.save(&self.data_root) {
+                        Ok(()) => {
+                            self.view.notifications.settings = next;
+                            if !next.shows_toasts() {
+                                self.view.notifications.dismiss_toast();
+                            }
+                            self.view.status = "Ajustes de notificaciones guardados".to_owned();
+                        }
+                        Err(error) => self.view.status = error,
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("notification_remove:") => {
+                if let Ok(id) = id["notification_remove:".len()..].parse() {
+                    self.view.notifications.take(id);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("notification_open:") => {
+                let target = id["notification_open:".len()..]
+                    .parse()
+                    .ok()
+                    .and_then(|id| self.view.notifications.take(id));
+                self.view.notifications.close();
+                if let Some(crate::notifications::Target::Session(session)) = target {
+                    self.open_session(&session);
+                }
+            }
+            UiAction::Clicked { id } if id == "terminal_toggle" => {
+                let scope = self.dock_scope();
+                if self.dock.active_terminal(&scope).is_none() {
+                    self.dock.new_terminal(&scope);
+                } else {
+                    self.dock.set_terminal_collapsed(&scope, self.view.show_terminal_panel);
+                }
+                self.sync_dock_view();
+                self.terminal_focus_pending = self.view.show_terminal_panel;
+                if !self.view.show_terminal_panel { self.tree.focus("prompt"); }
+            }
+            UiAction::Clicked { id } if id == "terminal_new" => {
+                self.new_terminal_with_profile(self.settings_preferences.terminal_shell.clone());
+            }
+            UiAction::Clicked { id } if id == "terminal_panel_hide" => {
+                let scope = self.dock_scope();
+                self.dock.set_terminal_collapsed(&scope, true);
+                self.sync_dock_view();
+                self.terminal_focus_pending = false;
+                self.tree.focus("prompt");
+            }
+            UiAction::Clicked { id } if id == "terminal_panel_maximize" => {
+                let scope = self.dock_scope();
+                self.dock.set_terminal_maximized(&scope, !self.view.terminal_maximized);
+                self.sync_dock_view();
+            }
+            UiAction::Clicked { id } if id == "terminal_menu_toggle" => {
+                self.view.terminal_menu_open = !self.view.terminal_menu_open;
+            }
+            UiAction::Clicked { id } if id == "terminal_menu_dismiss" => {
+                self.view.terminal_menu_open = false;
+            }
+            UiAction::Clicked { id } if id == "terminal_bottom" => {
+                self.terminal_focus_pending = true;
+                self.terminal_scroll(i32::MIN);
+            }
+            UiAction::Clicked { id } if id == "terminal_copy" => {
+                self.view.terminal_menu_open = false;
+                self.terminal_focus_pending = true;
+                if let Some(snapshot) = &self.view.terminal_snapshot {
+                    ctx.copy_text(
+                        snapshot
+                            .selection
+                            .clone()
+                            .unwrap_or_else(|| snapshot.lines.join("\n").trim_end().to_owned()),
+                    );
+                }
+            }
             UiAction::Clicked { id } if id == "terminal_send" => {
                 let command = self.view.terminal_input.clone();
                 self.send_terminal_command(&command);
             }
             UiAction::Clicked { id } if id == "terminal_interrupt" => {
+                self.view.terminal_menu_open = false;
+                self.terminal_focus_pending = true;
                 self.terminal_write(&[3]);
             }
             UiAction::Clicked { id } if id == "terminal_clear" => {
+                self.view.terminal_menu_open = false;
+                self.terminal_focus_pending = true;
                 self.terminal_write(&[12]);
             }
             UiAction::Clicked { id } if id == "terminal_scroll_up" => {
@@ -9632,10 +16602,14 @@ impl AgentsWindow {
                 self.terminal_scroll(-8);
             }
             UiAction::Clicked { id } if id == "terminal_restart" => {
+                self.view.terminal_menu_open = false;
+                self.terminal_focus_pending = true;
                 if let Some(id) = self.active_terminal_id() {
                     self.terminals.remove(&id);
+                    self.terminal_controls_host.errors.remove(&id);
                     self.view.terminal_error = None;
                     self.ensure_terminal_session(id);
+                    self.refresh_terminal_panes();
                 }
             }
             UiAction::Clicked { id } if id == "toggle_archived_view" => {
@@ -9649,6 +16623,7 @@ impl AgentsWindow {
                 self.refresh_sessions();
             }
             UiAction::Clicked { id } if id == "session_organize:project" => {
+                self.view.settings_choice_menu_open = None;
                 self.view.session_organization = SessionOrganization::Project;
                 self.view.session_sort_menu_open = false;
                 self.view.group_create_open = false;
@@ -9659,6 +16634,7 @@ impl AgentsWindow {
                 self.persist_sidebar_preferences();
             }
             UiAction::Clicked { id } if id == "session_organize:group" => {
+                self.view.settings_choice_menu_open = None;
                 self.view.session_organization = SessionOrganization::Group;
                 self.view.session_sort_menu_open = false;
                 self.close_session_menu();
@@ -9666,6 +16642,7 @@ impl AgentsWindow {
                 self.persist_sidebar_preferences();
             }
             UiAction::Clicked { id } if id == "session_organize:recent" => {
+                self.view.settings_choice_menu_open = None;
                 self.view.session_organization = SessionOrganization::Recent;
                 self.view.session_sort_menu_open = false;
                 self.view.group_create_open = false;
@@ -9683,6 +16660,7 @@ impl AgentsWindow {
                 self.view.session_sort_menu_open = false;
             }
             UiAction::Clicked { id } if id.starts_with("session_sort:") => {
+                self.view.settings_choice_menu_open = None;
                 let sort = match id.trim_start_matches("session_sort:") {
                     "updated" => Some(SessionSort::Updated),
                     "created" => Some(SessionSort::Created),
@@ -10046,8 +17024,17 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("session_delete:") => {
                 let session_id = id.trim_start_matches("session_delete:");
-                if self.view.show_archived {
+                if let Some(reason) = self.session_deletion_blocked_reason(session_id) {
+                    self.close_session_menu();
+                    self.view.status = reason.to_owned();
+                } else if self
+                    .view
+                    .sessions
+                    .iter()
+                    .any(|session| session.id == session_id)
+                {
                     self.view.pending_delete_session_id = Some(session_id.to_owned());
+                    self.view.session_menu_id = None;
                     self.view.renaming_session_id = None;
                     self.view.pending_archive_session_id = None;
                 }
@@ -10055,21 +17042,16 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("delete_confirm:") => {
                 let session_id = id.trim_start_matches("delete_confirm:");
                 if self.view.pending_delete_session_id.as_deref() == Some(session_id) {
-                    if self.view.running
-                        && self.view.selected_session.as_deref() == Some(session_id)
-                    {
-                        self.view.status =
-                            "Detén el agente antes de eliminar esta tarea".to_owned();
+                    if let Some(reason) = self.session_deletion_blocked_reason(session_id) {
+                        self.view.status = reason.to_owned();
                     } else if let Some(store) = &self.store {
                         match store.load(session_id) {
-                            Ok(Some(record))
-                                if record.session.archived && record.session.subagent.is_some() =>
-                            {
+                            Ok(Some(record)) if record.session.subagent.is_some() => {
                                 self.view.status =
-                                    "Elimina la tarea raíz archivada para borrar también sus subagentes"
+                                    "Elimina la conversación principal para borrar también sus subagentes"
                                         .to_owned();
                             }
-                            Ok(Some(record)) if record.session.archived => {
+                            Ok(Some(record)) => {
                                 let known_before = store.list().unwrap_or_default();
                                 let deletion = if record.session.backend == "native"
                                     && record.session.subagent.is_none()
@@ -10090,26 +17072,73 @@ impl AgentsWindow {
                                                 .iter()
                                                 .filter(|session| !remaining.contains(&session.id))
                                             {
+                                                let _ = crate::session_changes::remove_baseline(
+                                                    store.storage_root(),
+                                                    &removed.id,
+                                                );
+                                                let _ =
+                                                    crate::session_changes_external::remove_marker(
+                                                        store.storage_root(),
+                                                        &removed.id,
+                                                    );
+                                                self.dock.forget_task(
+                                                    &removed.workspace.to_string_lossy(),
+                                                    &removed.id,
+                                                );
                                                 self.native_command_sessions
                                                     .revoke_session(&removed.id);
                                                 self.navigation
                                                     .forget_task(&removed.workspace, &removed.id);
+                                                self.drafts.retain(|(_, id), _| {
+                                                    id.as_deref() != Some(removed.id.as_str())
+                                                });
+                                                self.attachment_drafts.retain(|(_, id), _| {
+                                                    id.as_deref() != Some(removed.id.as_str())
+                                                });
+                                                let _ = remove_native_steer_draft(
+                                                    &self.data_root,
+                                                    &removed.id,
+                                                );
                                                 selected_deleted |=
                                                     self.view.selected_session.as_deref()
                                                         == Some(removed.id.as_str());
                                             }
                                         }
+                                        let _ = crate::session_changes::remove_baseline(
+                                            store.storage_root(),
+                                            session_id,
+                                        );
+                                        let _ = crate::session_changes_external::remove_marker(
+                                            store.storage_root(),
+                                            session_id,
+                                        );
+                                        self.dock.forget_task(
+                                            &record.session.workspace.to_string_lossy(),
+                                            session_id,
+                                        );
                                         self.native_command_sessions.revoke_session(session_id);
                                         self.navigation
                                             .forget_task(&record.session.workspace, session_id);
+                                        self.drafts
+                                            .retain(|(_, id), _| id.as_deref() != Some(session_id));
+                                        self.attachment_drafts
+                                            .retain(|(_, id), _| id.as_deref() != Some(session_id));
+                                        let _ =
+                                            remove_native_steer_draft(&self.data_root, session_id);
                                         selected_deleted |= self.view.selected_session.as_deref()
                                             == Some(session_id);
                                         self.close_session_menu();
                                         if selected_deleted {
+                                            // new_session saves the previous draft. A deleted
+                                            // chat must not be recreated in that draft store.
+                                            self.view.prompt.clear();
+                                            self.view.composer_attachments.clear();
+                                            self.draft_dirty_at = None;
                                             self.new_session();
                                             self.visit_navigation();
                                         }
                                         self.refresh_sessions();
+                                        self.sync_dock_view();
                                         self.sync_navigation_controls();
                                     }
                                     Err(error) => {
@@ -10118,13 +17147,29 @@ impl AgentsWindow {
                                 }
                             }
                             Ok(None)
-                                if self.view.sessions.iter().any(|session| {
-                                    session.id == session_id && session.archived
-                                }) =>
+                                if self
+                                    .view
+                                    .sessions
+                                    .iter()
+                                    .any(|session| session.id == session_id) =>
                             {
                                 match store.delete(session_id) {
                                     Ok(_) => {
+                                        let _ = crate::session_changes::remove_baseline(
+                                            store.storage_root(),
+                                            session_id,
+                                        );
+                                        let _ = crate::session_changes_external::remove_marker(
+                                            store.storage_root(),
+                                            session_id,
+                                        );
                                         self.native_command_sessions.revoke_session(session_id);
+                                        self.drafts
+                                            .retain(|(_, id), _| id.as_deref() != Some(session_id));
+                                        self.attachment_drafts
+                                            .retain(|(_, id), _| id.as_deref() != Some(session_id));
+                                        let _ =
+                                            remove_native_steer_draft(&self.data_root, session_id);
                                         self.close_session_menu();
                                         if let Some(session) = self
                                             .view
@@ -10132,12 +17177,22 @@ impl AgentsWindow {
                                             .iter()
                                             .find(|session| session.id == session_id)
                                         {
+                                            self.dock.forget_task(&session.project, session_id);
                                             self.navigation.forget_task(
                                                 Path::new(&session.project),
                                                 session_id,
                                             );
                                         }
+                                        if self.view.selected_session.as_deref() == Some(session_id)
+                                        {
+                                            self.view.prompt.clear();
+                                            self.view.composer_attachments.clear();
+                                            self.draft_dirty_at = None;
+                                            self.new_session();
+                                            self.visit_navigation();
+                                        }
                                         self.refresh_sessions();
+                                        self.sync_dock_view();
                                         self.sync_navigation_controls();
                                     }
                                     Err(error) => {
@@ -10145,7 +17200,12 @@ impl AgentsWindow {
                                     }
                                 }
                             }
-                            _ => self.view.status = "Sólo se eliminan tareas archivadas".to_owned(),
+                            Ok(None) => {
+                                self.view.status = "La conversación ya no existe".to_owned()
+                            }
+                            Err(error) => {
+                                self.view.status = format!("No se pudo eliminar: {error}")
+                            }
                         }
                     }
                 }
@@ -10165,14 +17225,45 @@ impl AgentsWindow {
             UiAction::Clicked { id }
                 if id == "home_workspace_settings" || id == "composer_project_toggle" =>
             {
-                if !self.view.running {
+                if !self.view.running && !self.view.composer_branches.switching() {
+                    let was_open = self.view.composer_project_menu_open
+                        && self.view.environment.menu
+                            == crate::environment_ui::EnvironmentMenu::None;
+                    self.view.environment.menu = crate::environment_ui::EnvironmentMenu::None;
                     self.refresh_composer_projects();
-                    self.view.composer_project_menu_open = !self.view.composer_project_menu_open;
+                    self.view.composer_project_menu_open = !was_open;
+                    self.view.environment.project_query.clear();
+                    self.tree.set_input_value("composer_project_search", "");
+                    self.view.composer_branches.open = false;
+                    self.view.composer_context_open = false;
                     self.view.composer_add_menu_open = false;
                 }
             }
             UiAction::Clicked { id } if id == "composer_project_dismiss" => {
                 self.view.composer_project_menu_open = false;
+                self.view.environment.menu = crate::environment_ui::EnvironmentMenu::None;
+            }
+            UiAction::Clicked { id } if id == "composer_branch_toggle" => {
+                if self.view.environment.menu != crate::environment_ui::EnvironmentMenu::None {
+                    self.view.composer_branches.open = false;
+                }
+                self.view.environment.menu = crate::environment_ui::EnvironmentMenu::None;
+                self.toggle_composer_branches(ctx);
+            }
+            UiAction::Clicked { id } if id == "composer_branch_dismiss" => {
+                self.view.composer_branches.open = false;
+                self.view.environment.menu = crate::environment_ui::EnvironmentMenu::None;
+            }
+            UiAction::Clicked { id } if id == "composer_branch_refresh" => {
+                if self.view.composer_branches.open
+                    && !self.view.composer_branches.loading
+                    && !self.view.composer_branches.switching()
+                {
+                    self.request_composer_branches(BranchOperation::List, ctx);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("composer_branch_select:") => {
+                self.select_composer_branch(id.trim_start_matches("composer_branch_select:"), ctx);
             }
             UiAction::Clicked { id } if id == "composer_project_browse" => {
                 self.open_workspace_folder_picker(ctx);
@@ -10187,6 +17278,8 @@ impl AgentsWindow {
                             self.view.composer_project_options.get(index).cloned()
                         {
                             self.view.composer_project_menu_open = false;
+                            self.view.environment.menu =
+                                crate::environment_ui::EnvironmentMenu::None;
                             if Path::new(&path).is_dir() {
                                 self.change_workspace(path);
                                 self.visit_navigation();
@@ -10218,8 +17311,22 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id.starts_with("settings_page:") => {
                 if let Some(page) = SettingsPage::from_action_id(&id) {
+                    self.view.provider_usage_open = false;
+                    if page == SettingsPage::Usage {
+                        self.begin_provider_usage_refresh();
+                    }
                     self.view.settings_page = page;
+                    if page != SettingsPage::Plugins {
+                        self.view.plugins.close_dialogs();
+                    }
                     self.view.settings_nav_open = false;
+                    self.view.settings_terminal_shell_menu_open = false;
+                    self.view.settings_keymap_menu_open = false;
+                    self.view.settings_choice_menu_open = None;
+                    if page != SettingsPage::Terminal {
+                        self.view.settings_terminal_shell_editing = false;
+                        self.settings_terminal_path_focus_pending = false;
+                    }
                     if page != SettingsPage::Mcp {
                         self.view.mcp_editor_open = false;
                         self.view.pending_mcp_delete_id = None;
@@ -10229,8 +17336,17 @@ impl AgentsWindow {
                     } else {
                         self.view.native_hooks =
                             HookUiState::from_load(NativeHookSettings::load(&self.data_root));
+                        self.refresh_compat_hooks();
+                    }
+                    if page == SettingsPage::ExternalAgents {
+                        self.refresh_agent_clis();
+                    }
+                    if page == SettingsPage::Agent {
+                        self.refresh_turn_check_command();
+                        self.refresh_review_model();
                     }
                     if page == SettingsPage::Skills {
+                        self.refresh_plugin_skills();
                         self.refresh_native_skills();
                     }
                     if page == SettingsPage::Commands {
@@ -10249,6 +17365,21 @@ impl AgentsWindow {
             }
             UiAction::Clicked { id } if id == "settings_nav_toggle" => {
                 self.view.settings_nav_open = !self.view.settings_nav_open;
+            }
+            UiAction::Clicked { id } if id == "exec_rule_preview_evaluate" => {
+                if self.view.show_settings
+                    && self.view.settings_page == SettingsPage::Commands
+                    && !self.view.native_exec_rules.editor_open
+                {
+                    self.view
+                        .native_exec_rules
+                        .preview_saved(ExecPolicySettings::load(&self.data_root));
+                }
+            }
+            UiAction::Clicked { id } if id == "exec_rule_preview_clear" => {
+                if self.view.show_settings && self.view.settings_page == SettingsPage::Commands {
+                    self.view.native_exec_rules.preview = None;
+                }
             }
             UiAction::Clicked { id } if id == "exec_rule_new" => {
                 if self.exec_policy_load_error.is_none() {
@@ -10306,6 +17437,101 @@ impl AgentsWindow {
                 if self.view.native_exec_rules.reset_confirm_open {
                     self.reset_invalid_exec_rules();
                 }
+            }
+            UiAction::Clicked { id } if id.starts_with("native_skill_preview_selected:") => {
+                if self.view.show_settings && self.view.settings_page == SettingsPage::Skills {
+                    let scoped = std::fs::canonicalize(&self.view.workspace)
+                        .ok()
+                        .is_some_and(|workspace| {
+                            workspace == Path::new(&self.view.native_skills.workspace)
+                        });
+                    if !scoped {
+                        self.set_settings_notice(
+                            "La selección de skills pertenece a otro proyecto; actualiza la lista",
+                            true,
+                        );
+                    } else if let Ok(index) = id
+                        .trim_start_matches("native_skill_preview_selected:")
+                        .parse()
+                    {
+                        match self.view.native_skills.open_selected_preview(index) {
+                            Ok(()) => self.clear_settings_notice(),
+                            Err(error) => self.set_settings_notice(error, true),
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("native_skill_preview:") => {
+                if self.view.show_settings && self.view.settings_page == SettingsPage::Skills {
+                    let scoped = std::fs::canonicalize(&self.view.workspace)
+                        .ok()
+                        .is_some_and(|workspace| {
+                            workspace == Path::new(&self.view.native_skills.workspace)
+                        });
+                    if !scoped {
+                        self.set_settings_notice(
+                            "El catálogo de skills pertenece a otro proyecto; actualiza la lista",
+                            true,
+                        );
+                    } else if let Ok(index) = id.trim_start_matches("native_skill_preview:").parse()
+                    {
+                        match self.view.native_skills.open_preview(index) {
+                            Ok(()) => self.clear_settings_notice(),
+                            Err(error) => self.set_settings_notice(error, true),
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "native_skill_preview_close" => {
+                self.view.native_skills.close_preview();
+            }
+            UiAction::Clicked { id } if id == "native_skill_preview_accept" => {
+                if self.view.show_settings && self.view.settings_page == SettingsPage::Skills {
+                    let scoped = std::fs::canonicalize(&self.view.workspace)
+                        .ok()
+                        .is_some_and(|workspace| {
+                            workspace == Path::new(&self.view.native_skills.workspace)
+                        });
+                    if !scoped {
+                        self.set_settings_notice(
+                            "La skill revisada pertenece a otro proyecto; actualiza la lista",
+                            true,
+                        );
+                    } else {
+                        match self.view.native_skills.toggle_preview() {
+                            Ok(selections) => self.save_native_skill_selections(selections),
+                            Err(error) => self.set_settings_notice(error, true),
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "native_skill_clear_workspace" => {
+                if self.view.show_settings && self.view.settings_page == SettingsPage::Skills {
+                    let result = NativeSkillsSettings::load(
+                        &self.data_root,
+                        Path::new(&self.view.workspace),
+                    );
+                    match result {
+                        Ok(settings) if settings.workspace == Path::new(&self.view.native_skills.workspace) && !settings.selections.is_empty() => {
+                            let snapshot = crate::native_skills_settings::NativeSkillsClearSnapshot {
+                                workspace: settings.workspace.clone(), selections: settings.selections.clone(),
+                            };
+                            self.view.native_skills = NativeSkillsUiState::from_settings(&settings, &self.data_root);
+                            self.view.native_skills.clear_workspace_snapshot = Some(snapshot);
+                            self.view.native_skills.clear_workspace_confirm_open = true;
+                            self.clear_settings_notice();
+                        }
+                        Ok(_) => self.set_settings_notice("La selección del proyecto ya está vacía o cambió de ámbito; actualiza la lista", true),
+                        Err(error) => self.set_settings_notice(error, true),
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "native_skill_clear_workspace_cancel" => {
+                self.view.native_skills.clear_workspace_confirm_open = false;
+                self.view.native_skills.clear_workspace_snapshot = None;
+            }
+            UiAction::Clicked { id } if id == "native_skill_clear_workspace_confirm" => {
+                self.clear_native_skill_workspace_selection();
             }
             UiAction::Clicked { id } if id == "native_skill_refresh" => {
                 self.refresh_native_skills();
@@ -10430,6 +17656,12 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id.starts_with("mcp_select:") => {
                 self.select_mcp_server(id.trim_start_matches("mcp_select:"));
             }
+            UiAction::Clicked { id } if id.starts_with("mcp_inspect:") => {
+                self.start_mcp_inspection(id.trim_start_matches("mcp_inspect:"));
+            }
+            UiAction::Clicked { id } if id == "mcp_inspection_cancel" => {
+                self.cancel_mcp_inspection();
+            }
             UiAction::Clicked { id } if id == "mcp_cancel" => {
                 self.view.mcp_editor_open = false;
                 self.clear_mcp_draft();
@@ -10498,7 +17730,64 @@ impl AgentsWindow {
                     Err(error) => self.set_settings_notice(error, true),
                 }
             }
+            UiAction::Clicked { id } if id == "settings_terminal_shell_toggle" => {
+                if self.view.show_settings && self.view.settings_page == SettingsPage::Terminal {
+                    self.view.settings_choice_menu_open = None;
+                    self.view.settings_terminal_shell_menu_open =
+                        !self.view.settings_terminal_shell_menu_open;
+                }
+            }
+            UiAction::Clicked { id } if id == "settings_terminal_shell_dismiss" => {
+                self.view.settings_terminal_shell_menu_open = false;
+                    self.view.settings_keymap_menu_open = false;
+            }
+            UiAction::Clicked { id } if id.starts_with("settings_choice_toggle:") => {
+                let choice = id.trim_start_matches("settings_choice_toggle:");
+                let valid = self.view.show_settings
+                    && matches!(
+                        (self.view.settings_page, choice),
+                        (SettingsPage::Data, "organization" | "sort")
+                            | (SettingsPage::Agent, "isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search")
+                            | (SettingsPage::ExternalAgents, "external_permission")
+                    );
+                if valid {
+                    self.view.settings_terminal_shell_menu_open = false;
+                    self.view.settings_keymap_menu_open = false;
+                    self.view.settings_choice_menu_open =
+                        (self.view.settings_choice_menu_open.as_deref() != Some(choice))
+                            .then(|| choice.to_owned());
+                }
+            }
+            UiAction::Clicked { id } if id == "settings_choice_dismiss" => {
+                self.view.settings_choice_menu_open = None;
+            }
+            UiAction::Clicked { id } if id == "settings_terminal_shell_edit" => {
+                self.view.settings_terminal_shell_menu_open = false;
+                    self.view.settings_keymap_menu_open = false;
+                self.view.settings_terminal_shell_editing = true;
+                self.tree.set_input_value(
+                    "settings_terminal_shell_path",
+                    self.view.settings_terminal_shell_draft.clone(),
+                );
+                self.settings_terminal_path_focus_pending = true;
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id == "settings_terminal_shell_cancel" => {
+                self.view.settings_terminal_shell_editing = false;
+                self.settings_terminal_path_focus_pending = false;
+                self.view.settings_terminal_shell_draft = match &self.view.settings_terminal_shell {
+                    TerminalShell::Custom(path) => path.to_string_lossy().into_owned(),
+                    _ => String::new(),
+                };
+                self.tree.set_input_value(
+                    "settings_terminal_shell_path",
+                    self.view.settings_terminal_shell_draft.clone(),
+                );
+                self.clear_settings_notice();
+            }
             UiAction::Clicked { id } if id.starts_with("settings_terminal_shell:") => {
+                self.view.settings_terminal_shell_menu_open = false;
+                    self.view.settings_keymap_menu_open = false;
                 let choice = match id.trim_start_matches("settings_terminal_shell:") {
                     "system" => Some(TerminalShell::System),
                     "powershell" => Some(TerminalShell::PowerShell),
@@ -10520,22 +17809,145 @@ impl AgentsWindow {
                                 next,
                                 "Shell guardado. Se aplicará a las nuevas terminales.",
                             ) {
+                                self.view.settings_terminal_shell_draft = match &choice {
+                                    TerminalShell::Custom(path) => {
+                                        path.to_string_lossy().into_owned()
+                                    }
+                                    _ => String::new(),
+                                };
+                                self.tree.set_input_value(
+                                    "settings_terminal_shell_path",
+                                    self.view.settings_terminal_shell_draft.clone(),
+                                );
                                 self.view.settings_terminal_shell = choice;
+                                self.view.settings_terminal_shell_editing = false;
+                                self.settings_terminal_path_focus_pending = false;
                             }
                         }
                         Err(error) => self.set_settings_notice(error, true),
                     }
                 }
             }
+            UiAction::Clicked { id } if id == "catalog_overview" => {
+                self.view.catalog_browse_provider.clear();
+                self.view.catalog_expanded_model = None;
+                self.view.catalog_model_query.clear();
+                self.clear_settings_notice();
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_connect:") => {
+                self.begin_provider_connect(id.trim_start_matches("provider_connect:"));
+            }
+            UiAction::Clicked { id } if id == "provider_connect_start" => {
+                self.start_provider_connect()
+            }
+            UiAction::Clicked { id } if id == "provider_connect_cancel" => {
+                self.cancel_provider_connect()
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_service:") => {
+                if let Some(connect) = &mut self.view.provider_connect {
+                    let service = id.trim_start_matches("provider_service:");
+                    if connect.provider_id == "opencode"
+                        && matches!(service, "zen" | "go")
+                        && matches!(
+                            connect.phase,
+                            crate::provider_connections::ConnectPhase::Entry
+                                | crate::provider_connections::ConnectPhase::Error
+                        )
+                    {
+                        connect.service = service.into();
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id == "provider_browser" => {
+                if let Some(url) = &self.provider_browser_url {
+                    ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
+                }
+            }
+            UiAction::Clicked { id } if id == "provider_usage" => {
+                ctx.open_url(egui::OpenUrl::new_tab(
+                    crate::provider_connections::CHATGPT_USAGE_URL,
+                ));
+            }
+            UiAction::Clicked { id } if id == "usage_toggle" => {
+                self.view.provider_usage_open = !self.view.provider_usage_open;
+                if self.view.provider_usage_open {
+                    self.view.github_account_menu_open = false;
+                    self.begin_provider_usage_refresh();
+                }
+            }
+            UiAction::Clicked { id } if id == "usage_dismiss" => {
+                self.view.provider_usage_open = false;
+            }
+            UiAction::Clicked { id } if id == "usage_refresh" => {
+                self.retry_provider_usage_refresh();
+            }
+            UiAction::Clicked { id } if id == "usage_details" => {
+                self.view.provider_usage_open = false;
+                self.view.show_settings = true;
+                self.view.settings_page = SettingsPage::Usage;
+                self.view.settings_nav_open = false;
+                self.clear_settings_notice();
+                self.begin_provider_usage_refresh();
+                self.visit_navigation();
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_usage_account:") => {
+                let provider = id.trim_start_matches("provider_usage_account:");
+                if crate::provider_connections::supported(provider)
+                    && self.view.native_provider_definitions.contains_key(provider)
+                {
+                    if let Some(snapshot) = self.view.provider_usage.get(provider) {
+                        if let Some(url) = &snapshot.account_url {
+                            ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
+                        }
+                    }
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_usage_connect:") => {
+                let provider = id.trim_start_matches("provider_usage_connect:");
+                if crate::provider_connections::supported(provider)
+                    && self.view.native_provider_definitions.contains_key(provider)
+                {
+                    self.view.provider_usage_open = false;
+                    self.view.show_settings = true;
+                    self.view.settings_page = SettingsPage::Providers;
+                    self.view.catalog_browse_provider = provider.to_owned();
+                    self.view.catalog_settings_tab = CatalogSettingsTab::Connection;
+                    self.clear_settings_notice();
+                    self.visit_navigation();
+                    self.begin_provider_connect(provider);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_account:") => {
+                let provider = id.trim_start_matches("provider_account:");
+                if crate::provider_connections::supported(provider) {
+                    ctx.open_url(egui::OpenUrl::new_tab(
+                        crate::provider_connections::account_url(provider),
+                    ));
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("provider_disconnect:") => {
+                let provider = id.trim_start_matches("provider_disconnect:");
+                if !self.view.running
+                    && crate::provider_connections::supported(provider)
+                    && self.provider_connection_worker.is_none()
+                {
+                    self.provider_connection_id = Some(provider.into());
+                    self.provider_connection_worker =
+                        Some(crate::provider_connections::ConnectionWorker::disconnect(
+                            self.data_root.clone(),
+                            provider.into(),
+                        ));
+                    self.set_settings_notice("Desconectando proveedor…", false);
+                }
+            }
             UiAction::Clicked { id } if id == "catalog_refresh" => {
                 self.clear_settings_notice();
+                self.refresh_composer_routes();
                 self.begin_catalog_refresh();
                 self.begin_model_discovery();
-                self.begin_codex_model_discovery();
             }
             UiAction::Clicked { id } if id == "composer_routes_refresh" => {
                 self.begin_model_discovery();
-                self.begin_codex_model_discovery();
             }
             UiAction::Clicked { id } if id.starts_with("native_web_search:") => {
                 if !self.view.running && self.view.native_provider_id == "openai" {
@@ -10546,12 +17958,14 @@ impl AgentsWindow {
                         "native_web_search:live" => Some(Some(HostedWebSearchMode::Live)),
                         _ => None,
                     };
+                    self.view.settings_choice_menu_open = None;
                     if let Some(mode) = mode {
                         let previous = self.settings_preferences.hosted_web_search_mode;
                         self.settings_preferences.hosted_web_search_mode = mode;
                         match self.settings_preferences.save(&self.data_root) {
                             Ok(()) => {
                                 self.view.hosted_web_search_mode = mode;
+                                self.refresh_composer_context_percent();
                                 let message = if mode.is_some() {
                                     "Búsqueda web alojada activada para los próximos turnos"
                                 } else {
@@ -10568,40 +17982,99 @@ impl AgentsWindow {
                     }
                 }
             }
-            UiAction::Clicked { id } if id == "catalog_select_custom" => {
-                if !self.view.running {
-                    let previous = self.view.native_provider_id.clone();
-                    self.view.native_provider_id = "custom".to_owned();
-                    if !self.persist_native_settings() {
-                        self.view.native_provider_id = previous;
-                        self.view.native_key_available =
-                            native_key_available_at(&self.native_settings(), &self.data_root);
-                    } else {
-                        let message = "Conexión personalizada activa: revisa el endpoint y el ID del modelo antes de ejecutar";
-                        self.view.status = message.to_owned();
-                        self.set_settings_notice(message, false);
-                    }
-                    self.refresh_composer_context_percent();
+            UiAction::Clicked { id } if id == "native_output_limit_save" => {
+                self.save_output_limit_editor(false)
+            }
+            UiAction::Clicked { id } if id == "native_output_limit_reset" => {
+                self.save_output_limit_editor(true)
+            }
+            UiAction::Clicked { id } if id.starts_with("native_output_limit_field:") => {
+                let field = id.trim_start_matches("native_output_limit_field:");
+                if !self.view.running
+                    && !self.view.native_output_limit_responses
+                    && !self.view.native_output_limit_messages
+                    && matches!(field, "max_tokens" | "max_completion_tokens")
+                {
+                    self.view.native_output_limit_field = field.to_owned();
                 }
             }
             UiAction::Clicked { id } if id.starts_with("catalog_browse:") => {
                 let provider_id = id.trim_start_matches("catalog_browse:");
-                if self
-                    .view
-                    .catalog
-                    .as_ref()
-                    .is_some_and(|catalog| catalog.providers.contains_key(provider_id))
+                if crate::provider_connections::supported(provider_id)
+                    && self
+                        .view
+                        .native_provider_definitions
+                        .contains_key(provider_id)
                 {
                     self.view.catalog_browse_provider = provider_id.to_owned();
                     self.view.catalog_model_query.clear();
+                    self.view.catalog_expanded_model = None;
+                    self.view.catalog_provider_menu_open = false;
                     self.tree.set_input_value("catalog_model_query", "");
                 }
+            }
+            UiAction::Clicked { id } if id == "catalog_provider_menu_toggle" => {
+                self.view.catalog_provider_menu_open = !self.view.catalog_provider_menu_open;
+            }
+            UiAction::Clicked { id } if id == "catalog_provider_menu_dismiss" => {
+                self.view.catalog_provider_menu_open = false;
+            }
+            UiAction::Clicked { id } if id.starts_with("catalog_models_filter:") => {
+                if let Some(filter) = CatalogModelsFilter::from_action(
+                    id.trim_start_matches("catalog_models_filter:"),
+                ) {
+                    self.view.catalog_models_filter = filter;
+                    self.view.catalog_expanded_model = None;
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("catalog_settings_tab:") => {
+                if let Some(tab) =
+                    CatalogSettingsTab::from_action(id.trim_start_matches("catalog_settings_tab:"))
+                {
+                    self.view.catalog_settings_tab = tab;
+                    self.view.catalog_provider_menu_open = false;
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("catalog_model_details:") => {
+                let model_id = id.trim_start_matches("catalog_model_details:");
+                if self.view.catalog.as_ref().is_some_and(|catalog| {
+                    catalog
+                        .model(&self.view.catalog_browse_provider, model_id)
+                        .is_some()
+                }) {
+                    self.view.catalog_expanded_model =
+                        if self.view.catalog_expanded_model.as_deref() == Some(model_id) {
+                            None
+                        } else {
+                            Some(model_id.to_owned())
+                        };
+                }
+            }
+            UiAction::Clicked { id } if id == "catalog_model_details_dismiss" => {
+                self.view.catalog_expanded_model = None;
             }
             UiAction::Clicked { id } if id.starts_with("catalog_select:") => {
                 if !self.view.running {
                     let selected = id.trim_start_matches("catalog_select:");
                     if let Some((provider_id, model_id)) = selected.split_once('/') {
-                        let usable = native_provider::adapter_at(&self.data_root, provider_id)
+                        let connection_available =
+                            crate::provider_connections::supported(provider_id)
+                                && self
+                                    .view
+                                    .provider_connections
+                                    .get(provider_id)
+                                    .is_some_and(|c| c.configured && !c.needs_sign_in);
+                        let exact_listing = self.view.composer_routes.iter().find(|route| {
+                            route.backend == "native"
+                                && route.provider_id == provider_id
+                                && route.model_id == model_id
+                                && route.provider_listed == Some(true)
+                        });
+                        let usable = connection_available && native_provider::adapter_for_model_at(
+                                &self.data_root,
+                                provider_id,
+                                model_id,
+                            )
                             .ok()
                             .flatten()
                             .is_some()
@@ -10612,27 +18085,21 @@ impl AgentsWindow {
                                 .and_then(|catalog| catalog.providers.get(provider_id))
                                 .and_then(|provider| provider.models.get(model_id))
                                 .is_some_and(|model| {
-                                    settings_ui::catalog_model_usable(provider_id, model)
-                                });
-                        if usable {
-                            let previous_provider = self.view.native_provider_id.clone();
-                            let previous_model = self.view.model.clone();
-                            self.view.native_provider_id = provider_id.to_owned();
-                            self.view.model = model_id.to_owned();
-                            if self.persist_native_settings() {
-                                let message =
-                                    format!("Modelo nativo seleccionado: {provider_id}/{model_id}");
-                                self.view.status = message.clone();
-                                self.set_settings_notice(message, false);
-                            } else {
-                                self.view.native_provider_id = previous_provider;
-                                self.view.model = previous_model;
-                                self.view.native_key_available = native_key_available_at(
-                                    &self.native_settings(),
-                                    &self.data_root,
-                                );
-                            }
-                            self.refresh_composer_context_percent();
+                                    model.status.as_deref() != Some("deprecated")
+                                        && exact_listing.map_or_else(
+                                            || settings_ui::catalog_model_usable(provider_id, model),
+                                            |route| route.execution != composer_selection::ExecutionSupport::Unsupported,
+                                        )
+                                })
+                            && !provider_settings::catalog_route_blocked(
+                                &self.view.composer_routes,
+                                provider_id,
+                                model_id,
+                            );
+                        if usable && self.select_catalog_native_model(provider_id, model_id) {
+                            let message = format!("Modelo seleccionado: {provider_id}/{model_id}");
+                            self.view.status = message.clone();
+                            self.set_settings_notice(message, false);
                         }
                     }
                 }
@@ -10640,6 +18107,10 @@ impl AgentsWindow {
             UiAction::Clicked { id }
                 if matches!(id.as_str(), "toggle_side_pane" | "toggle_side_pane_header") =>
             {
+                if self.ide_workspace_active() {
+                    self.toggle_ide_panel(crate::ide_workspace::IdePanel::Agent);
+                    return;
+                }
                 self.view.show_side_pane = !self.view.show_side_pane;
                 let scope = self.dock_scope();
                 self.dock.set_collapsed(&scope, !self.view.show_side_pane);
@@ -10691,9 +18162,92 @@ impl AgentsWindow {
                     self.commit_agent_tool_settings(next, &message);
                 }
             }
+            UiAction::Clicked { id } if id == "review_model_capture" => self.capture_review_model(),
+            UiAction::Clicked { id } if id.starts_with("review_provider:") => {
+                self.view.settings_choice_menu_open = None;
+                self.pick_review_provider(id.trim_start_matches("review_provider:"));
+            }
+            UiAction::Clicked { id } if id.starts_with("review_pick:") => {
+                self.view.settings_choice_menu_open = None;
+                self.pick_review_model(id.trim_start_matches("review_pick:"));
+            }
+            UiAction::Clicked { id } if id.starts_with("review_model:") => {
+                self.view.settings_choice_menu_open = None;
+                if let Some(mode) = crate::review_model::ReviewModelMode::from_action_id(&id) {
+                    self.set_review_model_mode(mode);
+                }
+            }
+            UiAction::Submitted { id, value } if id == "turn_check_command" => {
+                self.set_turn_check_command(&value);
+            }
+            UiAction::Clicked { id } if id == "turn_check_fix" => self.load_turn_check_fix(),
+            UiAction::Clicked { id } if id == "turn_check_dismiss" => {
+                self.view.turn_check_failure = None;
+            }
+            UiAction::Submitted { id, value } if id.starts_with("agent_cli_path:") => {
+                self.set_agent_cli_path(id.trim_start_matches("agent_cli_path:"), &value);
+            }
+            UiAction::Clicked { id } if id.starts_with("plugin_skills:") => {
+                if let Ok(index) = id.trim_start_matches("plugin_skills:").parse() {
+                    self.toggle_plugin_skills(index);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("compat_hook:") => {
+                if let Ok(index) = id.trim_start_matches("compat_hook:").parse() {
+                    self.toggle_compat_hook(index);
+                }
+            }
+            UiAction::Clicked { id }
+                if id == "external_approval_allow" || id == "external_approval_deny" =>
+            {
+                self.answer_external_approval(id == "external_approval_allow");
+            }
+            UiAction::Clicked { id } if id == "external_agents_enabled" => {
+                let mut next = self.external_agent_settings;
+                let message = if next.toggle_enabled() {
+                    "Herramientas de OpenIDE ofrecidas a las CLIs externas"
+                } else {
+                    "Herramientas de OpenIDE cerradas para las CLIs externas"
+                };
+                self.commit_external_agent_settings(next, message);
+            }
+            UiAction::Clicked { id } if id.starts_with("external_tool:") => {
+                // The switches are disabled while the bridge is closed; a
+                // stale click must not change what opens with it later.
+                if let Some(tool) = ExternalTool::from_action_id(&id)
+                    .filter(|_| self.external_agent_settings.enabled())
+                {
+                    let mut next = self.external_agent_settings;
+                    let message = format!(
+                        "Herramienta externa {} {}",
+                        tool.name(),
+                        if next.toggle(tool) { "activada" } else { "desactivada" }
+                    );
+                    self.commit_external_agent_settings(next, &message);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with("external_permission:") => {
+                self.view.settings_choice_menu_open = None;
+                if let Some(mode) = ExternalPermissionMode::from_action_id(&id) {
+                    let mut next = self.external_agent_settings;
+                    next.set_permission_mode(mode);
+                    let message = match mode {
+                        ExternalPermissionMode::MirrorCli => {
+                            "Las herramientas de OpenIDE siguen el modo de permisos de la CLI"
+                        }
+                        ExternalPermissionMode::AlwaysAsk => {
+                            "OpenIDE pedirá aprobación en cada llamada externa"
+                        }
+                    };
+                    self.commit_external_agent_settings(next, message);
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("command_isolation:") => {
+                self.view.settings_choice_menu_open = None;
                 let selected = match id.as_str() {
-                    "command_isolation:workspace_write_offline" if cfg!(windows) => {
+                    "command_isolation:workspace_write_offline"
+                        if CommandIsolation::WorkspaceWriteOffline.is_available_on_host() =>
+                    {
                         Some(CommandIsolation::WorkspaceWriteOffline)
                     }
                     "command_isolation:host_unrestricted" => {
@@ -10758,59 +18312,55 @@ impl AgentsWindow {
                     self.set_settings_notice(message, true);
                 }
             }
-            UiAction::Clicked { id } if id == "backend_next" => {
-                if !self.view.running && !self.view.backend_options.is_empty() {
-                    let current = self
-                        .view
-                        .backend_options
-                        .iter()
-                        .position(|(backend, _)| backend == &self.view.selected_backend)
-                        .unwrap_or(0);
-                    let next = (current + 1) % self.view.backend_options.len();
-                    let backend = self.view.backend_options[next].0.clone();
-                    self.new_session();
-                    self.view.selected_backend = backend;
-                    self.refresh_composer_selection();
-                    self.remember_composer_selection(true);
-                }
-            }
-            UiAction::Clicked { id } if id == "backend_menu_toggle" => {
-                if !self.view.running {
-                    self.view.backend_menu_open = !self.view.backend_menu_open;
+            UiAction::Clicked { id } if id == "composer_context_toggle" => {
+                if self.view.selected_backend == "native" {
+                    self.refresh_native_context();
+                    self.view.composer_context_open = !self.view.composer_context_open;
+                    self.view.composer_context_details_open = false;
                     self.view.composer_model_menu_open = false;
                     self.view.composer_model_list_open = false;
                     self.view.composer_model_query.clear();
                     self.composer_model_search_focus_pending = false;
                     self.view.composer_advanced_open = false;
                     self.view.composer_effort_menu_open = false;
+                    self.view.composer_project_menu_open = false;
+                    self.view.composer_add_menu_open = false;
                 }
             }
-            UiAction::Clicked { id } if id == "backend_menu_dismiss" => {
-                self.view.backend_menu_open = false;
-            }
-            UiAction::Clicked { id } if id.starts_with("backend:") => {
-                self.view.backend_menu_open = false;
-                let backend = id.trim_start_matches("backend:");
-                if self.view.selected_backend != backend
-                    && self
-                        .view
-                        .backend_options
-                        .iter()
-                        .any(|(candidate, _)| candidate == backend)
+            UiAction::Clicked { id } if id.starts_with("composer_context_compact:") => {
+                let requested = id.trim_start_matches("composer_context_compact:");
+                let availability = crate::composer_context_ui::compaction_view(&self.view);
+                if self.view.composer_context_open
+                    && availability.session_id == Some(requested)
+                    && !availability.busy
+                    && availability.unavailable.is_none()
                 {
-                    self.new_session();
-                    if !self.view.running {
-                        self.view.selected_backend = backend.to_owned();
-                        self.refresh_composer_selection();
-                        self.remember_composer_selection(true);
-                    }
+                    self.start_compact();
                 }
+            }
+            UiAction::Clicked { id } if id == "composer_context_details_toggle" => {
+                if self.view.selected_backend == "native" && self.view.composer_context_open {
+                    self.refresh_native_context();
+                    self.view.composer_context_details_open =
+                        !self.view.composer_context_details_open;
+                }
+            }
+            UiAction::Clicked { id } if id == "composer_context_dismiss" => {
+                self.view.composer_context_open = false;
+                self.view.composer_context_details_open = false;
+            }
+            UiAction::Clicked { id }
+                if matches!(
+                    id.as_str(),
+                    "backend_next" | "backend_menu_toggle" | "backend_menu_dismiss"
+                ) || id.starts_with("backend:") =>
+            {
+                // Ignore stale actions from the retired external-engine picker.
+                self.view.backend_menu_open = false;
             }
             UiAction::Clicked { id } if id == "composer_model_toggle" => {
-                if !self.view.running
-                    && (!self.view.composer_model_options.is_empty()
-                        || !self.view.composer_effort_options.is_empty())
-                {
+                if self.composer_choices_editable() {
+                    self.view.composer_context_open = false;
                     self.view.composer_model_menu_open = !(self.view.composer_model_menu_open
                         || self.view.composer_effort_menu_open);
                     self.view.composer_model_list_open = false;
@@ -10831,8 +18381,26 @@ impl AgentsWindow {
                 self.view.composer_effort_menu_open = false;
                 self.view.composer_effort_preview = None;
             }
+            UiAction::Clicked { id } if id == "composer_connect_provider" => {
+                if self.view.selected_backend == "native" {
+                    self.view.composer_model_menu_open = false;
+                    self.view.composer_model_list_open = false;
+                    self.view.composer_model_query.clear();
+                    self.composer_model_search_focus_pending = false;
+                    self.view.composer_advanced_open = false;
+                    self.view.composer_effort_menu_open = false;
+                    self.view.composer_effort_preview = None;
+                    self.view.show_settings = true;
+                    self.view.settings_page = SettingsPage::Providers;
+                    self.view.catalog_settings_tab = CatalogSettingsTab::Connection;
+                    self.view.catalog_browse_provider.clear();
+                    self.view.catalog_expanded_model = None;
+                    self.clear_settings_notice();
+                    self.visit_navigation();
+                }
+            }
             UiAction::Clicked { id } if id == "composer_model_list_toggle" => {
-                if !self.view.running
+                if self.composer_choices_editable()
                     && self.view.composer_model_menu_open
                     && !self.view.composer_advanced_open
                 {
@@ -10842,15 +18410,60 @@ impl AgentsWindow {
                     self.view.composer_effort_preview = None;
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("composer_model_provider_toggle:") => {
+                let provider = id.trim_start_matches("composer_model_provider_toggle:");
+                let fallback_provider = if self.view.selected_backend == "native" {
+                    self.view.native_provider_id.as_str()
+                } else {
+                    self.view.selected_backend.as_str()
+                };
+                let available = self.view.composer_routes.iter().any(|route| {
+                    route.provider_id == provider
+                        && route.credential
+                            != composer_selection::CredentialAvailability::MissingCredential
+                }) || (self.view.composer_routes.is_empty()
+                    && !self.view.composer_model_options.is_empty()
+                    && provider == fallback_provider);
+                if self.view.composer_model_menu_open
+                    && self.view.composer_model_list_open
+                    && available
+                {
+                    if !self.view.composer_model_query.trim().is_empty() {
+                        if !self
+                            .view
+                            .composer_search_collapsed_model_providers
+                            .remove(provider)
+                        {
+                            self.view
+                                .composer_search_collapsed_model_providers
+                                .insert(provider.to_owned());
+                        }
+                    } else {
+                        let mut preferences = self.composer_preferences.clone();
+                        preferences.toggle_model_provider(provider);
+                        match preferences.save(&self.data_root) {
+                            Ok(()) => {
+                                self.view.composer_collapsed_model_providers =
+                                    preferences.collapsed_model_providers().clone();
+                                self.composer_preferences = preferences;
+                            }
+                            Err(error) => {
+                                self.view.composer_error = Some(format!(
+                                    "No se pudo guardar la sección del proveedor: {error}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
             UiAction::Clicked { id }
                 if id == "composer_advanced_toggle" || id == "composer_advanced_chip_toggle" =>
             {
-                if !self.view.running
+                if self.composer_choices_editable()
                     && self.view.composer_model_menu_open
                     && !self.view.composer_model_list_open
                     && self
-                        .view
-                        .composer_effort_options
+                        .composer_effort_options_for_selection()
                         .iter()
                         .any(|(id, _)| id != "default")
                 {
@@ -10871,10 +18484,11 @@ impl AgentsWindow {
                 self.select_composer_model(id.trim_start_matches("composer_model:"));
             }
             UiAction::Clicked { id } if id == "composer_effort_toggle" => {
-                if !self.view.running
+                if self.composer_choices_editable()
                     && (!self.view.composer_model_options.is_empty()
                         || !self.view.composer_effort_options.is_empty())
                 {
+                    self.view.composer_context_open = false;
                     self.view.composer_model_menu_open = !(self.view.composer_model_menu_open
                         || self.view.composer_effort_menu_open);
                     self.view.composer_model_list_open = false;
@@ -10906,25 +18520,67 @@ impl AgentsWindow {
                 }
             }
             UiAction::InputChanged { id, value } => match id.as_str() {
+                "provider_api_key" => {
+                    if let Some(connect) = &mut self.view.provider_connect {
+                        if matches!(
+                            connect.phase,
+                            crate::provider_connections::ConnectPhase::Entry
+                                | crate::provider_connections::ConnectPhase::Error
+                        ) && matches!(connect.provider_id.as_str(), "opencode" | "nvidia")
+                        {
+                            self.provider_key_draft = value.chars().take(4096).collect();
+                            connect.key_entered = !self.provider_key_draft.trim().is_empty();
+                        }
+                    }
+                }
+                "composer_branch_search" if self.view.composer_branches.open => {
+                    self.view.composer_branches.query = value.chars().take(128).collect();
+                }
+                "composer_project_search" if self.view.composer_project_menu_open => {
+                    self.view.environment.project_query = value.chars().take(128).collect();
+                }
+                "subagent_input_prompt" => {
+                    if let Some(draft) = &mut self.view.subagent_input_edit {
+                        draft.prompt = value;
+                    }
+                }
                 "composer_model_search" => {
                     if self.view.composer_model_menu_open && self.view.composer_model_list_open {
                         self.view.composer_model_query = value.chars().take(128).collect();
+                        self.view.composer_search_collapsed_model_providers.clear();
                     }
                 }
                 "dock_overview_query" => self.view.dock_overview_query = value,
-                "command_query" => {
+                "ide_agent_list_query" => {
+                    self.view.ide.agent_list_query = value.chars().take(128).collect();
+                }
+                "command_query" if self.view.show_command_center => {
                     self.view.command_query = value;
-                    self.view.command_selected_index = 0;
+                    self.reset_command_navigation();
                     self.request_command_search();
                 }
                 "prompt" => {
+                    if value.is_empty() {
+                        self.view.composer_expanded = false;
+                    }
                     self.view.prompt = value;
                     self.draft_dirty_at = Some(Instant::now());
                 }
                 "composer_goal_draft" => self.view.composer_goal_draft = value,
+                "native_goal_criteria"
+                    if self.view.composer_goal_editor_open
+                        && !self.view.running
+                        && !self.view.background_run_selected =>
+                {
+                    self.view.native_goal.criteria_draft = value;
+                }
                 "terminal_input" => self.view.terminal_input = value,
                 "tool_verification_output" => self.view.tool_verification_output = value,
-                "settings_terminal_shell_path" => self.view.settings_terminal_shell_draft = value,
+                "settings_terminal_shell_path" => {
+                    self.view.settings_terminal_shell_draft = value;
+                    self.view.settings_terminal_shell_editing = true;
+                    self.clear_settings_notice();
+                }
                 "mcp_draft_id" => self.view.mcp_draft_id = value,
                 "mcp_draft_url" => self.view.mcp_draft_url = value,
                 "mcp_draft_http_bearer_token_env_name" => {
@@ -10937,6 +18593,12 @@ impl AgentsWindow {
                 "mcp_draft_args" => self.view.mcp_draft_args = value,
                 "mcp_draft_cwd" => self.view.mcp_draft_cwd = value,
                 "mcp_draft_env_names" => self.view.mcp_draft_env_names = value,
+                "exec_rule_preview_argv"
+                    if self.view.show_settings
+                        && self.view.settings_page == SettingsPage::Commands =>
+                {
+                    self.view.native_exec_rules.set_preview_argv(value);
+                }
                 "exec_rule_draft_pattern" => self.view.native_exec_rules.draft_pattern = value,
                 "exec_rule_draft_justification" => {
                     self.view.native_exec_rules.draft_justification = value
@@ -10951,7 +18613,7 @@ impl AgentsWindow {
                     self.view.native_hooks.draft_max_output_bytes = value
                 }
                 "workspace" => self.view.workspace_draft = value,
-                "model" => {
+                "model" if !self.view.running => {
                     self.view.model = value.clone();
                     if self.view.selected_backend == "native" {
                         self.view.composer_model = value;
@@ -10974,12 +18636,14 @@ impl AgentsWindow {
                     self.persist_native_settings();
                     self.refresh_composer_context_percent();
                 }
-                "endpoint" => {
+                "native_output_limit_tokens" => self.view.native_output_limit_draft = value,
+                "endpoint" if !self.view.running => {
                     self.view.endpoint = value;
                     self.persist_native_settings();
                 }
                 "catalog_provider_query" => self.view.catalog_provider_query = value,
                 "catalog_model_query" => self.view.catalog_model_query = value,
+                "settings_search" => self.view.settings_nav_query = value,
                 "rename_title" => self.view.rename_draft = value,
                 "group_create_draft" => self.view.group_create_draft = value,
                 "group_rename_draft" => self.view.group_rename_draft = value,
@@ -11000,10 +18664,26 @@ impl AgentsWindow {
                 "automation_once_time" => self.view.automations.form.set_once_time(&value),
                 "automation_interval" => self.view.automations.form.interval_minutes = value,
                 "automation_time" => self.view.automations.form.time = value,
-                "marketplace_search" => self.view.marketplace.query = value,
+                "marketplace_search" => self.set_marketplace_query(value),
                 "marketplace_source_draft" => self.view.marketplace.source_draft = value,
                 _ => {}
             },
+            UiAction::Submitted { id, value } if matches!(id.as_str(), "marketplace_search" | "ide_extensions_search") => {
+                self.set_marketplace_query(value);
+                self.handle_marketplace_action("marketplace_explore_search");
+            }
+            UiAction::Submitted { id, .. } if id == "provider_api_key" => {
+                if self.view.provider_connect.as_ref().is_some_and(|connect| {
+                    matches!(
+                        connect.phase,
+                        crate::provider_connections::ConnectPhase::Entry
+                            | crate::provider_connections::ConnectPhase::Error
+                    ) && matches!(connect.provider_id.as_str(), "opencode" | "nvidia")
+                        && connect.key_entered
+                }) {
+                    self.start_provider_connect();
+                }
+            }
             UiAction::Submitted { id, .. } if id == "prompt" => self.start_run(),
             UiAction::Submitted { id, value } if id == "composer_goal_draft" => {
                 self.view.composer_goal_draft = value;
@@ -11017,6 +18697,20 @@ impl AgentsWindow {
             }
             UiAction::Submitted { id, value } if id == "terminal_input" => {
                 self.send_terminal_command(&value);
+            }
+            UiAction::Submitted { id, value } if id == "settings_terminal_shell_path" => {
+                if self.view.show_settings && self.view.settings_page == SettingsPage::Terminal {
+                    self.view.settings_terminal_shell_draft = value;
+                    let draft = self.view.settings_terminal_shell_draft.trim();
+                    if !draft.is_empty() && Path::new(draft).is_absolute() {
+                        self.apply_action(
+                            UiAction::Clicked {
+                                id: "settings_terminal_shell:custom".into(),
+                            },
+                            ctx,
+                        );
+                    }
+                }
             }
             UiAction::Submitted { id, value } if id == "group_create_draft" => {
                 self.view.group_create_draft = value;
@@ -11034,14 +18728,37 @@ impl AgentsWindow {
                     self.commit_session_rename(&session_id);
                 }
             }
-            UiAction::Submitted { id, .. } if id == "command_query" => {
+            UiAction::Submitted { id, .. }
+                if id == "command_query" && self.view.show_command_center => {
                 self.activate_command_result(self.view.command_selected_index);
             }
             _ => {}
         }
+        if !self.view.show_settings || self.view.settings_page != SettingsPage::Terminal {
+            self.view.settings_terminal_shell_menu_open = false;
+                    self.view.settings_keymap_menu_open = false;
+            self.settings_terminal_path_focus_pending = false;
+        }
+        if !self.view.show_settings
+            || !matches!(
+                (
+                    self.view.settings_page,
+                    self.view.settings_choice_menu_open.as_deref()
+                ),
+                (SettingsPage::Data, Some("organization" | "sort"))
+                    | (SettingsPage::Agent, Some("isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search"))
+                    | (SettingsPage::ExternalAgents, Some("external_permission"))
+            )
+        {
+            self.view.settings_choice_menu_open = None;
+        }
     }
 
     fn toggle_left_sidebar(&mut self) {
+        if self.ide_workspace_active() {
+            self.toggle_ide_panel(crate::ide_workspace::IdePanel::Explorer);
+            return;
+        }
         let right_was_visible = self.nominal_dock_layout().right.is_some();
         self.view.sidebar_collapsed = !self.view.sidebar_collapsed;
         // Responsive hiding is not a request to open the right dock. If the
@@ -11058,21 +18775,38 @@ impl AgentsWindow {
     }
 
     fn update_dock_motion(&mut self, viewport_width: f32, now: Instant) -> bool {
+        let environment_animating =
+            self.update_environment_motion(now) | self.update_agent_list_motion(viewport_width, now);
+        let ide = self.ide_workspace_active();
         // Compute destinations without presentation overrides. The same
         // dock_layout function is then used to lay out the animated frame.
         self.viewport_width = viewport_width;
         let nominal = self.nominal_dock_layout();
         let left_target = nominal.left;
         let right_target = nominal.right.unwrap_or(0.0);
+        let bottom_target =
+            crate::view::nominal_terminal_panel_height(&self.view, self.viewport_height);
+        if self
+            .dock_motion
+            .as_ref()
+            .is_some_and(|motion| motion.ide != ide)
+        {
+            self.dock_motion = None;
+        }
         if self.dock_drag.is_some() {
             self.dock_motion = None;
             self.view.left_presentation_width = None;
             self.view.right_presentation_width = None;
-            return false;
+            self.view.bottom_presentation_height = None;
+            self.view.ide.explorer_content_width = None;
+            self.view.ide.agent_content_width = None;
+            return environment_animating;
         }
-        let motion = self
-            .dock_motion
-            .get_or_insert_with(|| DockMotion::new(left_target, right_target, viewport_width, now));
+        let motion = self.dock_motion.get_or_insert_with(|| {
+            let mut motion = DockMotion::new(left_target, right_target, viewport_width, now);
+            motion.ide = ide;
+            motion
+        });
         let (left, right) = motion.update(
             left_target,
             right_target,
@@ -11082,11 +18816,59 @@ impl AgentsWindow {
         );
         self.view.left_presentation_width = left;
         self.view.right_presentation_width = right;
-        motion.is_active(now)
+        self.view.ide.explorer_content_width =
+            (ide && left.is_some()).then_some(motion.content_left);
+        self.view.ide.agent_content_width =
+            (ide && right.is_some()).then_some(motion.content_right);
+        self.view.bottom_presentation_height = motion.update_bottom(
+            bottom_target,
+            self.viewport_height,
+            self.view.terminal_maximized,
+            now,
+            self.reduced_motion,
+        );
+        motion.is_active(now) || environment_animating
+    }
+
+    fn update_agent_list_motion(&mut self, viewport_width: f32, now: Instant) -> bool {
+        let target = if crate::ide_workspace::agent_list_shown(&self.view, viewport_width) {
+            1.0
+        } else {
+            0.0
+        };
+        let motion = self
+            .agent_list_motion
+            .get_or_insert_with(|| ScalarTransition::new(target, now).easing(Easing::OutCubic));
+        motion.retarget_with_motion(target, now, DockMotion::DURATION, self.reduced_motion);
+        let active = motion.is_active(now);
+        self.view.ide.agent_list_progress = active.then(|| motion.value(now));
+        active
+    }
+
+    fn update_environment_motion(&mut self, now: Instant) -> bool {
+        let target = if self.view.environment.open { 1.0 } else { 0.0 };
+        let motion = self
+            .environment_motion
+            .get_or_insert_with(|| ScalarTransition::new(target, now).easing(Easing::OutCubic));
+        motion.retarget_with_motion(target, now, DockMotion::DURATION, self.reduced_motion);
+        let active = motion.is_active(now);
+        self.view.environment_presentation_progress = active.then(|| motion.value(now));
+        active
     }
 
     fn handle_dock_drag(&mut self, event: &UiEvent, viewport_width: f32) -> bool {
+        // Floating menus own their pointer surface, even where they cross a
+        // divider. Let the tree activate/dismiss them before another drag.
+        if self.tree.has_open_popover() {
+            self.dock_drag = None;
+            return false;
+        }
+        if self.ide_workspace_active() {
+            return self.handle_ide_dock_drag(event, viewport_width);
+        }
         let layout = dock_layout(&self.view, viewport_width);
+        let terminal_height = crate::view::terminal_panel_height(&self.view, self.viewport_height);
+        let split_y = self.viewport_height - 4.0 - terminal_height;
         match event {
             UiEvent::PointerDown(point) => {
                 self.dock_drag = if layout
@@ -11094,7 +18876,9 @@ impl AgentsWindow {
                     .is_some_and(|x| (point.x - x).abs() <= 5.0)
                 {
                     Some(DockDrag::Left)
-                } else if layout
+                } else if terminal_height > 0.0 && point.x > layout.left + 8.0 && (point.y - split_y).abs() <= 5.0 {
+                    Some(DockDrag::Bottom)
+                } else if point.y < split_y && layout
                     .right_split_x
                     .is_some_and(|x| (point.x - x).abs() <= 5.0)
                 {
@@ -11118,9 +18902,18 @@ impl AgentsWindow {
                     }
                     true
                 }
+                Some(DockDrag::Bottom) => {
+                    let scope = self.dock_scope();
+                    self.dock.set_terminal_maximized(&scope, false);
+                    self.view.terminal_maximized = false;
+                    self.dock.set_terminal_height_px(&scope.workspace_id, self.viewport_height - point.y - 4.0);
+                    self.view.terminal_panel_height = self.dock.preferred_terminal_height_px(&scope.workspace_id);
+                    true
+                }
                 None => false,
             },
-            UiEvent::PointerUp(_) if self.dock_drag.take().is_some() => true,
+            UiEvent::PointerUp(_) | UiEvent::PointerLeave
+                if self.dock_drag.take().is_some() => true,
             _ => false,
         }
     }
@@ -11128,6 +18921,8 @@ impl AgentsWindow {
 
 impl eframe::App for AgentsWindow {
     fn on_exit(&mut self) {
+        self.revoke_all_external_grants();
+        self.cancel_editor_loads();
         self.stop_dictation();
         self.cancel_mcp_oauth();
         // The CLI worker owns a Child behind an Arc. Dropping the UI receiver
@@ -11145,6 +18940,7 @@ impl eframe::App for AgentsWindow {
             recovery.cancel();
         }
         self.native_command_sessions.revoke_all();
+        self.native_manual_command_cancel.cancel();
         self.clear_native_command_ui();
         for run in self.background_automation_runs.drain(..) {
             run.run.cancel();
@@ -11161,10 +18957,46 @@ impl eframe::App for AgentsWindow {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.poll_run();
+        let composer_was_running = self.view.running || self.view.background_run_selected;
+        let mut early_changed = self.poll_run();
         let ctx = ui.ctx().clone();
-        let aux_changed = self.poll_dictation(&ctx)
+        render::normalize_keyboard_input(&ctx);
+        self.expire_text_paste_request();
+        let quit_confirm_before = self.view.code_editor_quit_confirm;
+        self.guard_editor_close(&ctx);
+        self.guard_debugger_close(&ctx);
+        early_changed |= quit_confirm_before != self.view.code_editor_quit_confirm;
+        early_changed |= self.sync_external_approval(&ctx);
+        early_changed |= self.follow_file_tree(&ctx);
+        early_changed |= self.follow_agent_clis();
+        early_changed |= self.follow_ide_agent_tabs();
+        early_changed |= self.follow_cli_task_title();
+        let toast = self.view.notifications.toast_remaining(Instant::now());
+        if let Some(remaining) = toast {
+            ctx.request_repaint_after(remaining);
+        }
+        early_changed |= std::mem::replace(&mut self.toast_shown, toast.is_some()) != toast.is_some();
+        early_changed |= self.expire_settings_notice(&ctx);
+        early_changed |= self.poll_turn_check();
+        // These updates are already included in the first tree below. Only
+        // mutations after that hit-test layout require rebuilding it again.
+        early_changed |= self.poll_chat_diffs(&ctx)
+            | self.poll_ide_search(&ctx)
+            | self.guard_debug_navigation()
+            | self.refresh_ide_activity_workspace()
+            | self.poll_code_editor(&ctx)
+            | self.poll_document_preview(&ctx)
+            | self.poll_markdown_preview(&ctx)
+            | self.poll_editor_workbench(&ctx)
+            | self.poll_editor_review(&ctx)
+            | self.poll_ide_status()
+            | self.poll_debugger(&ctx)
+            | self.poll_dictation(&ctx)
+            | self.poll_provider_connections(&ctx)
+            | self.poll_provider_usage()
             | self.poll_mcp_oauth()
+            | self.poll_mcp_inspection()
+            | self.poll_subagent_dispatches()
             | self.poll_subagent_events()
             | self.poll_subagent_sessions()
             | self.poll_automations()
@@ -11173,27 +19005,23 @@ impl eframe::App for AgentsWindow {
             | self.poll_child_recovery()
             | self.poll_native_command_sessions()
             | self.poll_marketplace()
+            | self.poll_plugins()
             | self.poll_catalog()
             | self.poll_model_discovery()
             | self.poll_codex_model_discovery()
             | self.poll_workspace_folder_picker()
-            | self.poll_composer_folder_picker();
-        let (
-            command_shortcut,
-            new_task_shortcut,
-            sidebar_shortcut,
-            effort_shortcut,
-            back_shortcut,
-            forward_shortcut,
-            escape,
-            up,
-            down,
-        ) = ctx.input(|input| {
+            | self.poll_composer_folder_picker()
+            | self.poll_composer_branches(&ctx)
+            | self.poll_environment_git(&ctx)
+            | self.poll_composer_attachments(&ctx);
+        if composer_was_running && !self.view.running && !self.view.background_run_selected {
+            self.refresh_native_composer_choice_metadata();
+            early_changed = true;
+        }
+        early_changed |= self.poll_pending_composer_selection();
+        early_changed |= self.sync_approval_ui();
+        let (back_shortcut, forward_shortcut, escape, up, down) = ctx.input(|input| {
             (
-                input.modifiers.command && input.key_pressed(egui::Key::K),
-                input.modifiers.command && input.key_pressed(egui::Key::N),
-                input.modifiers.command && input.key_pressed(egui::Key::B),
-                input.modifiers.command && input.modifiers.shift && input.key_pressed(egui::Key::M),
                 input.modifiers.alt && input.key_pressed(egui::Key::ArrowLeft),
                 input.modifiers.alt && input.key_pressed(egui::Key::ArrowRight),
                 input.key_pressed(egui::Key::Escape),
@@ -11201,64 +19029,61 @@ impl eframe::App for AgentsWindow {
                 input.key_pressed(egui::Key::ArrowDown),
             )
         });
-        let terminal_focused = self.view.side_tab == SideTab::Terminal
-            && self.tree.focused_id() == Some("terminal_screen");
-        let workflow_modal_open = self.view.automations.screen == AutomationScreen::Edit
+        early_changed |= back_shortcut || forward_shortcut || escape || up || down;
+        let terminal_focused = !self.view.show_command_center && self.view.show_terminal_panel
+            && self.tree.focused_id() == Some(self.active_terminal_screen_id().as_str());
+        let text_menu_open = self.tree.context_menu_open() || self.command_tree.context_menu_open()
+            || self.view.ide.menu_open.is_some();
+        let workflow_modal_open = self.view.ide.new_file.is_some()
+            || self.view.approval_ui.selected.is_some()
+            || self.view.composer_full_access_confirm.is_some()
+            || self.view.automations.screen == AutomationScreen::Edit
+            || self.view.pending_delete_session_id.is_some()
+            || self.view.pending_archive_session_id.is_some()
+            || self.view.renaming_session_id.is_some()
+            || self.view.code_editor_quit_confirm
+            || self.view.code_editor_reload_confirm.is_some()
+            || self.view.composer_image_viewer.is_some()
+            || self.view.github_sign_in.is_some()
+            || self.view.provider_connect.is_some()
             || self.view.marketplace.add_source_kind.is_some()
+            || self.view.marketplace.selected_item_id.is_some()
+            || self.view.marketplace.pending_uninstall_id.is_some()
+            || self.view.marketplace.pending_remove_source_id.is_some()
             || self.view.pending_mcp_delete_id.is_some()
             || self.view.pending_native_command_termination.is_some()
             || (self.view.show_settings
+                && self.view.settings_page == SettingsPage::Providers
+                && self.view.catalog_expanded_model.is_some())
+            || (self.view.show_settings
                 && self.view.settings_page == SettingsPage::Mcp
                 && self.view.mcp_editor_open);
-        if !terminal_focused && !workflow_modal_open && command_shortcut {
-            if self.view.show_command_center {
+        let (keymap_changed, settings_search_focus_target) =
+            self.handle_keymap_shortcuts(&ctx, workflow_modal_open, text_menu_open);
+        early_changed |= keymap_changed;
+        if !keymap_changed && !text_menu_open && !terminal_focused && !workflow_modal_open {
+            if escape && self.view.show_command_center {
                 self.view.show_command_center = false;
-            } else {
-                self.open_command_center();
-            }
-        } else if !terminal_focused
-            && !workflow_modal_open
-            && escape
-            && self.view.show_command_center
-        {
-            self.view.show_command_center = false;
-        } else if !terminal_focused && !workflow_modal_open && !self.view.show_command_center {
-            if escape && self.view.group_create_open {
-                self.view.group_create_open = false;
-                self.view.group_create_draft.clear();
-                self.group_focus_pending = false;
-            } else if escape && self.view.group_rename_id.is_some() {
-                self.view.group_rename_id = None;
-                self.view.group_rename_draft.clear();
-                self.group_focus_pending = false;
-            } else if effort_shortcut
-                && self.view.main_page == MainPage::Workspace
-                && !self.view.show_settings
-                && !self.view.running
-                && (!self.view.composer_model_options.is_empty()
-                    || !self.view.composer_effort_options.is_empty())
-            {
-                self.view.composer_model_menu_open =
-                    !(self.view.composer_model_menu_open || self.view.composer_effort_menu_open);
-                self.view.composer_model_list_open = false;
-                self.view.composer_model_query.clear();
-                self.composer_model_search_focus_pending = false;
-                self.view.composer_advanced_open = false;
-                self.view.composer_effort_menu_open = false;
-                self.view.composer_effort_preview = None;
-                self.view.backend_menu_open = false;
-            } else if sidebar_shortcut {
-                self.toggle_left_sidebar();
-            } else if new_task_shortcut {
-                self.new_session();
-                if !self.view.running {
-                    self.view.show_settings = false;
-                    self.visit_navigation();
+                // This Escape belongs to the palette even when the underlying
+                // focus is a PTY. Do not forward it after the overlay closes.
+                ctx.input_mut(|input| input.events.retain(|event| !matches!(event,
+                    egui::Event::Key { key: egui::Key::Escape, .. })));
+            } else if !self.view.show_command_center {
+                if escape && self.view.catalog_provider_menu_open {
+                    self.view.catalog_provider_menu_open = false;
+                } else if escape && self.view.group_create_open {
+                    self.view.group_create_open = false;
+                    self.view.group_create_draft.clear();
+                    self.group_focus_pending = false;
+                } else if escape && self.view.group_rename_id.is_some() {
+                    self.view.group_rename_id = None;
+                    self.view.group_rename_draft.clear();
+                    self.group_focus_pending = false;
+                } else if back_shortcut {
+                    self.go_back();
+                } else if forward_shortcut {
+                    self.go_forward();
                 }
-            } else if back_shortcut {
-                self.go_back();
-            } else if forward_shortcut {
-                self.go_forward();
             }
         }
         let font = egui::FontId::monospace(14.0);
@@ -11279,45 +19104,114 @@ impl eframe::App for AgentsWindow {
         self.tree.set_sans_metrics(sans_metrics);
         self.command_tree.set_metrics(metrics);
         self.command_tree.set_sans_metrics(sans_metrics);
-        install_text_measurer(&mut self.tree, &ctx);
-        install_text_measurer(&mut self.command_tree, &ctx);
+        early_changed |= self.ensure_native_text_measurers(&ctx);
         let area = ui.max_rect();
         self.viewport_width = area.width();
         self.viewport_height = area.height();
+        let previous_presentation = (
+            self.view.left_presentation_width,
+            self.view.right_presentation_width,
+            self.view.bottom_presentation_height,
+            self.view.environment_presentation_progress,
+            self.view.ide.agent_list_progress,
+        );
         let mut dock_animating = self.update_dock_motion(area.width(), Instant::now());
-        self.view.show_jump_to_bottom =
+        early_changed |= previous_presentation
+            != (
+                self.view.left_presentation_width,
+                self.view.right_presentation_width,
+                self.view.bottom_presentation_height,
+                self.view.environment_presentation_progress,
+                self.view.ide.agent_list_progress,
+            );
+        // Both synchronization points belong to the same rendered frame.
+        // Letting a slow layout advance the reveal clock again used to force
+        // a second complete layout whenever the first exceeded one tick.
+        let presentation_frame_time = Instant::now();
+        early_changed |= self.sync_stream_presentation(presentation_frame_time);
+        early_changed |= self.update_workspace_mode_motion(&ctx, presentation_frame_time);
+        let show_jump =
             !self.view.transcript.is_empty() && !self.tree.is_scroll_at_end("transcript", 24.0);
-        self.tree.set_root(build_view(&self.view, area.width()));
-        let mut frame = self.tree.layout(Size::new(area.width(), area.height()));
+        early_changed |= self.view.show_jump_to_bottom != show_jump;
+        self.view.show_jump_to_bottom = show_jump;
+        let window_focused = ctx.input(|input| input.focused);
+        self.window_focused = window_focused;
+        early_changed |= self
+            .tree
+            .set_window_focused(window_focused && !self.view.show_command_center);
+        early_changed |= self
+            .command_tree
+            .set_window_focused(window_focused && self.view.show_command_center);
+        if !window_focused || self.view.show_command_center {
+            early_changed |= self.tree.dismiss_context_menu();
+        }
+        if !window_focused || !self.view.show_command_center {
+            early_changed |= self.command_tree.dismiss_context_menu();
+        }
+        let (mut frame, prepared_layout) =
+            self.prepare_workspace_frame(Size::new(area.width(), area.height()), early_changed);
         let focus_was_pending = (
             self.prompt_focus_pending,
             self.composer_model_search_focus_pending,
             self.group_focus_pending,
             self.rename_focus_pending,
+            self.settings_terminal_path_focus_pending,
         );
         self.focus_prompt_if_pending();
         self.focus_composer_model_search_if_pending();
+        self.focus_settings_terminal_path_if_pending();
         self.focus_group_if_pending();
         self.focus_rename_if_pending();
-        let mut needs_relayout = aux_changed
+        let composer_selector_focused = self
+            .composer_selector_focus_pending
+            .take()
+            .is_some_and(|target| self.tree.focus(target));
+        let github_focus_changed = self
+            .github_sign_in_focus_pending
+            .take()
+            .is_some_and(|target| self.tree.focus(target));
+        let settings_search_focused =
+            settings_search_focus_target.is_some_and(|target| self.tree.focus(&target));
+        let mut needs_relayout = composer_selector_focused
+            || github_focus_changed
+            || settings_search_focused
             || focus_was_pending
                 != (
                     self.prompt_focus_pending,
                     self.composer_model_search_focus_pending,
                     self.group_focus_pending,
                     self.rename_focus_pending,
+                    self.settings_terminal_path_focus_pending,
                 );
         let modal = command_center_rect(area);
         let modal_width = modal.width();
         let modal_height = modal.height();
         let mut command_frame = None;
+        let mut tree_input_changed = false;
+        let mut command_input_changed = false;
+        let ide_editor_status_before = self.ide_editor_status_key();
+        needs_relayout |= self.handle_composer_clipboard_input(&ctx, workflow_modal_open);
+        if self.view.composer_image_viewer.is_some() {
+            let direction = ctx.input(|input| {
+                if input.modifiers.command || input.modifiers.alt || input.modifiers.ctrl {
+                    0
+                } else if input.key_pressed(egui::Key::ArrowLeft) {
+                    -1
+                } else if input.key_pressed(egui::Key::ArrowRight) {
+                    1
+                } else {
+                    0
+                }
+            });
+            if direction != 0 {
+                needs_relayout |= self.navigate_composer_images(direction, &ctx);
+            }
+        }
         if self.view.show_command_center {
-            if down {
-                self.view.command_selected_index = (self.view.command_selected_index + 1)
-                    .min(self.view.command_results.len().saturating_sub(1));
-            } else if up {
-                self.view.command_selected_index =
-                    self.view.command_selected_index.saturating_sub(1);
+            if down && !self.command_tree.context_menu_open() {
+                self.move_command_selection(true);
+            } else if up && !self.command_tree.context_menu_open() {
+                self.move_command_selection(false);
             }
             self.command_tree
                 .set_root(build_command_center(&self.view, modal_width, modal_height));
@@ -11330,7 +19224,17 @@ impl eframe::App for AgentsWindow {
                 self.command_focus_pending = false;
             }
             for event in render::events(&ctx, modal.min) {
-                needs_relayout = true;
+                command_input_changed = true;
+                let Some(event) = self.route_text_paste(event, true) else {
+                    continue;
+                };
+                if self.command_tree.context_menu_open() {
+                    for action in self.command_tree.handle_event(event) {
+                        needs_relayout = true;
+                        self.apply_action(action, &ctx);
+                    }
+                    continue;
+                }
                 if matches!(
                     &event,
                     UiEvent::Key {
@@ -11343,26 +19247,98 @@ impl eframe::App for AgentsWindow {
                 if matches!(&event, UiEvent::PointerDown(point) if point.x < 0.0 || point.y < 0.0 || point.x > modal_width || point.y > modal_height)
                 {
                     self.view.show_command_center = false;
+                    needs_relayout = true;
                     break;
                 }
-                for action in self.command_tree.handle_event(event) {
+                let actions = self.command_tree.handle_event(event);
+                needs_relayout |= !actions.is_empty();
+                for action in actions {
                     self.apply_action(action, &ctx);
                 }
             }
         } else {
+            if !workflow_modal_open && !self.tree.context_menu_open() {
+                needs_relayout |= self.handle_dock_middle_click(&ctx, area.min);
+                needs_relayout |= self.handle_terminal_clipboard(&ctx);
+            }
             for event in render::events(&ctx, area.min) {
-                needs_relayout = true;
+                tree_input_changed = true;
+                let Some(event) = self.route_text_paste(event, false) else {
+                    continue;
+                };
+                if !workflow_modal_open && self.handle_ide_menu_event(&event) {
+                    needs_relayout = true;
+                    continue;
+                }
+                if self.tree.context_menu_open() {
+                    for action in self.tree.handle_event(event) {
+                        needs_relayout = true;
+                        self.apply_action(action, &ctx);
+                    }
+                    continue;
+                }
+                if self.handle_targeted_terminal_paste(&event, &ctx) {
+                    needs_relayout = true;
+                    continue;
+                }
                 if !workflow_modal_open && self.handle_dock_drag(&event, area.width()) {
+                    needs_relayout = true;
                     continue;
                 }
-                if !workflow_modal_open && self.handle_terminal_event(&event) {
+                if !workflow_modal_open
+                    && (self.handle_dock_file_key(&event, &ctx) || self.handle_dock_tab_event(&event))
+                {
+                    needs_relayout = true;
                     continue;
                 }
-                for action in self.tree.handle_event(event) {
+                if !workflow_modal_open && self.handle_terminal_event(&event, &ctx) {
+                    needs_relayout = true;
+                    continue;
+                }
+                if !workflow_modal_open && self.handle_browser_event(&event) {
+                    needs_relayout = true;
+                    continue;
+                }
+                if !workflow_modal_open && self.handle_debug_key(&event, &ctx) { needs_relayout = true; continue; }
+                if !workflow_modal_open
+                    && (self.handle_markdown_preview_key(&event, &ctx)
+                        || self.handle_editor_workbench_key(&event, &ctx))
+                {
+                    needs_relayout = true;
+                    continue;
+                }
+                if !workflow_modal_open && self.handle_composer_suggestion_key(&event, &ctx) {
+                    needs_relayout = true;
+                    continue;
+                }
+                if !workflow_modal_open && self.handle_composer_key(&event) {
+                    needs_relayout = true;
+                    continue;
+                }
+                let environment_escape = matches!(
+                    &event,
+                    UiEvent::Key {
+                        key: openide_ui::Key::Escape,
+                        ..
+                    }
+                ) && !workflow_modal_open;
+                let actions = self.tree.handle_event(event);
+                // Floating menus and dialogs dismiss first. Only an unhandled
+                // Escape backs out of the inline environment's current level.
+                if environment_escape && actions.is_empty() {
+                    needs_relayout |= self.dismiss_environment_level(&ctx);
+                }
+                needs_relayout |= !actions.is_empty();
+                for action in actions {
                     self.apply_action(action, &ctx);
                 }
+                needs_relayout |= self.update_composer_suggestions(&ctx);
             }
         }
+        // Cursor and selection changes mutate the controller without an edit
+        // action. Refresh the window footer while retaining the hover/scroll path.
+        needs_relayout |= ide_editor_status_before != self.ide_editor_status_key();
+        needs_relayout |= self.update_workspace_mode_motion(&ctx, presentation_frame_time);
         let effort_hovered = !self.view.show_command_center
             && self.view.composer_model_menu_open
             && self.view.composer_advanced_open
@@ -11372,10 +19348,21 @@ impl eframe::App for AgentsWindow {
             needs_relayout = true;
         }
         needs_relayout |= self.update_command_search(&ctx);
+        needs_relayout |= self.poll_project_actions(&ctx);
+        // Disclosures can change during input handling. Start their background
+        // work now even when reduced motion leaves the application otherwise idle.
+        needs_relayout |= self.poll_chat_diffs(&ctx);
+        needs_relayout |= self.poll_editor_review(&ctx);
+        needs_relayout |= self.update_git_actions(&ctx);
         needs_relayout |= self.update_git_review(&ctx);
+        needs_relayout |= self.update_environment(&ctx);
+        needs_relayout |= self.update_composer_suggestions(&ctx);
         needs_relayout |= self.update_detail(&ctx);
-        needs_relayout |= self.update_terminal();
+        needs_relayout |= self.update_terminal(&ctx);
+        needs_relayout |= self.update_browser(&ctx);
         needs_relayout |= self.update_github_account(&ctx);
+        needs_relayout |= self.update_github_contributions(&ctx);
+        needs_relayout |= self.sync_stream_presentation(presentation_frame_time);
         if let Some(changed_at) = self.draft_dirty_at {
             let debounce = Duration::from_millis(350);
             if changed_at.elapsed() >= debounce {
@@ -11393,19 +19380,62 @@ impl eframe::App for AgentsWindow {
         if needs_relayout {
             dock_animating = self.update_dock_motion(area.width(), Instant::now());
         }
+        // Hover, focus, text selection and scrollbar dragging belong to
+        // UiTree. Repaint their current state without rebuilding Settings
+        // or cloning its catalog just because the pointer moved.
+        if needs_relayout || tree_input_changed {
+            self.preserve_streaming_tail_before_layout();
+        }
         frame = relayout_after_updates(
             &mut self.tree,
             frame,
             Size::new(area.width(), area.height()),
             needs_relayout,
-            || build_view(&self.view, area.width()),
+            tree_input_changed || !prepared_layout,
+            || crate::view::build_window_view(&self.view, area.width(), area.height()),
         );
+        self.record_transcript_layout_session();
+        if self.focus_ide_activity_if_pending() {
+            ctx.request_repaint();
+        }
+        if self.focus_document_preview_anchor() | self.focus_markdown_preview_anchor() {
+            ctx.request_repaint();
+        }
         if needs_relayout {
             self.focus_prompt_if_pending();
             self.focus_group_if_pending();
             self.focus_rename_if_pending();
         }
+        if self.terminal_focus_pending
+            && self.view.show_terminal_panel
+            && !workflow_modal_open
+            && !self.view.show_command_center
+            && !self.view.environment.open
+        {
+            let screen = self.active_terminal_screen_id();
+            if self.tree.focus(&screen) {
+                self.terminal_focus_pending = false;
+            }
+        }
         render::paint(ui, &frame);
+        if !workflow_modal_open && !self.view.show_command_center {
+            if let Some((body, caret)) = self.tree.editor_ime_rects() {
+                let rect = |r: openide_ui::Rect| {
+                    egui::Rect::from_min_size(
+                        area.min + egui::vec2(r.x, r.y),
+                        egui::vec2(r.width, r.height),
+                    )
+                };
+                ctx.output_mut(|output| {
+                    output.ime = Some(egui::output::IMEOutput {
+                        purpose: egui::IMEPurpose::Normal,
+                        rect: rect(body),
+                        cursor_rect: rect(caret),
+                        should_interrupt_composition: false,
+                    })
+                });
+            }
+        }
         if self.view.show_command_center {
             ui.painter()
                 .rect_filled(area, 0.0, egui::Color32::from_black_alpha(180));
@@ -11419,22 +19449,38 @@ impl eframe::App for AgentsWindow {
                     self.command_tree
                         .layout(Size::new(modal_width, modal_height)),
                 );
+            } else if command_input_changed {
+                command_frame = Some(
+                    self.command_tree
+                        .layout(Size::new(modal_width, modal_height)),
+                );
             }
             if let Some(frame) = &command_frame {
                 render::paint_at(ui, frame, modal.min);
             }
         }
         let dock = dock_layout(&self.view, area.width());
-        let pointer_x =
-            ctx.input(|input| input.pointer.hover_pos().map(|point| point.x - area.min.x));
-        let near_split = pointer_x.is_some_and(|x| {
-            dock.left_split_x
-                .is_some_and(|left| (x - left).abs() <= 5.0)
-                || dock
-                    .right_split_x
-                    .is_some_and(|right| (x - right).abs() <= 5.0)
-        });
-        if near_split || self.dock_drag.is_some() {
+        let terminal_height = crate::view::terminal_panel_height(&self.view, area.height());
+        let split_y = area.height() - 4.0 - terminal_height;
+        let pointer = ctx.input(|input| input.pointer.hover_pos().map(|p| p - area.min));
+        let near_bottom = if self.ide_workspace_active() {
+            pointer.is_some_and(|p| self.ide_dock_hit(openide_ui::Point::new(p.x, p.y), dock) == Some(DockDrag::Bottom))
+        } else {
+            pointer.is_some_and(|p| terminal_height > 0.0
+                && p.x > dock.left + 8.0 && (p.y - split_y).abs() <= 5.0)
+        };
+        let near_split = if self.ide_workspace_active() {
+            pointer.is_some_and(|p| matches!(self.ide_dock_hit(openide_ui::Point::new(p.x, p.y), dock), Some(DockDrag::Left | DockDrag::Right)))
+        } else {
+            pointer.is_some_and(|p| {
+                dock.left_split_x.is_some_and(|left| (p.x - left).abs() <= 5.0)
+                    || (p.y < split_y && dock.right_split_x.is_some_and(|right| (p.x - right).abs() <= 5.0))
+            })
+        };
+        let can_resize = !workflow_modal_open && !self.tree.has_open_popover();
+        if can_resize && (near_bottom || self.dock_drag == Some(DockDrag::Bottom)) {
+            ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        } else if can_resize && (near_split || self.dock_drag.is_some()) {
             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         if self.active_run.is_some()
@@ -11444,8 +19490,7 @@ impl eframe::App for AgentsWindow {
         {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
-        if self.view.show_side_pane
-            && self.view.side_tab == SideTab::Terminal
+        if self.view.show_terminal_panel
             && self
                 .view
                 .terminal_snapshot
@@ -11457,10 +19502,16 @@ impl eframe::App for AgentsWindow {
         if !self.background_automation_runs.is_empty()
             || !self.automation_queue.is_empty()
             || self.active_mcp_oauth.is_some()
+            || self.active_mcp_inspection.is_some()
             || !self.view.active_subagents.is_empty()
             || self.subagent_poll_needed
             || self.marketplace_response.is_some()
+            || self.plugin_response.is_some()
+            || self.marketplace_remote.pending()
             || self.catalog_response.is_some()
+            || self.provider_connection_worker.is_some()
+            || self.provider_refresh_worker.is_some()
+            || self.provider_usage_worker.is_some()
             || self.model_discovery_response.is_some()
             || self.codex_model_response.is_some()
             || self.workspace_folder_response.is_some()
@@ -11468,8 +19519,13 @@ impl eframe::App for AgentsWindow {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
         if self.native_command_snapshot_response.is_some()
+            || self.native_command_output_response.is_some()
+            || self.native_command_history_response.is_some()
             || self.native_command_termination_response.is_some()
-            || (self.view.show_side_pane
+            || self.native_command_control_response.is_some()
+            || self.native_manual_command_response.is_some()
+            || !self.native_command_poll_owners.is_empty()
+            || (self.resource_pane_visible()
                 && self.view.side_tab == SideTab::Activity
                 && self
                     .view
@@ -11482,6 +19538,10 @@ impl eframe::App for AgentsWindow {
         ctx.request_repaint_after(Duration::from_secs(30));
         let animation_interval = [
             dock_animating.then_some(Duration::from_millis(16)),
+            self.view
+                .stream_presentation
+                .has_pending()
+                .then_some(Duration::from_millis(16)),
             self.tree.animation_repaint_after(),
             self.command_tree.animation_repaint_after(),
         ]
@@ -11489,7 +19549,13 @@ impl eframe::App for AgentsWindow {
         .flatten()
         .min();
         if let Some(interval) = animation_interval {
-            ctx.request_repaint_after(interval);
+            if interval <= Duration::from_millis(16) {
+                // Vsync determines the cadence: a 120 Hz display must not wait
+                // an extra 16 ms after completing every animation frame.
+                ctx.request_repaint();
+            } else {
+                ctx.request_repaint_after(interval);
+            }
         }
     }
 }
@@ -11499,9 +19565,205 @@ mod tests {
     use super::*;
     use openide_core::{MessageRole, ModelTokenUsage};
     use openide_harness::{LocalTool, PermissionMode};
-    use openide_ui::{DrawCommand, Key};
+    use openide_ui::{DrawCommand, Key, Point};
     use serde_json::json;
     use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn native_backend_account_text_and_missing_model_denials_override_reviewed_routes() {
+        let root = tempfile::tempdir().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        let connection = || RuntimeConnection {
+            auth: Default::default(),
+            headers: Default::default(),
+            endpoint: endpoint.clone(),
+            api_key: Some("local-test-key".into()),
+            model_id: "gpt-4.1".into(),
+            wire_api: NativeWireApi::Responses,
+        };
+        let mut discovery = native_provider::ProviderModelDiscovery {
+            provider_id: "openai".into(),
+            models: BTreeMap::new(),
+        };
+        let result = native_model_backend(
+            connection(),
+            "openai",
+            None,
+            None,
+            root.path(),
+            None,
+            std::slice::from_ref(&discovery),
+        );
+        assert!(result.err().unwrap().contains("listado autenticado"));
+        discovery.models.insert(
+            "gpt-4.1".into(),
+            native_provider::DiscoveredModel {
+                listing_index: None,
+                limits_declared: false,
+                efforts_declared: false,
+                capabilities_declared: false,
+                max_input_tokens: None,
+                declared_capabilities: Default::default(),
+                id: "gpt-4.1".into(),
+                name: "gpt-4.1".into(),
+                provider_reports_tools: false,
+                tool_call_declared: None,
+                text_input_output: false,
+                supported_efforts: Vec::new(),
+                context_window_tokens: None,
+                max_output_tokens: None,
+            },
+        );
+        let result = native_model_backend(
+            connection(),
+            "openai",
+            None,
+            None,
+            root.path(),
+            None,
+            std::slice::from_ref(&discovery),
+        );
+        assert!(result.err().unwrap().contains("entrada y salida de texto"));
+        discovery
+            .models
+            .get_mut("gpt-4.1")
+            .unwrap()
+            .text_input_output = true;
+        assert!(native_model_backend(
+            connection(),
+            "openai",
+            None,
+            None,
+            root.path(),
+            None,
+            std::slice::from_ref(&discovery),
+        )
+        .is_ok());
+        discovery.provider_id = "openrouter".into();
+        discovery.models.clear();
+        assert!(native_model_backend(
+            connection(),
+            "openai",
+            None,
+            None,
+            root.path(),
+            None,
+            &[discovery],
+        )
+        .is_ok());
+        assert!(
+            native_model_backend(connection(), "openai", None, None, root.path(), None, &[])
+                .is_ok()
+        );
+        assert!(matches!(
+            listener.accept(),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ));
+    }
+
+    #[test]
+    fn native_run_account_denials_are_visible_without_admission_or_http() {
+        for missing_model in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let workspace = root.path().join("project");
+            std::fs::create_dir(&workspace).unwrap();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+            let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+            app.view.workspace = workspace.to_string_lossy().into_owned();
+            app.view.selected_backend = "native".into();
+            app.view.native_provider_id = "custom".into();
+            app.view.endpoint = endpoint;
+            app.view.model = "fixture-entry".into();
+            app.view.composer_effort = "default".into();
+            assert!(app.persist_native_settings());
+            let mut discovery = native_provider::ProviderModelDiscovery {
+                provider_id: "custom".into(),
+                models: BTreeMap::new(),
+            };
+            if !missing_model {
+                discovery.models.insert(
+                    "fixture-entry".into(),
+                    native_provider::DiscoveredModel {
+                        listing_index: None,
+                        limits_declared: false,
+                        efforts_declared: false,
+                        capabilities_declared: false,
+                        max_input_tokens: None,
+                        declared_capabilities: Default::default(),
+                        id: "fixture-entry".into(),
+                        name: "Fixture entry".into(),
+                        provider_reports_tools: false,
+                        tool_call_declared: None,
+                        text_input_output: false,
+                        supported_efforts: Vec::new(),
+                        context_window_tokens: None,
+                        max_output_tokens: None,
+                    },
+                );
+            }
+            app.model_discoveries = vec![discovery];
+            app.view.show_side_pane = false;
+            app.view.composer_error = Some("An earlier failure".into());
+            app.view.prompt = "Preserve this draft".into();
+            app.start_run();
+            let error_fragment = if missing_model {
+                "listado autenticado"
+            } else {
+                "entrada y salida de texto"
+            };
+            assert!(
+                app.view.status.contains(error_fragment),
+                "{}",
+                app.view.status
+            );
+            assert!(app.active_run.is_none());
+            assert!(!app.view.running);
+            assert_eq!(
+                app.view.composer_error.as_deref(),
+                Some(app.view.status.as_str())
+            );
+            assert_eq!(app.view.prompt, "Preserve this draft");
+            let session_id = app.view.selected_session.as_deref().unwrap();
+            let stored = app
+                .store
+                .as_ref()
+                .unwrap()
+                .load(session_id)
+                .unwrap()
+                .unwrap();
+            assert!(
+                stored.events.is_empty(),
+                "denial must precede turn admission"
+            );
+            assert!(matches!(
+                listener.accept(),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+            ));
+            let mut tree = UiTree::new(build_view(&app.view, 1300.0));
+            let frame = tree.layout(Size::new(1300.0, 900.0));
+            assert!(
+                frame.commands.iter().any(|command| matches!(
+                    command,
+                    DrawCommand::Text { text, .. } if text.contains("fixture-entry")
+                        && (text.contains("declara") || text.contains("listado"))
+                )),
+                "the backend rejection must be displayed in the native composer"
+            );
+            app.refresh_composer_selection();
+            assert!(app.view.composer_error.is_none());
+            app.show_composer_error("An earlier failure");
+            app.new_session();
+            assert!(app.view.composer_error.is_none());
+            app.view.prompt.clear();
+            app.show_composer_error("An earlier failure");
+            app.start_run();
+            assert!(app.view.composer_error.is_none());
+        }
+    }
 
     #[test]
     fn native_capabilities_follow_route_and_exact_provider_metadata() {
@@ -11519,12 +19781,20 @@ mod tests {
             models: [(
                 model_id.to_owned(),
                 native_provider::DiscoveredModel {
+                    listing_index: None,
+                    limits_declared: false,
+                    efforts_declared: false,
+                    capabilities_declared: false,
+                    max_input_tokens: None,
+                    declared_capabilities: Default::default(),
                     id: model_id.to_owned(),
                     name: model_id.to_owned(),
                     provider_reports_tools: true,
                     tool_call_declared: Some(true),
                     text_input_output: true,
                     supported_efforts: vec!["turbo".to_owned()],
+                    context_window_tokens: None,
+                    max_output_tokens: None,
                 },
             )]
             .into(),
@@ -11548,7 +19818,298 @@ mod tests {
         adapter.catalog.tool_call_path = Some("tools".to_owned());
         let mut denied = discovered;
         denied.models.get_mut(model_id).unwrap().tool_call_declared = Some(false);
-        assert!(!native_request_capabilities(&adapter, model_id, None, &[denied]).tool_calls);
+        assert!(
+            !native_request_capabilities(&adapter, model_id, None, std::slice::from_ref(&denied))
+                .tool_calls
+        );
+        let stale: CatalogSnapshot = serde_json::from_value(json!({
+            "version":3,"fetched_at_ms":1,"providers":{"custom":{
+                "id":"custom","name":"Custom","models":{model_id:{
+                    "id":model_id,"name":"Old row","tool_call_declared":false
+                }}
+            }}
+        }))
+        .unwrap();
+        assert!(!native_request_capabilities(&adapter, model_id, Some(&stale), &[]).tool_calls);
+        denied.models.get_mut(model_id).unwrap().tool_call_declared = None;
+        assert!(
+            native_request_capabilities(
+                &adapter,
+                model_id,
+                Some(&stale),
+                std::slice::from_ref(&denied)
+            )
+            .tool_calls
+        );
+    }
+
+    #[test]
+    fn output_limit_settings_actions_persist_reopen_validate_and_reset_only_selected_route() {
+        let root = tempfile::tempdir().unwrap();
+        NativeProviderSettings {
+            provider_id: "openai".into(),
+            model_id: "gpt-4o".into(),
+            ..Default::default()
+        }
+        .save(root.path())
+        .unwrap();
+        native_provider::save_output_limit(
+            root.path(),
+            "groq",
+            "other-model",
+            Some(native_provider::NativeOutputLimit {
+                provider_id: "groq".into(),
+                model_id: "other-model".into(),
+                wire_api: NativeWireApi::ChatCompletions,
+                field: "max_tokens".into(),
+                tokens: 2048,
+            }),
+        )
+        .unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert!(app.view.native_output_limit_responses);
+        let ctx = egui::Context::default();
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "native_output_limit_tokens".into(),
+                value: "4096".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("native_output_limit_save"), &ctx);
+        assert!(!app.view.settings_notice_error);
+        assert_eq!(
+            app.token_budget_for_native_model("openai", "gpt-4o")
+                .unwrap()
+                .output_reserve_tokens,
+            4096
+        );
+        drop(app);
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert_eq!(app.view.native_output_limit_draft, "4096");
+        for bad in ["0", "15", "1000000", "4.5", "-1"] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: "native_output_limit_tokens".into(),
+                    value: bad.into(),
+                },
+                &ctx,
+            );
+            app.apply_action(clicked("native_output_limit_save"), &ctx);
+            assert!(app.view.settings_notice_error, "{bad}");
+            assert_eq!(
+                native_provider::configured_output_limit(
+                    root.path(),
+                    "openai",
+                    "gpt-4o",
+                    NativeWireApi::Responses
+                )
+                .unwrap()
+                .unwrap()
+                .tokens,
+                4096
+            );
+        }
+        app.view.running = true;
+        app.apply_action(clicked("native_output_limit_reset"), &ctx);
+        assert!(native_provider::configured_output_limit(
+            root.path(),
+            "openai",
+            "gpt-4o",
+            NativeWireApi::Responses
+        )
+        .unwrap()
+        .is_some());
+        app.view.running = false;
+        app.apply_action(clicked("native_output_limit_reset"), &ctx);
+        assert!(app.view.native_output_limit_draft.is_empty());
+        assert!(native_provider::configured_output_limit(
+            root.path(),
+            "openai",
+            "gpt-4o",
+            NativeWireApi::Responses
+        )
+        .unwrap()
+        .is_none());
+        assert_eq!(
+            native_provider::configured_output_limit(
+                root.path(),
+                "groq",
+                "other-model",
+                NativeWireApi::ChatCompletions
+            )
+            .unwrap()
+            .unwrap()
+            .tokens,
+            2048
+        );
+        std::fs::write(root.path().join("native-output-limits.json"), "{broken").unwrap();
+        app.refresh_output_limit_editor();
+        assert!(app.view.native_output_limit_load_error.is_some());
+        app.apply_action(clicked("native_output_limit_reset"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("native-output-limits.json")).unwrap(),
+            "{broken"
+        );
+    }
+
+    #[test]
+    fn configured_output_cap_reopens_changes_budget_and_backend_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let connection = || RuntimeConnection {
+            auth: Default::default(),
+            headers: Default::default(),
+            endpoint: "https://api.openai.com/v1".into(),
+            api_key: None,
+            model_id: "gpt-4o".into(),
+            wire_api: NativeWireApi::Responses,
+        };
+        let base = native_model_backend(connection(), "openai", None, None, root.path(), None, &[])
+            .unwrap();
+        let path = root.path().join("native-output-limits.json");
+        let write_limit = |tokens| {
+            std::fs::write(&path, serde_json::to_vec(&json!({"version":1,"limits":[{
+            "provider_id":"openai","model_id":"gpt-4o","wire_api":"responses","field":"max_output_tokens","tokens":tokens,
+        }]})).unwrap()).unwrap()
+        };
+        write_limit(4096);
+        let configured =
+            native_model_backend(connection(), "openai", None, None, root.path(), None, &[])
+                .unwrap();
+        assert_ne!(
+            base.request_profile_fingerprint(),
+            configured.request_profile_fingerprint()
+        );
+        let app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let budget = app
+            .token_budget_for_native_model("openai", "gpt-4o")
+            .unwrap();
+        assert_eq!(budget.output_reserve_tokens, 4096);
+        assert_eq!(budget.context_window_tokens, 128000);
+        drop(app);
+        let reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert_eq!(
+            reopened.token_budget_for_native_model("openai", "gpt-4o"),
+            Some(budget)
+        );
+        write_limit(1000000);
+        assert!(
+            native_model_backend(connection(), "openai", None, None, root.path(), None, &[])
+                .is_err()
+        );
+        assert!(reopened
+            .token_budget_for_native_model("openai", "gpt-4o")
+            .is_none());
+        std::fs::write(path, "{malformed").unwrap();
+        assert!(
+            native_model_backend(connection(), "openai", None, None, root.path(), None, &[])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn exact_account_limits_override_reviewed_and_never_cross_model_or_provider() {
+        let mut adapter = native_provider::ProviderRegistry::builtin()
+            .adapter("groq")
+            .unwrap()
+            .clone();
+        let model_id = "brand/new-v2";
+        let mut discoveries = vec![native_provider::ProviderModelDiscovery {
+            provider_id: adapter.id.clone(),
+            models: [(
+                model_id.into(),
+                native_provider::DiscoveredModel {
+                    listing_index: None,
+                    limits_declared: false,
+                    efforts_declared: false,
+                    capabilities_declared: false,
+                    max_input_tokens: None,
+                    declared_capabilities: Default::default(),
+                    id: model_id.into(),
+                    name: model_id.into(),
+                    provider_reports_tools: true,
+                    tool_call_declared: Some(true),
+                    text_input_output: true,
+                    supported_efforts: vec![],
+                    context_window_tokens: Some(65_536),
+                    max_output_tokens: Some(4_096),
+                },
+            )]
+            .into(),
+        }];
+        let budget = native_token_budget(&adapter, model_id, None, &discoveries).unwrap();
+        assert_eq!(budget.context_window_tokens, 65_536);
+        assert_eq!(budget.output_reserve_tokens, 4_096);
+        assert!(
+            native_token_budget(&adapter, "brand/new-v2-preview", None, &discoveries).is_none()
+        );
+        adapter.id = "other-provider".into();
+        assert!(native_token_budget(&adapter, model_id, None, &discoveries).is_none());
+        adapter.id = "groq".into();
+        discoveries[0]
+            .models
+            .get_mut(model_id)
+            .unwrap()
+            .max_output_tokens = None;
+        assert!(native_token_budget(&adapter, model_id, None, &discoveries).is_none());
+        discoveries[0]
+            .models
+            .get_mut(model_id)
+            .unwrap()
+            .max_output_tokens = Some(100_000);
+        assert!(native_token_budget(&adapter, model_id, None, &discoveries).is_none());
+        discoveries[0]
+            .models
+            .get_mut(model_id)
+            .unwrap()
+            .max_output_tokens = Some(4_096);
+        discoveries[0]
+            .models
+            .get_mut(model_id)
+            .unwrap()
+            .tool_call_declared = Some(false);
+        assert!(native_token_budget(&adapter, model_id, None, &discoveries).is_none());
+
+        // A provider's exact negative claim must also override our reviewed pair.
+        let adapter = native_provider::ProviderRegistry::builtin()
+            .adapter("openai")
+            .unwrap()
+            .clone();
+        let mut model = discoveries.remove(0).models.remove(model_id).unwrap();
+        model.id = "gpt-4o".into();
+        let mut discoveries = vec![native_provider::ProviderModelDiscovery {
+            provider_id: adapter.id.clone(),
+            models: [(model.id.clone(), model)].into(),
+        }];
+        assert!(!native_request_capabilities(&adapter, "gpt-4o", None, &discoveries).tool_calls);
+        assert!(native_token_budget(&adapter, "gpt-4o", None, &discoveries).is_none());
+        discoveries[0]
+            .models
+            .get_mut("gpt-4o")
+            .unwrap()
+            .tool_call_declared = Some(true);
+        assert_eq!(
+            native_token_budget(&adapter, "gpt-4o", None, &discoveries)
+                .unwrap()
+                .context_window_tokens,
+            65_536
+        );
+        discoveries[0]
+            .models
+            .get_mut("gpt-4o")
+            .unwrap()
+            .max_output_tokens = None;
+        assert!(
+            native_token_budget(&adapter, "gpt-4o", None, &discoveries).is_none(),
+            "partial current limits must not be filled from the reviewed pair"
+        );
+        let unknown = discoveries[0].models.get_mut("gpt-4o").unwrap();
+        unknown.limits_declared = true;
+        unknown.context_window_tokens = None;
+        unknown.max_input_tokens = None;
+        assert!(native_token_budget(&adapter, "gpt-4o", None, &discoveries).is_none());
+        assert!(native_output_maximum(&adapter, "gpt-4o", None, &discoveries).is_none());
     }
 
     #[test]
@@ -11596,7 +20157,11 @@ mod tests {
             cached_input_tokens: None,
         }));
         assert_eq!(
-            committed_context_percent(&events, "openai", "gpt-4o"),
+            committed_context_percent(
+                &events,
+                native_provider::verified_token_budget("openai", "gpt-4o"),
+                "gpt-4o"
+            ),
             Some(55)
         );
         assert_eq!(context_remaining_percent(65_000, 128_000), Some(54));
@@ -11612,10 +20177,21 @@ mod tests {
             reasoning_tokens: None,
             cached_input_tokens: None,
         }));
-        assert_eq!(committed_context_percent(&events, "custom", "gpt-4o"), None);
-        assert_eq!(committed_context_percent(&events, "openai", "gpt-5"), None);
+        assert_eq!(committed_context_percent(&events, None, "gpt-4o"), None);
         assert_eq!(
-            committed_context_percent(&committed_usage_events(None), "openai", "gpt-4o"),
+            committed_context_percent(
+                &events,
+                native_provider::verified_token_budget("openai", "gpt-5"),
+                "gpt-5"
+            ),
+            None
+        );
+        assert_eq!(
+            committed_context_percent(
+                &committed_usage_events(None),
+                native_provider::verified_token_budget("openai", "gpt-4o"),
+                "gpt-4o"
+            ),
             None
         );
         assert_eq!(context_remaining_percent(1, 0), None);
@@ -11627,7 +20203,7 @@ mod tests {
             (
                 egui::Rect::from_min_size(egui::pos2(100.0, 40.0), egui::vec2(1440.0, 900.0)),
                 560.0,
-                500.0,
+                420.0,
             ),
             (
                 egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(480.0, 320.0)),
@@ -11644,19 +20220,36 @@ mod tests {
 
     #[test]
     fn terminal_keys_forward_control_and_navigation_sequences() {
+        let terminal_key_bytes =
+            |key, shift, ctrl| crate::terminal::key_bytes(key, shift, ctrl, false);
         assert_eq!(
-            terminal_key_bytes(Key::Enter, false, false),
+            terminal_key_bytes(Key::Enter, false, false).as_deref(),
             Some(&b"\r"[..])
         );
-        assert_eq!(terminal_key_bytes(Key::C, false, true), Some(&b"\x03"[..]));
-        assert_eq!(terminal_key_bytes(Key::D, false, true), Some(&b"\x04"[..]));
-        assert_eq!(terminal_key_bytes(Key::K, false, true), Some(&b"\x0b"[..]));
         assert_eq!(
-            terminal_key_bytes(Key::ArrowUp, false, false),
+            terminal_key_bytes(Key::C, false, true).as_deref(),
+            Some(&b"\x03"[..])
+        );
+        assert_eq!(
+            terminal_key_bytes(Key::D, false, true).as_deref(),
+            Some(&b"\x04"[..])
+        );
+        assert_eq!(
+            terminal_key_bytes(Key::K, false, true).as_deref(),
+            Some(&b"\x0b"[..])
+        );
+        assert_eq!(
+            terminal_key_bytes(Key::ArrowUp, false, false).as_deref(),
             Some(&b"\x1b[A"[..])
         );
-        assert_eq!(terminal_key_bytes(Key::Tab, false, false), Some(&b"\t"[..]));
-        assert_eq!(terminal_key_bytes(Key::Tab, true, false), None);
+        assert_eq!(
+            terminal_key_bytes(Key::Tab, false, false).as_deref(),
+            Some(&b"\t"[..])
+        );
+        assert_eq!(
+            terminal_key_bytes(Key::Tab, true, false).as_deref(),
+            Some(&b"\x1b[Z"[..])
+        );
     }
 
     #[test]
@@ -11673,22 +20266,451 @@ mod tests {
         let first_measure_count = measures.load(Ordering::Relaxed);
         assert!(first_measure_count > 0);
 
-        let idle = relayout_after_updates(&mut tree, first.clone(), viewport, false, || {
+        let idle = relayout_after_updates(&mut tree, first.clone(), viewport, false, false, || {
             panic!("an idle frame must not rebuild the view")
         });
         assert_eq!(idle, first);
         assert_eq!(measures.load(Ordering::Relaxed), first_measure_count);
 
-        let updated =
-            relayout_after_updates(&mut tree, idle, viewport, true, || Element::text("Updated"));
+        let updated = relayout_after_updates(&mut tree, idle, viewport, true, false, || {
+            Element::text("Updated")
+        });
         assert_ne!(updated, first);
         assert!(measures.load(Ordering::Relaxed) > first_measure_count);
+    }
+
+    #[test]
+    fn pointer_hover_repaints_without_rebuilding_the_settings_tree() {
+        let hover = openide_ui::Color::rgb(65, 65, 65);
+        let mut tree = UiTree::new(
+            Element::button("settings_probe", "Preferencia")
+                .background(openide_ui::Color::rgb(40, 40, 40))
+                .hover_background(hover)
+                .size(Some(180.0), Some(36.0)),
+        );
+        tree.set_reduced_motion(true);
+        let viewport = Size::new(200.0, 80.0);
+        let first = tree.layout(viewport);
+        assert!(tree
+            .handle_event(UiEvent::PointerMove(openide_ui::Point::new(20.0, 18.0)))
+            .is_empty());
+        let hovered = relayout_after_updates(&mut tree, first, viewport, false, true, || {
+            panic!("hover must retain the already built Settings tree")
+        });
+        assert_eq!(tree.hovered_id(), Some("settings_probe"));
+        assert!(hovered.commands.iter().any(|command| matches!(command,
+            openide_ui::DrawCommand::FillRect { color, .. } if *color == hover
+        )));
+    }
+
+    #[test]
+    fn scroll_input_updates_visible_content_without_rebuilding_settings() {
+        use openide_ui::Component;
+        let body = Element::column(
+            (0..20)
+                .map(|index| Element::text(format!("Preferencia {index}")).size(None, Some(24.0)))
+                .collect(),
+        );
+        let mut tree = UiTree::new(
+            openide_ui::ScrollArea::new("settings_probe", body)
+                .render()
+                .size(Some(200.0), Some(96.0)),
+        );
+        tree.set_reduced_motion(true);
+        let viewport = Size::new(200.0, 96.0);
+        let first = tree.layout(viewport);
+        assert!(tree
+            .handle_event(UiEvent::ScrollDirect {
+                position: openide_ui::Point::new(50.0, 48.0),
+                delta_y: -120.0,
+            })
+            .is_empty());
+        let scrolled =
+            relayout_after_updates(&mut tree, first.clone(), viewport, false, true, || {
+                panic!("scroll must retain the already built Settings tree")
+            });
+        assert!(tree.scroll_offset("settings_probe") > 0.0);
+        assert_ne!(scrolled, first);
     }
 
     fn clicked(id: impl Into<String>) -> UiAction {
         UiAction::Clicked { id: id.into() }
     }
 
+    #[test]
+    fn instruction_inspection_actions_read_reopened_journal_without_effects_and_keep_scope() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let original = "SnapshotRootÑ\nExact original instruction text\n終わり";
+        let (store, id) = crate::native_instruction_ui::tests::journal_fixture(
+            &data,
+            root.path(),
+            &[original],
+            false,
+        );
+        let path = store.storage_root().join(format!("{id}.jsonl"));
+        let before = std::fs::read(&path).unwrap();
+        drop(store);
+        std::fs::write(
+            root.path().join("AGENTS.md"),
+            "Do not read or activate this new disk text",
+        )
+        .unwrap();
+        let mut app = AgentsWindow::with_data_root(data.clone());
+        app.view.workspace = root.path().display().to_string();
+        app.view.selected_session = Some(id.clone());
+        app.view.selected_backend = "native".into();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Memory;
+        app.view.running = true;
+        let permissions_before = app.native_permission_policy().unwrap().digest_hex();
+        let ctx = egui::Context::default();
+        let open = format!("settings_native_instructions_open:{id}");
+        app.apply_action(clicked(&open), &ctx);
+        assert!(
+            app.view.native_instructions.error.is_none(),
+            "{:?}",
+            app.view.native_instructions.error
+        );
+        assert_eq!(app.view.native_instructions.snapshots[0].content, original);
+        assert!(app.view.running);
+        assert!(app.active_run.is_none());
+        assert!(app.active_resume.is_none());
+        assert!(app.active_compact.is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(
+            app.native_permission_policy().unwrap().digest_hex(),
+            permissions_before
+        );
+
+        let sequence = app.view.native_instructions.snapshots[0].sequence;
+        app.apply_action(
+            clicked("settings_native_instructions_selector_toggle"),
+            &ctx,
+        );
+        assert!(app.view.native_instructions.selector_open);
+        app.apply_action(
+            clicked(format!(
+                "settings_native_instructions_select:{}",
+                serde_json::to_string(&("foreign", sequence)).unwrap()
+            )),
+            &ctx,
+        );
+        assert!(app.view.native_instructions.selector_open);
+        app.apply_action(
+            clicked(format!(
+                "settings_native_instructions_select:{}",
+                serde_json::to_string(&(&id, sequence)).unwrap()
+            )),
+            &ctx,
+        );
+        assert!(!app.view.native_instructions.selector_open);
+        assert_eq!(
+            app.view.native_instructions.selected_sequence,
+            Some(sequence)
+        );
+        app.apply_action(clicked("settings_native_instructions_dismiss"), &ctx);
+        assert!(app.view.native_instructions.session_id.is_none());
+        app.view.settings_page = SettingsPage::Commands;
+        app.apply_action(clicked(&open), &ctx);
+        assert!(app.view.native_instructions.session_id.is_none());
+        app.view.settings_page = SettingsPage::Memory;
+        app.view.selected_session = Some("foreign".into());
+        app.apply_action(clicked(&open), &ctx);
+        assert!(app.view.native_instructions.session_id.is_none());
+        app.view.selected_session = Some(id.clone());
+        let foreign_workspace = root.path().join("foreign-workspace");
+        std::fs::create_dir(&foreign_workspace).unwrap();
+        app.view.workspace = foreign_workspace.display().to_string();
+        app.apply_action(clicked(&open), &ctx);
+        assert!(app.view.native_instructions.error.is_some());
+        assert!(app.view.native_instructions.snapshots.is_empty());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        drop(app);
+
+        std::fs::write(&path, b"{invalid journal\n").unwrap();
+        let mut reopened = AgentsWindow::with_data_root(data);
+        reopened.view.workspace = root.path().display().to_string();
+        reopened.view.selected_session = Some(id);
+        reopened.view.show_settings = true;
+        reopened.view.settings_page = SettingsPage::Memory;
+        reopened.apply_action(clicked(open), &ctx);
+        assert!(reopened.view.native_instructions.error.is_some());
+        assert!(reopened.view.native_instructions.snapshots.is_empty());
+        assert_eq!(std::fs::read(&path).unwrap(), b"{invalid journal\n");
+        assert!(reopened.active_run.is_none());
+        assert!(reopened.active_resume.is_none());
+    }
+
+    #[test]
+    fn native_ledger_goal_excludes_legacy_objective_from_parent_and_child_base() {
+        use openide_core::{
+            NativeGoalCriterion, NativeGoalEvidence, NativeGoalMutation, NativeGoalStore,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+        let session = sessions.create(root.path(), "native").unwrap();
+        let lease = sessions.try_acquire_native_lease(&session.id).unwrap();
+        let goals = NativeGoalStore::new(sessions.clone());
+        let active = goals
+            .create(
+                &lease,
+                "goal",
+                "Current complete scope",
+                vec![NativeGoalCriterion {
+                    id: "verify".into(),
+                    description: "Verify every effect".into(),
+                    evidence: None,
+                }],
+            )
+            .unwrap();
+        let paused = goals
+            .update(&lease, "goal", "pause", 0, NativeGoalMutation::PauseByUser)
+            .unwrap();
+        goals
+            .update(
+                &lease,
+                "goal",
+                "resume",
+                1,
+                NativeGoalMutation::ResumeByUser,
+            )
+            .unwrap();
+        let admission = sessions
+            .admit_native_turn(&session.id, "fixture", "Seed", "fixture", TurnMode::Build)
+            .unwrap();
+        sessions
+            .append_native_event(&AgentEvent::new(
+                &session.id,
+                admission.sequence + 1,
+                AgentEventKind::TurnStarted {
+                    prompt: "Seed".into(),
+                },
+            ))
+            .unwrap();
+        sessions
+            .append_native_event(&AgentEvent::new(
+                &session.id,
+                admission.sequence + 2,
+                AgentEventKind::TurnCompleted {
+                    response: "Core fixture".into(),
+                    steps: 1,
+                },
+            ))
+            .unwrap();
+        goals
+            .update(
+                &lease,
+                "goal",
+                "evidence",
+                2,
+                NativeGoalMutation::RecordEvidence {
+                    criterion_id: "verify".into(),
+                    evidence: NativeGoalEvidence {
+                        turn_id: "fixture".into(),
+                        summary: "Fixture assertion".into(),
+                    },
+                },
+            )
+            .unwrap();
+        let completed = goals
+            .update(&lease, "goal", "complete", 3, NativeGoalMutation::Complete)
+            .unwrap();
+        let path = sessions
+            .storage_root()
+            .join(format!("{}.native-goals.json", session.id));
+        let before = std::fs::read(&path).unwrap();
+        for goal in [active, paused, completed] {
+            let (base, full) = native_task_instructions(
+                "Exact project instructions".into(),
+                Some("Stale legacy objective"),
+                Some(&goal),
+            )
+            .unwrap();
+            assert_eq!(base, "Exact project instructions");
+            assert!(!base.contains("Current complete scope"));
+            assert!(full.contains("Current complete scope"));
+            assert!(full.contains("Verify every effect"));
+            assert!(!full.contains("Stale legacy objective"));
+            assert_eq!(
+                openide_harness::native_goal_base_instructions(&full),
+                Some(base)
+            );
+        }
+        let (base, full) = native_task_instructions(
+            "Exact project instructions".into(),
+            Some("Legacy without a ledger"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(base, full);
+        assert!(full.contains("Legacy without a ledger"));
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+    #[test]
+    fn native_goal_editor_activates_exact_criteria_pause_resume_and_reopens() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let store = app.store.as_ref().unwrap().clone();
+        let session = store.create(root.path(), "native").unwrap();
+        app.view.selected_session = Some(session.id.clone());
+        app.view.selected_backend = "native".into();
+        app.restore_draft();
+        let ctx = egui::Context::default();
+        app.set_composer_goal(Some("Stale legacy objective".into()));
+        app.refresh_sessions();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Memory;
+        app.apply_action(clicked("settings_native_goal_open"), &ctx);
+        assert!(!app.view.show_settings);
+        assert!(app.view.composer_goal_editor_open);
+        let frame =
+            UiTree::new(crate::view::build_view(&app.view, 900.0)).layout(Size::new(900.0, 1100.0));
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "composer_goal_draft"));
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "composer_goal_draft".into(),
+                value: "Full explicit objective".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "native_goal_criteria".into(),
+                value: "Verify tools\nVerify recovery".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("native_goal_activate"), &ctx);
+        let active = app.view.native_goal.goal.clone().unwrap();
+        assert_eq!(active.objective, "Full explicit objective");
+        assert_eq!(
+            active
+                .criteria
+                .iter()
+                .map(|c| c.description.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Verify tools", "Verify recovery"]
+        );
+        assert!(active.criteria.iter().all(|c| c.evidence.is_none()));
+        assert_eq!(active.status, openide_core::NativeGoalStatus::Active);
+        assert_eq!(active.revision, 0);
+        let composer = crate::composer_ui::ComposerProps::from_state(
+            &app.view, 620.0, false, None, "Prompt", None,
+        );
+        assert_eq!(composer.goal, Some("Full explicit objective"));
+        assert!(store.load(&session.id).unwrap().unwrap().events.is_empty());
+        assert_eq!(
+            app.composer_goals.get(&app.draft_key()).map(String::as_str),
+            Some("Stale legacy objective")
+        );
+        let (base, full) = native_task_instructions(
+            "Project".into(),
+            app.composer_goals.get(&app.draft_key()).map(String::as_str),
+            Some(&active),
+        )
+        .unwrap();
+        assert_eq!(base, "Project");
+        assert!(full.contains("Full explicit objective"));
+        assert!(!full.contains("Stale legacy objective"));
+        let pause_id = app.view.native_goal.control_id().unwrap();
+        app.apply_action(clicked(&pause_id), &ctx);
+        assert_eq!(
+            app.view.native_goal.goal.as_ref().unwrap().status,
+            openide_core::NativeGoalStatus::Paused
+        );
+        app.apply_action(clicked(pause_id), &ctx);
+        assert!(app.view.native_goal.error.is_some());
+        assert_eq!(app.view.native_goal.goal.as_ref().unwrap().revision, 1);
+        let resume_id = app.view.native_goal.control_id().unwrap();
+        app.apply_action(clicked(resume_id), &ctx);
+        let final_goal = app.view.native_goal.goal.clone().unwrap();
+        assert_eq!(final_goal.status, openide_core::NativeGoalStatus::Active);
+        assert_eq!(final_goal.revision, 2);
+        assert_eq!(final_goal.objective, active.objective);
+        assert_eq!(final_goal.criteria, active.criteria);
+        drop(app);
+        let mut reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        reopened.view.selected_session = Some(session.id.clone());
+        reopened.view.selected_backend = "native".into();
+        reopened.restore_draft();
+        reopened.view.show_settings = true;
+        reopened.view.settings_page = SettingsPage::Memory;
+        reopened.apply_action(clicked("settings_native_goal_open"), &ctx);
+        assert!(!reopened.view.show_settings && reopened.view.composer_goal_editor_open);
+        assert_eq!(reopened.view.native_goal.goal, Some(final_goal));
+        assert_eq!(reopened.view.composer_goal_draft, "Full explicit objective");
+    }
+    #[test]
+    fn native_goal_editor_rejects_busy_empty_stale_and_corrupt_store_actions() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let store = app.store.as_ref().unwrap().clone();
+        let session = store.create(root.path(), "native").unwrap();
+        app.view.selected_backend = "native".into();
+        app.view.selected_session = Some(session.id.clone());
+        app.restore_draft();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("composer_goal_open"), &ctx);
+        app.view.composer_goal_draft = "Full objective".into();
+        app.apply_action(clicked("native_goal_activate"), &ctx);
+        assert!(app.view.native_goal.goal.is_none());
+        app.view.native_goal.criteria_draft = "Verify".into();
+        let lease = store.try_acquire_native_lease(&session.id).unwrap();
+        app.apply_action(clicked("native_goal_activate"), &ctx);
+        assert!(app.view.native_goal.goal.is_none());
+        assert!(app.view.native_goal.error.is_some());
+        drop(lease);
+        app.view.running = true;
+        app.apply_action(clicked("native_goal_activate"), &ctx);
+        assert!(app.view.native_goal.goal.is_none());
+        app.view.running = false;
+        app.apply_action(clicked("native_goal_activate"), &ctx);
+        let active = app.view.native_goal.goal.clone().unwrap();
+        let pause_id = app.view.native_goal.control_id().unwrap();
+        let foreign = store.create(root.path(), "native").unwrap();
+        app.view.selected_session = Some(foreign.id);
+        app.apply_action(clicked(&pause_id), &ctx);
+        assert_eq!(
+            openide_core::NativeGoalStore::new(store.clone())
+                .list(&session.id)
+                .unwrap(),
+            vec![active.clone()]
+        );
+        app.view.selected_session = Some(session.id.clone());
+        // A different handle publishes after the UI snapshot. The old control
+        // cannot advance the now-stale revision or hide the conflict.
+        let lease = store.try_acquire_native_lease(&session.id).unwrap();
+        let paused = openide_core::NativeGoalStore::new(store.clone())
+            .update(
+                &lease,
+                &active.id,
+                "external-pause",
+                0,
+                openide_core::NativeGoalMutation::PauseByUser,
+            )
+            .unwrap();
+        drop(lease);
+        app.apply_action(clicked(&pause_id), &ctx);
+        assert!(app.view.native_goal.error.is_some());
+        assert_eq!(
+            openide_core::NativeGoalStore::new(store.clone())
+                .list(&session.id)
+                .unwrap(),
+            vec![paused]
+        );
+        let path = store
+            .storage_root()
+            .join(format!("{}.native-goals.json", session.id));
+        std::fs::write(&path, b"{broken").unwrap();
+        app.refresh_native_goal();
+        app.apply_action(clicked("native_goal_activate"), &ctx);
+        assert!(app.view.native_goal.error.is_some());
+        assert_eq!(std::fs::read(path).unwrap(), b"{broken");
+    }
     #[test]
     fn composer_goal_is_saved_per_draft_and_follows_the_created_session() {
         let root = tempfile::tempdir().unwrap();
@@ -11838,6 +20860,274 @@ mod tests {
         let updated = native_workspace_instructions(&data, &workspace).unwrap();
         assert!(updated.contains("Review version two"));
         assert_ne!(updated, original);
+    }
+
+    #[test]
+    fn local_skill_preview_is_read_only_and_accepts_only_reviewed_disk_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let workspace = root.path().join("project");
+        let skill = workspace.join(".agents/skills/review/SKILL.md");
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        let original =
+            "---\nname: review\ndescription: Review skill\n---\nDocumento íntegro ñ\nFIN-ORIGINAL";
+        std::fs::write(&skill, original).unwrap();
+        let mut app = AgentsWindow::with_data_root(data.clone());
+        app.change_workspace(workspace.to_string_lossy().into_owned());
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Skills;
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("native_skill_preview:0"), &ctx);
+        assert_eq!(
+            app.view.native_skills.preview_entry().unwrap().instructions,
+            original
+        );
+        assert!(app.view.native_skills.selected.is_empty());
+        assert!(!data.join("native-local-skills.json").exists());
+        app.apply_action(clicked("native_skill_preview_close"), &ctx);
+        assert!(app.view.native_skills.preview.is_none());
+        app.apply_action(clicked("native_skill_preview_accept"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert!(!data.join("native-local-skills.json").exists());
+        app.apply_action(clicked("native_skill_preview:0"), &ctx);
+        app.apply_action(clicked("native_skill_preview_accept"), &ctx);
+        assert!(!app.view.settings_notice_error);
+        assert!(app.view.native_skills.preview.is_none());
+        assert_eq!(app.view.native_skills.selected.len(), 1);
+        let saved = std::fs::read(data.join("native-local-skills.json")).unwrap();
+        app.apply_action(clicked("native_skill_preview_selected:0"), &ctx);
+        let selected_hash = app
+            .view
+            .native_skills
+            .preview
+            .as_ref()
+            .unwrap()
+            .provenance
+            .sha256_hex
+            .clone();
+        app.apply_action(clicked("native_skill_preview_close"), &ctx);
+        std::fs::write(&skill, original.replace("FIN-ORIGINAL", "FIN-NUEVO")).unwrap();
+        app.apply_action(clicked("native_skill_refresh"), &ctx);
+        app.apply_action(clicked("native_skill_preview_selected:0"), &ctx);
+        assert!(app.view.native_skills.activation_error.is_some());
+        let reviewed_hash = app
+            .view
+            .native_skills
+            .preview
+            .as_ref()
+            .unwrap()
+            .provenance
+            .sha256_hex
+            .clone();
+        assert_ne!(selected_hash, reviewed_hash);
+        std::fs::write(&skill, original.replace("FIN-ORIGINAL", "FIN-NO-REVISADO")).unwrap();
+        app.apply_action(clicked("native_skill_preview_accept"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            saved
+        );
+        assert!(app.view.native_skills.preview.is_none());
+        app.apply_action(clicked("native_skill_preview_selected:0"), &ctx);
+        assert!(app
+            .view
+            .native_skills
+            .preview_entry()
+            .unwrap()
+            .instructions
+            .contains("FIN-NO-REVISADO"));
+        app.apply_action(clicked("native_skill_preview_accept"), &ctx);
+        assert!(!app.view.settings_notice_error);
+        let reloaded = NativeSkillsSettings::load(&data, &workspace).unwrap();
+        assert_eq!(reloaded.selections, app.view.native_skills.selected);
+        assert!(reloaded
+            .activate(&data)
+            .unwrap()
+            .instructions
+            .contains("FIN-NO-REVISADO"));
+        assert!(
+            !std::fs::read_to_string(data.join("native-local-skills.json"))
+                .unwrap()
+                .contains("FIN-NO-REVISADO")
+        );
+        let accepted = std::fs::read(data.join("native-local-skills.json")).unwrap();
+        app.apply_action(clicked("native_skill_preview_selected:0"), &ctx);
+        app.view.settings_page = SettingsPage::Memory;
+        app.apply_action(clicked("native_skill_preview_accept"), &ctx);
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            accepted
+        );
+        app.view.settings_page = SettingsPage::Skills;
+        app.view.native_skills.workspace =
+            root.path().join("another-project").display().to_string();
+        app.apply_action(clicked("native_skill_preview_accept"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            accepted
+        );
+    }
+
+    #[test]
+    fn clearing_local_skill_workspace_selection_recovers_multiple_stale_skills_without_touching_other_projects(
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let workspace = root.path().join("project");
+        let other = root.path().join("other");
+        let write = |workspace: &Path, name: &str, body: &str| {
+            let path = workspace.join(".agents/skills").join(name).join("SKILL.md");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                &path,
+                format!("---\nname: {name}\ndescription: {name} description\n---\n{body}"),
+            )
+            .unwrap();
+            path
+        };
+        let first = write(&workspace, "alpha", "Original alpha");
+        let missing = write(&workspace, "beta", "Original beta");
+        let other_document = write(&other, "keep", "Keep exact content");
+        let original = NativeSkillsSettings::load(&data, &workspace).unwrap();
+        let selected = original.with_selections(
+            original
+                .discover(&data)
+                .unwrap()
+                .iter()
+                .map(|skill| skill.selection())
+                .collect(),
+        );
+        selected.save(&data).unwrap();
+        let other_settings = NativeSkillsSettings::load(&data, &other).unwrap();
+        let other_selected = other_settings.with_selections(
+            other_settings
+                .discover(&data)
+                .unwrap()
+                .iter()
+                .map(|skill| skill.selection())
+                .collect(),
+        );
+        other_selected.save(&data).unwrap();
+        let other_bytes = std::fs::read(&other_document).unwrap();
+        write(&workspace, "alpha", "Changed alpha ñ");
+        std::fs::remove_file(&missing).unwrap();
+        let first_bytes = std::fs::read(&first).unwrap();
+        let view = NativeSkillsUiState::from_settings(&selected, &data);
+        assert!(view.activation_error.is_some());
+        assert!(selected
+            .with_selections(view.toggle(0).unwrap())
+            .save(&data)
+            .is_err());
+        assert!(selected
+            .with_selections(view.remove(1).unwrap())
+            .save(&data)
+            .is_err());
+        let mut app = AgentsWindow::with_data_root(data.clone());
+        app.change_workspace(workspace.display().to_string());
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Skills;
+        let ctx = egui::Context::default();
+        let initial = std::fs::read(data.join("native-local-skills.json")).unwrap();
+        app.apply_action(clicked("native_skill_clear_workspace_confirm"), &ctx);
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            initial
+        );
+        app.apply_action(clicked("native_skill_clear_workspace"), &ctx);
+        assert_eq!(
+            app.view
+                .native_skills
+                .clear_workspace_snapshot
+                .as_ref()
+                .unwrap()
+                .selections,
+            selected.selections
+        );
+        app.apply_action(clicked("native_skill_clear_workspace_cancel"), &ctx);
+        assert!(app.view.native_skills.clear_workspace_snapshot.is_none());
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            initial
+        );
+        app.apply_action(clicked("native_skill_clear_workspace"), &ctx);
+        let added = write(&workspace, "gamma", "Added elsewhere ñ");
+        let refreshed = NativeSkillsSettings::load(&data, &workspace).unwrap();
+        let external = refreshed.with_selections(
+            refreshed
+                .discover(&data)
+                .unwrap()
+                .iter()
+                .map(|skill| skill.selection())
+                .collect(),
+        );
+        external.save(&data).unwrap();
+        let external_bytes = std::fs::read(data.join("native-local-skills.json")).unwrap();
+        app.apply_action(clicked("native_skill_clear_workspace_confirm"), &ctx);
+        assert!(app.view.settings_notice_error);
+        assert!(app
+            .view
+            .settings_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("cambió"));
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            external_bytes
+        );
+        app.apply_action(clicked("native_skill_clear_workspace"), &ctx);
+        app.apply_action(clicked("native_skill_clear_workspace_confirm"), &ctx);
+        assert!(!app.view.settings_notice_error);
+        assert!(NativeSkillsSettings::load(&data, &workspace)
+            .unwrap()
+            .selections
+            .is_empty());
+        assert_eq!(
+            NativeSkillsSettings::load(&data, &other)
+                .unwrap()
+                .selections,
+            other_selected.selections
+        );
+        assert_eq!(std::fs::read(&first).unwrap(), first_bytes);
+        assert_eq!(std::fs::read(&other_document).unwrap(), other_bytes);
+        assert!(added.exists());
+        assert!(!missing.exists());
+        drop(app);
+        let mut reopened = AgentsWindow::with_data_root(data.clone());
+        reopened.change_workspace(workspace.display().to_string());
+        reopened.view.show_settings = true;
+        reopened.view.settings_page = SettingsPage::Skills;
+        assert!(reopened.view.native_skills.selected.is_empty());
+        reopened.apply_action(clicked("native_skill_preview:0"), &ctx);
+        reopened.apply_action(clicked("native_skill_preview_accept"), &ctx);
+        assert_eq!(
+            NativeSkillsSettings::load(&data, &workspace)
+                .unwrap()
+                .selections
+                .len(),
+            1
+        );
+        assert_eq!(
+            NativeSkillsSettings::load(&data, &other)
+                .unwrap()
+                .selections,
+            other_selected.selections
+        );
+        reopened.apply_action(clicked("native_skill_clear_workspace"), &ctx);
+        std::fs::write(data.join("native-local-skills.json"), b"{broken").unwrap();
+        reopened.apply_action(clicked("native_skill_clear_workspace_confirm"), &ctx);
+        assert!(reopened.view.settings_notice_error);
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            b"{broken"
+        );
+        assert!(reopened.view.native_skills.load_error.is_some());
+        reopened.apply_action(clicked("native_skill_clear_workspace"), &ctx);
+        assert!(!reopened.view.native_skills.clear_workspace_confirm_open);
+        assert_eq!(
+            std::fs::read(data.join("native-local-skills.json")).unwrap(),
+            b"{broken"
+        );
     }
 
     #[test]
@@ -12312,6 +21602,202 @@ mod tests {
     }
 
     #[test]
+    fn settings_terminal_shell_custom_editor_keeps_saved_choice_until_validated() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Terminal;
+        app.apply_action(clicked("settings_terminal_shell_toggle"), &ctx);
+        assert!(app.view.settings_terminal_shell_menu_open);
+        app.apply_action(clicked("settings_terminal_shell_edit"), &ctx);
+        assert!(!app.view.settings_terminal_shell_menu_open);
+        assert!(app.view.settings_terminal_shell_editing);
+        assert!(app.settings_terminal_path_focus_pending);
+        app.tree.set_root(build_view(&app.view, 360.0));
+        app.tree.layout(Size::new(360.0, 900.0));
+        app.focus_settings_terminal_path_if_pending();
+        assert_eq!(app.tree.focused_id(), Some("settings_terminal_shell_path"));
+        assert!(!app.settings_terminal_path_focus_pending);
+        assert_eq!(app.view.settings_terminal_shell, TerminalShell::System);
+        assert_eq!(
+            SettingsPreferences::load(root.path()).terminal_shell,
+            TerminalShell::System
+        );
+
+        for invalid in [
+            String::new(),
+            "relative-shell".to_owned(),
+            root.path()
+                .join("missing-shell")
+                .to_string_lossy()
+                .into_owned(),
+        ] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: "settings_terminal_shell_path".into(),
+                    value: invalid,
+                },
+                &ctx,
+            );
+            app.apply_action(clicked("settings_terminal_shell:custom"), &ctx);
+            assert!(app.view.settings_terminal_shell_editing);
+            assert!(app.view.settings_notice_error);
+            assert_eq!(app.view.settings_terminal_shell, TerminalShell::System);
+            assert_eq!(
+                SettingsPreferences::load(root.path()).terminal_shell,
+                TerminalShell::System
+            );
+        }
+        app.apply_action(clicked("settings_terminal_shell_cancel"), &ctx);
+        assert!(!app.view.settings_terminal_shell_editing);
+        assert!(app.view.settings_terminal_shell_draft.is_empty());
+        assert_eq!(
+            app.tree.input_value("settings_terminal_shell_path"),
+            Some("")
+        );
+        assert!(app.view.settings_notice.is_none());
+
+        let executable = std::env::current_exe().unwrap();
+        app.apply_action(clicked("settings_terminal_shell_edit"), &ctx);
+        app.tree.set_root(build_view(&app.view, 360.0));
+        app.tree.layout(Size::new(360.0, 900.0));
+        assert_eq!(
+            app.tree.input_value("settings_terminal_shell_path"),
+            Some("")
+        );
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "settings_terminal_shell_path".into(),
+                value: executable.to_string_lossy().into_owned(),
+            },
+            &ctx,
+        );
+        app.apply_action(
+            UiAction::Submitted {
+                id: "settings_terminal_shell_path".into(),
+                value: format!(" {} ", executable.display()),
+            },
+            &ctx,
+        );
+        assert_eq!(
+            app.view.settings_terminal_shell,
+            TerminalShell::Custom(executable.clone())
+        );
+        assert!(!app.view.settings_terminal_shell_editing);
+        assert_eq!(
+            app.tree.input_value("settings_terminal_shell_path"),
+            Some(executable.to_string_lossy().as_ref())
+        );
+
+        app.tree
+            .set_input_value("settings_terminal_shell_path", "retained wrong draft");
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "settings_terminal_shell_path".into(),
+                value: root
+                    .path()
+                    .join("other-shell")
+                    .to_string_lossy()
+                    .into_owned(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("settings_terminal_shell_cancel"), &ctx);
+        assert_eq!(
+            app.view.settings_terminal_shell_draft,
+            executable.to_string_lossy()
+        );
+        assert_eq!(
+            app.tree.input_value("settings_terminal_shell_path"),
+            Some(executable.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            SettingsPreferences::load(root.path()).terminal_shell,
+            TerminalShell::Custom(executable)
+        );
+
+        app.apply_action(clicked("settings_terminal_shell_toggle"), &ctx);
+        app.apply_action(clicked("settings_terminal_shell:system"), &ctx);
+        assert!(!app.view.settings_terminal_shell_menu_open);
+        assert!(!app.view.settings_terminal_shell_editing);
+        assert!(app.view.settings_terminal_shell_draft.is_empty());
+        assert_eq!(
+            app.tree.input_value("settings_terminal_shell_path"),
+            Some("")
+        );
+        for invalid in ["", "relative-shell"] {
+            app.apply_action(
+                UiAction::Submitted {
+                    id: "settings_terminal_shell_path".into(),
+                    value: invalid.into(),
+                },
+                &ctx,
+            );
+            assert_eq!(app.view.settings_terminal_shell, TerminalShell::System);
+            assert_eq!(
+                SettingsPreferences::load(root.path()).terminal_shell,
+                TerminalShell::System
+            );
+        }
+        assert_eq!(app.view.settings_terminal_shell, TerminalShell::System);
+        assert_eq!(
+            SettingsPreferences::load(root.path()).terminal_shell,
+            TerminalShell::System
+        );
+        app.apply_action(clicked("settings_terminal_shell_toggle"), &ctx);
+        app.apply_action(clicked("settings_terminal_shell_dismiss"), &ctx);
+        assert!(!app.view.settings_terminal_shell_menu_open);
+        app.apply_action(clicked("settings_terminal_shell_toggle"), &ctx);
+        app.apply_action(clicked("settings_page:general"), &ctx);
+        assert!(!app.view.settings_terminal_shell_menu_open);
+        app.settings_terminal_path_focus_pending = true;
+        app.focus_settings_terminal_path_if_pending();
+        assert!(!app.settings_terminal_path_focus_pending);
+    }
+
+    #[test]
+    fn external_agent_actions_persist_and_ignore_tools_while_the_bridge_is_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.view.show_settings = true;
+        app.apply_action(clicked(SettingsPage::ExternalAgents.action_id()), &ctx);
+        assert_eq!(app.view.settings_page, SettingsPage::ExternalAgents);
+        assert!(!app.view.external_agents.enabled());
+
+        app.apply_action(clicked("external_tool:conversations"), &ctx);
+        assert!(!app.view.external_agents.allows(ExternalTool::Conversations));
+
+        app.apply_action(clicked("external_agents_enabled"), &ctx);
+        app.apply_action(clicked("external_tool:conversations"), &ctx);
+        app.apply_action(clicked("external_tool:shell"), &ctx);
+        assert!(app.view.external_agents.allows(ExternalTool::Conversations));
+        assert_eq!(
+            app.view.external_agents.mode_for(ExternalTool::Conversations, true),
+            PermissionMode::Allow
+        );
+
+        app.apply_action(clicked("settings_choice_toggle:external_permission"), &ctx);
+        assert_eq!(
+            app.view.settings_choice_menu_open.as_deref(),
+            Some("external_permission")
+        );
+        app.apply_action(clicked("external_permission:always_ask"), &ctx);
+        assert_eq!(app.view.settings_choice_menu_open, None);
+        assert_eq!(
+            app.view.external_agents.mode_for(ExternalTool::Conversations, true),
+            PermissionMode::Ask
+        );
+        assert_eq!(
+            ExternalAgentSettings::load(root.path()).unwrap(),
+            app.view.external_agents
+        );
+        let reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert_eq!(reopened.view.external_agents, app.view.external_agents);
+    }
+
+    #[test]
     fn settings_tool_actions_keep_native_permissions_independent_and_persistent() {
         let root = tempfile::tempdir().unwrap();
         let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
@@ -12367,6 +21853,11 @@ mod tests {
             .unwrap()
             .create(&workspace, "native")
             .unwrap();
+        app.view.workspace = workspace.to_string_lossy().into_owned();
+        app.agent_tool_settings.set(LocalTool::RunCommand, true);
+        app.agent_tool_settings
+            .set_command_isolation(CommandIsolation::HostUnrestricted);
+        app.agent_tool_settings.save(&app.data_root).unwrap();
         app.view.selected_session = Some(session.id.clone());
         app.view.selected_backend = "native".into();
         app.view.main_page = MainPage::Workspace;
@@ -12452,46 +21943,54 @@ mod tests {
             clicked(format!("native_command_terminate:{}", started.id)),
             &ctx,
         );
-        assert_eq!(
-            app.view.pending_native_command_termination.as_deref(),
-            Some(started.id.as_str())
-        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.view.native_command_control.observed.is_none() {
+            app.poll_native_command_sessions();
+            assert!(Instant::now() < deadline, "control snapshot did not arrive");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         assert!(manager
             .list_sessions()
             .unwrap()
             .iter()
             .any(|command| command.id == started.id && command.exit.is_none()));
-        app.apply_action(clicked("native_command_terminate_cancel"), &ctx);
-        assert!(app.view.pending_native_command_termination.is_none());
+        app.apply_action(clicked("native_command_control_prepare_terminate"), &ctx);
+        assert!(app.view.native_command_control.can_confirm());
+        app.apply_action(clicked("native_command_control_back"), &ctx);
         assert!(manager
             .list_sessions()
             .unwrap()
             .iter()
             .any(|command| command.id == started.id && command.exit.is_none()));
-
-        app.apply_action(
-            clicked(format!("native_command_terminate:{}", started.id)),
-            &ctx,
-        );
-        app.apply_action(
-            clicked(format!("native_command_terminate_confirm:{}", started.id)),
-            &ctx,
-        );
-        assert!(app.native_command_termination_response.is_some());
-        assert_eq!(
-            app.view.native_command_terminating.as_deref(),
-            Some(started.id.as_str())
-        );
+        app.apply_action(clicked("native_command_control_prepare_terminate"), &ctx);
+        app.apply_action(clicked("native_command_control_confirm"), &ctx);
+        assert!(app.native_manual_command_response.is_some());
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             app.poll_native_command_sessions();
-            if app.native_command_termination_response.is_none() {
+            if app.view.native_command_control.operations.iter().any(|op| {
+                matches!(
+                    &op.state,
+                    openide_core::NativeCommandOperationState::Finished {
+                        outcome: openide_core::NativeCommandOperationOutcome::Succeeded { .. }
+                    }
+                )
+            }) {
                 break;
             }
-            assert!(Instant::now() < deadline, "termination did not finish");
+            assert!(
+                Instant::now() < deadline,
+                "durable termination did not finish"
+            );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(app.view.status.contains("terminado"), "{}", app.view.status);
+        assert!(app
+            .store
+            .as_ref()
+            .unwrap()
+            .load_events(&session.id)
+            .unwrap()
+            .is_empty());
         assert!(manager.list_sessions().unwrap().iter().any(|command| {
             command.id == started.id
                 && command.exit == Some(openide_harness::PersistentCommandExit::Terminated)
@@ -12631,6 +22130,165 @@ mod tests {
             corrupt.native_permission_policy().unwrap().digest_hex(),
             baseline
         );
+    }
+
+    #[test]
+    fn rules_preview_ui_reads_saved_policy_without_execution_or_permission_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let settings = ExecPolicySettings {
+            rules: vec![openide_harness::ExecRule::new(
+                vec![openide_harness::ExecPatternToken::Literal("git".into())],
+                ExecDecision::Deny,
+                Some("Revisar git".into()),
+            )
+            .unwrap()],
+        };
+        settings.save(root.path()).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Commands;
+        let ctx = egui::Context::default();
+        let original_bytes = std::fs::read(root.path().join("native-exec-rules.json")).unwrap();
+        let original_policy = app.native_permission_policy().unwrap().digest_hex();
+        let original_rules = app.view.native_exec_rules.rules.clone();
+        let marker = root.path().join("preview-must-not-run.txt");
+        let script = format!("echo execution > \"{}\"", marker.display());
+        let argv = if cfg!(windows) {
+            vec!["cmd".to_owned(), "/c".to_owned(), script]
+        } else {
+            vec!["/bin/sh".to_owned(), "-c".to_owned(), script]
+        };
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "exec_rule_preview_argv".into(),
+                value: serde_json::to_string(&argv).unwrap(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("exec_rule_preview_evaluate"), &ctx);
+        let report = app
+            .view
+            .native_exec_rules
+            .preview
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap();
+        assert_eq!(report.argv, argv);
+        assert!(report.evaluation.opaque_wrapper);
+        assert_eq!(report.evaluation.decision, Some(ExecDecision::Deny));
+        assert!(!marker.exists());
+        assert_eq!(
+            std::fs::read(root.path().join("native-exec-rules.json")).unwrap(),
+            original_bytes
+        );
+        assert_eq!(app.view.native_exec_rules.rules, original_rules);
+        assert_eq!(
+            app.native_permission_policy().unwrap().digest_hex(),
+            original_policy
+        );
+
+        // An unmatched shell command is also inspected without starting it.
+        // The lack of an effect is independent of a Deny rule above.
+        ExecPolicySettings::default().save(root.path()).unwrap();
+        app.apply_action(clicked("exec_rule_preview_evaluate"), &ctx);
+        let report = app
+            .view
+            .native_exec_rules
+            .preview
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap();
+        assert_eq!(report.evaluation.decision, None);
+        assert!(!report.evaluation.opaque_wrapper);
+        assert!(!marker.exists());
+        assert_eq!(app.view.native_exec_rules.rules, original_rules);
+
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "exec_rule_preview_argv".into(),
+                value: "[\"git\",\"push\"]".into(),
+            },
+            &ctx,
+        );
+        assert!(app.view.native_exec_rules.preview.is_none());
+        let externally_changed = ExecPolicySettings {
+            rules: vec![openide_harness::ExecRule::new(
+                vec![openide_harness::ExecPatternToken::Literal("git".into())],
+                ExecDecision::Ask,
+                Some("Política actualizada fuera de la ventana".into()),
+            )
+            .unwrap()],
+        };
+        externally_changed.save(root.path()).unwrap();
+        let fresh_bytes = std::fs::read(root.path().join("native-exec-rules.json")).unwrap();
+        app.apply_action(clicked("exec_rule_preview_evaluate"), &ctx);
+        let report = app
+            .view
+            .native_exec_rules
+            .preview
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap();
+        assert_eq!(report.evaluation.decision, Some(ExecDecision::Ask));
+        assert_eq!(
+            report.policy_digest,
+            externally_changed.policy().unwrap().digest_hex()
+        );
+        assert_eq!(app.view.native_exec_rules.rules, original_rules);
+        assert_eq!(
+            std::fs::read(root.path().join("native-exec-rules.json")).unwrap(),
+            fresh_bytes
+        );
+        let mut reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        reopened.view.show_settings = true;
+        reopened.view.settings_page = SettingsPage::Commands;
+        reopened
+            .view
+            .native_exec_rules
+            .set_preview_argv("[\"git\",\"push\"]".into());
+        reopened.apply_action(clicked("exec_rule_preview_evaluate"), &ctx);
+        assert_eq!(
+            reopened
+                .view
+                .native_exec_rules
+                .preview
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .evaluation
+                .decision,
+            Some(ExecDecision::Ask)
+        );
+
+        std::fs::write(
+            root.path().join("native-exec-rules.json"),
+            "{broken-preview",
+        )
+        .unwrap();
+        app.apply_action(clicked("exec_rule_preview_evaluate"), &ctx);
+        assert!(app
+            .view
+            .native_exec_rules
+            .preview
+            .as_ref()
+            .unwrap()
+            .is_err());
+        assert_eq!(
+            std::fs::read(root.path().join("native-exec-rules.json")).unwrap(),
+            b"{broken-preview"
+        );
+        assert!(app.native_permission_policy().is_err());
+        assert_eq!(app.view.native_exec_rules.rules, original_rules);
+        app.apply_action(clicked("exec_rule_preview_clear"), &ctx);
+        assert!(app.view.native_exec_rules.preview.is_none());
+        app.view.show_settings = false;
+        app.apply_action(clicked("exec_rule_preview_evaluate"), &ctx);
+        assert!(app.view.native_exec_rules.preview.is_none());
+        assert!(!marker.exists());
     }
 
     #[test]
@@ -12901,6 +22559,854 @@ mod tests {
             .unwrap();
         assert!(row.title.ends_with("completado"));
         assert!(!app.subagent_poll_needed);
+        assert_eq!(app.view.subagent_sessions.len(), 1);
+        assert_eq!(
+            app.view.subagent_sessions[0].status,
+            SubagentStatus::Completed
+        );
+        drop(run);
+        drop(parent_lease);
+        drop(app);
+        let mut reopened = AgentsWindow::with_data_root(root.path().join("data"));
+        assert_eq!(reopened.view.subagent_sessions.len(), 1);
+        assert_eq!(
+            reopened.view.subagent_sessions[0].status,
+            SubagentStatus::Completed
+        );
+        assert_eq!(reopened.view.subagent_sessions[0].open_inputs, 0);
+        reopened.open_session(&parent.id);
+        let ctx = egui::Context::default();
+        reopened.apply_action(clicked(format!("subagent_open:{}", child.session.id)), &ctx);
+        assert_eq!(
+            reopened.view.selected_session.as_deref(),
+            Some(child.session.id.as_str())
+        );
+        reopened.apply_action(
+            clicked(format!("subagent_inputs:{}", child.session.id)),
+            &ctx,
+        );
+        assert_eq!(
+            reopened.view.expanded_subagent_inputs.as_deref(),
+            Some(child.session.id.as_str())
+        );
+        reopened.apply_action(clicked("subagent_inputs:unrelated"), &ctx);
+        assert_eq!(
+            reopened.view.expanded_subagent_inputs.as_deref(),
+            Some(child.session.id.as_str())
+        );
+        reopened.apply_action(
+            clicked(format!("subagent_inputs:{}", child.session.id)),
+            &ctx,
+        );
+        assert!(reopened.view.expanded_subagent_inputs.is_none());
+        reopened.apply_action(clicked("subagent_open:unrelated"), &ctx);
+        assert_eq!(
+            reopened.view.selected_session.as_deref(),
+            Some(child.session.id.as_str())
+        );
+        reopened.apply_action(clicked(format!("subagent_open:{}", parent.id)), &ctx);
+        assert_eq!(
+            reopened.view.selected_session.as_deref(),
+            Some(parent.id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_dispatch_reopens_http_child_and_drains_frozen_mailbox_once() {
+        use std::io::{Read, Write};
+        for (blocked_first, ready_first) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let root = tempfile::tempdir().unwrap();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+            let (requests_tx, requests) = std::sync::mpsc::channel();
+            let server = std::thread::spawn(move || {
+                for index in 0..2 {
+                    let deadline = Instant::now() + Duration::from_secs(30);
+                    let mut stream = loop {
+                        match listener.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                                assert!(
+                                    Instant::now() < deadline,
+                                    "expected native HTTP request {index}"
+                                );
+                                std::thread::sleep(Duration::from_millis(10));
+                            }
+                            Err(error) => panic!("fixture accept failed: {error}"),
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut bytes = Vec::new();
+                    let (header_end, length) = loop {
+                        let mut chunk = [0u8; 4096];
+                        let count = stream.read(&mut chunk).unwrap();
+                        assert!(count > 0);
+                        bytes.extend_from_slice(&chunk[..count]);
+                        assert!(bytes.len() < 1024 * 1024);
+                        if let Some(end) = bytes.windows(4).position(|value| value == b"\r\n\r\n") {
+                            let headers = String::from_utf8_lossy(&bytes[..end]);
+                            let length = headers
+                                .lines()
+                                .find_map(|line| {
+                                    line.to_ascii_lowercase()
+                                        .strip_prefix("content-length:")
+                                        .and_then(|value| value.trim().parse::<usize>().ok())
+                                })
+                                .unwrap();
+                            break (end + 4, length);
+                        }
+                    };
+                    while bytes.len() < header_end + length {
+                        let mut chunk = [0u8; 4096];
+                        let count = stream.read(&mut chunk).unwrap();
+                        assert!(count > 0);
+                        bytes.extend_from_slice(&chunk[..count]);
+                    }
+                    let request: serde_json::Value =
+                        serde_json::from_slice(&bytes[header_end..header_end + length]).unwrap();
+                    requests_tx.send(request).unwrap();
+                    let body = format!("data: {{\"id\":\"fixture-{index}\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"done\"}},\"finish_reason\":null}}]}}\n\ndata: {{\"id\":\"fixture-{index}\",\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"stop\"}}]}}\n\ndata: [DONE]\n\n");
+                    write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+                }
+            });
+            let data_root = root.path().join("data");
+            let mut app = AgentsWindow::with_data_root(data_root.clone());
+            app.view.native_provider_id = "custom".into();
+            app.view.model = "fixture-startup".into();
+            app.view.endpoint = endpoint;
+            assert!(app.persist_native_settings());
+            let sessions = app.store.clone().unwrap();
+            let parent = sessions.create(root.path(), "native").unwrap();
+            let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+            let coordinator = Arc::new(
+                SubagentCoordinator::new(sessions.clone(), SubagentLimits::default()).unwrap(),
+            );
+            let connection = app.native_settings().resolve_at(&data_root).unwrap();
+            let endpoint = connection.endpoint.clone();
+            let model = native_model_backend(
+                connection,
+                "custom",
+                Some(&app.view.composer_effort),
+                app.view.hosted_web_search_mode,
+                &data_root,
+                app.view.catalog.as_deref(),
+                &app.model_discoveries,
+            )
+            .unwrap();
+            let tools: Arc<dyn ToolExecutor> = Arc::new(
+                LocalTools::new()
+                    .with_permissions(app.agent_tool_settings.permissions())
+                    .with_command_isolation(app.agent_tool_settings.command_isolation()),
+            );
+            let worker = SubagentWorker::new(
+                coordinator.clone(),
+                sessions.clone(),
+                model,
+                tools,
+                "custom",
+                endpoint,
+            )
+            .with_permission_policy(app.native_permission_policy().unwrap())
+            .with_session_approvals(app.agent_tool_settings.command_isolation())
+            .with_nested_subagents(SubagentToolLimits::default())
+            .with_native_goals()
+            .with_system_instructions("Frozen startup instructions");
+            let spawn_id = if ready_first {
+                use sha2::{Digest, Sha256};
+                let mut hash = Sha256::new();
+                hash.update(b"openide-spawn-agent-tool-v1\0");
+                hash.update(("ready-call".len() as u64).to_le_bytes());
+                hash.update(b"ready-call");
+                format!("tool-{:x}", hash.finalize())
+            } else {
+                "spawn-startup".into()
+            };
+            let (child_id, mut first_request) = if ready_first {
+                sessions
+                    .admit_native_turn(
+                        &parent.id,
+                        "parent-spawn",
+                        "Spawn first",
+                        "fixture-startup",
+                        TurnMode::Build,
+                    )
+                    .unwrap();
+                let call = openide_core::ToolCall {
+                    id: "ready-call".into(),
+                    name: "spawn_agent".into(),
+                    arguments: serde_json::json!({"prompt":"first"}),
+                };
+                for kind in [
+                    AgentEventKind::TurnStarted {
+                        prompt: "Spawn first".into(),
+                    },
+                    AgentEventKind::SystemInstructionsCommitted {
+                        version: openide_core::SYSTEM_INSTRUCTIONS_VERSION,
+                        digest: openide_core::system_instructions_digest(
+                            "Frozen startup instructions",
+                        )
+                        .unwrap(),
+                        content: "Frozen startup instructions".into(),
+                    },
+                    AgentEventKind::ModelRequestStarted {
+                        step: 1,
+                        model: "fixture-startup".into(),
+                    },
+                    AgentEventKind::ModelResponseCommitted {
+                        step: 1,
+                        assistant: openide_core::AgentMessage::assistant("", vec![call.clone()]),
+                        response_id: None,
+                        usage: None,
+                    },
+                    AgentEventKind::ToolStarted { tool_call: call },
+                ] {
+                    let events = sessions.load(&parent.id).unwrap().unwrap().events;
+                    let sequence = events.last().unwrap().sequence + 1;
+                    sessions
+                        .append_native_event(&openide_core::AgentEvent::new(
+                            &parent.id, sequence, kind,
+                        ))
+                        .unwrap();
+                }
+                let child = worker
+                    .prepare_child(&parent_lease, &spawn_id, "first", TurnMode::Build)
+                    .unwrap();
+                assert_eq!(child.status, SubagentStatus::Ready);
+                (child.session.id, None)
+            } else {
+                let initial = worker
+                    .run(
+                        parent_lease.clone(),
+                        spawn_id.clone(),
+                        "first".into(),
+                        TurnMode::Build,
+                        CancellationToken::new(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(initial.status, SubagentStatus::Completed);
+                let request = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+                assert_eq!(request["model"], "fixture-startup");
+                (initial.child_session_id, Some(request))
+            };
+            // Exact persisted mailbox fixture represents a committed enqueue just
+            // before host exit; initial child journal and runtime identity are real.
+            let path = sessions.storage_root().join("subagents.registry.json");
+            let mut registry: serde_json::Value = if ready_first {
+                serde_json::json!({"version":3,"children":{},"inputs":{}})
+            } else {
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap()
+            };
+            registry["inputs"][&child_id] = serde_json::json!([{"id":"queued-startup", "prompt":"second", "mode":"build", "digest":"1c000c8b21d542902173f501e78f174932b845c630aad69ed6a58131df19aaff", "state":"pending", "revision":0}]);
+            std::fs::write(&path, serde_json::to_vec(&registry).unwrap()).unwrap();
+            std::fs::write(
+                root.path().join("AGENTS.md"),
+                "Changed after the first child run",
+            )
+            .unwrap();
+            drop(worker);
+            drop(parent_lease);
+            drop(app);
+            let mut reopened = AgentsWindow::with_data_root(data_root);
+            assert!(reopened.startup_subagent_candidates.contains(&child_id));
+            if blocked_first {
+                let journal_before =
+                    serde_json::to_value(sessions.load(&child_id).unwrap().unwrap().events)
+                        .unwrap();
+                let registry_before = std::fs::read(&path).unwrap();
+                reopened.view.model = "wrong-startup-model".into();
+                assert!(reopened.poll_subagent_dispatches());
+                assert!(reopened.subagent_dispatches.is_empty());
+                assert!(reopened.subagent_dispatch_errors[&child_id].contains("modelo original"));
+                assert_eq!(
+                    serde_json::to_value(sessions.load(&child_id).unwrap().unwrap().events)
+                        .unwrap(),
+                    journal_before
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), registry_before);
+                assert!(requests.try_recv().is_err());
+                reopened.view.model = "fixture-startup".into();
+                reopened.open_session(&parent.id);
+                reopened.apply_action(
+                    clicked(format!("subagent_dispatch:{}", child_id)),
+                    &egui::Context::default(),
+                );
+            } else {
+                assert!(reopened.poll_subagent_dispatches());
+            }
+            assert!(
+                reopened.subagent_dispatch_errors.is_empty(),
+                "{:?}",
+                reopened.subagent_dispatch_errors
+            );
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !reopened.subagent_dispatches.is_empty() {
+                reopened.poll_subagent_dispatches();
+                reopened.poll_subagent_events();
+                assert!(Instant::now() < deadline, "dispatcher did not finish");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            assert!(
+                reopened.subagent_dispatch_errors.is_empty(),
+                "{:?}",
+                reopened.subagent_dispatch_errors
+            );
+            if ready_first {
+                first_request = Some(requests.recv_timeout(Duration::from_secs(5)).unwrap());
+            }
+            let first_request = first_request.unwrap();
+            let request = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(request["model"], "fixture-startup");
+            assert_eq!(request["messages"][0], first_request["messages"][0]);
+            assert!(request["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|message| message["content"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("Frozen startup instructions"))));
+            assert!(request["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|message| message["content"] == "second"));
+            assert_eq!(reopened.view.subagent_sessions[0].open_inputs, 0);
+            assert_eq!(
+                reopened.view.subagent_sessions[0].inputs[0].status,
+                openide_harness::SubagentInputStatus::Done
+            );
+            assert!(!reopened.poll_subagent_dispatches());
+            let stored = sessions.load(&child_id).unwrap().unwrap();
+            assert_eq!(stored.events.iter().filter(|event| matches!(&event.kind, AgentEventKind::TurnAdmitted {turn_id,..} if turn_id == "queued-startup")).count(), 1);
+            let request = reopened.child_worker_request(&stored).unwrap();
+            assert_eq!(request.spawn_id, spawn_id);
+            assert_eq!(request.prompt, "first");
+            reopened.open_session(&parent.id);
+            reopened.apply_action(
+                clicked("subagent_dispatch:unrelated"),
+                &egui::Context::default(),
+            );
+            assert!(reopened.subagent_dispatches.is_empty());
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn mailbox_edit_actions_migrate_reopen_and_preserve_conflicting_draft() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let mut app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.clone().unwrap();
+        let parent = store.create(root.path(), "native").unwrap();
+        let lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &lease,
+                "edit-ui",
+                &openide_harness::SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        drop(lease);
+        // A genuine v2 mailbox has no revision field; opening it migrates only
+        // when the UI commits an edit, while preserving the request digest.
+        let registry = serde_json::json!({ "version":2,
+            "children": { (child.session.id.clone()): {"status":"completed", "cancellation_requested":false} },
+            "inputs": { (child.session.id.clone()): [{"id":"ui-input", "prompt":"Original", "mode":"build", "digest":"2effa45233fcc9fc5728b31b4753ca812b20ca2054869406c7c132586cb39cd7", "state":"pending"}] }
+        });
+        std::fs::write(
+            store.storage_root().join("subagents.registry.json"),
+            serde_json::to_vec(&registry).unwrap(),
+        )
+        .unwrap();
+        app.refresh_sessions();
+        app.open_session(&parent.id);
+        let ctx = egui::Context::default();
+        app.apply_action(
+            clicked(format!("subagent_input_edit:{}:ui-input", child.session.id)),
+            &ctx,
+        );
+        assert_eq!(
+            app.view
+                .subagent_input_edit
+                .as_ref()
+                .unwrap()
+                .expected_revision,
+            0
+        );
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "subagent_input_prompt".into(),
+                value: " ".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("subagent_input_save"), &ctx);
+        assert!(app.view.subagent_input_edit.is_some());
+        assert_eq!(
+            coordinator
+                .list_children_snapshot_for_ui(&parent.id)
+                .unwrap()[0]
+                .inputs[0]
+                .prompt,
+            "Original"
+        );
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "subagent_input_prompt".into(),
+                value: "Editado\nUI ñ".into(),
+            },
+            &ctx,
+        );
+        let busy = store.try_acquire_native_lease(&parent.id).unwrap();
+        app.apply_action(clicked("subagent_input_save"), &ctx);
+        assert!(app.view.status.contains("en uso"));
+        assert!(app.view.subagent_input_edit.is_some());
+        drop(busy);
+        app.apply_action(clicked("subagent_input_save"), &ctx);
+        assert!(app.view.subagent_input_edit.is_none());
+        drop(app);
+        let mut app = AgentsWindow::with_data_root(data_root);
+        app.open_session(&parent.id);
+        assert_eq!(
+            app.view.subagent_sessions[0].inputs[0].prompt,
+            "Editado\nUI ñ"
+        );
+        assert_eq!(app.view.subagent_sessions[0].inputs[0].revision, 1);
+        app.apply_action(clicked("subagent_input_edit:unrelated:ui-input"), &ctx);
+        assert!(app.view.subagent_input_edit.is_none());
+        app.apply_action(
+            clicked(format!("subagent_input_edit:{}:ui-input", child.session.id)),
+            &ctx,
+        );
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "subagent_input_prompt".into(),
+                value: "Borrador local".into(),
+            },
+            &ctx,
+        );
+        let lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        coordinator
+            .edit_pending_input(
+                &lease,
+                &child.session.id,
+                "ui-input",
+                1,
+                "Edición concurrente",
+            )
+            .unwrap();
+        drop(lease);
+        app.apply_action(clicked("subagent_input_save"), &ctx);
+        assert_eq!(
+            app.view.subagent_input_edit.as_ref().unwrap().prompt,
+            "Borrador local"
+        );
+        assert!(
+            app.view.status.contains("abrila nuevamente"),
+            "{}",
+            app.view.status
+        );
+        assert_eq!(
+            app.view.subagent_sessions[0].inputs[0].prompt,
+            "Edición concurrente"
+        );
+        let committed: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(store.storage_root().join("subagents.registry.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(committed["version"], 3);
+        assert_eq!(
+            committed["inputs"][&child.session.id][0]["digest"],
+            "2effa45233fcc9fc5728b31b4753ca812b20ca2054869406c7c132586cb39cd7"
+        );
+        app.apply_action(clicked("subagent_input_cancel"), &ctx);
+        assert!(app.view.subagent_input_edit.is_none());
+    }
+
+    #[test]
+    fn desktop_startup_goal_recovery_keeps_busy_and_corrupt_ledgers_visible_after_reopen() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.clone().unwrap();
+        let good = store.create(root.path(), "native").unwrap();
+        let busy = store.create(root.path(), "native").unwrap();
+        let corrupt = store.create(root.path(), "native").unwrap();
+        let goals = openide_core::NativeGoalStore::new(store.clone());
+        for session in [&good, &busy, &corrupt] {
+            let lease = store.try_acquire_native_lease(&session.id).unwrap();
+            goals
+                .create(
+                    &lease,
+                    "goal",
+                    "Full original objective",
+                    vec![openide_core::NativeGoalCriterion {
+                        id: "verify".into(),
+                        description: "Verify all behavior".into(),
+                        evidence: None,
+                    }],
+                )
+                .unwrap();
+        }
+        store
+            .admit_native_turn(
+                &good.id,
+                "pending-turn",
+                "Preserve admission",
+                "fixture",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let journal = store.load(&good.id).unwrap().unwrap().events;
+        let temporary = |id: &str| {
+            let path = store
+                .storage_root()
+                .join(format!(".{id}.native-goals.{}.tmp", uuid::Uuid::new_v4()));
+            std::fs::write(&path, b"unpublished").unwrap();
+            path
+        };
+        let good_temp = temporary(&good.id);
+        let busy_temp = temporary(&busy.id);
+        let corrupt_temp = temporary(&corrupt.id);
+        let corrupt_path = store
+            .storage_root()
+            .join(format!("{}.native-goals.json", corrupt.id));
+        let valid = std::fs::read(&corrupt_path).unwrap();
+        std::fs::write(&corrupt_path, b"{broken").unwrap();
+        let busy_lease = store.try_acquire_native_lease(&busy.id).unwrap();
+        drop(app);
+        let mut app = AgentsWindow::with_data_root(data_root.clone());
+        assert!(app.store.is_some());
+        assert_eq!(app.native_goal_recovery.removed_temporaries, 1);
+        assert_eq!(
+            app.native_goal_recovery.busy_session_ids,
+            vec![busy.id.clone()]
+        );
+        assert_eq!(app.native_goal_recovery.diagnostics.len(), 1);
+        assert_eq!(
+            app.native_goal_recovery.diagnostics[0].session_id,
+            corrupt.id
+        );
+        assert!(!good_temp.exists());
+        assert!(busy_temp.exists());
+        assert!(corrupt_temp.exists());
+        assert_eq!(std::fs::read(&corrupt_path).unwrap(), b"{broken");
+        assert_eq!(store.load(&good.id).unwrap().unwrap().events, journal);
+        app.open_session(&good.id);
+        app.refresh_sessions();
+        assert!(app
+            .view
+            .sessions_status
+            .as_ref()
+            .unwrap()
+            .contains(&corrupt.id));
+        let frame = UiTree::new(build_view(&app.view, 1300.0)).layout(Size::new(1300.0, 900.0));
+        assert!(frame.commands.iter().any(
+            |command| matches!(command,DrawCommand::Text{text,..} if text.starts_with("Goal"))
+        ));
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("composer_goal_open"), &ctx);
+        assert_eq!(app.view.native_goal.recovery, app.native_goal_recovery);
+        assert!(app
+            .view
+            .native_goal
+            .recovery_description()
+            .contains(&busy.id));
+        assert!(app
+            .view
+            .native_goal
+            .recovery_description()
+            .contains(&corrupt.id));
+        let report_before = app.native_goal_recovery.clone();
+        app.view.selected_session = None;
+        app.refresh_native_goal();
+        assert!(app.view.native_goal.session_id.is_none());
+        assert_eq!(app.view.native_goal.recovery, report_before);
+        app.open_session(&good.id);
+        app.apply_action(clicked("composer_goal_open"), &ctx);
+        assert_eq!(app.view.native_goal.recovery, report_before);
+        app.view.running = true;
+        app.apply_action(clicked("native_goal_maintenance_retry"), &ctx);
+        assert_eq!(app.native_goal_recovery, report_before);
+        app.view.running = false;
+        app.view.composer_goal_editor_open = false;
+        app.apply_action(clicked("native_goal_maintenance_retry"), &ctx);
+        assert_eq!(app.native_goal_recovery, report_before);
+        app.view.composer_goal_editor_open = true;
+        app.apply_action(clicked("native_goal_maintenance_retry"), &ctx);
+        assert_eq!(app.native_goal_recovery.removed_temporaries, 0);
+        assert_eq!(
+            app.native_goal_recovery.busy_session_ids,
+            vec![busy.id.clone()]
+        );
+        assert_eq!(app.native_goal_recovery.diagnostics.len(), 1);
+        assert_eq!(app.view.native_goal.recovery, app.native_goal_recovery);
+        assert_eq!(std::fs::read(&corrupt_path).unwrap(), b"{broken");
+        assert_eq!(store.load(&good.id).unwrap().unwrap().events, journal);
+        drop(busy_lease);
+        std::fs::write(&corrupt_path, &valid).unwrap();
+        app.apply_action(clicked("native_goal_maintenance_retry"), &ctx);
+        assert_eq!(app.native_goal_recovery.removed_temporaries, 2);
+        assert!(app.native_goal_recovery.busy_session_ids.is_empty());
+        assert!(app.native_goal_recovery.diagnostics.is_empty());
+        assert_eq!(app.view.native_goal.recovery, app.native_goal_recovery);
+        assert!(app
+            .view
+            .sessions_status
+            .as_ref()
+            .is_none_or(|status| !status.contains("Goal al iniciar")));
+        assert!(!busy_temp.exists());
+        assert!(!corrupt_temp.exists());
+        assert_eq!(std::fs::read(&corrupt_path).unwrap(), valid);
+        assert_eq!(store.load(&good.id).unwrap().unwrap().events, journal);
+        drop(app);
+        std::fs::write(&corrupt_path, &valid).unwrap();
+        let app = AgentsWindow::with_data_root(data_root);
+        assert_eq!(app.native_goal_recovery.removed_temporaries, 0);
+        assert!(app.native_goal_recovery.busy_session_ids.is_empty());
+        assert!(app.native_goal_recovery.diagnostics.is_empty());
+        assert!(!busy_temp.exists());
+        assert!(!corrupt_temp.exists());
+        assert_eq!(std::fs::read(corrupt_path).unwrap(), valid);
+        assert_eq!(store.load(&good.id).unwrap().unwrap().events, journal);
+        assert_eq!(
+            goals.list(&good.id).unwrap()[0].objective,
+            "Full original objective"
+        );
+    }
+
+    #[test]
+    fn desktop_startup_recovers_orphan_registry_temporaries_without_changing_journal() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.clone().unwrap();
+        let parent = store.create(root.path(), "native").unwrap();
+        let before = store.load(&parent.id).unwrap().unwrap().events;
+        drop(app);
+        let orphan = store
+            .storage_root()
+            .join(format!(".subagents.{}.tmp", uuid::Uuid::new_v4()));
+        std::fs::write(&orphan, b"uncommitted input").unwrap();
+        let unrelated = store.storage_root().join(".subagents.notes.tmp");
+        std::fs::write(&unrelated, b"notes").unwrap();
+        let app = AgentsWindow::with_data_root(data_root);
+        assert!(app.store.is_some());
+        assert!(!orphan.exists());
+        assert!(unrelated.exists());
+        assert_eq!(store.load(&parent.id).unwrap().unwrap().events, before);
+    }
+
+    #[test]
+    fn mailbox_skip_actions_reject_busy_stale_unrelated_and_reopen_one_omission() {
+        let root = tempfile::tempdir().unwrap();
+        let data_root = root.path().join("data");
+        let mut app = AgentsWindow::with_data_root(data_root.clone());
+        let store = app.store.clone().unwrap();
+        let parent = store.create(root.path(), "native").unwrap();
+        let lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator = SubagentCoordinator::new(store.clone(), Default::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &lease,
+                "skip-ui",
+                &openide_harness::SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        let run = coordinator.start_child(&lease, &child.session.id).unwrap();
+        coordinator
+            .finish_child(&run, openide_harness::SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        // Durable mailbox fixture; coordinator enqueue is crate-private and
+        // exercised through its public worker in harness acceptance.
+        let path = store.storage_root().join("subagents.registry.json");
+        let mut registry: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        registry["inputs"][&child.session.id] = serde_json::json!([{"id": "ui:input", "prompt": "Original", "mode": "build", "digest": "2effa45233fcc9fc5728b31b4753ca812b20ca2054869406c7c132586cb39cd7", "state": "pending", "revision": 0}, {"id": "keep", "prompt": "Keep", "mode": "build", "digest": "ebe7abdb3f8dccf9742130546a9883788864cc500274add2f2889421e20dc712", "state": "pending", "revision": 0}]);
+        std::fs::write(path, serde_json::to_vec(&registry).unwrap()).unwrap();
+        drop(lease);
+        app.refresh_sessions();
+        app.open_session(&parent.id);
+        let ctx = egui::Context::default();
+        let action = format!("subagent_input_skip:{}:0:ui:input", child.session.id);
+        let busy = store.try_acquire_native_lease(&parent.id).unwrap();
+        app.apply_action(clicked(&action), &ctx);
+        assert!(app.view.status.contains("en uso"));
+        drop(busy);
+        app.apply_action(clicked("subagent_input_skip:unrelated:0:ui:input"), &ctx);
+        assert_eq!(
+            coordinator
+                .list_children_snapshot_for_ui(&parent.id)
+                .unwrap()[0]
+                .open_inputs,
+            2
+        );
+        let lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        coordinator
+            .edit_pending_input(&lease, &child.session.id, "ui:input", 0, "Concurrent edit")
+            .unwrap();
+        drop(lease);
+        app.apply_action(clicked(&action), &ctx);
+        assert!(app.view.status.contains("cambió"));
+        assert_eq!(
+            app.view.subagent_sessions[0].inputs[0].status,
+            openide_harness::SubagentInputStatus::Pending
+        );
+        app.open_session(&child.session.id);
+        app.apply_action(
+            clicked(format!("subagent_input_edit:{}:ui:input", child.session.id)),
+            &ctx,
+        );
+        assert!(app.view.subagent_input_edit.is_some());
+        let action = format!("subagent_input_skip:{}:1:ui:input", child.session.id);
+        app.apply_action(clicked(&action), &ctx);
+        assert!(app.view.status.contains("Entrada omitida"));
+        assert!(app.view.subagent_input_edit.is_none());
+        app.apply_action(clicked(&action), &ctx); // ambiguous-commit retry
+        assert!(app.view.status.contains("Entrada omitida"));
+        drop(app);
+        let app = AgentsWindow::with_data_root(data_root);
+        let child = app
+            .view
+            .subagent_sessions
+            .iter()
+            .find(|c| c.child_session_id == child.session.id)
+            .unwrap();
+        assert_eq!(child.open_inputs, 1);
+        assert!(!child.cancellation_requested);
+        assert_eq!(
+            child.inputs[0].status,
+            openide_harness::SubagentInputStatus::Skipped
+        );
+        assert_eq!(child.inputs[0].revision, 2);
+        assert_eq!(child.inputs[0].prompt, "Concurrent edit");
+        assert_eq!(
+            child.inputs[1].status,
+            openide_harness::SubagentInputStatus::Pending
+        );
+    }
+
+    #[test]
+    fn desktop_cancels_persisted_child_without_bridge_and_reopens_flags() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.clone().unwrap();
+        let parent = store.create(&workspace, "native").unwrap();
+        let parent_lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "cancel-ui",
+                &openide_harness::SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        drop(parent_lease);
+        drop(app);
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.open_session(&parent.id);
+        assert!(app.subagent_bridge.active_child_ids().is_empty());
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("subagent_cancel:unrelated"), &ctx);
+        assert!(!coordinator.list_children_for_ui(&parent.id).unwrap()[0].cancellation_requested);
+        let busy_parent = store.try_acquire_native_lease(&parent.id).unwrap();
+        app.apply_action(
+            clicked(format!("subagent_cancel:{}", child.session.id)),
+            &ctx,
+        );
+        assert!(app.view.status.contains("en uso"), "{}", app.view.status);
+        assert!(!coordinator.list_children_for_ui(&parent.id).unwrap()[0].cancellation_requested);
+        drop(busy_parent);
+        app.apply_action(
+            clicked(format!("subagent_cancel:{}", child.session.id)),
+            &ctx,
+        );
+        assert!(
+            app.view.status.contains("Cancelación persistida"),
+            "{}",
+            app.view.status
+        );
+        drop(app);
+        let reopened = AgentsWindow::with_data_root(root.path().join("data"));
+        let child = reopened
+            .view
+            .subagent_sessions
+            .iter()
+            .find(|saved| saved.child_session_id == child.session.id)
+            .unwrap();
+        assert_eq!(child.status, SubagentStatus::Cancelled);
+        assert!(child.cancellation_requested);
+    }
+
+    #[test]
+    fn desktop_cancellation_without_bridge_notifies_running_worker_durably() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.clone().unwrap();
+        let parent = store.create(root.path(), "native").unwrap();
+        let parent_lease = store.try_acquire_native_lease(&parent.id).unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let child = coordinator
+            .create_child(
+                &parent_lease,
+                "cancel-running-ui",
+                &openide_harness::SubagentSpec {
+                    prompt: "Inspect".into(),
+                    model: "fixture".into(),
+                    mode: TurnMode::Build,
+                    context_digest: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        drop(parent_lease);
+        app.refresh_sessions();
+        app.open_session(&child.session.id);
+        app.cancel_subagent(&child.session.id);
+        assert!(coordinator.cancellation_requested(&run).unwrap());
+        assert_eq!(
+            app.view.subagent_sessions[0].status,
+            SubagentStatus::Running
+        );
+        assert!(app.view.status.contains("esperando"));
+        coordinator
+            .finish_child(&run, openide_harness::SubagentOutcome::Cancelled)
+            .unwrap();
+        drop(run);
+        app.refresh_sessions();
+        assert_eq!(
+            app.view.subagent_sessions[0].status,
+            SubagentStatus::Cancelled
+        );
     }
 
     #[test]
@@ -13344,37 +23850,150 @@ mod tests {
         );
     }
 
+    // A private synthetic account exercises the four-account UI through the
+    // real credential reader. It authorizes no external service or inference.
+    fn install_public_account_fixture(root: &Path, provider: &str) {
+        let directory = root.join("provider-credentials");
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(format!("{provider}.json"));
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "version": 1,
+                "provider_id": provider,
+                "access_token": "synthetic-account-fixture-not-a-real-key"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+
+    fn public_catalog_test_fixture(root: &Path) -> AgentsWindow {
+        install_public_account_fixture(root, "nvidia");
+        // The public account adapter is used only to validate UI actions.
+        // These synthetic credentials never send a generation request.
+        let mut app = AgentsWindow::with_data_root(root.to_owned());
+        let catalog = Arc::make_mut(app.view.catalog.as_mut().unwrap());
+        let mut model = catalog.model("openai", "gpt-4.1").unwrap().clone();
+        model.id = "fixture-model-exact".into();
+        model.name = "Fixture model".into();
+        model.tool_call_declared = Some(true);
+        let provider = catalog.providers.get_mut("nvidia").unwrap();
+        provider.models.clear();
+        provider.models.insert(model.id.clone(), model);
+        app.refresh_composer_routes();
+        app
+    }
+
+    pub(super) struct NativeComposerTestCredential(String);
+
+    impl Drop for NativeComposerTestCredential {
+        fn drop(&mut self) {
+            std::env::remove_var(&self.0);
+        }
+    }
+
+    pub(super) fn native_composer_test_fixture(
+        data_root: &Path,
+    ) -> (AgentsWindow, NativeComposerTestCredential) {
+        static CREDENTIAL_SEQUENCE: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
+        let variable = format!(
+            "OPENIDE_COMPOSER_FIXTURE_{}_{}",
+            std::process::id(),
+            CREDENTIAL_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        assert!(std::env::var_os(&variable).is_none());
+        std::env::set_var(&variable, "fixture-credential-not-a-real-provider-key");
+        let credential = NativeComposerTestCredential(variable.clone());
+        // UI action fixture; the private synthetic account makes no
+        // claim about OpenCode generation or advertised model capabilities.
+        install_public_account_fixture(data_root, "opencode");
+        let mut app = AgentsWindow::with_data_root(data_root.to_owned());
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "opencode".into();
+        app.view.model = "gpt-6-astra".into();
+        app.model_discoveries = vec![native_provider::ProviderModelDiscovery {
+            provider_id: "opencode".into(),
+            models: [
+                ("gpt-6-astra", vec!["low", "medium", "high"]),
+                ("gpt-5.6-luna", vec!["low"]),
+            ]
+            .into_iter()
+            .map(|(id, efforts)| {
+                (
+                    id.to_owned(),
+                    native_provider::DiscoveredModel {
+                        listing_index: None,
+                        limits_declared: false,
+                        efforts_declared: false,
+                        capabilities_declared: false,
+                        max_input_tokens: None,
+                        declared_capabilities: Default::default(),
+                        id: id.into(),
+                        name: id.into(),
+                        provider_reports_tools: true,
+                        tool_call_declared: Some(true),
+                        text_input_output: true,
+                        supported_efforts: efforts.into_iter().map(str::to_owned).collect(),
+                        context_window_tokens: Some(32_768),
+                        max_output_tokens: Some(4_096),
+                    },
+                )
+            })
+            .collect(),
+        }];
+        assert!(app.persist_native_settings(), "{}", app.view.status);
+        (app, credential)
+    }
+
     #[test]
     fn composer_model_and_effort_actions_are_validated_and_persisted() {
         let root = tempfile::tempdir().unwrap();
-        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let (mut app, _credential) = native_composer_test_fixture(root.path());
         let ctx = egui::Context::default();
-        app.view.selected_backend = "codex".to_owned();
-        app.refresh_composer_selection();
 
         app.apply_action(clicked("composer_model_toggle"), &ctx);
         assert!(app.view.composer_model_menu_open);
-        app.apply_action(clicked("composer_model:gpt-6-sol"), &ctx);
-        assert_eq!(app.view.composer_model, "gpt-6-sol");
+        app.apply_action(clicked("composer_model:gpt-6-astra"), &ctx);
+        assert_eq!(app.view.composer_model, "gpt-6-astra");
         assert!(!app.view.composer_model_menu_open);
 
-        app.apply_action(clicked("composer_effort:ultra"), &ctx);
-        assert_eq!(app.view.composer_effort, "ultra");
+        app.apply_action(clicked("composer_effort:high"), &ctx);
+        assert_eq!(app.view.composer_effort, "high");
         app.apply_action(clicked("composer_effort:invalid"), &ctx);
-        assert_eq!(app.view.composer_effort, "ultra");
+        assert_eq!(app.view.composer_effort, "high");
 
         let stored = ComposerPreferences::load(root.path());
         assert_eq!(
-            stored.choice("codex", ""),
+            stored.choice("native", ""),
             ComposerChoice {
-                model: "gpt-6-sol".into(),
-                effort: "ultra".into(),
+                model: "gpt-6-astra".into(),
+                effort: "high".into(),
             }
         );
 
-        app.apply_action(clicked("composer_model:gpt-6-luna"), &ctx);
-        assert_eq!(app.view.composer_model, "gpt-6-luna");
+        let route = app
+            .view
+            .composer_routes
+            .iter()
+            .find(|route| route.model_id == "gpt-5.6-luna")
+            .unwrap()
+            .route_id
+            .clone();
+        app.apply_action(clicked(format!("composer_route:{route}")), &ctx);
+        assert_eq!(app.view.composer_model, "gpt-5.6-luna");
         assert_eq!(app.view.composer_effort, "default");
+        assert_eq!(
+            NativeProviderSettings::load(root.path()).model_id,
+            "gpt-5.6-luna"
+        );
     }
 
     #[test]
@@ -13396,34 +24015,58 @@ mod tests {
     }
 
     #[test]
-    fn selecting_codex_route_persists_backend_and_model_together() {
+    fn selecting_stale_codex_route_cannot_replace_the_native_route() {
         let root = tempfile::tempdir().unwrap();
-        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
-        if !app
-            .view
-            .backend_options
-            .iter()
-            .any(|(backend, _)| backend == "codex")
-        {
-            app.view
-                .backend_options
-                .push(("codex".into(), "Codex".into()));
-        }
-        app.view.selected_backend = "native".into();
-        app.refresh_composer_routes();
-        let route = app
+        let (mut app, _credential) = native_composer_test_fixture(root.path());
+        let ctx = egui::Context::default();
+        app.select_composer_effort("high");
+        app.view.selected_session = Some("native-session".into());
+        assert!(app
             .view
             .composer_routes
             .iter()
-            .find(|route| route.backend == "codex" && route.model_id != "default")
+            .all(|route| route.backend == "native"));
+        let profile_before = std::fs::read(root.path().join("native-provider.json")).unwrap();
+        let preferences_before =
+            std::fs::read(root.path().join("composer-preferences.json")).unwrap();
+        let native_settings = app.native_settings();
+        let mut stale_route = app
+            .view
+            .composer_routes
+            .iter()
+            .find(|route| route.model_id == "gpt-6-astra")
             .unwrap()
             .clone();
-        app.select_composer_route(&route.route_id);
-        let preferences = ComposerPreferences::load(root.path());
-        assert_eq!(app.view.selected_backend, "codex");
-        assert_eq!(app.view.composer_model, route.model_id);
-        assert_eq!(preferences.selected_backend(), Some("codex"));
-        assert_eq!(preferences.choice("codex", "").model, route.model_id);
+        stale_route.route_id = "legacy:codex:external-model".into();
+        stale_route.backend = "codex".into();
+        stale_route.provider_id = "codex".into();
+        stale_route.model_id = "external-model".into();
+        stale_route.credential = composer_selection::CredentialAvailability::ExternalCliManaged;
+        stale_route.source = composer_selection::RouteSource::CliLiveCatalog;
+        let stale_id = stale_route.route_id.clone();
+        // Deliberately bypass the filtered native picker to exercise the host
+        // boundary when an old UI action arrives after the route has changed.
+        app.view
+            .backend_options
+            .push(("codex".into(), "Codex".into()));
+        app.view.composer_routes.push(stale_route);
+        app.apply_action(clicked(format!("composer_route:{stale_id}")), &ctx);
+        assert_eq!(app.view.selected_backend, "native");
+        assert_eq!(app.view.composer_model, "gpt-6-astra");
+        assert_eq!(app.view.composer_effort, "high");
+        assert_eq!(app.view.selected_session.as_deref(), Some("native-session"));
+        assert_eq!(app.native_settings(), native_settings);
+        assert_eq!(
+            std::fs::read(root.path().join("native-provider.json")).unwrap(),
+            profile_before
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("composer-preferences.json")).unwrap(),
+            preferences_before
+        );
+        let reopened = AgentsWindow::with_data_root(root.path().to_owned());
+        assert_eq!(reopened.view.selected_backend, "native");
+        assert_eq!(reopened.view.composer_model, "gpt-6-astra");
     }
 
     #[test]
@@ -13436,17 +24079,16 @@ mod tests {
     }
 
     #[test]
-    fn codex_account_catalog_replaces_stale_choice_and_effort_levels() {
+    fn codex_account_catalog_cannot_replace_native_exact_model_or_efforts() {
         let root = tempfile::tempdir().unwrap();
-        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
-        app.view
-            .backend_options
-            .push(("codex".into(), "Codex".into()));
-        app.view.selected_backend = "codex".into();
-        app.refresh_composer_selection();
-        app.select_composer_model("gpt-6-sol");
-        app.select_composer_effort("ultra");
-
+        let (mut app, _credential) = native_composer_test_fixture(root.path());
+        app.select_composer_effort("high");
+        let options_before = app.view.composer_model_options.clone();
+        let efforts_before = app.view.composer_effort_options.clone();
+        let native_settings = app.native_settings();
+        let profile_before = std::fs::read(root.path().join("native-provider.json")).unwrap();
+        let preferences_before =
+            std::fs::read(root.path().join("composer-preferences.json")).unwrap();
         let (sender, receiver) = mpsc::channel();
         app.codex_model_response = Some(receiver);
         app.view
@@ -13454,49 +24096,60 @@ mod tests {
             .insert("codex".into(), ProviderModelStatus::Checking);
         sender
             .send(Ok(vec![openide_cli::DiscoveredCodexModel {
-                id: "gpt-6-luna".into(),
-                display_name: "Luna disponible".into(),
-                supported_efforts: vec!["low".into(), "medium".into(), "high".into()],
+                id: "external/model:only".into(),
+                display_name: "Modelo CLI histórico".into(),
+                description: None,
+                input_modalities: Vec::new(),
+                supported_efforts: vec!["ultra".into()],
                 is_default: true,
             }]))
             .unwrap();
-
         assert!(app.poll_codex_model_discovery());
-        assert_eq!(app.view.composer_model, "default");
-        assert_eq!(app.view.composer_effort, "default");
-        assert_eq!(app.view.composer_model_options.len(), 2);
+        assert!(app.codex_model_response.is_none());
+        assert!(!app.view.composer_provider_status.contains_key("codex"));
+        assert_eq!(app.view.selected_backend, "native");
+        assert_eq!(app.view.composer_model, "gpt-6-astra");
+        assert_eq!(app.view.composer_effort, "high");
+        assert_eq!(app.view.composer_model_options, options_before);
+        assert_eq!(app.view.composer_effort_options, efforts_before);
+        assert_eq!(
+            app.view
+                .composer_effort_options
+                .iter()
+                .filter(|(effort, _)| effort != "default")
+                .map(|(effort, _)| effort.as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high"]
+        );
         assert!(app
             .view
-            .composer_effort_options
+            .composer_routes
             .iter()
-            .any(|(effort, _)| effort == "high"));
-        assert!(!app
-            .view
-            .composer_effort_options
-            .iter()
-            .any(|(effort, _)| effort == "ultra"));
-        assert!(app.view.composer_routes.iter().any(|route| {
-            route.model_id == "gpt-6-luna"
-                && route.source == composer_selection::RouteSource::CliLiveCatalog
-        }));
-        assert_eq!(
-            ComposerPreferences::load(root.path())
-                .choice("codex", "")
-                .model,
-            "default"
-        );
-        app.select_composer_model("gpt-6-luna");
-        app.select_composer_effort("high");
+            .all(|route| route.backend == "native"
+                && route.source != composer_selection::RouteSource::CliLiveCatalog
+                && route.model_id != "external/model:only"));
+        app.select_composer_model("external/model:only");
+        app.select_composer_effort("ultra");
+        assert_eq!(app.view.composer_model, "gpt-6-astra");
         assert_eq!(app.view.composer_effort, "high");
+        assert_eq!(app.native_settings(), native_settings);
+        assert_eq!(
+            std::fs::read(root.path().join("native-provider.json")).unwrap(),
+            profile_before
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("composer-preferences.json")).unwrap(),
+            preferences_before
+        );
     }
 
     #[test]
     fn failed_provider_save_keeps_the_open_session_and_backend() {
         let root = tempfile::tempdir().unwrap();
-        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let mut app = public_catalog_test_fixture(&root.path().join("data"));
         app.view.selected_backend = "codex".into();
         app.view.selected_session = Some("still-open".into());
-        app.view.native_provider_id = "custom".into();
+        app.view.native_provider_id = "nvidia".into();
         app.view.endpoint = "http://127.0.0.1:1234/v1".into();
         app.view.model = "local-before".into();
         app.refresh_composer_routes();
@@ -13504,32 +24157,29 @@ mod tests {
             .view
             .composer_routes
             .iter()
-            .find(|route| route.provider_id == "custom")
+            .find(|route| route.provider_id == "nvidia")
             .unwrap()
             .clone();
         assert!(route.selectable());
-        route.route_id = "native:custom:local-after".into();
+        route.route_id = "native:nvidia:local-after".into();
         route.model_id = "local-after".into();
         app.view.composer_routes.push(route);
         let blocker = root.path().join("file-instead-of-directory");
         std::fs::write(&blocker, "occupied").unwrap();
         app.data_root = blocker;
 
-        app.select_composer_route("native:custom:local-after");
+        app.select_composer_route("native:nvidia:local-after");
         assert_eq!(app.view.selected_backend, "codex");
         assert_eq!(app.view.selected_session.as_deref(), Some("still-open"));
-        assert_eq!(app.view.native_provider_id, "custom");
+        assert_eq!(app.view.native_provider_id, "nvidia");
         assert_eq!(app.view.model, "local-before");
     }
 
     #[test]
     fn effort_slider_previews_then_snaps_to_the_models_advertised_tiers() {
         let root = tempfile::tempdir().unwrap();
-        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let (mut app, _credential) = native_composer_test_fixture(root.path());
         let ctx = egui::Context::default();
-        app.view.selected_backend = "codex".to_owned();
-        app.refresh_composer_selection();
-        app.select_composer_model("gpt-6-sol");
         let last = app
             .view
             .composer_effort_options
@@ -13538,6 +24188,7 @@ mod tests {
             .unwrap()
             .0
             .clone();
+        assert_eq!(last, "high");
         let before = app.view.composer_effort.clone();
         app.view.composer_model_menu_open = true;
 
@@ -13565,7 +24216,7 @@ mod tests {
         assert!(app.view.composer_advanced_open);
         assert_eq!(
             ComposerPreferences::load(root.path())
-                .choice("codex", "")
+                .choice("native", "")
                 .effort,
             last
         );
@@ -13679,13 +24330,16 @@ mod tests {
     #[test]
     fn disconnected_provider_opens_connection_settings_without_changing_model() {
         let root = tempfile::tempdir().unwrap();
-        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let mut app = public_catalog_test_fixture(root.path());
+        app.view.native_provider_id = "nvidia".into();
+        app.view.model = "fixture-model-exact".into();
+        app.refresh_composer_routes();
         let ctx = egui::Context::default();
         let mut route = app
             .view
             .composer_routes
             .iter()
-            .find(|route| route.provider_id == "openai" && route.backend == "native")
+            .find(|route| route.provider_id == "nvidia" && route.backend == "native")
             .unwrap()
             .clone();
         route.credential = composer_selection::CredentialAvailability::MissingCredential;
@@ -13695,9 +24349,390 @@ mod tests {
         app.apply_action(clicked(format!("composer_route:{}", route.route_id)), &ctx);
         assert!(app.view.show_settings);
         assert_eq!(app.view.settings_page, SettingsPage::Providers);
-        assert_eq!(app.view.catalog_browse_provider, "openai");
+        assert_eq!(app.view.catalog_browse_provider, "nvidia");
         assert_eq!(app.view.model, previous_model);
         assert_eq!(app.view.native_provider_id, previous_provider);
+    }
+
+    #[test]
+    fn settings_catalog_account_denials_block_selection_but_unknown_routes_remain_explicit() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = public_catalog_test_fixture(root.path());
+        let ctx = egui::Context::default();
+        app.view.native_provider_id = "nvidia".into();
+        app.view.model = "fixture-model-exact".into();
+        app.view.selected_backend = "codex".into();
+        app.view.composer_model = "external-model".into();
+        let previous_settings = app.native_settings();
+        let model = native_provider::DiscoveredModel {
+            listing_index: None,
+            limits_declared: false,
+            efforts_declared: false,
+            capabilities_declared: false,
+            max_input_tokens: None,
+            declared_capabilities: Default::default(),
+            id: "fixture-model-exact".into(),
+            name: "fixture-model-exact".into(),
+            provider_reports_tools: false,
+            tool_call_declared: Some(false),
+            text_input_output: true,
+            supported_efforts: Vec::new(),
+            context_window_tokens: None,
+            max_output_tokens: None,
+        };
+        app.model_discoveries = vec![native_provider::ProviderModelDiscovery {
+            provider_id: "nvidia".into(),
+            models: [("fixture-model-exact".into(), model)]
+                .into_iter()
+                .collect(),
+        }];
+        for (tools, text) in [(Some(false), true), (None, false)] {
+            let model = app.model_discoveries[0]
+                .models
+                .get_mut("fixture-model-exact")
+                .unwrap();
+            model.tool_call_declared = tools;
+            model.text_input_output = text;
+            app.refresh_composer_routes();
+            assert!(provider_settings::catalog_route_blocked(
+                &app.view.composer_routes,
+                "nvidia",
+                "fixture-model-exact"
+            ));
+            app.apply_action(clicked("catalog_select:nvidia/fixture-model-exact"), &ctx);
+            assert_eq!(app.view.selected_backend, "codex");
+            assert_eq!(app.view.composer_model, "external-model");
+            assert_eq!(app.native_settings(), previous_settings);
+            assert!(!root.path().join("native-provider.json").exists());
+        }
+        app.model_discoveries[0].models.clear();
+        app.refresh_composer_routes();
+        assert!(provider_settings::catalog_route_blocked(
+            &app.view.composer_routes,
+            "nvidia",
+            "fixture-model-exact"
+        ));
+        app.apply_action(clicked("catalog_select:nvidia/fixture-model-exact"), &ctx);
+        assert_eq!(app.view.selected_backend, "codex");
+        assert_eq!(app.native_settings(), previous_settings);
+
+        app.model_discoveries.clear();
+        let catalog = Arc::make_mut(app.view.catalog.as_mut().unwrap());
+        let mut unknown = catalog
+            .model("nvidia", "fixture-model-exact")
+            .unwrap()
+            .clone();
+        unknown.id = "settings-future-model".into();
+        unknown.name = "Settings future model".into();
+        unknown.tool_call = false;
+        unknown.tool_call_declared = None;
+        unknown.limit = None;
+        catalog
+            .providers
+            .get_mut("nvidia")
+            .unwrap()
+            .models
+            .insert(unknown.id.clone(), unknown);
+        app.refresh_composer_routes();
+        assert!(!provider_settings::catalog_route_blocked(
+            &app.view.composer_routes,
+            "nvidia",
+            "settings-future-model"
+        ));
+        app.apply_action(clicked("catalog_select:nvidia/settings-future-model"), &ctx);
+        assert_eq!(app.view.selected_backend, "native");
+        assert_eq!(app.view.model, "settings-future-model");
+        assert_eq!(app.view.composer_model, "settings-future-model");
+        assert_eq!(
+            NativeProviderSettings::load(root.path()).model_id,
+            "settings-future-model"
+        );
+    }
+
+    #[test]
+    fn settings_catalog_use_model_activates_native_and_reopens_the_exact_route() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = public_catalog_test_fixture(root.path());
+        let ctx = egui::Context::default();
+        app.view.selected_backend = "codex".into();
+        app.view.composer_model = "external-model".into();
+        app.apply_action(clicked("catalog_select:nvidia/fixture-model-exact"), &ctx);
+        assert_eq!(app.view.selected_backend, "native");
+        assert_eq!(app.view.native_provider_id, "nvidia");
+        assert_eq!(app.view.model, "fixture-model-exact");
+        assert_eq!(app.view.composer_model, "fixture-model-exact");
+        assert!(!app.view.settings_notice_error);
+        assert_eq!(
+            ComposerPreferences::load(root.path()).selected_backend(),
+            Some("native")
+        );
+        let reopened = public_catalog_test_fixture(root.path());
+        assert_eq!(reopened.view.selected_backend, "native");
+        assert_eq!(reopened.view.native_provider_id, "nvidia");
+        assert_eq!(reopened.view.composer_model, "fixture-model-exact");
+
+        // The removed custom-connection action cannot replace the new
+        // four-account selection even if a delayed old UI click arrives.
+        let before = app.native_settings();
+        let disk_before = std::fs::read(root.path().join("native-provider.json")).unwrap();
+        app.apply_action(clicked("catalog_select_custom"), &ctx);
+        assert_eq!(app.native_settings(), before);
+        assert_eq!(
+            std::fs::read(root.path().join("native-provider.json")).unwrap(),
+            disk_before
+        );
+        app.view.running = true;
+        app.apply_action(clicked("catalog_select:nvidia/fixture-model-exact"), &ctx);
+        assert_eq!(app.native_settings(), before);
+        assert_eq!(NativeProviderSettings::load(root.path()), before);
+    }
+
+    #[test]
+    fn settings_catalog_failed_profile_or_backend_save_preserves_the_active_route() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = public_catalog_test_fixture(root.path());
+        let ctx = egui::Context::default();
+        app.view.selected_backend = "codex".into();
+        app.view.composer_model = "external-model".into();
+        let previous = app.native_settings();
+        std::fs::create_dir(root.path().join("native-provider.json")).unwrap();
+        app.apply_action(clicked("catalog_select:nvidia/fixture-model-exact"), &ctx);
+        assert_eq!(app.view.selected_backend, "codex");
+        assert_eq!(app.view.composer_model, "external-model");
+        assert_eq!(app.native_settings(), previous);
+        assert!(app.view.settings_notice_error);
+        app.apply_action(clicked("catalog_select_custom"), &ctx);
+        assert_eq!(app.view.selected_backend, "codex");
+        assert_eq!(app.native_settings(), previous);
+
+        std::fs::remove_dir(root.path().join("native-provider.json")).unwrap();
+        previous.save(root.path()).unwrap();
+        let preferences_path = root.path().join("composer-preferences.json");
+        if preferences_path.is_file() {
+            std::fs::remove_file(&preferences_path).unwrap();
+        }
+        std::fs::create_dir(&preferences_path).unwrap();
+        app.apply_action(clicked("catalog_select:nvidia/fixture-model-exact"), &ctx);
+        assert_eq!(app.view.selected_backend, "codex");
+        assert_eq!(app.view.composer_model, "external-model");
+        assert_eq!(app.native_settings(), previous);
+        assert_eq!(NativeProviderSettings::load(root.path()), previous);
+        assert!(app.view.settings_notice_error);
+        app.apply_action(clicked("catalog_select_custom"), &ctx);
+        assert_eq!(app.view.selected_backend, "codex");
+        assert_eq!(NativeProviderSettings::load(root.path()), previous);
+    }
+
+    #[test]
+    fn settings_model_selection_reveals_reordered_row_before_details_modal_returns_focus() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = public_catalog_test_fixture(&root.path().join("data"));
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Providers;
+        app.view.native_provider_id = "nvidia".into();
+        app.view.model = "fixture-000".into();
+        app.view.selected_backend = "native".into();
+        app.view.catalog_browse_provider = "nvidia".into();
+        let mut catalog = app.view.catalog.as_deref().unwrap().clone();
+        let provider = catalog.providers.get_mut("nvidia").unwrap();
+        let template = provider.models.values().next().unwrap().clone();
+        provider.models.clear();
+        for index in 0..300 {
+            let mut model = template.clone();
+            model.id = format!("fixture-{index:03}");
+            model.name = format!("Fixture {index:03}");
+            provider.models.insert(model.id.clone(), model);
+        }
+        app.view.catalog = Some(Arc::new(catalog));
+        app.tree = UiTree::new(crate::view::build_view(&app.view, 1300.0));
+        app.tree.layout(Size::new(1300.0, 900.0));
+        app.tree.scroll_to_index("catalog_models:nvidia", 299);
+        app.tree.layout(Size::new(1300.0, 900.0));
+        assert!(app.tree.scroll_offset("catalog_models:nvidia") > 1_000.0);
+        assert!(app.tree.focus("catalog_model_details:fixture-299"));
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("catalog_model_details:fixture-299"), &ctx);
+        app.tree
+            .set_root(crate::view::build_view(&app.view, 1300.0));
+        app.tree.layout(Size::new(1300.0, 900.0));
+        app.apply_action(clicked("catalog_select:nvidia/fixture-299"), &ctx);
+        assert_eq!(app.view.model, "fixture-299");
+        app.tree
+            .set_root(crate::view::build_view(&app.view, 1300.0));
+        app.tree.layout(Size::new(1300.0, 900.0));
+        assert_eq!(app.tree.scroll_offset("catalog_models:nvidia"), 0.0);
+        app.apply_action(clicked("catalog_model_details_dismiss"), &ctx);
+        app.tree
+            .set_root(crate::view::build_view(&app.view, 1300.0));
+        let frame = app.tree.layout(Size::new(1300.0, 900.0));
+        assert_eq!(
+            app.tree.focused_id(),
+            Some("catalog_model_details:fixture-299")
+        );
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == "catalog_model_details:fixture-299"));
+    }
+
+    #[test]
+    fn settings_connection_fields_preserve_running_route_and_saved_profile() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "running-model".into();
+        app.view.endpoint = "https://configured.example.com/v1".into();
+        assert!(app.persist_native_settings());
+        let previous = app.native_settings();
+        let previous_disk = std::fs::read(root.path().join("native-provider.json")).unwrap();
+        let previous_routes = app.view.composer_routes.clone();
+        let previous_composer_model = app.view.composer_model.clone();
+        app.view.running = true;
+        let ctx = egui::Context::default();
+        for (id, value) in [
+            ("model", "changed-model"),
+            ("endpoint", "https://changed.example.com/v1"),
+        ] {
+            app.apply_action(
+                UiAction::InputChanged {
+                    id: id.into(),
+                    value: value.into(),
+                },
+                &ctx,
+            );
+        }
+        assert_eq!(app.native_settings(), previous);
+        assert_eq!(app.view.composer_model, previous_composer_model);
+        assert_eq!(app.view.composer_routes, previous_routes);
+        assert_eq!(
+            std::fs::read(root.path().join("native-provider.json")).unwrap(),
+            previous_disk
+        );
+        assert_eq!(NativeProviderSettings::load(root.path()), previous);
+    }
+
+    #[test]
+    fn settings_catalog_navigation_filters_and_details_do_not_change_active_route() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = public_catalog_test_fixture(root.path());
+        let ctx = egui::Context::default();
+        let previous_provider = app.view.native_provider_id.clone();
+        let previous_model = app.view.model.clone();
+        let previous_backend = app.view.selected_backend.clone();
+        let previous_routes = app.view.composer_routes.clone();
+        app.view.running = true;
+
+        app.apply_action(clicked("catalog_provider_menu_toggle"), &ctx);
+        assert!(app.view.catalog_provider_menu_open);
+        app.apply_action(clicked("catalog_browse:nvidia"), &ctx);
+        assert!(!app.view.catalog_provider_menu_open);
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "catalog_model_query".into(),
+                value: "gpt".into(),
+            },
+            &ctx,
+        );
+        app.apply_action(clicked("catalog_models_filter:agent_ready"), &ctx);
+        assert_eq!(
+            app.view.catalog_models_filter,
+            CatalogModelsFilter::AgentReady
+        );
+        app.apply_action(clicked("catalog_model_details:fixture-model-exact"), &ctx);
+        assert_eq!(
+            app.view.catalog_expanded_model.as_deref(),
+            Some("fixture-model-exact")
+        );
+        app.apply_action(clicked("catalog_model_details:unknown"), &ctx);
+        assert_eq!(
+            app.view.catalog_expanded_model.as_deref(),
+            Some("fixture-model-exact")
+        );
+        app.apply_action(clicked("catalog_model_details:fixture-model-exact"), &ctx);
+        assert!(app.view.catalog_expanded_model.is_none());
+        app.apply_action(clicked("catalog_model_details:fixture-model-exact"), &ctx);
+        app.apply_action(clicked("catalog_model_details_dismiss"), &ctx);
+        assert!(app.view.catalog_expanded_model.is_none());
+        app.apply_action(clicked("catalog_settings_tab:connection"), &ctx);
+        assert_eq!(
+            app.view.catalog_settings_tab,
+            CatalogSettingsTab::Connection
+        );
+        app.apply_action(clicked("catalog_browse:custom"), &ctx);
+        assert_eq!(app.view.catalog_browse_provider, "nvidia");
+        assert_eq!(app.view.catalog_model_query, "gpt");
+        app.apply_action(clicked("catalog_browse:unregistered"), &ctx);
+        assert_eq!(app.view.catalog_browse_provider, "nvidia");
+
+        assert_eq!(app.view.native_provider_id, previous_provider);
+        assert_eq!(app.view.model, previous_model);
+        assert_eq!(app.view.selected_backend, previous_backend);
+        assert_eq!(app.view.composer_routes, previous_routes);
+        assert!(!root.path().join("native-provider.json").exists());
+    }
+
+    #[test]
+    fn registered_engine_connections_survive_without_entering_the_four_account_settings() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("provider-registry.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "version": 1,
+                "providers": [{
+                    "id": "settings-test-provider",
+                    "name": "Settings Test Provider",
+                    "endpoint": "https://settings.example.com/v1",
+                    "key_env": "OPENIDE_SETTINGS_TEST_API_KEY",
+                    "wire_api": "chat_completions",
+                    "model_list_path": "models"
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert_eq!(
+            app.view.native_provider_definitions["settings-test-provider"].endpoint,
+            "https://settings.example.com/v1"
+        );
+        let ctx = egui::Context::default();
+        let previous_provider = app.view.native_provider_id.clone();
+        let previous_browse = app.view.catalog_browse_provider.clone();
+        app.apply_action(clicked("catalog_browse:settings-test-provider"), &ctx);
+        assert_eq!(app.view.catalog_browse_provider, previous_browse);
+        assert_eq!(app.view.native_provider_id, previous_provider);
+    }
+
+    #[test]
+    fn settings_search_is_transient_and_shortcut_targets_current_surface() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        app.apply_action(
+            UiAction::InputChanged {
+                id: "settings_search".into(),
+                value: "proveedores".into(),
+            },
+            &ctx,
+        );
+        assert_eq!(app.view.settings_nav_query, "proveedores");
+        app.view.settings_page = SettingsPage::Providers;
+        app.view.catalog_browse_provider = "openai".into();
+        app.view.catalog_settings_tab = CatalogSettingsTab::Models;
+        assert_eq!(app.settings_search_target(), "catalog_model_query");
+        app.view.catalog_settings_tab = CatalogSettingsTab::Connection;
+        assert_eq!(app.settings_search_target(), "settings_search");
+        assert!(app.view.settings_nav_open);
+        app.view.settings_page = SettingsPage::General;
+        assert_eq!(app.settings_search_target(), "settings_search");
+
+        let reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert!(reopened.view.settings_nav_query.is_empty());
+        assert_eq!(
+            reopened.view.catalog_models_filter,
+            CatalogModelsFilter::All
+        );
+        assert!(reopened.view.catalog_expanded_model.is_none());
     }
 
     #[test]
@@ -13771,9 +24806,9 @@ mod tests {
         app.ensure_dock_tabs();
         assert!(app.view.dock_tabs.is_empty());
 
-        app.apply_action(clicked("dock_open:context"), &ctx);
+        app.apply_action(clicked("dock_open:files"), &ctx);
         assert_eq!(app.view.dock_tabs.len(), 1);
-        assert_eq!(app.view.side_tab, SideTab::Context);
+        assert_eq!(app.view.side_tab, SideTab::Files);
     }
 
     #[test]
@@ -13781,6 +24816,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
         let ctx = egui::Context::default();
+        app.apply_action(clicked("dock_open:activity"), &ctx);
         let first = app.view.dock_tabs[0].id;
         let second = app.view.dock_tabs[1].id;
         app.apply_action(clicked(format!("dock_move_down:{first}")), &ctx);
@@ -13800,11 +24836,11 @@ mod tests {
         app.apply_action(
             UiAction::InputChanged {
                 id: "dock_overview_query".into(),
-                value: "contexto".into(),
+                value: "actividad".into(),
             },
             &ctx,
         );
-        assert_eq!(app.view.dock_overview_query, "contexto");
+        assert_eq!(app.view.dock_overview_query, "actividad");
         app.apply_action(clicked(format!("dock_reopen:{closed}")), &ctx);
         assert!(!app.view.show_dock_overview);
         assert_eq!(app.view.dock_tabs.len(), 1);
@@ -13830,10 +24866,10 @@ mod tests {
         assert!(!app.view.show_dock_add_menu);
 
         app.apply_action(clicked("dock_add_tab"), &ctx);
-        app.apply_action(clicked("dock_open:context"), &ctx);
+        app.apply_action(clicked("dock_open:files"), &ctx);
         assert!(!app.view.show_dock_add_menu);
         assert_eq!(app.view.dock_tabs.len(), original_count);
-        assert_eq!(app.view.side_tab, SideTab::Context);
+        assert_eq!(app.view.side_tab, SideTab::Files);
 
         app.apply_action(clicked("dock_add_tab"), &ctx);
         app.apply_action(clicked("dock_overview_toggle"), &ctx);
@@ -13842,29 +24878,52 @@ mod tests {
     }
 
     #[test]
-    fn right_dock_page_actions_navigate_real_tabs() {
+    fn right_dock_keyboard_cycles_tabs_without_changing_their_order() {
         let root = tempfile::tempdir().unwrap();
         let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
         let ctx = egui::Context::default();
         app.viewport_width = 1400.0;
+        app.apply_action(clicked("dock_open:activity"), &ctx);
+        app.apply_action(clicked("dock_open:changes"), &ctx);
+        let ids: Vec<_> = app.view.dock_tabs.iter().map(|tab| tab.id).collect();
         let scope = app.dock_scope();
-        app.dock.set_width_px(&scope.workspace_id, 500.0);
-        let first = DockTabId::from_raw(app.view.dock_tabs[0].id).unwrap();
-        app.dock.activate(&scope, first);
+        app.dock
+            .activate(&scope, DockTabId::from_raw(ids[0]).unwrap());
         app.sync_dock_view();
+        assert!(app.handle_dock_tab_event(&UiEvent::Key {
+            key: Key::Tab,
+            shift: false,
+            ctrl: true
+        }));
         assert_eq!(
-            app.view.dock_tabs.iter().position(|tab| tab.active),
-            Some(0)
+            app.view.dock_tabs.iter().find(|tab| tab.active).unwrap().id,
+            ids[1]
         );
-        app.apply_action(clicked("dock_tab_page_next"), &ctx);
+        assert!(app.handle_dock_tab_event(&UiEvent::Key {
+            key: Key::Tab,
+            shift: true,
+            ctrl: true
+        }));
         assert_eq!(
-            app.view.dock_tabs.iter().position(|tab| tab.active),
-            Some(2)
+            app.view.dock_tabs.iter().find(|tab| tab.active).unwrap().id,
+            ids[0]
         );
-        app.apply_action(clicked("dock_tab_page_previous"), &ctx);
+        assert!(app.handle_dock_tab_event(&UiEvent::Key {
+            key: Key::Tab,
+            shift: true,
+            ctrl: true
+        }));
         assert_eq!(
-            app.view.dock_tabs.iter().position(|tab| tab.active),
-            Some(0)
+            app.view.dock_tabs.iter().find(|tab| tab.active).unwrap().id,
+            *ids.last().unwrap()
+        );
+        assert_eq!(
+            app.view
+                .dock_tabs
+                .iter()
+                .map(|tab| tab.id)
+                .collect::<Vec<_>>(),
+            ids
         );
     }
 
@@ -13874,6 +24933,7 @@ mod tests {
             title: id.into(),
             project: project.into(),
             backend: "native".into(),
+            native_automation: None,
             pinned: false,
             archived: false,
             unread: false,
@@ -14073,6 +25133,8 @@ mod tests {
         app.view.selected_session = Some(session.id);
         app.viewport_width = 1000.0;
         app.ensure_dock_tabs();
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("dock_open:activity"), &ctx);
         let scope = app.dock_scope();
         app.dock.set_collapsed(&scope, false);
         app.sync_dock_view();
@@ -14080,7 +25142,6 @@ mod tests {
         assert!(app.view.show_side_pane);
         assert!(before.right.is_none(), "the right dock is hidden by width");
 
-        let ctx = egui::Context::default();
         app.apply_action(clicked("toggle_sidebar"), &ctx);
         let after = dock_layout(&app.view, app.viewport_width);
         assert!(app.view.sidebar_collapsed);
@@ -15261,6 +26322,432 @@ mod tests {
     }
 
     #[test]
+    fn composer_context_compaction_rechecks_owner_and_open_surface_before_dispatch() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.clone().unwrap();
+        let session = store.create(root.path(), "native").unwrap();
+        app.view.workspace = root.path().display().to_string();
+        app.view.selected_session = Some(session.id.clone());
+        app.view.selected_backend = "native".into();
+        app.view.sessions = vec![sample_session(&session.id, &app.view.workspace)];
+        app.view.native_context.owner = Some(session.id.clone());
+        app.view.native_context.workspace = Some(root.path().canonicalize().unwrap());
+        app.view.native_context.unreported_responses = 1;
+        let action = format!("composer_context_compact:{}", session.id);
+        let ctx = egui::Context::default();
+        for (open, running, id) in [
+            (false, false, action.as_str()),
+            (true, true, action.as_str()),
+            (true, false, "composer_context_compact:stale-session"),
+        ] {
+            app.view.composer_context_open = open;
+            app.view.running = running;
+            app.view.status = "unchanged".into();
+            app.apply_action(clicked(id), &ctx);
+            assert_eq!(app.view.status, "unchanged");
+            assert!(app.active_compact.is_none());
+        }
+        app.view.composer_context_open = true;
+        app.view.running = false;
+        app.apply_action(clicked(&action), &ctx);
+        // The host reaches the real journal guard, rather than trusting the
+        // stale presentation's response count or starting a provider request.
+        assert_eq!(app.view.status, "No hay historial nuevo para compactar");
+        assert!(app.active_compact.is_none());
+        assert!(store.load(&session.id).unwrap().unwrap().events.is_empty());
+    }
+
+    #[test]
+    fn settings_native_actions_recheck_owner_execution_and_recovery_before_leaving_settings() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.clone().unwrap();
+        let native = store.create(root.path(), "native").unwrap();
+        let cli = store.create(root.path(), "codex").unwrap();
+        let ctx = egui::Context::default();
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Memory;
+        for id in [None, Some(cli.id.clone()), Some("missing-session".into())] {
+            app.view.selected_session = id;
+            app.view.selected_backend = "native".into();
+            for action in ["settings_native_goal_open", "settings_native_compact"] {
+                app.apply_action(clicked(action), &ctx);
+                assert!(app.view.show_settings);
+                assert!(app.view.settings_notice_error);
+                assert!(!app.view.composer_goal_editor_open && app.active_compact.is_none());
+            }
+        }
+        app.view.selected_session = Some(native.id.clone());
+        app.view.selected_backend = "codex".into();
+        app.apply_action(clicked("settings_native_goal_open"), &ctx);
+        assert!(!app.view.composer_goal_editor_open);
+        app.view.selected_backend = "native".into();
+        for (running, background) in [(true, false), (false, true)] {
+            app.view.running = running;
+            app.view.background_run_selected = background;
+            app.apply_action(clicked("settings_native_goal_open"), &ctx);
+            app.apply_action(clicked("settings_native_compact"), &ctx);
+            assert!(app.view.show_settings && !app.view.composer_goal_editor_open);
+            assert!(app.active_compact.is_none());
+        }
+        app.view.running = false;
+        app.view.background_run_selected = false;
+        app.view
+            .session_recovery
+            .insert(native.id.clone(), SessionRecoveryView::Resume);
+        app.apply_action(clicked("settings_native_goal_open"), &ctx);
+        assert!(!app.view.composer_goal_editor_open);
+        app.apply_action(clicked(format!("settings_session_open:{}", cli.id)), &ctx);
+        assert!(app.view.show_settings);
+        app.apply_action(
+            clicked(format!("settings_session_open:{}", native.id)),
+            &ctx,
+        );
+        assert!(!app.view.show_settings);
+        assert_eq!(
+            app.view.selected_session.as_deref(),
+            Some(native.id.as_str())
+        );
+        assert!(app.active_resume.is_none());
+        assert!(store.load(&native.id).unwrap().unwrap().events.is_empty());
+        assert!(store.load(&cli.id).unwrap().unwrap().events.is_empty());
+
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Agent;
+        app.view.running = true;
+        app.apply_action(clicked("settings_engine_open"), &ctx);
+        assert!(app.view.show_settings && !app.view.composer_model_menu_open);
+        app.view.running = false;
+        app.apply_action(clicked("settings_engine_open"), &ctx);
+        assert!(
+            !app.view.show_settings
+                && app.view.composer_model_menu_open
+                && app.view.composer_model_list_open
+        );
+        assert_eq!(app.view.selected_backend, "native");
+        assert!(store.load(&native.id).unwrap().unwrap().events.is_empty());
+    }
+
+    #[test]
+    fn settings_memory_compacts_real_http_turn_and_reopens_checkpoint_and_goal() {
+        use std::io::{Read, Write};
+        let root = tempfile::tempdir().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        let (requests_tx, requests) = std::sync::mpsc::channel();
+        let summary = json!({
+            "objective": "Verify the complete native task",
+            "decisions": ["Keep the goal ledger unchanged"], "files": [],
+            "current_state": "The native Plan turn finished", "constraints": ["Do not invent evidence"],
+            "remaining_work": ["Verify checkpoint recovery"]
+        });
+        let expected_summary = summary.clone();
+        let server = std::thread::spawn(move || {
+            for index in 0..2 {
+                let deadline = Instant::now() + Duration::from_secs(15);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "expected native request {index}");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("fixture accept: {error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                let (header_end, length) = loop {
+                    let mut chunk = [0u8; 4096];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&chunk[..count]);
+                    assert!(bytes.len() < 1024 * 1024);
+                    if let Some(end) = bytes.windows(4).position(|value| value == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                line.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .and_then(|value| value.trim().parse::<usize>().ok())
+                            })
+                            .unwrap();
+                        break (end + 4, length);
+                    }
+                };
+                while bytes.len() < header_end + length {
+                    let mut chunk = [0u8; 4096];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&chunk[..count]);
+                }
+                let request: serde_json::Value =
+                    serde_json::from_slice(&bytes[header_end..header_end + length]).unwrap();
+                let streaming = request["stream"].as_bool() == Some(true);
+                requests_tx.send(request).unwrap();
+                let content = if index == 0 {
+                    "Native Plan completed".into()
+                } else {
+                    summary.to_string()
+                };
+                let chunk = json!({"id":format!("settings-{index}"), "choices":[{"index":0,"delta":{"content":content},"finish_reason":null}]});
+                let terminal = json!({"id":format!("settings-{index}"),"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+                let (body, content_type) = if streaming {
+                    (
+                        format!("data: {chunk}\n\ndata: {terminal}\n\ndata: [DONE]\n\n"),
+                        "text/event-stream",
+                    )
+                } else {
+                    (json!({"id":format!("settings-{index}"),"choices":[{"index":0,"message":{"role":"assistant","content":content},"finish_reason":"stop"}]}).to_string(), "application/json")
+                };
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            }
+        });
+        let data_root = root.path().join("data");
+        let mut app = AgentsWindow::with_data_root(data_root.clone());
+        app.view.workspace = root.path().to_string_lossy().into_owned();
+        app.view.selected_backend = "native".into();
+        app.view.native_provider_id = "custom".into();
+        app.view.model = "settings-exact-model".into();
+        app.view.endpoint = endpoint;
+        app.view.composer_effort = "default".into();
+        assert!(app.persist_native_settings());
+        let store = app.store.clone().unwrap();
+        let session = store.create(root.path(), "native").unwrap();
+        app.open_session(&session.id);
+        let ctx = egui::Context::default();
+        app.apply_action(clicked("composer_goal_open"), &ctx);
+        app.view.composer_goal_draft = "Verify the complete native task".into();
+        app.view.native_goal.criteria_draft = "Verify checkpoint recovery".into();
+        app.apply_action(clicked("native_goal_activate"), &ctx);
+        let goal = app.view.native_goal.goal.clone().unwrap();
+        app.apply_action(clicked("composer_goal_cancel"), &ctx);
+        app.view.prompt = "Continue the native task".into();
+        app.view.turn_mode = TurnMode::Plan;
+        app.start_run();
+        assert!(app.active_run.is_some(), "{}", app.view.status);
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while app.active_run.is_some() {
+            assert!(Instant::now() < deadline, "{}", app.view.status);
+            app.poll_run();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let before = store.load(&session.id).unwrap().unwrap();
+        assert!(before
+            .events
+            .iter()
+            .any(|event| matches!(event.kind, AgentEventKind::TurnCompleted { .. })));
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Memory;
+        let mut tree = UiTree::new(crate::view::build_view(&app.view, 900.0));
+        let frame = tree.layout(Size::new(900.0, 1100.0));
+        let button = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "settings_native_compact")
+            .unwrap()
+            .rect;
+        let position = Point::new(
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0,
+        );
+        tree.handle_event(UiEvent::PointerDown(position));
+        let actions = tree.handle_event(UiEvent::PointerUp(position));
+        assert_eq!(actions, vec![clicked("settings_native_compact")]);
+        for action in actions {
+            app.apply_action(action, &ctx);
+        }
+        assert!(
+            app.active_compact.is_some(),
+            "{:?} / {}",
+            app.view.settings_notice,
+            app.view.status
+        );
+        assert!(!app.view.show_settings);
+        assert_eq!(
+            app.view.conversation_activity.compacting_session.as_deref(),
+            Some(session.id.as_str())
+        );
+        assert!(!app.view.transcript.iter().any(|item| matches!(
+            item,
+            crate::transcript::TranscriptItem::Activity(
+                crate::transcript::TranscriptActivity::Checkpoint { .. }
+            )
+        )));
+        let mut marker_tree = UiTree::new(Element::column(
+            crate::session_surface::host_activity_markers(&app.view),
+        ));
+        marker_tree.layout(Size::new(420.0, 100.0));
+        assert!(
+            marker_tree.is_animating(),
+            "a started compact worker is real in-flight work"
+        );
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while app.active_compact.is_some() {
+            assert!(Instant::now() < deadline);
+            app.poll_compact();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            app.view.status,
+            "Contexto compactado y checkpoint confirmado"
+        );
+        assert!(app.view.conversation_activity.compacting_session.is_none());
+        assert!(app.view.transcript.iter().any(|item| matches!(
+            item,
+            crate::transcript::TranscriptItem::Activity(
+                crate::transcript::TranscriptActivity::Checkpoint { .. }
+            )
+        )));
+        let first = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        let second = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(first["model"], "settings-exact-model");
+        assert!(first["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains(&goal.objective));
+        assert!(first["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Verify checkpoint recovery"));
+        assert_eq!(second["model"], "settings-exact-model");
+        assert!(second["tools"]
+            .as_array()
+            .is_none_or(|tools| tools.is_empty()));
+        assert!(second["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Native Plan completed"));
+        server.join().unwrap();
+        let stored = store.load(&session.id).unwrap().unwrap();
+        assert_eq!(
+            stored
+                .events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::CheckpointCommitted { .. }))
+                .count(),
+            1
+        );
+        let replay = replay_stored_native(&data_root, &stored).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&replay.checkpoint.as_ref().unwrap().summary)
+                .unwrap(),
+            expected_summary
+        );
+        assert_eq!(
+            openide_core::NativeGoalStore::new(store.clone())
+                .list(&session.id)
+                .unwrap(),
+            vec![goal.clone()]
+        );
+        app.view.show_settings = true;
+        app.view.settings_page = SettingsPage::Memory;
+        app.apply_action(
+            clicked(format!("settings_native_instructions_open:{}", session.id)),
+            &ctx,
+        );
+        assert!(
+            app.view.native_instructions.error.is_none(),
+            "{:?}",
+            app.view.native_instructions.error
+        );
+        let observed = app.view.native_instructions.selected_snapshot().unwrap();
+        let saved_instructions = stored
+            .events
+            .iter()
+            .find_map(|event| {
+                if let AgentEventKind::SystemInstructionsCommitted { content, .. } = &event.kind {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(observed.content, saved_instructions);
+        let sent_system = first["messages"][0]["content"].as_str().unwrap();
+        assert!(sent_system.ends_with(saved_instructions));
+        assert!(sent_system.starts_with("You are the OpenIDE coding agent."));
+        assert_ne!(
+            sent_system, saved_instructions,
+            "Generated harness instructions are separate from the saved initial additions"
+        );
+        assert!(observed.content.contains(&goal.objective));
+        assert!(observed.content.contains("Verify checkpoint recovery"));
+        assert_eq!(
+            observed.digest,
+            openide_core::system_instructions_digest(&observed.content).unwrap()
+        );
+        assert_eq!(
+            store.load(&session.id).unwrap().unwrap().events,
+            stored.events
+        );
+        app.apply_action(clicked("settings_native_instructions_dismiss"), &ctx);
+        assert!(app.view.native_instructions.session_id.is_none());
+        drop(app);
+        let mut reopened = AgentsWindow::with_data_root(data_root.clone());
+        reopened.open_session(&session.id);
+        assert_eq!(reopened.view.native_goal.goal, Some(goal));
+        assert!(reopened
+            .view
+            .conversation_activity
+            .compacting_session
+            .is_none());
+        assert!(reopened.view.transcript.iter().any(|item| matches!(
+            item,
+            crate::transcript::TranscriptItem::Activity(
+                crate::transcript::TranscriptActivity::Checkpoint { .. }
+            )
+        )));
+        let replay = replay_stored_native(
+            &data_root,
+            &reopened
+                .store
+                .as_ref()
+                .unwrap()
+                .load(&session.id)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&replay.checkpoint.unwrap().summary).unwrap(),
+            expected_summary
+        );
+        assert!(replay.can_start_new_turn);
+        reopened.view.show_settings = true;
+        reopened.view.settings_page = SettingsPage::Memory;
+        reopened.apply_action(
+            clicked(format!("settings_native_instructions_open:{}", session.id)),
+            &ctx,
+        );
+        assert_eq!(
+            reopened
+                .view
+                .native_instructions
+                .selected_snapshot()
+                .unwrap()
+                .content,
+            saved_instructions
+        );
+        assert_eq!(
+            reopened
+                .store
+                .as_ref()
+                .unwrap()
+                .load(&session.id)
+                .unwrap()
+                .unwrap()
+                .events,
+            stored.events
+        );
+    }
+
+    #[test]
     fn compact_command_requires_a_selected_native_session() {
         let root = tempfile::tempdir().unwrap();
         let mut app = AgentsWindow::with_data_root(root.path().join("data"));
@@ -15486,3 +26973,7 @@ mod tests {
         assert!(app.view.command_search_errors.is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "dock_integration_tests.rs"]
+mod dock_integration_tests;

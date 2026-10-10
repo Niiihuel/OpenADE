@@ -178,6 +178,16 @@ impl CliProfile {
 /// Detect an executable without invoking a shell. On Windows, PATHEXT is used
 /// so npm's `.cmd` shims and native `.exe` installations can both be found.
 pub fn detect_executable(executable: impl AsRef<Path>) -> Option<PathBuf> {
+    detect_executable_in(executable, None)
+}
+
+/// Like `detect_executable`, searching `search_path` instead of this process's
+/// `PATH` when one is given. A desktop-launched app does not inherit what the
+/// user's shell adds to `PATH`, so callers may pass the shell's own value.
+pub fn detect_executable_in(
+    executable: impl AsRef<Path>,
+    search_path: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
     let executable = executable.as_ref();
     if executable.as_os_str().is_empty() {
         return None;
@@ -190,7 +200,7 @@ pub fn detect_executable(executable: impl AsRef<Path>) -> Option<PathBuf> {
         return executable_candidates(executable).find(|candidate| executable_file(candidate));
     }
 
-    if let Some(path) = env::var_os("PATH") {
+    if let Some(path) = search_path.map(Into::into).or_else(|| env::var_os("PATH")) {
         if let Some(found) = env::split_paths(&path)
             .flat_map(|directory| executable_candidates(&directory.join(executable)))
             .find(|candidate| executable_file(candidate))
@@ -230,7 +240,9 @@ fn codex_windows_install(local_app_data: &Path) -> Option<PathBuf> {
 }
 
 fn executable_candidates(path: &Path) -> impl Iterator<Item = PathBuf> {
-    let mut candidates = vec![path.to_path_buf()];
+    let candidates = vec![path.to_path_buf()];
+    #[cfg(windows)]
+    let mut candidates = candidates;
     #[cfg(windows)]
     if path.extension().is_none() {
         let extensions = env::var_os("PATHEXT")
@@ -252,9 +264,8 @@ fn executable_file(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        return path
-            .metadata()
-            .is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0);
+        path.metadata()
+            .is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
     }
     #[cfg(not(unix))]
     true

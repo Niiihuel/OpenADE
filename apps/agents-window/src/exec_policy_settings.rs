@@ -5,7 +5,7 @@
 //! is handed to the harness at the start of a native turn.
 
 use crate::agent_tool_settings::replace_atomically;
-use openide_harness::{ExecDecision, ExecPatternToken, ExecPolicy, ExecRule};
+use openide_harness::{ExecDecision, ExecEvaluation, ExecPatternToken, ExecPolicy, ExecRule};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -32,6 +32,56 @@ pub(crate) struct ExecPolicyUiState {
     pub draft_pattern: String,
     pub draft_decision: ExecDecision,
     pub draft_justification: String,
+    pub preview_argv: String,
+    pub preview: Option<Result<ExecPolicyPreview, String>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExecPolicyPreview {
+    pub argv: Vec<String>,
+    pub policy_digest: String,
+    pub evaluation: ExecEvaluation,
+    pub matched_rules: Vec<(usize, ExecRule)>,
+}
+
+impl ExecPolicyPreview {
+    pub fn description(&self) -> String {
+        let decision = match self.evaluation.decision {
+            Some(ExecDecision::Ask) => "Pedir aprobación",
+            Some(ExecDecision::Deny) => "Bloquear",
+            Some(ExecDecision::Allow) => "Permitir según reglas",
+            None => "Sin coincidencias",
+        };
+        let mut description = format!(
+            "Resultado: {decision}\nArgumentos exactos: {}\nIdentidad de las reglas guardadas: {}\n",
+            serde_json::to_string_pretty(&self.argv).expect("string argv is serializable"),
+            self.policy_digest
+        );
+        if self.evaluation.opaque_wrapper {
+            description.push_str("El ejecutable envuelve un script. El motor aplica la restricción conservadora para intérpretes; no analiza el contenido del script.\n");
+        }
+        if self.matched_rules.is_empty() {
+            description.push_str("Ningún prefijo guardado coincide con estos argumentos.\n");
+        }
+        for (index, rule) in &self.matched_rules {
+            let decision = match rule.decision() {
+                ExecDecision::Ask => "Pedir aprobación",
+                ExecDecision::Deny => "Bloquear",
+                ExecDecision::Allow => "Permitir según reglas",
+            };
+            description.push_str(&format!(
+                "\nRegla {} · {decision}\nPrefijo: {}\n",
+                index + 1,
+                serde_json::to_string_pretty(rule.pattern())
+                    .expect("validated rule is serializable")
+            ));
+            if let Some(reason) = rule.justification() {
+                description.push_str(&format!("Motivo: {reason}\n"));
+            }
+        }
+        description.push_str("\nEsta vista evalúa las reglas guardadas sin ejecutar el comando. Los permisos de herramientas y de sesión se comprueban al ejecutar.");
+        description
+    }
 }
 
 impl Default for ExecPolicyUiState {
@@ -45,6 +95,8 @@ impl Default for ExecPolicyUiState {
             draft_pattern: "[]".into(),
             draft_decision: ExecDecision::Ask,
             draft_justification: String::new(),
+            preview_argv: "[]".into(),
+            preview: None,
         }
     }
 }
@@ -64,6 +116,41 @@ impl ExecPolicyUiState {
         self.draft_pattern = "[]".into();
         self.draft_decision = ExecDecision::Ask;
         self.draft_justification.clear();
+        self.preview = None;
+    }
+
+    pub fn set_preview_argv(&mut self, value: String) {
+        self.preview_argv = value;
+        self.preview = None;
+    }
+
+    /// Inspect a freshly read saved policy. The draft and effective runtime
+    /// settings are untouched; this snapshot is never an execution grant.
+    pub fn preview_saved(&mut self, settings: Result<ExecPolicySettings, String>) {
+        self.preview = Some((|| {
+            let settings = settings?;
+            if self.preview_argv.len() as u64 > MAX_BYTES {
+                return Err("Los argumentos de la vista previa exceden el límite de tamaño".into());
+            }
+            let argv: Vec<String> = serde_json::from_str(&self.preview_argv).map_err(|error| {
+                format!("Los argumentos deben ser un arreglo JSON de cadenas: {error}")
+            })?;
+            let policy = settings.policy()?;
+            let evaluation = policy
+                .evaluate_argv(&argv)
+                .map_err(|error| format!("No se pudo evaluar el comando: {error}"))?;
+            let matched_rules = evaluation
+                .matched_rule_indices
+                .iter()
+                .map(|index| (*index, settings.rules[*index].clone()))
+                .collect();
+            Ok(ExecPolicyPreview {
+                argv,
+                policy_digest: policy.digest_hex(),
+                evaluation,
+                matched_rules,
+            })
+        })());
     }
 
     pub fn select(&mut self, index: usize) -> Result<(), String> {
@@ -117,6 +204,7 @@ impl ExecPolicyUiState {
         }
         .policy()?;
         self.rules = next;
+        self.preview = None;
         self.clear_draft();
         Ok(())
     }
@@ -129,6 +217,7 @@ impl ExecPolicyUiState {
             return Err("La regla seleccionada ya no existe".into());
         }
         self.rules.remove(index);
+        self.preview = None;
         self.clear_draft();
         Ok(())
     }
@@ -288,6 +377,116 @@ mod tests {
             settings.policy().unwrap().digest_hex(),
             loaded.policy().unwrap().digest_hex()
         );
+    }
+
+    #[test]
+    fn preview_uses_saved_rules_after_reopen_and_preserves_files_and_policy() {
+        let root = tempfile::tempdir().unwrap();
+        let settings = ExecPolicySettings {
+            rules: vec![
+                ExecRule::new(
+                    vec![ExecPatternToken::Literal("git".into())],
+                    ExecDecision::Ask,
+                    Some("Revisar argumentos".into()),
+                )
+                .unwrap(),
+                rule(),
+            ],
+        };
+        settings.save(root.path()).unwrap();
+        let saved_bytes = fs::read(root.path().join(FILE_NAME)).unwrap();
+        let loaded = ExecPolicySettings::load(root.path()).unwrap();
+        let digest = loaded.policy().unwrap().digest_hex();
+        let mut ui = ExecPolicyUiState::from_settings(&loaded);
+        ui.draft_pattern = "[\"inventado\"]".into();
+        ui.draft_decision = ExecDecision::Deny;
+        for (argv, decision, matched, opaque) in [
+            (
+                r#"["git","push","origen","rama"]"#,
+                Some(ExecDecision::Deny),
+                vec![0, 1],
+                false,
+            ),
+            (
+                r#"["git","status"]"#,
+                Some(ExecDecision::Ask),
+                vec![0],
+                false,
+            ),
+            (r#"["otro","ámbito\ncompleto"]"#, None, vec![], false),
+            (
+                r#"["sh","-c","printf prueba"]"#,
+                Some(ExecDecision::Deny),
+                vec![],
+                true,
+            ),
+        ] {
+            ui.set_preview_argv(argv.into());
+            ui.preview_saved(ExecPolicySettings::load(root.path()));
+            let preview = ui.preview.as_ref().unwrap().as_ref().unwrap();
+            assert_eq!(preview.evaluation.decision, decision);
+            assert_eq!(preview.evaluation.matched_rule_indices, matched);
+            assert_eq!(preview.evaluation.opaque_wrapper, opaque);
+            assert_eq!(preview.policy_digest, digest);
+            assert_eq!(
+                preview.argv,
+                serde_json::from_str::<Vec<String>>(argv).unwrap()
+            );
+            assert_eq!(fs::read(root.path().join(FILE_NAME)).unwrap(), saved_bytes);
+            assert_eq!(ui.rules, loaded.rules);
+            assert_eq!(ui.draft_pattern, "[\"inventado\"]");
+        }
+        assert!(ui
+            .preview
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .description()
+            .contains("sin ejecutar"));
+        fs::write(root.path().join(FILE_NAME), b"{corrupto").unwrap();
+        ui.preview_saved(ExecPolicySettings::load(root.path()));
+        assert!(ui.preview.as_ref().unwrap().is_err());
+        assert_eq!(fs::read(root.path().join(FILE_NAME)).unwrap(), b"{corrupto");
+        assert_eq!(ui.rules, loaded.rules);
+        settings.save(root.path()).unwrap();
+        ui.preview_saved(ExecPolicySettings::load(root.path()));
+        assert_eq!(
+            ui.preview.as_ref().unwrap().as_ref().unwrap().policy_digest,
+            digest
+        );
+    }
+
+    #[test]
+    fn preview_rejects_invalid_arguments_without_a_stale_report() {
+        let settings = ExecPolicySettings {
+            rules: vec![rule()],
+        };
+        let mut ui = ExecPolicyUiState::from_settings(&settings);
+        ui.set_preview_argv("[\"git\",\"push\"]".into());
+        ui.preview_saved(Ok(settings.clone()));
+        assert!(ui.preview.as_ref().unwrap().is_ok());
+        for input in [
+            "[]",
+            "[null]",
+            "{\"command\":\"git\"}",
+            "[\"\"]",
+            "[\"git\\u0000\"]",
+        ] {
+            ui.set_preview_argv(input.into());
+            assert!(ui.preview.is_none());
+            ui.preview_saved(Ok(settings.clone()));
+            assert!(ui.preview.as_ref().unwrap().is_err(), "{input}");
+        }
+        ui.set_preview_argv("x".repeat(MAX_BYTES as usize + 1));
+        ui.preview_saved(Ok(settings));
+        assert!(ui
+            .preview
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap_err()
+            .contains("tamaño"));
     }
 
     #[test]

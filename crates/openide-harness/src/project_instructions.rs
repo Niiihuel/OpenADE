@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata, OpenOptions};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -20,6 +20,10 @@ const ACTIVATION_PREFIX: &str = "OPENIDE_PROJECT_INSTRUCTIONS_V1\n";
 pub(crate) const ACTIVATION_HOOK_PREFIX: &str = "openide-project-instructions-v1:";
 const MAX_ACTIVE_SCOPE_BYTES: usize = 32 * 1024;
 const MAX_ACTIVE_SCOPES: usize = 64;
+const MAX_METADATA_EVENTS: usize = 20_000;
+const MAX_METADATA_CANDIDATES: usize = 256;
+const MAX_METADATA_SCAN_BYTES: usize = 32 * 1024 * 1024;
+const MAX_METADATA_ITEM_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ScopedInstructions {
@@ -39,13 +43,39 @@ struct ActivationBatch {
 
 /// Project rules admitted by earlier tool results in the current turn. The
 /// journaled tool result is the source of truth after reopening or compaction.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct ProjectInstructionLedger {
     scopes: Vec<ScopedInstructions>,
     directories: HashSet<PathBuf>,
 }
 
 impl ProjectInstructionLedger {
+    /// The automation's host froze its combined instructions before admission.
+    /// ReadOnlyV1 cannot add a second, mutable hierarchy during tool execution.
+    pub(crate) fn from_session(
+        record: &openide_core::StoredSession,
+        turn_start_sequence: u64,
+        workspace: &Path,
+    ) -> Result<Option<Self>, AgentError> {
+        if record.session.native_automation.is_some() {
+            if record
+                .events
+                .iter()
+                .filter(|event| event.sequence > turn_start_sequence)
+                .any(|event| {
+                    matches!(&event.kind, AgentEventKind::HookStarted { hook_id, .. }
+                    if hook_id.starts_with(ACTIVATION_HOOK_PREFIX))
+                })
+            {
+                return Err(AgentError::InvalidRequest(
+                    "read-only automation cannot activate mutable project instructions".into(),
+                ));
+            }
+            return Ok(None);
+        }
+        Self::from_events(&record.events, turn_start_sequence, workspace).map(Some)
+    }
+
     pub(crate) fn from_events(
         events: &[AgentEvent],
         turn_start_sequence: u64,
@@ -90,40 +120,10 @@ impl ProjectInstructionLedger {
                         // Tool output alone is never promoted to trusted context.
                         continue;
                     };
-                    if !is_error
-                        || !output.starts_with(ACTIVATION_PREFIX)
-                        || activation_hook_id(output).as_deref() != Some(marker)
-                    {
-                        return Err(AgentError::Runtime(
-                            "project instruction snapshot marker is invalid".into(),
-                        ));
-                    }
                     let call = calls.get(tool_call_id.as_str()).ok_or_else(|| {
                         AgentError::Runtime("project instruction result has no tool call".into())
                     })?;
-                    let batch: ActivationBatch = serde_json::from_str(
-                        &output[ACTIVATION_PREFIX.len()..],
-                    )
-                    .map_err(|error| {
-                        AgentError::Runtime(format!("project instruction snapshot: {error}"))
-                    })?;
-                    if batch.version != 1
-                        || batch.call_digest != call_digest(call)
-                        || !batch.operation_not_executed_retry_required
-                        || batch.scopes.is_empty()
-                        || !matches!(
-                            call.name.as_str(),
-                            "read_file"
-                                | "write_file"
-                                | "list_files"
-                                | "search_files"
-                                | "apply_patch"
-                        )
-                    {
-                        return Err(AgentError::Runtime(
-                            "project instruction snapshot has invalid provenance".into(),
-                        ));
-                    }
+                    let batch = validated_activation_batch(call, marker, output, *is_error)?;
                     ledger.add_scopes(batch.scopes, workspace)?;
                 }
                 _ => {}
@@ -138,6 +138,22 @@ impl ProjectInstructionLedger {
         call: &ToolCall,
         max_output_chars: usize,
     ) -> Result<Option<ToolOutput>, AgentError> {
+        // Installed skill reference files may be outside the project. Their
+        // read capability is checked by the tool executor, never by this
+        // instruction preflight. Do not scan external parent AGENTS.md files
+        // or promote a reference document into project instructions.
+        if call.name == "read_file" {
+            if let Some(path) = call.arguments.get("path").and_then(serde_json::Value::as_str) {
+                let path = Path::new(path);
+                if path.is_absolute() {
+                    let root = workspace.canonicalize().map_err(|error| AgentError::InvalidRequest(error.to_string()))?;
+                    let original = std::path::absolute(workspace).map_err(|error| AgentError::InvalidRequest(error.to_string()))?;
+                    if !path.starts_with(&root) && !path.starts_with(original) {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
         let mut additions = Vec::new();
         for directory in target_directories(workspace, call)? {
             if self.directories.contains(&directory) {
@@ -240,6 +256,18 @@ impl ProjectInstructionLedger {
         for scope in scopes {
             if !scope.directory.starts_with(workspace)
                 || !scope.root.starts_with(workspace)
+                || !scope.directory.is_absolute()
+                || !scope.root.is_absolute()
+                || scope
+                    .directory
+                    .components()
+                    .any(|part| matches!(part, std::path::Component::ParentDir))
+                || scope
+                    .root
+                    .components()
+                    .any(|part| matches!(part, std::path::Component::ParentDir))
+                || !scope.directory.starts_with(&scope.root)
+                || scope.replaces_outer != (scope.root != workspace)
                 || scope.text.len() > MAX_ACTIVE_SCOPE_BYTES
             {
                 return Err(AgentError::Runtime(
@@ -281,6 +309,188 @@ impl ProjectInstructionLedger {
     }
 }
 
+fn validated_activation_batch(
+    call: &ToolCall,
+    marker: &str,
+    output: &str,
+    is_error: bool,
+) -> Result<ActivationBatch, AgentError> {
+    if !is_error
+        || !output.starts_with(ACTIVATION_PREFIX)
+        || activation_hook_id(output).as_deref() != Some(marker)
+    {
+        return Err(AgentError::Runtime(
+            "project instruction snapshot marker is invalid".into(),
+        ));
+    }
+    let batch: ActivationBatch = serde_json::from_str(&output[ACTIVATION_PREFIX.len()..])
+        .map_err(|error| AgentError::Runtime(format!("project instruction snapshot: {error}")))?;
+    if batch.version != 1
+        || batch.call_digest != call_digest(call)
+        || !batch.operation_not_executed_retry_required
+        || batch.scopes.is_empty()
+        || !matches!(
+            call.name.as_str(),
+            "read_file" | "write_file" | "list_files" | "search_files" | "apply_patch"
+        )
+    {
+        return Err(AgentError::Runtime(
+            "project instruction snapshot has invalid provenance".into(),
+        ));
+    }
+    Ok(batch)
+}
+
+/// Identify only proven, unexecuted AGENTS preflight metadata. This projection
+/// performs no I/O and grants no tool or context authority. Unknown, partial,
+/// oversized or ambiguous sequences remain ordinary potentially effectful
+/// hooks for its caller to handle conservatively.
+///
+/// Native activation emits an adjacent start/allow/result triple. A configured
+/// command hook emits diagnostics between its start and finish, so its name or
+/// an activation-looking tool output alone cannot exempt a real hook.
+pub fn project_instruction_metadata_sequences(
+    events: &[AgentEvent],
+    workspace: &Path,
+) -> HashSet<u64> {
+    let events = &events[..events.len().min(MAX_METADATA_EVENTS)];
+    let mut authenticated = HashSet::new();
+    let Some(first) = events.first() else {
+        return authenticated;
+    };
+    let mut previous = 0u64;
+    for event in events {
+        if event.session_id != first.session_id || previous.checked_add(1) != Some(event.sequence) {
+            return authenticated;
+        }
+        previous = event.sequence;
+    }
+    let mut calls = HashMap::<&str, Option<&ToolCall>>::new();
+    let mut ledger = ProjectInstructionLedger::default();
+    let mut turn_active = false;
+    let mut candidates = 0usize;
+    let mut retained_bytes = 0usize;
+    for (index, event) in events.iter().enumerate() {
+        match &event.kind {
+            AgentEventKind::TurnStarted { .. } => {
+                calls.clear();
+                ledger = ProjectInstructionLedger::default();
+                turn_active = true;
+            }
+            AgentEventKind::TurnCompleted { .. }
+            | AgentEventKind::TurnFailed { .. }
+            | AgentEventKind::TurnCancelled => {
+                calls.clear();
+                turn_active = false;
+            }
+            AgentEventKind::ToolStarted { tool_call } if turn_active => {
+                if let Some(call) = calls.get_mut(tool_call.id.as_str()) {
+                    *call = None;
+                } else if calls.len() < MAX_METADATA_CANDIDATES
+                    && tool_call.id.len() <= 256
+                    && tool_call.name.len() <= 256
+                {
+                    calls.insert(tool_call.id.as_str(), Some(tool_call));
+                }
+            }
+            AgentEventKind::HookStarted {
+                tool_call_id,
+                hook_id,
+                phase,
+            } if turn_active
+                && phase == "pre_tool_use"
+                && hook_id.starts_with(ACTIVATION_HOOK_PREFIX) =>
+            {
+                if candidates == MAX_METADATA_CANDIDATES {
+                    continue;
+                }
+                candidates += 1;
+                let (Some(finished), Some(result)) = (events.get(index + 1), events.get(index + 2))
+                else {
+                    continue;
+                };
+                let AgentEventKind::HookFinished {
+                    tool_call_id: finished_call,
+                    hook_id: finished_hook,
+                    phase: finished_phase,
+                    decision,
+                } = &finished.kind
+                else {
+                    continue;
+                };
+                let AgentEventKind::ToolFinished {
+                    tool_call_id: result_call,
+                    output,
+                    is_error,
+                } = &result.kind
+                else {
+                    continue;
+                };
+                if finished_call != tool_call_id
+                    || finished_hook != hook_id
+                    || finished_phase != phase
+                    || decision != "allow"
+                    || result_call != tool_call_id
+                    || !is_error
+                    || output.len() > MAX_METADATA_ITEM_BYTES
+                {
+                    continue;
+                }
+                let Some(Some(call)) = calls.get(tool_call_id.as_str()) else {
+                    continue;
+                };
+                // Count JSON through a capped writer before the shared digest
+                // serializer can allocate it. Presentation inputs are bounded
+                // independently from authoritative journal/model validation.
+                let mut size = MetadataSizeLimit { bytes: 0 };
+                if serde_json::to_writer(&mut size, &call.arguments).is_err() {
+                    continue;
+                }
+                let candidate_bytes = output.len().saturating_add(size.bytes);
+                if retained_bytes.saturating_add(candidate_bytes) > MAX_METADATA_SCAN_BYTES {
+                    continue;
+                }
+                retained_bytes += candidate_bytes;
+                let Ok(batch) = validated_activation_batch(call, hook_id, output, *is_error) else {
+                    continue;
+                };
+                let mut updated = ledger.clone();
+                if updated.add_scopes(batch.scopes, workspace).is_err() {
+                    continue;
+                }
+                ledger = updated;
+                authenticated.extend([event.sequence, finished.sequence, result.sequence]);
+            }
+            AgentEventKind::ToolFinished { tool_call_id, .. } => {
+                calls.remove(tool_call_id.as_str());
+            }
+            _ => {}
+        }
+    }
+    authenticated
+}
+
+struct MetadataSizeLimit {
+    bytes: usize,
+}
+
+impl Write for MetadataSizeLimit {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        if self.bytes.saturating_add(buffer.len()) > MAX_METADATA_ITEM_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "activation arguments exceed projection limit",
+            ));
+        }
+        self.bytes += buffer.len();
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn call_digest(call: &ToolCall) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"openide-project-instruction-call-v1\0");
@@ -317,13 +527,7 @@ fn target_directories(workspace: &Path, call: &ToolCall) -> Result<Vec<PathBuf>,
             }
         }
         "list_files" | "search_files" => {
-            paths.push((
-                call.arguments
-                    .get("path")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("."),
-                true,
-            ));
+            paths.push((crate::tools::directory_path_argument(&call.arguments), true));
         }
         "apply_patch" => {
             if let Some(patch) = call
@@ -348,24 +552,26 @@ fn target_directories(workspace: &Path, call: &ToolCall) -> Result<Vec<PathBuf>,
         }
         _ => return Ok(Vec::new()),
     }
+    let original_workspace = workspace;
+    let canonical_workspace = workspace.canonicalize().map_err(|error| {
+        AgentError::InvalidRequest(format!("project instruction workspace: {error}"))
+    })?;
+    let workspace = canonical_workspace.as_path();
     let mut directories = Vec::new();
     for (path, directory_hint) in paths {
         let mut target = workspace.to_path_buf();
-        let relative = Path::new(path);
         if path.len() > 4096
             || path.chars().any(char::is_control)
-            || relative.is_absolute()
-            || relative.components().any(|component| {
-                !matches!(
-                    component,
-                    std::path::Component::Normal(_) | std::path::Component::CurDir
-                )
-            })
+            || (call.name == "apply_patch" && Path::new(path).is_absolute())
         {
             return Err(AgentError::InvalidRequest(
                 "project instruction target is not a safe workspace path".into(),
             ));
         }
+        let relative = crate::tools::workspace_relative_path(original_workspace, workspace, path)
+            .map_err(|error| {
+            AgentError::InvalidRequest(format!("project instruction target: {error}"))
+        })?;
         target.push(relative);
         let target = if directory_hint {
             match fs::symlink_metadata(&target) {
@@ -1099,6 +1305,90 @@ mod tests {
             ),
             Err(ProjectInstructionsError::LinkedPath(_))
         ));
+    }
+
+    #[test]
+    fn file_tool_absolute_paths_activate_the_same_nested_rules_as_relative_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().canonicalize().unwrap();
+        let nested = workspace.join("src");
+        fs::create_dir(&nested).unwrap();
+        write(&nested.join(AGENTS_MD_FILENAME), "nested path rule");
+        write(&nested.join("file.txt"), "file contents");
+        for name in ["read_file", "write_file", "list_files", "search_files"] {
+            let relative = if matches!(name, "list_files" | "search_files") {
+                Path::new("src")
+            } else {
+                Path::new("src/file.txt")
+            };
+            for path in [relative.to_path_buf(), workspace.join(relative)] {
+                let call = ToolCall {
+                    id: "path-rules".into(),
+                    name: name.into(),
+                    arguments: json!({"path":path, "pattern":"file", "content":"new"}),
+                };
+                assert_eq!(
+                    target_directories(&workspace, &call).unwrap(),
+                    vec![nested.clone()]
+                );
+                let output = ProjectInstructionLedger::default()
+                    .preflight(&workspace, &call, 16_000)
+                    .unwrap()
+                    .unwrap();
+                assert!(output.is_error);
+                assert!(output.content.contains("nested path rule"));
+            }
+        }
+        for name in ["list_files", "search_files"] {
+            for arguments in [json!({}), json!({"path":""}), json!({"path":"."})] {
+                let call = ToolCall {
+                    id: "root-rules".into(),
+                    name: name.into(),
+                    arguments,
+                };
+                assert_eq!(
+                    target_directories(&workspace, &call).unwrap(),
+                    vec![workspace.clone()]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_tool_preflight_rejects_empty_filenames_and_outside_absolute_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("workspace");
+        let sibling = temp.path().join("workspace-sibling");
+        fs::create_dir(&workspace).unwrap();
+        fs::create_dir(&sibling).unwrap();
+        let workspace = workspace.canonicalize().unwrap();
+        for name in ["read_file", "write_file", "list_files", "search_files"] {
+            for path in [
+                sibling.join("file.txt"),
+                workspace.join("../workspace-sibling/file.txt"),
+            ] {
+                let call = ToolCall {
+                    id: "outside-rules".into(),
+                    name: name.into(),
+                    arguments: json!({"path":path}),
+                };
+                assert!(target_directories(&workspace, &call).is_err());
+            }
+        }
+        for name in ["read_file", "write_file"] {
+            let call = ToolCall {
+                id: "empty-file-rules".into(),
+                name: name.into(),
+                arguments: json!({"path":""}),
+            };
+            assert!(target_directories(&workspace, &call).is_err());
+        }
+        let absolute_patch = ToolCall {
+            id: "absolute-patch".into(),
+            name: "apply_patch".into(),
+            arguments: json!({"patch":format!("*** Begin Patch\n*** Add File: {}\n+hello\n*** End Patch", workspace.join("file.txt").display())}),
+        };
+        assert!(target_directories(&workspace, &absolute_patch).is_err());
     }
 
     #[test]

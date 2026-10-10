@@ -6,26 +6,32 @@ use crate::permission::{
 use crate::plan_tool::{self, UPDATE_PLAN_TOOL};
 use crate::project_instructions::{activation_hook_id, ProjectInstructionLedger};
 use crate::tool_scheduler::{
-    trusted_local_read, ReadWaveAdmission, ScheduleGroup, ScheduledCall, ToolEffect, ToolScheduler,
+    trusted_local_read, trusted_plan_read, ReadWaveAdmission, ScheduleGroup, ScheduledCall,
+    ToolEffect, ToolScheduler,
 };
 use crate::{
     AgentError, CheckpointCoordinator, CheckpointCoordinatorError, CommandIsolation, ContextPolicy,
-    ModelBackend, PermissionChoice, PermissionMode, PermissionPolicy, TokenBudgetDecision,
-    TokenBudgetPolicy, TokenBudgetState, ToolCatalog, ToolContext, ToolDefinition, ToolExecutor,
-    ToolPreparation,
+    ModelBackend, NativeManualCommandActor, PermissionChoice, PermissionMode, PermissionPolicy,
+    TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState, ToolCatalog, ToolContext,
+    ToolDefinition, ToolExecutor, ToolPreparation,
 };
 use openide_core::{
     system_instructions_digest, AgentEvent, AgentEventKind, AgentMessage, AgentRunRequest,
     CheckpointBudgetSnapshot, CheckpointCompatibility, CheckpointFileStore, MessageRole,
-    NativeEventJournal, NativeSessionLease, PermissionDecision, PermissionResolution, PlanSnapshot,
-    ReplayRecovery, SessionStore, StoreError, ToolCall, TurnMode, UserImage,
-    MAX_SYSTEM_INSTRUCTIONS_BYTES, MODEL_CONTEXT_VERSION, SYSTEM_INSTRUCTIONS_VERSION,
+    ModelStreamEvent, NativeCommandOperationError, NativeCommandOperationState, NativeEventJournal,
+    NativeSessionLease, PermissionDecision, PermissionResolution, PlanSnapshot, ReplayRecovery,
+    SessionStore, StoreError, ToolCall, TurnMode, UserImage, MAX_SYSTEM_INSTRUCTIONS_BYTES,
+    MODEL_CONTEXT_VERSION, SYSTEM_INSTRUCTIONS_VERSION,
 };
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+#[cfg(all(test, unix))]
+#[path = "initial_validation_boundary_tests.rs"]
+mod initial_validation_boundary_tests;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RunLimits {
@@ -61,6 +67,8 @@ pub struct AgentRunner {
     auto_compaction: Option<AutoCompaction>,
     session_approvals: Option<(Arc<SessionStore>, CommandIsolation)>,
     native_steering_store: Option<Arc<SessionStore>>,
+    external_controls_store: Option<Arc<SessionStore>>,
+    manual_command_actor: Option<Arc<NativeManualCommandActor>>,
 }
 
 #[derive(Clone)]
@@ -97,6 +105,17 @@ struct NativeRunContext<'a> {
     request_profile: Option<[u8; 32]>,
 }
 
+/// Separate the authority to retire this owner's queued intentions from the
+/// ACK that known initial inputs authorize external preparation/effects.
+/// An initial failure must never fall through the normal effectful boundary.
+#[derive(Default, PartialEq, Eq)]
+enum InitialRunValidation {
+    #[default]
+    UnverifiedAuthority,
+    InitialAuthorityVerified,
+    EffectsAllowed,
+}
+
 struct NativeSteeringContext<'a> {
     store: Arc<SessionStore>,
     lease: &'a NativeSessionLease,
@@ -108,13 +127,13 @@ impl NativeSteeringContext<'_> {
         &self,
         turn_start_sequence: u64,
         workspace: &Path,
-    ) -> Result<ProjectInstructionLedger, AgentError> {
+    ) -> Result<Option<ProjectInstructionLedger>, AgentError> {
         let record = self
             .store
             .load(self.lease.session_id())
             .map_err(|error| AgentError::Runtime(format!("project instruction journal: {error}")))?
             .ok_or_else(|| AgentError::Runtime("native session is missing".into()))?;
-        ProjectInstructionLedger::from_events(&record.events, turn_start_sequence, workspace)
+        ProjectInstructionLedger::from_session(&record, turn_start_sequence, workspace)
     }
 
     fn admitted_images(
@@ -132,7 +151,15 @@ impl NativeSteeringContext<'_> {
         let admitted = record
             .events
             .iter()
-            .find(|event| event.sequence == sequence)
+            .rev()
+            .find(|event| {
+                matches!(
+                    event.kind,
+                    AgentEventKind::TurnAdmitted { .. }
+                        | AgentEventKind::TurnAdmittedWithImages { .. }
+                )
+            })
+            .filter(|event| event.sequence == sequence)
             .ok_or_else(|| AgentError::InvalidRequest("native admission is missing".into()))?;
         match &admitted.kind {
             AgentEventKind::TurnAdmittedWithImages {
@@ -196,7 +223,7 @@ impl NativeSteeringContext<'_> {
                 _ => {
                     return Err(AgentError::Runtime(
                         "steering acknowledgement returned a different event".into(),
-                    ))
+                    ));
                 }
             };
             sink.forward_persisted(event)?;
@@ -269,7 +296,16 @@ impl AgentRunner {
             auto_compaction: None,
             session_approvals: None,
             native_steering_store: None,
+            external_controls_store: None,
+            manual_command_actor: None,
         }
+    }
+
+    /// Serialize explicitly confirmed process controls under this run's native
+    /// lease. Controls remain separate from model tool calls and history.
+    pub fn with_manual_command_actor(mut self, actor: Arc<NativeManualCommandActor>) -> Self {
+        self.manual_command_actor = Some(actor);
+        self
     }
 
     pub fn with_limits(mut self, limits: RunLimits) -> Self {
@@ -362,6 +398,14 @@ impl AgentRunner {
         self
     }
 
+    /// Allow a local remote gateway to cancel this active turn or resolve its
+    /// pending permissions. Requires the same leased journal and native steering
+    /// store; the owner heartbeat exists only after all initial validation passes.
+    pub fn with_external_controls(mut self, sessions: Arc<SessionStore>) -> Self {
+        self.external_controls_store = Some(sessions);
+        self
+    }
+
     /// Enable durable compaction inside a native run. The session store also
     /// becomes the event journal, so the checkpoint marker and worker events
     /// share one ordered log. Call this after `with_event_journal` if both are
@@ -426,7 +470,9 @@ impl AgentRunner {
         let cancel = CancellationToken::new();
         let pending_permissions = Arc::new(PendingPermissions::default());
         let journal_error = Arc::new(Mutex::new(None));
-        let (sender, receiver) = mpsc::channel();
+        // Backpressure reaches the model once the desktop falls behind. The
+        // receiver remains the existing polling API; publication follows append.
+        let (sender, receiver) = mpsc::sync_channel(64);
         let worker = self.clone();
         let worker_cancel = cancel.clone();
         let worker_pending = pending_permissions.clone();
@@ -438,6 +484,7 @@ impl AgentRunner {
                 session_id: worker_session_id,
                 sequence: request.sequence_start,
                 sender,
+                pending_stream_event: None,
                 journal: worker.event_journal.clone(),
                 journal_failed: false,
                 journal_error: worker_journal_error,
@@ -448,28 +495,60 @@ impl AgentRunner {
             {
                 Ok(runtime) => runtime,
                 Err(error) => {
-                    let _ = sink.emit(AgentEventKind::TurnFailed {
-                        error: format!("cannot start async runtime: {error}"),
-                    });
+                    // Runtime setup precedes any authority ACK. Retain the
+                    // admission for recovery instead of closing a foreign turn.
+                    *sink
+                        .journal_error
+                        .lock()
+                        .unwrap_or_else(|poison| poison.into_inner()) = Some(format!(
+                        "cannot start async runtime before authority validation: {error}"
+                    ));
                     return;
                 }
             };
+            let mut initial_validation = InitialRunValidation::default();
             let result = runtime.block_on(worker.run_inner(
                 request,
-                worker_cancel,
+                worker_cancel.clone(),
                 worker_pending,
                 &mut sink,
                 session_lease.as_deref(),
+                &mut initial_validation,
             ));
-            match result {
-                Ok(()) => {}
+            let failure = match result {
+                Ok(()) => None,
                 Err(AgentError::Cancelled) => {
-                    let _ = sink.emit(AgentEventKind::TurnCancelled);
+                    Some(("run cancelled".to_owned(), AgentEventKind::TurnCancelled))
                 }
-                Err(error) => {
-                    let _ = sink.emit(AgentEventKind::TurnFailed {
+                Err(error) => Some((
+                    error.to_string(),
+                    AgentEventKind::TurnFailed {
                         error: error.to_string(),
-                    });
+                    },
+                )),
+            };
+            if let Some((reason, terminal)) = failure {
+                if let Err(error) = runtime.block_on(worker.emit_worker_failure_boundary(
+                    session_lease.as_deref(),
+                    &worker_cancel,
+                    &mut sink,
+                    terminal,
+                    &initial_validation,
+                )) {
+                    if initial_validation != InitialRunValidation::EffectsAllowed {
+                        let mut report = sink
+                            .journal_error
+                            .lock()
+                            .unwrap_or_else(|poison| poison.into_inner());
+                        let previous = report.take();
+                        let mut diagnostic = format!(
+                            "{reason}; initial rejection terminal was not published: {error}"
+                        );
+                        if let Some(previous) = previous.filter(|previous| previous != &reason) {
+                            diagnostic.push_str(&format!("; prior journal diagnostic: {previous}"));
+                        }
+                        *report = Some(diagnostic);
+                    }
                 }
             }
             // The UI treats channel disconnection as the turn's final ACK.
@@ -494,7 +573,31 @@ impl AgentRunner {
         pending_permissions: Arc<PendingPermissions>,
         sink: &mut EventSink,
         lease: Option<&NativeSessionLease>,
+        initial_validation: &mut InitialRunValidation,
     ) -> Result<(), AgentError> {
+        if lease.is_some_and(|lease| {
+            sink.session_id != lease.session_id()
+                || request.session_id.as_deref() != Some(lease.session_id())
+        }) {
+            return Err(AgentError::InvalidRequest(
+                "native request and event sink must match the leased session".into(),
+            ));
+        }
+        if let Some(store) = &self.external_controls_store {
+            if !self
+                .native_steering_store
+                .as_ref()
+                .is_some_and(|steering| Arc::ptr_eq(store, steering))
+            {
+                return Err(AgentError::InvalidRequest(
+                    "external controls require the native steering journal".into(),
+                ));
+            }
+        }
+        self.validate_manual_actor(lease, sink)?;
+        let workspace = canonical_workspace(&request.workspace)?;
+        self.validate_initial_admission(&request, &workspace, lease, sink)?;
+        *initial_validation = InitialRunValidation::InitialAuthorityVerified;
         sink.emit(AgentEventKind::SessionStarted {
             workspace: request.workspace.clone(),
         })?;
@@ -504,7 +607,6 @@ impl AgentRunner {
         if request.prompt.trim().is_empty() {
             return Err(AgentError::InvalidRequest("prompt is empty".into()));
         }
-        let workspace = canonical_workspace(&request.workspace)?;
         // Reject an unverifiable native request before starting an external
         // tool service during Build preparation.
         let request_profile = if lease.is_some() {
@@ -513,11 +615,41 @@ impl AgentRunner {
                     "native provider and endpoint identity are required".into(),
                 ));
             }
-            Some(self.model.request_profile_fingerprint().ok_or_else(|| {
+            let profile = self.model.request_profile_fingerprint().ok_or_else(|| {
                 AgentError::InvalidRequest(
                     "native model backend has no stable request profile fingerprint".into(),
                 )
-            })?)
+            })?;
+            self.native_runtime_identity
+                .as_ref()
+                .expect("checked native identity")
+                .route_snapshot(self.model.model_id(), profile)?;
+            Some(profile)
+        } else {
+            None
+        };
+        self.validate_initial_inputs(&workspace, lease, sink)?;
+        if cancel.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
+        *initial_validation = InitialRunValidation::EffectsAllowed;
+        let _external_controls = if let Some(store) = &self.external_controls_store {
+            let context = self.native_steering_context(lease, sink)?.ok_or_else(|| {
+                AgentError::InvalidRequest(
+                    "external controls require a leased admitted turn".into(),
+                )
+            })?;
+            let pending = pending_permissions.clone();
+            Some(
+                crate::NativeRemoteControlGuard::start(
+                    store.clone(),
+                    context.lease,
+                    &context.turn_id,
+                    cancel.clone(),
+                    move |request_id, choice| pending.resolve(request_id, choice),
+                )
+                .map_err(|error| AgentError::Runtime(format!("external controls: {error}")))?,
+            )
         } else {
             None
         };
@@ -537,6 +669,21 @@ impl AgentRunner {
         } else {
             None
         };
+        // Conversation resource preparation can capture a file baseline. Do
+        // that after validation and before any pending manual command effect.
+        if let Err(error) = self.process_manual_commands(lease, &cancel).await {
+            let shutdown = match &prepared {
+                Some(session) => session.shutdown().await,
+                None => Ok(()),
+            };
+            return match (error, shutdown) {
+                (AgentError::Cancelled, _) => Err(AgentError::Cancelled),
+                (error, Err(shutdown_error)) => Err(AgentError::Runtime(format!(
+                    "{error}; tool shutdown failed: {shutdown_error}"
+                ))),
+                (error, _) => Err(error),
+            };
+        }
         let tools = prepared
             .as_ref()
             .map(|session| session.tools())
@@ -591,8 +738,145 @@ impl AgentRunner {
                         plan: PlanSnapshot::from_plan_response(&response),
                     })?;
                 }
-                sink.emit(AgentEventKind::TurnCompleted { response, steps })
+                self.emit_manual_boundary(
+                    lease,
+                    &cancel,
+                    sink,
+                    AgentEventKind::TurnCompleted { response, steps },
+                )
+                .await
             }
+        }
+    }
+
+    /// Validate every initial input known before tool discovery. Catalog and
+    /// MCP identities still require preparation and retain their later checks.
+    fn validate_initial_inputs(
+        &self,
+        workspace: &Path,
+        lease: Option<&NativeSessionLease>,
+        sink: &EventSink,
+    ) -> Result<(), AgentError> {
+        system_instructions_digest(&self.system_instructions).ok_or_else(|| {
+            AgentError::InvalidRequest(format!(
+                "system instructions exceed {MAX_SYSTEM_INSTRUCTIONS_BYTES} bytes"
+            ))
+        })?;
+        if self
+            .plan_snapshot
+            .as_ref()
+            .is_some_and(|plan| !plan.is_valid())
+        {
+            return Err(AgentError::InvalidRequest(
+                "plan snapshot is invalid".into(),
+            ));
+        }
+        if !self.command_hooks.is_empty() && (lease.is_none() || sink.journal.is_none()) {
+            return Err(AgentError::InvalidRequest(
+                "command hooks require a leased native journal".into(),
+            ));
+        }
+        self.command_hooks.digest_hex().map_err(|error| {
+            AgentError::InvalidRequest(format!("command hook identity: {error}"))
+        })?;
+        if lease.is_some() && workspace.to_str().is_none() {
+            return Err(AgentError::InvalidRequest(
+                "native workspace path is not Unicode".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_initial_admission(
+        &self,
+        request: &AgentRunRequest,
+        workspace: &Path,
+        lease: Option<&NativeSessionLease>,
+        sink: &EventSink,
+    ) -> Result<(), AgentError> {
+        let configured = self.native_steering_context(lease, sink)?;
+        let context = match (configured, &self.manual_command_actor, lease) {
+            (Some(context), _, _) => Some(context),
+            (None, Some(actor), Some(lease)) => {
+                let turn_id = actor
+                    .sessions()
+                    .active_native_turn_id(lease.session_id())
+                    .map_err(|error| AgentError::Runtime(format!("active turn: {error}")))?
+                    .ok_or_else(|| {
+                        AgentError::InvalidRequest(
+                            "manual command runner requires an active admitted turn".into(),
+                        )
+                    })?;
+                Some(NativeSteeringContext {
+                    store: actor.sessions().clone(),
+                    lease,
+                    turn_id,
+                })
+            }
+            _ => None,
+        };
+        if let Some(context) = context {
+            let session = context
+                .store
+                .native_session_for_lease(context.lease)
+                .map_err(|error| {
+                    AgentError::InvalidRequest(format!("native admission: {error}"))
+                })?;
+            if session.native_automation.is_some()
+                && canonical_workspace(&session.workspace)? != session.workspace
+            {
+                return Err(AgentError::InvalidRequest(
+                    "automation workspace no longer matches its registered canonical path".into(),
+                ));
+            }
+            if canonical_workspace(&session.workspace)? != workspace {
+                return Err(AgentError::InvalidRequest(
+                    "native request workspace differs from its session".into(),
+                ));
+            }
+            let images = context.admitted_images(
+                request.sequence_start,
+                &request.prompt,
+                self.model.model_id(),
+                request.mode,
+            )?;
+            AgentMessage::user_with_images(request.prompt.clone(), images)
+                .map_err(|error| AgentError::InvalidRequest(format!("admitted images: {error}")))?;
+        }
+        Ok(())
+    }
+
+    fn native_steering_context<'a>(
+        &self,
+        lease: Option<&'a NativeSessionLease>,
+        sink: &EventSink,
+    ) -> Result<Option<NativeSteeringContext<'a>>, AgentError> {
+        match (&self.native_steering_store, lease, &sink.journal) {
+            (None, _, _) => Ok(None),
+            (Some(store), Some(lease), Some(journal)) => {
+                let store_journal: Arc<dyn NativeEventJournal> = store.clone();
+                if !Arc::ptr_eq(journal, &store_journal) {
+                    return Err(AgentError::InvalidRequest(
+                        "steering store differs from the native event journal".into(),
+                    ));
+                }
+                let turn_id = store
+                    .active_native_turn_id(&sink.session_id)
+                    .map_err(|error| AgentError::Runtime(format!("active turn: {error}")))?
+                    .ok_or_else(|| {
+                        AgentError::InvalidRequest(
+                            "native steering requires an admitted turn".into(),
+                        )
+                    })?;
+                Ok(Some(NativeSteeringContext {
+                    store: store.clone(),
+                    lease,
+                    turn_id,
+                }))
+            }
+            (Some(_), _, _) => Err(AgentError::InvalidRequest(
+                "native steering requires a leased session store journal".into(),
+            )),
         }
     }
 
@@ -611,35 +895,7 @@ impl AgentRunner {
                 "command hooks require a leased native journal".into(),
             ));
         }
-        let steering = match (&self.native_steering_store, native.lease, &sink.journal) {
-            (None, _, _) => None,
-            (Some(store), Some(lease), Some(journal)) => {
-                let store_journal: Arc<dyn NativeEventJournal> = store.clone();
-                if !Arc::ptr_eq(journal, &store_journal) {
-                    return Err(AgentError::InvalidRequest(
-                        "steering store differs from the native event journal".into(),
-                    ));
-                }
-                let turn_id = store
-                    .active_native_turn_id(&sink.session_id)
-                    .map_err(|error| AgentError::Runtime(format!("active turn: {error}")))?
-                    .ok_or_else(|| {
-                        AgentError::InvalidRequest(
-                            "native steering requires an admitted turn".into(),
-                        )
-                    })?;
-                Some(NativeSteeringContext {
-                    store: store.clone(),
-                    lease,
-                    turn_id,
-                })
-            }
-            (Some(_), _, _) => {
-                return Err(AgentError::InvalidRequest(
-                    "native steering requires a leased session store journal".into(),
-                ))
-            }
-        };
+        let steering = self.native_steering_context(native.lease, sink)?;
         let turn_start_sequence = sink.sequence;
         let hooks_digest = self.command_hooks.digest_hex().map_err(|error| {
             AgentError::InvalidRequest(format!("command hook identity: {error}"))
@@ -653,10 +909,8 @@ impl AgentRunner {
             .into_iter()
             .filter(|definition| {
                 mode == TurnMode::Build
-                    || (trusted_local_read(&definition.name)
-                        && active_tools
-                            .executor
-                            .certifies_parallel_read(&definition.name)
+                    || (trusted_plan_read(&definition.name)
+                        && active_tools.executor.certifies_plan_read(&definition.name)
                         && !self.command_hooks.has_hooks_for_tool(&definition.name))
             })
             .collect::<Vec<_>>();
@@ -787,10 +1041,12 @@ impl AgentRunner {
                 &system,
                 request_profile,
             )?;
+            let route = identity.route_snapshot(self.model.model_id(), request_profile)?;
             sink.emit(AgentEventKind::ModelContextCommitted {
                 version: MODEL_CONTEXT_VERSION,
                 digest,
             })?;
+            sink.emit(route.into_event())?;
         }
         let mut messages = vec![AgentMessage::system(system)];
         messages.extend(request.history);
@@ -815,6 +1071,7 @@ impl AgentRunner {
         let mut tool_count = 0usize;
         let mut budget_state = TokenBudgetState::default();
         for step in 1..=self.limits.max_model_steps {
+            self.process_manual_commands(native.lease, &cancel).await?;
             if cancel.is_cancelled() {
                 return Err(AgentError::Cancelled);
             }
@@ -839,13 +1096,15 @@ impl AgentRunner {
                 if assessment.decision != TokenBudgetDecision::Continue {
                     let limit_message = format!(
                         "semantic compaction is required before the next model request: projected {} tokens, threshold {}",
-                        assessment.projected_total_tokens,
-                        assessment.auto_compact_threshold_tokens
+                        if policy.context_window_tokens == 0 {
+                            assessment.projected_input_tokens.saturating_add(policy.tool_schema_reserve_tokens)
+                        } else { assessment.projected_total_tokens }, assessment.auto_compact_threshold_tokens
                     );
                     let (Some(config), Some(lease)) = (&self.auto_compaction, native.lease) else {
                         return Err(AgentError::Limit(limit_message));
                     };
                     let budget = CheckpointBudgetSnapshot {
+                        input_limit_tokens: policy.input_limit_tokens,
                         context_window_tokens: policy.context_window_tokens,
                         estimated_input_tokens: assessment.estimated_input_tokens,
                         observed_input_tokens: budget_state.observed_input_tokens(),
@@ -928,7 +1187,7 @@ impl AgentRunner {
             if let Some(steering) = &steering {
                 let ledger = steering
                     .project_instruction_ledger(turn_start_sequence, &active_tools.workspace)?;
-                if let Some(context) = ledger.model_context() {
+                if let Some(context) = ledger.and_then(|ledger| ledger.model_context()) {
                     model_messages.insert(1, context);
                 }
             }
@@ -954,12 +1213,25 @@ impl AgentRunner {
                 // instructions, rather than the earlier compaction probe.
                 budget_state = request_budget;
             }
-            sink.emit(AgentEventKind::ModelRequestStarted {
-                step,
-                model: self.model.model_id().to_owned(),
-            })?;
+            self.emit_manual_boundary(
+                native.lease,
+                &cancel,
+                sink,
+                AgentEventKind::ModelRequestStarted {
+                    step,
+                    model: self.model.model_id().to_owned(),
+                },
+            )
+            .await?;
             let completion = self
-                .model_step(&model_messages, catalog.definitions(), cancel.clone(), sink)
+                .model_step(
+                    &model_messages,
+                    catalog.definitions(),
+                    cancel.clone(),
+                    sink,
+                    step,
+                    native.lease,
+                )
                 .await?;
             if cancel.is_cancelled() {
                 return Err(AgentError::Cancelled);
@@ -1034,7 +1306,8 @@ impl AgentRunner {
                     steering
                         .project_instruction_ledger(turn_start_sequence, &active_tools.workspace)
                 })
-                .transpose()?;
+                .transpose()?
+                .flatten();
             let project_preflights = calls
                 .iter()
                 .map(|call| {
@@ -1083,6 +1356,7 @@ impl AgentRunner {
                 .collect::<Vec<_>>();
             let scheduler = ToolScheduler::new(4)?;
             for group in scheduler.plan(&scheduled)? {
+                self.process_manual_commands(native.lease, &cancel).await?;
                 if cancel.is_cancelled() {
                     return Err(AgentError::Cancelled);
                 }
@@ -1212,6 +1486,11 @@ impl AgentRunner {
                         })?;
                     }
                 }
+                if let Some(media) =
+                    crate::tool_media::extract_tool_result_media(call, &result.content)
+                {
+                    sink.emit(media)?;
+                }
                 let content = truncate_chars(&result.content, self.limits.max_tool_output_chars);
                 sink.emit(AgentEventKind::ToolFinished {
                     tool_call_id: call.id.clone(),
@@ -1237,14 +1516,17 @@ impl AgentRunner {
         hooks_digest: &str,
     ) -> Result<crate::ToolOutput, AgentError> {
         let mut contexts = Vec::new();
-        for config in self
+        // Later hooks and the executor see an earlier hook's rewrite; the
+        // journaled ToolStarted keeps what the model asked for.
+        let mut rewritten = call.clone();
+        for (config, compat) in self
             .command_hooks
-            .for_call(HookPhase::PreToolUse, &call.name)
+            .tool_hooks(HookPhase::PreToolUse, &call.name)
         {
             let response = self
                 .run_one_hook(
                     config,
-                    call,
+                    &rewritten,
                     None,
                     context,
                     sink,
@@ -1260,20 +1542,37 @@ impl AgentRunner {
                     response.reason.unwrap_or_default()
                 )));
             }
+            // A Claude Code hook answers in its own input shape; one that
+            // does not map back onto this tool is ignored.
+            let updated = response.updated_input.and_then(|arguments| {
+                if compat {
+                    crate::native_input(&call.name, &rewritten.arguments, &arguments)
+                } else {
+                    Some(arguments)
+                }
+            });
+            if let Some(arguments) = updated {
+                rewritten.arguments = arguments;
+                contexts.push(format!("Hook {} rewrote this call's input.", config.id));
+            }
             if let Some(text) = response.additional_context {
                 contexts.push(text);
             }
         }
-        let mut output = match executor.execute(call, context).await {
+        let call = &rewritten;
+        let mut output = match self
+            .execute_streaming_tool(executor, call, context, sink)
+            .await
+        {
             Ok(output) => output,
             Err(error @ AgentError::Cancelled) | Err(error @ AgentError::EffectUncertain(_)) => {
                 return Err(error);
             }
             Err(error) => crate::ToolOutput::error(error.to_string()),
         };
-        for config in self
+        for (config, _) in self
             .command_hooks
-            .for_call(HookPhase::PostToolUse, &call.name)
+            .tool_hooks(HookPhase::PostToolUse, &call.name)
         {
             let response = self
                 .run_one_hook(
@@ -1295,6 +1594,49 @@ impl AgentRunner {
             output.content.push_str(&contexts.join("\n"));
         }
         Ok(output)
+    }
+
+    async fn execute_streaming_tool(
+        &self,
+        executor: &dyn ToolExecutor,
+        call: &ToolCall,
+        context: &ToolContext,
+        sink: &mut EventSink,
+    ) -> Result<crate::ToolOutput, AgentError> {
+        let (sender, mut receiver) =
+            crate::tool_output::tool_output_channel(context.cancel.clone());
+        let result = {
+            let future = executor.execute_streaming(call, context, sender);
+            tokio::pin!(future);
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = context.cancel.cancelled() => break Err(AgentError::Cancelled),
+                    Some(chunk) = receiver.recv() => {
+                        if let Err(error) = sink.emit_stream_event(chunk.into_event(&call.id), &context.cancel).await {
+                            break Err(tool_output_delivery_error(error));
+                        }
+                    }
+                    result = &mut future => break result,
+                }
+            }
+        };
+        // Dropping the executor first terminates its process tree. Preserve
+        // only the finite accepted prefix, including before errors/cancellation.
+        receiver.close();
+        let mut delivery_error = sink.flush_stream_event().err();
+        while let Ok(chunk) = receiver.try_recv() {
+            if let Err(error) = sink.emit(chunk.into_event(&call.id)) {
+                if matches!(error, AgentError::Cancelled) {
+                    delivery_error.get_or_insert(error);
+                } else {
+                    return Err(tool_output_delivery_error(error));
+                }
+            }
+        }
+        result.and_then(|output| {
+            delivery_error.map_or(Ok(output), |error| Err(tool_output_delivery_error(error)))
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1336,8 +1678,31 @@ impl AgentRunner {
                 |value| serde_json::json!({"content": value.content, "is_error": value.is_error}),
             ),
         };
-        match crate::run_command_hook(config, &invocation, &context.cancel).await {
-            HookRunResult::Completed { response, .. } => {
+        let result =
+            crate::hooks::run_tool_hook(&self.command_hooks, config, &invocation, &context.cancel)
+                .await;
+        let (partial_stdout, partial_stderr) = match &result {
+            HookRunResult::OutcomeUncertainCaptured { stdout, stderr, .. } => {
+                (Some(stdout.clone()), Some(stderr.clone()))
+            }
+            _ => (None, None),
+        };
+        match result {
+            HookRunResult::Completed {
+                response,
+                stdout,
+                stderr,
+            } => {
+                sink.emit(AgentEventKind::HookDiagnosticCommitted {
+                    tool_call_id: call.id.clone(),
+                    hook_id: config.id.clone(),
+                    phase: phase.into(),
+                    reason: response.reason.clone(),
+                    stdout: Some(stdout),
+                    stderr: Some(stderr),
+                    error: None,
+                })?;
+
                 sink.emit(AgentEventKind::HookFinished {
                     tool_call_id: call.id.clone(),
                     hook_id: config.id.clone(),
@@ -1350,7 +1715,18 @@ impl AgentRunner {
                 })?;
                 Ok(response)
             }
-            HookRunResult::NotStarted(failure) | HookRunResult::OutcomeUncertain(failure) => {
+            HookRunResult::NotStarted(failure)
+            | HookRunResult::OutcomeUncertain(failure)
+            | HookRunResult::OutcomeUncertainCaptured { failure, .. } => {
+                sink.emit(AgentEventKind::HookDiagnosticCommitted {
+                    tool_call_id: call.id.clone(),
+                    hook_id: config.id.clone(),
+                    phase: phase.into(),
+                    reason: None,
+                    stdout: partial_stdout,
+                    stderr: partial_stderr,
+                    error: Some(format!("{failure:?}").chars().take(2000).collect()),
+                })?;
                 Err(AgentError::EffectUncertain(format!(
                     "hook {} has no committed outcome after tool start: {failure:?}",
                     config.id
@@ -1492,34 +1868,250 @@ impl AgentRunner {
         }
     }
 
+    fn validate_manual_actor(
+        &self,
+        lease: Option<&NativeSessionLease>,
+        sink: &EventSink,
+    ) -> Result<(), AgentError> {
+        let Some(actor) = &self.manual_command_actor else {
+            return Ok(());
+        };
+        let lease = lease.ok_or_else(|| {
+            AgentError::InvalidRequest("manual command controls require a native lease".into())
+        })?;
+        let journal = sink.journal.as_ref().ok_or_else(|| {
+            AgentError::InvalidRequest("manual command controls require a native journal".into())
+        })?;
+        let actor_journal: Arc<dyn NativeEventJournal> = actor.sessions().clone();
+        if !Arc::ptr_eq(journal, &actor_journal) {
+            return Err(AgentError::InvalidRequest(
+                "manual command actor and runner journal use different stores".into(),
+            ));
+        }
+        actor.validate_lease(lease)
+    }
+
+    async fn emit_worker_failure_boundary(
+        &self,
+        lease: Option<&NativeSessionLease>,
+        cancel: &CancellationToken,
+        sink: &mut EventSink,
+        kind: AgentEventKind,
+        initial: &InitialRunValidation,
+    ) -> Result<(), AgentError> {
+        if *initial == InitialRunValidation::EffectsAllowed {
+            return self.emit_manual_boundary(lease, cancel, sink, kind).await;
+        }
+        if *initial == InitialRunValidation::UnverifiedAuthority
+            && (lease.is_some()
+                || self.manual_command_actor.is_some()
+                || self.native_steering_store.is_some())
+        {
+            // A sequence fence cannot prove that this journal belongs to
+            // the lease. Publish the worker diagnostic through its handle,
+            // leaving both the actor ledger and journal byte-identical.
+            let diagnostic = match &kind {
+                AgentEventKind::TurnFailed { error } => error.clone(),
+                _ => "initial worker authority was not validated".into(),
+            };
+            *sink
+                .journal_error
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()) = Some(diagnostic);
+            return Err(AgentError::InvalidRequest(
+                "initial worker authority was not validated; no terminal was published".into(),
+            ));
+        }
+        if self.manual_command_actor.is_none() {
+            // No manual actor was configured. Keep the existing event path,
+            // with the store's transactional pending/uncertain operation fence.
+            return if sink.emit_retryable_manual_boundary(kind)? {
+                Ok(())
+            } else {
+                Err(AgentError::EffectUncertain("initial validation failed with unverified manual intentions; terminal was not published".into()))
+            };
+        }
+        let actor = self
+            .manual_command_actor
+            .as_ref()
+            .expect("validated manual authority");
+        let lease = lease.expect("validated manual lease");
+        loop {
+            for operation in actor
+                .operations()
+                .list_pending(actor.owner_session_id())
+                .map_err(|error| AgentError::Runtime(error.to_string()))?
+            {
+                if operation.state != NativeCommandOperationState::Requested {
+                    return Err(AgentError::EffectUncertain("initial validation failed; an existing manual effect still requires inspection".into()));
+                }
+                match actor.operations().reject_requested(
+                    lease,
+                    &operation.request.operation_id,
+                    operation.revision,
+                    "initial run validation failed before any hook or command effect",
+                ) {
+                    Ok(_) => {}
+                    Err(NativeCommandOperationError::Conflict) => {
+                        let saved = actor
+                            .operations()
+                            .snapshot(actor.owner_session_id(), &operation.request.operation_id)
+                            .map_err(|error| AgentError::Runtime(error.to_string()))?;
+                        if !saved.is_some_and(|saved| {
+                            saved.request == operation.request
+                                && matches!(
+                                    saved.state,
+                                    NativeCommandOperationState::Cancelled { .. }
+                                        | NativeCommandOperationState::Rejected { .. }
+                                )
+                        }) {
+                            return Err(AgentError::EffectUncertain("manual intention changed during initial rejection; no effect or acknowledgment was performed".into()));
+                        }
+                    }
+                    Err(error) => return Err(AgentError::Runtime(error.to_string())),
+                }
+            }
+            // A concurrent enqueue may win before this atomic append fence.
+            // Retry retirement only, without hooks, stdin, or preparation.
+            if sink.emit_retryable_manual_boundary(kind.clone())? {
+                return Ok(());
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+
+    async fn process_manual_commands(
+        &self,
+        lease: Option<&NativeSessionLease>,
+        cancel: &CancellationToken,
+    ) -> Result<(), AgentError> {
+        if let Some(actor) = &self.manual_command_actor {
+            let lease = lease.ok_or_else(|| {
+                AgentError::InvalidRequest("manual command controls require a native lease".into())
+            })?;
+            actor.process_pending(lease, cancel).await?;
+        }
+        Ok(())
+    }
+
+    async fn manual_command_notified(&self) {
+        match &self.manual_command_actor {
+            Some(actor) => actor.notified().await,
+            None => std::future::pending::<()>().await,
+        }
+    }
+
+    /// Retry only this event if an intention won the store admission race.
+    /// No provider request or process effect is repeated by this loop.
+    async fn emit_manual_boundary(
+        &self,
+        lease: Option<&NativeSessionLease>,
+        cancel: &CancellationToken,
+        sink: &mut EventSink,
+        kind: AgentEventKind,
+    ) -> Result<(), AgentError> {
+        if self.manual_command_actor.is_none() {
+            return sink.emit(kind);
+        }
+        loop {
+            self.process_manual_commands(lease, cancel).await?;
+            if cancel.is_cancelled()
+                && matches!(
+                    kind,
+                    AgentEventKind::ModelRequestStarted { .. }
+                        | AgentEventKind::TurnCompleted { .. }
+                )
+            {
+                return Err(AgentError::Cancelled);
+            }
+            if sink.emit_retryable_manual_boundary(kind.clone())? {
+                return Ok(());
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+
     async fn model_step(
         &self,
         messages: &[AgentMessage],
         definitions: &[ToolDefinition],
         cancel: CancellationToken,
         sink: &mut EventSink,
+        step: usize,
+        lease: Option<&NativeSessionLease>,
     ) -> Result<crate::ModelCompletion, AgentError> {
-        let (delta_sender, mut delta_receiver) = tokio::sync::mpsc::unbounded_channel();
-        let future = self.model.stream_complete_detailed(
-            messages,
-            definitions,
-            cancel.clone(),
-            delta_sender,
-        );
-        tokio::pin!(future);
-        let output = loop {
-            tokio::select! {
-                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-                result = &mut future => break result?,
-                Some(content) = delta_receiver.recv() => {
-                    sink.emit(AgentEventKind::AssistantDelta { content })?;
+        let (delta_sender, mut delta_receiver) = crate::model_event_channel(cancel.clone());
+        // Drop the model future before sealing its delta channel. Cancellation
+        // and failures must preserve text already published, just like success.
+        let result = {
+            let future =
+                self.model
+                    .stream_events(messages, definitions, cancel.clone(), delta_sender);
+            tokio::pin!(future);
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break Err(AgentError::Cancelled),
+                    result = &mut future => break result,
+                    _ = self.manual_command_notified(), if self.manual_command_actor.is_some() => {
+                        if let Err(error) = self.process_manual_commands(lease, &cancel).await {
+                            break Err(error);
+                        }
+                    }
+                    Some(update) = delta_receiver.recv() => {
+                        if let Some(kind) = stream_update_kind(step, update) {
+                            if let Err(error) = sink.emit_stream_event(kind, &cancel).await {
+                                break Err(error);
+                            }
+                        }
+                    }
                 }
             }
         };
-        while let Ok(content) = delta_receiver.try_recv() {
-            sink.emit(AgentEventKind::AssistantDelta { content })?;
+        // Closing rejects late producers, including a retained sender. Drain
+        // only the accepted finite tail; never await producer completion.
+        delta_receiver.close();
+        // The HTTP future has been dropped before any synchronous flush. A
+        // cancelled send retains at most one already journaled event, so UI
+        // backpressure cannot delay cancelling the provider request.
+        let mut delivery_error = sink.flush_stream_event().err();
+        while let Ok(update) = delta_receiver.try_recv() {
+            if let Some(kind) = stream_update_kind(step, update) {
+                if let Err(error) = sink.emit(kind) {
+                    if matches!(error, AgentError::Cancelled) {
+                        // A closed UI cannot accept more records; still append
+                        // the complete finite prefix to the native journal.
+                        delivery_error.get_or_insert(error);
+                    } else {
+                        return Err(error);
+                    }
+                }
+            }
         }
-        Ok(output)
+        result.and_then(|completion| match delivery_error {
+            Some(error) => Err(error),
+            None => Ok(completion),
+        })
+    }
+}
+
+/// A delivery failure occurs after ToolStarted. Do not convert it into an
+/// ordinary tool result or execute post hooks after the journal failed.
+fn tool_output_delivery_error(error: AgentError) -> AgentError {
+    match error {
+        AgentError::Cancelled | AgentError::EffectUncertain(_) => error,
+        error => AgentError::EffectUncertain(format!(
+            "tool output could not be delivered after execution started: {error}"
+        )),
+    }
+}
+
+/// Keep legacy text journals readable. Rich updates remain presentation data
+/// for the exact model step and cannot substitute for a response commit.
+pub(crate) fn stream_update_kind(step: usize, update: ModelStreamEvent) -> Option<AgentEventKind> {
+    match update {
+        ModelStreamEvent::TextDelta { content } if content.is_empty() => None,
+        ModelStreamEvent::TextDelta { content } => Some(AgentEventKind::AssistantDelta { content }),
+        update => Some(AgentEventKind::ModelStreamUpdate { step, update }),
     }
 }
 
@@ -1535,20 +2127,29 @@ fn canonical_workspace(path: &Path) -> Result<PathBuf, AgentError> {
     Ok(path)
 }
 
+/// Keeps both ends of an oversized result: the beginning says what ran and
+/// the end usually says how it failed. The closing marker stays last because
+/// hosts detect truncation by it.
 fn truncate_chars(text: &str, max_chars: usize) -> String {
-    let mut chars = text.chars();
-    let prefix: String = chars.by_ref().take(max_chars).collect();
-    if chars.next().is_some() {
-        format!("{prefix}\n[tool output truncated]")
-    } else {
-        prefix
+    let total = text.chars().count();
+    if total <= max_chars {
+        return text.to_owned();
     }
+    let head_chars = max_chars.div_ceil(2);
+    let tail_chars = max_chars - head_chars;
+    let head: String = text.chars().take(head_chars).collect();
+    let tail: String = text.chars().skip(total - tail_chars).collect();
+    format!(
+        "{head}\n[... {} of {total} chars omitted ...]\n{tail}\n[tool output truncated]",
+        total - max_chars
+    )
 }
 
 struct EventSink {
     session_id: String,
     sequence: u64,
-    sender: mpsc::Sender<AgentEvent>,
+    sender: mpsc::SyncSender<AgentEvent>,
+    pending_stream_event: Option<AgentEvent>,
     journal: Option<Arc<dyn NativeEventJournal>>,
     journal_failed: bool,
     journal_error: Arc<Mutex<Option<String>>>,
@@ -1575,6 +2176,65 @@ impl EventSink {
     }
 
     fn emit(&mut self, kind: AgentEventKind) -> Result<(), AgentError> {
+        self.append_event(kind, false).map(|_| ())
+    }
+
+    fn emit_retryable_manual_boundary(&mut self, kind: AgentEventKind) -> Result<bool, AgentError> {
+        self.append_event(kind, true)
+    }
+
+    /// Persist first, then wait for bounded desktop capacity without blocking
+    /// the model future's cancellation. Only streaming events use this path;
+    /// terminal/effect boundaries run after the model future is gone.
+    async fn emit_stream_event(
+        &mut self,
+        kind: AgentEventKind,
+        cancel: &CancellationToken,
+    ) -> Result<(), AgentError> {
+        let mut event = self
+            .prepare_event(kind, false)?
+            .expect("stream updates do not retry a manual fence");
+        loop {
+            match self.sender.try_send(event) {
+                Ok(()) => return Ok(()),
+                Err(mpsc::TrySendError::Disconnected(_)) => return Err(AgentError::Cancelled),
+                Err(mpsc::TrySendError::Full(retained)) => event = retained,
+            }
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    self.pending_stream_event = Some(event);
+                    return Err(AgentError::Cancelled);
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_millis(5)) => {}
+            }
+        }
+    }
+
+    fn flush_stream_event(&mut self) -> Result<(), AgentError> {
+        if let Some(event) = self.pending_stream_event.take() {
+            self.sender.send(event).map_err(|_| AgentError::Cancelled)?;
+        }
+        Ok(())
+    }
+
+    fn append_event(
+        &mut self,
+        kind: AgentEventKind,
+        retry_manual_fence: bool,
+    ) -> Result<bool, AgentError> {
+        let Some(event) = self.prepare_event(kind, retry_manual_fence)? else {
+            return Ok(false);
+        };
+        self.sender.send(event).map_err(|_| AgentError::Cancelled)?;
+        Ok(true)
+    }
+
+    fn prepare_event(
+        &mut self,
+        kind: AgentEventKind,
+        retry_manual_fence: bool,
+    ) -> Result<Option<AgentEvent>, AgentError> {
         if self.journal_failed {
             return Err(AgentError::Runtime(
                 "session journal failed earlier in this run".into(),
@@ -1586,6 +2246,11 @@ impl EventSink {
         let event = AgentEvent::new(&self.session_id, sequence, kind);
         if let Some(journal) = &self.journal {
             if let Err(error) = journal.append_native_event(&event) {
+                if retry_manual_fence
+                    && matches!(error, StoreError::NativeCommandOperationAdmissionBlocked(_))
+                {
+                    return Ok(None);
+                }
                 self.journal_failed = true;
                 let message = format!("session journal could not persist event: {error}");
                 *self
@@ -1596,13 +2261,14 @@ impl EventSink {
             }
         }
         self.sequence = sequence;
-        self.sender.send(event).map_err(|_| AgentError::Cancelled)
+        Ok(Some(event))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    include!("runner_tool_output_tests.rs");
     use crate::{ModelOutput, ResponsesBackend, ToolOutput};
     use async_trait::async_trait;
     use openide_core::{
@@ -1612,13 +2278,419 @@ mod tests {
     use serde_json::json;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
 
     struct ScriptedModel {
         outputs: Mutex<Vec<ModelOutput>>,
         seen: Mutex<Vec<Vec<AgentMessage>>>,
+    }
+
+    #[derive(Clone, Copy)]
+    enum QueuedStreamOutcome {
+        Success,
+        Error,
+        CancelPending,
+    }
+
+    struct QueuedStreamingModel {
+        outcome: QueuedStreamOutcome,
+        release: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+        retained_sender: Mutex<Option<crate::ModelEventSender>>,
+        future_dropped: Arc<AtomicBool>,
+    }
+
+    struct StreamingFutureDrop(Arc<AtomicBool>);
+
+    impl Drop for StreamingFutureDrop {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[async_trait]
+    impl ModelBackend for QueuedStreamingModel {
+        fn model_id(&self) -> &str {
+            "scripted"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            panic!("fixture requires the streaming path")
+        }
+
+        async fn stream_events(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            cancel: CancellationToken,
+            events: crate::ModelEventSender,
+        ) -> Result<crate::ModelCompletion, AgentError> {
+            let _drop = StreamingFutureDrop(self.future_dropped.clone());
+            *self.retained_sender.lock().unwrap() = Some(events.clone());
+            events
+                .send(ModelStreamEvent::TextDelta {
+                    content: "Café ".into(),
+                })
+                .await
+                .unwrap();
+            let release = self.release.lock().unwrap().take();
+            if let Some(release) = release {
+                release.await.unwrap();
+            }
+            // Only a successful bounded send counts as accepted output. The
+            // compatibility bridge's private legacy queue is not this boundary.
+            events
+                .send(ModelStreamEvent::TextDelta {
+                    content: "中".into(),
+                })
+                .await
+                .unwrap();
+            match self.outcome {
+                QueuedStreamOutcome::Success => Ok(crate::ModelCompletion {
+                    output: ModelOutput {
+                        content: "Café 中".into(),
+                        tool_calls: vec![],
+                    },
+                    usage: None,
+                    response_id: None,
+                    provider_output_items: vec![],
+                }),
+                QueuedStreamOutcome::Error => {
+                    Err(AgentError::Model("stream failed after publication".into()))
+                }
+                QueuedStreamOutcome::CancelPending => {
+                    cancel.cancel();
+                    std::future::pending().await
+                }
+            }
+        }
+    }
+
+    fn assert_native_streaming_tail_survives_reopen(outcome: QueuedStreamOutcome) {
+        let workspace = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(workspace.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, workspace.path());
+        let session_id = request.session_id.clone().unwrap();
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let (release, receiver) = tokio::sync::oneshot::channel();
+        let cancel_pending = matches!(outcome, QueuedStreamOutcome::CancelPending);
+        let model = Arc::new(QueuedStreamingModel {
+            outcome,
+            release: Mutex::new(cancel_pending.then_some(receiver)),
+            retained_sender: Mutex::new(None),
+            future_dropped: Arc::new(AtomicBool::new(false)),
+        });
+        let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .with_native_runtime_identity("test", "https://test.example/v1")
+            .with_event_journal(store.clone());
+        let handle = runner.start_with_lease(request, lease);
+        let mut events = Vec::new();
+        if cancel_pending {
+            loop {
+                let event = handle.events.recv_timeout(Duration::from_secs(5)).unwrap();
+                let first = matches!(&event.kind, AgentEventKind::AssistantDelta { content } if content == "Café ");
+                events.push(event);
+                if first {
+                    break;
+                }
+            }
+            release.send(()).unwrap();
+        }
+        events.extend(receive_until_terminal(&handle));
+        assert!(matches!(
+            handle.events.recv_timeout(Duration::from_secs(5)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        assert!(model.future_dropped.load(Ordering::SeqCst));
+        let retained_sender = model.retained_sender.lock().unwrap().clone().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert!(runtime
+            .block_on(retained_sender.send(ModelStreamEvent::TextDelta {
+                content: "late publication must be rejected".into(),
+            }))
+            .is_err());
+        let is_success = matches!(outcome, QueuedStreamOutcome::Success);
+        assert!(match (&events.last().unwrap().kind, outcome) {
+            (AgentEventKind::TurnCompleted { .. }, QueuedStreamOutcome::Success) => true,
+            (AgentEventKind::TurnFailed { error }, QueuedStreamOutcome::Error) =>
+                error.contains("stream failed after publication"),
+            (AgentEventKind::TurnCancelled, QueuedStreamOutcome::CancelPending) => true,
+            _ => false,
+        });
+        let deltas = |events: &[AgentEvent]| {
+            events
+                .iter()
+                .filter_map(|event| {
+                    if let AgentEventKind::AssistantDelta { content } = &event.kind {
+                        Some(content.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .concat()
+        };
+        assert_eq!(deltas(&events), "Café 中");
+        let reopened = SessionStore::open(workspace.path().join("sessions")).unwrap();
+        let saved = reopened.load(&session_id).unwrap().unwrap();
+        assert_eq!(deltas(&saved.events), "Café 中");
+        assert_eq!(
+            saved
+                .events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::ModelResponseCommitted { .. }))
+                .count(),
+            usize::from(is_success)
+        );
+        let replay = replay_native(
+            &session_id,
+            &saved.events,
+            None,
+            &CheckpointCompatibility {
+                provider: "test".into(),
+                model: "scripted".into(),
+                context_format_key: "test-v1".into(),
+            },
+        )
+        .unwrap();
+        assert!(replay.can_start_new_turn);
+        assert_eq!(
+            replay
+                .history
+                .iter()
+                .filter(|message| message.role == MessageRole::Assistant
+                    && message.content == "Café 中")
+                .count(),
+            usize::from(is_success)
+        );
+        if !is_success {
+            assert!(replay.history.is_empty());
+        }
+
+        // Use recovered history as actual input for another native request.
+        let next_model = Arc::new(ScriptedModel {
+            outputs: Mutex::new(vec![ModelOutput {
+                content: "Next turn complete".into(),
+                tool_calls: vec![],
+            }]),
+            seen: Mutex::new(vec![]),
+        });
+        let admission = reopened
+            .admit_native_turn(
+                &session_id,
+                "next-turn",
+                "Continue from committed history",
+                "scripted",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let next_request = AgentRunRequest {
+            session_id: Some(session_id.clone()),
+            sequence_start: admission.sequence,
+            workspace: workspace.path().to_path_buf(),
+            history: replay.history,
+            prompt: "Continue from committed history".into(),
+            mode: TurnMode::Build,
+        };
+        let lease = reopened.try_acquire_native_lease(&session_id).unwrap();
+        let next = AgentRunner::new(next_model.clone(), Arc::new(EchoTool))
+            .with_native_runtime_identity("test", "https://test.example/v1")
+            .with_event_journal(Arc::new(reopened));
+        receive_until_terminal(&next.start_with_lease(next_request, lease));
+        let seen = next_model.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            seen[0]
+                .iter()
+                .filter(|message| message.role == MessageRole::Assistant
+                    && message.content == "Café 中")
+                .count(),
+            usize::from(is_success)
+        );
+        assert!(!seen[0]
+            .iter()
+            .any(|message| message.content == "Café " || message.content == "中"));
+    }
+
+    #[test]
+    fn native_streaming_tail_success_is_persisted_before_terminal_and_reopens() {
+        assert_native_streaming_tail_survives_reopen(QueuedStreamOutcome::Success);
+    }
+
+    #[test]
+    fn native_streaming_tail_error_is_persisted_without_partial_model_history() {
+        assert_native_streaming_tail_survives_reopen(QueuedStreamOutcome::Error);
+    }
+
+    #[test]
+    fn native_streaming_tail_cancel_drops_pending_future_and_rejects_late_producer() {
+        assert_native_streaming_tail_survives_reopen(QueuedStreamOutcome::CancelPending);
+    }
+
+    struct CancelledPrivateLegacyQueue;
+
+    #[async_trait]
+    impl ModelBackend for CancelledPrivateLegacyQueue {
+        fn model_id(&self) -> &str {
+            "legacy-fixture"
+        }
+
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            panic!("fixture requires the legacy compatibility bridge")
+        }
+
+        async fn stream_complete_detailed(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            cancel: CancellationToken,
+            deltas: tokio::sync::mpsc::UnboundedSender<String>,
+        ) -> Result<crate::ModelCompletion, AgentError> {
+            deltas.send("private ñ🙂 ".into()).unwrap();
+            deltas.send("queue 終わり".into()).unwrap();
+            cancel.cancel();
+            Ok(ModelOutput {
+                content: "private ñ🙂 queue 終わり".into(),
+                tool_calls: Vec::new(),
+            }
+            .into())
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_cancellation_does_not_publish_unaccepted_private_queue() {
+        let cancel = CancellationToken::new();
+        let (events, mut receiver) = crate::model_event_channel(cancel.clone());
+        let result = CancelledPrivateLegacyQueue
+            .stream_events(&[], &[], cancel, events)
+            .await;
+        assert!(matches!(result, Err(AgentError::Cancelled)));
+        // ModelBackend::stream_events documents this boundary: successful
+        // writes into its private UnboundedSender are not accepted bounded
+        // events. Cancellation discards that private queue; the typed tail
+        // tests above require every send(...).await to have returned Ok.
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+        ));
+    }
+
+    #[test]
+    fn native_streaming_tail_http_provider_error_reopens_without_response_or_tools() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.starts_with("POST /v1/chat/completions "));
+            let mut length = None;
+            loop {
+                line.clear();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = Some(value.trim().parse::<usize>().unwrap());
+                }
+            }
+            let mut bytes = vec![0; length.unwrap()];
+            reader.read_exact(&mut bytes).unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["stream"], true);
+            assert_eq!(body["model"], "scripted");
+            let text = json!({"choices":[{"delta":{"content":"Café 中"}}]});
+            let error =
+                json!({"error":{"message":"HTTP provider failed after its visible prefix"}});
+            let stream = format!("data: {text}\n\ndata: {error}\n\ndata: [DONE]\n\n");
+            write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{stream}", stream.len()).unwrap();
+        });
+        let workspace = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(workspace.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, workspace.path());
+        let session_id = request.session_id.clone().unwrap();
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let model = crate::OpenAiCompatibleBackend::new(&endpoint, None, "scripted")
+            .with_capabilities(crate::ModelRequestCapabilities {
+                tool_calls: true,
+                reasoning_efforts: vec![],
+                tool_call_reasoning_efforts: None,
+                default_tool_call_effort: None,
+            })
+            .unwrap();
+        let tools = Arc::new(CountingTool {
+            executions: AtomicUsize::new(0),
+        });
+        let runner = AgentRunner::new(Arc::new(model), tools.clone())
+            .with_native_runtime_identity("fixture", &endpoint)
+            .with_event_journal(store.clone());
+        let handle = runner.start_with_lease(request, lease);
+        let events = receive_until_terminal(&handle);
+        assert!(
+            matches!(&events.last().unwrap().kind, AgentEventKind::TurnFailed {error} if error.contains("HTTP provider failed after its visible prefix"))
+        );
+        assert!(matches!(
+            handle.events.recv_timeout(Duration::from_secs(5)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        assert_eq!(tools.executions.load(Ordering::SeqCst), 0);
+        server.join().unwrap();
+        let reopened = SessionStore::open(workspace.path().join("sessions")).unwrap();
+        let saved = reopened.load(&session_id).unwrap().unwrap();
+        let partial = saved
+            .events
+            .iter()
+            .filter_map(|event| {
+                if let AgentEventKind::AssistantDelta { content } = &event.kind {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .concat();
+        assert_eq!(partial, "Café 中");
+        assert!(!saved.events.iter().any(|event| matches!(
+            event.kind,
+            AgentEventKind::ModelResponseCommitted { .. }
+                | AgentEventKind::AssistantMessage { .. }
+                | AgentEventKind::ToolStarted { .. }
+                | AgentEventKind::ToolFinished { .. }
+        )));
+        let replay = replay_native(
+            &session_id,
+            &saved.events,
+            None,
+            &CheckpointCompatibility {
+                provider: "fixture".into(),
+                model: "scripted".into(),
+                context_format_key: "test-v1".into(),
+            },
+        )
+        .unwrap();
+        assert!(replay.history.is_empty() && replay.can_start_new_turn);
     }
 
     #[async_trait]
@@ -1965,6 +3037,89 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn pre_hook_rewrite_reaches_the_tool_and_the_journal_keeps_the_models_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, dir.path());
+        let session_id = request.session_id.clone().unwrap();
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let hooks = Arc::new(
+            CommandHooks::new(vec![command_hook_config(
+                dir.path(),
+                HookPhase::PreToolUse,
+                "cat >/dev/null; printf '%s' '{\"decision\":\"allow\",\"updated_input\":{\"text\":\"wrapped\"}}'",
+                5_000,
+            )])
+            .unwrap(),
+        );
+        let tools = Arc::new(CountingTool {
+            executions: AtomicUsize::new(0),
+        });
+        let runner = AgentRunner::new(model_with_tool_call(), tools.clone())
+            .with_command_hooks(hooks)
+            .with_native_runtime_identity("test", "https://test.example/v1")
+            .with_event_journal(store.clone());
+        receive_until_terminal(&runner.start_with_lease(request, lease));
+        assert_eq!(tools.executions.load(Ordering::SeqCst), 1);
+        let saved = store.load(&session_id).unwrap().unwrap().events;
+        assert!(saved.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::ToolStarted { tool_call } if tool_call.arguments == json!({"text":"hello"})
+        )));
+        assert!(saved.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::ToolFinished { is_error: false, output, .. }
+                if output.starts_with("wrapped") && output.contains("Hook hook-1 rewrote this call's input.")
+        )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_protocol_hook_blocks_by_exit_status_and_a_failing_one_does_not_stop_the_turn() {
+        for (script, executions, needle) in [
+            ("cat >/dev/null; echo 'policy says no' >&2; exit 2", 0, "policy says no"),
+            ("cat >/dev/null; exit 1", 1, "hello"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+            let request = journaled_request(&store, dir.path());
+            let session_id = request.session_id.clone().unwrap();
+            let lease = store.try_acquire_native_lease(&session_id).unwrap();
+            let hooks = CommandHooks::new(vec![])
+                .unwrap()
+                .with_compat(vec![crate::CompatHookConfig::new(
+                    "compat-1",
+                    crate::CompatEvent::PreToolUse,
+                    "echo|Bash",
+                    "/bin/sh".into(),
+                    vec!["-c".into(), script.into()],
+                    dir.path().into(),
+                    5_000,
+                )])
+                .unwrap();
+            let tools = Arc::new(CountingTool {
+                executions: AtomicUsize::new(0),
+            });
+            let runner = AgentRunner::new(model_with_tool_call(), tools.clone())
+                .with_command_hooks(Arc::new(hooks))
+                .with_native_runtime_identity("test", "https://test.example/v1")
+                .with_event_journal(store.clone());
+            let events = receive_until_terminal(&runner.start_with_lease(request, lease));
+            assert!(matches!(
+                events.last().unwrap().kind,
+                AgentEventKind::TurnCompleted { .. }
+            ));
+            assert_eq!(tools.executions.load(Ordering::SeqCst), executions, "{script}");
+            let saved = store.load(&session_id).unwrap().unwrap().events;
+            assert!(saved.iter().any(|event| matches!(
+                &event.kind,
+                AgentEventKind::ToolFinished { output, .. } if output.contains(needle)
+            )));
+        }
+    }
+
     #[test]
     fn post_hook_timeout_after_tool_effect_requires_manual_resolution() {
         let dir = tempfile::tempdir().unwrap();
@@ -1973,15 +3128,13 @@ mod tests {
         let session_id = request.session_id.clone().unwrap();
         let lease = store.try_acquire_native_lease(&session_id).unwrap();
         #[cfg(windows)]
-        let script = "[IO.File]::WriteAllText('post-started.txt','yes'); Start-Sleep -Seconds 10";
+        let script = "[Console]::Out.Write('partial-post'); [Console]::Out.Flush(); [Console]::Error.Write('post-warning'); [Console]::Error.Flush(); [IO.File]::WriteAllText('post-started.txt','yes'); Start-Sleep -Seconds 30";
         #[cfg(unix)]
-        let script = "printf yes > post-started.txt; sleep 10";
-        // PowerShell startup can exceed a second during a parallel test run;
-        // leave time for the marker write before testing the uncertain timeout.
-        #[cfg(windows)]
+        let script =
+            "printf partial-post; printf post-warning >&2; printf yes > post-started.txt; sleep 30";
+        // Allow process startup under the parallel workspace suite on all
+        // hosts; the hook sleeps well past this deadline after its marker.
         let timeout_ms = 5_000;
-        #[cfg(unix)]
-        let timeout_ms = 1_000;
         let hooks = Arc::new(
             CommandHooks::new(vec![command_hook_config(
                 dir.path(),
@@ -2010,6 +3163,12 @@ mod tests {
         assert!(dir.path().join("post-started.txt").exists());
         let saved = store.load(&session_id).unwrap().unwrap().events;
         assert!(saved.iter().any(|event| matches!(&event.kind, AgentEventKind::HookStarted {hook_id, ..} if hook_id == "hook-1")));
+        let reopened = SessionStore::open(dir.path().join("sessions")).unwrap();
+        let reopened_events = reopened.load(&session_id).unwrap().unwrap().events;
+        assert!(reopened_events.iter().any(|event| matches!(&event.kind,
+            AgentEventKind::HookDiagnosticCommitted { stdout:Some(stdout), stderr:Some(stderr), error:Some(error), .. }
+                if stdout == "partial-post" && stderr == "post-warning" && error.contains("TimedOut")
+        )));
         assert!(!saved.iter().any(|event| matches!(
             event.kind,
             AgentEventKind::HookFinished { .. } | AgentEventKind::ToolFinished { .. }
@@ -2089,6 +3248,7 @@ mod tests {
 
     #[derive(Clone, Copy)]
     enum JournalFailure {
+        ModelRoute,
         ModelRequest,
         ModelResponse,
         McpRuntime,
@@ -2106,6 +3266,9 @@ mod tests {
             let fail = matches!(
                 (self.failure, &event.kind),
                 (
+                    JournalFailure::ModelRoute,
+                    AgentEventKind::ModelRouteCommitted { .. }
+                ) | (
                     JournalFailure::ModelRequest,
                     AgentEventKind::ModelRequestStarted { .. }
                 ) | (
@@ -2318,13 +3481,74 @@ mod tests {
             .iter()
             .position(|event| matches!(event.kind, AgentEventKind::ModelRequestStarted { .. }))
             .unwrap();
+        let route = saved
+            .iter()
+            .position(|event| matches!(event.kind, AgentEventKind::ModelRouteCommitted { .. }))
+            .unwrap();
+        assert_eq!(
+            openide_core::ModelRouteSnapshot::from_event(&saved[route].kind),
+            openide_core::ModelRouteSnapshot::new(
+                "test",
+                "scripted",
+                "https://test.example/v1",
+                [7; 32],
+            )
+        );
         assert!(
             catalog < mcp
                 && mcp < hooks
                 && hooks < instructions
                 && instructions < context
-                && context < model
+                && context < route
+                && route < model
         );
+    }
+
+    #[test]
+    fn model_route_snapshot_failed_commit_prevents_first_request_and_survives_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("sessions");
+        let store = Arc::new(SessionStore::open(&store_path).unwrap());
+        let request = journaled_request(&store, dir.path());
+        let session_id = request.session_id.clone().unwrap();
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let model = model_with_tool_call();
+        let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .with_native_runtime_identity("test", "https://test.example/v1")
+            .with_event_journal(Arc::new(FailingJournal {
+                store: store.clone(),
+                failure: JournalFailure::ModelRoute,
+            }));
+        let handle = runner.start_with_lease(request, lease);
+        receive_until_disconnect(&handle);
+        assert!(model.seen.lock().unwrap().is_empty());
+        assert!(handle.journal_error().is_some());
+        let saved = store.load(&session_id).unwrap().unwrap().events;
+        assert!(matches!(
+            saved.last().unwrap().kind,
+            AgentEventKind::ModelContextCommitted { .. }
+        ));
+        assert!(!saved.iter().any(|event| matches!(
+            event.kind,
+            AgentEventKind::ModelRouteCommitted { .. }
+                | AgentEventKind::ModelRequestStarted { .. }
+                | AgentEventKind::ToolStarted { .. }
+        )));
+        let reopened = SessionStore::open(store_path).unwrap();
+        assert_eq!(reopened.load(&session_id).unwrap().unwrap().events, saved);
+        assert!(replay_native(
+            &session_id,
+            &saved,
+            None,
+            &CheckpointCompatibility {
+                provider: "test".into(),
+                model: "scripted".into(),
+                context_format_key: "chat-v1".into(),
+            },
+        )
+        .unwrap()
+        .active_model_route
+        .is_none());
     }
 
     #[test]
@@ -2633,6 +3857,7 @@ mod tests {
         let model = model_with_tool_call();
         let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool)).with_token_budget_policy(
             TokenBudgetPolicy {
+                input_limit_tokens: None,
                 context_window_tokens: 200,
                 output_reserve_tokens: 20,
                 tool_schema_reserve_tokens: 10,
@@ -2698,6 +3923,7 @@ mod tests {
         ));
         let runner = AgentRunner::new(model, Arc::new(EchoTool)).with_token_budget_policy(
             TokenBudgetPolicy {
+                input_limit_tokens: None,
                 context_window_tokens: 200,
                 output_reserve_tokens: 20,
                 tool_schema_reserve_tokens: 0,
@@ -2821,6 +4047,7 @@ mod tests {
             seen: Mutex::new(vec![]),
         });
         let budget = TokenBudgetPolicy {
+            input_limit_tokens: None,
             context_window_tokens: if reject_before_compaction {
                 12_000
             } else {
@@ -2905,6 +4132,7 @@ mod tests {
         let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool))
             .with_native_runtime_identity("test", "https://test.example/v1")
             .with_token_budget_policy(TokenBudgetPolicy {
+                input_limit_tokens: None,
                 context_window_tokens: 200,
                 output_reserve_tokens: 20,
                 tool_schema_reserve_tokens: 10,
@@ -4022,6 +5250,91 @@ mod tests {
     }
 
     #[test]
+    fn external_controls_observe_cross_process_permissions_and_cancel() {
+        for approve in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+            let gateway_store = SessionStore::open(store.storage_root()).unwrap();
+            let request = journaled_request(&store, dir.path());
+            let session_id = request.session_id.clone().unwrap();
+            let lease = store.try_acquire_native_lease(&session_id).unwrap();
+            let tool = Arc::new(CountingTool {
+                executions: AtomicUsize::new(0),
+            });
+            let runner = AgentRunner::new(model_with_tool_call(), tool.clone())
+                .with_permission_policy(
+                    PermissionPolicy::new().with_tool("echo", PermissionMode::Ask),
+                )
+                .with_native_runtime_identity("test", "https://test.example/v1")
+                .with_event_journal(store.clone())
+                .with_native_steering(store.clone())
+                .with_external_controls(store.clone());
+            let handle = runner.start_with_lease(request, lease);
+            let permission_id = wait_for_permission(&handle);
+            assert!(
+                crate::native_remote_owner(&gateway_store, &session_id, "turn-1")
+                    .unwrap()
+                    .is_some()
+            );
+            if approve {
+                gateway_store
+                    .record_permission_decision(
+                        &session_id,
+                        &permission_id,
+                        openide_core::PermissionDecision::Allow,
+                    )
+                    .unwrap();
+            } else {
+                crate::request_native_remote_cancel(&gateway_store, &session_id, "turn-1").unwrap();
+            }
+            let events = receive_until_terminal(&handle);
+            assert_eq!(tool.executions.load(Ordering::SeqCst), usize::from(approve));
+            assert!(if approve {
+                matches!(
+                    events.last().unwrap().kind,
+                    AgentEventKind::TurnCompleted { .. }
+                )
+            } else {
+                matches!(events.last().unwrap().kind, AgentEventKind::TurnCancelled)
+            });
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            while crate::native_remote_owner(&gateway_store, &session_id, "turn-1")
+                .unwrap()
+                .is_some()
+            {
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+
+    #[test]
+    fn external_controls_never_advertise_unvalidated_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, dir.path());
+        let session_id = request.session_id.clone().unwrap();
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let model = model_with_tool_call();
+        let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .with_native_runtime_identity("test", "https://test.example/v1")
+            .with_event_journal(store.clone())
+            .with_native_steering(store.clone())
+            .with_external_controls(store.clone())
+            .with_system_instructions("x".repeat(MAX_SYSTEM_INSTRUCTIONS_BYTES + 1));
+        let events = receive_until_terminal(&runner.start_with_lease(request, lease));
+        assert!(matches!(
+            events.last().unwrap().kind,
+            AgentEventKind::TurnFailed { .. }
+        ));
+        assert!(model.seen.lock().unwrap().is_empty());
+        assert!(!store.storage_root().join(".remote-controls").exists());
+        assert!(crate::native_remote_owner(&store, &session_id, "turn-1")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
     fn queued_steers_before_and_during_model_are_answered_once() {
         struct SteeringModel {
             store: Arc<SessionStore>,
@@ -4574,6 +5887,16 @@ mod tests {
 
     #[test]
     fn truncates_utf8_by_characters() {
-        assert_eq!(truncate_chars("áéí", 2), "áé\n[tool output truncated]");
+        assert_eq!(truncate_chars("áéí", 3), "áéí");
+        assert_eq!(
+            truncate_chars("áéí", 2),
+            "á\n[... 1 of 3 chars omitted ...]\ní\n[tool output truncated]"
+        );
+        // A failure printed last must survive a long passing prefix.
+        let log = format!("{}error: assertion failed", "ok\n".repeat(10_000));
+        let kept = truncate_chars(&log, 200);
+        assert!(kept.starts_with("ok\n") && kept.contains("error: assertion failed"));
+        assert!(kept.ends_with("[tool output truncated]"));
+        assert_eq!(truncate_chars("abc", 0), "\n[... 3 of 3 chars omitted ...]\n\n[tool output truncated]");
     }
 }

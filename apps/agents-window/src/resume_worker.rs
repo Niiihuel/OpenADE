@@ -1,6 +1,7 @@
 //! UI-facing recovery worker. The native lease and prepared MCP clients stay
 //! inside one Tokio thread until recovery finishes or is explicitly stopped.
 
+use crate::native_automation::FrozenNativeAutomationAuthorityV1;
 use async_trait::async_trait;
 use openide_core::{
     replay_native, AgentEvent, CheckpointCompatibility, CheckpointFileStore, NativeSessionLease,
@@ -8,19 +9,22 @@ use openide_core::{
 };
 use openide_harness::{
     update_plan_tool_definition, AgentError, CommandHooks, CommandIsolation, ModelBackend,
-    PermissionChoice, PermissionPolicy, PersistentCommandManager, PreparedToolSession,
-    ResumeDisposition, ResumeEngine, RunLimits, SubagentCoordinator, SubagentEventBridge,
-    SubagentLimits, SubagentToolExecutor, SubagentToolLimits, SubagentWorker, TokenBudgetPolicy,
-    ToolCatalog, ToolContext, ToolDefinition, ToolExecutor, ToolOutput, ToolPreparation,
+    NativeCommandProfile, PermissionChoice, PermissionPolicy, PersistentCommandManager,
+    PreparedToolSession, ResumeDisposition, ResumeEngine, ResumeEventObserver, RunLimits,
+    SubagentCoordinator, SubagentEventBridge, SubagentLimits, SubagentToolExecutor,
+    SubagentToolLimits, SubagentWorker, TokenBudgetPolicy, ToolCatalog, ToolContext,
+    ToolDefinition, ToolExecutor, ToolOutput, ToolPreparation,
 };
 use std::sync::{
-    mpsc::{self, Receiver, Sender},
-    Arc,
+    mpsc::{self, Receiver, SyncSender as Sender},
+    Arc, Mutex,
 };
 use tokio_util::sync::CancellationToken;
 
 pub(crate) struct ResumeWorkerRequest {
     pub session_id: String,
+    /// Reconstructed from this session's immutable origin, never Settings.
+    pub native_automation: Option<FrozenNativeAutomationAuthorityV1>,
     pub provider: String,
     pub endpoint: String,
     pub sessions: Arc<SessionStore>,
@@ -29,6 +33,7 @@ pub(crate) struct ResumeWorkerRequest {
     pub model: Arc<dyn ModelBackend>,
     pub base_tools: Arc<dyn ToolExecutor>,
     pub child_tools: Arc<dyn ToolExecutor>,
+    pub child_command_profile: Option<NativeCommandProfile>,
     pub event_bridge: Option<Arc<SubagentEventBridge>>,
     pub tool_preparation: Option<Arc<dyn ToolPreparation>>,
     pub permission_policy: PermissionPolicy,
@@ -36,7 +41,30 @@ pub(crate) struct ResumeWorkerRequest {
     pub command_hooks: Arc<CommandHooks>,
     pub budget_policy: Option<TokenBudgetPolicy>,
     pub system_instructions: String,
+    /// Only for an admission that has not committed context yet. The native
+    /// lease holder selects the authoritative ledger over legacy composer text.
+    pub pre_context_instructions: Option<(String, Option<String>)>,
     pub limits: RunLimits,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum GoalReceiptInspection {
+    Found(openide_core::NativeGoalCommitReceipt),
+    NotFound,
+    Failed(String),
+}
+
+impl GoalReceiptInspection {
+    pub(crate) fn description(&self) -> String {
+        match self {
+            Self::Found(receipt) => format!(
+                "Modificación guardada. Goal: {}\nOperación: {}\nRevisión guardada: {}\nRevisión actual: {}\nEl recibo no reconstruye el resultado original ni verifica semánticamente el criterio. La llamada no se repetirá; comprueba el estado antes de continuar.",
+                receipt.goal_id, receipt.operation_id, receipt.committed_revision, receipt.current_revision,
+            ),
+            Self::NotFound => "No se encontró un recibo exacto para estos argumentos. Esto no autoriza repetir la llamada.".into(),
+            Self::Failed(error) => format!("No se pudo comprobar el recibo del goal: {error}. Esto no autoriza repetir la llamada."),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -51,6 +79,7 @@ pub(crate) enum ResumeUpdate {
     NeedsVerification {
         tool_call: ToolCall,
         executor_error: Option<String>,
+        goal_receipt: Option<GoalReceiptInspection>,
     },
     /// Sent after all earlier Events updates and after prepared tools close.
     Finished(Result<ResumeDisposition, String>),
@@ -77,13 +106,23 @@ pub(crate) struct ResumeWorkerHandle {
 impl ResumeWorkerHandle {
     /// Acquire the native session lease before starting a worker. A second
     /// recovery or normal run cannot be admitted while this handle is active.
+    #[cfg(test)]
     pub fn start(request: ResumeWorkerRequest) -> Result<Self, String> {
+        Self::start_with_command_actor(request, None)
+    }
+
+    pub fn start_with_command_actor(
+        request: ResumeWorkerRequest,
+        command_actor: Option<Arc<openide_harness::NativeManualCommandActor>>,
+    ) -> Result<Self, String> {
         let lease = request
             .sessions
             .try_acquire_native_lease(&request.session_id)
             .map_err(|error| format!("No se pudo bloquear la sesión nativa: {error}"))?;
         let session_id = request.session_id.clone();
-        let (update_tx, updates) = mpsc::channel();
+        // Match normal runs: retain FIFO and stop producing when the desktop
+        // has a full frame of unread updates, rather than accumulating a tail.
+        let (update_tx, updates) = mpsc::sync_channel(64);
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
         let worker_cancel = cancel.clone();
@@ -94,12 +133,13 @@ impl ResumeWorkerHandle {
                     .enable_all()
                     .build()
                 {
-                    Ok(runtime) => runtime.block_on(run_recovery(
+                    Ok(runtime) => runtime.block_on(run_recovery_with_command_actor(
                         request,
                         lease,
                         command_rx,
                         &update_tx,
                         worker_cancel,
+                        command_actor,
                     )),
                     Err(error) => {
                         drop(lease);
@@ -149,12 +189,13 @@ impl Drop for ResumeWorkerHandle {
     }
 }
 
-async fn run_recovery(
+async fn run_recovery_with_command_actor(
     request: ResumeWorkerRequest,
     lease: NativeSessionLease,
     mut commands: tokio::sync::mpsc::UnboundedReceiver<ResumeCommand>,
     updates: &Sender<ResumeUpdate>,
     cancel: CancellationToken,
+    command_actor: Option<Arc<openide_harness::NativeManualCommandActor>>,
 ) -> Result<ResumeDisposition, String> {
     let lease = Arc::new(lease);
     let record = request
@@ -162,7 +203,57 @@ async fn run_recovery(
         .load(&request.session_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "La sesión nativa ya no existe".to_owned())?;
-    let mut last_reported_sequence = record.events.last().map_or(0, |event| event.sequence);
+    let automation = FrozenNativeAutomationAuthorityV1::from_session(&record.session)?;
+    if automation.as_ref() != request.native_automation.as_ref() {
+        return Err(
+            "El origen de la automatización no coincide con la autoridad de recuperación".into(),
+        );
+    }
+    if let Some(frozen) = &automation {
+        frozen.validate_workspace_for_execution()?;
+        frozen.verify_model(request.model.as_ref())?;
+        if command_actor.is_some()
+            || request.tool_preparation.is_some()
+            || request.event_bridge.is_some()
+            || request.child_command_profile.is_some()
+            || request.pre_context_instructions.is_some()
+            || request.provider != frozen.provider_id()
+            || request.endpoint != frozen.endpoint()
+            || request.compatibility != frozen.compatibility()
+            || request.budget_policy != frozen.budget()
+            || request.system_instructions != frozen.instructions()
+            || request.permission_policy.digest_hex() != frozen.policy().digest_hex()
+            || request
+                .command_hooks
+                .digest_hex()
+                .map_err(|error| error.to_string())?
+                != CommandHooks::default()
+                    .digest_hex()
+                    .map_err(|error| error.to_string())?
+            || ToolCatalog::from_executor(request.base_tools.as_ref())
+                .map_err(|error| error.to_string())?
+                .digest_hex()
+                != ToolCatalog::from_executor(frozen.tools().as_ref())
+                    .map_err(|error| error.to_string())?
+                    .digest_hex()
+        {
+            return Err(
+                "La recuperación de automatización exige su perfil original de sólo lectura".into(),
+            );
+        }
+        let limits = frozen.limits();
+        if request.limits.max_model_steps != limits.max_model_steps
+            || request.limits.max_tool_calls != limits.max_tool_calls
+            || request.limits.max_tool_output_chars != limits.max_tool_output_chars
+        {
+            return Err("Los límites de la automatización difieren del snapshot original".into());
+        }
+    }
+    let event_forwarder = Arc::new(ResumeEventForwarder {
+        session_id: request.session_id.clone(),
+        updates: updates.clone(),
+        last_reported_sequence: Mutex::new(record.events.last().map_or(0, |event| event.sequence)),
+    });
     let replay = replay_native(
         &request.session_id,
         &record.events,
@@ -170,13 +261,98 @@ async fn run_recovery(
         &request.compatibility,
     )
     .map_err(|error| error.to_string())?;
+    match &command_actor {
+        Some(actor) => {
+            if !Arc::ptr_eq(actor.sessions(), &request.sessions) {
+                return Err("El actor de comandos pertenece a otro store".into());
+            }
+            actor
+                .validate_lease(&lease)
+                .map_err(|error| error.to_string())?;
+        }
+        None => openide_core::NativeCommandOperationStore::new(request.sessions.clone())
+            .require_no_pending(&lease)
+            .map_err(|error| error.to_string())?,
+    }
     if replay.recovery == ReplayRecovery::Idle {
+        if let Some(actor) = &command_actor {
+            actor
+                .process_pending(&lease, &cancel)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
         return Ok(ResumeDisposition::Complete);
     }
-    let system_instructions = replay
+    if let Some(frozen) = &automation {
+        if replay
+            .active_system_instructions
+            .as_deref()
+            .is_some_and(|saved| saved != frozen.instructions())
+        {
+            return Err("Las instrucciones del turno difieren del origen de automatización".into());
+        }
+        let outcome = run_with_prepared(
+            &request,
+            frozen.instructions(),
+            &lease,
+            frozen.tools(),
+            None,
+            replay.active_tool_catalog_digest.as_deref(),
+            None,
+            &mut commands,
+            updates,
+            &cancel,
+            event_forwarder.clone(),
+            None,
+        )
+        .await;
+        if outcome.is_err() {
+            let _ =
+                forward_unreported_events(&request.sessions, &request.session_id, &event_forwarder);
+        }
+        return outcome;
+    }
+    let mut system_instructions = replay
         .active_system_instructions
         .clone()
         .unwrap_or_else(|| request.system_instructions.clone());
+    if replay.active_system_instructions.is_none()
+        && !record
+            .events
+            .iter()
+            .rev()
+            .take_while(|e| {
+                !matches!(
+                    e.kind,
+                    openide_core::AgentEventKind::TurnAdmitted { .. }
+                        | openide_core::AgentEventKind::TurnAdmittedWithImages { .. }
+                )
+            })
+            .any(|e| {
+                matches!(
+                    e.kind,
+                    openide_core::AgentEventKind::ModelContextCommitted { .. }
+                )
+            })
+    {
+        let goals = openide_core::NativeGoalStore::new(request.sessions.clone())
+            .list(&request.session_id)
+            .map_err(|e| e.to_string())?;
+        system_instructions = match &request.pre_context_instructions {
+            Some((project, legacy)) => {
+                crate::app::native_task_instructions(
+                    project.clone(),
+                    legacy.as_deref(),
+                    goals.last(),
+                )?
+                .1
+            }
+            None => {
+                openide_harness::native_goal_system_instructions(&system_instructions, goals.last())
+                    .map_err(|e| e.to_string())?
+            }
+        };
+    }
     let turn = replay
         .active_turn
         .as_ref()
@@ -215,9 +391,16 @@ async fn run_recovery(
     .with_session_approvals(request.command_isolation)
     .with_command_hooks(request.command_hooks.clone())
     .with_nested_subagents(SubagentToolLimits::default())
-    .with_system_instructions(system_instructions.clone())
+    .with_native_goals()
+    .with_system_instructions(
+        openide_harness::native_goal_base_instructions(&system_instructions)
+            .unwrap_or_else(|| system_instructions.clone()),
+    )
     .with_limits(request.limits)
     .with_auto_compaction(request.checkpoints.clone(), request.compatibility.clone());
+    if let Some(profile) = &request.child_command_profile {
+        child_worker = child_worker.with_persistent_commands(profile.clone());
+    }
     if let Some(bridge) = &request.event_bridge {
         child_worker = child_worker.with_event_bridge(bridge.clone());
     }
@@ -235,6 +418,25 @@ async fn run_recovery(
         )
         .map_err(|error| format!("No se pudieron preparar subagentes para resume: {error}"))?,
     );
+
+    // Legacy journals without a native admission have no turn identity to
+    // bind goal mutations to. Preserve their original tool scope.
+    let goal_tools = match turn.turn_id.as_deref() {
+        Some(turn_id) => Some(Arc::new(
+            openide_harness::NativeGoalToolExecutor::new_for_recovery(
+                base_tools.clone(),
+                request.sessions.clone(),
+                lease.clone(),
+                turn_id,
+            )
+            .map_err(|error| format!("No se pudieron preparar goals para resume: {error}"))?,
+        )),
+        None => None,
+    };
+    let base_tools: Arc<dyn ToolExecutor> = goal_tools
+        .as_ref()
+        .map(|tools| tools.clone() as Arc<dyn ToolExecutor>)
+        .unwrap_or(base_tools);
 
     // Discovery, calls, and shutdown all happen on this same Tokio runtime.
     let prepared = if turn.mode == openide_core::TurnMode::Build {
@@ -255,21 +457,18 @@ async fn run_recovery(
         &system_instructions,
         &lease,
         base_tools,
+        goal_tools.as_deref(),
         replay.active_tool_catalog_digest.as_deref(),
         prepared.as_deref(),
         &mut commands,
         updates,
         &cancel,
-        &mut last_reported_sequence,
+        event_forwarder.clone(),
+        command_actor,
     )
     .await;
     if outcome.is_err() {
-        let _ = forward_unreported_events(
-            &request.sessions,
-            &request.session_id,
-            updates,
-            &mut last_reported_sequence,
-        );
+        let _ = forward_unreported_events(&request.sessions, &request.session_id, &event_forwarder);
     }
     let shutdown = match &prepared {
         Some(session) => session.shutdown().await.map_err(|error| error.to_string()),
@@ -291,17 +490,33 @@ async fn run_with_prepared(
     system_instructions: &str,
     lease: &NativeSessionLease,
     base_tools: Arc<dyn ToolExecutor>,
+    goal_tools: Option<&openide_harness::NativeGoalToolExecutor>,
     saved_catalog_digest: Option<&str>,
     prepared: Option<&dyn PreparedToolSession>,
     commands: &mut tokio::sync::mpsc::UnboundedReceiver<ResumeCommand>,
     updates: &Sender<ResumeUpdate>,
     cancel: &CancellationToken,
-    last_reported_sequence: &mut u64,
+    event_forwarder: Arc<ResumeEventForwarder>,
+    command_actor: Option<Arc<openide_harness::NativeManualCommandActor>>,
 ) -> Result<ResumeDisposition, String> {
     let executor = prepared
         .map(|session| session.tools())
         .unwrap_or(base_tools);
-    let (executor, catalog) = select_saved_catalog(executor, saved_catalog_digest)?;
+    let (executor, catalog) = match &request.native_automation {
+        Some(frozen) => {
+            if prepared.is_some() || goal_tools.is_some() || command_actor.is_some() {
+                return Err(
+                    "La automatización no puede incorporar extensiones durante recuperación".into(),
+                );
+            }
+            let catalog = frozen.catalog()?;
+            if saved_catalog_digest.is_some_and(|saved| saved != catalog.digest_hex()) {
+                return Err("El catálogo del turno difiere del origen de automatización".into());
+            }
+            (frozen.tools(), catalog)
+        }
+        None => select_saved_catalog(executor, saved_catalog_digest)?,
+    };
     let mut policy = request.permission_policy.clone();
     if let Some(prepared) = prepared {
         for name in prepared.ask_tool_names() {
@@ -313,7 +528,7 @@ async fn run_with_prepared(
             policy.require_ask_unless_denied(name);
         }
     }
-    let engine = ResumeEngine::new(
+    let mut engine = ResumeEngine::new(
         request.sessions.clone(),
         request.checkpoints.clone(),
         request.compatibility.clone(),
@@ -324,13 +539,19 @@ async fn run_with_prepared(
         request.budget_policy,
     )
     .with_limits(request.limits)
-    .with_session_approvals(request.sessions.clone(), request.command_isolation)
     .with_command_hooks(request.command_hooks.clone())
     .with_system_instructions(system_instructions.to_owned())
     .with_native_runtime_identity(request.provider.clone(), request.endpoint.clone())
     .with_mcp_runtime_identity_digest(
         prepared.and_then(|session| session.mcp_resume_identity_digest().map(str::to_owned)),
-    );
+    )
+    .with_event_observer(event_forwarder.clone());
+    if request.native_automation.is_none() {
+        engine = engine.with_session_approvals(request.sessions.clone(), request.command_isolation);
+    }
+    if let Some(actor) = command_actor {
+        engine = engine.with_manual_command_actor(actor);
+    }
     // A single tool may need a pause, a resolution, and a later execution
     // step. Bound the whole UI recovery, not only one run_until_pause call.
     let max_actions = request
@@ -351,7 +572,7 @@ async fn run_with_prepared(
                 .await
                 .map_err(|error| error.to_string())?,
         };
-        forward_events(updates, last_reported_sequence, step.appended_events)?;
+        event_forwarder.forward_step_events(step.appended_events)?;
         match step.disposition {
             ResumeDisposition::Advanced => {}
             ResumeDisposition::NeedsPermission {
@@ -406,10 +627,36 @@ async fn run_with_prepared(
                 tool_call,
                 executor_error,
             } => {
+                let goal_receipt = goal_tools
+                    .filter(|_| {
+                        matches!(
+                            tool_call.name.as_str(),
+                            "record_goal_evidence" | "complete_goal"
+                        )
+                    })
+                    .map(|tools| -> Result<GoalReceiptInspection, String> {
+                        match tools.committed_mutation(
+                            &tool_call,
+                            &ToolContext {
+                                workspace: request
+                                    .sessions
+                                    .native_session_for_lease(lease)
+                                    .map_err(|error| error.to_string())?
+                                    .workspace,
+                                cancel: cancel.clone(),
+                            },
+                        ) {
+                            Ok(Some(receipt)) => Ok(GoalReceiptInspection::Found(receipt)),
+                            Ok(None) => Ok(GoalReceiptInspection::NotFound),
+                            Err(error) => Ok(GoalReceiptInspection::Failed(error.to_string())),
+                        }
+                    })
+                    .transpose()?;
                 updates
                     .send(ResumeUpdate::NeedsVerification {
                         tool_call: tool_call.clone(),
                         executor_error,
+                        goal_receipt,
                     })
                     .map_err(|_| "La UI dejó de escuchar la recuperación".to_owned())?;
                 let command = wait_for_command(commands, cancel).await?;
@@ -451,6 +698,7 @@ struct HistoricalToolCatalog {
     legacy_start_command: bool,
     without_persistent_commands: bool,
     without_resize_command: bool,
+    without_goals: bool,
 }
 
 #[async_trait]
@@ -470,6 +718,10 @@ impl ToolExecutor for HistoricalToolCatalog {
             .collect()
     }
 
+    fn certifies_plan_read(&self, name: &str) -> bool {
+        self.advertises(name) && self.inner.certifies_plan_read(name)
+    }
+
     fn certifies_parallel_read(&self, name: &str) -> bool {
         self.advertises(name) && self.inner.certifies_parallel_read(name)
     }
@@ -479,6 +731,23 @@ impl ToolExecutor for HistoricalToolCatalog {
         call: &ToolCall,
         context: &ToolContext,
     ) -> Result<ToolOutput, AgentError> {
+        self.validate_call(call)?;
+        self.inner.execute(call, context).await
+    }
+
+    async fn execute_streaming(
+        &self,
+        call: &ToolCall,
+        context: &ToolContext,
+        output: openide_harness::ToolOutputSender,
+    ) -> Result<ToolOutput, AgentError> {
+        self.validate_call(call)?;
+        self.inner.execute_streaming(call, context, output).await
+    }
+}
+
+impl HistoricalToolCatalog {
+    fn validate_call(&self, call: &ToolCall) -> Result<(), AgentError> {
         if !self.advertises(&call.name) {
             return Err(AgentError::InvalidRequest(
                 "tool was not advertised for this turn".into(),
@@ -496,12 +765,15 @@ impl ToolExecutor for HistoricalToolCatalog {
                 "PTY fields were not advertised for this turn".into(),
             ));
         }
-        self.inner.execute(call, context).await
+        Ok(())
     }
-}
 
-impl HistoricalToolCatalog {
     fn advertises(&self, name: &str) -> bool {
+        if self.without_goals
+            && matches!(name, "get_goal" | "record_goal_evidence" | "complete_goal")
+        {
+            return false;
+        }
         if self.without_persistent_commands && is_persistent_command_tool(name) {
             return false;
         }
@@ -530,41 +802,45 @@ fn select_saved_catalog(
             return Ok((current, plan_catalog));
         }
     }
-    for without_persistent_commands in [false, true] {
-        for legacy_start_command in [false, true] {
-            if without_persistent_commands && legacy_start_command {
-                continue;
-            }
-            for without_resize_command in [false, true] {
-                for subagents in [
-                    HistoricalSubagentCatalog::WithoutSendInput,
-                    HistoricalSubagentCatalog::WithoutSubagents,
-                    HistoricalSubagentCatalog::Current,
-                ] {
-                    if !without_persistent_commands
-                        && !legacy_start_command
-                        && !without_resize_command
-                        && matches!(subagents, HistoricalSubagentCatalog::Current)
-                    {
-                        continue;
-                    }
-                    let candidate: Arc<dyn ToolExecutor> = Arc::new(HistoricalToolCatalog {
-                        inner: current.clone(),
-                        subagents,
-                        legacy_start_command,
-                        without_persistent_commands,
-                        without_resize_command,
-                    });
-                    let catalog =
-                        ToolCatalog::from_executor(candidate.as_ref()).map_err(|error| {
-                            format!("Catálogo de herramientas anterior no válido: {error}")
-                        })?;
-                    if saved_catalog_digest == Some(catalog.digest_hex().as_str()) {
-                        return Ok((candidate, catalog));
-                    }
-                    if let Some(plan_catalog) = catalog_with_plan_tool(&catalog)? {
-                        if saved_catalog_digest == Some(plan_catalog.digest_hex().as_str()) {
-                            return Ok((candidate, plan_catalog));
+    for without_goals in [false, true] {
+        for without_persistent_commands in [false, true] {
+            for legacy_start_command in [false, true] {
+                if without_persistent_commands && legacy_start_command {
+                    continue;
+                }
+                for without_resize_command in [false, true] {
+                    for subagents in [
+                        HistoricalSubagentCatalog::WithoutSendInput,
+                        HistoricalSubagentCatalog::WithoutSubagents,
+                        HistoricalSubagentCatalog::Current,
+                    ] {
+                        if !without_goals
+                            && !without_persistent_commands
+                            && !legacy_start_command
+                            && !without_resize_command
+                            && matches!(subagents, HistoricalSubagentCatalog::Current)
+                        {
+                            continue;
+                        }
+                        let candidate: Arc<dyn ToolExecutor> = Arc::new(HistoricalToolCatalog {
+                            inner: current.clone(),
+                            subagents,
+                            legacy_start_command,
+                            without_persistent_commands,
+                            without_resize_command,
+                            without_goals,
+                        });
+                        let catalog =
+                            ToolCatalog::from_executor(candidate.as_ref()).map_err(|error| {
+                                format!("Catálogo de herramientas anterior no válido: {error}")
+                            })?;
+                        if saved_catalog_digest == Some(catalog.digest_hex().as_str()) {
+                            return Ok((candidate, catalog));
+                        }
+                        if let Some(plan_catalog) = catalog_with_plan_tool(&catalog)? {
+                            if saved_catalog_digest == Some(plan_catalog.digest_hex().as_str()) {
+                                return Ok((candidate, plan_catalog));
+                            }
                         }
                     }
                 }
@@ -616,6 +892,107 @@ async fn wait_for_command(
     }
 }
 
+/// One cursor is shared by immediate observation and the completed step. Only
+/// completed engine steps may repeat an already observed prefix; live delivery
+/// requires the exact next sequence and owner.
+struct ResumeEventForwarder {
+    session_id: String,
+    updates: Sender<ResumeUpdate>,
+    last_reported_sequence: Mutex<u64>,
+}
+
+impl ResumeEventForwarder {
+    fn forward_step_events(&self, events: Vec<AgentEvent>) -> Result<(), String> {
+        self.validate_owner_and_order(&events)?;
+        let mut sequence = self
+            .last_reported_sequence
+            .lock()
+            .map_err(|_| "Se perdió el cursor de eventos de recuperación".to_owned())?;
+        let events = events
+            .into_iter()
+            .filter(|event| event.sequence > *sequence)
+            .collect();
+        forward_events(&self.updates, &mut sequence, events)
+    }
+
+    fn validate_owner_and_order(&self, events: &[AgentEvent]) -> Result<(), String> {
+        if events
+            .iter()
+            .any(|event| event.session_id != self.session_id)
+            || events
+                .windows(2)
+                .any(|pair| pair[0].sequence.checked_add(1) != Some(pair[1].sequence))
+        {
+            return Err("Los eventos no pertenecen a esta recuperación y secuencia".into());
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl ResumeEventObserver for ResumeEventForwarder {
+    fn on_persisted_event(&self, event: &AgentEvent) -> Result<(), AgentError> {
+        self.validate_owner_and_order(std::slice::from_ref(event))
+            .map_err(AgentError::Runtime)?;
+        let mut sequence = self.last_reported_sequence.lock().map_err(|_| {
+            AgentError::Runtime("Se perdió el cursor de eventos de recuperación".into())
+        })?;
+        forward_events(&self.updates, &mut sequence, vec![event.clone()])
+            .map_err(AgentError::Runtime)
+    }
+
+    async fn on_persisted_stream_event(
+        &self,
+        event: &AgentEvent,
+        cancel: &CancellationToken,
+    ) -> Result<(), AgentError> {
+        self.validate_owner_and_order(std::slice::from_ref(event))
+            .map_err(AgentError::Runtime)?;
+        let previous_sequence = {
+            let sequence = self.last_reported_sequence.lock().map_err(|_| {
+                AgentError::Runtime("Se perdió el cursor de eventos de recuperación".into())
+            })?;
+            if sequence.checked_add(1) != Some(event.sequence) {
+                return Err(AgentError::Runtime(
+                    "El journal cambió durante la recuperación".into(),
+                ));
+            }
+            *sequence
+        };
+        let mut update = ResumeUpdate::Events(vec![event.clone()]);
+        loop {
+            match self.updates.try_send(update) {
+                Ok(()) => {
+                    // Only the recovery worker invokes this observer. Leave
+                    // its cursor unchanged while waiting so cancellation can
+                    // replay this one pending delivery after dropping HTTP.
+                    let mut sequence = self.last_reported_sequence.lock().map_err(|_| {
+                        AgentError::Runtime("Se perdió el cursor de eventos de recuperación".into())
+                    })?;
+                    if *sequence != previous_sequence {
+                        return Err(AgentError::Runtime(
+                            "El cursor cambió durante la entrega de recuperación".into(),
+                        ));
+                    }
+                    *sequence = event.sequence;
+                    return Ok(());
+                }
+                Err(mpsc::TrySendError::Full(pending)) => update = pending,
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    return Err(AgentError::Runtime(
+                        "La UI dejó de escuchar los eventos recuperados".into(),
+                    ));
+                }
+            }
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+                _ = tokio::time::sleep(std::time::Duration::from_millis(5)) => {}
+            }
+        }
+    }
+}
+
 fn forward_events(
     updates: &Sender<ResumeUpdate>,
     last_reported_sequence: &mut u64,
@@ -633,33 +1010,43 @@ fn forward_events(
             return Err("El journal cambió durante la recuperación".into());
         }
     }
-    updates
-        .send(ResumeUpdate::Events(events))
-        .map_err(|_| "La UI dejó de escuchar los eventos recuperados".to_owned())?;
-    *last_reported_sequence = next;
+    for event in events {
+        let sequence = event.sequence;
+        updates
+            .send(ResumeUpdate::Events(vec![event]))
+            .map_err(|_| "La UI dejó de escuchar los eventos recuperados".to_owned())?;
+        *last_reported_sequence = sequence;
+    }
     Ok(())
 }
 
 fn forward_unreported_events(
     sessions: &SessionStore,
     session_id: &str,
-    updates: &Sender<ResumeUpdate>,
-    last_reported_sequence: &mut u64,
+    event_forwarder: &ResumeEventForwarder,
 ) -> Result<(), String> {
     let record = sessions
         .load(session_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "La sesión nativa ya no existe".to_owned())?;
-    let events = record
-        .events
-        .into_iter()
-        .filter(|event| event.sequence > *last_reported_sequence)
-        .collect();
-    forward_events(updates, last_reported_sequence, events)
+    event_forwarder.forward_step_events(record.events)
 }
 
 #[cfg(test)]
+#[path = "resume_streaming_tests.rs"]
+mod streaming_tests;
+
+#[cfg(test)]
+#[path = "resume_automation_tests.rs"]
+mod automation_tests;
+
+#[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    mod manual_command_gates {
+        include!("resume_manual_command_tests.rs");
+    }
+
     use super::*;
     use async_trait::async_trait;
     use openide_core::{AgentEventKind, AgentMessage, TurnMode, MODEL_CONTEXT_VERSION};
@@ -669,10 +1056,7 @@ mod tests {
     };
     use serde_json::json;
     use std::path::Path;
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Mutex,
-    };
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
     struct WaitingModel {
@@ -783,6 +1167,7 @@ mod tests {
 
     fn budget() -> TokenBudgetPolicy {
         TokenBudgetPolicy {
+            input_limit_tokens: None,
             context_window_tokens: 100_000,
             output_reserve_tokens: 1_000,
             tool_schema_reserve_tokens: 100,
@@ -892,6 +1277,7 @@ mod tests {
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+            native_automation: None,
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -903,6 +1289,7 @@ mod tests {
                 release: Mutex::new(Some(release_rx)),
             }),
             base_tools: local.clone(),
+            child_command_profile: None,
             child_tools: local,
             event_bridge: None,
             tool_preparation: Some(Arc::new(TrackingPreparation {
@@ -913,6 +1300,7 @@ mod tests {
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: None,
             system_instructions: String::new(),
+            pre_context_instructions: None,
             limits: RunLimits::default(),
         })
         .unwrap();
@@ -1035,6 +1423,7 @@ mod tests {
         drop(wrapper);
         drop(lease);
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+            native_automation: None,
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -1043,6 +1432,7 @@ mod tests {
             compatibility: compatibility(),
             model,
             base_tools: local.clone(),
+            child_command_profile: None,
             child_tools: local,
             event_bridge: None,
             tool_preparation: None,
@@ -1051,6 +1441,7 @@ mod tests {
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
             system_instructions: String::new(),
+            pre_context_instructions: None,
             limits: RunLimits::default(),
         })
         .unwrap();
@@ -1141,6 +1532,7 @@ mod tests {
         let (started_tx, _started_rx) = mpsc::channel();
         let (_release_tx, release_rx) = tokio::sync::oneshot::channel();
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+            native_automation: None,
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -1152,6 +1544,7 @@ mod tests {
                 release: Mutex::new(Some(release_rx)),
             }),
             base_tools: local.clone(),
+            child_command_profile: None,
             child_tools: local,
             event_bridge: None,
             tool_preparation: None,
@@ -1160,6 +1553,7 @@ mod tests {
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
             system_instructions: String::new(),
+            pre_context_instructions: None,
             limits: RunLimits::default(),
         })
         .unwrap();
@@ -1261,6 +1655,7 @@ mod tests {
                     .unwrap();
             }
             let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+                native_automation: None,
                 session_id: session.id.clone(),
                 provider: "test".into(),
                 endpoint: "https://test.example/v1".into(),
@@ -1269,6 +1664,7 @@ mod tests {
                 compatibility: compatibility(),
                 model: Arc::new(ImmediateModel),
                 base_tools: local.clone(),
+                child_command_profile: None,
                 child_tools: local,
                 event_bridge: None,
                 tool_preparation: None,
@@ -1277,6 +1673,7 @@ mod tests {
                 command_hooks: hooks,
                 budget_policy: Some(budget()),
                 system_instructions: String::new(),
+                pre_context_instructions: None,
                 limits: RunLimits::default(),
             })
             .unwrap();
@@ -1312,6 +1709,286 @@ mod tests {
                 delivered.last().map(|event| &event.kind),
                 Some(AgentEventKind::TurnCompleted { .. })
             ));
+        }
+    }
+
+    #[test]
+    fn native_goal_receipt_recovery_reports_exact_state_without_replaying_or_publishing_result() {
+        use openide_core::{NativeGoalCriterion, NativeGoalStore};
+        use openide_harness::NativeGoalToolExecutor;
+        for case in ["committed", "absent", "corrupt"] {
+            let root = tempfile::tempdir().unwrap();
+            let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+            let session = sessions.create(root.path(), "native").unwrap();
+            let lease = Arc::new(sessions.try_acquire_native_lease(&session.id).unwrap());
+            NativeGoalStore::new(sessions.clone())
+                .create(
+                    &lease,
+                    "goal",
+                    "Verify complete scope",
+                    vec![NativeGoalCriterion {
+                        id: "criterion".into(),
+                        description: "Verify persisted work".into(),
+                        evidence: None,
+                    }],
+                )
+                .unwrap();
+            // Completed evidence turn is a journal fixture. The goal mutation and
+            // desktop recovery below execute the actual adapters and stores.
+            sessions
+                .admit_native_turn(&session.id, "seed", "Seed", "test-model", TurnMode::Build)
+                .unwrap();
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::TurnStarted {
+                    prompt: "Seed".into(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ModelRequestStarted {
+                    step: 1,
+                    model: "test-model".into(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ModelResponseCommitted {
+                    step: 1,
+                    assistant: AgentMessage::assistant("Evidence fixture", vec![]),
+                    response_id: None,
+                    usage: None,
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::TurnCompleted {
+                    response: "Evidence fixture".into(),
+                    steps: 1,
+                },
+            );
+            sessions
+                .admit_native_turn(
+                    &session.id,
+                    "mutation",
+                    "Record evidence",
+                    "test-model",
+                    TurnMode::Build,
+                )
+                .unwrap();
+            let local = Arc::new(LocalTools::new());
+            let tools = NativeGoalToolExecutor::new(
+                local.clone(),
+                sessions.clone(),
+                lease.clone(),
+                "mutation",
+            )
+            .unwrap();
+            let catalog = ToolCatalog::from_executor(&tools).unwrap();
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::TurnStarted {
+                    prompt: "Record evidence".into(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ToolCatalogCommitted {
+                    digest: catalog.digest_hex(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::HooksCommitted {
+                    version: openide_core::HOOK_CONFIG_IDENTITY_VERSION,
+                    digest: CommandHooks::default().digest_hex().unwrap(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ExecPolicyCommitted {
+                    version: openide_core::EXEC_POLICY_IDENTITY_VERSION,
+                    digest: PermissionPolicy::new().digest_hex(),
+                },
+            );
+            let digest = native_model_context_digest(
+                "test",
+                "https://test.example/v1",
+                "test-model",
+                TurnMode::Build,
+                root.path(),
+                &catalog,
+                "",
+                [7; 32],
+            )
+            .unwrap();
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ModelContextCommitted {
+                    version: MODEL_CONTEXT_VERSION,
+                    digest,
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ModelRequestStarted {
+                    step: 1,
+                    model: "test-model".into(),
+                },
+            );
+            let call = ToolCall {
+                id: "evidence-call".into(),
+                name: "record_goal_evidence".into(),
+                arguments: json!({"goal_id":"goal", "expected_revision":0,"criterion_id":"criterion","turn_id":"seed","summary":"Fixture work checked"}),
+            };
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ModelResponseCommitted {
+                    step: 1,
+                    assistant: AgentMessage::assistant("", vec![call.clone()]),
+                    response_id: None,
+                    usage: None,
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ToolStarted {
+                    tool_call: call.clone(),
+                },
+            );
+            if case != "absent" {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                let output = runtime
+                    .block_on(tools.execute(
+                        &call,
+                        &ToolContext {
+                            workspace: root.path().into(),
+                            cancel: CancellationToken::new(),
+                        },
+                    ))
+                    .unwrap();
+                assert!(!output.is_error, "{}", output.content);
+            }
+            tools.shutdown();
+            drop(tools);
+            drop(lease);
+            let goal_path = root
+                .path()
+                .join(format!("{}.native-goals.json", session.id));
+            if case == "corrupt" {
+                std::fs::write(&goal_path, b"broken ledger").unwrap();
+            }
+            let before_goal = std::fs::read(&goal_path).unwrap();
+            let before_events = sessions.load(&session.id).unwrap().unwrap().events;
+            drop(sessions);
+            let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+            let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+                native_automation: None,
+                session_id: session.id.clone(),
+                provider: "test".into(),
+                endpoint: "https://test.example/v1".into(),
+                sessions: sessions.clone(),
+                checkpoints: Arc::new(CheckpointFileStore::new(root.path()).unwrap()),
+                compatibility: compatibility(),
+                model: Arc::new(ImmediateModel),
+                base_tools: local.clone(),
+                child_command_profile: None,
+                child_tools: local,
+                event_bridge: None,
+                tool_preparation: None,
+                permission_policy: PermissionPolicy::new(),
+                command_isolation: CommandIsolation::HostUnrestricted,
+                command_hooks: Arc::new(CommandHooks::default()),
+                budget_policy: Some(budget()),
+                system_instructions: String::new(),
+                pre_context_instructions: None,
+                limits: RunLimits::default(),
+            })
+            .unwrap();
+            let update = handle.updates.recv_timeout(Duration::from_secs(5)).unwrap();
+            let ResumeUpdate::NeedsVerification {
+                goal_receipt: Some(receipt),
+                tool_call,
+                ..
+            } = update
+            else {
+                panic!("missing receipt inspection for {case}: {update:?}")
+            };
+            assert_eq!(tool_call, call);
+            match (case, &receipt) {
+                ("committed", GoalReceiptInspection::Found(receipt)) => {
+                    assert_eq!(receipt.goal_id, "goal");
+                    assert_eq!(receipt.committed_revision, 1);
+                    assert_eq!(receipt.current_revision, 1);
+                }
+                ("absent", GoalReceiptInspection::NotFound) => {}
+                ("corrupt", GoalReceiptInspection::Failed(error)) => assert!(!error.is_empty()),
+                _ => panic!("unexpected receipt for {case}: {receipt:?}"),
+            }
+            assert_eq!(
+                sessions.load(&session.id).unwrap().unwrap().events,
+                before_events
+            );
+            assert_eq!(std::fs::read(&goal_path).unwrap(), before_goal);
+            assert!(sessions.try_acquire_native_lease(&session.id).is_err());
+            if case == "committed" {
+                assert!(handle.record_verified_tool_outcome(
+                    &call.id,
+                    ToolOutput::success("Ledger inspected manually; evidence persisted")
+                ));
+                loop {
+                    match handle.updates.recv_timeout(Duration::from_secs(5)).unwrap() {
+                        ResumeUpdate::Events(_) => {}
+                        ResumeUpdate::Finished(Ok(ResumeDisposition::Complete)) => break,
+                        update => panic!("unexpected verified recovery update: {update:?}"),
+                    }
+                }
+                let events = sessions.load(&session.id).unwrap().unwrap().events;
+                assert_eq!(&events[..before_events.len()], before_events.as_slice());
+                let results: Vec<_> = events
+                    .iter()
+                    .filter_map(|event| match &event.kind {
+                        AgentEventKind::ToolFinished {
+                            tool_call_id,
+                            output,
+                            is_error,
+                        } if tool_call_id == &call.id => Some((output.as_str(), *is_error)),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(
+                    results,
+                    vec![("Ledger inspected manually; evidence persisted", false)]
+                );
+                assert_eq!(events.iter().filter(|event| matches!(&event.kind, AgentEventKind::ToolStarted { tool_call } if tool_call.id == call.id)).count(), 1);
+            } else {
+                handle.cancel();
+                assert!(matches!(
+                    handle.updates.recv_timeout(Duration::from_secs(5)).unwrap(),
+                    ResumeUpdate::Finished(Err(_))
+                ));
+                assert_eq!(
+                    sessions.load(&session.id).unwrap().unwrap().events,
+                    before_events
+                );
+            }
+            assert_eq!(std::fs::read(&goal_path).unwrap(), before_goal);
+            let _released = sessions.try_acquire_native_lease(&session.id).unwrap();
         }
     }
 
@@ -1376,6 +2053,7 @@ mod tests {
             AgentEventKind::ToolStarted { tool_call: call },
         );
         let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+            native_automation: None,
             session_id: session.id.clone(),
             provider: "test".into(),
             endpoint: "https://test.example/v1".into(),
@@ -1384,6 +2062,7 @@ mod tests {
             compatibility: compatibility(),
             model: Arc::new(ImmediateModel),
             base_tools: local.clone(),
+            child_command_profile: None,
             child_tools: local,
             event_bridge: None,
             tool_preparation: None,
@@ -1392,6 +2071,7 @@ mod tests {
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
             system_instructions: String::new(),
+            pre_context_instructions: None,
             limits: RunLimits::default(),
         })
         .unwrap();
@@ -1493,6 +2173,7 @@ mod tests {
             }
             let shutdown = Arc::new(AtomicBool::new(false));
             let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+                native_automation: None,
                 session_id: session.id.clone(),
                 provider: "test".into(),
                 endpoint: "https://test.example/v1".into(),
@@ -1501,6 +2182,7 @@ mod tests {
                 compatibility: compatibility(),
                 model: Arc::new(ImmediateModel),
                 base_tools: local.clone(),
+                child_command_profile: None,
                 child_tools: local,
                 event_bridge: None,
                 tool_preparation: Some(Arc::new(TrackingPreparation {
@@ -1511,6 +2193,7 @@ mod tests {
                 command_hooks: Arc::new(CommandHooks::default()),
                 budget_policy: Some(budget()),
                 system_instructions: String::new(),
+                pre_context_instructions: None,
                 limits: RunLimits::default(),
             })
             .unwrap();
@@ -1589,7 +2272,15 @@ mod tests {
                 },
             )
             .await;
-        assert!(matches!(result, Err(AgentError::InvalidRequest(_))));
+        // On hosts without PTY support, the current schema is already the
+        // legacy schema and the executor rejects unknown fields directly.
+        // On Windows the historical wrapper rejects them before delegation.
+        match result {
+            Err(AgentError::InvalidRequest(message)) => assert!(message.contains("PTY fields")),
+            Err(AgentError::Tool(message)) => assert!(message.contains("unknown field")),
+            other => panic!("legacy schema did not reject PTY fields: {other:?}"),
+        }
+        assert_eq!(std::fs::read_dir(workspace.path()).unwrap().count(), 0);
     }
 
     #[cfg(windows)]
@@ -1687,5 +2378,430 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(AgentError::InvalidRequest(_))));
+    }
+    struct RecoveryGoalReader(std::sync::atomic::AtomicUsize);
+    #[async_trait]
+    impl ModelBackend for RecoveryGoalReader {
+        fn model_id(&self) -> &str {
+            "test-model"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        async fn complete(
+            &self,
+            messages: &[AgentMessage],
+            tools: &[ToolDefinition],
+            _: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            let system = &messages.first().unwrap().content;
+            assert!(system.contains("Full recovery objective"));
+            assert!(system.contains("Original project instructions"));
+            assert!(system.contains("\"status\":\"active\""));
+            assert!(!system.contains("Changed project instructions"));
+            assert!(tools.iter().any(|t| t.name == "get_goal"));
+            assert!(!tools
+                .iter()
+                .any(|t| matches!(t.name.as_str(), "record_goal_evidence" | "complete_goal")));
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(ModelOutput {
+                    content: String::new(),
+                    tool_calls: vec![ToolCall {
+                        id: "goal-read".into(),
+                        name: "get_goal".into(),
+                        arguments: json!({}),
+                    }],
+                })
+            } else {
+                assert!(messages
+                    .iter()
+                    .any(|m| m.content.contains("Full recovery objective")));
+                Ok(ModelOutput {
+                    content: "Verified recovered goal scope".into(),
+                    tool_calls: vec![],
+                })
+            }
+        }
+    }
+    #[test]
+    fn resume_installs_goal_reader_and_preserves_frozen_plan_catalog_after_store_reopen() {
+        use openide_core::{NativeGoalCriterion, NativeGoalStore};
+        use openide_harness::NativeGoalToolExecutor;
+        let root = tempfile::tempdir().unwrap();
+        let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+        let session = sessions.create(root.path(), "native").unwrap();
+        let lease = Arc::new(sessions.try_acquire_native_lease(&session.id).unwrap());
+        let goals = NativeGoalStore::new(sessions.clone());
+        let goal = goals
+            .create(
+                &lease,
+                "goal",
+                "Full recovery objective",
+                vec![NativeGoalCriterion {
+                    id: "verify".into(),
+                    description: "Inspect whole scope".into(),
+                    evidence: None,
+                }],
+            )
+            .unwrap();
+        sessions
+            .admit_native_turn(&session.id, "plan", "Inspect", "test-model", TurnMode::Plan)
+            .unwrap();
+        let local = Arc::new(LocalTools::new());
+        let goal_tools =
+            NativeGoalToolExecutor::new(local.clone(), sessions.clone(), lease.clone(), "plan")
+                .unwrap();
+        let catalog = ToolCatalog::new(
+            goal_tools
+                .definitions()
+                .into_iter()
+                .filter(|d| goal_tools.certifies_plan_read(&d.name)),
+        )
+        .unwrap();
+        append(
+            &sessions,
+            &session.id,
+            AgentEventKind::TurnStarted {
+                prompt: "Inspect".into(),
+            },
+        );
+        append(
+            &sessions,
+            &session.id,
+            AgentEventKind::ToolCatalogCommitted {
+                digest: catalog.digest_hex(),
+            },
+        );
+        append(
+            &sessions,
+            &session.id,
+            AgentEventKind::HooksCommitted {
+                version: openide_core::HOOK_CONFIG_IDENTITY_VERSION,
+                digest: CommandHooks::default().digest_hex().unwrap(),
+            },
+        );
+        append(
+            &sessions,
+            &session.id,
+            AgentEventKind::ExecPolicyCommitted {
+                version: openide_core::EXEC_POLICY_IDENTITY_VERSION,
+                digest: PermissionPolicy::new().digest_hex(),
+            },
+        );
+        let instructions = openide_harness::native_goal_system_instructions(
+            "Original project instructions",
+            Some(&goal),
+        )
+        .unwrap();
+        append(
+            &sessions,
+            &session.id,
+            AgentEventKind::SystemInstructionsCommitted {
+                version: openide_core::SYSTEM_INSTRUCTIONS_VERSION,
+                digest: openide_core::system_instructions_digest(&instructions).unwrap(),
+                content: instructions.clone(),
+            },
+        );
+        let digest = native_model_context_digest(
+            "test",
+            "https://test.example/v1",
+            "test-model",
+            TurnMode::Plan,
+            root.path(),
+            &catalog,
+            &instructions,
+            [7; 32],
+        )
+        .unwrap();
+        append(
+            &sessions,
+            &session.id,
+            AgentEventKind::ModelContextCommitted {
+                version: MODEL_CONTEXT_VERSION,
+                digest,
+            },
+        );
+        append(
+            &sessions,
+            &session.id,
+            AgentEventKind::ModelRequestStarted {
+                step: 1,
+                model: "test-model".into(),
+            },
+        );
+        let paused = goals
+            .update(
+                &lease,
+                "goal",
+                "user-pause",
+                0,
+                openide_core::NativeGoalMutation::PauseByUser,
+            )
+            .unwrap();
+        drop(goal_tools);
+        drop(goals);
+        drop(lease);
+        drop(sessions);
+        let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+        let model = Arc::new(RecoveryGoalReader(std::sync::atomic::AtomicUsize::new(0)));
+        let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+            native_automation: None,
+            session_id: session.id.clone(),
+            provider: "test".into(),
+            endpoint: "https://test.example/v1".into(),
+            sessions: sessions.clone(),
+            checkpoints: Arc::new(CheckpointFileStore::new(root.path()).unwrap()),
+            compatibility: compatibility(),
+            model: model.clone(),
+            base_tools: local.clone(),
+            child_command_profile: None,
+            child_tools: local,
+            event_bridge: None,
+            tool_preparation: None,
+            permission_policy: PermissionPolicy::new(),
+            command_isolation: CommandIsolation::HostUnrestricted,
+            command_hooks: Arc::new(CommandHooks::default()),
+            budget_policy: Some(budget()),
+            system_instructions: "Changed project instructions".into(),
+            pre_context_instructions: None,
+            limits: RunLimits::default(),
+        })
+        .unwrap();
+        let mut delivered = vec![];
+        loop {
+            match handle
+                .updates
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+            {
+                ResumeUpdate::Events(events) => delivered.extend(events),
+                ResumeUpdate::Finished(Ok(ResumeDisposition::Complete)) => break,
+                update => panic!("{update:?}"),
+            }
+        }
+        assert!(delivered
+            .iter()
+            .any(|e| matches!(e.kind, AgentEventKind::ToolFinished { .. })));
+        assert_eq!(model.0.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            NativeGoalStore::new(sessions).list(&session.id).unwrap(),
+            vec![paused]
+        );
+    }
+    #[tokio::test]
+    async fn frozen_catalog_before_goals_blocks_new_goal_tools() {
+        use openide_harness::NativeGoalToolExecutor;
+        let root = tempfile::tempdir().unwrap();
+        let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+        let session = sessions.create(root.path(), "native").unwrap();
+        let lease = Arc::new(sessions.try_acquire_native_lease(&session.id).unwrap());
+        sessions
+            .admit_native_turn(&session.id, "build", "Build", "test-model", TurnMode::Build)
+            .unwrap();
+        let local = Arc::new(LocalTools::new());
+        for mode in [TurnMode::Build, TurnMode::Plan] {
+            let old = ToolCatalog::new(
+                local
+                    .definitions()
+                    .into_iter()
+                    .filter(|d| mode == TurnMode::Build || local.certifies_plan_read(&d.name)),
+            )
+            .unwrap();
+            let current: Arc<dyn ToolExecutor> = Arc::new(
+                NativeGoalToolExecutor::new(
+                    local.clone(),
+                    sessions.clone(),
+                    lease.clone(),
+                    "build",
+                )
+                .unwrap(),
+            );
+            let (executor, selected) =
+                select_saved_catalog(current, Some(&old.digest_hex())).unwrap();
+            assert_eq!(selected.digest_hex(), old.digest_hex());
+            assert!(selected.get("get_goal").is_none());
+            assert!(!executor.certifies_plan_read("get_goal"));
+            assert!(matches!(
+                executor
+                    .execute(
+                        &ToolCall {
+                            id: "injected".into(),
+                            name: "get_goal".into(),
+                            arguments: json!({})
+                        },
+                        &ToolContext {
+                            workspace: root.path().into(),
+                            cancel: CancellationToken::new()
+                        }
+                    )
+                    .await,
+                Err(AgentError::InvalidRequest(_))
+            ));
+        }
+    }
+    struct PreContextGoalModel {
+        has_goal: bool,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    #[async_trait]
+    impl ModelBackend for PreContextGoalModel {
+        fn model_id(&self) -> &str {
+            "test-model"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        async fn complete(
+            &self,
+            messages: &[AgentMessage],
+            tools: &[ToolDefinition],
+            _: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            let system = &messages.first().unwrap().content;
+            assert!(system.contains("Exact project instructions"));
+            assert_eq!(system.contains("Old legacy objective"), !self.has_goal);
+            assert_eq!(system.contains("Current complete scope"), self.has_goal);
+            assert!(tools.iter().any(|t| t.name == "get_goal"));
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(ModelOutput {
+                content: "Context received".into(),
+                tool_calls: vec![],
+            })
+        }
+    }
+    #[test]
+    fn resume_before_context_commit_selects_native_goal_under_lease_and_preserves_legacy_fallback()
+    {
+        use openide_core::{NativeGoalCriterion, NativeGoalStore};
+        use openide_harness::NativeGoalToolExecutor;
+        for has_goal in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+            let session = sessions.create(root.path(), "native").unwrap();
+            let lease = Arc::new(sessions.try_acquire_native_lease(&session.id).unwrap());
+            let goals = NativeGoalStore::new(sessions.clone());
+            let original = if has_goal {
+                vec![goals
+                    .create(
+                        &lease,
+                        "goal",
+                        "Current complete scope",
+                        vec![NativeGoalCriterion {
+                            id: "verify".into(),
+                            description: "Every effect".into(),
+                            evidence: None,
+                        }],
+                    )
+                    .unwrap()]
+            } else {
+                vec![]
+            };
+            sessions
+                .admit_native_turn(&session.id, "plan", "Inspect", "test-model", TurnMode::Plan)
+                .unwrap();
+            let local = Arc::new(LocalTools::new());
+            let tools =
+                NativeGoalToolExecutor::new(local.clone(), sessions.clone(), lease.clone(), "plan")
+                    .unwrap();
+            let catalog = ToolCatalog::new(
+                tools
+                    .definitions()
+                    .into_iter()
+                    .filter(|d| tools.certifies_plan_read(&d.name)),
+            )
+            .unwrap();
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::TurnStarted {
+                    prompt: "Inspect".into(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ToolCatalogCommitted {
+                    digest: catalog.digest_hex(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::HooksCommitted {
+                    version: openide_core::HOOK_CONFIG_IDENTITY_VERSION,
+                    digest: CommandHooks::default().digest_hex().unwrap(),
+                },
+            );
+            append(
+                &sessions,
+                &session.id,
+                AgentEventKind::ExecPolicyCommitted {
+                    version: openide_core::EXEC_POLICY_IDENTITY_VERSION,
+                    digest: PermissionPolicy::new().digest_hex(),
+                },
+            );
+            drop(tools);
+            drop(goals);
+            drop(lease);
+            drop(sessions);
+            let sessions = Arc::new(SessionStore::open(root.path()).unwrap());
+            let model = Arc::new(PreContextGoalModel {
+                has_goal,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            });
+            let handle = ResumeWorkerHandle::start(ResumeWorkerRequest {
+                native_automation: None,
+                session_id: session.id.clone(),
+                provider: "test".into(),
+                endpoint: "https://test.example/v1".into(),
+                sessions: sessions.clone(),
+                checkpoints: Arc::new(CheckpointFileStore::new(root.path()).unwrap()),
+                compatibility: compatibility(),
+                model: model.clone(),
+                base_tools: local.clone(),
+                child_command_profile: None,
+                child_tools: local,
+                event_bridge: None,
+                tool_preparation: None,
+                permission_policy: PermissionPolicy::new(),
+                command_isolation: CommandIsolation::HostUnrestricted,
+                command_hooks: Arc::new(CommandHooks::default()),
+                budget_policy: Some(budget()),
+                system_instructions: "unselected fallback".into(),
+                pre_context_instructions: Some((
+                    "Exact project instructions".into(),
+                    Some("Old legacy objective".into()),
+                )),
+                limits: RunLimits::default(),
+            })
+            .unwrap();
+            loop {
+                match handle
+                    .updates
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap()
+                {
+                    ResumeUpdate::Events(_) => {}
+                    ResumeUpdate::Finished(Ok(ResumeDisposition::Complete)) => break,
+                    update => panic!("{update:?}"),
+                }
+            }
+            assert_eq!(model.calls.load(Ordering::SeqCst), 1);
+            let record = sessions.load(&session.id).unwrap().unwrap();
+            let content = record
+                .events
+                .iter()
+                .find_map(|e| match &e.kind {
+                    AgentEventKind::SystemInstructionsCommitted { content, .. } => Some(content),
+                    _ => None,
+                })
+                .unwrap();
+            assert!(!content.contains("unselected fallback"));
+            assert_eq!(content.contains("Old legacy objective"), !has_goal);
+            assert_eq!(
+                NativeGoalStore::new(sessions).list(&session.id).unwrap(),
+                original
+            );
+        }
     }
 }

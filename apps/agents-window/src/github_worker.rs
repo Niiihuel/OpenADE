@@ -10,12 +10,15 @@ use std::thread;
 pub struct GithubRequest {
     pub workspace: PathBuf,
     pub generation: u64,
+    /// None means public requests with no credential lookup.
+    pub account: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GithubResponse {
     pub workspace: PathBuf,
     pub generation: u64,
+    pub account: Option<String>,
     pub overview: Option<GithubOverview>,
 }
 
@@ -41,10 +44,18 @@ impl GithubWorker {
         self.request_tx.send(request)
     }
 
-    pub fn poll_latest(&self, generation: u64, workspace: &Path) -> Option<GithubResponse> {
+    pub fn poll_latest(
+        &self,
+        generation: u64,
+        workspace: &Path,
+        account: Option<&str>,
+    ) -> Option<GithubResponse> {
         let mut latest = None;
         while let Ok(response) = self.result_rx.try_recv() {
-            if response.generation == generation && response.workspace == workspace {
+            if response.generation == generation
+                && response.workspace == workspace
+                && response.account.as_deref() == account
+            {
                 latest = Some(response);
             }
         }
@@ -60,11 +71,12 @@ fn run_worker(request_rx: Receiver<GithubRequest>, result_tx: Sender<GithubRespo
                 request = next;
             }
         }
-        let overview = load_overview(&request.workspace);
+        let overview = load_overview(&request.workspace, request.account.as_deref());
         if result_tx
             .send(GithubResponse {
                 workspace: request.workspace,
                 generation: request.generation,
+                account: request.account,
                 overview,
             })
             .is_err()
@@ -79,6 +91,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn same_repository_and_revision_do_not_allow_another_accounts_response() {
+        let (request_tx, _) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+        let worker = GithubWorker {
+            request_tx,
+            result_rx,
+        };
+        let response = |account: Option<&str>| GithubResponse {
+            workspace: PathBuf::from("repo"),
+            generation: 7,
+            account: account.map(str::to_owned),
+            overview: None,
+        };
+        result_tx.send(response(Some("alice"))).unwrap();
+        assert!(worker
+            .poll_latest(7, Path::new("repo"), Some("bob"))
+            .is_none());
+        result_tx.send(response(Some("alice"))).unwrap();
+        assert!(worker.poll_latest(7, Path::new("repo"), None).is_none());
+        result_tx.send(response(None)).unwrap();
+        assert!(worker.poll_latest(7, Path::new("repo"), None).is_some());
+        result_tx.send(response(Some("bob"))).unwrap();
+        assert!(worker
+            .poll_latest(7, Path::new("repo"), Some("bob"))
+            .is_some());
+    }
+
+    #[test]
     fn a_newer_response_supersedes_old_or_foreign_workspaces() {
         let (request_tx, _) = mpsc::channel();
         let (result_tx, result_rx) = mpsc::channel();
@@ -91,12 +131,16 @@ mod tests {
                 .send(GithubResponse {
                     workspace: workspace.into(),
                     generation,
+                    account: None,
                     overview: None,
                 })
                 .unwrap();
         }
         assert_eq!(
-            worker.poll_latest(3, Path::new("repo")).unwrap().generation,
+            worker
+                .poll_latest(3, Path::new("repo"), None)
+                .unwrap()
+                .generation,
             3
         );
     }

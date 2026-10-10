@@ -1,8 +1,7 @@
-use crate::tools::{existing_workspace_path, required_string};
+use crate::tools::{directory_path_argument, existing_workspace_path, required_string};
 use crate::{AgentError, ToolContext, ToolOutput};
 use openide_core::ToolCall;
 use regex::Regex;
-use serde_json::Value;
 use std::fs::{self, Metadata, OpenOptions};
 use std::io::Read;
 use std::path::Path;
@@ -25,13 +24,9 @@ pub(crate) async fn search_files(
     }
     let regex = Regex::new(pattern)
         .map_err(|error| AgentError::Tool(format!("invalid search pattern: {error}")))?;
-    let start = call
-        .arguments
-        .get("path")
-        .and_then(Value::as_str)
-        .unwrap_or(".");
+    let start = directory_path_argument(&call.arguments);
     let root = context.workspace.canonicalize().map_err(tool_io_error)?;
-    let start = existing_workspace_path(&root, start)?;
+    let start = existing_workspace_path(&context.workspace, start)?;
     let mut stack = vec![start];
     let mut scanned = 0usize;
     let mut visited = 0usize;

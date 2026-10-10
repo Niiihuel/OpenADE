@@ -563,27 +563,33 @@ impl McpHttpClient {
         if session_id.read().await.is_none() {
             return Ok(());
         }
-        let headers = self.legacy_headers(&CancellationToken::new()).await?;
-        let response = timeout_at(
-            Instant::now() + self.config.request_timeout,
-            self.client
+        // Cleanup remains possible after the handshake caller cancels. Bound
+        // authorization (which may refresh OAuth) and DELETE together, so a
+        // failed connection cannot wait indefinitely before returning its error.
+        let cleanup = CancellationToken::new();
+        timeout_at(Instant::now() + self.config.request_timeout, async {
+            let headers = self.legacy_headers(&cleanup).await?;
+            let response = self
+                .client
                 .delete(self.endpoint.clone())
                 .headers(headers)
-                .send(),
-        )
+                .send()
+                .await
+                .map_err(http_error)?;
+            if !response.status().is_success()
+                && response.status() != StatusCode::METHOD_NOT_ALLOWED
+                && response.status() != StatusCode::NOT_FOUND
+            {
+                return Err(McpError::Protocol(format!(
+                    "MCP session DELETE returned HTTP {}",
+                    response.status()
+                )));
+            }
+            *session_id.write().await = None;
+            Ok(())
+        })
         .await
         .map_err(|_| McpError::Timeout)?
-        .map_err(http_error)?;
-        if !response.status().is_success()
-            && response.status() != StatusCode::METHOD_NOT_ALLOWED
-            && response.status() != StatusCode::NOT_FOUND
-        {
-            return Err(McpError::Protocol(format!(
-                "MCP session DELETE returned HTTP {}",
-                response.status()
-            )));
-        }
-        Ok(())
     }
 
     fn is_modern(&self) -> bool {
@@ -602,6 +608,9 @@ impl McpHttpClient {
             ));
         };
         *session_id.write().await = None;
+        // Until the response negotiates a supported version, cleanup uses the
+        // version offered by initialize. The initialize POST itself omits it.
+        *version.write().await = MCP_PROTOCOL_VERSION.to_owned();
         self.catalog_discovered.store(false, Ordering::Release);
         let mut catalog = self.catalog.write().await;
         if !catalog.is_empty() {
@@ -611,7 +620,29 @@ impl McpHttpClient {
         }
         catalog.clear();
         drop(catalog);
-        let (result, new_session) = self
+        let handshake = self.finish_legacy_handshake(cancellation).await;
+        if let Err(handshake) = handshake {
+            // We hold the handshake lock, so calling shutdown would deadlock.
+            // A partial session is never exposed as a usable client, including
+            // a failed replacement session after SessionExpired.
+            let cleanup = self.delete_legacy_session().await;
+            self.closed.cancel();
+            return Err(match cleanup {
+                Ok(()) => handshake,
+                Err(cleanup) => McpError::HandshakeCleanupFailed {
+                    handshake: Box::new(handshake),
+                    cleanup: Box::new(cleanup),
+                },
+            });
+        }
+        Ok(())
+    }
+
+    async fn finish_legacy_handshake(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<(), McpError> {
+        let (result, _) = self
             .request_with_session(
                 "initialize",
                 json!({
@@ -637,8 +668,9 @@ impl McpHttpClient {
                 info.protocol_version
             )));
         }
-        *version.write().await = info.protocol_version.clone();
-        *session_id.write().await = new_session;
+        if let HttpEra::Legacy { version, .. } = &self.era {
+            *version.write().await = info.protocol_version.clone();
+        }
         *self.server_info.write().await = info;
         self.send_initialized(cancellation).await
     }
@@ -725,7 +757,7 @@ impl McpHttpClient {
             status => {
                 return Err(McpError::Protocol(format!(
                     "MCP legacy SSE GET returned HTTP {status}"
-                )))
+                )));
             }
         }
         if response.status() != StatusCode::OK {
@@ -864,8 +896,15 @@ impl McpHttpClient {
                 limit: self.config.max_message_bytes,
             });
         }
-        let headers = self.legacy_headers(cancellation).await?;
         let deadline = Instant::now() + max_duration;
+        let headers = tokio::select! {
+            biased;
+            _ = self.closed.cancelled() => return Err(McpError::Closed),
+            _ = cancellation.cancelled() => return Err(McpError::Cancelled),
+            result = timeout_at(deadline, self.legacy_headers(cancellation)) => {
+                result.map_err(|_| McpError::Timeout)??
+            }
+        };
         let send = self
             .client
             .post(self.endpoint.clone())
@@ -1089,10 +1128,12 @@ impl McpHttpClient {
             Err(McpError::SessionExpired) => {
                 // The 2025 transport calls for a fresh session after 404. The
                 // tool call itself might have run, so never replay it.
-                let _ = self.initialize_legacy(cancellation).await;
-                return Err(McpError::EffectUncertain(
-                    "MCP HTTP session expired during tools/call".into(),
-                ));
+                let recovery = self.initialize_legacy(cancellation).await;
+                let mut message = "MCP HTTP session expired during tools/call".to_owned();
+                if let Err(error) = recovery {
+                    message.push_str(&format!("; session reinitialization failed: {error}"));
+                }
+                return Err(McpError::EffectUncertain(message));
             }
             other => other.map_err(mark_uncertain_tool_error)?,
         };
@@ -1242,6 +1283,14 @@ impl McpHttpClient {
         } else {
             None
         };
+        if method == "initialize" {
+            if let HttpEra::Legacy { session_id, .. } = &self.era {
+                // The server already allocated this session. Keep ownership
+                // even if the response body is malformed, oversized or cut
+                // off, so initialization failure can still issue DELETE.
+                *session_id.write().await = session.clone();
+            }
+        }
         let result = self
             .read_response(response, id, method, deadline, cancellation)
             .await;
@@ -1640,7 +1689,9 @@ fn require_complete(result: &Value, method: &str, modern: bool) -> Result<(), Mc
         Some("input_required") => Err(McpError::Protocol(format!(
             "{method} requires additional input; this client cannot complete MCP multi-round-trip requests"
         ))),
-        _ => Err(McpError::Protocol(format!("unsupported {method} resultType"))),
+        _ => Err(McpError::Protocol(format!(
+            "unsupported {method} resultType"
+        ))),
     }
 }
 
@@ -1810,7 +1861,7 @@ fn extract_tool_headers(
             _ => {
                 return Err(McpError::Protocol(
                     "invalid x-mcp-header argument type".into(),
-                ))
+                ));
             }
         };
         headers.push((spec.header.clone(), encode_header_value(&string)?));
@@ -1820,16 +1871,16 @@ fn extract_tool_headers(
 
 fn encode_header_value(value: &str) -> Result<HeaderValue, McpError> {
     let bytes = value.as_bytes();
-    let plain = bytes
+    let printable = bytes
         .iter()
-        .all(|byte| matches!(*byte, b'\t' | b' '..=b'~'))
-        && !bytes
-            .first()
-            .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
-        && !bytes
-            .last()
-            .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
-        && !(value.starts_with("=?base64?") && value.ends_with("?="));
+        .all(|byte| matches!(*byte, b'\t' | b' '..=b'~'));
+    let edge_whitespace = bytes
+        .first()
+        .into_iter()
+        .chain(bytes.last())
+        .any(|byte| matches!(*byte, b' ' | b'\t'));
+    let already_encoded = value.starts_with("=?base64?") && value.ends_with("?=");
+    let plain = printable && !edge_whitespace && !already_encoded;
     let encoded = if plain {
         value.to_owned()
     } else {
@@ -2306,6 +2357,345 @@ mod tests {
                 "tools":[{"name":"echo","inputSchema":{"type":"object"}}]
             }),
         ))
+    }
+
+    struct PartialHandshakeServer {
+        url: String,
+        requests: thread::JoinHandle<Vec<Request>>,
+        initialized_started: tokio::sync::oneshot::Receiver<()>,
+        delete_started: tokio::sync::oneshot::Receiver<()>,
+        release_delete: std::sync::mpsc::Sender<()>,
+    }
+
+    /// Keep initialized open while accepting DELETE on a separate connection.
+    /// The explicit DELETE gate verifies connect does not return before cleanup
+    /// finishes; None holds DELETE until its independent timeout has elapsed.
+    fn partial_handshake_server(delete_reply: Option<Reply>) -> PartialHandshakeServer {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let (initialized_tx, initialized_started) = tokio::sync::oneshot::channel();
+        let (delete_tx, delete_started) = tokio::sync::oneshot::channel();
+        let (release_delete, release_rx) = std::sync::mpsc::channel();
+        let requests = thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            let next = || {
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "missing HTTP request");
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("HTTP accept failed: {error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let request = read_request(&mut stream);
+                (stream, request)
+            };
+            let mut requests = Vec::new();
+            for index in 0..2 {
+                let (mut stream, request) = next();
+                let reply = if index == 0 {
+                    legacy_probe(&request)
+                } else {
+                    legacy_initialize(&request, "2025-06-18", Some("partial-owned"))
+                };
+                write_reply(&mut stream, reply);
+                requests.push(request);
+            }
+            let (initialized_stream, request) = next();
+            assert_eq!(request.body["method"], "notifications/initialized");
+            requests.push(request);
+            initialized_tx.send(()).unwrap();
+            let (mut delete_stream, request) = next();
+            assert_eq!(request.method, "DELETE");
+            requests.push(request);
+            delete_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            if let Some(reply) = delete_reply {
+                write_reply(&mut delete_stream, reply);
+            }
+            drop(delete_stream);
+            drop(initialized_stream);
+            requests
+        });
+        PartialHandshakeServer {
+            url,
+            requests,
+            initialized_started,
+            delete_started,
+            release_delete,
+        }
+    }
+
+    fn assert_partial_session_cleanup(requests: &[Request]) {
+        assert_eq!(requests.len(), 4);
+        assert_eq!(requests[0].body["method"], "server/discover");
+        assert_eq!(requests[1].body["method"], "initialize");
+        assert_eq!(requests[2].body["method"], "notifications/initialized");
+        assert_eq!(requests[3].method, "DELETE");
+        assert!(requests[3].body.is_null());
+        for request in &requests[2..] {
+            assert_eq!(request.headers["mcp-session-id"], "partial-owned");
+            assert_eq!(request.headers["mcp-protocol-version"], "2025-06-18");
+        }
+        assert!(requests
+            .iter()
+            .all(|request| request.body["method"] != "tools/call"));
+    }
+
+    #[tokio::test]
+    async fn failed_legacy_initialized_closes_owned_session_before_returning() {
+        let (url, server) = local_server(4, |index, request| match index {
+            0 => legacy_probe(request),
+            1 => legacy_initialize(request, "2025-06-18", Some("partial-owned")),
+            2 => empty_reply("500 Internal Server Error"),
+            3 => empty_reply("204 No Content"),
+            _ => unreachable!(),
+        });
+        let mut config = McpHttpConfig::new(url);
+        config.bearer_token = Some("partial-fixture-secret".into());
+        let error = McpHttpClient::connect(config, &CancellationToken::new())
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(&error, McpError::Protocol(message) if message.contains("500")));
+        assert!(!error.to_string().contains("partial-fixture-secret"));
+        let requests = server.join().unwrap();
+        assert_partial_session_cleanup(&requests);
+        for request in &requests {
+            assert_eq!(
+                request.headers["authorization"],
+                "Bearer partial-fixture-secret"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_legacy_initialized_still_waits_for_session_delete() {
+        let server = partial_handshake_server(Some(empty_reply("204 No Content")));
+        let mut config = McpHttpConfig::new(server.url);
+        config.request_timeout = Duration::from_secs(5);
+        let cancellation = CancellationToken::new();
+        let task_token = cancellation.clone();
+        let connect =
+            tokio::spawn(async move { McpHttpClient::connect(config, &task_token).await });
+        server.initialized_started.await.unwrap();
+        cancellation.cancel();
+        tokio::time::timeout(Duration::from_secs(5), server.delete_started)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            !connect.is_finished(),
+            "connect returned before DELETE completed"
+        );
+        server.release_delete.send(()).unwrap();
+        assert!(matches!(connect.await.unwrap(), Err(McpError::Cancelled)));
+        assert_partial_session_cleanup(&server.requests.join().unwrap());
+    }
+
+    #[tokio::test]
+    async fn timed_out_legacy_initialized_still_waits_for_session_delete() {
+        let server = partial_handshake_server(Some(empty_reply("204 No Content")));
+        let mut config = McpHttpConfig::new(server.url);
+        config.request_timeout = Duration::from_secs(2);
+        let connect =
+            tokio::spawn(
+                async move { McpHttpClient::connect(config, &CancellationToken::new()).await },
+            );
+        server.initialized_started.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), server.delete_started)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            !connect.is_finished(),
+            "connect returned before DELETE completed"
+        );
+        server.release_delete.send(()).unwrap();
+        assert!(matches!(connect.await.unwrap(), Err(McpError::Timeout)));
+        assert_partial_session_cleanup(&server.requests.join().unwrap());
+    }
+
+    #[tokio::test]
+    async fn failed_legacy_handshake_reports_delete_failure_without_losing_cause() {
+        let (url, server) = local_server(4, |index, request| match index {
+            0 => legacy_probe(request),
+            1 => legacy_initialize(request, "2025-06-18", Some("partial-owned")),
+            2 => empty_reply("500 Internal Server Error"),
+            3 => empty_reply("503 Service Unavailable"),
+            _ => unreachable!(),
+        });
+        let error = McpHttpClient::connect(McpHttpConfig::new(url), &CancellationToken::new())
+            .await
+            .err()
+            .unwrap();
+        let McpError::HandshakeCleanupFailed { handshake, cleanup } = &error else {
+            panic!("missing cleanup diagnostic: {error}");
+        };
+        assert!(
+            matches!(handshake.as_ref(), McpError::Protocol(message) if message.contains("500"))
+        );
+        assert!(matches!(cleanup.as_ref(), McpError::Protocol(message) if message.contains("503")));
+        assert!(std::error::Error::source(&error)
+            .unwrap()
+            .to_string()
+            .contains("500"));
+        assert!(error
+            .to_string()
+            .contains("remote session may remain active"));
+        assert_partial_session_cleanup(&server.join().unwrap());
+    }
+
+    #[tokio::test]
+    async fn cancelled_legacy_handshake_reports_bounded_delete_timeout() {
+        let server = partial_handshake_server(None);
+        let mut config = McpHttpConfig::new(server.url);
+        config.request_timeout = Duration::from_secs(1);
+        let cancellation = CancellationToken::new();
+        let task_token = cancellation.clone();
+        let connect =
+            tokio::spawn(async move { McpHttpClient::connect(config, &task_token).await });
+        server.initialized_started.await.unwrap();
+        cancellation.cancel();
+        server.delete_started.await.unwrap();
+        let error = tokio::time::timeout(Duration::from_secs(5), connect)
+            .await
+            .unwrap()
+            .unwrap()
+            .err()
+            .unwrap();
+        assert!(
+            matches!(error, McpError::HandshakeCleanupFailed { handshake, cleanup }
+            if matches!(handshake.as_ref(), McpError::Cancelled)
+                && matches!(cleanup.as_ref(), McpError::Timeout))
+        );
+        server.release_delete.send(()).unwrap();
+        assert_partial_session_cleanup(&server.requests.join().unwrap());
+    }
+
+    #[tokio::test]
+    async fn malformed_legacy_initialize_still_closes_allocated_session() {
+        for case in 0..3 {
+            let (url, server) = local_server(3, move |index, request| match index {
+                0 => legacy_probe(request),
+                1 if case == 0 => Reply::Custom {
+                    status: "200 OK",
+                    content_type: Some("application/json"),
+                    headers: vec![("MCP-Session-Id".into(), "partial-owned".into())],
+                    body: b"not JSON".to_vec(),
+                },
+                1 if case == 1 => json_reply(
+                    "200 OK",
+                    rpc(request, json!({"protocolVersion":"2025-06-18"})),
+                    Some("partial-owned"),
+                ),
+                1 => legacy_initialize(request, "2099-01-01", Some("partial-owned")),
+                2 => empty_reply("204 No Content"),
+                _ => unreachable!(),
+            });
+            let error = McpHttpClient::connect(McpHttpConfig::new(url), &CancellationToken::new())
+                .await
+                .err()
+                .unwrap();
+            assert!(matches!(error, McpError::Protocol(_)), "case {case}");
+            let requests = server.join().unwrap();
+            assert_eq!(requests.len(), 3);
+            assert_eq!(requests[2].method, "DELETE");
+            assert_eq!(requests[2].headers["mcp-session-id"], "partial-owned");
+            assert_eq!(
+                requests[2].headers["mcp-protocol-version"],
+                MCP_PROTOCOL_VERSION
+            );
+            assert!(requests
+                .iter()
+                .all(|request| request.body["method"] != "notifications/initialized"));
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_legacy_replacement_handshake_closes_session_and_revokes_client() {
+        let (url, server) = local_server(7, |index, request| match index {
+            0 => legacy_probe(request),
+            1 => legacy_initialize(request, "2025-11-25", Some("session-old")),
+            2 => empty_reply("202 Accepted"),
+            3 => empty_reply("404 Not Found"),
+            4 => legacy_initialize(request, "2025-06-18", Some("partial-owned")),
+            5 => empty_reply("500 Internal Server Error"),
+            6 => empty_reply("204 No Content"),
+            _ => unreachable!(),
+        });
+        let cancellation = CancellationToken::new();
+        let client = McpHttpClient::connect(McpHttpConfig::new(url), &cancellation)
+            .await
+            .unwrap();
+        assert!(matches!(client.list_tools(&cancellation).await,
+            Err(McpError::Protocol(message)) if message.contains("500")));
+        assert!(matches!(
+            client.list_tools(&cancellation).await,
+            Err(McpError::Closed)
+        ));
+        assert!(matches!(
+            client.call_tool("echo", json!({}), &cancellation).await,
+            Err(McpError::Closed)
+        ));
+        client.shutdown().await.unwrap(); // DELETE is not repeated after acknowledgement.
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 7);
+        assert_eq!(requests[6].method, "DELETE");
+        assert_eq!(requests[6].headers["mcp-session-id"], "partial-owned");
+        assert_eq!(requests[6].headers["mcp-protocol-version"], "2025-06-18");
+        assert!(requests
+            .iter()
+            .all(|request| request.body["method"] != "tools/call"));
+    }
+
+    #[tokio::test]
+    async fn expired_tool_with_failed_replacement_cleanup_keeps_both_diagnostics_without_replay() {
+        let (url, server) = local_server(8, |index, request| match index {
+            0 => legacy_probe(request),
+            1 => legacy_initialize(request, "2025-11-25", Some("session-old")),
+            2 => empty_reply("202 Accepted"),
+            3 => legacy_tool_list(request),
+            4 => empty_reply("404 Not Found"),
+            5 => legacy_initialize(request, "2025-06-18", Some("partial-owned")),
+            6 => empty_reply("500 Internal Server Error"),
+            7 => empty_reply("503 Service Unavailable"),
+            _ => unreachable!(),
+        });
+        let cancellation = CancellationToken::new();
+        let client = McpHttpClient::connect(McpHttpConfig::new(url), &cancellation)
+            .await
+            .unwrap();
+        client.list_tools(&cancellation).await.unwrap();
+        assert!(
+            matches!(client.call_tool("echo", json!({}), &cancellation).await,
+            Err(McpError::EffectUncertain(message))
+                if message.contains("session expired during tools/call")
+                    && message.contains("500")
+                    && message.contains("DELETE returned HTTP 503")
+                    && message.contains("remote session may remain active"))
+        );
+        assert!(matches!(
+            client.call_tool("echo", json!({}), &cancellation).await,
+            Err(McpError::Closed)
+        ));
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 8);
+        assert_eq!(requests[7].method, "DELETE");
+        assert_eq!(requests[7].headers["mcp-session-id"], "partial-owned");
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.body["method"] == "tools/call")
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]

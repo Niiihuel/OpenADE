@@ -7,20 +7,22 @@ use crate::native_context::{native_system_prompt_with_plan, NativeRuntimeIdentit
 use crate::permission::{effective_session_approval_policy_digest, SessionApprovalGrant};
 use crate::plan_tool::{self, UPDATE_PLAN_TOOL};
 use crate::project_instructions::{activation_hook_id, ProjectInstructionLedger};
-use crate::tool_scheduler::trusted_local_read;
+use crate::tool_scheduler::trusted_plan_read;
 use crate::{
     AgentError, CheckpointCoordinator, CheckpointCoordinatorError, CommandIsolation, ModelBackend,
-    PermissionChoice, PermissionMode, PermissionPolicy, RunLimits, TokenBudgetDecision,
-    TokenBudgetPolicy, TokenBudgetState, ToolCatalog, ToolCatalogError, ToolContext, ToolExecutor,
-    ToolOutput,
+    NativeManualCommandActor, PermissionChoice, PermissionMode, PermissionPolicy, RunLimits,
+    TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState, ToolCatalog, ToolCatalogError,
+    ToolContext, ToolExecutor, ToolOutput,
 };
+use async_trait::async_trait;
 use openide_core::{
     replay_native, system_instructions_digest, AgentEvent, AgentEventKind, AgentMessage,
-    CheckpointBudgetSnapshot, CheckpointCompatibility, CheckpointFileStore, NativeReplay,
-    NativeSessionLease, PermissionDecision, PermissionResolution, PlanSnapshot, ReplayError,
-    ReplayRecovery, SessionStore, StoreError, StoredSession, ToolCall, TurnMode,
-    EXEC_POLICY_IDENTITY_VERSION, HOOK_CONFIG_IDENTITY_VERSION, MAX_SYSTEM_INSTRUCTIONS_BYTES,
-    MCP_RUNTIME_IDENTITY_VERSION, MODEL_CONTEXT_VERSION, SYSTEM_INSTRUCTIONS_VERSION,
+    CheckpointBudgetSnapshot, CheckpointCompatibility, CheckpointFileStore,
+    NativeCommandOperationStore, NativeReplay, NativeSessionLease, PermissionDecision,
+    PermissionResolution, PlanSnapshot, ReplayError, ReplayRecovery, SessionStore, StoreError,
+    StoredSession, ToolCall, TurnMode, EXEC_POLICY_IDENTITY_VERSION, HOOK_CONFIG_IDENTITY_VERSION,
+    MAX_SYSTEM_INSTRUCTIONS_BYTES, MCP_RUNTIME_IDENTITY_VERSION, MODEL_CONTEXT_VERSION,
+    SYSTEM_INSTRUCTIONS_VERSION,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -56,6 +58,8 @@ pub enum ResumeError {
         "the configured provider, endpoint, or system context differs from the interrupted turn"
     )]
     ContextMismatch,
+    #[error("the configured provider, exact model, endpoint, or request profile differs from the committed route")]
+    ModelRouteMismatch,
     #[error("the pending MCP server identity cannot be verified from this turn's journal")]
     McpIdentityUnverified,
     #[error("the prepared MCP server identity differs from the interrupted turn")]
@@ -264,6 +268,26 @@ pub fn discard_aborted_tool_batch(
     })
 }
 
+/// Receives native events only after their append has succeeded. Observation
+/// does not change the journal's synchronization policy: text deltas use the
+/// same append contract as a normal native run. A failed observer stops the
+/// current recovery; the committed prefix remains available for manual Resume.
+#[async_trait]
+pub trait ResumeEventObserver: Send + Sync {
+    fn on_persisted_event(&self, event: &AgentEvent) -> Result<(), AgentError>;
+
+    /// A bounded UI can wait for capacity without preventing the model future
+    /// from being dropped on cancellation. The unsent persisted event is
+    /// delivered synchronously only after that future has been dropped.
+    async fn on_persisted_stream_event(
+        &self,
+        event: &AgentEvent,
+        _cancel: &CancellationToken,
+    ) -> Result<(), AgentError> {
+        self.on_persisted_event(event)
+    }
+}
+
 pub struct ResumeEngine {
     sessions: Arc<SessionStore>,
     checkpoints: Arc<CheckpointFileStore>,
@@ -280,6 +304,8 @@ pub struct ResumeEngine {
     mcp_runtime_identity_digest: Option<String>,
     command_hooks: Arc<CommandHooks>,
     session_approvals: Option<(Arc<SessionStore>, CommandIsolation)>,
+    event_observer: Option<Arc<dyn ResumeEventObserver>>,
+    manual_command_actor: Option<Arc<NativeManualCommandActor>>,
 }
 
 impl ResumeEngine {
@@ -311,11 +337,26 @@ impl ResumeEngine {
             mcp_runtime_identity_digest: None,
             command_hooks: Arc::new(CommandHooks::default()),
             session_approvals: None,
+            event_observer: None,
+            manual_command_actor: None,
         }
+    }
+
+    /// Drain confirmed human process controls under the retained recovery lease.
+    pub fn with_manual_command_actor(mut self, actor: Arc<NativeManualCommandActor>) -> Self {
+        self.manual_command_actor = Some(actor);
+        self
     }
 
     pub fn with_limits(mut self, limits: RunLimits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Forward the exact committed events of this engine as they occur. The
+    /// returned ResumeStep still contains those events for non-observing callers.
+    pub fn with_event_observer(mut self, observer: Arc<dyn ResumeEventObserver>) -> Self {
+        self.event_observer = Some(observer);
         self
     }
 
@@ -380,6 +421,21 @@ impl ResumeEngine {
             return Err(ResumeError::ModelMismatch);
         }
         if let Some(turn) = &replay.active_turn {
+            if let Some(saved_route) = &replay.active_model_route {
+                let current = self
+                    .native_runtime_identity
+                    .as_ref()
+                    .ok_or(ResumeError::ContextUnverified)?
+                    .route_snapshot(
+                        self.model.model_id(),
+                        self.model
+                            .request_profile_fingerprint()
+                            .ok_or(ResumeError::ContextUnverified)?,
+                    )?;
+                if &current != saved_route {
+                    return Err(ResumeError::ModelRouteMismatch);
+                }
+            }
             match replay.active_exec_policy_digest.as_deref() {
                 Some(saved) => {
                     if replay.active_exec_policy_version != Some(EXEC_POLICY_IDENTITY_VERSION) {
@@ -476,6 +532,20 @@ impl ResumeEngine {
                 None => {}
             }
         }
+        match &self.manual_command_actor {
+            Some(actor) => {
+                if !Arc::ptr_eq(actor.sessions(), &self.sessions) {
+                    return Err(AgentError::InvalidRequest(
+                        "manual command actor and recovery use different stores".into(),
+                    )
+                    .into());
+                }
+                actor.validate_lease(lease)?;
+            }
+            None => NativeCommandOperationStore::new(self.sessions.clone())
+                .require_no_pending(lease)
+                .map_err(|error| AgentError::EffectUncertain(error.to_string()))?,
+        }
         Ok(replay)
     }
 
@@ -488,6 +558,7 @@ impl ResumeEngine {
         cancel: CancellationToken,
     ) -> Result<ResumeStep, ResumeError> {
         let replay = self.inspect(lease)?;
+        self.process_manual_commands(lease, &cancel).await?;
         let mut events = Vec::new();
         let mut executor_error = None;
         if cancel.is_cancelled() {
@@ -606,7 +677,8 @@ impl ResumeEngine {
                         )?;
                     }
                 }
-                self.finish_model_response(lease, &replay, &mut events, response, *step)?;
+                self.finish_model_response(lease, &replay, &mut events, response, *step, &cancel)
+                    .await?;
             }
             ReplayRecovery::PermissionPending { tool_call, .. } => {
                 self.require_stable_tool_identity(&replay, tool_call)?;
@@ -746,14 +818,18 @@ impl ResumeEngine {
         tool_call_id: &str,
         result: ToolOutput,
     ) -> Result<ResumeStep, ResumeError> {
-        crate::resume::record_verified_tool_outcome(
+        let step = crate::resume::record_verified_tool_outcome(
             &self.sessions,
             &self.checkpoints,
             lease,
             tool_call_id,
             result,
             self.limits.max_tool_output_chars,
-        )
+        )?;
+        for event in &step.appended_events {
+            self.observe(event)?;
+        }
+        Ok(step)
     }
 
     pub fn discard_aborted_tool_batch(
@@ -761,7 +837,18 @@ impl ResumeEngine {
         lease: &NativeSessionLease,
         call_id: &str,
     ) -> Result<ResumeStep, ResumeError> {
-        discard_aborted_tool_batch(&self.sessions, &self.checkpoints, lease, call_id)
+        let step = discard_aborted_tool_batch(&self.sessions, &self.checkpoints, lease, call_id)?;
+        for event in &step.appended_events {
+            self.observe(event)?;
+        }
+        Ok(step)
+    }
+
+    fn observe(&self, event: &AgentEvent) -> Result<(), ResumeError> {
+        if let Some(observer) = &self.event_observer {
+            observer.on_persisted_event(event)?;
+        }
+        Ok(())
     }
 
     fn append(
@@ -780,7 +867,75 @@ impl ResumeEngine {
         let event = AgentEvent::new(lease.session_id(), sequence, kind);
         self.sessions.append_native_event(&event)?;
         events.push(event);
+        self.observe(events.last().expect("appended event"))
+    }
+
+    async fn append_stream_update(
+        &self,
+        lease: &NativeSessionLease,
+        base_sequence: u64,
+        events: &mut Vec<AgentEvent>,
+        kind: AgentEventKind,
+        cancel: &CancellationToken,
+    ) -> Result<(), ResumeError> {
+        let sequence = events
+            .last()
+            .map_or(base_sequence, |event| event.sequence)
+            .checked_add(1)
+            .ok_or(ResumeError::SequenceExhausted)?;
+        let event = AgentEvent::new(lease.session_id(), sequence, kind);
+        self.sessions.append_native_event(&event)?;
+        events.push(event);
+        if let Some(observer) = &self.event_observer {
+            observer
+                .on_persisted_stream_event(events.last().expect("appended stream update"), cancel)
+                .await?;
+        }
         Ok(())
+    }
+
+    async fn process_manual_commands(
+        &self,
+        lease: &NativeSessionLease,
+        cancel: &CancellationToken,
+    ) -> Result<(), ResumeError> {
+        if let Some(actor) = &self.manual_command_actor {
+            actor.process_pending(lease, cancel).await?;
+        }
+        Ok(())
+    }
+
+    async fn manual_command_notified(&self) {
+        match &self.manual_command_actor {
+            Some(actor) => actor.notified().await,
+            None => std::future::pending::<()>().await,
+        }
+    }
+
+    /// The store admission fence can lose a race to a newly queued intention.
+    /// Drain it and retry the same append, never the model or an external effect.
+    async fn append_manual_boundary(
+        &self,
+        lease: &NativeSessionLease,
+        base_sequence: u64,
+        events: &mut Vec<AgentEvent>,
+        kind: AgentEventKind,
+        cancel: &CancellationToken,
+    ) -> Result<(), ResumeError> {
+        loop {
+            self.process_manual_commands(lease, cancel).await?;
+            if cancel.is_cancelled() {
+                return Err(AgentError::Cancelled.into());
+            }
+            match self.append(lease, base_sequence, events, kind.clone()) {
+                Err(ResumeError::Store(StoreError::NativeCommandOperationAdmissionBlocked(_)))
+                    if self.manual_command_actor.is_some() =>
+                {
+                    tokio::task::yield_now().await
+                }
+                result => return result,
+            }
+        }
     }
 
     /// Commit queued user inputs only at a replay-safe model boundary. The
@@ -823,18 +978,21 @@ impl ResumeEngine {
             };
             messages.push(message);
             events.push(event);
+            self.observe(events.last().expect("committed steer event"))?;
         }
         Ok(messages)
     }
 
-    fn finish_model_response(
+    async fn finish_model_response(
         &self,
         lease: &NativeSessionLease,
         replay: &NativeReplay,
         events: &mut Vec<AgentEvent>,
         response: String,
         steps: usize,
+        cancel: &CancellationToken,
     ) -> Result<(), ResumeError> {
+        self.process_manual_commands(lease, cancel).await?;
         if !self.drain_pending_steers(lease, replay, events)?.is_empty() {
             return Ok(());
         }
@@ -852,12 +1010,14 @@ impl ResumeEngine {
                 Err(error) => return Err(error.into()),
             }
         }
-        self.append(
+        self.append_manual_boundary(
             lease,
             replay.last_sequence,
             events,
             AgentEventKind::TurnCompleted { response, steps },
+            cancel,
         )
+        .await
     }
 
     fn finish_step(
@@ -914,6 +1074,23 @@ impl ResumeEngine {
     ) -> Result<(), ResumeError> {
         if step == 0 || step > self.limits.max_model_steps {
             return Err(AgentError::Limit("recovery exceeded model step limit".into()).into());
+        }
+        let current_route = self
+            .native_runtime_identity
+            .as_ref()
+            .ok_or(ResumeError::ContextUnverified)?
+            .route_snapshot(
+                self.model.model_id(),
+                self.model
+                    .request_profile_fingerprint()
+                    .ok_or(ResumeError::ContextUnverified)?,
+            )?;
+        if replay
+            .active_model_route
+            .as_ref()
+            .is_some_and(|saved| saved != &current_route)
+        {
+            return Err(ResumeError::ModelRouteMismatch);
         }
         let turn = replay
             .active_turn
@@ -1003,8 +1180,8 @@ impl ResumeEngine {
             })
             .ok_or(ResumeError::StaleResolution)?;
         let scoped_context =
-            ProjectInstructionLedger::from_events(&record.events, turn_start_sequence, &workspace)?
-                .model_context();
+            ProjectInstructionLedger::from_session(&record, turn_start_sequence, &workspace)?
+                .and_then(|ledger| ledger.model_context());
         let system_instructions = replay
             .active_system_instructions
             .as_deref()
@@ -1064,11 +1241,31 @@ impl ResumeEngine {
                 },
             )?;
         }
+        let mut request_history = replay.history.clone();
+        if replay.active_model_route.is_none() && start_request && step == 1 && turn.last_step == 0
+        {
+            self.append(
+                lease,
+                replay.last_sequence,
+                events,
+                current_route.clone().into_event(),
+            )?;
+            // The first request may be recovered from an admission/context
+            // commit that preceded its route marker. `append` does not rebuild
+            // this borrowed replay, so reconcile the outgoing copy immediately
+            // after publishing the new route. Legacy in-flight retries keep
+            // their original payloads and never gain retrospective attribution.
+            openide_core::reconcile_model_history_route(
+                &mut request_history,
+                replay.history_model_route.as_ref(),
+                &current_route,
+            );
+        }
         let mut messages = vec![AgentMessage::system(system.clone())];
         if let Some(context) = scoped_context.clone() {
             messages.push(context);
         }
-        messages.extend(replay.history.iter().cloned());
+        messages.extend(request_history);
         if start_request {
             messages.extend(self.drain_pending_steers(lease, replay, events)?);
         }
@@ -1086,9 +1283,12 @@ impl ResumeEngine {
             if assessment.decision != TokenBudgetDecision::Continue {
                 let limit_message = format!(
                 "semantic compaction is required before recovery model request: projected {} tokens, threshold {}",
-                assessment.projected_total_tokens, assessment.auto_compact_threshold_tokens
+                if policy.context_window_tokens == 0 {
+                    assessment.projected_input_tokens.saturating_add(policy.tool_schema_reserve_tokens)
+                } else { assessment.projected_total_tokens }, assessment.auto_compact_threshold_tokens
             );
                 let budget = CheckpointBudgetSnapshot {
+                    input_limit_tokens: policy.input_limit_tokens,
                     context_window_tokens: policy.context_window_tokens,
                     estimated_input_tokens: assessment.estimated_input_tokens,
                     observed_input_tokens: record.events.iter().rev().find_map(|event| {
@@ -1142,6 +1342,7 @@ impl ResumeEngine {
                     .into());
                 }
                 events.push(committed.marker_event);
+                self.observe(events.last().expect("committed checkpoint marker"))?;
                 messages = vec![AgentMessage::system(system)];
                 if let Some(context) = scoped_context {
                     messages.push(context);
@@ -1168,7 +1369,7 @@ impl ResumeEngine {
             }
         }
         if start_request {
-            self.append(
+            self.append_manual_boundary(
                 lease,
                 replay.last_sequence,
                 events,
@@ -1176,23 +1377,69 @@ impl ResumeEngine {
                     step,
                     model: self.model.model_id().to_owned(),
                 },
-            )?;
+                &cancel,
+            )
+            .await?;
         }
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let future = self.model.stream_complete_detailed(
-            &messages,
-            catalog.definitions(),
-            cancel.clone(),
-            sender,
-        );
-        tokio::pin!(future);
-        let completion = loop {
-            tokio::select! {
-                _ = cancel.cancelled() => return Err(AgentError::Cancelled.into()),
-                result = &mut future => break result?,
-                Some(_) = receiver.recv() => {}
+        let (sender, mut receiver) = crate::model_event_channel(cancel.clone());
+        let mut pending_delivery = None;
+        let mut delivery_failed = false;
+        let completion_result = {
+            let future =
+                self.model
+                    .stream_events(&messages, catalog.definitions(), cancel.clone(), sender);
+            tokio::pin!(future);
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break Err(ResumeError::Agent(AgentError::Cancelled)),
+                    result = &mut future => break result.map_err(ResumeError::from),
+                    _ = self.manual_command_notified(), if self.manual_command_actor.is_some() => {
+                        let actor = self.manual_command_actor.as_ref().expect("notified actor exists");
+                        if let Err(error) = actor.process_pending(lease, &cancel).await {
+                            break Err(ResumeError::from(error));
+                        }
+                    }
+                    Some(update) = receiver.recv() => {
+                        if let Some(kind) = crate::runner::stream_update_kind(step, update) {
+                            let previous_len = events.len();
+                            if let Err(error) = self.append_stream_update(
+                                lease,
+                                replay.last_sequence,
+                                events,
+                                kind,
+                                &cancel,
+                            ).await {
+                                if matches!(&error, ResumeError::Agent(AgentError::Cancelled))
+                                    && events.len() > previous_len
+                                {
+                                    pending_delivery = events.last().cloned();
+                                } else {
+                                    delivery_failed = true;
+                                }
+                                break Err(error);
+                            }
+                        }
+                    }
+                }
             }
         };
+        // The backend future is now completed or dropped. Close the receiver
+        // so detached producers cannot extend this attempt, then preserve the
+        // prefix already accepted by the channel before exposing its error or
+        // cancellation. Partial text never becomes a model response commit.
+        receiver.close();
+        if let Some(event) = pending_delivery {
+            self.observe(&event)?;
+        }
+        if delivery_failed {
+            return completion_result.map(|_| ());
+        }
+        while let Ok(update) = receiver.try_recv() {
+            if let Some(kind) = crate::runner::stream_update_kind(step, update) {
+                self.append(lease, replay.last_sequence, events, kind)?;
+            }
+        }
+        let completion = completion_result?;
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled.into());
         }
@@ -1267,7 +1514,8 @@ impl ResumeEngine {
                     },
                 )?;
             }
-            self.finish_model_response(lease, replay, events, assistant.content, step)?;
+            self.finish_model_response(lease, replay, events, assistant.content, step, &cancel)
+                .await?;
         }
         Ok(())
     }
@@ -1324,9 +1572,12 @@ impl ResumeEngine {
                         | PermissionResolution::Cancelled
                 )
             ) {
-            ProjectInstructionLedger::from_events(&record.events, turn_start_sequence, &workspace)?
-                .preflight(&workspace, call, self.limits.max_tool_output_chars)
-                .unwrap_or_else(|error| Some(ToolOutput::error(error.to_string())))
+            ProjectInstructionLedger::from_session(&record, turn_start_sequence, &workspace)?
+                .and_then(|ledger| {
+                    ledger
+                        .preflight(&workspace, call, self.limits.max_tool_output_chars)
+                        .unwrap_or_else(|error| Some(ToolOutput::error(error.to_string())))
+                })
         } else {
             None
         };
@@ -1506,6 +1757,9 @@ impl ResumeEngine {
                 },
             )?;
         }
+        if let Some(media) = crate::tool_media::extract_tool_result_media(call, &result.content) {
+            self.append(lease, replay.last_sequence, events, media)?;
+        }
         let content = result
             .content
             .chars()
@@ -1536,16 +1790,18 @@ impl ResumeEngine {
         events: &mut Vec<AgentEvent>,
     ) -> Result<ToolOutput, ResumeError> {
         let mut contexts = Vec::new();
-        for config in self
+        // Same rewrite rule as the live runner's `execute_with_hooks`.
+        let mut rewritten = call.clone();
+        for (config, compat) in self
             .command_hooks
-            .for_call(HookPhase::PreToolUse, &call.name)
+            .tool_hooks(HookPhase::PreToolUse, &call.name)
         {
             let response = self
                 .run_one_hook(
                     lease,
                     replay,
                     config,
-                    call,
+                    &rewritten,
                     None,
                     context,
                     turn_start_sequence,
@@ -1561,14 +1817,30 @@ impl ResumeEngine {
                     response.reason.unwrap_or_default()
                 )));
             }
+            // A Claude Code hook answers in its own input shape; one that
+            // does not map back onto this tool is ignored.
+            let updated = response.updated_input.and_then(|arguments| {
+                if compat {
+                    crate::native_input(&call.name, &rewritten.arguments, &arguments)
+                } else {
+                    Some(arguments)
+                }
+            });
+            if let Some(arguments) = updated {
+                rewritten.arguments = arguments;
+                contexts.push(format!("Hook {} rewrote this call's input.", config.id));
+            }
             if let Some(text) = response.additional_context {
                 contexts.push(text);
             }
         }
-        let mut output = self.tools.execute(call, context).await?;
-        for config in self
+        let call = &rewritten;
+        let mut output = self
+            .execute_streaming_tool(lease, replay, call, context, events)
+            .await?;
+        for (config, _) in self
             .command_hooks
-            .for_call(HookPhase::PostToolUse, &call.name)
+            .tool_hooks(HookPhase::PostToolUse, &call.name)
         {
             let response = self
                 .run_one_hook(
@@ -1592,6 +1864,60 @@ impl ResumeEngine {
             output.content.push_str(&contexts.join("\n"));
         }
         Ok(output)
+    }
+
+    async fn execute_streaming_tool(
+        &self,
+        lease: &NativeSessionLease,
+        replay: &NativeReplay,
+        call: &ToolCall,
+        context: &ToolContext,
+        events: &mut Vec<AgentEvent>,
+    ) -> Result<ToolOutput, ResumeError> {
+        let (sender, mut receiver) =
+            crate::tool_output::tool_output_channel(context.cancel.clone());
+        let mut pending_delivery = None;
+        let mut delivery_failed = false;
+        let result = {
+            let future = self.tools.execute_streaming(call, context, sender);
+            tokio::pin!(future);
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = context.cancel.cancelled() => break Err(ResumeError::from(AgentError::Cancelled)),
+                    Some(chunk) = receiver.recv() => {
+                        let previous_len = events.len();
+                        if let Err(error) = self.append_stream_update(
+                            lease, replay.last_sequence, events, chunk.into_event(&call.id), &context.cancel,
+                        ).await {
+                            if matches!(&error, ResumeError::Agent(AgentError::Cancelled)) && events.len() > previous_len {
+                                pending_delivery = events.last().cloned();
+                            } else {
+                                delivery_failed = true;
+                            }
+                            break Err(error);
+                        }
+                    }
+                    result = &mut future => break result.map_err(ResumeError::from),
+                }
+            }
+        };
+        receiver.close();
+        if let Some(event) = pending_delivery {
+            self.observe(&event)?;
+        }
+        if delivery_failed {
+            return result;
+        }
+        while let Ok(chunk) = receiver.try_recv() {
+            self.append(
+                lease,
+                replay.last_sequence,
+                events,
+                chunk.into_event(&call.id),
+            )?;
+        }
+        result
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1641,8 +1967,36 @@ impl ResumeEngine {
                 |value| serde_json::json!({"content": value.content, "is_error": value.is_error}),
             ),
         };
-        match crate::run_command_hook(config, &invocation, &context.cancel).await {
-            HookRunResult::Completed { response, .. } => {
+        let result =
+            crate::hooks::run_tool_hook(&self.command_hooks, config, &invocation, &context.cancel)
+                .await;
+        let (partial_stdout, partial_stderr) = match &result {
+            HookRunResult::OutcomeUncertainCaptured { stdout, stderr, .. } => {
+                (Some(stdout.clone()), Some(stderr.clone()))
+            }
+            _ => (None, None),
+        };
+        match result {
+            HookRunResult::Completed {
+                response,
+                stdout,
+                stderr,
+            } => {
+                self.append(
+                    lease,
+                    replay.last_sequence,
+                    events,
+                    AgentEventKind::HookDiagnosticCommitted {
+                        tool_call_id: call.id.clone(),
+                        hook_id: config.id.clone(),
+                        phase: phase.into(),
+                        reason: response.reason.clone(),
+                        stdout: Some(stdout),
+                        stderr: Some(stderr),
+                        error: None,
+                    },
+                )?;
+
                 self.append(
                     lease,
                     replay.last_sequence,
@@ -1660,7 +2014,23 @@ impl ResumeEngine {
                 )?;
                 Ok(response)
             }
-            HookRunResult::NotStarted(failure) | HookRunResult::OutcomeUncertain(failure) => {
+            HookRunResult::NotStarted(failure)
+            | HookRunResult::OutcomeUncertain(failure)
+            | HookRunResult::OutcomeUncertainCaptured { failure, .. } => {
+                self.append(
+                    lease,
+                    replay.last_sequence,
+                    events,
+                    AgentEventKind::HookDiagnosticCommitted {
+                        tool_call_id: call.id.clone(),
+                        hook_id: config.id.clone(),
+                        phase: phase.into(),
+                        reason: None,
+                        stdout: partial_stdout,
+                        stderr: partial_stderr,
+                        error: Some(format!("{failure:?}").chars().take(2000).collect()),
+                    },
+                )?;
                 Err(AgentError::EffectUncertain(format!(
                     "hook {} has no committed outcome after tool start: {failure:?}",
                     config.id
@@ -1686,8 +2056,8 @@ impl ResumeEngine {
                 .definitions()
                 .iter()
                 .filter(|definition| {
-                    trusted_local_read(&definition.name)
-                        && self.tools.certifies_parallel_read(&definition.name)
+                    trusted_plan_read(&definition.name)
+                        && self.tools.certifies_plan_read(&definition.name)
                         && !self.command_hooks.has_hooks_for_tool(&definition.name)
                 })
                 .cloned(),
@@ -1823,6 +2193,7 @@ impl ResumeEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    include!("resume_tool_output_tests.rs");
     use crate::{ModelOutput, ToolDefinition};
     use async_trait::async_trait;
     use openide_core::AgentEventKind;
@@ -1838,6 +2209,7 @@ mod tests {
         seen_tools: Mutex<Vec<Vec<ToolDefinition>>>,
         interfere: Mutex<Option<(Arc<SessionStore>, String)>>,
         request_profile: Mutex<[u8; 32]>,
+        input_counts: Mutex<Vec<u64>>,
     }
 
     #[async_trait]
@@ -1856,7 +2228,12 @@ mod tests {
             _tools: &[ToolDefinition],
             _cancel: CancellationToken,
         ) -> Result<Option<u64>, AgentError> {
-            Ok(Some(100))
+            let mut counts = self.input_counts.lock().unwrap();
+            Ok(Some(if counts.is_empty() {
+                100
+            } else {
+                counts.remove(0)
+            }))
         }
 
         fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
@@ -1946,6 +2323,7 @@ mod tests {
                     seen_tools: Mutex::new(Vec::new()),
                     interfere: Mutex::new(None),
                     request_profile: Mutex::new([7; 32]),
+                    input_counts: Mutex::new(Vec::new()),
                 }),
                 tools: Arc::new(MockTools {
                     calls: Mutex::new(Vec::new()),
@@ -1990,6 +2368,40 @@ mod tests {
 
         fn started(&self) {
             self.started_with_hooks(&CommandHooks::default());
+        }
+
+        fn started_with_model_route(&self, request_started: bool) {
+            self.admit();
+            self.append(AgentEventKind::TurnStarted {
+                prompt: "Inspect the file".into(),
+            });
+            self.append(AgentEventKind::ToolCatalogCommitted {
+                digest: ToolCatalog::new([definition()]).unwrap().digest_hex(),
+            });
+            self.append(AgentEventKind::HooksCommitted {
+                version: HOOK_CONFIG_IDENTITY_VERSION,
+                digest: CommandHooks::default().digest_hex().unwrap(),
+            });
+            self.append(AgentEventKind::ModelContextCommitted {
+                version: MODEL_CONTEXT_VERSION,
+                digest: self.context_digest(),
+            });
+            self.append(
+                openide_core::ModelRouteSnapshot::new(
+                    "openai",
+                    "gpt-example",
+                    "https://test.example/v1",
+                    [7; 32],
+                )
+                .unwrap()
+                .into_event(),
+            );
+            if request_started {
+                self.append(AgentEventKind::ModelRequestStarted {
+                    step: 1,
+                    model: "gpt-example".into(),
+                });
+            }
         }
 
         fn started_with_hooks(&self, hooks: &CommandHooks) {
@@ -2239,6 +2651,7 @@ mod tests {
 
     fn budget() -> TokenBudgetPolicy {
         TokenBudgetPolicy {
+            input_limit_tokens: None,
             context_window_tokens: 128_000,
             output_reserve_tokens: 4_096,
             tool_schema_reserve_tokens: 1_024,
@@ -3340,6 +3753,344 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn model_route_snapshot_resume_rejects_changed_route_before_any_append_or_effect() {
+        struct OtherModel(Arc<MockModel>);
+        #[async_trait]
+        impl ModelBackend for OtherModel {
+            fn model_id(&self) -> &str {
+                "different-exact-model"
+            }
+            fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+                Some([7; 32])
+            }
+            async fn complete(
+                &self,
+                messages: &[AgentMessage],
+                tools: &[ToolDefinition],
+                cancel: CancellationToken,
+            ) -> Result<ModelOutput, AgentError> {
+                self.0.complete(messages, tools, cancel).await
+            }
+        }
+        for changed in ["provider", "endpoint", "profile", "model"] {
+            let fixture = Fixture::new(vec![done()]);
+            fixture.started_with_model_route(true);
+            let before = fixture.events();
+            let mut engine = match changed {
+                "provider" => fixture
+                    .engine(PermissionMode::Allow)
+                    .with_native_runtime_identity("different-provider", "https://test.example/v1"),
+                "endpoint" => fixture
+                    .engine(PermissionMode::Allow)
+                    .with_native_runtime_identity("openai", "https://different.example/v1"),
+                _ => fixture.engine(PermissionMode::Allow),
+            };
+            if changed == "profile" {
+                *fixture.model.request_profile.lock().unwrap() = [8; 32];
+            }
+            if changed == "model" {
+                engine.model = Arc::new(OtherModel(fixture.model.clone()));
+            }
+            let lease = fixture
+                .sessions
+                .try_acquire_native_lease(&fixture.session_id)
+                .unwrap();
+            let outcome = engine.resume_step(&lease, CancellationToken::new()).await;
+            if changed == "model" {
+                assert!(matches!(outcome, Err(ResumeError::ModelMismatch)));
+            } else {
+                assert!(
+                    matches!(outcome, Err(ResumeError::ModelRouteMismatch)),
+                    "{changed}: {outcome:?}"
+                );
+            }
+            assert_eq!(
+                fixture.events(),
+                before,
+                "changed route mutated recovery journal"
+            );
+            assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 0);
+            assert!(fixture.tools.calls.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn model_route_snapshot_crash_before_first_request_reopens_and_reuses_exact_route() {
+        let fixture = Fixture::new(vec![done()]);
+        fixture.started_with_model_route(false);
+        let before = fixture.events();
+        let reopened_sessions = Arc::new(SessionStore::open(fixture._dir.path()).unwrap());
+        let reopened_checkpoints = Arc::new(CheckpointFileStore::new(fixture._dir.path()).unwrap());
+        let engine = ResumeEngine::new(
+            reopened_sessions.clone(),
+            reopened_checkpoints,
+            compatibility(),
+            fixture.model.clone(),
+            fixture.tools.clone(),
+            ToolCatalog::new([definition()]).unwrap(),
+            PermissionPolicy::new().with_default_mode(PermissionMode::Allow),
+            budget(),
+        )
+        .with_native_runtime_identity("openai", "https://test.example/v1");
+        let lease = reopened_sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        assert_eq!(
+            engine.inspect(&lease).unwrap().active_model_route,
+            openide_core::ModelRouteSnapshot::from_event(&before.last().unwrap().kind)
+        );
+        let completed = engine
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(completed.disposition, ResumeDisposition::Complete);
+        assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 1);
+        let events = fixture.events();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::ModelRouteCommitted { .. }))
+                .count(),
+            1
+        );
+        assert!(completed.replay.active_model_route.is_none());
+        assert_eq!(&events[..before.len()], before.as_slice());
+    }
+
+    #[tokio::test]
+    async fn first_request_recovery_reconciles_prior_route_without_losing_text_or_tools() {
+        for changed_route in [false, true] {
+            for crash_after in ["admission", "context", "route"] {
+                let fixture = Fixture::new(vec![done()]);
+                let prior_model = if changed_route {
+                    "prior-model"
+                } else {
+                    "gpt-example"
+                };
+                let prior_provider = if changed_route {
+                    "prior-provider"
+                } else {
+                    "openai"
+                };
+                let prior_route = openide_core::ModelRouteSnapshot::new(
+                    prior_provider,
+                    prior_model,
+                    "https://test.example/v1",
+                    [7; 32],
+                )
+                .unwrap();
+                let prior_call = ToolCall {
+                    id: "prior-read".into(),
+                    name: "read_file".into(),
+                    arguments: json!({"path": "README.md"}),
+                };
+                let mut prior_assistant = AgentMessage::assistant(
+                    "Reading the project instructions",
+                    vec![prior_call.clone()],
+                );
+                prior_assistant.provider_output_items = vec![
+                    json!({"type": "reasoning", "encrypted_content": "opaque-prior-route-data"}),
+                    json!({"type": "function_call", "call_id": prior_call.id, "name": prior_call.name, "arguments": "{\"path\":\"README.md\"}"}),
+                ];
+                fixture
+                    .sessions
+                    .admit_native_turn(
+                        &fixture.session_id,
+                        "prior-turn",
+                        "Inspect the existing project",
+                        prior_model,
+                        TurnMode::Build,
+                    )
+                    .unwrap();
+                for event in [
+                    AgentEventKind::TurnStarted {
+                        prompt: "Inspect the existing project".into(),
+                    },
+                    AgentEventKind::ToolCatalogCommitted {
+                        digest: ToolCatalog::new([definition()]).unwrap().digest_hex(),
+                    },
+                    AgentEventKind::ModelContextCommitted {
+                        version: MODEL_CONTEXT_VERSION,
+                        digest: "a".repeat(64),
+                    },
+                    prior_route.into_event(),
+                    AgentEventKind::ModelRequestStarted {
+                        step: 1,
+                        model: prior_model.into(),
+                    },
+                    AgentEventKind::ModelResponseCommitted {
+                        step: 1,
+                        assistant: prior_assistant.clone(),
+                        response_id: Some("prior-response".into()),
+                        usage: None,
+                    },
+                    AgentEventKind::ToolStarted {
+                        tool_call: prior_call.clone(),
+                    },
+                    AgentEventKind::ToolFinished {
+                        tool_call_id: prior_call.id.clone(),
+                        output: "Retained README contents".into(),
+                        is_error: false,
+                    },
+                    AgentEventKind::ModelRequestStarted {
+                        step: 2,
+                        model: prior_model.into(),
+                    },
+                    AgentEventKind::ModelResponseCommitted {
+                        step: 2,
+                        assistant: AgentMessage::assistant(
+                            "Prior project review completed",
+                            vec![],
+                        ),
+                        response_id: None,
+                        usage: None,
+                    },
+                    AgentEventKind::TurnCompleted {
+                        response: "Prior project review completed".into(),
+                        steps: 2,
+                    },
+                ] {
+                    fixture.append(event);
+                }
+                fixture.admit();
+                if crash_after != "admission" {
+                    fixture.append(AgentEventKind::TurnStarted {
+                        prompt: "Inspect the file".into(),
+                    });
+                    fixture.append(AgentEventKind::ToolCatalogCommitted {
+                        digest: ToolCatalog::new([definition()]).unwrap().digest_hex(),
+                    });
+                    fixture.append(AgentEventKind::HooksCommitted {
+                        version: HOOK_CONFIG_IDENTITY_VERSION,
+                        digest: CommandHooks::default().digest_hex().unwrap(),
+                    });
+                    fixture.append(AgentEventKind::ModelContextCommitted {
+                        version: MODEL_CONTEXT_VERSION,
+                        digest: fixture.context_digest(),
+                    });
+                }
+                if crash_after == "route" {
+                    fixture.append(
+                        openide_core::ModelRouteSnapshot::new(
+                            "openai",
+                            "gpt-example",
+                            "https://test.example/v1",
+                            [7; 32],
+                        )
+                        .unwrap()
+                        .into_event(),
+                    );
+                }
+                let before = fixture.events();
+                let reopened = Arc::new(SessionStore::open(fixture._dir.path()).unwrap());
+                let engine = ResumeEngine::new(
+                    reopened.clone(),
+                    Arc::new(CheckpointFileStore::new(fixture._dir.path()).unwrap()),
+                    compatibility(),
+                    fixture.model.clone(),
+                    fixture.tools.clone(),
+                    ToolCatalog::new([definition()]).unwrap(),
+                    PermissionPolicy::new().with_default_mode(PermissionMode::Allow),
+                    budget(),
+                )
+                .with_native_runtime_identity("openai", "https://test.example/v1");
+                let lease = reopened
+                    .try_acquire_native_lease(&fixture.session_id)
+                    .unwrap();
+                let outcome = engine
+                    .run_until_pause(&lease, CancellationToken::new())
+                    .await
+                    .unwrap();
+                assert_eq!(outcome.disposition, ResumeDisposition::Complete);
+                assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 1);
+                assert!(
+                    fixture.tools.calls.lock().unwrap().is_empty(),
+                    "old reads must not run again"
+                );
+                let histories = fixture.model.seen_histories.lock().unwrap();
+                let messages = &histories[0];
+                let assistant = messages
+                    .iter()
+                    .find(|message| message.tool_calls == vec![prior_call.clone()])
+                    .expect("the exact tool call remains");
+                assert_eq!(assistant.content, prior_assistant.content);
+                assert_eq!(
+                    assistant.provider_output_items,
+                    if changed_route {
+                        Vec::new()
+                    } else {
+                        prior_assistant.provider_output_items.clone()
+                    },
+                    "changed={changed_route}, crash={crash_after}"
+                );
+                assert!(messages
+                    .iter()
+                    .any(
+                        |message| message.tool_call_id.as_deref() == Some("prior-read")
+                            && message.content == "Retained README contents"
+                    ));
+                for content in [
+                    "Inspect the existing project",
+                    "Prior project review completed",
+                    "Inspect the file",
+                ] {
+                    assert!(
+                        messages.iter().any(|message| message.content == content),
+                        "missing {content}, crash={crash_after}"
+                    );
+                }
+                let events = fixture.events();
+                assert_eq!(
+                    &events[..before.len()],
+                    before.as_slice(),
+                    "original journal remains immutable"
+                );
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| matches!(
+                            event.kind,
+                            AgentEventKind::ModelRouteCommitted { .. }
+                        ))
+                        .count(),
+                    2
+                );
+                let replayed = engine.inspect(&lease).unwrap();
+                let replayed_assistant = replayed
+                    .history
+                    .iter()
+                    .find(|message| message.tool_calls == vec![prior_call.clone()])
+                    .unwrap();
+                assert_eq!(
+                    replayed_assistant, assistant,
+                    "restart and the actual request agree"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn model_route_snapshot_legacy_retry_remains_without_retrospective_attribution() {
+        let fixture = Fixture::new(vec![done()]);
+        fixture.started();
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        let completed = fixture
+            .engine(PermissionMode::Allow)
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(completed.disposition, ResumeDisposition::Complete);
+        assert!(fixture
+            .events()
+            .iter()
+            .all(|event| !matches!(event.kind, AgentEventKind::ModelRouteCommitted { .. })));
+        assert!(completed.replay.active_model_route.is_none());
+    }
+
+    #[tokio::test]
     async fn legacy_model_flight_with_catalog_but_without_context_fails_closed() {
         let fixture = Fixture::new(vec![done()]);
         fixture.admit();
@@ -3631,6 +4382,12 @@ mod tests {
             tool_calls: vec![],
         };
         let fixture = Fixture::new(vec![summary, done()]);
+        // Count the three different requests explicitly: the original
+        // transcript crosses the configured threshold, the summary request
+        // fits its own hard budget, and the checkpoint-refilled request fits.
+        // The default 100-token fixture would never request compaction now
+        // that text requests also use the provider's counter.
+        *fixture.model.input_counts.lock().unwrap() = vec![4_000, 100, 100];
         fixture
             .sessions
             .admit_native_turn(
@@ -3731,6 +4488,7 @@ mod tests {
             .engine(PermissionMode::Allow)
             .with_system_instructions("Changed AGENTS.md");
         engine.budget_policy = Some(TokenBudgetPolicy {
+            input_limit_tokens: None,
             context_window_tokens: 8_000,
             output_reserve_tokens: 512,
             tool_schema_reserve_tokens: 128,
@@ -3746,6 +4504,7 @@ mod tests {
             .iter()
             .any(|event| matches!(event.kind, AgentEventKind::CheckpointCommitted { .. })));
         assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 2);
+        assert!(fixture.model.input_counts.lock().unwrap().is_empty());
         let seen = fixture.model.seen_histories.lock().unwrap();
         assert!(seen[1][0].content.contains(original_instructions));
         assert!(!seen[1][0].content.contains("Changed AGENTS.md"));
@@ -4398,5 +5157,347 @@ mod tests {
         assert_eq!(last.replay.history[3].tool_call_id.as_deref(), Some("b"));
         assert!(fixture.tools.calls.lock().unwrap().is_empty());
         assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[derive(Clone, Copy)]
+    enum StreamingTerminal {
+        Error,
+        Cancel,
+        Complete,
+    }
+
+    struct SamePollStreamingModel(StreamingTerminal);
+
+    #[async_trait]
+    impl ModelBackend for SamePollStreamingModel {
+        fn model_id(&self) -> &str {
+            "gpt-example"
+        }
+
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            panic!("recovery must use the streaming backend")
+        }
+
+        async fn stream_events(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            cancel: CancellationToken,
+            events: crate::ModelEventSender,
+        ) -> Result<crate::ModelCompletion, AgentError> {
+            // Both deltas and the terminal result become ready in one future
+            // poll. This reproduces the receiver/result select race without
+            // sleeps, provider timing, or a test-only engine path.
+            // The typed sender must accept each event before cancellation;
+            // writing into a legacy adapter's private queue is not acceptance.
+            for content in ["accepted ñ🙂 ", "", "prefix 終わり"] {
+                events
+                    .send(openide_core::ModelStreamEvent::TextDelta {
+                        content: content.into(),
+                    })
+                    .await
+                    .unwrap();
+            }
+            match self.0 {
+                StreamingTerminal::Error => Err(AgentError::Model("same-poll failure".into())),
+                StreamingTerminal::Cancel => {
+                    cancel.cancel();
+                    Ok(ModelOutput {
+                        content: "accepted ñ🙂 prefix 終わり".into(),
+                        tool_calls: Vec::new(),
+                    }
+                    .into())
+                }
+                StreamingTerminal::Complete => Ok(ModelOutput {
+                    content: "accepted ñ🙂 prefix 終わり".into(),
+                    tool_calls: Vec::new(),
+                }
+                .into()),
+            }
+        }
+    }
+
+    struct JournalCheckingObserver {
+        sessions: Arc<SessionStore>,
+        seen: Mutex<Vec<AgentEvent>>,
+        fail_on_first: bool,
+        fail_on_response: bool,
+        replace_journal: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    }
+
+    impl ResumeEventObserver for JournalCheckingObserver {
+        fn on_persisted_event(&self, event: &AgentEvent) -> Result<(), AgentError> {
+            let record = self.sessions.load(&event.session_id).unwrap().unwrap();
+            assert_eq!(record.events.last(), Some(event));
+            let mut seen = self.seen.lock().unwrap();
+            seen.push(event.clone());
+            if self.fail_on_response
+                && matches!(event.kind, AgentEventKind::ModelResponseCommitted { .. })
+            {
+                return Err(AgentError::Runtime(
+                    "observer cut after response commit".into(),
+                ));
+            }
+            if seen.len() == 1 {
+                if let Some((journal, backup)) = &self.replace_journal {
+                    std::fs::rename(journal, backup).unwrap();
+                    std::fs::create_dir(journal).unwrap();
+                }
+                if self.fail_on_first {
+                    return Err(AgentError::Runtime("observer unavailable".into()));
+                }
+            }
+            Ok(())
+        }
+    }
+
+    async fn assert_same_poll_partial_survives(terminal: StreamingTerminal) {
+        let fixture = Fixture::new(vec![]);
+        fixture.started_with_model_route(true);
+        let prefix = fixture.events();
+        let observer = Arc::new(JournalCheckingObserver {
+            sessions: fixture.sessions.clone(),
+            seen: Mutex::new(Vec::new()),
+            fail_on_first: false,
+            fail_on_response: false,
+            replace_journal: None,
+        });
+        let mut engine = fixture
+            .engine(PermissionMode::Allow)
+            .with_event_observer(observer.clone());
+        engine.model = Arc::new(SamePollStreamingModel(terminal));
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        let result = engine.resume_step(&lease, CancellationToken::new()).await;
+        match terminal {
+            StreamingTerminal::Error => assert!(matches!(
+                result,
+                Err(ResumeError::Agent(AgentError::Model(message))) if message == "same-poll failure"
+            )),
+            StreamingTerminal::Cancel => assert!(matches!(
+                result,
+                Err(ResumeError::Agent(AgentError::Cancelled))
+            )),
+            StreamingTerminal::Complete => unreachable!(),
+        }
+        let saved = fixture.events();
+        assert_eq!(&saved[..prefix.len()], &prefix);
+        assert_eq!(saved.len(), prefix.len() + 2);
+        assert_eq!(
+            *observer.seen.lock().unwrap(),
+            saved[prefix.len()..],
+            "Accepted text is observed only after append and in exact order"
+        );
+        assert!(saved[prefix.len()..]
+            .iter()
+            .all(|event| matches!(event.kind, AgentEventKind::AssistantDelta { .. })));
+        assert!(fixture.tools.calls.lock().unwrap().is_empty());
+        drop(lease);
+        let reopened = SessionStore::open(fixture._dir.path()).unwrap();
+        let checkpoints = CheckpointFileStore::new(fixture._dir.path()).unwrap();
+        let record = reopened.load(&fixture.session_id).unwrap().unwrap();
+        assert_eq!(record.events, saved);
+        let replay = replay_native(
+            &fixture.session_id,
+            &record.events,
+            Some(&checkpoints),
+            &compatibility(),
+        )
+        .unwrap();
+        assert!(matches!(
+            replay.recovery,
+            ReplayRecovery::ModelInFlight { step: 1, .. }
+        ));
+        assert!(!replay
+            .history
+            .iter()
+            .any(|message| message.content.contains("accepted ñ🙂")));
+        assert_eq!(*observer.seen.lock().unwrap(), saved[prefix.len()..]);
+    }
+
+    #[tokio::test]
+    async fn recovery_streaming_same_poll_error_preserves_all_accepted_deltas_on_reopen() {
+        assert_same_poll_partial_survives(StreamingTerminal::Error).await;
+    }
+
+    #[tokio::test]
+    async fn recovery_streaming_same_poll_cancel_preserves_all_accepted_deltas_on_reopen() {
+        assert_same_poll_partial_survives(StreamingTerminal::Cancel).await;
+    }
+
+    #[tokio::test]
+    async fn recovery_streaming_observer_failure_stops_at_recoverable_saved_prefix() {
+        let fixture = Fixture::new(vec![]);
+        fixture.started_with_model_route(true);
+        let prefix = fixture.events();
+        let observer = Arc::new(JournalCheckingObserver {
+            sessions: fixture.sessions.clone(),
+            seen: Mutex::new(Vec::new()),
+            fail_on_first: true,
+            fail_on_response: false,
+            replace_journal: None,
+        });
+        let mut engine = fixture
+            .engine(PermissionMode::Allow)
+            .with_event_observer(observer.clone());
+        engine.model = Arc::new(SamePollStreamingModel(StreamingTerminal::Complete));
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        assert!(matches!(
+            engine.resume_step(&lease, CancellationToken::new()).await,
+            Err(ResumeError::Agent(AgentError::Runtime(message))) if message == "observer unavailable"
+        ));
+        assert_eq!(fixture.events().len(), prefix.len() + 1);
+        assert_eq!(observer.seen.lock().unwrap().len(), 1);
+        assert!(matches!(
+            engine.inspect(&lease).unwrap().recovery,
+            ReplayRecovery::ModelInFlight { step: 1, .. }
+        ));
+        assert!(fixture.tools.calls.lock().unwrap().is_empty());
+        drop(lease);
+        assert_eq!(
+            SessionStore::open(fixture._dir.path())
+                .unwrap()
+                .load(&fixture.session_id)
+                .unwrap()
+                .unwrap()
+                .events,
+            fixture.events()
+        );
+    }
+
+    #[tokio::test]
+    async fn recovery_streaming_failed_append_never_notifies_or_commits_phantom_output() {
+        let fixture = Fixture::new(vec![]);
+        fixture.started_with_model_route(true);
+        let prefix = fixture.events();
+        let journal = fixture
+            ._dir
+            .path()
+            .join(format!("{}.jsonl", fixture.session_id));
+        let backup = fixture._dir.path().join("saved-prefix.backup");
+        let observer = Arc::new(JournalCheckingObserver {
+            sessions: fixture.sessions.clone(),
+            seen: Mutex::new(Vec::new()),
+            fail_on_first: false,
+            fail_on_response: false,
+            replace_journal: Some((journal.clone(), backup.clone())),
+        });
+        let mut engine = fixture
+            .engine(PermissionMode::Allow)
+            .with_event_observer(observer.clone());
+        engine.model = Arc::new(SamePollStreamingModel(StreamingTerminal::Complete));
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        let result = engine.resume_step(&lease, CancellationToken::new()).await;
+        std::fs::remove_dir(&journal).unwrap();
+        std::fs::rename(&backup, &journal).unwrap();
+        assert!(matches!(result, Err(ResumeError::Store(_))));
+        assert_eq!(observer.seen.lock().unwrap().len(), 1);
+        drop(lease);
+        let reopened = SessionStore::open(fixture._dir.path()).unwrap();
+        let record = reopened.load(&fixture.session_id).unwrap().unwrap();
+        assert_eq!(record.events.len(), prefix.len() + 1);
+        assert_eq!(&record.events[..prefix.len()], &prefix);
+        assert_eq!(
+            &record.events[prefix.len()..],
+            &*observer.seen.lock().unwrap()
+        );
+        assert!(matches!(
+            replay_native(
+                &fixture.session_id,
+                &record.events,
+                Some(&fixture.checkpoints),
+                &compatibility()
+            )
+            .unwrap()
+            .recovery,
+            ReplayRecovery::ModelInFlight { step: 1, .. }
+        ));
+        assert!(fixture.tools.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn recovery_streaming_cut_after_response_commit_reopens_and_finishes_without_model_retry()
+    {
+        let fixture = Fixture::new(vec![]);
+        fixture.started_with_model_route(true);
+        let initial = fixture.events();
+        let observer = Arc::new(JournalCheckingObserver {
+            sessions: fixture.sessions.clone(),
+            seen: Mutex::new(Vec::new()),
+            fail_on_first: false,
+            fail_on_response: true,
+            replace_journal: None,
+        });
+        let mut engine = fixture
+            .engine(PermissionMode::Allow)
+            .with_event_observer(observer.clone());
+        engine.model = Arc::new(SamePollStreamingModel(StreamingTerminal::Complete));
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        assert!(
+            matches!(engine.resume_step(&lease,CancellationToken::new()).await,Err(ResumeError::Agent(AgentError::Runtime(message))) if message=="observer cut after response commit")
+        );
+        let saved = fixture.events();
+        assert_eq!(saved.len(), initial.len() + 3);
+        assert!(matches!(
+            saved.last().unwrap().kind,
+            AgentEventKind::ModelResponseCommitted { step: 1, .. }
+        ));
+        assert_eq!(*observer.seen.lock().unwrap(), saved[initial.len()..]);
+        assert!(!saved[initial.len()..].iter().any(|event| matches!(
+            event.kind,
+            AgentEventKind::AssistantMessage { .. } | AgentEventKind::TurnCompleted { .. }
+        )));
+        drop(lease);
+        let reopened = Arc::new(SessionStore::open(fixture._dir.path()).unwrap());
+        let mut recovery = fixture.engine(PermissionMode::Allow);
+        recovery.sessions = reopened.clone();
+        recovery.checkpoints = Arc::new(CheckpointFileStore::new(fixture._dir.path()).unwrap());
+        let lease = reopened
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        assert!(matches!(
+            recovery.inspect(&lease).unwrap().recovery,
+            ReplayRecovery::ResponseCommitted { step: 1 }
+        ));
+        let step = recovery
+            .resume_step(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(step.disposition, ResumeDisposition::Complete);
+        assert_eq!(step.appended_events.len(), 2);
+        assert!(
+            matches!(&step.appended_events[0].kind,AgentEventKind::AssistantMessage { content } if content=="accepted ñ🙂 prefix 終わり")
+        );
+        assert!(
+            matches!(&step.appended_events[1].kind,AgentEventKind::TurnCompleted { response,steps:1 } if response=="accepted ñ🙂 prefix 終わり")
+        );
+        let finished = reopened.load(&fixture.session_id).unwrap().unwrap().events;
+        assert_eq!(&finished[..saved.len()], &saved);
+        assert_eq!(
+            fixture.model.calls.load(Ordering::SeqCst),
+            0,
+            "Confirmed response recovery must not contact the model again"
+        );
+        assert!(fixture.tools.calls.lock().unwrap().is_empty());
     }
 }

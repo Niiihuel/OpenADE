@@ -1,0 +1,151 @@
+{
+  "retrieved": "2026-10-06",
+  "svgl": {
+    "repository": "https://github.com/pheralb/svgl",
+    "revision": "f9b726cee1d1f3c697a18c880185e89d9a55bb70",
+    "license": "MIT",
+    "license_file": "svgl/LICENSE",
+    "api": "https://svgl.app/docs/api"
+  },
+  "lobe": {
+    "package": "@lobehub/icons-static-svg",
+    "version": "1.95.1",
+    "license": "MIT",
+    "license_file": "lobe/LICENSE",
+    "tarball": "https://registry.npmjs.org/@lobehub/icons-static-svg/-/icons-static-svg-1.95.1.tgz",
+    "integrity": "sha512-Hw7EPPgVnC4NZLXBfTNJG6hyQgqECfUPC11VVXodPSr1aebKcFxDZlSpxhWwYNdCc6bhxps/x5TtXoPmfKH2ag==",
+    "license_url": "https://raw.githubusercontent.com/lobehub/lobe-icons/c385b2b8d1f9e19aa86e628d4e23c91ee1111a47/LICENSE"
+  },
+  "assets": [
+    {
+      "provider": "codex",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/codex_dark.svg",
+      "original": "svgl/codex_dark.svg",
+      "embedded": "icons/codex.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet.",
+      "original_sha256": "1b156eb915f7e74443f3fc491334f1896b6650e8fb597e2f2cb71c0ff7dd1cb0",
+      "embedded_sha256": "fb4c637c09c427bc218cdd965c954d4c8c16a3d88295a26d5d072972969fab52"
+    },
+    {
+      "provider": "openai",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/openai_dark.svg",
+      "original": "svgl/openai_dark.svg",
+      "embedded": "icons/openai.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet. Cropped empty source margins to exact cubic path bounds with 1.5% optical padding per side; original path unchanged.",
+      "original_sha256": "4dac62f014aac76e15be7d681776cda434ce540beaa22410e9f7a87806a91f5a",
+      "embedded_sha256": "d13231cb612f39b5922ece5d099f07d5faa3514c3d87c6925602cc1acb8a8a6e"
+    },
+    {
+      "provider": "openrouter",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/openrouter_dark.svg",
+      "original": "svgl/openrouter_dark.svg",
+      "embedded": "icons/openrouter.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet. Removed the upstream dangling clip-path reference #clip0_205_3 (no corresponding clipPath exists); all four original paths preserved.",
+      "original_sha256": "d05021526e72fddf3426eabc066924aca83da0cd66a699a3de3bac58ed2fe0a2",
+      "embedded_sha256": "dcfd1c64868d92e8f61e940215716d7c46e60876ff9bbcb66bde2eba5801c22a"
+    },
+    {
+      "provider": "deepseek",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/deepseek.svg",
+      "original": "svgl/deepseek.svg",
+      "embedded": "icons/deepseek.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet.",
+      "original_sha256": "360336e87a3336f60b7d2432ecdea2982537806886e20b170163fd5d3dda825b",
+      "embedded_sha256": "319d5700a3fb77dc473d51a81bd193bef238083499a7dc1017ec2e98ea4b4073"
+    },
+    {
+      "provider": "nvidia",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/nvidia-icon-dark.svg",
+      "original": "svgl/nvidia-icon-dark.svg",
+      "embedded": "icons/nvidia.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet.",
+      "original_sha256": "c0ba24515aa21f07119e15914abbde64dd17b42fd95518a15df208a615c3810e",
+      "embedded_sha256": "07cfd988828a9136ecf0c5e650bc153d68aa192b5b5b892b843e6ded39c75438"
+    },
+    {
+      "provider": "opencode",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/opencode-dark.svg",
+      "original": "svgl/opencode-dark.svg",
+      "embedded": "icons/opencode.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet. Removed the dark square background and unused wrapper/CSS; cropped viewBox to the original mark; inner gray path represented by 0.35 opacity.",
+      "original_sha256": "e29bbe33380ad1c1ada9134b52f229d30e9776d60481512c9d81f2bb6f37def9",
+      "embedded_sha256": "486a05009ab13ab4763e05abfc7a9454e9c9a13c2280f09ea56ccd9b314dcceb"
+    },
+    {
+      "provider": "minimax",
+      "source": "Lobe Icons (not SVGL)",
+      "url": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/minimax.svg",
+      "original": "lobe/minimax.svg",
+      "embedded": "icons/minimax.svg",
+      "adaptation": "Removed CSS and em dimensions; original paths/viewBox/currentColor retained.",
+      "original_sha256": "bb96e2005081494716de6af5fd030701ae551ee68393ad61b325c07325607848",
+      "embedded_sha256": "0356964d7edf2e285a7564b0f7a741f52337a4bf64fe129ae64c64923379289e"
+    },
+    {
+      "provider": "zai",
+      "source": "Lobe Icons (not SVGL)",
+      "url": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/zai.svg",
+      "original": "lobe/zai.svg",
+      "embedded": "icons/zai.svg",
+      "adaptation": "Removed CSS and em dimensions; original paths/viewBox/currentColor retained. Official brand shape cross-checked with https://z-cdn.chatglm.cn/z-ai/static/logo.svg, not redistributed.",
+      "original_sha256": "e748cb5108ce37b116d7a5ba97d37e0ae97eadf6849b0de11afb248e244a01e1",
+      "embedded_sha256": "d0ff8657196c4113a97ed64f245e638712821de2b17f77fd04ab164a35ea5ded"
+    },
+    {
+      "provider": "anthropic",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/anthropic_white.svg",
+      "original": "svgl/anthropic_white.svg",
+      "embedded": "icons/anthropic.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet.",
+      "original_sha256": "7fea3100bfc2a9480e181fc615d4791cab014f54674b83953785abb86dc293f0",
+      "embedded_sha256": "9ebfe982fda1620ebaee7378400f7632d7b33d8c61d1847e0706426a253f687a"
+    },
+    {
+      "provider": "groq",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/groq.svg",
+      "original": "svgl/groq.svg",
+      "embedded": "icons/groq.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet. Removed the orange app tile and cropped to exact cubic extrema of the unchanged mark path.",
+      "original_sha256": "f8b4420340ff8875a1f04ce80909325dd81b0cb78d0c7a15fd567977338ae956",
+      "embedded_sha256": "cddce4d9e8b4e064a84ee8c3f1f76b84983e5bb773d31c234aeb0ca4b7216189"
+    },
+    {
+      "provider": "mistral",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/mistral-ai_logo.svg",
+      "original": "svgl/mistral-ai_logo.svg",
+      "embedded": "icons/mistral.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet. Original black shadow paths use 0.35 opacity; colored foreground paths use full native tint.",
+      "original_sha256": "792480de7c64c395ad438cfe0dd668cf7577961a8e653512ea6a45591a2f488e",
+      "embedded_sha256": "33884dc3c629935e2122553e289e43672c6a75f948f99cdcfff7eb4beb0c844a"
+    },
+    {
+      "provider": "xai",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/xai_dark.svg",
+      "original": "svgl/xai_dark.svg",
+      "embedded": "icons/xai.svg",
+      "adaptation": "Native theme tint via currentColor; numeric intrinsic dimensions; preserveAspectRatio meet. Removed empty source margins by changing viewBox to original path bounds; path unchanged.",
+      "original_sha256": "aa41806e679c972053a12fd33d0165daef4ce60be572976cce0e9026bcd47158",
+      "embedded_sha256": "38c449a1ca14abd234d030f3d39867a447dcccf34af6c039719888c281033f54"
+    },
+    {
+      "provider": "claude",
+      "source": "SVGL",
+      "url": "https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/claude-ai-icon.svg",
+      "original": "svgl/claude-ai-icon.svg",
+      "embedded": "icons/claude.svg",
+      "adaptation": "Native theme tint via currentColor; preserveAspectRatio meet.",
+      "original_sha256": "0df6dad23995f5a76c6db8cc2a4e646ff45bd7a0626ef98662a7025646e5eea1",
+      "embedded_sha256": "7900134c70cc3f49e997bede452a3612eb1ec33b5a923d2d4ea8725d3c17f1e0"
+    }
+  ]
+}

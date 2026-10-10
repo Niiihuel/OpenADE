@@ -22,6 +22,12 @@ pub(crate) fn trusted_local_read(name: &str) -> bool {
     matches!(name, "read_file" | "list_files" | "search_files")
 }
 
+/// Plan permits independently certified local reads without implying that
+/// they may overlap. Goal ledger reads remain serial.
+pub(crate) fn trusted_plan_read(name: &str) -> bool {
+    trusted_local_read(name) || name == "get_goal"
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ToolEffect {
     ReadOnly,

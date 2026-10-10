@@ -38,6 +38,9 @@ pub struct RetainedUserMessage {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckpointBudgetSnapshot {
+    /// Independent maximum input; omitted to preserve legacy checkpoint digests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_limit_tokens: Option<u64>,
     pub context_window_tokens: u64,
     pub estimated_input_tokens: u64,
     pub observed_input_tokens: Option<u64>,
@@ -57,6 +60,7 @@ fn is_false(value: &bool) -> bool {
 impl CheckpointBudgetSnapshot {
     pub fn unverified(estimated_input_tokens: u64, observed_input_tokens: Option<u64>) -> Self {
         Self {
+            input_limit_tokens: None,
             context_window_tokens: 0,
             estimated_input_tokens,
             observed_input_tokens,
@@ -326,13 +330,19 @@ fn validate_checkpoint(checkpoint: &Checkpoint) -> Result<(), CheckpointError> {
     }
     if checkpoint.budget.limits_unverified {
         if checkpoint.budget.context_window_tokens != 0
+            || checkpoint.budget.input_limit_tokens.is_some()
             || checkpoint.budget.output_reserve_tokens != 0
             || checkpoint.budget.tool_schema_reserve_tokens != 0
         {
             return Err(CheckpointError::InvalidField("unverified budget limits"));
         }
     } else {
-        if checkpoint.budget.context_window_tokens == 0 {
+        if checkpoint.budget.input_limit_tokens == Some(0) {
+            return Err(CheckpointError::InvalidField("input_limit_tokens"));
+        }
+        if checkpoint.budget.context_window_tokens == 0
+            && checkpoint.budget.input_limit_tokens.is_none()
+        {
             return Err(CheckpointError::InvalidField("context_window_tokens"));
         }
         if checkpoint.budget.output_reserve_tokens == 0 {
@@ -423,6 +433,7 @@ mod tests {
                 },
             ],
             budget: CheckpointBudgetSnapshot {
+                input_limit_tokens: None,
                 context_window_tokens: 128_000,
                 estimated_input_tokens: 93_000,
                 observed_input_tokens: Some(24_000),
@@ -431,6 +442,31 @@ mod tests {
                 limits_unverified: false,
             },
         }
+    }
+
+    #[test]
+    fn independent_input_limit_persists_without_inventing_a_context_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut checkpoint = sample("input-limit");
+        checkpoint.budget.context_window_tokens = 0;
+        checkpoint.budget.input_limit_tokens = Some(2_000);
+        checkpoint.budget.output_reserve_tokens = 4_096;
+        let store = CheckpointFileStore::new(dir.path()).unwrap();
+        let reference = store.write_candidate(&checkpoint).unwrap();
+        drop(store);
+        let reopened = CheckpointFileStore::new(dir.path()).unwrap();
+        assert_eq!(
+            reopened.load_after_commit(Some(&reference)).unwrap(),
+            Some(checkpoint.clone())
+        );
+        checkpoint.checkpoint_id = "bad-zero-input".into();
+        checkpoint.budget.input_limit_tokens = Some(0);
+        assert!(reopened.write_candidate(&checkpoint).is_err());
+        checkpoint.budget.input_limit_tokens = None;
+        assert!(reopened.write_candidate(&checkpoint).is_err());
+        checkpoint.budget = CheckpointBudgetSnapshot::unverified(100, None);
+        checkpoint.budget.input_limit_tokens = Some(2_000);
+        assert!(reopened.write_candidate(&checkpoint).is_err());
     }
 
     #[test]

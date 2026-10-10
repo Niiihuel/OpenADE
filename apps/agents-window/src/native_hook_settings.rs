@@ -134,6 +134,30 @@ impl NativeHookSettings {
             .map_err(|error| format!("Configuración de hooks no válida: {error}"))
     }
 
+    /// The registry a run uses: the native hooks plus the Claude Code hooks
+    /// the user enabled, if they still exist unchanged in their source file.
+    /// A hook that cannot be validated fails the run rather than being skipped,
+    /// because the user may rely on it to block something.
+    pub fn registry_for(
+        &self,
+        root: &Path,
+        workspace: &Path,
+        source: Option<&Path>,
+    ) -> Result<CommandHooks, String> {
+        let registry = self.registry()?;
+        let enabled = crate::compat_hook_settings::CompatHookSettings::load(root)?;
+        // Nothing enabled means another tool's settings are not even read.
+        let Some(source) = source.filter(|_| !enabled.is_empty()) else {
+            return Ok(registry);
+        };
+        let discovered = crate::compat_hook_settings::discover(source)?;
+        registry
+            .with_compat(enabled.configs(&discovered, workspace))
+            .map_err(|error| {
+                format!("Hook de Claude Code no válido ({error}); desactivalo en Ajustes → Hooks")
+            })
+    }
+
     pub fn save(&self, root: &Path) -> Result<(), String> {
         self.registry()?;
         let bytes = serde_json::to_vec_pretty(&Document {

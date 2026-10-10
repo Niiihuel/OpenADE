@@ -59,6 +59,24 @@ If OAuth refresh fails or the grant changes before dispatch, the call stops
 before the POST. A successfully refreshed access/refresh token pair retains
 the grant revision, while a changed scope set invalidates the recovery digest.
 
+The explicit Settings inspector reuses this authorization flow with an
+observing `TokenStore` wrapper. It delegates every storage operation to the
+existing store and collects access and refresh token values only in bounded
+memory (256 distinct values, at most 8 MiB) for report sanitization. Tokens
+loaded, saved, refreshed or observed while closing the connection are checked
+before publishing metadata or its hash. A report containing an observed
+credential is rejected; diagnostics redact those values. Exceeding the
+observer limit suppresses both metadata and raw diagnostics. This wrapper
+adds no token persistence and changes no grant or refresh authority.
+
+`oauth_store_observer_preserves_refresh_cas_and_checks_new_tokens_before_report_hash`
+uses the real `MemoryTokenStore` to verify refresh compare-and-swap, grant
+revision preservation, stale-write rejection and credential collection across
+a simulated closing boundary. It does not exercise an OAuth HTTP refresh,
+browser authorization or Windows Credential Manager. Desktop HTTPS endpoint
+requirements remain enforced; the harness's test-only loopback exception is
+not enabled when that harness is a dependency of the desktop tests.
+
 Remaining work:
 
 - A credential-store implementation for other supported operating systems.

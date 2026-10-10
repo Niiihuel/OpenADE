@@ -5,6 +5,8 @@
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 
+// The event contract is shared; only the Windows SAPI worker produces it.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum VoiceEvent {
     Listening,

@@ -14,7 +14,7 @@ use openide_harness::{
 use serde::{Deserialize, Serialize};
 
 const SETTINGS_FILE: &str = "agent-tool-settings.json";
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
 static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -30,6 +30,7 @@ pub const ALL_TOOLS: [LocalTool; 5] = [
 pub struct AgentToolSettings {
     permissions: ToolPermissions,
     command_isolation: CommandIsolation,
+    full_access: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -39,6 +40,8 @@ struct Document {
     permissions: ToolPermissions,
     #[serde(default)]
     command_isolation: Option<CommandIsolation>,
+    #[serde(default)]
+    full_access: bool,
 }
 
 impl Default for AgentToolSettings {
@@ -50,6 +53,7 @@ impl Default for AgentToolSettings {
             } else {
                 CommandIsolation::HostUnrestricted
             },
+            full_access: false,
         }
     }
 }
@@ -87,7 +91,7 @@ impl AgentToolSettings {
             .map_err(|error| format!("Los permisos del agente no son válidos: {error}"))?;
         let command_isolation = match (document.version, document.command_isolation) {
             (1, None) => Self::default().command_isolation,
-            (VERSION, Some(isolation)) => isolation,
+            (2 | VERSION, Some(isolation)) => isolation,
             _ => {
                 return Err(format!(
                     "Versión o aislamiento de permisos del agente no compatible: {}",
@@ -95,9 +99,22 @@ impl AgentToolSettings {
                 ));
             }
         };
+        if document.full_access
+            && (document.version != VERSION
+                || command_isolation != CommandIsolation::HostUnrestricted
+                || ALL_TOOLS
+                    .iter()
+                    .any(|tool| !document.permissions.allows(*tool)))
+        {
+            return Err(
+                "El acceso completo requiere herramientas habilitadas y comandos sin aislamiento"
+                    .into(),
+            );
+        }
         Ok(Self {
             permissions: document.permissions,
             command_isolation,
+            full_access: document.full_access,
         })
     }
 
@@ -108,6 +125,7 @@ impl AgentToolSettings {
             version: VERSION,
             permissions: self.permissions,
             command_isolation: Some(self.command_isolation),
+            full_access: self.full_access,
         })
         .map_err(|error| format!("No se pudieron codificar los permisos del agente: {error}"))?;
         let temporary = root.join(format!(
@@ -139,8 +157,26 @@ impl AgentToolSettings {
         self.command_isolation
     }
 
+    pub fn full_access(&self) -> bool {
+        self.full_access
+    }
+
+    /// The host calls this only after the user confirms the full-access dialog.
+    pub fn set_full_access(&mut self, enabled: bool) {
+        self.full_access = enabled;
+        if enabled {
+            for tool in ALL_TOOLS {
+                self.permissions.set(tool, true);
+            }
+            self.command_isolation = CommandIsolation::HostUnrestricted;
+        }
+    }
+
     pub fn set_command_isolation(&mut self, isolation: CommandIsolation) {
         self.command_isolation = isolation;
+        if isolation != CommandIsolation::HostUnrestricted {
+            self.full_access = false;
+        }
     }
 
     pub fn enabled(&self, tool: LocalTool) -> bool {
@@ -149,6 +185,9 @@ impl AgentToolSettings {
 
     pub fn set(&mut self, tool: LocalTool, enabled: bool) {
         self.permissions.set(tool, enabled);
+        if !enabled {
+            self.full_access = false;
+        }
     }
 
     pub fn toggle(&mut self, tool: LocalTool) -> bool {
@@ -158,9 +197,12 @@ impl AgentToolSettings {
     }
 
     pub fn mode_for(&self, tool: LocalTool) -> PermissionMode {
-        if !self.enabled(tool) {
+        if !self.enabled(tool)
+            || tool == LocalTool::RunCommand && !self.command_isolation.is_available_on_host()
+        {
             PermissionMode::Deny
-        } else if matches!(tool, LocalTool::WriteFile | LocalTool::RunCommand) {
+        } else if matches!(tool, LocalTool::WriteFile | LocalTool::RunCommand) && !self.full_access
+        {
             PermissionMode::Ask
         } else {
             PermissionMode::Allow
@@ -169,13 +211,17 @@ impl AgentToolSettings {
 
     fn persistent_modes(&self) -> [(&'static str, PermissionMode); 5] {
         let mutating = if self.enabled(LocalTool::RunCommand)
-            && (self.command_isolation == CommandIsolation::HostUnrestricted || cfg!(windows))
+            && self.command_isolation.is_available_on_host()
         {
-            PermissionMode::Ask
+            if self.full_access {
+                PermissionMode::Allow
+            } else {
+                PermissionMode::Ask
+            }
         } else {
             PermissionMode::Deny
         };
-        let poll = if mutating == PermissionMode::Ask {
+        let poll = if mutating != PermissionMode::Deny {
             PermissionMode::Allow
         } else {
             PermissionMode::Deny
@@ -340,7 +386,7 @@ mod tests {
             .all(|(_, mode)| *mode == PermissionMode::Deny));
         settings.set(LocalTool::RunCommand, true);
         settings.set_command_isolation(CommandIsolation::WorkspaceWriteOffline);
-        if cfg!(windows) {
+        if CommandIsolation::WorkspaceWriteOffline.is_available_on_host() {
             assert_eq!(
                 settings.persistent_modes(),
                 [
@@ -442,6 +488,106 @@ mod tests {
         assert_eq!(
             AgentToolSettings::tool_from_action_id("agent_tool:mcp"),
             None
+        );
+    }
+
+    #[test]
+    fn full_access_is_explicit_persistent_and_disabling_a_tool_revokes_it() {
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = AgentToolSettings::default();
+        assert!(!settings.full_access());
+        settings.set_full_access(true);
+        assert!(settings.full_access());
+        assert_eq!(
+            settings.command_isolation(),
+            CommandIsolation::HostUnrestricted
+        );
+        for tool in ALL_TOOLS {
+            assert!(settings.enabled(tool));
+            assert_eq!(settings.mode_for(tool), PermissionMode::Allow);
+        }
+        settings.save(root.path()).unwrap();
+        assert_eq!(AgentToolSettings::load(root.path()).unwrap(), settings);
+        let document: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.path().join(SETTINGS_FILE)).unwrap()).unwrap();
+        assert_eq!(document["version"], 3);
+        assert_eq!(document["full_access"], true);
+
+        settings.set(LocalTool::SearchFiles, false);
+        assert!(!settings.full_access());
+        assert_eq!(settings.mode_for(LocalTool::WriteFile), PermissionMode::Ask);
+        assert_eq!(
+            settings.mode_for(LocalTool::RunCommand),
+            PermissionMode::Ask
+        );
+        settings.save(root.path()).unwrap();
+        assert!(!AgentToolSettings::load(root.path()).unwrap().full_access());
+    }
+
+    #[test]
+    fn version_two_never_migrates_to_full_access() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join(SETTINGS_FILE),
+            br#"{"version":2,"permissions":{"read_file":true,"list_files":true,"search_files":true,"write_file":true,"run_command":true},"command_isolation":"host_unrestricted"}"#,
+        ).unwrap();
+        let settings = AgentToolSettings::load(root.path()).unwrap();
+        assert!(!settings.full_access());
+        assert_eq!(settings.mode_for(LocalTool::WriteFile), PermissionMode::Ask);
+        assert_eq!(
+            settings.mode_for(LocalTool::RunCommand),
+            PermissionMode::Ask
+        );
+        settings.save(root.path()).unwrap();
+        assert!(!AgentToolSettings::load(root.path()).unwrap().full_access());
+    }
+
+    #[test]
+    fn contradictory_or_legacy_full_access_documents_fail_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = AgentToolSettings::default();
+        settings.set_full_access(true);
+        settings.save(root.path()).unwrap();
+        let path = root.path().join(SETTINGS_FILE);
+        let document: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("version", serde_json::json!(2)),
+            (
+                "command_isolation",
+                serde_json::json!("workspace_write_offline"),
+            ),
+        ] {
+            let mut invalid = document.clone();
+            invalid[field] = value;
+            fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+            assert!(AgentToolSettings::load(root.path()).is_err());
+        }
+        let mut invalid = document;
+        invalid["permissions"]["run_command"] = serde_json::json!(false);
+        fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        assert!(AgentToolSettings::load(root.path()).is_err());
+    }
+
+    #[test]
+    fn sandbox_selection_revokes_full_access_and_persistent_commands_require_approval_again() {
+        let mut settings = AgentToolSettings::default();
+        settings.set_full_access(true);
+        assert_eq!(
+            settings.persistent_modes()[0],
+            ("start_command", PermissionMode::Allow)
+        );
+        settings.set_command_isolation(CommandIsolation::WorkspaceWriteOffline);
+        assert!(!settings.full_access());
+        settings.set_command_isolation(CommandIsolation::HostUnrestricted);
+        assert!(!settings.full_access());
+        assert_eq!(
+            settings.mode_for(LocalTool::RunCommand),
+            PermissionMode::Ask
+        );
+        assert_eq!(
+            settings.persistent_modes()[0],
+            ("start_command", PermissionMode::Ask)
         );
     }
 }

@@ -195,7 +195,11 @@ impl CheckpointCoordinator {
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled.into());
         }
+        #[cfg(test)]
+        tests::process_cut("summary_returned");
         let reference = self.checkpoints.write_candidate(&checkpoint)?;
+        #[cfg(test)]
+        tests::process_cut("candidate_published");
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled.into());
         }
@@ -207,6 +211,8 @@ impl CheckpointCoordinator {
             },
         );
         self.sessions.append_native_event(&marker_event)?;
+        #[cfg(test)]
+        tests::process_cut("marker_synced");
 
         let verified = self
             .sessions
@@ -247,6 +253,168 @@ mod tests {
     use openide_core::{AgentMessage, ModelTokenUsage, ReplayRecovery, ToolCall, TurnMode};
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    pub(super) fn process_cut(point: &str) {
+        if std::env::var("OPENIDE_CHECKPOINT_CUT_POINT")
+            .ok()
+            .as_deref()
+            == Some(point)
+        {
+            std::process::exit(86);
+        }
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture for checkpoint publication interruption"]
+    fn checkpoint_process_cut_child() {
+        let root = std::path::PathBuf::from(std::env::var("OPENIDE_CHECKPOINT_CUT_ROOT").unwrap());
+        let session_id = std::env::var("OPENIDE_CHECKPOINT_CUT_SESSION").unwrap();
+        let sessions = Arc::new(SessionStore::open(root.join("sessions")).unwrap());
+        let checkpoints =
+            Arc::new(CheckpointFileStore::new(root.join("checkpoint-store")).unwrap());
+        let lease = sessions.try_acquire_native_lease(&session_id).unwrap();
+        let coordinator = CheckpointCoordinator::new(
+            sessions,
+            checkpoints,
+            model("gpt-example", &session_id, None),
+            compatibility("gpt-example"),
+            budget(),
+        );
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(coordinator.compact(&lease, CancellationToken::new()))
+            .unwrap();
+        panic!("checkpoint child did not reach its interruption point");
+    }
+
+    #[test]
+    fn checkpoint_publication_process_cuts_keep_last_committed_history_after_reopen() {
+        for point in ["summary_returned", "candidate_published", "marker_synced"] {
+            let root = tempfile::tempdir().unwrap();
+            let sessions_root = root.path().join("sessions");
+            let checkpoints_root = root.path().join("checkpoint-store");
+            let sessions = Arc::new(SessionStore::open(&sessions_root).unwrap());
+            let session = sessions.create(root.path(), "native").unwrap();
+            let checkpoints = Arc::new(CheckpointFileStore::new(&checkpoints_root).unwrap());
+            let lease = sessions.try_acquire_native_lease(&session.id).unwrap();
+            append_completed_turn(&sessions, &session.id, "first", "First request");
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let coordinator = CheckpointCoordinator::new(
+                sessions.clone(),
+                checkpoints.clone(),
+                model("gpt-example", &session.id, None),
+                compatibility("gpt-example"),
+                budget(),
+            );
+            let first = runtime
+                .block_on(coordinator.compact(&lease, CancellationToken::new()))
+                .unwrap();
+            append_completed_turn(&sessions, &session.id, "second", "Second request");
+            let covered_sequence = sessions
+                .load(&session.id)
+                .unwrap()
+                .unwrap()
+                .events
+                .last()
+                .unwrap()
+                .sequence;
+            drop(coordinator);
+            drop(lease);
+            drop(sessions);
+            drop(checkpoints);
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "checkpoint_coordinator::tests::checkpoint_process_cut_child",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("OPENIDE_CHECKPOINT_CUT_ROOT", root.path())
+                .env("OPENIDE_CHECKPOINT_CUT_SESSION", &session.id)
+                .env("OPENIDE_CHECKPOINT_CUT_POINT", point)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::inherit())
+                .spawn()
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            let status = loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    break status;
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+                    panic!("checkpoint child timeout at {point}");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            };
+            assert_eq!(status.code(), Some(86), "checkpoint cut at {point}");
+            let sessions = Arc::new(SessionStore::open(&sessions_root).unwrap());
+            let checkpoints = Arc::new(CheckpointFileStore::new(&checkpoints_root).unwrap());
+            let lease = sessions.try_acquire_native_lease(&session.id).unwrap();
+            let record = sessions.load(&session.id).unwrap().unwrap();
+            let replay = replay_native(
+                &session.id,
+                &record.events,
+                Some(&checkpoints),
+                &compatibility("gpt-example"),
+            )
+            .unwrap();
+            assert!(replay.can_start_new_turn);
+            let marker_count = record
+                .events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::CheckpointCommitted { .. }))
+                .count();
+            let candidate_count =
+                std::fs::read_dir(checkpoints_root.join("checkpoints").join(&session.id))
+                    .unwrap()
+                    .count();
+            if point == "marker_synced" {
+                assert_eq!(marker_count, 2);
+                assert_eq!(candidate_count, 2);
+                let checkpoint = replay.checkpoint.unwrap();
+                assert_eq!(checkpoint.covered_event_sequence, covered_sequence);
+                assert_ne!(checkpoint.checkpoint_id, first.checkpoint.checkpoint_id);
+                assert!(replay.committed_messages.is_empty());
+            } else {
+                assert_eq!(marker_count, 1);
+                assert_eq!(
+                    candidate_count,
+                    if point == "candidate_published" { 2 } else { 1 }
+                );
+                assert_eq!(replay.checkpoint, Some(first.checkpoint));
+                assert_eq!(
+                    replay.history.last(),
+                    Some(&AgentMessage::assistant("Done", vec![]))
+                );
+                assert!(replay
+                    .history
+                    .iter()
+                    .any(|message| message.content == "Second request"));
+                // An unreferenced candidate is ignored, and retry publishes a
+                // fresh checkpoint from the preserved history, not its orphan.
+                let coordinator = CheckpointCoordinator::new(
+                    sessions,
+                    checkpoints,
+                    model("gpt-example", &session.id, None),
+                    compatibility("gpt-example"),
+                    budget(),
+                );
+                let retried = runtime
+                    .block_on(coordinator.compact(&lease, CancellationToken::new()))
+                    .unwrap();
+                assert_eq!(retried.checkpoint.covered_event_sequence, covered_sequence);
+                assert!(retried.replay.can_start_new_turn);
+                assert!(retried.replay.committed_messages.is_empty());
+            }
+        }
+    }
 
     struct SummaryModel {
         model_id: String,
@@ -308,6 +476,7 @@ mod tests {
 
     fn budget() -> CheckpointBudgetSnapshot {
         CheckpointBudgetSnapshot {
+            input_limit_tokens: None,
             context_window_tokens: 128_000,
             estimated_input_tokens: 50_000,
             observed_input_tokens: Some(14_000),

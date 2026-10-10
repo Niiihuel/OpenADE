@@ -263,6 +263,19 @@ fn parse(patch: &str) -> Result<Vec<Operation>, AgentError> {
     Ok(operations)
 }
 
+/// A structural permission check only; execution still validates containment,
+/// links, original text and transaction preconditions against the workspace.
+pub(crate) fn is_non_deleting_workspace_patch(patch: &str) -> bool {
+    parse(patch).is_ok_and(|operations| {
+        !operations.is_empty() && operations.iter().all(|operation| matches!(operation,
+            Operation::Add { .. } | Operation::Update { move_to: None, .. }))
+    })
+}
+
+pub(crate) fn is_workspace_relative_edit_path(path: &str) -> bool {
+    validate_path_text(path).is_ok()
+}
+
 fn is_file_marker(line: &str) -> bool {
     line.starts_with("*** Add File: ")
         || line.starts_with("*** Delete File: ")
@@ -275,7 +288,7 @@ fn finish_chunk(
     chunk: Chunk,
     allow_unchanged_context: bool,
 ) -> Result<(), AgentError> {
-    if !chunk.changed && !(allow_unchanged_context && !chunk.old_lines.is_empty()) {
+    if !(chunk.changed || allow_unchanged_context && !chunk.old_lines.is_empty()) {
         return Err(tool_error("update hunk has no added or removed lines"));
     }
     if chunk.anchor.as_deref() == Some("") {

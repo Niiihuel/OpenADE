@@ -111,6 +111,42 @@ pub(crate) async fn run_command_with_isolation(
     context: &ToolContext,
     isolation: CommandIsolation,
 ) -> Result<ToolOutput, AgentError> {
+    run_command_with_policy(call, context, isolation, false).await
+}
+
+pub(crate) async fn run_command_with_policy(
+    call: &ToolCall,
+    context: &ToolContext,
+    isolation: CommandIsolation,
+    allow_elevated_commands: bool,
+) -> Result<ToolOutput, AgentError> {
+    run_command_streaming(call, context, isolation, allow_elevated_commands, None).await
+}
+
+pub(crate) async fn run_command_streaming(
+    call: &ToolCall,
+    context: &ToolContext,
+    isolation: CommandIsolation,
+    allow_elevated_commands: bool,
+    output: Option<crate::ToolOutputSender>,
+) -> Result<ToolOutput, AgentError> {
+    match call.arguments.get("elevated") {
+        None | Some(Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => {
+            if !allow_elevated_commands {
+                return Err(AgentError::Tool(
+                    "administrator command access is disabled".into(),
+                ));
+            }
+            if isolation != CommandIsolation::HostUnrestricted {
+                return Err(AgentError::Tool(
+                    "administrator commands cannot run inside the workspace sandbox".into(),
+                ));
+            }
+            return crate::command_elevation::run(call, context).await;
+        }
+        Some(_) => return Err(AgentError::Tool("elevated must be boolean".into())),
+    }
     sandbox::require_available(isolation)?;
     let program = required_string(&call.arguments, "command")?;
     if program.trim().is_empty() {
@@ -140,6 +176,13 @@ pub(crate) async fn run_command_with_isolation(
     #[cfg(windows)]
     if isolation == CommandIsolation::WorkspaceWriteOffline {
         return sandbox::run_workspace_write_offline(program, &args, timeout_ms, context).await;
+    }
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    if isolation == CommandIsolation::WorkspaceWriteOffline {
+        return sandbox::linux::run_streaming(program, &args, timeout_ms, context, output).await;
     }
     let mut process = Command::new(program);
     process
@@ -184,8 +227,16 @@ pub(crate) async fn run_command_with_isolation(
     let stderr = child.stderr.take().ok_or_else(|| {
         AgentError::EffectUncertain("command stderr pipe is unavailable after spawn".into())
     })?;
-    let stdout_task = tokio::spawn(read_capped(stdout));
-    let stderr_task = tokio::spawn(read_capped(stderr));
+    let stdout_task = tokio::spawn(read_capped_streaming(
+        stdout,
+        output.clone(),
+        openide_core::OutputStream::Stdout,
+    ));
+    let stderr_task = tokio::spawn(read_capped_streaming(
+        stderr,
+        output,
+        openide_core::OutputStream::Stderr,
+    ));
     let outcome = tokio::select! {
         _ = context.cancel.cancelled() => WaitOutcome::Cancelled,
         result = tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait()) => {
@@ -255,20 +306,67 @@ enum WaitOutcome {
 }
 
 async fn read_capped<R: AsyncRead + Unpin>(mut reader: R) -> std::io::Result<(String, bool)> {
-    let mut kept = Vec::new();
+    read_capped_streaming(&mut reader, None, openide_core::OutputStream::Stdout).await
+}
+
+pub(crate) async fn read_capped_streaming<R: AsyncRead + Unpin>(
+    mut reader: R,
+    output: Option<crate::ToolOutputSender>,
+    stream: openide_core::OutputStream,
+) -> std::io::Result<(String, bool)> {
+    // The end of a long output usually carries the failure, so the capture
+    // keeps both ends and drops the middle. The live stream still shows only
+    // the beginning; the finished tool result carries the tail.
+    const HEAD_BYTES: usize = MAX_OUTPUT_BYTES / 2;
+    const TAIL_BYTES: usize = MAX_OUTPUT_BYTES - HEAD_BYTES;
+    let mut head = Vec::new();
+    let mut tail = std::collections::VecDeque::new();
+    let mut omitted = 0usize;
+    let mut streamed = 0usize;
     let mut truncated = false;
+    let mut decoder = crate::tool_output::OutputDecoder::default();
     let mut chunk = [0u8; 8192];
     loop {
         let count = reader.read(&mut chunk).await?;
         if count == 0 {
             break;
         }
-        let remaining = MAX_OUTPUT_BYTES.saturating_sub(kept.len());
-        let keep = count.min(remaining);
-        kept.extend_from_slice(&chunk[..keep]);
+        let head_take = count.min(HEAD_BYTES - head.len());
+        head.extend_from_slice(&chunk[..head_take]);
+        tail.extend(&chunk[head_take..count]);
+        let excess = tail.len().saturating_sub(TAIL_BYTES);
+        tail.drain(..excess);
+        omitted += excess;
+        let keep = count.min(MAX_OUTPUT_BYTES - streamed);
+        streamed += keep;
+        if let Some(output) = &output {
+            let text = decoder.decode(&chunk[..keep], false);
+            output
+                .send(stream, &text)
+                .await
+                .map_err(std::io::Error::other)?;
+            if keep < count && !truncated {
+                let tail = decoder.decode(&[], true);
+                output
+                    .send(stream, &format!("{tail}\n[command output truncated]\n"))
+                    .await
+                    .map_err(std::io::Error::other)?;
+            }
+        }
         truncated |= keep < count;
     }
-    Ok((String::from_utf8_lossy(&kept).into_owned(), truncated))
+    if let Some(output) = &output {
+        output
+            .send(stream, &decoder.decode(&[], true))
+            .await
+            .map_err(std::io::Error::other)?;
+    }
+    let mut text = String::from_utf8_lossy(&head).into_owned();
+    if omitted > 0 {
+        text.push_str(&format!("\n[... {omitted} bytes omitted ...]\n"));
+    }
+    text.push_str(&String::from_utf8_lossy(tail.make_contiguous()));
+    Ok((crate::output_condense::condense_output(&text), truncated))
 }
 
 #[cfg(unix)]
@@ -410,6 +508,26 @@ mod windows_job {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn capture_keeps_both_ends_of_long_output() {
+        let short = b"all of it".to_vec();
+        assert_eq!(
+            read_capped(short.as_slice()).await.unwrap(),
+            ("all of it".to_owned(), false)
+        );
+
+        let mut long = b"START".to_vec();
+        long.extend(std::iter::repeat_n(b'.', MAX_OUTPUT_BYTES * 3));
+        long.extend_from_slice(b"error: the real failure");
+        let (text, truncated) = read_capped(long.as_slice()).await.unwrap();
+        assert!(truncated);
+        assert!(text.starts_with("START"));
+        assert!(text.ends_with("error: the real failure"));
+        let omitted = long.len() - MAX_OUTPUT_BYTES;
+        assert!(text.contains(&format!("[... {omitted} bytes omitted ...]")));
+        assert!(text.len() < MAX_OUTPUT_BYTES + 64);
+    }
     use serde_json::json;
     use std::path::Path;
     use std::time::Instant;
@@ -512,7 +630,13 @@ mod tests {
         assert_no_descendant_survival(dir.path(), started).await;
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(
+        windows,
+        all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )
+    )))]
     #[tokio::test]
     async fn unavailable_workspace_offline_profile_refuses_spawn() {
         let dir = tempfile::tempdir().unwrap();

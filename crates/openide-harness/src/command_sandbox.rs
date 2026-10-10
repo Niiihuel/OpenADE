@@ -15,17 +15,66 @@ use serde::{Deserialize, Serialize};
 pub enum CommandIsolation {
     #[default]
     HostUnrestricted,
-    /// Windows ProcessContainer with workspace grant and no network capability.
+    /// Platform OS containment with workspace writes and no network sockets.
     WorkspaceWriteOffline,
 }
 
+impl CommandIsolation {
+    /// Whether this build implements the profile. This alone does not attest
+    /// to installed helpers, kernel support, or successful runtime setup.
+    pub const fn is_supported_on_host(self) -> bool {
+        match self {
+            Self::HostUnrestricted => true,
+            Self::WorkspaceWriteOffline => {
+                cfg!(windows)
+                    || cfg!(all(
+                        target_os = "linux",
+                        any(target_arch = "x86_64", target_arch = "aarch64")
+                    ))
+            }
+        }
+    }
+
+    /// Build support plus required helper presence. On Linux every launch must
+    /// additionally complete namespaces/seccomp/supervision and the target gate;
+    /// helper presence is not a claim that those runtime checks succeeded.
+    pub fn is_available_on_host(self) -> bool {
+        if !self.is_supported_on_host() {
+            return false;
+        }
+        #[cfg(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
+        if self == Self::WorkspaceWriteOffline {
+            return linux::helper_available();
+        }
+        true
+    }
+
+    pub const fn run_command_description(self) -> &'static str {
+        match self {
+            Self::HostUnrestricted => "Run a command with the host user's filesystem and network rights; no implicit shell.",
+            Self::WorkspaceWriteOffline if cfg!(windows) => "Run a command inside a Windows workspace-write/offline OS sandbox; no implicit shell.",
+            Self::WorkspaceWriteOffline => "Run a command inside the workspace-write/offline OS sandbox. Requires Bubblewrap and working user namespaces on Linux. Only the workspace, mounted system runtime and private temporary files are visible; network sockets are blocked. No implicit shell or unrestricted fallback.",
+        }
+    }
+}
+
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[path = "command_sandbox_linux.rs"]
+pub(crate) mod linux;
+
 pub(super) fn require_available(isolation: CommandIsolation) -> Result<(), AgentError> {
-    match isolation {
-        CommandIsolation::HostUnrestricted => Ok(()),
-        CommandIsolation::WorkspaceWriteOffline if cfg!(windows) => Ok(()),
-        CommandIsolation::WorkspaceWriteOffline => Err(AgentError::Tool(
+    if isolation.is_supported_on_host() {
+        Ok(())
+    } else {
+        Err(AgentError::Tool(
             "workspace-write/offline command isolation is unavailable on this host; command was not started".into(),
-        )),
+        ))
     }
 }
 

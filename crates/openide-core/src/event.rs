@@ -52,6 +52,114 @@ pub struct ModelTokenUsage {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+pub enum ModelStreamEvent {
+    Started {
+        response_id: Option<String>,
+    },
+    TextDelta {
+        content: String,
+    },
+    /// Public reasoning text only. Opaque reasoning and signatures remain in
+    /// the committed provider output, never in presentation events.
+    ReasoningDelta {
+        item_id: String,
+        content: String,
+    },
+    /// Incomplete arguments are display data, never executable ToolCall input.
+    ToolCallDelta {
+        item_id: String,
+        call_id: Option<String>,
+        /// Current name snapshot; some protocols extend it across fragments.
+        name: Option<String>,
+        arguments_delta: String,
+    },
+    /// Complete provider input is still provisional until response commit.
+    ToolCallReady {
+        item_id: String,
+        call_id: String,
+        name: String,
+    },
+    /// Provider-hosted web activity is presentation only, never a local tool
+    /// call. Even a completed item remains provisional until response commit.
+    WebSearchUpdate {
+        item_id: String,
+        status: String,
+        action: Option<String>,
+        query: Option<String>,
+        url: Option<String>,
+        sources: Vec<(String, String)>,
+    },
+    Usage {
+        usage: ModelTokenUsage,
+    },
+}
+
+impl ModelStreamEvent {
+    /// Bound hosted-search presentation independently of authoritative provider
+    /// output. All byte clipping preserves UTF-8 and accounts for JSON escapes.
+    /// Invalid identities are rejected rather than truncated into collisions.
+    pub fn bounded_web_search_update(&self) -> Option<Self> {
+        let Self::WebSearchUpdate {
+            item_id,
+            status,
+            action,
+            query,
+            url,
+            sources,
+        } = self
+        else {
+            return None;
+        };
+        if item_id.is_empty() || item_id.len() > 256 || item_id.chars().any(char::is_control) {
+            return None;
+        }
+        fn prefix(text: &str, cap: usize) -> String {
+            let mut end = cap.min(text.len());
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text[..end].to_owned()
+        }
+        let mut bounded = Self::WebSearchUpdate {
+            item_id: item_id.clone(),
+            status: prefix(status, 32),
+            action: action.as_deref().map(|value| prefix(value, 64)),
+            query: query.as_deref().map(|value| prefix(value, 1024)),
+            url: url.as_deref().map(|value| prefix(value, 2048)),
+            sources: sources
+                .iter()
+                .take(8)
+                .map(|(title, url)| (prefix(title, 256), prefix(url, 2048)))
+                .collect(),
+        };
+        while serde_json::to_vec(&bounded).ok()?.len() > 8 * 1024 {
+            let Self::WebSearchUpdate {
+                sources,
+                query,
+                url,
+                ..
+            } = &mut bounded
+            else {
+                unreachable!()
+            };
+            if sources.pop().is_some() {
+                continue;
+            }
+            let field =
+                if url.as_ref().map_or(0, String::len) > query.as_ref().map_or(0, String::len) {
+                    url
+                } else {
+                    query
+                };
+            let value = field.as_mut()?;
+            *value = prefix(value, value.len() / 2);
+        }
+        Some(bounded)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEventKind {
     SessionStarted {
         workspace: PathBuf,
@@ -134,9 +242,24 @@ pub enum AgentEventKind {
         version: u16,
         digest: String,
     },
+    /// Exact route of the forthcoming model request. Endpoint text and secrets
+    /// are not journaled. Absent for legacy turns without explicit attribution.
+    ModelRouteCommitted {
+        version: u16,
+        provider_id: String,
+        model_id: String,
+        endpoint_digest: String,
+        request_profile_digest: String,
+    },
     ModelRequestStarted {
         step: usize,
         model: String,
+    },
+    /// Durable presentation update for one in-flight model step. This cannot
+    /// modify authoritative model history, authorize a tool, or close a turn.
+    ModelStreamUpdate {
+        step: usize,
+        update: ModelStreamEvent,
     },
     /// One complete model response, synced before any subsequent tool effect.
     /// The assistant carries original provider items for stateless replay.
@@ -168,11 +291,37 @@ pub enum AgentEventKind {
     ToolStarted {
         tool_call: ToolCall,
     },
+    /// Bounded observations from a running tool. Only ToolFinished commits
+    /// its model-visible result; these bytes never authorize an effect.
+    ToolOutputDelta {
+        tool_call_id: String,
+        stream: OutputStream,
+        text: String,
+    },
+    /// Validated, bounded MCP image observations preserved independently of
+    /// the truncated model-facing result. This never resolves a tool call.
+    ToolResultMedia {
+        tool_call_id: String,
+        images: Vec<UserImage>,
+        text: String,
+        notices: Vec<String>,
+    },
     /// Synced after ToolStarted and before launching one configured hook.
     HookStarted {
         tool_call_id: String,
         hook_id: String,
         phase: String,
+    },
+    /// Bounded diagnostics only. This does not resolve a pending hook; only
+    /// HookFinished confirms its protocol decision. Old journals omit it.
+    HookDiagnosticCommitted {
+        tool_call_id: String,
+        hook_id: String,
+        phase: String,
+        reason: Option<String>,
+        stdout: Option<String>,
+        stderr: Option<String>,
+        error: Option<String>,
     },
     HookFinished {
         tool_call_id: String,

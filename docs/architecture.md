@@ -3,6 +3,7 @@
 ```text
 agents-window (aplicación nativa)
   ├─ openide-ui       árbol de elementos, layout, eventos y dibujo
+  ├─ openide-preview  análisis de Markdown y rasterización de imágenes/PDF
   ├─ openide-core     sesiones, eventos y persistencia
   ├─ openide-harness  bucle de agente y herramientas nativas
   └─ openide-cli      ejecución de agentes CLI externos
@@ -28,6 +29,12 @@ que cada archivo permanezca dentro del proyecto. `SessionStore` guarda metadatos
 eventos, borradores y decisiones de permisos en archivos separados. Las
 decisiones se sincronizan antes de liberar una herramienta bloqueada por el
 broker de permisos del harness.
+
+`openide-preview` ejecuta análisis y rasterización fuera del hilo de UI. La aplicación
+envía el snapshot del editor para Markdown y rutas del proyecto para imágenes/PDF;
+aplica los resultados sólo si coinciden proyecto, ruta, pestaña y generación. El
+renderer nativo conserva el mismo dock y sus componentes. Ver
+[Motor nativo de documentos](native-document-preview.md).
 
 ## Reglas de procedencia
 

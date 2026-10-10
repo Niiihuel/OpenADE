@@ -142,6 +142,7 @@ pub struct PermissionPolicy {
     tool_modes: HashMap<String, PermissionMode>,
     timeout: Duration,
     exec_policy: ExecPolicy,
+    auto_workspace_edits: bool,
 }
 
 impl Default for PermissionPolicy {
@@ -152,6 +153,7 @@ impl Default for PermissionPolicy {
             tool_modes: HashMap::new(),
             timeout: Duration::from_secs(60),
             exec_policy: ExecPolicy::default(),
+            auto_workspace_edits: false,
         }
     }
 }
@@ -176,6 +178,15 @@ impl PermissionPolicy {
         self
     }
 
+    /// Explicit host opt-in to automatically permit bounded, workspace-relative
+    /// text edits. This is a deterministic tool rule, not a risk classifier.
+    /// Commands, file deletion/move, malformed calls and unknown tools retain
+    /// their configured modes; executor containment remains mandatory.
+    pub fn with_auto_workspace_edits(mut self, enabled: bool) -> Self {
+        self.auto_workspace_edits = enabled;
+        self
+    }
+
     /// Attach validated argv rules for run_command and start_command. Allow rules never grant
     /// more than the host's existing per-tool permission mode.
     pub fn with_exec_policy(mut self, policy: ExecPolicy) -> Self {
@@ -196,6 +207,23 @@ impl PermissionPolicy {
 
     pub(crate) fn mode_for_call(&self, call: &ToolCall) -> PermissionMode {
         let host_mode = self.mode_for(&call.name);
+        if host_mode == PermissionMode::Ask && self.auto_workspace_edits {
+            let known_edit = match call.name.as_str() {
+                "write_file" => call.arguments.as_object().is_some_and(|args| {
+                    args.len() == 2
+                        && args.get("path").and_then(Value::as_str)
+                            .is_some_and(crate::tools::is_workspace_relative_edit_path)
+                        && args.get("content").and_then(Value::as_str)
+                            .is_some_and(|text| text.len() <= 256 * 1024 && !text.contains('\0'))
+                }),
+                "apply_patch" => call.arguments.as_object().is_some_and(|args| {
+                    args.len() == 1 && args.get("patch").and_then(Value::as_str)
+                        .is_some_and(crate::tools::is_non_deleting_workspace_patch)
+                }),
+                _ => false,
+            };
+            if known_edit { return PermissionMode::Allow; }
+        }
         if call.name == "write_stdin" && !self.exec_policy.rules().is_empty() {
             // An interactive process can interpret later input as commands.
             // No argv is available here for a trustworthy prefix decision.
@@ -328,6 +356,9 @@ impl PermissionPolicy {
             hasher.update([mode_byte(*mode)]);
         }
         hasher.update(self.exec_policy.digest_hex().as_bytes());
+        if self.auto_workspace_edits {
+            hasher.update(b"auto-workspace-edits-v1\0");
+        }
         format!("{:x}", hasher.finalize())
     }
 
@@ -600,6 +631,39 @@ mod tests {
         assert_ne!(first.digest_hex(), changed.digest_hex());
         let same = PermissionPolicy::new().with_exec_policy(policy(ExecDecision::Ask));
         assert_eq!(first.digest_hex(), same.digest_hex());
+    }
+
+    #[test]
+    fn automatic_workspace_edits_are_bounded_and_never_allow_deletes_commands_or_unknowns() {
+        let ask = PermissionPolicy::new().with_default_mode(PermissionMode::Deny)
+            .with_tool("write_file", PermissionMode::Ask)
+            .with_tool("apply_patch", PermissionMode::Ask)
+            .with_tool("run_command", PermissionMode::Ask);
+        let auto = ask.clone().with_auto_workspace_edits(true);
+        assert_ne!(ask.digest_hex(), auto.digest_hex());
+        let write = ToolCall { id:"edit".into(), name:"write_file".into(), arguments:json!({"path":"src/example.rs","content":"fn main() {}"}) };
+        assert_eq!(ask.mode_for_call(&write), PermissionMode::Ask);
+        assert_eq!(auto.mode_for_call(&write), PermissionMode::Allow);
+        for path in ["../outside", "/absolute", "nested/../../outside", ""] {
+            let mut bad=write.clone(); bad.arguments["path"]=json!(path);
+            assert_eq!(auto.mode_for_call(&bad), PermissionMode::Ask);
+        }
+        let mut oversized=write.clone(); oversized.arguments["content"]=json!("x".repeat(256*1024+1));
+        assert_eq!(auto.mode_for_call(&oversized),PermissionMode::Ask);
+        let patch=|text:&str| ToolCall { id:"patch".into(), name:"apply_patch".into(), arguments:json!({"patch":text}) };
+        assert_eq!(auto.mode_for_call(&patch("*** Begin Patch\n*** Add File: a.txt\n+text\n*** End Patch")),PermissionMode::Allow);
+        assert_eq!(auto.mode_for_call(&patch("*** Begin Patch\n*** Update File: a.txt\n@@\n-old\n+new\n*** End Patch")),PermissionMode::Allow);
+        for text in [
+            "*** Begin Patch\n*** Delete File: a.txt\n*** End Patch",
+            "*** Begin Patch\n*** Update File: a.txt\n*** Move to: b.txt\n@@\n-old\n+new\n*** End Patch",
+            "*** Begin Patch\n*** Add File: ../outside\n+text\n*** End Patch",
+            "*** Begin Patch\n*** Add File: /absolute\n+text\n*** End Patch",
+            "not a patch"
+        ] { assert_eq!(auto.mode_for_call(&patch(text)),PermissionMode::Ask); }
+        assert_eq!(auto.mode_for_call(&command("git", &["status"])),PermissionMode::Ask);
+        assert_eq!(auto.mode_for_call(&command("bash", &["-c","rm -rf ."])),PermissionMode::Ask);
+        assert_eq!(auto.mode_for_call(&ToolCall { name:"unknown_future_tool".into(), ..write.clone() }),PermissionMode::Deny);
+        assert_eq!(auto.with_tool("write_file",PermissionMode::Deny).mode_for_call(&write),PermissionMode::Deny);
     }
 
     #[test]

@@ -1,0 +1,19 @@
+[package]
+name = "openide-preview"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Native Markdown, image and PDF previews for OpenIDE"
+
+[dependencies]
+hayro = "=0.7.1"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "raster-images"] }
+percent-encoding = "2"
+pulldown-cmark = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

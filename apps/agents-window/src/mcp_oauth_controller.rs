@@ -207,11 +207,21 @@ pub(crate) async fn discover_oauth_session(
     server: &McpServerSettings,
     cancellation: &CancellationToken,
 ) -> Result<Arc<OAuthSession>, String> {
+    discover_oauth_session_with_store(server, cancellation, platform_token_store()?).await
+}
+
+/// Uses the same discovery, scope validation and refresh lifecycle with a
+/// supplied store. Temporary UI inspection can observe credentials in memory
+/// while delegating every operation to the existing platform vault.
+pub(crate) async fn discover_oauth_session_with_store(
+    server: &McpServerSettings,
+    cancellation: &CancellationToken,
+    store: Arc<dyn TokenStore>,
+) -> Result<Arc<OAuthSession>, String> {
     let config = server
         .oauth_config()?
         .ok_or_else(|| "El servidor MCP no tiene OAuth configurado".to_owned())?;
     let challenge = probe_bearer_challenge(&config.resource_url, cancellation).await?;
-    let store = platform_token_store()?;
     let inspect_store = Arc::clone(&store);
     let session = Arc::new(
         OAuthSession::discover(config, challenge.as_deref(), store, cancellation)
@@ -259,7 +269,7 @@ fn oauth_error(error: OAuthError) -> String {
     }
 }
 
-fn platform_token_store() -> Result<Arc<dyn TokenStore>, String> {
+pub(crate) fn platform_token_store() -> Result<Arc<dyn TokenStore>, String> {
     #[cfg(windows)]
     {
         Ok(Arc::new(openide_harness::WindowsCredentialTokenStore::new()))

@@ -141,6 +141,13 @@ impl FileExplorer {
         &self.rows
     }
 
+    /// The folders whose entries are on screen: the root and every expanded one.
+    pub fn shown_directories(&self) -> Vec<PathBuf> {
+        std::iter::once(self.workspace.clone())
+            .chain(self.expanded.iter().map(|relative| self.workspace.join(relative)))
+            .collect()
+    }
+
     pub fn rows_truncated(&self) -> bool {
         self.rows_truncated
     }
@@ -246,6 +253,24 @@ impl FileExplorer {
         self.expanded.insert(relative.to_owned());
         self.rebuild_rows();
         Ok(true)
+    }
+
+    /// Expand a breadcrumb hierarchy without toggling already-open ancestors.
+    pub fn reveal(&mut self, relative: &Path) -> io::Result<()> {
+        let mut ancestor = PathBuf::new();
+        for part in relative.components() {
+            if !matches!(part, Component::Normal(_)) {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "invalid folder path",
+                ));
+            }
+            ancestor.push(part);
+            if !self.expanded.contains(&ancestor) {
+                self.toggle(&ancestor)?;
+            }
+        }
+        Ok(())
     }
 
     /// Reload the root and all expanded directories, including descendants of

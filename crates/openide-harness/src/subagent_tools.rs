@@ -149,6 +149,102 @@ impl SubagentToolExecutor {
             })
     }
 
+    /// Recover only data from a committed response whose spawn tool actually
+    /// started. The caller must still validate the child reservation digest.
+    /// Returns the child's prompt, original model, the frozen project/worker
+    /// instructions and the mode its role runs in. A recovered read-only child
+    /// must come back read-only, so callers start it in the returned mode.
+    pub fn reserved_spawn_request(
+        events: &[openide_core::AgentEvent],
+        spawn_id: &str,
+    ) -> Result<(String, String, String, TurnMode), AgentError> {
+        let mut model = None;
+        let mut instructions = None;
+        let mut calls = Vec::new();
+        let mut found = None;
+        for event in events {
+            match &event.kind {
+                AgentEventKind::TurnAdmitted {
+                    model: admitted,
+                    mode,
+                    ..
+                }
+                | AgentEventKind::TurnAdmittedWithImages {
+                    model: admitted,
+                    mode,
+                    ..
+                } => {
+                    model = (*mode == TurnMode::Build).then(|| admitted.clone());
+                    instructions = None;
+                    calls.clear();
+                }
+                AgentEventKind::SystemInstructionsCommitted {
+                    content,
+                    version,
+                    digest,
+                } => {
+                    if *version != openide_core::SYSTEM_INSTRUCTIONS_VERSION
+                        || openide_core::system_instructions_digest(content).as_ref()
+                            != Some(digest)
+                    {
+                        return Err(AgentError::InvalidRequest(
+                            "invalid frozen spawn instructions".into(),
+                        ));
+                    }
+                    instructions = Some(content.clone())
+                }
+                AgentEventKind::ModelResponseCommitted { assistant, .. } => {
+                    calls = assistant.tool_calls.clone()
+                }
+                AgentEventKind::ToolStarted { tool_call } if tool_call.name == "spawn_agent" => {
+                    if Self::spawn_id(&tool_call.id)
+                        .map_err(|e| AgentError::InvalidRequest(e.content))?
+                        != spawn_id
+                    {
+                        continue;
+                    }
+                    if !calls.iter().any(|call| call == tool_call) {
+                        return Err(AgentError::InvalidRequest(
+                            "spawn was not in the committed model response".into(),
+                        ));
+                    }
+                    let args: SpawnArgs = serde_json::from_value(tool_call.arguments.clone())
+                        .map_err(|e| AgentError::InvalidRequest(e.to_string()))?;
+                    if args.prompt.trim().is_empty() || args.prompt.len() > 64 * 1024 {
+                        return Err(AgentError::InvalidRequest(
+                            "invalid reserved spawn prompt".into(),
+                        ));
+                    }
+                    let model = model.clone().ok_or_else(|| {
+                        AgentError::InvalidRequest("spawn has no original model admission".into())
+                    })?;
+                    let instructions = instructions.clone().ok_or_else(|| {
+                        AgentError::InvalidRequest("spawn has no frozen instructions".into())
+                    })?;
+                    let base =
+                        crate::native_goal_base_instructions(&instructions).unwrap_or(instructions);
+                    let (prompt, mode) =
+                        crate::subagent_roles::resolve(&args.prompt, args.role.as_deref())
+                            .map_err(AgentError::InvalidRequest)?;
+                    let candidate = (prompt, model, base, mode);
+                    if found
+                        .as_ref()
+                        .is_some_and(|previous| previous != &candidate)
+                    {
+                        return Err(AgentError::InvalidRequest(
+                            "conflicting original spawn context".into(),
+                        ));
+                    }
+                    found = Some(candidate);
+                }
+                _ => {}
+            }
+        }
+        found.ok_or_else(|| {
+            AgentError::InvalidRequest("original started spawn request is missing".into())
+        })
+    }
+
     fn spawn_id(call_id: &str) -> Result<String, ToolOutput> {
         if call_id.is_empty() || call_id.len() > MAX_CALL_ID_BYTES {
             return Err(ToolOutput::error("invalid subagent tool call ID"));
@@ -301,6 +397,10 @@ impl SubagentToolExecutor {
                 "subagent prompt must contain 1..65536 bytes",
             ));
         }
+        let (prompt, mode) = match crate::subagent_roles::resolve(&args.prompt, args.role.as_deref()) {
+            Ok(resolved) => resolved,
+            Err(error) => return Ok(ToolOutput::error(error)),
+        };
         let spawn_id = match Self::spawn_id(&call.id) {
             Ok(id) => id,
             Err(output) => return Ok(output),
@@ -333,7 +433,7 @@ impl SubagentToolExecutor {
         let child =
             match self
                 .worker
-                .prepare_child(&parent_lease, &spawn_id, &args.prompt, TurnMode::Build)
+                .prepare_child(&parent_lease, &spawn_id, &prompt, mode)
             {
                 Ok(child) => child,
                 Err(SubagentWorkerError::Coordination(
@@ -364,7 +464,6 @@ impl SubagentToolExecutor {
                 .insert(child_id.clone(), cancellation.clone());
             let worker = self.worker.clone();
             let spawned = spawn_id.clone();
-            let prompt = args.prompt;
             let cleanup_control = Arc::clone(&self.control);
             let cleanup_child_id = child_id.clone();
             let child_id_for_worker = child_id.clone();
@@ -384,7 +483,7 @@ impl SubagentToolExecutor {
                             child_id_for_worker,
                             spawned,
                             prompt,
-                            TurnMode::Build,
+                            mode,
                             cancellation,
                         ));
                     }
@@ -520,10 +619,11 @@ impl SubagentToolExecutor {
         let parent_lease = self.lease()?;
         let result = self
             .coordinator
-            .request_cancel(&parent_lease, &args.agent_id);
+            .request_cancel_with_affected(&parent_lease, &args.agent_id);
         drop(parent_lease);
         match result {
-            Ok(child) => {
+            Ok((child, affected)) => {
+                self.worker.revoke_persistent_commands_for(&affected)?;
                 if let Some(token) = self
                     .control
                     .lock()
@@ -575,6 +675,9 @@ impl Drop for ScheduledCleanup {
 #[serde(deny_unknown_fields)]
 struct SpawnArgs {
     prompt: String,
+    /// Absent in every journal written before roles existed.
+    #[serde(default)]
+    role: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -606,8 +709,11 @@ pub(crate) fn coordination_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: "spawn_agent".to_owned(),
-            description: "Start a native Build subagent concurrently and return its stable agent ID. The child uses the tool policy configured by the host.".to_owned(),
-            parameters: json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":65536}},"required":["prompt"],"additionalProperties":false}),
+            description: format!(
+                "Start a native subagent concurrently and return its stable agent ID. The child uses the tool policy configured by the host. An optional role narrows it: {}",
+                crate::subagent_roles::catalog()
+            ),
+            parameters: json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":65536},"role":{"type":"string","enum":crate::subagent_roles::ROLES.iter().map(|role| role.name).collect::<Vec<_>>()}},"required":["prompt"],"additionalProperties":false}),
         },
         ToolDefinition {
             name: "wait_agent".to_owned(),
@@ -629,12 +735,37 @@ pub(crate) fn coordination_definitions() -> Vec<ToolDefinition> {
 
 #[async_trait]
 impl ToolExecutor for SubagentToolExecutor {
+    async fn execute_streaming(
+        &self,
+        call: &ToolCall,
+        context: &ToolContext,
+        output: crate::ToolOutputSender,
+    ) -> Result<ToolOutput, AgentError> {
+        if context.cancel.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
+        if matches!(
+            call.name.as_str(),
+            "spawn_agent" | "send_input" | "wait_agent" | "cancel_agent"
+        ) {
+            self.execute(call, context).await
+        } else {
+            self.base.execute_streaming(call, context, output).await
+        }
+    }
+
     fn definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions = self.base.definitions();
         definitions.extend(coordination_definitions());
         definitions
     }
 
+    fn certifies_plan_read(&self, name: &str) -> bool {
+        !matches!(
+            name,
+            "spawn_agent" | "send_input" | "wait_agent" | "cancel_agent"
+        ) && self.base.certifies_plan_read(name)
+    }
     fn certifies_parallel_read(&self, name: &str) -> bool {
         if matches!(
             name,
@@ -677,6 +808,8 @@ mod tests {
         active: AtomicUsize,
         maximum_active: AtomicUsize,
         messages: Mutex<Vec<Vec<AgentMessage>>>,
+        /// Tool names offered on each call, in the same order as `messages`.
+        tools: Mutex<Vec<Vec<String>>>,
         delay: Duration,
     }
 
@@ -687,9 +820,111 @@ mod tests {
                 active: AtomicUsize::new(0),
                 maximum_active: AtomicUsize::new(0),
                 messages: Mutex::new(Vec::new()),
+                tools: Mutex::new(Vec::new()),
                 delay,
             }
         }
+    }
+
+    #[test]
+    fn initial_reservation_source_requires_original_started_build_call_and_frozen_context() {
+        let call = ToolCall {
+            id: "original-call".into(),
+            name: "spawn_agent".into(),
+            arguments: json!({"prompt":"Complete original scope"}),
+        };
+        let spawn = SubagentToolExecutor::spawn_id(&call.id).unwrap();
+        let kinds = vec![
+            AgentEventKind::TurnAdmitted {
+                turn_id: "parent-turn".into(),
+                prompt: "Parent scope".into(),
+                model: "exact-model".into(),
+                mode: TurnMode::Build,
+            },
+            AgentEventKind::SystemInstructionsCommitted {
+                version: openide_core::SYSTEM_INSTRUCTIONS_VERSION,
+                digest: openide_core::system_instructions_digest("Frozen project").unwrap(),
+                content: "Frozen project".into(),
+            },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: openide_core::AgentMessage::assistant("", vec![call.clone()]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::ToolStarted {
+                tool_call: call.clone(),
+            },
+        ];
+        let events: Vec<_> = kinds
+            .into_iter()
+            .enumerate()
+            .map(|(index, kind)| openide_core::AgentEvent::new("parent", index as u64 + 1, kind))
+            .collect();
+        assert_eq!(
+            SubagentToolExecutor::reserved_spawn_request(&events, &spawn).unwrap(),
+            (
+                "Complete original scope".into(),
+                "exact-model".into(),
+                "Frozen project".into(),
+                TurnMode::Build
+            )
+        );
+        // A role in the journaled call comes back as the same narrowed child:
+        // its preamble on the prompt and, for a read-only role, Plan mode.
+        let with_role = |role: serde_json::Value, only_started: bool| {
+            let mut events = events.clone();
+            for index in [2, 3] {
+                let arguments = json!({"prompt":"Complete original scope", "role": role});
+                match &mut events[index].kind {
+                    AgentEventKind::ModelResponseCommitted { assistant, .. } if !only_started => {
+                        assistant.tool_calls[0].arguments = arguments
+                    }
+                    AgentEventKind::ToolStarted { tool_call } => tool_call.arguments = arguments,
+                    _ => {}
+                }
+            }
+            SubagentToolExecutor::reserved_spawn_request(&events, &spawn)
+        };
+        let (prompt, model, instructions, mode) = with_role(json!("explorer"), false).unwrap();
+        assert!(prompt.ends_with("Task:\nComplete original scope") && prompt.len() > 60, "{prompt}");
+        assert_eq!((model.as_str(), instructions.as_str(), mode), ("exact-model", "Frozen project", TurnMode::Plan));
+        assert_eq!(with_role(json!("worker"), false).unwrap().3, TurnMode::Build);
+        assert!(with_role(json!("admin"), false).is_err());
+        // A role the model never committed to cannot be slipped into the started call.
+        assert!(with_role(json!("explorer"), true).is_err());
+        assert!(SubagentToolExecutor::reserved_spawn_request(&events[..3], &spawn).is_err());
+        assert!(SubagentToolExecutor::reserved_spawn_request(&events, "foreign-spawn").is_err());
+        let mut plan = events.clone();
+        if let AgentEventKind::TurnAdmitted { mode, .. } = &mut plan[0].kind {
+            *mode = TurnMode::Plan;
+        }
+        assert!(SubagentToolExecutor::reserved_spawn_request(&plan, &spawn).is_err());
+        let mut changed = events.clone();
+        if let AgentEventKind::ToolStarted { tool_call } = &mut changed[3].kind {
+            tool_call.arguments = json!({"prompt":"Changed scope"});
+        }
+        assert!(SubagentToolExecutor::reserved_spawn_request(&changed, &spawn).is_err());
+        let mut tampered = events.clone();
+        if let AgentEventKind::SystemInstructionsCommitted { content, .. } = &mut tampered[1].kind {
+            *content = "Changed project".into();
+        }
+        assert!(SubagentToolExecutor::reserved_spawn_request(&tampered, &spawn).is_err());
+        let mut unknown = events.clone();
+        for index in [2, 3] {
+            match &mut unknown[index].kind {
+                AgentEventKind::ModelResponseCommitted { assistant, .. } => {
+                    assistant.tool_calls[0].arguments =
+                        json!({"prompt":"Complete original scope", "permissions":"allow-all"})
+                }
+                AgentEventKind::ToolStarted { tool_call } => {
+                    tool_call.arguments =
+                        json!({"prompt":"Complete original scope", "permissions":"allow-all"})
+                }
+                _ => unreachable!(),
+            }
+        }
+        assert!(SubagentToolExecutor::reserved_spawn_request(&unknown, &spawn).is_err());
     }
 
     #[async_trait]
@@ -705,11 +940,20 @@ mod tests {
         async fn complete(
             &self,
             messages: &[AgentMessage],
-            _tools: &[ToolDefinition],
+            tools: &[ToolDefinition],
             cancel: CancellationToken,
         ) -> Result<ModelOutput, AgentError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            self.messages.lock().unwrap().push(messages.to_vec());
+            {
+                // One lock for both, so a call's messages and tools share an
+                // index. Scoped: a guard must not live across the await below.
+                let mut recorded = self.messages.lock().unwrap();
+                recorded.push(messages.to_vec());
+                self.tools
+                    .lock()
+                    .unwrap()
+                    .push(tools.iter().map(|tool| tool.name.clone()).collect());
+            }
             let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
             self.maximum_active.fetch_max(active, Ordering::SeqCst);
             let result = tokio::select! {
@@ -735,6 +979,10 @@ mod tests {
     }
 
     fn fixture(max_tasks: usize, delay: Duration) -> Fixture {
+        fixture_with_tools(max_tasks, delay, LocalTools::new())
+    }
+
+    fn fixture_with_tools(max_tasks: usize, delay: Duration, base: LocalTools) -> Fixture {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().to_path_buf();
         let sessions = Arc::new(SessionStore::open(root.path().join("sessions")).unwrap());
@@ -744,7 +992,7 @@ mod tests {
             SubagentCoordinator::new(sessions.clone(), SubagentLimits::default()).unwrap(),
         );
         let model = Arc::new(DelayedModel::new(delay));
-        let base: Arc<dyn ToolExecutor> = Arc::new(LocalTools::new());
+        let base: Arc<dyn ToolExecutor> = Arc::new(base);
         let worker = SubagentWorker::new(
             coordinator.clone(),
             sessions.clone(),
@@ -791,6 +1039,82 @@ mod tests {
     fn json_output(output: ToolOutput) -> serde_json::Value {
         assert!(!output.is_error, "{}", output.content);
         serde_json::from_str(&output.content).unwrap()
+    }
+
+    /// End to end through the real executor and worker: what each child's
+    /// model is actually given.
+    #[tokio::test]
+    async fn role_e2e_an_explorer_child_runs_without_write_tools_and_a_plain_child_keeps_them() {
+        // The host allows writes and commands here, so a role is the only
+        // thing that can take them away from a child.
+        let fixture = fixture_with_tools(
+            4,
+            Duration::from_millis(20),
+            LocalTools::new().with_write_access(true),
+        );
+        let context = context(&fixture.workspace);
+        let spawn = |id: &'static str, arguments: serde_json::Value| {
+            let tools = &fixture.tools;
+            let context = &context;
+            async move { tools.execute(&call(id, "spawn_agent", arguments), context).await.unwrap() }
+        };
+        let refused = spawn("call-bad", json!({"prompt":"x","role":"admin"})).await;
+        assert!(refused.is_error && refused.content.contains("explorer"), "{}", refused.content);
+
+        let plain = json_output(spawn("call-plain", json!({"prompt":"change the parser"})).await);
+        let explorer = json_output(
+            spawn("call-explorer", json!({"prompt":"find the parser","role":"explorer"})).await,
+        );
+        for agent in [&plain, &explorer] {
+            let waited = json_output(
+                fixture
+                    .tools
+                    .execute(
+                        &call(
+                            "wait",
+                            "wait_agent",
+                            json!({"agent_id": agent["agent_id"], "timeout_ms": 20_000}),
+                        ),
+                        &context,
+                    )
+                    .await
+                    .unwrap(),
+            );
+            assert_eq!(waited["response"], "child response", "{waited}");
+        }
+        assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 2, "the refused spawn must not run a child");
+
+        let messages = fixture.model.messages.lock().unwrap().clone();
+        let tools = fixture.model.tools.lock().unwrap().clone();
+        let offered = |needle: &str| {
+            let index = messages
+                .iter()
+                .position(|call| call.iter().any(|message| message.content.contains(needle)))
+                .unwrap_or_else(|| panic!("no child saw {needle}"));
+            (messages[index].clone(), tools[index].clone())
+        };
+        let (plain_messages, plain_tools) = offered("change the parser");
+        let (explorer_messages, explorer_tools) = offered("find the parser");
+        let writes = ["write_file", "run_command", "apply_patch", "spawn_agent"];
+
+        // The plain child is the child the host always offered.
+        assert!(plain_tools.iter().any(|name| name == "write_file"), "{plain_tools:?}");
+        assert!(!plain_messages.iter().any(|message| message.content.contains("explorer subagent")));
+
+        // The explorer got its role's instructions, can still read, and was
+        // offered nothing that changes the project or spawns more agents.
+        assert!(explorer_messages
+            .iter()
+            .any(|message| message.content.contains("You are an explorer subagent")
+                && message.content.ends_with("Task:\nfind the parser")));
+        assert!(explorer_tools.iter().any(|name| name == "read_file"), "{explorer_tools:?}");
+        for name in writes {
+            assert!(!explorer_tools.iter().any(|tool| tool == name), "{name} offered: {explorer_tools:?}");
+        }
+
+        // Its saved record says so too, which is what recovery reads.
+        let record = fixture.tools.child_for_call_id("call-explorer").unwrap().unwrap();
+        assert_eq!(record.session.id, explorer["agent_id"].as_str().unwrap());
     }
 
     #[tokio::test]

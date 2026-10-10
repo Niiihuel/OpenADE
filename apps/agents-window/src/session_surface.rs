@@ -1,33 +1,73 @@
 //! Session surface composed from the persisted/live transcript projection.
 //!
-//! A turn is visually anchored by its user prompt. Consecutive tool calls are
-//! shown as one work group, but remain individually selectable. No task count,
+//! A turn is visually anchored by its user prompt. Tools retain their own
+//! compact disclosure through preparation, execution and review. No task count,
 //! duration, or file change is inferred from text: only transcript facts appear.
 
+use std::collections::HashSet;
+
+use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon,
-    IconButton as UiIconButton, ScrollArea, TextArea,
+    Alert, AlertTone, Button, ButtonVariant, Collapsible, Color, Component, ControlSize, Element,
+    FontFamily, Icon, IconButton as UiIconButton, Marker, MarkerVariant, ScrollArea, TextArea,
+    ToolActivity, Tooltip, TooltipPlacement,
 };
 
 use crate::{
-    composer_ui::{build_composer, ComposerProps},
+    composer_ui::{build_composer_with_height, build_native_context_control, ComposerProps},
     rich_text, theme,
-    transcript::{TranscriptImage, TranscriptItem},
+    tool_presentation::{self, ToolKind},
+    transcript::{
+        ActivityStatus, ModelStreamStatus, TranscriptActivity, TranscriptImage, TranscriptItem,
+    },
     view::{
-        sidebar_reopen_control, AbortedToolBatchView, PermissionView, SessionPlanView,
-        SessionRecoveryView, SubagentPermissionView, SubagentRunView, ToolVerificationView,
-        ViewState,
+        sidebar_reopen_control, AbortedToolBatchView, NativeAutomationSessionView, PermissionView,
+        SessionPlanView, SessionRecoveryView, SubagentPermissionView, SubagentRunView,
+        ToolVerificationView, ViewState,
     },
 };
 
 const READING_WIDTH: f32 = 780.0;
 const COMPACT_BREAKPOINT: f32 = 470.0;
-const HEADER_PADDING: f32 = 16.0;
-const HEADER_HEIGHT: f32 = 64.0;
+const HEADER_PADDING: f32 = 4.0;
+const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 const HEADER_FADE_HEIGHT: f32 = 42.0;
-const HEADER_ACTION_SIZE: f32 = 32.0;
-const HEADER_GAP: f32 = 8.0;
+pub(crate) const TRANSCRIPT_BOTTOM_FADE_HEIGHT: f32 = 32.0;
+const HEADER_ACTION_SIZE: f32 = crate::sidebar_chrome::TOOL_SIZE;
+const HEADER_GAP: f32 = 4.0;
+
+/// Humanize known provider failures only at presentation time. The original
+/// error stays intact in the transcript and journal for replay and diagnosis.
+pub(crate) fn conversation_notice_message(message: &str, is_error: bool) -> &str {
+    if is_error && message.contains("subscription_sharing_usage_limit_exceeded") {
+        "Se alcanzó un límite de uso de ChatGPT en OpenIDE. Revisa los límites de esta app en ChatGPT → Configuración → Uso; abre esa página desde Configuración de proveedores → Ver uso."
+    } else if is_error && message.contains("subscription_sharing_usage_unavailable") {
+        "ChatGPT no pudo comprobar la disponibilidad de uso para este turno. Inténtalo de nuevo más tarde."
+    } else {
+        message
+    }
+}
+
+#[cfg(test)]
+#[path = "conversation_marker_tests.rs"]
+mod marker_tests;
+
+#[cfg(test)]
+#[path = "conversation_stream_visual_tests.rs"]
+mod stream_visual_tests;
+
+#[cfg(test)]
+#[path = "conversation_plan_visual_tests.rs"]
+mod plan_visual_tests;
+
+#[cfg(test)]
+#[path = "file_activity_visual_tests.rs"]
+mod file_activity_visual_tests;
+
+#[cfg(test)]
+#[path = "chat_dock_visual_tests.rs"]
+mod chat_dock_visual_tests;
 
 fn text(value: impl Into<String>, color: Color, size: f32) -> Element {
     Element::text(value)
@@ -65,28 +105,6 @@ pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     .gap(5.0)
 }
 
-fn action(
-    id: impl Into<String>,
-    icon: Icon,
-    label: impl Into<String>,
-    background: Color,
-    foreground: Color,
-) -> Element {
-    UiIconButton::new(id, icon, theme::action_palette(background, foreground))
-        .label(label)
-        .variant(if background == theme::BRAND {
-            ButtonVariant::Solid
-        } else {
-            ButtonVariant::Subtle
-        })
-        .size(ControlSize::Regular)
-        .render()
-        .font_size(12.0)
-        .padding(5.0)
-        .radius(8.0)
-        .min_size(0.0, 32.0)
-}
-
 fn separator() -> Element {
     Element::spacer()
         .size(None, Some(1.0))
@@ -119,30 +137,25 @@ fn session_name(state: &ViewState) -> &str {
         .unwrap_or("Nueva tarea")
 }
 
-fn session_backend_label(state: &ViewState) -> Option<&'static str> {
-    let backend = state
+fn selected_native_automation(state: &ViewState) -> Option<&NativeAutomationSessionView> {
+    state
         .selected_session
         .as_deref()
-        .and_then(|id| state.sessions.iter().find(|session| session.id == id))
-        .map_or(state.selected_backend.as_str(), |session| {
-            session.backend.as_str()
-        });
-    match backend {
-        "native" => Some("Nativo"),
-        "codex" => Some("Codex CLI"),
-        _ => None,
-    }
+        .and_then(|id| {
+            state
+                .sessions
+                .iter()
+                .find(|session| session.id == id && session.backend == "native")
+        })
+        .and_then(|session| session.native_automation.as_ref())
 }
 
-fn framed_row(contents: Vec<Element>, background: Color, padding: f32, radius: f32) -> Element {
-    Element::panel(Element::row(contents).gap(8.0))
-        .padding(padding)
-        .background(background)
-        .border(theme::BORDER, 1.0)
-        .radius(radius)
-}
-
-fn header(state: &ViewState, width: f32, side_visible: bool, side_available: bool) -> Element {
+pub(crate) fn header(
+    state: &ViewState,
+    width: f32,
+    side_visible: bool,
+    side_available: bool,
+) -> Element {
     let sidebar_hidden = state
         .left_presentation_width
         .map_or(state.sidebar_collapsed, |width| width <= 1.0);
@@ -151,174 +164,173 @@ fn header(state: &ViewState, width: f32, side_visible: bool, side_available: boo
     let show_side_toggle =
         !recovery_decision_pending && !side_visible && side_available && width >= 300.0;
     let show_settings = !recovery_decision_pending && width >= 220.0;
+    let header_action = |id: &str, icon: Icon, hint: &str| {
+        Tooltip::new(
+            UiIconButton::new(
+                id,
+                icon,
+                theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Subtle)
+            .size(ControlSize::Dense)
+            .render(),
+            id,
+            hint,
+            theme::component_palette(),
+        )
+        .placement(TooltipPlacement::Below)
+        .render()
+    };
     let mut top = Vec::new();
     if sidebar_hidden {
         top.push(sidebar_reopen_control(theme::BACKGROUND));
     }
+    let cli = state
+        .selected_backend
+        .strip_prefix(crate::view::CLI_BACKEND)
+        .filter(|_| crate::view::cli_task(state));
+    if let Some(agent) = cli {
+        top.push(Element::spacer().size(Some(4.0), None));
+        top.push(
+            Element::column(vec![
+                Element::spacer().flex(1.0),
+                Element::icon(crate::provider_icons::icon_for_agent_cli(agent))
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .size(Some(16.0), Some(16.0)),
+                Element::spacer().flex(1.0),
+            ])
+            .size(Some(16.0), Some(HEADER_ACTION_SIZE)),
+        );
+    }
     top.push(
-        Element::truncated_text(session_name(state))
+        Element::faded_text(session_name(state), 24.0)
             .foreground(theme::FOREGROUND)
             .font_family(FontFamily::Sans)
-            .font_size(14.0)
+            .font_size(13.0)
             .flex(1.0)
             .size(None, Some(HEADER_ACTION_SIZE)),
     );
-    if width >= COMPACT_BREAKPOINT && state.selected_session.is_some() {
-        if let Some(backend) = session_backend_label(state) {
-            top.push(
-                mono(backend, theme::FOREGROUND_SUBTLE, 10.0)
-                    .padding(6.0)
-                    .background(theme::PANEL)
-                    .radius(6.0)
-                    .size(None, Some(26.0)),
-            );
-        }
+    if cli.is_some() {
+        top.push(header_action(
+            "cli_task_restart",
+            Icon::Refresh,
+            "Reiniciar la CLI en una terminal nueva",
+        ));
     }
-    if !recovery_decision_pending {
-        top.push(
-            action(
-                "new_session_header",
-                Icon::Add,
-                "",
-                theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
-            )
-            .size(Some(32.0), Some(32.0)),
-        );
+    if !recovery_decision_pending && width >= 300.0 {
+        top.push(crate::view::window_mode_control(state));
+        top.push(crate::environment_ui::header_control(state, width));
     }
     if show_side_toggle {
-        top.push(
-            action(
-                "toggle_side_pane_header",
-                Icon::PanelRightOpen,
-                "",
-                theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
-            )
-            .size(Some(32.0), Some(32.0)),
-        );
+        top.push(header_action(
+            "toggle_side_pane_header",
+            Icon::PanelRightOpen,
+            "Mostrar panel derecho: archivos, cambios, terminal y navegador",
+        ));
     }
     if show_settings {
-        top.push(
-            action(
-                "toggle_settings_header",
-                Icon::Settings,
-                "",
-                theme::BACKGROUND,
-                theme::FOREGROUND_SUBTLE,
-            )
-            .size(Some(HEADER_ACTION_SIZE), Some(HEADER_ACTION_SIZE)),
-        );
+        top.push(header_action(
+            "toggle_settings_header",
+            Icon::Settings,
+            "Abrir configuración de OpenIDE",
+        ));
     }
     Element::panel(Element::row(top).gap(HEADER_GAP))
         .padding(HEADER_PADDING)
         .size(None, Some(HEADER_HEIGHT))
 }
 
-fn turn_heading(number: usize, item: &TranscriptItem) -> Element {
-    let (title, icon) = match item {
-        TranscriptItem::User { .. } => ("TÚ", Icon::Chat),
-        TranscriptItem::Assistant { streaming, .. } => (
-            if *streaming {
-                "AGENTE · ESCRIBIENDO"
-            } else {
-                "AGENTE"
-            },
-            Icon::Code,
-        ),
-        _ => ("ACTIVIDAD", Icon::Code),
-    };
-    Element::row(vec![
-        Element::icon(icon).foreground(theme::ICON_PRIMARY),
-        text(title, theme::FOREGROUND_SUBTLE, 10.0),
-        Element::spacer().flex(1.0),
-        if matches!(item, TranscriptItem::User { .. }) {
-            mono(format!("{number:02}"), theme::FOREGROUND_SUBTLE, 10.0)
-        } else {
-            Element::spacer()
-        },
-    ])
-    .gap(7.0)
-    .size(None, Some(20.0))
-}
-
 fn message(
     item: &TranscriptItem,
     item_index: usize,
-    turn_number: usize,
+    _turn_number: usize,
     reading_width: f32,
+    state: &ViewState,
 ) -> Element {
     match item {
         TranscriptItem::User { content, images } => {
-            let mut contents = vec![
-                turn_heading(turn_number, item),
-                text(content, theme::FOREGROUND, 14.0),
-            ];
+            let mut contents = vec![rich_text::render_user_message(content, &format!(
+                "user:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
+            ))];
             for image in images {
                 contents.push(user_image(image));
             }
-            Element::panel(Element::column(contents).gap(9.0))
-                .padding(16.0)
+            Element::panel(Element::column(contents).gap(8.0))
+                .padding(10.0)
                 .background(theme::CARD)
-                .border(theme::BORDER, 1.0)
-                .radius(12.0)
+                .radius(8.0)
         }
-        TranscriptItem::Assistant { content, .. } => Element::panel(
-            Element::column(vec![
-                turn_heading(turn_number, item),
-                rich_text::render_markdown_at_width(content, (reading_width - 24.0).max(96.0)),
-            ])
-            .gap(9.0),
-        )
-        .padding(12.0)
-        .background(theme::BACKGROUND),
-        TranscriptItem::WebCitation { title, url } => Element::clickable(
-            format!("web_citation_open:{item_index}"),
-            Element::row(vec![
-                Element::icon(Icon::Search).foreground(theme::ICON_PRIMARY),
-                Element::column(vec![
-                    Element::truncated_text(title)
-                        .font_family(FontFamily::Sans)
-                        .font_size(12.0)
-                        .foreground(theme::FOREGROUND)
-                        .size(None, Some(18.0)),
-                    Element::truncated_text(url)
-                        .font_family(FontFamily::Monospace)
-                        .font_size(10.0)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .size(None, Some(16.0)),
-                ])
-                .gap(2.0)
-                .flex(1.0),
-            ])
-            .gap(8.0)
-            .padding(9.0),
-        )
-        .background(theme::PANEL)
-        .hover_background(theme::HOVER)
-        .border(theme::BORDER, 1.0)
-        .radius(8.0),
-        TranscriptItem::Notice { message, is_error } => {
-            let ink = if *is_error {
-                theme::DESTRUCTIVE
+        TranscriptItem::Assistant { content, streaming } => {
+            let visible = state.stream_presentation.visible_bytes(item_index, content);
+            let preview = if *streaming {
+                rich_text::render_streaming_markdown_preview_at_width(
+                    &content[..visible],
+                    reading_width.max(96.0),
+                )
             } else {
-                theme::FOREGROUND_SUBTLE
+                rich_text::render_markdown_preview_at_width(content, reading_width.max(96.0))
             };
-            framed_row(
-                vec![
-                    Element::icon(if *is_error {
-                        Icon::Close
-                    } else {
-                        Icon::History
-                    })
-                    .foreground(ink),
-                    text(message, ink, 12.0),
-                ],
-                theme::PANEL,
-                10.0,
-                8.0,
-            )
+            let mut rows = vec![rich_text::scope_web_links(preview.element, &format!(
+                "assistant:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
+            ))];
+            if preview.limited && !*streaming && crate::conversation_source_ui::available(state) {
+                // Keep actions outside the cached passive Markdown tree.
+                rows.push(crate::conversation_source_ui::open_button(
+                    state, item_index,
+                ));
+            }
+            Element::column(rows).gap(8.0)
         }
+        TranscriptItem::Reasoning { .. } | TranscriptItem::ToolPreview { .. } => {
+            model_stream_item(item, item_index, state, reading_width)
+        }
+        TranscriptItem::ModelUsage { .. } => Element::spacer(),
+        TranscriptItem::WebSearch { .. } => crate::search_activity_ui::hosted(item, state),
+        TranscriptItem::PlanSnapshot { .. } => plan_snapshot_item(item, item_index, state),
+        TranscriptItem::Hook(hook) => hook_activity_card(hook),
+        TranscriptItem::Activity(activity) => activity_marker(activity),
+        TranscriptItem::WebCitation { title, url } => {
+            theme::interactive_surface(Element::clickable(
+                format!("web_citation_open:{item_index}"),
+                Element::row(vec![
+                    Element::icon(Icon::Search).foreground(theme::ICON_PRIMARY),
+                    Element::column(vec![
+                        Element::truncated_text(title)
+                            .font_family(FontFamily::Sans)
+                            .font_size(12.0)
+                            .foreground(theme::FOREGROUND)
+                            .size(None, Some(18.0)),
+                        Element::truncated_text(url)
+                            .font_family(FontFamily::Monospace)
+                            .font_size(10.0)
+                            .foreground(theme::FOREGROUND_SUBTLE)
+                            .size(None, Some(16.0)),
+                    ])
+                    .gap(2.0)
+                    .flex(1.0),
+                ])
+                .gap(8.0)
+                .padding(9.0),
+            ))
+            .background(theme::PANEL)
+            .border(theme::BORDER, 1.0)
+        }
+        TranscriptItem::Notice { message, is_error } => Alert::new(
+            if *is_error {
+                "Error en la conversación"
+            } else {
+                "Aviso de la conversación"
+            },
+            conversation_notice_message(message, *is_error),
+            theme::component_palette(),
+        )
+        .tone(if *is_error {
+            AlertTone::Error
+        } else {
+            AlertTone::Info
+        })
+        .compact(true)
+        .render(),
         TranscriptItem::ProcessOutput {
             stream,
             text: output,
@@ -339,8 +351,388 @@ fn message(
             .border(theme::BORDER, 1.0)
             .radius(9.0)
         }
-        TranscriptItem::Tool { .. } => unreachable!("tools are rendered in work groups"),
+        TranscriptItem::Tool { .. } => unreachable!("tools own their captured output"),
+        TranscriptItem::ToolOutput { .. } | TranscriptItem::ToolMedia { .. } => Element::spacer(),
     }
+}
+
+fn detail_action(state: &ViewState, id: &str) -> String {
+    format!(
+        "conversation_detail:{}:{id}",
+        state.selected_session.as_deref().unwrap_or("draft")
+    )
+}
+
+fn stream_state_label(status: ModelStreamStatus) -> &'static str {
+    match status {
+        ModelStreamStatus::Receiving => "En curso",
+        ModelStreamStatus::Committed => "Recibido",
+        ModelStreamStatus::Interrupted => "Interrumpido",
+        ModelStreamStatus::Failed => "Falló",
+        ModelStreamStatus::Cancelled => "Cancelado",
+        ModelStreamStatus::Discarded => "Descartado",
+    }
+}
+
+/// Automatic disclosure follows the current reasoning chunk, not the whole
+/// request. Starting prose or a tool closes it unless the reader chose a state.
+fn reasoning_is_live_tail(state: &ViewState, id: &str) -> bool {
+    matches!(state.transcript.iter().rev().find(|item| !matches!(item,
+        TranscriptItem::ModelUsage { .. } | TranscriptItem::PlanSnapshot { .. }
+    )), Some(TranscriptItem::Reasoning { id: tail_id, status: ModelStreamStatus::Receiving, content, .. })
+        if tail_id == id && !content.is_empty())
+}
+
+pub(crate) fn model_stream_item(
+    item: &TranscriptItem,
+    item_index: usize,
+    state: &ViewState,
+    reading_width: f32,
+) -> Element {
+    if let Some(file) =
+        crate::file_activity_ui::build(item, state, reading_width < COMPACT_BREAKPOINT, None, None)
+    {
+        return file;
+    }
+    if let Some(search) = crate::search_activity_ui::build(item, state) {
+        return search;
+    }
+    match item {
+        TranscriptItem::Reasoning {
+            id,
+            content,
+            status,
+            truncated,
+            ..
+        } => {
+            let receiving = *status == ModelStreamStatus::Receiving;
+            let live = reasoning_is_live_tail(state, id);
+            let expanded = state.conversation_details.is_expanded(id, live);
+            let visible = &content[..state.stream_presentation.visible_bytes(item_index, content)];
+            let body = if expanded {
+                let rendered = if receiving {
+                    rich_text::render_streaming_markdown_at_width(
+                        visible,
+                        (reading_width - 33.0).max(48.0),
+                    )
+                } else {
+                    rich_text::render_markdown_at_width(content, (reading_width - 33.0).max(48.0))
+                };
+                let mut rows = vec![rich_text::scope_web_links(rendered, &format!(
+                    "reasoning:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
+                ))];
+                if *truncated {
+                    rows.push(text(
+                        "Vista de razonamiento limitada",
+                        theme::FOREGROUND_SUBTLE,
+                        10.0,
+                    ));
+                }
+                ScrollArea::new(
+                    format!(
+                        "reasoning-body:{}:{id}",
+                        state.selected_session.as_deref().unwrap_or("draft")
+                    ),
+                    Element::column(rows).gap(6.0),
+                )
+                .tint(theme::FOREGROUND_SUBTLE)
+                .render()
+                .max_height(160.0)
+            } else {
+                Element::spacer()
+            };
+            Collapsible::new(
+                detail_action(state, id),
+                if live { "Pensando" } else { "Razonamiento" },
+                body,
+                theme::component_palette(),
+            )
+            .icon(Icon::Brain)
+            .collapse_footer(true)
+            .thinking(live)
+            .expanded(expanded)
+            .detail(stream_state_label(*status))
+            .render()
+        }
+        TranscriptItem::ToolPreview {
+            id,
+            call_id,
+            name,
+            arguments,
+            input_complete,
+            status,
+            truncated,
+            ..
+        } => {
+            let status_label = match status {
+                ModelStreamStatus::Receiving if *input_complete => "Entrada recibida",
+                ModelStreamStatus::Receiving => "Preparando",
+                ModelStreamStatus::Committed => "Pendiente",
+                ModelStreamStatus::Interrupted | ModelStreamStatus::Failed => "No ejecutada",
+                ModelStreamStatus::Cancelled => "Cancelada",
+                ModelStreamStatus::Discarded => "Descartada · sin ejecutar",
+            };
+            let name = name.as_deref().unwrap_or("Herramienta");
+            let disclosure = call_id.as_ref().map(|id| format!("tool:{id}"));
+            let disclosure = disclosure.as_deref().unwrap_or(id);
+            let expanded = state.conversation_details.is_expanded(disclosure, false);
+            let preview = tool_presentation::present(
+                name,
+                &tool_presentation::preview_arguments(arguments),
+                ActivityStatus::Running,
+                false,
+                None,
+            );
+            let mut rows = Vec::new();
+            if expanded {
+                rows.push(text(
+                    "Entrada provisional · todavía sin ejecutar",
+                    theme::FOREGROUND_SUBTLE,
+                    11.0,
+                ));
+                if !arguments.is_empty() {
+                    rows.push(mono(arguments, theme::FOREGROUND_SUBTLE, 11.0));
+                }
+                if *truncated {
+                    rows.push(text(
+                        "Vista de argumentos limitada",
+                        theme::FOREGROUND_SUBTLE,
+                        10.0,
+                    ));
+                }
+            }
+            let row = ToolActivity::new(
+                detail_action(state, disclosure),
+                format!("{status_label} · {}", tool_operation(name)),
+                Element::column(rows).gap(6.0),
+                theme::component_palette(),
+            )
+            .icon(preview.icon)
+            .target(preview.target)
+            .command(preview.kind == ToolKind::Command)
+            .running(*status == ModelStreamStatus::Receiving)
+            .expanded(expanded)
+            .render();
+            let explanation = match status {
+                ModelStreamStatus::Failed => Some(
+                    "El modelo falló antes de confirmar esta llamada. La herramienta no se ejecutó.",
+                ),
+                ModelStreamStatus::Interrupted => Some(
+                    "La solicitud se interrumpió antes de confirmar esta llamada. La herramienta no se ejecutó.",
+                ),
+                ModelStreamStatus::Cancelled => Some(
+                    "La solicitud se canceló antes de confirmar esta llamada. La herramienta no se ejecutó.",
+                ),
+                ModelStreamStatus::Discarded => {
+                    Some("La llamada confirmada fue descartada sin ejecutar.")
+                }
+                _ => None,
+            };
+            if let Some(explanation) = explanation {
+                Tooltip::new(
+                    row,
+                    detail_action(state, disclosure),
+                    status_label,
+                    theme::component_palette(),
+                )
+                .description(explanation)
+                .placement(TooltipPlacement::Right)
+                .render()
+            } else {
+                row
+            }
+        }
+        _ => Element::spacer(),
+    }
+}
+
+fn marker_palette(surface: Color, ink: Color) -> openide_ui::ComponentPalette {
+    let mut palette = theme::action_palette(surface, ink);
+    palette.muted = ink;
+    palette
+}
+
+pub(crate) fn activity_marker(activity: &TranscriptActivity) -> Element {
+    match activity {
+        TranscriptActivity::Model {
+            id,
+            has_text,
+            status,
+            ..
+        } => {
+            let label = match status {
+                ActivityStatus::Running if *has_text => "Generando respuesta",
+                ActivityStatus::Running => "Pensando",
+                ActivityStatus::Completed => "Respuesta recibida",
+                ActivityStatus::Failed => "Solicitud al modelo fallida",
+                ActivityStatus::Cancelled => "Solicitud al modelo cancelada",
+                ActivityStatus::Interrupted => "Solicitud al modelo interrumpida",
+                ActivityStatus::WaitingPermission
+                | ActivityStatus::PermissionInterrupted
+                | ActivityStatus::Discarded => {
+                    unreachable!("models never wait for tool permission")
+                }
+            };
+            let ink = if matches!(status, ActivityStatus::Failed | ActivityStatus::Interrupted) {
+                theme::DESTRUCTIVE
+            } else {
+                theme::FOREGROUND_SUBTLE
+            };
+            Marker::new(
+                id,
+                label,
+                if *status == ActivityStatus::Running {
+                    theme::component_palette()
+                } else {
+                    marker_palette(theme::BACKGROUND, ink)
+                },
+            )
+            .icon(if *status == ActivityStatus::Completed {
+                Icon::Check
+            } else {
+                Icon::Code
+            })
+            .loading(*status == ActivityStatus::Running)
+            .thinking(*status == ActivityStatus::Running && !has_text)
+            .render()
+        }
+        TranscriptActivity::Checkpoint {
+            id,
+            covered_event_sequence,
+        } => {
+            let title = if id.starts_with("route-migration-") {
+                "Contexto conservado para el modelo elegido"
+            } else {
+                "Contexto compactado"
+            };
+            Tooltip::new(
+                Marker::new(
+                    format!("checkpoint:{id}"),
+                    title,
+                    theme::component_palette(),
+                )
+                .variant(MarkerVariant::Separator)
+                .icon(Icon::History)
+                .render(),
+                format!("checkpoint:{id}:info"),
+                "El resumen está guardado. Puedes continuar la conversación.",
+                theme::component_palette(),
+            )
+            .description(format!("Hasta el evento {covered_event_sequence}"))
+            .render()
+        }
+    }
+}
+
+#[cfg(test)]
+fn tool_marker_icon(name: &str) -> Icon {
+    tool_presentation::icon(name)
+}
+
+fn tool_operation(name: &str) -> &str {
+    tool_presentation::operation(name)
+}
+
+#[cfg(test)]
+pub(crate) fn tool_activity_marker(
+    owner: Option<&str>,
+    id: &str,
+    name: &str,
+    activity: ActivityStatus,
+    selected: bool,
+    is_error: bool,
+) -> Element {
+    let operation = tool_operation(name);
+    let status = match activity {
+        ActivityStatus::Running => "en curso",
+        ActivityStatus::WaitingPermission => "esperando permiso",
+        ActivityStatus::PermissionInterrupted => "permiso pendiente · turno interrumpido",
+        ActivityStatus::Completed => "completada",
+        ActivityStatus::Failed => "error",
+        ActivityStatus::Cancelled => "permiso cancelado",
+        ActivityStatus::Interrupted => "resultado incierto",
+        ActivityStatus::Discarded => "descartada sin ejecutar",
+    };
+    let ink = if is_error
+        || matches!(
+            activity,
+            ActivityStatus::Failed | ActivityStatus::Interrupted
+        ) {
+        theme::DESTRUCTIVE
+    } else {
+        theme::FOREGROUND_SUBTLE
+    };
+    Marker::new(
+        format!("tool-activity:{}:{id}", owner.unwrap_or("draft")),
+        format!(
+            "{operation} · {} · {status}",
+            if name.is_empty() {
+                "Nombre no registrado"
+            } else {
+                name
+            }
+        ),
+        marker_palette(
+            if selected {
+                theme::SELECTED
+            } else {
+                theme::CARD
+            },
+            ink,
+        ),
+    )
+    .icon(tool_marker_icon(name))
+    .loading(activity == ActivityStatus::Running)
+    .action(format!("tool:{id}"))
+    .render()
+    .background(if selected {
+        theme::SELECTED
+    } else {
+        theme::CARD
+    })
+}
+
+pub(crate) fn host_activity_markers(state: &ViewState) -> Vec<Element> {
+    let mut markers = Vec::new();
+    if let Some(session) = state.conversation_activity.compacting_for(
+        std::path::Path::new(&state.workspace),
+        state.selected_session.as_deref(),
+    ) {
+        markers.push(
+            Marker::new(
+                format!("manual-compaction:{session}"),
+                "Compactando contexto…",
+                theme::component_palette(),
+            )
+            .variant(MarkerVariant::Border)
+            .loading(true)
+            .render(),
+        );
+    }
+    if let Some(change) = state.conversation_activity.branch_change(
+        std::path::Path::new(&state.workspace),
+        state.selected_session.as_deref(),
+    ) {
+        markers.push(
+            Marker::new(
+                format!(
+                    "branch-observed:{}:{}:{}",
+                    state.selected_session.as_deref().unwrap_or("draft"),
+                    change.previous,
+                    change.current
+                ),
+                format!(
+                    "Rama cambiada: {} → {} · observada en Git",
+                    change.previous, change.current
+                ),
+                theme::component_palette(),
+            )
+            .variant(MarkerVariant::Separator)
+            .icon(Icon::GitBranch)
+            .render(),
+        );
+    }
+    markers
 }
 
 /// A successful CLI turn keeps stderr in the activity pane, but its startup
@@ -369,32 +761,265 @@ fn completed_process_diagnostic(items: &[TranscriptItem], index: usize) -> bool 
         })
 }
 
-fn work_counts(items: &[TranscriptItem]) -> (usize, usize, usize) {
+fn work_counts(items: &[TranscriptItem]) -> (usize, usize, usize, usize, usize, usize) {
     let mut completed = 0;
     let mut running = 0;
     let mut failed = 0;
+    let mut uncertain = 0;
+    let mut permission = 0;
+    let mut cancelled = 0;
     for item in items {
         if let TranscriptItem::Tool {
-            output, is_error, ..
+            output,
+            is_error,
+            activity,
+            ..
         } = item
         {
-            if output.is_none() {
-                running += 1;
-            } else if *is_error {
+            if *is_error || *activity == ActivityStatus::Failed {
                 failed += 1;
             } else {
-                completed += 1;
+                match activity {
+                    ActivityStatus::Completed if output.is_some() => completed += 1,
+                    ActivityStatus::Running => running += 1,
+                    ActivityStatus::WaitingPermission | ActivityStatus::PermissionInterrupted => {
+                        permission += 1
+                    }
+                    ActivityStatus::Cancelled | ActivityStatus::Discarded => cancelled += 1,
+                    _ => uncertain += 1,
+                }
+            }
+        } else if let TranscriptItem::ToolPreview { status, .. } = item {
+            match status {
+                ModelStreamStatus::Failed => failed += 1,
+                ModelStreamStatus::Interrupted => uncertain += 1,
+                ModelStreamStatus::Cancelled | ModelStreamStatus::Discarded => cancelled += 1,
+                _ => {}
             }
         }
     }
-    (completed, running, failed)
+    (completed, running, failed, uncertain, permission, cancelled)
 }
 
-fn tool_line(
+pub(crate) fn conversation_detail_default_open(state: &ViewState, id: &str) -> bool {
+    if reasoning_is_live_tail(state, id) {
+        return true;
+    }
+    if let Some(call) = id.strip_prefix("work:") {
+        return state
+            .transcript
+            .iter()
+            .position(|item| exploration_call(item) == Some(call))
+            .map(|start| {
+                let (end, _) = exploration_run(&state.transcript, start);
+                exploration_open_child(&state.transcript[start..end], state)
+            })
+            .unwrap_or(false);
+    }
+    if let Some(call) = id.strip_prefix("tool:") {
+        return crate::file_activity_ui::default_expanded(state, call);
+    }
+    if crate::file_activity_ui::default_expanded(state, id) {
+        return true;
+    }
+    // Plan snapshots are always inline and no longer own a disclosure. Other
+    // tool activity still preserves its own explicit expansion choice.
+    false
+}
+
+pub(crate) fn tool_partial_output<'a>(
+    state: &'a ViewState,
+    index: usize,
+    id: &str,
+) -> Option<(&'a str, bool)> {
+    match state.transcript.get(index + 1) {
+        Some(TranscriptItem::ToolOutput {
+            tool_call_id,
+            text,
+            truncated,
+        }) if tool_call_id == id => Some((text, *truncated)),
+        _ => None,
+    }
+}
+
+pub(crate) fn tool_media<'a>(
+    state: &'a ViewState,
+    index: usize,
+    id: &str,
+) -> Option<&'a TranscriptItem> {
+    let next = state.transcript.get(index + 1)?;
+    match next {
+        TranscriptItem::ToolMedia { tool_call_id, .. } if tool_call_id == id => Some(next),
+        TranscriptItem::ToolOutput { tool_call_id, .. } if tool_call_id == id => {
+            let next = state.transcript.get(index + 2)?;
+            matches!(next, TranscriptItem::ToolMedia { tool_call_id, .. } if tool_call_id == id)
+                .then_some(next)
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn tool_media_elements(
+    media: &TranscriptItem,
+    compact: bool,
+    owner: &str,
+) -> Vec<Element> {
+    let TranscriptItem::ToolMedia {
+        tool_call_id,
+        images,
+        text: content,
+        notices,
+        ..
+    } = media
+    else {
+        return Vec::new();
+    };
+    let mut rows = Vec::new();
+    for (index, image) in images.iter().enumerate() {
+        rows.push(image.raster.as_ref().map_or_else(
+            || text(&image.alt, theme::FOREGROUND_SUBTLE, 11.0),
+            |raster| {
+                Element::clickable(
+                    tool_presentation::image_action(owner, tool_call_id, index, raster.sha256()),
+                    Element::raster_image(raster.clone())
+                        .size(None, Some(if compact { 180.0 } else { 240.0 }))
+                        .radius(6.0),
+                )
+            },
+        ));
+    }
+    if !content.is_empty() {
+        rows.push(text(content, theme::FOREGROUND, 12.0));
+    }
+    for notice in notices {
+        rows.push(text(notice, theme::FOREGROUND_SUBTLE, 11.0));
+    }
+    rows
+}
+
+pub(crate) fn tool_line(
     item: &TranscriptItem,
     state: &ViewState,
-    side_visible: bool,
+    _side_visible: bool,
     compact: bool,
+) -> Element {
+    tool_line_with_output(item, state, _side_visible, compact, None, None)
+}
+
+pub(crate) fn tool_line_with_output(
+    item: &TranscriptItem,
+    state: &ViewState,
+    _side_visible: bool,
+    compact: bool,
+    partial: Option<(&str, bool)>,
+    media: Option<&TranscriptItem>,
+) -> Element {
+    if let Some(file) = crate::file_activity_ui::build(item, state, compact, partial, media) {
+        return file;
+    }
+    if let Some(search) = crate::search_activity_ui::build(item, state) {
+        return search;
+    }
+    let TranscriptItem::Tool {
+        id,
+        name,
+        arguments,
+        output,
+        is_error,
+        activity,
+    } = item
+    else {
+        unreachable!()
+    };
+    let disclosure = format!("tool:{id}");
+    let expanded = state.conversation_details.is_expanded(&disclosure, false);
+    let presentation =
+        tool_presentation::present(name, arguments, *activity, *is_error, output.as_deref());
+    if presentation.kind == ToolKind::Command {
+        return terminal_activity(item, state, expanded, compact, partial, media);
+    }
+    let ink = if *is_error || *activity == ActivityStatus::Failed {
+        theme::DESTRUCTIVE
+    } else {
+        theme::FOREGROUND_SUBTLE
+    };
+    let mut details = Vec::new();
+    if expanded {
+        details.push(tool_detail_body(
+            item,
+            compact,
+            state.selected_session.as_deref().unwrap_or("draft"),
+            partial,
+            media,
+        ));
+        if let Some(target) = tool_presentation::navigation_target(name, arguments) {
+            if let Some(owner) = state.selected_session.as_deref() {
+                details.push(
+                    Button::new(
+                        tool_presentation::navigation_action(owner, id),
+                        match target {
+                            tool_presentation::ToolNavigationTarget::File(_) => "Abrir archivo",
+                            tool_presentation::ToolNavigationTarget::Url(_) => "Abrir enlace",
+                        },
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ControlSize::Compact)
+                    .render(),
+                );
+            }
+        }
+        details.push(
+            Button::new(
+                format!("tool:{id}"),
+                "Inspeccionar actividad",
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .render(),
+        );
+    }
+    let tooltip = if presentation.target.is_empty() {
+        presentation.title.clone()
+    } else {
+        format!("{} · {}", presentation.title, presentation.target)
+    };
+    let mut row = ToolActivity::new(
+        detail_action(state, &disclosure),
+        &presentation.title,
+        Element::column(details).gap(7.0),
+        marker_palette(theme::BACKGROUND, ink),
+    )
+    .icon(presentation.icon)
+    .target(&presentation.target)
+    .command(presentation.kind == ToolKind::Command)
+    .running(*activity == ActivityStatus::Running && !*is_error)
+    .expanded(expanded);
+    if let Some(note) = presentation.note {
+        row = row.note(note);
+    }
+    Tooltip::new(
+        row.render(),
+        detail_action(state, &disclosure),
+        tooltip,
+        theme::component_palette(),
+    )
+    .description(name)
+    .render()
+}
+
+/// A recorded command is a compact terminal, not its tool-input JSON. The
+/// bounded tail stays visible; expanding reveals captured/final output and
+/// the original command. Execution and background-process authority remain
+/// with the existing host/runtime, never inferred from this presentation.
+fn terminal_activity(
+    item: &TranscriptItem,
+    state: &ViewState,
+    expanded: bool,
+    compact: bool,
+    partial: Option<(&str, bool)>,
+    media: Option<&TranscriptItem>,
 ) -> Element {
     let TranscriptItem::Tool {
         id,
@@ -402,67 +1027,513 @@ fn tool_line(
         arguments,
         output,
         is_error,
+        activity,
     } = item
     else {
-        unreachable!()
+        return Element::spacer();
     };
-    let selected = state.selected_tool_id.as_deref() == Some(id.as_str());
-    let active = state.running || state.background_run_selected;
-    let (status, ink) = if output.is_none() && active {
-        ("EN CURSO", theme::FOREGROUND_SUBTLE)
-    } else if output.is_none() {
-        ("INCIERTO", theme::DESTRUCTIVE)
-    } else if *is_error {
-        ("ERROR", theme::DESTRUCTIVE)
-    } else {
-        ("LISTO", theme::FOREGROUND_SUBTLE)
-    };
-    let mut rows = vec![Element::row(vec![
-        action(
-            format!("tool:{id}"),
-            Icon::Code,
-            ellipsis(
-                if name.is_empty() { "Herramienta" } else { name },
-                if compact { 18 } else { 35 },
-            ),
-            if selected {
-                theme::SELECTED
-            } else {
-                theme::CARD
-            },
-            if *is_error {
-                theme::DESTRUCTIVE
-            } else {
-                theme::FOREGROUND
-            },
-        )
-        .size(None, Some(32.0))
-        .flex(1.0),
-        text(status, ink, 10.0),
-    ])
-    .gap(8.0)];
-    if selected && !side_visible {
-        let args = if arguments.is_null() {
-            "Sin argumentos".to_owned()
+    let owner = state.selected_session.as_deref().unwrap_or("draft");
+    let disclosure = detail_action(state, &format!("tool:{id}"));
+    let command = ["command", "cmd"]
+        .into_iter()
+        .find_map(|key| arguments.get(key).and_then(serde_json::Value::as_str))
+        .filter(|value| !value.trim().is_empty());
+    let title = command.map_or_else(|| tool_operation(name).to_owned(), terminal_command_title);
+    let mut tooltip = command.unwrap_or_else(|| tool_operation(name)).to_owned();
+    if let Some(cwd) = arguments.get("cwd").and_then(serde_json::Value::as_str) {
+        tooltip.push_str(&format!("\n{cwd}"));
+    }
+    let parsed = output
+        .as_deref()
+        .and_then(|output| tool_presentation::terminal_result(name, output));
+    let final_text = parsed
+        .as_ref()
+        .map(|(text, _)| text.as_str())
+        .or(output.as_deref());
+    let mut content = Vec::new();
+    let mut visible_copy = String::new();
+    let mut limited = false;
+    if let Some(command) = command {
+        let (command, clipped) = tool_presentation::clip_text(command, 12_000);
+        limited |= clipped;
+        let prompt = format!("$ {command}");
+        content.push(if expanded {
+            mono(prompt, theme::FOREGROUND, 12.0)
         } else {
-            serde_json::to_string_pretty(arguments).unwrap_or_else(|_| arguments.to_string())
+            Element::truncated_text(prompt.replace(['\r', '\n'], " "))
+                .font_family(FontFamily::Monospace)
+                .font_size(12.0)
+                .foreground(theme::FOREGROUND)
+        });
+    }
+    // A streamed capture and the authoritative result can differ. Only in
+    // that case keep their names, so diagnostics never replace the result.
+    let distinct_capture = partial.is_some_and(|(capture, _)| {
+        final_text.is_some_and(|final_text| capture.trim_end() != final_text.trim_end())
+    });
+    let outputs = if expanded && distinct_capture {
+        vec![
+            (Some("Resultado final"), final_text),
+            (Some("Salida capturada"), partial.map(|(text, _)| text)),
+        ]
+    } else {
+        vec![(
+            distinct_capture.then_some("Salida capturada"),
+            partial.map(|(text, _)| text).or(final_text),
+        )]
+    };
+    for (label, output) in outputs {
+        let Some(output) = output.filter(|output| !output.is_empty()) else {
+            continue;
         };
-        rows.push(
-            Element::panel(mono(ellipsis(&args, 1_200), theme::FOREGROUND_SUBTLE, 11.0))
-                .padding(8.0)
-                .background(theme::PANEL)
-                .radius(6.0),
+        if let Some(label) = label {
+            content.push(text(label, theme::FOREGROUND_SUBTLE, 10.0));
+        }
+        let (preview, clipped) = tool_presentation::terminal_tail(
+            output.trim_end_matches('\n'),
+            if expanded { usize::MAX } else { 6 },
+            if expanded { 12_000 } else { 1_400 },
         );
-        if let Some(output) = output {
-            rows.push(
-                Element::panel(mono(ellipsis(output, 2_000), ink, 11.0))
-                    .padding(8.0)
-                    .background(theme::PANEL)
+        limited |= clipped;
+        visible_copy.push_str(&preview);
+        if expanded {
+            content.push(mono(preview, theme::FOREGROUND_SUBTLE, 12.0));
+        } else {
+            content.push(Element::column(
+                preview
+                    .lines()
+                    .map(|line| {
+                        Element::column(vec![
+                            Element::spacer().flex(1.0),
+                            Element::truncated_text(line.trim_end_matches('\r'))
+                                .font_family(FontFamily::Monospace)
+                                .font_size(12.0)
+                                .foreground(theme::FOREGROUND_SUBTLE),
+                            Element::spacer().flex(1.0),
+                        ])
+                        .size(None, Some(18.0))
+                    })
+                    .collect(),
+            ));
+        }
+    }
+    if let Some((_, status)) = &parsed {
+        // These are process observations (including start/poll and remaining
+        // output), not a redundant label for the tool's Completed lifecycle.
+        content.push(text(status, theme::FOREGROUND_SUBTLE, 11.0));
+        visible_copy.push_str(status);
+    }
+    if partial.is_some_and(|(_, truncated)| truncated) {
+        content.push(text(
+            "Salida limitada · parte del contenido fue omitida",
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ));
+    }
+    if expanded && limited {
+        content.push(text(
+            "Vista limitada · contenido registrado en Actividad",
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ));
+    }
+    if expanded {
+        if let Some(media) = media {
+            content.extend(tool_media_elements(media, compact, owner));
+        }
+    }
+    let mut body = Vec::new();
+    if !content.is_empty() {
+        body.push(separator());
+        let content = Element::column(content).gap(4.0);
+        body.push(if expanded {
+            let content = Element::column(vec![
+                Element::spacer().size(None, Some(8.0)),
+                Element::row(vec![
+                    Element::spacer().size(Some(8.0), None),
+                    content.flex(1.0),
+                    Element::spacer().size(Some(8.0), None),
+                ]),
+                Element::spacer().size(None, Some(2.0)),
+            ]);
+            ScrollArea::new(
+                format!(
+                    "tool-result:{owner}:{id}:{}",
+                    if partial.is_some() {
+                        "capture"
+                    } else {
+                        "final"
+                    }
+                ),
+                content,
+            )
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .max_height(if compact { 240.0 } else { 320.0 })
+        } else {
+            content.padding(8.0)
+        });
+    }
+    if !expanded && limited {
+        body.push(
+            Button::new(
+                format!("{disclosure}:expand"),
+                "Expandir salida",
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .render()
+            .dispatch_as(&disclosure)
+            .center_content(),
+        );
+    }
+    let failed = *is_error || *activity == ActivityStatus::Failed;
+    let mut palette = theme::component_palette();
+    palette.surface = theme::CODE_SURFACE;
+    if failed {
+        palette.muted = theme::DESTRUCTIVE;
+    }
+    let mut terminal = ToolActivity::new(&disclosure, title, Element::column(body), palette)
+        .terminal(true)
+        .tooltip(tooltip)
+        .icon(Icon::Terminal)
+        .expanded(expanded)
+        .running(*activity == ActivityStatus::Running && !failed)
+        .header_action(
+            UiIconButton::new(format!("tool:{id}"), Icon::More, theme::component_palette())
+                .variant(ButtonVariant::Ghost)
+                .tooltip("Inspeccionar actividad")
+                .size(ControlSize::Dense)
+                .render(),
+        );
+    let status = if failed {
+        Some("Error")
+    } else {
+        match activity {
+            ActivityStatus::WaitingPermission | ActivityStatus::PermissionInterrupted => {
+                Some("Permiso pendiente")
+            }
+            ActivityStatus::Interrupted => Some("Sin confirmar"),
+            ActivityStatus::Cancelled => Some("Cancelado"),
+            ActivityStatus::Discarded => Some("Descartado"),
+            _ => None,
+        }
+    };
+    if let Some(status) = status {
+        terminal = terminal.status(status);
+    }
+    if let Some(note) =
+        tool_presentation::present(name, arguments, *activity, *is_error, output.as_deref()).note
+    {
+        if !visible_copy.contains(&note) {
+            terminal = terminal.note(note);
+        }
+    }
+    terminal.render()
+}
+
+/// Display-only first executable. Quoted paths and assignment prefixes stay
+/// intact; this does not parse or authorize a shell command. The unmodified
+/// command remains available in the body and the header's tooltip.
+fn terminal_command_title(command: &str) -> String {
+    let mut chars = command
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '(' || c == '{')
+        .chars()
+        .peekable();
+    while chars.peek().is_some() {
+        let mut word = String::new();
+        let mut quote = None;
+        while let Some(character) = chars.next() {
+            if quote.is_none() && character.is_whitespace() {
+                break;
+            }
+            if character == '\\' && quote != Some('\'') {
+                if let Some(escaped) = chars.next() {
+                    word.push(escaped);
+                }
+            } else if quote == Some(character) {
+                quote = None;
+            } else if quote.is_none() && matches!(character, '\'' | '"') {
+                quote = Some(character);
+            } else {
+                word.push(character);
+            }
+        }
+        while chars
+            .peek()
+            .is_some_and(|character| character.is_whitespace())
+        {
+            chars.next();
+        }
+        if word.split_once('=').is_some_and(|(name, _)| {
+            !name.is_empty()
+                && name.chars().enumerate().all(|(index, character)| {
+                    character == '_'
+                        || character.is_ascii_alphabetic()
+                        || index > 0 && character.is_ascii_digit()
+                })
+        }) {
+            continue;
+        }
+        if word.is_empty() || word.contains(['<', '>', ';', '|', '&']) {
+            return "Terminal".into();
+        }
+        return tool_presentation::clip_text(word.rsplit('/').next().unwrap_or(&word), 80).0;
+    }
+    "Terminal".into()
+}
+
+pub(crate) fn tool_detail_body(
+    item: &TranscriptItem,
+    compact: bool,
+    owner: &str,
+    partial: Option<(&str, bool)>,
+    typed_media: Option<&TranscriptItem>,
+) -> Element {
+    let TranscriptItem::Tool {
+        id,
+        name,
+        arguments,
+        output,
+        is_error,
+        activity,
+        ..
+    } = item
+    else {
+        return Element::spacer();
+    };
+    let (args, args_limited) = if arguments.is_null() {
+        ("Sin argumentos".to_owned(), false)
+    } else {
+        tool_presentation::json_preview(arguments, 3_000)
+    };
+    let mut body = vec![
+        text("Entrada", theme::FOREGROUND_SUBTLE, 10.0),
+        mono(args, theme::FOREGROUND_SUBTLE, 11.0),
+    ];
+    if args_limited {
+        body.push(text(
+            "Entrada limitada en esta vista · completa en Actividad",
+            theme::FOREGROUND_SUBTLE,
+            10.0,
+        ));
+    }
+    let media = if typed_media.is_none() {
+        output
+            .as_deref()
+            .and_then(|output| crate::tool_result_media::preview(name, output))
+    } else {
+        None
+    };
+    if let Some(media) = typed_media {
+        body.extend(tool_media_elements(media, compact, owner));
+    }
+    if let Some(media) = &media {
+        for image in &media.images {
+            body.push(
+                Element::raster_image(image.clone())
+                    .size(None, Some(if compact { 180.0 } else { 240.0 }))
                     .radius(6.0),
             );
         }
+        if !media.text.is_empty() {
+            body.push(text(&media.text, theme::FOREGROUND, 12.0));
+        }
+        for note in &media.notices {
+            body.push(text(*note, theme::FOREGROUND_SUBTLE, 11.0));
+        }
     }
-    Element::column(rows).gap(3.0)
+    let terminal_result = output
+        .as_deref()
+        .and_then(|output| tool_presentation::terminal_result(name, output));
+    let final_text = terminal_result
+        .as_ref()
+        .map(|(text, _)| text.as_str())
+        .or(output.as_deref());
+    let capture_title = if output.is_some() {
+        "Salida capturada"
+    } else if *activity == ActivityStatus::Running {
+        "Salida en curso"
+    } else {
+        "Salida parcial · sin resultado final confirmado"
+    };
+    for (title, content, captured) in [
+        ("Resultado final", final_text, false),
+        (capture_title, partial.map(|(text, _)| text), true),
+    ] {
+        let Some(content) = content else {
+            continue;
+        };
+        if !captured && (media.is_some() || typed_media.is_some()) {
+            continue;
+        }
+        body.push(text(title, theme::FOREGROUND_SUBTLE, 10.0));
+        if !captured {
+            if let Some((_, status)) = &terminal_result {
+                body.push(text(status, theme::FOREGROUND_SUBTLE, 11.0));
+            }
+        } else if partial.is_some_and(|(_, truncated)| truncated) {
+            body.push(text(
+                "Salida limitada · parte del contenido fue omitida",
+                theme::FOREGROUND_SUBTLE,
+                10.0,
+            ));
+        }
+        let (preview, limited) = if captured {
+            tool_presentation::terminal_tail(content, usize::MAX, 12_000)
+        } else {
+            tool_presentation::clip_text(content, 12_000)
+        };
+        let height = ((preview
+            .lines()
+            .count()
+            .clamp(1, if compact { 8 } else { 14 }) as f32)
+            * 15.0
+            + 16.0)
+            .min(226.0);
+        body.push(
+            ScrollArea::new(
+                format!(
+                    "tool-result:{owner}:{id}:{}",
+                    if captured { "capture" } else { "final" }
+                ),
+                mono(
+                    if preview.is_empty() {
+                        "Sin salida".into()
+                    } else {
+                        preview
+                    },
+                    if *is_error {
+                        theme::DESTRUCTIVE
+                    } else {
+                        theme::FOREGROUND
+                    },
+                    11.0,
+                )
+                .padding(8.0),
+            )
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .size(None, Some(height))
+            .background(theme::CODE_SURFACE)
+            .radius(6.0),
+        );
+        if limited {
+            body.push(text(
+                "Vista limitada · contenido registrado en Actividad",
+                theme::FOREGROUND_SUBTLE,
+                10.0,
+            ));
+        }
+    }
+    if output.is_none() && partial.is_none() {
+        body.push(text(
+            match activity {
+                ActivityStatus::Running => "Esperando resultado…",
+                ActivityStatus::WaitingPermission => "Pendiente de autorización",
+                ActivityStatus::PermissionInterrupted => "Permiso pendiente · turno interrumpido",
+                ActivityStatus::Cancelled => "Operación cancelada sin resultado",
+                ActivityStatus::Discarded => "Operación descartada sin ejecutar",
+                ActivityStatus::Failed => "La operación falló sin resultado",
+                _ => "No se recibió un resultado confirmado",
+            },
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ));
+    }
+    Element::column(body).gap(5.0)
+}
+
+/// Group only known exploration operations. Edits, commands and opaque MCP
+/// calls keep their own visible records; tool names never imply safety.
+fn exploration_call(item: &TranscriptItem) -> Option<&str> {
+    let (call, name) = match item {
+        TranscriptItem::Tool { id, name, .. } => (id.as_str(), name.as_str()),
+        TranscriptItem::ToolPreview {
+            call_id: Some(call),
+            name: Some(name),
+            ..
+        } => (call.as_str(), name.as_str()),
+        _ => return None,
+    };
+    // Classification must not change when output/status arrives: merging two
+    // previously separate runs would replace the later group's disclosure ID.
+    matches!(
+        name,
+        "read_file"
+            | "batch_read"
+            | "list_files"
+            | "find_files"
+            | "search_files"
+            | "search_text"
+            | "codebase_search"
+            | "codebase_explore"
+            | "get_diagnostics"
+            | "web_search"
+            | "web_fetch"
+    )
+    .then_some(call)
+}
+
+/// Find one visually consecutive run. Only invisible request bookkeeping and
+/// the preceding call's own output/media may sit between exploration rows.
+/// Any prose, reasoning, notice, user turn or different tool ends the group.
+fn exploration_run(items: &[TranscriptItem], start: usize) -> (usize, usize) {
+    let mut index = start;
+    let mut count = 0;
+    let mut previous_call = None;
+    while let Some(item) = items.get(index) {
+        if let Some(call) = exploration_call(item) {
+            count += 1;
+            previous_call = Some(call);
+        } else {
+            match item {
+                TranscriptItem::ToolOutput { tool_call_id, .. }
+                | TranscriptItem::ToolMedia { tool_call_id, .. }
+                    if previous_call == Some(tool_call_id.as_str()) => {}
+                TranscriptItem::ModelUsage { .. }
+                | TranscriptItem::Activity(TranscriptActivity::Model {
+                    status: ActivityStatus::Completed | ActivityStatus::Running,
+                    ..
+                }) if count > 0 => {}
+                _ => break,
+            }
+        }
+        index += 1;
+    }
+    (index, count)
+}
+
+fn exploration_open_child(items: &[TranscriptItem], state: &ViewState) -> bool {
+    items.iter().filter_map(exploration_call).any(|call| {
+        state
+            .conversation_details
+            .is_expanded(&format!("tool:{call}"), false)
+    })
+}
+
+fn exploration_needs_attention(item: &TranscriptItem) -> bool {
+    match item {
+        TranscriptItem::Tool {
+            activity,
+            is_error,
+            output,
+            ..
+        } => {
+            *is_error
+                || !matches!(
+                    activity,
+                    ActivityStatus::Running | ActivityStatus::Completed
+                )
+                || (*activity == ActivityStatus::Completed && output.is_none())
+        }
+        TranscriptItem::ToolPreview { status, .. } => !matches!(
+            status,
+            ModelStreamStatus::Receiving | ModelStreamStatus::Committed
+        ),
+        _ => false,
+    }
 }
 
 fn work_group(
@@ -471,64 +1542,199 @@ fn work_group(
     side_visible: bool,
     compact: bool,
 ) -> Element {
-    let (completed, pending, failed) = work_counts(items);
-    let active = state.running || state.background_run_selected;
-    let running = if active { pending } else { 0 };
-    let uncertain = if active { 0 } else { pending };
-    let count = |number: usize, singular: &str, plural: &str| {
-        format!("{number} {}", if number == 1 { singular } else { plural })
+    let Some(call) = items.first().and_then(|item| match item {
+        TranscriptItem::Tool { id, .. } => Some(id.as_str()),
+        TranscriptItem::ToolPreview {
+            call_id: Some(id), ..
+        } => Some(id.as_str()),
+        _ => None,
+    }) else {
+        return Element::spacer();
     };
-    let summary = if compact {
-        let mut summary = format!("{completed}/{} listas", completed + pending + failed);
-        if failed > 0 {
-            summary.push_str(&format!(" · {failed} error"));
-        }
-        if uncertain > 0 {
-            summary.push_str(&format!(" · {}", count(uncertain, "incierta", "inciertas")));
-        }
-        summary
-    } else {
-        let mut parts = vec![count(completed, "lista", "listas")];
-        if running > 0 {
-            parts.push(format!("{running} en curso"));
-        }
-        if uncertain > 0 {
-            parts.push(count(uncertain, "incierta", "inciertas"));
-        }
-        if failed > 0 {
-            parts.push(format!("{failed} con error"));
-        }
-        parts.join(" · ")
-    };
-    let mut rows = vec![Element::row(vec![
-        text("TRABAJO DEL AGENTE", theme::FOREGROUND_SUBTLE, 10.0),
-        Element::spacer().flex(1.0),
-        text(summary, theme::FOREGROUND_SUBTLE, 10.0),
-    ])];
-    rows.push(separator());
-    for item in items {
-        rows.push(tool_line(item, state, side_visible, compact));
+    let id = format!("work:{call}");
+    let (completed, running, failed, uncertain, permission, cancelled) = work_counts(items);
+    let preparing = items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                TranscriptItem::ToolPreview {
+                    status: ModelStreamStatus::Receiving | ModelStreamStatus::Committed,
+                    ..
+                }
+            )
+        })
+        .count();
+    let total = items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                TranscriptItem::Tool { .. } | TranscriptItem::ToolPreview { .. }
+            )
+        })
+        .count();
+    let mut parts = Vec::new();
+    if permission > 0 {
+        parts.push(format!("{permission} con permiso pendiente"));
     }
-    Element::panel(Element::column(rows).gap(7.0))
-        .padding(12.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(10.0)
+    if failed > 0 {
+        parts.push(format!("{failed} con error"));
+    }
+    if uncertain > 0 {
+        parts.push(format!("{uncertain} sin confirmar"));
+    }
+    if cancelled > 0 {
+        parts.push(format!("{cancelled} sin completar"));
+    }
+    if running > 0 {
+        parts.push(format!("{running} en curso"));
+    }
+    if preparing > 0 {
+        parts.push(format!("{preparing} preparando"));
+    }
+    if completed > 0 {
+        parts.push(format!("{completed}/{total} listas"));
+    }
+    let expanded = state
+        .conversation_details
+        .is_expanded(&id, exploration_open_child(items, state));
+    let render_item = |index: usize, item: &TranscriptItem| {
+        if let TranscriptItem::Tool { id, .. } = item {
+            let partial = match items.get(index + 1) {
+                Some(TranscriptItem::ToolOutput {
+                    tool_call_id,
+                    text,
+                    truncated,
+                }) if tool_call_id == id => Some((text.as_str(), *truncated)),
+                _ => None,
+            };
+            let media_index = index + if partial.is_some() { 2 } else { 1 };
+            let media = items.get(media_index).filter(|item| {
+                matches!(item,
+                    TranscriptItem::ToolMedia { tool_call_id, .. } if tool_call_id == id
+                )
+            });
+            tool_line_with_output(item, state, side_visible, compact, partial, media)
+        } else {
+            // Tool previews use the same controlled per-call disclosure and
+            // provisional labels as their ungrouped representation.
+            model_stream_item(
+                item,
+                index,
+                state,
+                if compact { 360.0 } else { READING_WIDTH },
+            )
+        }
+    };
+    let content = if expanded {
+        Element::column(
+            items
+                .iter()
+                .enumerate()
+                .filter_map(|(index, item)| {
+                    exploration_call(item).map(|_| render_item(index, item))
+                })
+                .collect(),
+        )
+        .gap(4.0)
+    } else {
+        Element::spacer()
+    };
+    let summary = parts.join(" · ");
+    let detail = if compact {
+        parts.first().cloned().unwrap_or_default()
+    } else {
+        summary.clone()
+    };
+    let header = Collapsible::new(
+        detail_action(state, &id),
+        format!("Exploración · {total}"),
+        content,
+        marker_palette(
+            theme::BACKGROUND,
+            if failed > 0 {
+                theme::DESTRUCTIVE
+            } else {
+                theme::FOREGROUND_SUBTLE
+            },
+        ),
+    )
+    .icon(Icon::Search)
+    .loading(running > 0 || preparing > 0)
+    .expanded(expanded)
+    .collapse_footer(true)
+    .detail(detail)
+    .render();
+    let header = Tooltip::new(
+        header,
+        detail_action(state, &id),
+        "Lecturas y búsquedas",
+        theme::component_palette(),
+    )
+    .description(summary)
+    .render();
+    // Collapsing successful exploration never hides an error, permission or
+    // uncertain outcome. Those rows retain their own result and title actions.
+    let mut rows = vec![header];
+    if !expanded {
+        rows.extend(items.iter().enumerate().filter_map(|(index, item)| {
+            (exploration_call(item).is_some() && exploration_needs_attention(item))
+                .then(|| render_item(index, item))
+        }));
+    }
+    Element::column(rows).gap(4.0)
+}
+
+/// Shared by native and CLI conversations; the action keeps the existing
+/// scroll-follow policy and does not send a message or open another surface.
+pub(crate) fn jump_to_bottom_control() -> Element {
+    Tooltip::new(
+        UiIconButton::new(
+            "jump_to_bottom",
+            Icon::ArrowDown,
+            theme::action_palette(Color::rgb(246, 246, 246), Color::rgb(32, 32, 32)),
+        )
+        .variant(ButtonVariant::Subtle)
+        .size(ControlSize::Regular)
+        .render()
+        .size(Some(36.0), Some(36.0))
+        .center_content()
+        .radius(18.0),
+        "jump_to_bottom",
+        "Volver al final",
+        theme::component_palette(),
+    )
+    .render()
 }
 
 fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
-    let reading_width = (width
-        - if width < COMPACT_BREAKPOINT {
-            22.0
-        } else {
-            56.0
-        })
-    .clamp(120.0, READING_WIDTH);
+    let gutter = if width < COMPACT_BREAKPOINT {
+        16.0
+    } else {
+        24.0
+    };
+    // Reserve the shared scrollbar rail even before overflow. Content and
+    // cached Markdown widths must not jump when the first long turn arrives.
+    let reading_width = (width - 2.0 * gutter - 14.0).clamp(120.0, READING_WIDTH);
+    let _markdown_frame =
+        rich_text::begin_markdown_frame(state.selected_session.as_deref(), reading_width.max(96.0));
     // Keep first content below the scrim at scroll position zero. When the
     // transcript scrolls, earlier rows pass beneath the fade like Codex.
     let mut rows = vec![Element::spacer().size(None, Some(22.0))];
     let mut index = 0;
     let mut turn_number = 0;
+    let recorded_plan_calls: std::collections::HashSet<&str> = state
+        .transcript
+        .iter()
+        .filter_map(|item| match item {
+            TranscriptItem::PlanSnapshot {
+                tool_call_id: Some(id),
+                ..
+            } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
     if state.transcript.is_empty() {
         rows.push(text(
             "Esta tarea aún no tiene actividad",
@@ -543,23 +1749,93 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
     }
     while index < state.transcript.len() {
         let item = &state.transcript[index];
+        let replaced_by_plan = match item {
+            TranscriptItem::Tool {
+                id,
+                name,
+                activity: ActivityStatus::Completed,
+                is_error: false,
+                ..
+            } => name == "update_plan" && recorded_plan_calls.contains(id.as_str()),
+            TranscriptItem::ToolPreview {
+                call_id: Some(id),
+                name: Some(name),
+                status: ModelStreamStatus::Committed,
+                ..
+            } => name == "update_plan" && recorded_plan_calls.contains(id.as_str()),
+            _ => false,
+        };
+        if replaced_by_plan {
+            index += 1;
+            continue;
+        }
+        if matches!(
+            item,
+            TranscriptItem::ToolOutput { .. } | TranscriptItem::ToolMedia { .. }
+        ) {
+            // Render this bounded, call-scoped partial output with its tool.
+            index += 1;
+            continue;
+        }
         if completed_process_diagnostic(&state.transcript, index) {
             index += 1;
             continue;
         }
-        if matches!(item, TranscriptItem::Tool { .. }) {
-            let start = index;
-            while index < state.transcript.len()
-                && matches!(state.transcript[index], TranscriptItem::Tool { .. })
-            {
-                index += 1;
+        if matches!(
+            item,
+            TranscriptItem::Activity(TranscriptActivity::Model {
+                status: ActivityStatus::Completed | ActivityStatus::Running,
+                ..
+            }) | TranscriptItem::ModelUsage { .. }
+        ) {
+            index += 1;
+            continue;
+        }
+        if matches!(
+            item,
+            TranscriptItem::Activity(TranscriptActivity::Model {
+                status: ActivityStatus::Failed,
+                ..
+            })
+        ) && state.transcript[index + 1..]
+            .iter()
+            .take_while(|item| {
+                !matches!(
+                    item,
+                    TranscriptItem::User { .. }
+                        | TranscriptItem::Activity(TranscriptActivity::Model { .. })
+                )
+            })
+            .any(|item| matches!(item, TranscriptItem::Notice { is_error: true, .. }))
+        {
+            // The durable turn error already supplies the complete reason.
+            // Keep the activity in the journal without repeating its title.
+            index += 1;
+            continue;
+        }
+        if exploration_call(item).is_some() {
+            let (end, count) = exploration_run(&state.transcript, index);
+            if count >= 2 {
+                rows.push(work_group(
+                    &state.transcript[index..end],
+                    state,
+                    side_visible,
+                    width < COMPACT_BREAKPOINT,
+                ));
+                index = end;
+                continue;
             }
-            rows.push(work_group(
-                &state.transcript[start..index],
+        }
+        if let TranscriptItem::Tool { id, .. } = item {
+            rows.push(tool_line_with_output(
+                item,
                 state,
                 side_visible,
                 width < COMPACT_BREAKPOINT,
+                tool_partial_output(state, index, id),
+                tool_media(state, index, id),
             ));
+            index += 1;
             continue;
         }
         if matches!(item, TranscriptItem::User { .. }) {
@@ -568,16 +1844,136 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
                 rows.push(Element::spacer().size(None, Some(8.0)));
             }
         }
-        rows.push(message(item, index, turn_number, reading_width));
+        rows.push(message(item, index, turn_number, reading_width, state));
         index += 1;
     }
-    let content = Element::column(rows)
-        .gap(12.0)
-        .padding(if width < COMPACT_BREAKPOINT {
-            10.0
+    // Recovery and permissions remain current controls. Plan snapshots belong
+    // to the transcript at their recorded position, never to this trailing area.
+    if !state.running {
+        if let Some((session_id, recovery)) = state.selected_session.as_deref().and_then(|id| {
+            state
+                .session_recovery
+                .get(id)
+                .map(|recovery| (id, recovery))
+        }) {
+            let child_card_already_visible = state
+                .recoverable_subagent
+                .as_ref()
+                .is_some_and(|child| child.child_session_id == session_id);
+            if !child_card_already_visible {
+                rows.push(native_recovery_card(session_id, recovery));
+            }
+        }
+    }
+    rows.extend(
+        state
+            .pending_permissions
+            .iter()
+            .take(3)
+            .map(|permission| permission_card(permission, state, reading_width)),
+    );
+    rows.extend(related_subagent_rows(state, width < COMPACT_BREAKPOINT));
+    let latest_model = state
+        .transcript
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, item)| {
+            if let TranscriptItem::Activity(TranscriptActivity::Model { status, .. }) = item {
+                Some((index, *status))
+            } else {
+                None
+            }
+        });
+    let visible_prose = |index, item: &TranscriptItem| {
+        let TranscriptItem::Assistant { content, streaming } = item else {
+            return false;
+        };
+        let visible = if *streaming {
+            state.stream_presentation.visible_bytes(index, content)
         } else {
-            24.0
-        })
+            content.len()
+        };
+        !content[..visible].trim().is_empty()
+    };
+    let footer = match latest_model {
+        Some((index, ActivityStatus::Running)) => {
+            let trailing = &state.transcript[index + 1..];
+            let pending_ready = trailing.iter().any(|item| {
+                matches!(
+                    item,
+                    TranscriptItem::ToolPreview {
+                        status: ModelStreamStatus::Receiving,
+                        ..
+                    }
+                )
+            });
+            // Prose owns the response presentation once it becomes visible.
+            // Keep the request running in state, but don't append another row
+            // or a lone spinner while receiving text or awaiting its commit.
+            if trailing
+                .iter()
+                .enumerate()
+                .any(|(offset, item)| visible_prose(index + 1 + offset, item))
+            {
+                None
+            } else if pending_ready {
+                Some("Preparando herramientas")
+            } else {
+                Some("Pensando")
+            }
+        }
+        None => state.transcript.last().and_then(|item| {
+            (matches!(
+                item,
+                TranscriptItem::Assistant {
+                    streaming: true,
+                    ..
+                }
+            ) && !visible_prose(state.transcript.len() - 1, item))
+            .then_some("Pensando")
+        }),
+        _ => None,
+    };
+    // The currently visible input/reasoning already owns its progress label.
+    // Reserve the trailing marker for waiting before prose; don't animate twice.
+    let live_detail = matches!(
+        state.transcript.iter().rev().find(|item| !matches!(
+            item,
+            TranscriptItem::ModelUsage { .. } | TranscriptItem::PlanSnapshot { .. }
+        )),
+        Some(
+            TranscriptItem::Reasoning {
+                status: ModelStreamStatus::Receiving,
+                ..
+            } | TranscriptItem::ToolPreview {
+                status: ModelStreamStatus::Receiving,
+                ..
+            } | TranscriptItem::WebSearch {
+                status: ModelStreamStatus::Receiving,
+                ..
+            }
+        )
+    );
+    if let Some(label) = footer.filter(|_| !live_detail) {
+        rows.push(
+            Marker::new(
+                format!(
+                    "reply-stream:{}",
+                    state.selected_session.as_deref().unwrap_or("draft")
+                ),
+                label,
+                theme::component_palette(),
+            )
+            .loading(true)
+            .thinking(label == "Pensando")
+            .render()
+            .padding(6.0),
+        );
+    }
+    rows.extend(host_activity_markers(state));
+    let content = Element::column(rows)
+        .gap(8.0)
         .size(Some(reading_width), None);
     ScrollArea::new(
         "transcript",
@@ -585,151 +1981,31 @@ fn timeline(state: &ViewState, width: f32, side_visible: bool) -> Element {
             Element::spacer().flex(1.0),
             content,
             Element::spacer().flex(1.0),
-        ]),
+        ])
+        .padding(gutter),
     )
     .tint(theme::FOREGROUND_SUBTLE)
     .render()
     .flex(1.0)
     .background(theme::BACKGROUND)
     .top_fade(theme::BACKGROUND, HEADER_FADE_HEIGHT)
+    .bottom_fade(theme::BACKGROUND, TRANSCRIPT_BOTTOM_FADE_HEIGHT)
 }
 
-fn permission_card(permission: &PermissionView, compact: bool) -> Element {
-    let argument_height = if compact { 54.0 } else { 76.0 };
-    Element::panel(
-        Element::column(vec![
-            text("PERMISO REQUERIDO", theme::FOREGROUND_SUBTLE, 10.0),
-            text(
-                format!("El agente quiere usar {}", permission.tool_name),
-                theme::FOREGROUND,
-                13.0,
-            ),
-            ScrollArea::new(
-                format!("permission_args:{}", permission.request_id),
-                mono(&permission.arguments, theme::FOREGROUND_SUBTLE, 11.0).padding(7.0),
-            )
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .size(None, Some(argument_height))
-            .background(theme::PANEL)
-            .radius(6.0),
-            Element::row(vec![
-                Element::button(
-                    format!("permission_deny:{}", permission.request_id),
-                    "Denegar",
-                )
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::FOREGROUND)
-                .background(theme::HOVER)
-                .radius(7.0)
-                .size(Some(90.0), Some(30.0)),
-                Element::button(
-                    format!("permission_allow:{}", permission.request_id),
-                    "Permitir una vez",
-                )
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::PRIMARY_FOREGROUND)
-                .background(theme::BRAND)
-                .radius(7.0)
-                .size(Some(136.0), Some(30.0)),
-            ])
-            .gap(8.0),
-            Element::button(
-                format!("permission_allow_session:{}", permission.request_id),
-                "Permitir en esta sesión",
-            )
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND)
-            .background(theme::HOVER)
-            .radius(7.0)
-            .size(Some(196.0), Some(30.0)),
-        ])
-        .gap(7.0),
-    )
-    .padding(12.0)
-    .background(theme::CARD)
-    .border(theme::BORDER, 1.0)
-    .radius(10.0)
+fn permission_card(permission: &PermissionView, state: &ViewState, width: f32) -> Element {
+    crate::approval_ui::inline_root(permission, state, width)
 }
 
-fn subagent_permission_card(permission: &SubagentPermissionView, compact: bool) -> Element {
-    Element::panel(
-        Element::column(vec![
-            text("PERMISO DE SUBAGENTE", theme::FOREGROUND_SUBTLE, 10.0),
-            text(
-                format!("El subagente quiere usar {}", permission.tool_name),
-                theme::FOREGROUND,
-                13.0,
-            ),
-            mono(
-                format!("Sesión hija: {}", permission.child_session_id),
-                theme::FOREGROUND_SUBTLE,
-                11.0,
-            ),
-            ScrollArea::new(
-                format!(
-                    "subagent_permission_args:{}:{}",
-                    permission.child_session_id, permission.request_id
-                ),
-                mono(&permission.arguments, theme::FOREGROUND_SUBTLE, 11.0).padding(7.0),
-            )
-            .tint(theme::FOREGROUND_SUBTLE)
-            .render()
-            .size(None, Some(if compact { 54.0 } else { 76.0 }))
-            .background(theme::PANEL)
-            .radius(6.0),
-            Element::row(vec![
-                Element::button(
-                    format!(
-                        "subagent_permission_deny:{}:{}",
-                        permission.child_session_id, permission.request_id
-                    ),
-                    "Denegar",
-                )
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::FOREGROUND)
-                .background(theme::HOVER)
-                .radius(7.0)
-                .size(Some(90.0), Some(30.0)),
-                Element::button(
-                    format!(
-                        "subagent_permission_allow:{}:{}",
-                        permission.child_session_id, permission.request_id
-                    ),
-                    "Permitir una vez",
-                )
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::PRIMARY_FOREGROUND)
-                .background(theme::BRAND)
-                .radius(7.0)
-                .size(Some(136.0), Some(30.0)),
-            ])
-            .gap(8.0),
-            Element::button(
-                format!(
-                    "subagent_permission_allow_session:{}:{}",
-                    permission.child_session_id, permission.request_id
-                ),
-                "Permitir en esta sesión",
-            )
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::FOREGROUND)
-            .background(theme::HOVER)
-            .radius(7.0)
-            .size(Some(196.0), Some(30.0)),
-        ])
-        .gap(7.0),
+fn subagent_permission_card(
+    permission: &SubagentPermissionView,
+    state: &ViewState,
+    compact: bool,
+) -> Element {
+    crate::approval_ui::inline_child(
+        permission,
+        state,
+        if compact { 360.0 } else { READING_WIDTH },
     )
-    .padding(12.0)
-    .background(theme::CARD)
-    .border(theme::BORDER, 1.0)
-    .radius(10.0)
 }
 
 fn active_subagent_card(run: &SubagentRunView, selected_session: &str) -> Element {
@@ -741,62 +2017,59 @@ fn active_subagent_card(run: &SubagentRunView, selected_session: &str) -> Elemen
     Element::panel(
         Element::column(vec![
             text(relation, theme::FOREGROUND_SUBTLE, 10.0),
-            text(&run.title, theme::FOREGROUND, 13.0),
+            text(&run.title, theme::FOREGROUND, 12.0),
             mono(
                 format!("Sesión hija: {}", run.child_session_id),
                 theme::FOREGROUND_SUBTLE,
                 11.0,
             ),
-            Element::button(
+            Button::new(
                 format!("subagent_cancel:{}", run.child_session_id),
                 "Cancelar subagente",
+                theme::action_palette(theme::HOVER, theme::DESTRUCTIVE),
             )
-            .font_family(FontFamily::Sans)
+            .variant(ButtonVariant::Subtle)
+            .size(ControlSize::Compact)
+            .render()
             .font_size(12.0)
-            .foreground(theme::DESTRUCTIVE)
-            .background(theme::HOVER)
-            .radius(7.0)
-            .size(Some(170.0), Some(30.0)),
+            .size(Some(170.0), Some(28.0)),
         ])
         .gap(7.0),
     )
-    .padding(12.0)
+    .padding(10.0)
     .background(theme::CARD)
     .border(theme::BORDER, 1.0)
-    .radius(10.0)
+    .radius(8.0)
 }
 
 fn recoverable_subagent_card(run: &SubagentRunView) -> Element {
-    Element::panel(
-        Element::column(vec![
-            text("SUBAGENTE INTERRUMPIDO", theme::FOREGROUND_SUBTLE, 10.0),
-            text(&run.title, theme::FOREGROUND, 13.0),
-            text(
-                "El journal conserva el turno. Reanudar verificará el estado antes de pedir al modelo o ejecutar una herramienta.",
-                theme::FOREGROUND_SUBTLE,
-                12.0,
-            ),
-            Element::button(
-                format!("subagent_resume:{}", run.child_session_id),
-                "Reanudar subagente",
-            )
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(theme::PRIMARY_FOREGROUND)
-            .background(theme::BRAND)
-            .radius(7.0)
-            .size(Some(176.0), Some(30.0)),
-        ])
-        .gap(7.0),
+    Alert::new(
+        "Subagente interrumpido",
+        format!("{}\nEl journal conserva el turno. Reanudar verificará el estado antes de pedir al modelo o ejecutar una herramienta.", run.title),
+        theme::component_palette(),
     )
-    .padding(12.0)
-    .background(theme::CARD)
-    .border(theme::BORDER, 1.0)
-    .radius(10.0)
+    .tone(AlertTone::Warning)
+    .action(
+        Button::new(
+            format!("subagent_resume:{}", run.child_session_id),
+            "Reanudar subagente",
+            theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+        )
+        .variant(ButtonVariant::Solid)
+        .size(ControlSize::Compact)
+        .render()
+        .font_size(12.0)
+        .size(Some(176.0), Some(28.0)),
+    )
+    .compact(true)
+    .render()
 }
 
 fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView) -> Element {
     let message = match recovery {
+        SessionRecoveryView::StartAutomation => {
+            "La sesión se registró antes de iniciar el agente. Se usará el perfil original de sólo lectura y la ruta guardada, sin ampliar permisos desde Settings."
+        }
         SessionRecoveryView::Resume => "El turno quedó interrumpido y puede reanudarse.",
         SessionRecoveryView::Permission => {
             "Hay un permiso pendiente. Reanudar pedirá la decisión antes de ejecutar."
@@ -809,124 +2082,506 @@ fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView) -> Ele
         }
         SessionRecoveryView::InvalidJournal(error) => error,
     };
-    let mut content = vec![
-        text("RECUPERACIÓN DEL TURNO", theme::FOREGROUND_SUBTLE, 10.0),
-        text(recovery.label(), theme::FOREGROUND, 13.0),
-        text(message, theme::FOREGROUND_SUBTLE, 12.0),
-    ];
+    let mut alert = Alert::new(
+        "Recuperación del turno",
+        format!("{}\n{message}", recovery.label()),
+        theme::component_palette(),
+    )
+    .tone(
+        if matches!(recovery, SessionRecoveryView::InvalidJournal(_)) {
+            AlertTone::Error
+        } else {
+            AlertTone::Warning
+        },
+    )
+    .compact(true);
     if recovery.can_open() {
-        content.push(
-            Element::button(format!("session_recover:{session_id}"), recovery.label())
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::PRIMARY_FOREGROUND)
-                .background(theme::BRAND)
-                .radius(7.0)
-                .size(Some(196.0), Some(30.0)),
+        alert = alert.action(
+            Button::new(
+                format!("session_recover:{session_id}"),
+                recovery.label(),
+                theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+            )
+            .variant(ButtonVariant::Solid)
+            .size(ControlSize::Compact)
+            .render()
+            .font_size(12.0)
+            .size(Some(196.0), Some(28.0)),
         );
     }
-    Element::panel(Element::column(content).gap(7.0))
-        .padding(12.0)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(10.0)
+    alert.render()
 }
 
-fn session_plan_card(session_id: &str, plan: &SessionPlanView) -> Element {
+fn plan_snapshot_can_build(item: &TranscriptItem, index: usize, state: &ViewState) -> bool {
+    let TranscriptItem::PlanSnapshot {
+        plan,
+        is_proposal: true,
+        ..
+    } = item
+    else {
+        return false;
+    };
+    if state.running || state.background_run_selected {
+        return false;
+    }
+    let current_matches = state
+        .selected_session
+        .as_ref()
+        .and_then(|id| state.session_plans.get(id))
+        .is_some_and(|current| current.can_build && current.snapshot == *plan);
+    if !current_matches {
+        return false;
+    }
+    state
+        .transcript
+        .iter()
+        .rposition(|item| matches!(item, TranscriptItem::PlanSnapshot { .. }))
+        == Some(index)
+}
+
+pub(crate) fn plan_snapshot_item(
+    item: &TranscriptItem,
+    index: usize,
+    state: &ViewState,
+) -> Element {
+    let TranscriptItem::PlanSnapshot {
+        plan, is_proposal, ..
+    } = item
+    else {
+        return Element::spacer();
+    };
+    let can_build = plan_snapshot_can_build(item, index, state);
+    session_plan_card(
+        state.selected_session.as_deref().unwrap_or("draft"),
+        &SessionPlanView {
+            snapshot: plan.clone(),
+            can_build,
+        },
+        if *is_proposal {
+            "Plan propuesto"
+        } else {
+            "Plan actualizado"
+        },
+    )
+}
+
+fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> Element {
+    let completed = plan
+        .snapshot
+        .plan
+        .iter()
+        .filter(|step| step.status == PlanStepStatus::Completed)
+        .count();
+    let header = Element::row(vec![
+        Element::panel(
+            Element::icon(Icon::Plan)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(14.0), Some(14.0)),
+        )
+        .size(Some(14.0), Some(18.0))
+        .center_content(),
+        Element::column(vec![
+            Element::spacer().flex(1.0),
+            text(title, theme::FOREGROUND, 12.0),
+            Element::spacer().flex(1.0),
+        ])
+        .flex(1.0),
+        Element::column(vec![
+            Element::spacer().flex(1.0),
+            text(
+                format!("{completed} de {}", plan.snapshot.plan.len()),
+                theme::FOREGROUND_SUBTLE,
+                11.0,
+            ),
+            Element::spacer().flex(1.0),
+        ]),
+    ])
+    .min_size(0.0, 18.0)
+    .gap(8.0);
     let steps = plan
         .snapshot
         .plan
         .iter()
         .enumerate()
         .map(|(index, step)| {
+            // Use vector marks: the bundled UI font does not cover every
+            // Unicode circle/check glyph, and must not show missing-glyph boxes.
             let marker = match step.status {
-                PlanStepStatus::Pending => "○",
-                PlanStepStatus::InProgress => "◉",
-                PlanStepStatus::Completed => "✓",
-            };
-            text(
-                format!("{marker} {}. {}", index + 1, step.step),
-                if step.status == PlanStepStatus::InProgress {
-                    theme::FOREGROUND
+                PlanStepStatus::Completed => Element::icon(Icon::CheckCircle)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .size(Some(14.0), Some(14.0)),
+                status => Element::panel(if status == PlanStepStatus::InProgress {
+                    Element::column(vec![
+                        Element::spacer().flex(1.0),
+                        Element::row(vec![
+                            Element::spacer().flex(1.0),
+                            Element::spacer()
+                                .size(Some(6.0), Some(6.0))
+                                .background(theme::BRAND)
+                                .radius(3.0),
+                            Element::spacer().flex(1.0),
+                        ])
+                        .size(None, Some(6.0)),
+                        Element::spacer().flex(1.0),
+                    ])
                 } else {
-                    theme::FOREGROUND_SUBTLE
-                },
-                12.0,
-            )
+                    Element::spacer()
+                })
+                .size(Some(14.0), Some(14.0))
+                .center_content()
+                .border(
+                    if status == PlanStepStatus::InProgress {
+                        theme::BRAND
+                    } else {
+                        theme::FOREGROUND_SUBTLE
+                    },
+                    1.0,
+                )
+                .radius(7.0),
+            };
+            Element::row(vec![
+                marker,
+                text(
+                    format!("{}. {}", index + 1, step.step),
+                    if step.status == PlanStepStatus::InProgress {
+                        theme::FOREGROUND
+                    } else {
+                        theme::FOREGROUND_SUBTLE
+                    },
+                    12.0,
+                )
+                .flex(1.0),
+            ])
+            .gap(8.0)
         })
         .collect::<Vec<_>>();
-    let list_height = (plan.snapshot.plan.len() as f32 * 28.0).min(220.0);
-    let mut content = vec![
-        text("PLAN", theme::FOREGROUND_SUBTLE, 10.0),
-        ScrollArea::new(
-            format!("session_plan_steps:{session_id}"),
-            Element::column(steps).gap(5.0),
-        )
-        .tint(theme::FOREGROUND_SUBTLE)
-        .render()
-        .size(None, Some(list_height)),
-    ];
+    let mut content = vec![header];
+    if let Some(explanation) = plan
+        .snapshot
+        .explanation
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+    {
+        content.push(text(explanation, theme::FOREGROUND_SUBTLE, 12.0));
+    }
+    content.push(Element::column(steps).gap(8.0));
     if plan.can_build {
         content.push(
-            Element::button(
+            Button::new(
                 format!("session_build_plan:{session_id}"),
                 "Construir este plan",
+                theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
             )
-            .font_family(FontFamily::Sans)
+            .variant(ButtonVariant::Solid)
+            .size(ControlSize::Compact)
+            .render()
             .font_size(12.0)
-            .foreground(theme::PRIMARY_FOREGROUND)
-            .background(theme::BRAND)
-            .radius(7.0)
-            .size(Some(180.0), Some(30.0)),
+            .size(Some(180.0), Some(28.0)),
         );
     }
     Element::panel(Element::column(content).gap(7.0))
-        .padding(12.0)
+        .padding(10.0)
         .background(theme::CARD)
         .border(theme::BORDER, 1.0)
-        .radius(10.0)
+        .radius(8.0)
 }
 
 /// Shared by the session layout and the workspace fallback so permissions
 /// remain actionable while either related session is selected.
-pub(crate) fn related_subagent_cards(state: &ViewState, compact: bool) -> Option<Element> {
-    let selected = state.selected_session.as_deref()?;
+fn persisted_subagent_card(
+    run: &crate::view::SubagentSessionView,
+    selected: &str,
+    live: bool,
+    show_inputs: bool,
+    edit: Option<&crate::view::SubagentInputEditView>,
+) -> Element {
+    let status = match run.status {
+        openide_harness::SubagentStatus::Ready => "Pendiente",
+        openide_harness::SubagentStatus::Running => "En ejecución",
+        openide_harness::SubagentStatus::Interrupted => "Interrumpido",
+        openide_harness::SubagentStatus::Completed => "Completado",
+        openide_harness::SubagentStatus::Failed => "Fallido",
+        openide_harness::SubagentStatus::Cancelled => "Cancelado",
+    };
+    let (target, label) = if selected == run.child_session_id {
+        (&run.parent_session_id, "Abrir sesión padre")
+    } else if run.status == openide_harness::SubagentStatus::Interrupted {
+        (&run.child_session_id, "Abrir recuperación")
+    } else {
+        (&run.child_session_id, "Abrir subagente")
+    };
+    let mut details = vec![
+        text(&run.title, theme::FOREGROUND, 12.0),
+        text(
+            format!(
+                "{status} · Nivel {} · {} entradas pendientes",
+                run.depth, run.open_inputs
+            ),
+            theme::FOREGROUND_SUBTLE,
+            12.0,
+        ),
+    ];
+    if run.cancellation_requested {
+        details.push(text(
+            "Cancelación solicitada",
+            theme::FOREGROUND_SUBTLE,
+            12.0,
+        ));
+    }
+    let mut actions = vec![Button::new(
+        format!("subagent_open:{target}"),
+        label,
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Outline)
+    .size(ControlSize::Compact)
+    .render()];
+    let cancellable =
+        live || matches!(
+            run.status,
+            openide_harness::SubagentStatus::Ready | openide_harness::SubagentStatus::Running
+        ) || (run.status == openide_harness::SubagentStatus::Completed && run.open_inputs > 0);
+    if cancellable && !run.cancellation_requested {
+        actions.push(
+            Button::new(
+                format!("subagent_cancel:{}", run.child_session_id),
+                "Cancelar",
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render(),
+        );
+    }
+    if !run.inputs.is_empty() {
+        actions.push(
+            Button::new(
+                format!("subagent_inputs:{}", run.child_session_id),
+                if show_inputs {
+                    "Ocultar entradas".to_owned()
+                } else {
+                    format!("Ver entradas ({})", run.inputs.len())
+                },
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render(),
+        );
+    }
+    if (run.status == openide_harness::SubagentStatus::Ready
+        || (run.status == openide_harness::SubagentStatus::Completed && run.open_inputs > 0))
+        && !run.cancellation_requested
+    {
+        actions.push(
+            Button::new(
+                format!("subagent_dispatch:{}", run.child_session_id),
+                if run.status == openide_harness::SubagentStatus::Ready {
+                    "Iniciar subagente"
+                } else {
+                    "Procesar entradas"
+                },
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render(),
+        );
+    }
+    if let Some(error) = &run.dispatch_error {
+        details.push(
+            Alert::new(
+                if run.status == openide_harness::SubagentStatus::Ready {
+                    "Inicio pendiente"
+                } else {
+                    "Cola pendiente"
+                },
+                error,
+                theme::component_palette(),
+            )
+            .tone(AlertTone::Error)
+            .compact(true)
+            .render(),
+        );
+    }
+    details.push(Element::column(actions).gap(6.0));
+    if show_inputs && !run.inputs.is_empty() {
+        let entries = run
+            .inputs
+            .iter()
+            .map(|input| {
+                let status = match input.status {
+                    openide_harness::SubagentInputStatus::Pending => "Pendiente",
+                    openide_harness::SubagentInputStatus::Active => "Activa",
+                    openide_harness::SubagentInputStatus::Done => "Completada",
+                    openide_harness::SubagentInputStatus::Skipped => "Omitida",
+                };
+                let mut content = vec![
+                    text(
+                        format!("{status} · {:?}", input.mode),
+                        theme::FOREGROUND_SUBTLE,
+                        11.0,
+                    ),
+                    mono(&input.id, theme::FOREGROUND_SUBTLE, 11.0),
+                    text(&input.prompt, theme::FOREGROUND, 12.0),
+                ];
+                if input.status == openide_harness::SubagentInputStatus::Pending
+                    && !run.cancellation_requested
+                {
+                    content.insert(
+                        2,
+                        Button::new(
+                            format!("subagent_input_edit:{}:{}", run.child_session_id, input.id),
+                            "Editar entrada",
+                            theme::component_palette(),
+                        )
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Compact)
+                        .render(),
+                    );
+                    content.insert(
+                        3,
+                        Button::new(
+                            format!(
+                                "subagent_input_skip:{}:{}:{}",
+                                run.child_session_id, input.revision, input.id
+                            ),
+                            "Omitir entrada",
+                            theme::component_palette(),
+                        )
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Compact)
+                        .render(),
+                    );
+                }
+                Element::column(content)
+                    .gap(4.0)
+                    .padding(7.0)
+                    .background(theme::PANEL)
+                    .radius(6.0)
+            })
+            .collect();
+        details.push(
+            ScrollArea::new(
+                format!("subagent_mailbox:{}", run.child_session_id),
+                Element::column(entries).gap(7.0),
+            )
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .size(None, Some(170.0)),
+        );
+    }
+    if let Some(edit) = edit.filter(|edit| edit.child_session_id == run.child_session_id) {
+        details.push(
+            Element::column(vec![
+                text("Editar entrada pendiente", theme::FOREGROUND, 13.0),
+                mono(&edit.input_id, theme::FOREGROUND_SUBTLE, 11.0),
+                TextArea::new(
+                    "subagent_input_prompt",
+                    &edit.prompt,
+                    "Instrucción para el subagente",
+                    theme::component_palette(),
+                )
+                .height(96.0)
+                .render(),
+                Element::column(vec![
+                    Button::new(
+                        "subagent_input_save",
+                        "Guardar entrada",
+                        theme::component_palette(),
+                    )
+                    .size(ControlSize::Compact)
+                    .render(),
+                    Button::new(
+                        "subagent_input_cancel",
+                        "Descartar edición",
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Compact)
+                    .render(),
+                ])
+                .gap(6.0),
+            ])
+            .gap(7.0),
+        );
+    }
+    Element::panel(Element::column(details).gap(8.0))
+        .padding(10.0)
+        .background(theme::CARD)
+        .border(theme::BORDER, 1.0)
+        .radius(8.0)
+}
+
+fn related_subagent_rows(state: &ViewState, compact: bool) -> Vec<Element> {
+    let Some(selected) = state.selected_session.as_deref() else {
+        return Vec::new();
+    };
     let related = |child: &str, parent: &str| selected == child || selected == parent;
-    let pending: Vec<_> = state
+    // These sets index presence only. Render the original vectors so duplicate
+    // records, card order and permission/recovery priority remain unchanged.
+    // Include unrelated entries: the previous cross-lookups considered every
+    // live/saved child ID when deciding whether a related card has a bridge.
+    let live_ids: HashSet<&str> = state
+        .active_subagents
+        .iter()
+        .map(|run| run.child_session_id.as_str())
+        .collect();
+    let saved_ids: HashSet<&str> = state
+        .subagent_sessions
+        .iter()
+        .map(|run| run.child_session_id.as_str())
+        .collect();
+    let mut cards: Vec<Element> = state
         .pending_subagent_permissions
         .iter()
         .filter(|permission| related(&permission.child_session_id, &permission.parent_session_id))
+        .map(|permission| subagent_permission_card(permission, state, compact))
         .collect();
-    let active: Vec<_> = state
-        .active_subagents
-        .iter()
-        .filter(|run| related(&run.child_session_id, &run.parent_session_id))
-        .collect();
-    let recoverable = state
+    // Put explicit recovery ahead of the durable overview so its action remains
+    // reachable even when a parent has many completed children.
+    if let Some(run) = state
         .recoverable_subagent
         .as_ref()
-        .filter(|run| selected == run.child_session_id);
-    if pending.is_empty() && active.is_empty() && recoverable.is_none() {
-        return None;
-    }
-    let height = (16.0
-        + pending.len() as f32 * if compact { 178.0 } else { 200.0 }
-        + active.len() as f32 * 120.0
-        + recoverable.map_or(0.0, |_| 150.0)
-        + (pending.len() + active.len() + usize::from(recoverable.is_some()) - 1) as f32 * 8.0)
-        .min(if compact { 330.0 } else { 350.0 });
-    let mut cards: Vec<Element> = pending
-        .into_iter()
-        .map(|permission| subagent_permission_card(permission, compact))
-        .collect();
-    cards.extend(
-        active
-            .into_iter()
-            .map(|run| active_subagent_card(run, selected)),
-    );
-    if let Some(run) = recoverable {
+        .filter(|run| selected == run.child_session_id)
+    {
         cards.push(recoverable_subagent_card(run));
     }
+    cards.extend(
+        state
+            .subagent_sessions
+            .iter()
+            .filter(|run| related(&run.child_session_id, &run.parent_session_id))
+            .map(|run| {
+                persisted_subagent_card(
+                    run,
+                    selected,
+                    live_ids.contains(run.child_session_id.as_str()),
+                    state.expanded_subagent_inputs.as_deref()
+                        == Some(run.child_session_id.as_str()),
+                    state.subagent_input_edit.as_ref(),
+                )
+            }),
+    );
+    cards.extend(
+        state
+            .active_subagents
+            .iter()
+            .filter(|run| {
+                related(&run.child_session_id, &run.parent_session_id)
+                    && !saved_ids.contains(run.child_session_id.as_str())
+            })
+            .map(|run| active_subagent_card(run, selected)),
+    );
+    cards
+}
+
+pub(crate) fn related_subagent_cards(state: &ViewState, compact: bool) -> Option<Element> {
+    let cards = related_subagent_rows(state, compact);
+    if cards.is_empty() {
+        return None;
+    }
+    let height = (cards.len() as f32 * 210.0 + 16.0).min(if compact { 330.0 } else { 350.0 });
     Some(
         ScrollArea::new(
             "related_subagents",
@@ -934,9 +2589,73 @@ pub(crate) fn related_subagent_cards(state: &ViewState, compact: bool) -> Option
         )
         .tint(theme::FOREGROUND_SUBTLE)
         .render()
-        .size(None, Some(height))
+        .max_height(height)
         .background(theme::BACKGROUND),
     )
+}
+
+pub(crate) fn hook_activity_card(hook: &crate::transcript::HookActivity) -> Element {
+    let phase = match hook.phase.as_str() {
+        "pre_tool_use" => "Antes de la herramienta",
+        "post_tool_use" => "Después de la herramienta",
+        other => other,
+    };
+    let status = match hook.decision.as_deref() {
+        Some("allow") => "Permitido · resultado confirmado",
+        Some("block") => "Bloqueado · resultado confirmado",
+        Some(_) => "Resultado registrado",
+        None if hook.interrupted => "Interrumpido · efecto sin verificar",
+        None => "En ejecución · resultado pendiente",
+    };
+    let mut details = vec![
+        text(format!("Hook: {}", hook.hook_id), theme::FOREGROUND, 13.0),
+        text(phase, theme::FOREGROUND_SUBTLE, 12.0),
+        mono(
+            format!("Llamada: {}", hook.tool_call_id),
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ),
+        text(
+            status,
+            if hook.interrupted || hook.decision.as_deref() == Some("block") {
+                theme::DESTRUCTIVE
+            } else {
+                theme::FOREGROUND_SUBTLE
+            },
+            12.0,
+        ),
+    ];
+    for (label, value) in [
+        ("Razón", &hook.reason),
+        ("Salida del hook", &hook.stdout),
+        ("stderr", &hook.stderr),
+        ("Error del hook", &hook.error),
+    ] {
+        if let Some(value) = value.as_ref().filter(|value| !value.is_empty()) {
+            details.push(text(label, theme::FOREGROUND_SUBTLE, 11.0));
+            details.push(
+                ScrollArea::new(
+                    format!(
+                        "hook_diagnostic:{}:{}:{}:{label}",
+                        hook.tool_call_id, hook.hook_id, hook.phase
+                    ),
+                    mono(value, theme::FOREGROUND, 11.0).padding(6.0),
+                )
+                .render()
+                .size(None, Some(90.0))
+                .background(theme::CARD)
+                .radius(6.0),
+            );
+        }
+    }
+    if hook.interrupted {
+        details.push(text("Verifica también el efecto de este hook fuera de OpenIDE. No se repetirá automáticamente.", theme::FOREGROUND_SUBTLE, 12.0));
+    }
+    Element::panel(Element::column(details).gap(6.0))
+        .padding(12.0)
+        .background(theme::PANEL)
+        .border(theme::BORDER, 1.0)
+        .radius(8.0)
 }
 
 fn tool_verification_card(
@@ -950,18 +2669,26 @@ fn tool_verification_card(
         Element::row(vec![
             Element::icon(Icon::Stop)
                 .foreground(theme::DESTRUCTIVE)
-                .size(Some(18.0), Some(18.0)),
-            text("RESULTADO SIN VERIFICAR", theme::FOREGROUND, 13.0),
+                .size(Some(16.0), Some(16.0)),
+            text("RESULTADO SIN VERIFICAR", theme::FOREGROUND, 12.0),
         ])
         .gap(8.0),
         text(
             "La herramienta pudo haber tenido un efecto antes de la interrupción. Comprueba el resultado fuera de OpenIDE antes de continuar.",
             theme::FOREGROUND_SUBTLE,
-            12.0,
+            11.0,
         ),
         separator(),
-        text(format!("Herramienta: {}", verification.name), theme::FOREGROUND, 14.0),
-        mono(format!("Llamada: {}", verification.call_id), theme::FOREGROUND_SUBTLE, 11.0),
+        text(
+            format!("Herramienta: {}", verification.name),
+            theme::FOREGROUND,
+            12.0,
+        ),
+        mono(
+            format!("Llamada: {}", verification.call_id),
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ),
         text("Argumentos originales", theme::FOREGROUND_SUBTLE, 11.0),
         ScrollArea::new(
             format!("tool_verification_args:{}", verification.call_id),
@@ -971,19 +2698,42 @@ fn tool_verification_card(
         .render()
         .size(None, Some(argument_height))
         .background(theme::PANEL)
-        .radius(7.0),
+        .radius(8.0),
     ];
+    if !verification.hooks.is_empty() {
+        details.push(text(
+            "Hooks asociados a esta llamada",
+            theme::FOREGROUND,
+            12.0,
+        ));
+        details.extend(verification.hooks.iter().map(hook_activity_card));
+    }
+    if let Some(receipt) = &verification.goal_receipt {
+        details.push(text(
+            "Recibo de modificación del goal",
+            theme::FOREGROUND,
+            12.0,
+        ));
+        details.push(
+            ScrollArea::new(
+                format!("tool_verification_goal_receipt:{}", verification.call_id),
+                mono(receipt.description(), theme::FOREGROUND, 11.0).padding(8.0),
+            )
+            .render()
+            .size(None, Some(96.0)),
+        );
+    }
     if let Some(error) = &verification.error {
         details.push(text("Error del ejecutor", theme::DESTRUCTIVE, 11.0));
         details.push(mono(error, theme::FOREGROUND, 11.0));
     }
     details.extend([
         separator(),
-        text("Resultado comprobado", theme::FOREGROUND, 13.0),
+        text("Resultado comprobado", theme::FOREGROUND, 12.0),
         text(
             "Escribe lo que verificaste manualmente. Esta llamada no se repetirá al reanudar.",
             theme::FOREGROUND_SUBTLE,
-            12.0,
+            11.0,
         ),
         TextArea::new(
             "tool_verification_output",
@@ -1017,12 +2767,12 @@ fn tool_verification_card(
         theme::action_palette(theme::CARD, theme::FOREGROUND),
     )
     .variant(ButtonVariant::Outline)
-    .size(ControlSize::Regular)
+    .size(ControlSize::Compact)
     .render();
     details.push(if compact {
-        Element::column(vec![classification, toggle]).gap(9.0)
+        Element::column(vec![classification, toggle]).gap(6.0)
     } else {
-        Element::row(vec![classification.flex(1.0), toggle]).gap(12.0)
+        Element::row(vec![classification.flex(1.0), toggle]).gap(8.0)
     });
     let confirm = Button::new(
         "tool_verification_confirm",
@@ -1034,7 +2784,7 @@ fn tool_verification_card(
         theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
     )
     .variant(ButtonVariant::Raised)
-    .size(ControlSize::Regular)
+    .size(ControlSize::Compact)
     .enabled(!output.trim().is_empty())
     .render();
     let cancel = Button::new(
@@ -1043,7 +2793,7 @@ fn tool_verification_card(
         theme::action_palette(theme::CARD, theme::FOREGROUND),
     )
     .variant(ButtonVariant::Outline)
-    .size(ControlSize::Regular)
+    .size(ControlSize::Compact)
     .render();
     details.push(if compact {
         Element::column(vec![cancel, confirm]).gap(8.0)
@@ -1051,10 +2801,10 @@ fn tool_verification_card(
         Element::row(vec![cancel, confirm]).gap(10.0)
     });
     Element::panel(Element::column(details).gap(10.0))
-        .padding(if compact { 14.0 } else { 20.0 })
+        .padding(10.0)
         .background(theme::CARD)
         .border(theme::BORDER, 1.0)
-        .radius(12.0)
+        .radius(8.0)
 }
 
 fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
@@ -1063,24 +2813,28 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
         Element::row(vec![
             Element::icon(Icon::Stop)
                 .foreground(theme::DESTRUCTIVE)
-                .size(Some(18.0), Some(18.0)),
-            text("LOTE DE HERRAMIENTAS INTERRUMPIDO", theme::FOREGROUND, 13.0),
+                .size(Some(16.0), Some(16.0)),
+            text("LOTE DE HERRAMIENTAS INTERRUMPIDO", theme::FOREGROUND, 12.0),
         ])
         .gap(8.0),
         text(
             format!(
                 "El turno terminó con {count} {} sin ejecutar. Descartarlas permite iniciar otro turno. No revierte las {} llamadas ya completadas.",
-                if count == 1 { "llamada pendiente" } else { "llamadas pendientes" },
+                if count == 1 {
+                    "llamada pendiente"
+                } else {
+                    "llamadas pendientes"
+                },
                 batch.completed_calls,
             ),
             theme::FOREGROUND_SUBTLE,
-            12.0,
+            11.0,
         ),
         separator(),
         text(
             format!("Próxima herramienta pendiente: {}", batch.next_tool_name),
             theme::FOREGROUND,
-            14.0,
+            12.0,
         ),
         mono(
             format!("Llamada: {}", batch.next_call_id),
@@ -1096,7 +2850,7 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
         .render()
         .size(None, Some(if compact { 66.0 } else { 96.0 }))
         .background(theme::PANEL)
-        .radius(7.0),
+        .radius(8.0),
         separator(),
     ];
     let discard = Button::new(
@@ -1105,7 +2859,7 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
         theme::action_palette(theme::DESTRUCTIVE, theme::PRIMARY_FOREGROUND),
     )
     .variant(ButtonVariant::Raised)
-    .size(ControlSize::Regular)
+    .size(ControlSize::Compact)
     .render();
     let defer = Button::new(
         "aborted_batch_defer",
@@ -1113,7 +2867,7 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
         theme::action_palette(theme::CARD, theme::FOREGROUND),
     )
     .variant(ButtonVariant::Outline)
-    .size(ControlSize::Regular)
+    .size(ControlSize::Compact)
     .render();
     details.push(if compact {
         Element::column(vec![defer, discard]).gap(8.0)
@@ -1121,29 +2875,166 @@ fn aborted_batch_card(batch: &AbortedToolBatchView, compact: bool) -> Element {
         Element::row(vec![defer, discard]).gap(10.0)
     });
     Element::panel(Element::column(details).gap(10.0))
-        .padding(if compact { 14.0 } else { 20.0 })
+        .padding(10.0)
         .background(theme::CARD)
         .border(theme::BORDER, 1.0)
-        .radius(12.0)
+        .radius(8.0)
 }
 
 fn composer(state: &ViewState, width: f32) -> Element {
+    composer_with_height(state, width, None)
+}
+
+fn composer_with_height(state: &ViewState, width: f32, available_height: Option<f32>) -> Element {
     let compact = width < COMPACT_BREAKPOINT;
-    let card_width = (width - if compact { 20.0 } else { 32.0 }).clamp(0.0, READING_WIDTH);
-    let shell = build_composer(&ComposerProps::from_state(
-        state,
-        card_width,
-        false,
-        None,
-        "Pide al agente que trabaje en este proyecto…",
-        Some(&state.status),
-    ));
+    let card_width = (width - 32.0).clamp(0.0, READING_WIDTH);
+    let notice = crate::approval_ui::pending_banner(state, card_width);
+    // The permission banner is a single 24px control with 8px padding; retain
+    // it above the editor and account for the inter-row gap.
+    let shell_height = available_height
+        .map(|height| (height - 32.0 - if notice.is_some() { 40.0 + 8.0 } else { 0.0 }).max(0.0));
+    let shell = if let Some(origin) = selected_native_automation(state) {
+        automation_read_only_card(state, origin, card_width, compact)
+    } else {
+        build_composer_with_height(
+            &ComposerProps::from_state(
+                state,
+                card_width,
+                false,
+                None,
+                "Pide al agente que trabaje en este proyecto…",
+                Some(&state.status),
+            ),
+            shell_height,
+        )
+    };
+    let mut rows = Vec::new();
+    if let Some(notice) = notice {
+        rows.push(notice);
+    }
+    rows.push(shell);
     Element::row(vec![
         Element::spacer().flex(1.0),
-        shell,
+        Element::column(rows).gap(8.0).size(Some(card_width), None),
         Element::spacer().flex(1.0),
     ])
-    .padding(10.0)
+    .padding(16.0)
+}
+
+fn automation_read_only_card(
+    state: &ViewState,
+    origin: &NativeAutomationSessionView,
+    width: f32,
+    compact: bool,
+) -> Element {
+    let when = Local
+        .timestamp_millis_opt(origin.scheduled_at_ms)
+        .single()
+        .map(|value| value.format("%d/%m/%Y %H:%M:%S").to_string())
+        .unwrap_or_else(|| "Fecha no disponible".into());
+    let details = Element::column(vec![
+        text(
+            "Automatización nativa · sólo lectura",
+            theme::FOREGROUND,
+            12.0,
+        ),
+        text(
+            "Esta sesión conserva el perfil original de la ejecución registrada.",
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ),
+        mono(
+            format!("Proveedor: {}", origin.provider_id),
+            theme::FOREGROUND,
+            11.0,
+        ),
+        mono(
+            format!("Modelo: {}", origin.model_id),
+            theme::FOREGROUND,
+            11.0,
+        ),
+        mono(
+            format!("Automatización: {}", origin.automation_id),
+            theme::FOREGROUND_SUBTLE,
+            10.0,
+        ),
+        mono(
+            format!("Ejecución: {}", origin.run_id),
+            theme::FOREGROUND_SUBTLE,
+            10.0,
+        ),
+        text(
+            format!(
+                "{} · {when}",
+                if origin.manual {
+                    "Inicio manual"
+                } else {
+                    "Programada"
+                }
+            ),
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ),
+        text(
+            "Para enviar otra instrucción, crea una tarea nativa nueva.",
+            theme::FOREGROUND_SUBTLE,
+            11.0,
+        ),
+    ])
+    .gap(5.0)
+    .padding(4.0);
+    let mut rows = vec![ScrollArea::new(
+        format!("automation_session_origin:{}", origin.run_id),
+        details,
+    )
+    .tint(theme::FOREGROUND_SUBTLE)
+    .render()
+    .size(None, Some(if compact { 148.0 } else { 134.0 }))];
+    if !state.status.trim().is_empty() {
+        rows.push(text(&state.status, theme::FOREGROUND_SUBTLE, 11.0));
+    }
+    if let Some(error) = &state.composer_error {
+        rows.push(
+            Alert::new("Error de automatización", error, theme::component_palette())
+                .tone(AlertTone::Error)
+                .compact(true)
+                .render(),
+        );
+    }
+    if state.running || state.background_run_selected {
+        rows.push(
+            Button::new(
+                "run_toggle",
+                "Detener ejecución",
+                theme::action_palette(theme::CARD, theme::DESTRUCTIVE),
+            )
+            .icon(Icon::Stop)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .render(),
+        );
+    }
+    rows.push(Element::row(vec![
+        Element::spacer().flex(1.0),
+        build_native_context_control(state, (width - 20.0).max(0.0)),
+    ]));
+    rows.push(
+        Button::new(
+            "new_session_header",
+            "Nueva tarea nativa",
+            theme::action_palette(theme::CARD, theme::FOREGROUND),
+        )
+        .icon(Icon::Add)
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .render(),
+    );
+    Element::panel(Element::column(rows).gap(7.0))
+        .padding(10.0)
+        .background(theme::CARD)
+        .border(theme::BORDER, 1.0)
+        .radius(8.0)
+        .size(Some(width), None)
 }
 
 /// Renders an active session without representing unprojected harness state.
@@ -1153,6 +3044,82 @@ pub fn build_session_surface(
     side_visible: bool,
     side_available: bool,
 ) -> Element {
+    build_session_surface_layout(
+        state,
+        center_width,
+        side_visible,
+        side_available,
+        true,
+        None,
+    )
+}
+
+pub(crate) fn build_session_surface_sized(
+    state: &ViewState,
+    center_width: f32,
+    available_height: f32,
+    side_visible: bool,
+    side_available: bool,
+) -> Element {
+    build_session_surface_layout(
+        state,
+        center_width,
+        side_visible,
+        side_available,
+        true,
+        Some(available_height),
+    )
+}
+
+pub(crate) fn build_session_body(
+    state: &ViewState,
+    center_width: f32,
+    side_visible: bool,
+    side_available: bool,
+) -> Element {
+    build_session_surface_layout(
+        state,
+        center_width,
+        side_visible,
+        side_available,
+        false,
+        None,
+    )
+}
+
+pub(crate) fn build_session_body_sized(
+    state: &ViewState,
+    center_width: f32,
+    available_height: f32,
+    side_visible: bool,
+    side_available: bool,
+) -> Element {
+    // Environment places this header outside the body, but the supplied
+    // height includes it, just as it does for the ordinary session surface.
+    build_session_surface_layout(
+        state,
+        center_width,
+        side_visible,
+        side_available,
+        false,
+        Some(available_height),
+    )
+}
+
+fn build_session_surface_layout(
+    state: &ViewState,
+    center_width: f32,
+    side_visible: bool,
+    side_available: bool,
+    include_header: bool,
+    available_height: Option<f32>,
+) -> Element {
+    let with_header = |mut children: Vec<Element>| {
+        if include_header {
+            children.insert(0, header(state, center_width, side_visible, side_available));
+        }
+        Element::column(children).flex(1.0)
+    };
     let compact = center_width < COMPACT_BREAKPOINT;
     if let Some(batch) = &state.pending_batch_discard {
         let card_width =
@@ -1166,14 +3133,11 @@ pub fn build_session_surface(
             Element::spacer().size(None, Some(64.0)),
         ])
         .padding(if compact { 10.0 } else { 24.0 });
-        return Element::column(vec![
-            header(state, center_width, side_visible, side_available),
-            ScrollArea::new("aborted_batch", recovery)
-                .tint(theme::FOREGROUND_SUBTLE)
-                .render()
-                .flex(1.0)
-                .background(theme::BACKGROUND),
-        ])
+        return with_header(vec![ScrollArea::new("aborted_batch", recovery)
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .flex(1.0)
+            .background(theme::BACKGROUND)])
         .flex(1.0);
     }
     if let Some(verification) = &state.pending_tool_verification {
@@ -1195,69 +3159,45 @@ pub fn build_session_surface(
             Element::spacer().size(None, Some(64.0)),
         ])
         .padding(if compact { 10.0 } else { 24.0 });
-        return Element::column(vec![
-            header(state, center_width, side_visible, side_available),
-            ScrollArea::new("tool_verification", recovery)
-                .tint(theme::FOREGROUND_SUBTLE)
-                .render()
-                .flex(1.0)
-                .background(theme::BACKGROUND),
-        ])
+        return with_header(vec![ScrollArea::new("tool_verification", recovery)
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .flex(1.0)
+            .background(theme::BACKGROUND)])
         .flex(1.0);
     }
-    let mut children = vec![
-        header(state, center_width, side_visible, side_available),
-        timeline(state, center_width, side_visible),
-    ];
-    if let Some((session_id, plan)) = state
-        .selected_session
-        .as_deref()
-        .and_then(|id| state.session_plans.get(id).map(|plan| (id, plan)))
-    {
-        children.push(session_plan_card(session_id, plan).padding(8.0));
-    }
-    if !state.running {
-        if let Some((session_id, recovery)) = state.selected_session.as_deref().and_then(|id| {
-            state
-                .session_recovery
-                .get(id)
-                .map(|recovery| (id, recovery))
-        }) {
-            let child_card_already_visible = state
-                .recoverable_subagent
-                .as_ref()
-                .is_some_and(|child| child.child_session_id == session_id);
-            if !child_card_already_visible {
-                children.push(native_recovery_card(session_id, recovery).padding(8.0));
-            }
-        }
-    }
-    if state.show_jump_to_bottom {
-        children.push(
-            Element::row(vec![
+    let chat = timeline(state, center_width, side_visible);
+    let chat = if state.show_jump_to_bottom {
+        // A floating chat control must not shrink the scroll viewport or move
+        // the composer when it appears after the user scrolls upward.
+        Element::overlay(
+            chat,
+            Element::column(vec![
                 Element::spacer().flex(1.0),
-                action(
-                    "jump_to_bottom",
-                    Icon::ArrowDown,
-                    "Volver al final",
-                    theme::CARD,
-                    theme::FOREGROUND,
-                )
-                .border(theme::BORDER, 1.0)
-                .size(Some(146.0), Some(30.0)),
-            ])
-            .padding(8.0)
-            .size(None, Some(40.0)),
-        );
-    }
-    for permission in state.pending_permissions.iter().take(3) {
-        children.push(permission_card(permission, compact).padding(8.0));
-    }
-    if let Some(cards) = related_subagent_cards(state, compact) {
-        children.push(cards);
-    }
-    children.push(composer(state, center_width));
-    Element::column(children).flex(1.0)
+                Element::row(vec![
+                    Element::spacer().flex(1.0),
+                    jump_to_bottom_control(),
+                    Element::spacer().flex(1.0),
+                ])
+                .padding(8.0)
+                .size(None, Some(52.0)),
+            ]),
+        )
+        .clip_children()
+        .flex(1.0)
+    } else {
+        chat
+    };
+    // Reserve a readable tail for the normal composer when the editor expands
+    // or the window shrinks. A short window with Environment stacked or extra
+    // notices can exhaust even fixed chrome; retain one usable 36px editor
+    // line, including its existing 9px vertical insets.
+    let composer_height = available_height.map(|height| (height - HEADER_HEIGHT - 100.0).max(0.0));
+    with_header(vec![
+        chat,
+        composer_with_height(state, center_width, composer_height),
+    ])
+    .flex(1.0)
 }
 
 #[cfg(test)]
@@ -1269,27 +3209,54 @@ mod tests {
     };
     use image::ImageEncoder as _;
     use openide_core::{AgentEvent, AgentEventKind, TurnMode, UserImage, UserImageMime};
-    use openide_ui::{DrawCommand, Point, Size, UiEvent, UiTree};
+    use openide_ui::{DrawCommand, HitKind, Point, Size, UiEvent, UiTree};
     use serde_json::{json, Value};
     use unicode_segmentation::UnicodeSegmentation;
 
-    fn state() -> ViewState {
+    pub(super) fn state() -> ViewState {
         ViewState {
+            keymap_profile: crate::keymap::KeymapProfile::default(),
+            vim_mode: false,
+            settings_keymap_menu_open: false,
+            ide: crate::ide_workspace::IdeWorkspaceState::default(),
+            ide_search: crate::ide_search::IdeSearchState::default(),
+            document_preview: None,
+            markdown_preview: None,
+            ide_status: Default::default(),
             workspace: "C:/repo/openIDE".into(),
             workspace_draft: "C:/repo/openIDE".into(),
             project_branch: None,
+            composer_branches: Default::default(),
+            github_contributions: crate::github_contributions::GithubContributionsStatus::Idle,
             prompt: "Siguiente paso".into(),
             composer_attachments: Vec::new(),
+            composer_attachment_visuals: Default::default(),
+            composer_attachment_loading: false,
+            composer_image_viewer: None,
             composer_add_menu_open: false,
             composer_listening: false,
+            composer_expanded: false,
             composer_goal: None,
             composer_goal_editor_open: false,
             composer_goal_draft: String::new(),
+            native_goal: Default::default(),
+            native_instructions: Default::default(),
+            native_context: Default::default(),
+            composer_permissions_open: false,
+            composer_full_access_confirm: None,
+            composer_suggestions: Default::default(),
             composer_project_menu_open: false,
+            environment: Default::default(),
+            project_actions: Default::default(),
             composer_project_options: Vec::new(),
             endpoint: String::new(),
             model: "gpt-4.1".into(),
             native_provider_id: "custom".into(),
+            native_output_limit_draft: String::new(),
+            native_output_limit_field: String::new(),
+            native_output_limit_responses: false,
+            native_output_limit_messages: false,
+            native_output_limit_load_error: None,
             hosted_web_search_mode: None,
             catalog: None,
             catalog_status: String::new(),
@@ -1297,16 +3264,30 @@ mod tests {
             catalog_browse_provider: "openai".into(),
             catalog_provider_query: String::new(),
             catalog_model_query: String::new(),
+            catalog_models_filter: Default::default(),
+            catalog_settings_tab: Default::default(),
+            catalog_expanded_model: None,
+            catalog_provider_menu_open: false,
+            native_provider_definitions: Default::default(),
+            native_provider_registry_error: None,
+            provider_connections: Default::default(),
+            provider_usage: Default::default(),
+            provider_usage_open: false,
+            provider_usage_refreshing: false,
+            provider_connect: None,
             backend_options: vec![("native".into(), "Nativo".into())],
             selected_backend: "native".into(),
             backend_menu_open: false,
             composer_model: "gpt-4.1".into(),
             composer_model_options: vec![("gpt-4.1".into(), "gpt-4.1".into())],
             composer_routes: Vec::new(),
+            composer_model_metadata: Default::default(),
             composer_provider_status: Default::default(),
             composer_model_menu_open: false,
             composer_model_list_open: false,
             composer_model_query: String::new(),
+            composer_collapsed_model_providers: Default::default(),
+            composer_search_collapsed_model_providers: Default::default(),
             composer_advanced_open: false,
             composer_effort: "default".into(),
             composer_effort_options: vec![],
@@ -1314,6 +3295,9 @@ mod tests {
             composer_effort_preview: None,
             composer_effort_hovered: false,
             composer_context_percent: None,
+            composer_context_open: false,
+            composer_context_details_open: false,
+            composer_error: None,
             turn_mode: openide_core::TurnMode::Build,
             sessions: vec![],
             session_plans: Default::default(),
@@ -1350,23 +3334,40 @@ mod tests {
             native_key_available: false,
             workspace_writes_enabled: false,
             native_tool_permissions: openide_harness::ToolPermissions::default(),
+            native_full_access: false,
             native_command_isolation: if cfg!(windows) {
                 openide_harness::CommandIsolation::WorkspaceWriteOffline
             } else {
                 openide_harness::CommandIsolation::HostUnrestricted
             },
+            external_agents: Default::default(),
+            external_approval: None,
+            compat_hooks: Vec::new(),
+            plugin_skills: Vec::new(),
+            agent_clis: Vec::new(),
+            turn_check_command: String::new(),
+            turn_check_failure: None,
+            review_model: Default::default(),
+            compat_hooks_error: None,
             session_approval_grants: Vec::new(),
             native_commands: Vec::new(),
             native_commands_error: None,
+            native_command_control: Default::default(),
+            native_command_output: Default::default(),
+            native_command_history: Default::default(),
             pending_native_command_termination: None,
             native_command_terminating: None,
             native_exec_rules: Default::default(),
             native_skills: Default::default(),
+            plugins: Default::default(),
             native_hooks: Default::default(),
             settings_reduced_motion: false,
             settings_reopen_last_workspace: false,
             settings_terminal_shell: crate::settings_preferences::TerminalShell::System,
             settings_terminal_shell_draft: String::new(),
+            settings_terminal_shell_menu_open: false,
+            settings_choice_menu_open: None,
+            settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),
             mcp_selected_id: None,
             mcp_editor_open: false,
@@ -1385,6 +3386,10 @@ mod tests {
             mcp_draft_cwd: String::new(),
             mcp_draft_env_names: String::new(),
             mcp_load_error: None,
+            mcp_inspection: Default::default(),
+            conversation_activity: Default::default(),
+            conversation_details: Default::default(),
+            stream_presentation: Default::default(),
             show_settings: false,
             main_page: crate::view::MainPage::Workspace,
             automations: crate::automation_view::AutomationViewState::new(
@@ -1395,6 +3400,7 @@ mod tests {
             marketplace: crate::marketplace_view::MarketplaceViewState::default(),
             settings_page: SettingsPage::General,
             settings_nav_open: false,
+            settings_nav_query: String::new(),
             can_go_back: false,
             can_go_forward: false,
             show_command_center: false,
@@ -1411,6 +3417,8 @@ mod tests {
             right_dock_width: None,
             left_presentation_width: None,
             right_presentation_width: None,
+            bottom_presentation_height: None,
+            environment_presentation_progress: None,
             side_tab: SideTab::Context,
             activity_page: 0,
             review_page: 0,
@@ -1419,15 +3427,41 @@ mod tests {
             dock_overview_query: String::new(),
             show_dock_overview: false,
             show_dock_add_menu: false,
+            notifications: Default::default(),
+            show_dock_tabs_menu: false,
             file_preview: None,
+            code_editor: None,
+            editor_workbench: Default::default(),
+            debug: Default::default(),
+            debug_open: false,
+            code_snapshot: None,
+            code_editor_quit_confirm: false,
+            code_editor_pending_saves: false,
+            chat_diffs: Default::default(),
+            code_editor_reload_confirm: None,
             git_review: None,
+            git_action_pending: false,
+            git_action_error: None,
+            session_changes: Default::default(),
+            browser: Default::default(),
             review_detail: None,
+            terminal_tabs: Vec::new(),
+            terminal_menu_open: false,
+            terminal_controls: Default::default(),
+            terminal_maximized: false,
+            show_terminal_panel: false,
+            terminal_panel_height: 240.0,
             terminal_snapshot: None,
             terminal_input: String::new(),
             terminal_error: None,
             pending_permissions: vec![],
+            approval_ui: Default::default(),
+            composer_pending: None,
             pending_subagent_permissions: vec![],
             active_subagents: vec![],
+            subagent_sessions: vec![],
+            expanded_subagent_inputs: None,
+            subagent_input_edit: None,
             recoverable_subagent: None,
             pending_tool_verification: None,
             pending_batch_discard: None,
@@ -1437,6 +3471,9 @@ mod tests {
             show_jump_to_bottom: false,
             github_account: crate::github_account::GithubAccountStatus::Disconnected,
             github_account_menu_open: false,
+            github_account_refreshing: false,
+            github_account_notice: None,
+            github_sign_in: None,
         }
     }
 
@@ -1470,6 +3507,70 @@ mod tests {
     }
 
     #[test]
+    fn hook_effect_details_and_verification_actions_remain_visible_on_small_surfaces() {
+        let hook = crate::transcript::HookActivity {
+            tool_call_id: "call-1".into(),
+            hook_id: "post-check".into(),
+            phase: "post_tool_use".into(),
+            decision: None,
+            interrupted: true,
+            reason: None,
+            stdout: None,
+            stderr: None,
+            error: None,
+        };
+        let frame = UiTree::new(hook_activity_card(&hook)).layout(Size::new(360.0, 350.0));
+        let content = visible_text(&frame);
+        for expected in [
+            "post-check",
+            "Después de la herramienta",
+            "call-1",
+            "efecto sin verificar",
+            "No se repetirá automáticamente",
+        ] {
+            assert!(content.contains(expected), "{content}");
+        }
+        let mut diagnosed = hook.clone();
+        diagnosed.reason = Some("Razón histórica".into());
+        diagnosed.stdout = Some("Salida JSON registrada".into());
+        diagnosed.stderr = Some("Aviso stderr".into());
+        diagnosed.error = Some("TimedOut".into());
+        let frame = UiTree::new(hook_activity_card(&diagnosed)).layout(Size::new(360.0, 1000.0));
+        let content = visible_text(&frame);
+        for expected in [
+            "Razón histórica",
+            "Salida JSON registrada",
+            "Aviso stderr",
+            "TimedOut",
+        ] {
+            assert!(content.contains(expected), "{content}");
+        }
+        let mut state = state();
+        state.pending_tool_verification = Some(ToolVerificationView {
+            goal_receipt: None,
+            session_id: "s1".into(),
+            call_id: "call-1".into(),
+            name: "write_file".into(),
+            arguments: "{}".into(),
+            error: None,
+            hooks: vec![diagnosed],
+        });
+        state.tool_verification_output = "Verifiqué los efectos de herramienta y hook".into();
+        for (width, height) in [(360.0, 320.0), (760.0, 720.0)] {
+            for action in [
+                "tool_verification_confirm",
+                "tool_verification_cancel",
+                "tool_verification_output",
+            ] {
+                assert!(
+                    verification_action_reachable(&state, width, height, action),
+                    "{action} at {width}px"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn aborted_batch_discard_and_defer_are_reachable_on_small_surfaces() {
         let mut state = state();
         state.pending_batch_discard = Some(AbortedToolBatchView {
@@ -1494,18 +3595,94 @@ mod tests {
         assert!(!frame
             .regions
             .iter()
-            .any(|region| region.id == "new_session_header"));
+            .any(|region| region.id == "toggle_settings_header"));
+    }
+
+    #[test]
+    fn native_goal_receipt_details_preserve_manual_verification_controls() {
+        use crate::resume_worker::GoalReceiptInspection;
+        let cases = [
+            GoalReceiptInspection::Found(openide_core::NativeGoalCommitReceipt {
+                goal_id: "goal-full".into(),
+                operation_id: "operation-exact".into(),
+                committed_revision: 1,
+                current_revision: 3,
+            }),
+            GoalReceiptInspection::NotFound,
+            GoalReceiptInspection::Failed("ledger corrupto".into()),
+        ];
+        for receipt in cases {
+            let view = ToolVerificationView {
+                goal_receipt: Some(receipt.clone()),
+                session_id: "session-1".into(),
+                call_id: "goal-call".into(),
+                name: "record_goal_evidence".into(),
+                arguments: "{}".into(),
+                error: None,
+                hooks: vec![],
+            };
+            let frame = UiTree::new(tool_verification_card(&view, "", false, false))
+                .layout(Size::new(900.0, 1400.0));
+            let text = visible_text(&frame);
+            assert!(text.contains("Recibo de modificación del goal"));
+            let expected = receipt
+                .description()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                normalized.contains(&expected),
+                "missing receipt content: {normalized}"
+            );
+            assert!(frame
+                .regions
+                .iter()
+                .any(|region| region.id == "tool_verification_goal_receipt:goal-call"));
+            let mut state = state();
+            state.pending_tool_verification = Some(view);
+            for (width, height) in [(420.0, 360.0), (900.0, 800.0)] {
+                assert!(verification_action_reachable(
+                    &state,
+                    width,
+                    height,
+                    "tool_verification_output"
+                ));
+                assert!(verification_action_reachable(
+                    &state,
+                    width,
+                    height,
+                    "tool_verification_cancel"
+                ));
+                assert!(!verification_action_reachable(
+                    &state,
+                    width,
+                    height,
+                    "tool_verification_confirm"
+                ));
+                state.tool_verification_output = "Estado verificado manualmente".into();
+                assert!(verification_action_reachable(
+                    &state,
+                    width,
+                    height,
+                    "tool_verification_confirm"
+                ));
+                state.tool_verification_output.clear();
+            }
+        }
     }
 
     #[test]
     fn uncertain_tool_result_requires_manual_text_before_confirmation() {
         let mut state = state();
         state.pending_tool_verification = Some(ToolVerificationView {
+            goal_receipt: None,
             session_id: "session-1".into(),
             call_id: "call-42".into(),
             name: "write_file".into(),
             arguments: "{\"path\":\"notes.txt\"}".into(),
             error: Some("Se perdió la respuesta del ejecutor".into()),
+            hooks: vec![],
         });
         for (width, height) in [(360.0, 320.0), (760.0, 720.0)] {
             assert!(verification_action_reachable(
@@ -1556,10 +3733,10 @@ mod tests {
         assert!(!frame
             .regions
             .iter()
-            .any(|region| region.id == "new_session_header"));
+            .any(|region| region.id == "toggle_settings_header"));
     }
 
-    fn visible_text(frame: &openide_ui::Frame) -> String {
+    pub(super) fn visible_text(frame: &openide_ui::Frame) -> String {
         frame
             .commands
             .iter()
@@ -1569,6 +3746,474 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    #[test]
+    fn long_assistant_source_pages_are_readable_and_actions_stay_inside_modal() {
+        let mut state = state();
+        state.selected_session = Some("source-session".into());
+        state.running = false;
+        state.background_run_selected = false;
+        let content = format!("PRIMERA_PAGINA\n{}ULTIMA_PAGINA", "línea🦀\n".repeat(3_500));
+        state.transcript = vec![TranscriptItem::Assistant {
+            content: content.clone(),
+            streaming: false,
+        }];
+        state.conversation_details.sync(Some("source-session"));
+        let open_id = "conversation_source:source-session:0:0:open";
+        let first = UiTree::new(message(&state.transcript[0], 0, 1, 360.0, &state))
+            .layout(Size::new(360.0, 500.0));
+        assert!(visible_text(&first).contains("Respuesta extensa"));
+        let mut preview_tree = UiTree::new(
+            ScrollArea::new(
+                "source-preview",
+                message(&state.transcript[0], 0, 1, 360.0, &state),
+            )
+            .render(),
+        );
+        preview_tree.layout(Size::new(360.0, 500.0));
+        preview_tree.scroll_to_end("source-preview");
+        click_visible_control(&mut preview_tree, Size::new(360.0, 500.0), open_id);
+        // Navigation and close stay outside the modal body's scroll.
+        assert!(crate::conversation_source_ui::apply_action(
+            &mut state, open_id
+        ));
+        for viewport in [Size::new(360.0, 320.0), Size::new(900.0, 700.0)] {
+            let modal = crate::conversation_source_ui::modal(
+                &state,
+                Element::button("source-base", "Chat"),
+                viewport.width,
+            );
+            let mut tree = UiTree::new(modal);
+            let frame = tree.layout(viewport);
+            assert!(visible_text(&frame).contains("Respuesta completa"));
+            let close_id = "conversation_source:source-session:0:0:close";
+            // The first page's Previous is passive, rather than a clickable
+            // region. Its visible label remains part of the fixed footer.
+            assert!(visible_text(&frame).contains("Anterior"));
+            for suffix in ["next", "close:close"] {
+                let id = format!("conversation_source:source-session:0:0:{suffix}");
+                let region = frame.regions.iter().find(|region| region.id == id).unwrap();
+                assert!(region.rect.x >= 0.0 && region.rect.y >= 0.0, "{id}");
+                assert!(region.rect.x + region.rect.width <= viewport.width, "{id}");
+                assert!(
+                    region.rect.y + region.rect.height <= viewport.height,
+                    "{id}"
+                );
+            }
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: openide_ui::Key::Escape,
+                    shift: false,
+                    ctrl: false,
+                }),
+                vec![openide_ui::UiAction::Clicked {
+                    id: close_id.into()
+                }],
+            );
+        }
+        let next_id = "conversation_source:source-session:0:0:next";
+        assert!(crate::conversation_source_ui::apply_action(
+            &mut state, next_id
+        ));
+        let (index, start) = state.conversation_details.source_view().unwrap();
+        assert_eq!(index, 0);
+        assert!(start > 0 && content.is_char_boundary(start));
+        // A queued action from a previous page is ignored.
+        assert!(!crate::conversation_source_ui::apply_action(
+            &mut state, next_id
+        ));
+        let page = rich_text::markdown_source_page(&content, start);
+        assert!(page.text.ends_with("ULTIMA_PAGINA"));
+        assert!(crate::conversation_source_ui::apply_action(
+            &mut state,
+            &format!("conversation_source:source-session:0:{start}:previous"),
+        ));
+        assert_eq!(state.conversation_details.source_view(), Some((0, 0)));
+        assert!(crate::conversation_source_ui::apply_action(
+            &mut state,
+            "conversation_source:source-session:0:0:close",
+        ));
+        assert_eq!(state.conversation_details.source_view(), None);
+        assert_eq!(
+            state.transcript[0],
+            TranscriptItem::Assistant {
+                content,
+                streaming: false
+            }
+        );
+    }
+
+    #[test]
+    fn source_view_is_scoped_to_session_and_waits_for_live_projection_to_settle() {
+        let mut state = state();
+        state.selected_session = Some("source-owner".into());
+        state.running = false;
+        state.background_run_selected = false;
+        state.transcript = vec![TranscriptItem::Assistant {
+            content: "Fuente íntegra 🦀".into(),
+            streaming: false,
+        }];
+        let open = "conversation_source:source-owner:0:0:open";
+        assert!(crate::conversation_source_ui::apply_action(
+            &mut state, open
+        ));
+        state.running = true;
+        assert!(!crate::conversation_source_ui::apply_action(
+            &mut state, open
+        ));
+        let base = crate::conversation_source_ui::modal(
+            &state,
+            Element::button("source-base", "Chat"),
+            600.0,
+        );
+        let frame = UiTree::new(base).layout(Size::new(600.0, 400.0));
+        assert!(!visible_text(&frame).contains("Respuesta completa"));
+        state.running = false;
+        state.selected_session = Some("other-owner".into());
+        state
+            .conversation_details
+            .sync(state.selected_session.as_deref());
+        assert_eq!(state.conversation_details.source_view(), None);
+        assert!(!crate::conversation_source_ui::apply_action(
+            &mut state, open
+        ));
+    }
+
+    fn automation_state() -> ViewState {
+        let mut state = state();
+        state.selected_session = Some("auto-recorded".into());
+        state.sessions = vec![crate::view::SessionView {
+            id: "auto-recorded".into(),
+            title: "Resumen registrado".into(),
+            project: state.workspace.clone(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+            native_automation: Some(NativeAutomationSessionView {
+                automation_id: "987784fa-996e-4f54-83a6-a5c60b652e44".into(),
+                run_id: "987784fa-996e-4f54-83a6-a5c60b652e44:2000000".into(),
+                provider_id: "provider-original".into(),
+                model_id: "exact-model-original".into(),
+                manual: false,
+                scheduled_at_ms: 2_000_000,
+            }),
+        }];
+        state.native_provider_id = "settings-provider-later".into();
+        state.composer_model = "settings-model-later".into();
+        state.model = "settings-model-later".into();
+        state.status = "Registrada; aún no se inició".into();
+        state
+    }
+
+    fn click_visible_control(tree: &mut UiTree, viewport: Size, id: &str) {
+        let frame = tree.layout(viewport);
+        let control = frame
+            .regions
+            .iter()
+            .rev()
+            .find(|region| region.id == id && region.kind == HitKind::Button)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        assert!(control.rect.x >= 0.0 && control.rect.y >= 0.0);
+        assert!(control.rect.x + control.rect.width <= viewport.width);
+        assert!(control.rect.y + control.rect.height <= viewport.height);
+        let point = Point::new(
+            control.rect.x + control.rect.width / 2.0,
+            control.rect.y + control.rect.height / 2.0,
+        );
+        assert_eq!(frame.hit_test(point), Some(id));
+        tree.handle_event(UiEvent::PointerDown(point));
+        assert_eq!(
+            tree.handle_event(UiEvent::PointerUp(point)),
+            vec![openide_ui::UiAction::Clicked { id: id.into() }]
+        );
+    }
+
+    #[test]
+    fn automation_origin_and_start_recovery_remain_scoped_read_only_and_clickable_at_small_and_large_widths(
+    ) {
+        for width in [360.0, 900.0] {
+            let mut state = automation_state();
+            state
+                .session_recovery
+                .insert("auto-recorded".into(), SessionRecoveryView::StartAutomation);
+            let viewport = Size::new(width, 760.0);
+            let mut tree = UiTree::new(build_session_surface(&state, width, false, false));
+            let frame = tree.layout(viewport);
+            let top = visible_text(&frame);
+            for value in [
+                "sólo lectura",
+                "provider-original",
+                "exact-model-original",
+                "Registrada; aún no se inició",
+                "Iniciar ejecución registrada",
+            ] {
+                assert!(top.contains(value), "missing {value} at {width}: {top}");
+            }
+            assert!(
+                !top.contains("settings-provider-later") && !top.contains("settings-model-later")
+            );
+            for id in [
+                "prompt",
+                "run_toggle",
+                "run_steer",
+                "composer_add_context",
+                "composer_model_toggle",
+            ] {
+                assert!(
+                    !frame.regions.iter().any(|region| region.id == id),
+                    "interactive {id} at {width}"
+                );
+            }
+            for region in &frame.regions {
+                assert!(
+                    region.rect.x >= -0.5,
+                    "{} starts outside at {width}",
+                    region.id
+                );
+                assert!(
+                    region.rect.x + region.rect.width <= width + 0.5,
+                    "{} ends outside at {width}",
+                    region.id
+                );
+            }
+            click_visible_control(&mut tree, viewport, "session_recover:auto-recorded");
+            click_visible_control(&mut tree, viewport, "new_session_header");
+            let origin = selected_native_automation(&state).unwrap();
+            tree.scroll_to_end(&format!("automation_session_origin:{}", origin.run_id));
+            let bottom = visible_text(&tree.layout(viewport));
+            let all = format!("{top} {bottom}")
+                .split_whitespace()
+                .collect::<String>();
+            assert!(all.contains(&origin.automation_id));
+            assert!(all.contains(&origin.run_id));
+            assert!(bottom.contains("Programada"));
+        }
+    }
+
+    #[test]
+    fn automation_context_control_preserves_original_route_usage_and_pointer_actions() {
+        use crate::native_context_ui::{
+            NativeContextCategory, NativeContextMeasurementStatus, NativeContextRow,
+            NativeContextSection, NativeContextUiState,
+        };
+        let project = tempfile::tempdir().unwrap();
+        let workspace = project.path().canonicalize().unwrap().display().to_string();
+        for width in [360.0, 900.0] {
+            let mut state = automation_state();
+            state.workspace = workspace.clone();
+            state.sessions[0].project = workspace.clone();
+            state.status = "Automatización terminada".into();
+            state.native_context = NativeContextUiState {
+                owner: state.selected_session.clone(),
+                workspace: Some(std::path::PathBuf::from(&state.workspace)),
+                provider: "provider-original".into(),
+                model: "exact-model-original".into(),
+                window: Some(2_000),
+                remaining_percent: Some(85),
+                measurement_status: NativeContextMeasurementStatus::Measured,
+                last_usage: Some(openide_core::ModelTokenUsage {
+                    input_tokens: 240,
+                    output_tokens: 60,
+                    total_tokens: 300,
+                    cached_input_tokens: Some(40),
+                    reasoning_tokens: Some(20),
+                }),
+                last_usage_sequence: Some(12),
+                journal_last_sequence: 13,
+                reported_responses: 1,
+                breakdown: vec![NativeContextCategory::new(
+                    "tools",
+                    "Herramientas",
+                    "4 definiciones",
+                    "Catálogo original de sólo lectura; no representa tokens.",
+                )],
+                sections: vec![NativeContextSection {
+                    title: "Ruta y límites registrados".into(),
+                    rows: vec![NativeContextRow::new(
+                        "Proveedor e ID de modelo",
+                        "provider-original · exact-model-original",
+                        "La ruta registrada no cambia con Settings.",
+                    )],
+                }],
+                ..Default::default()
+            };
+            let viewport = Size::new(width, 760.0);
+            let mut tree = UiTree::new(build_session_surface(&state, width, false, false));
+            tree.set_reduced_motion(true);
+            let initial = tree.layout(viewport);
+            let trigger = initial
+                .regions
+                .iter()
+                .find(|region| region.id == "composer_context_toggle" && region.kind == HitKind::Button)
+                .unwrap();
+            assert!(initial.commands.iter().any(|command| matches!(command,
+                DrawCommand::ProgressRing { rect, fraction: Some(fraction), .. }
+                    if (*fraction - 0.15).abs() < 0.001
+                        && rect.x >= trigger.rect.x
+                        && rect.y >= trigger.rect.y
+                        && rect.x + rect.width <= trigger.rect.x + trigger.rect.width
+                        && rect.y + rect.height <= trigger.rect.y + trigger.rect.height)));
+            // The narrow trigger retains its measured ring without a label.
+            assert_eq!(visible_text(&initial).contains("15%"), width >= 490.0);
+            click_visible_control(&mut tree, viewport, "composer_context_toggle");
+            state.composer_context_open = true;
+            tree.set_root(build_session_surface(&state, width, false, false));
+            let summary = tree.layout(viewport);
+            for value in ["15%", "300 / 2.0K tokens"] {
+                assert!(
+                    visible_text(&summary).contains(value),
+                    "missing {value} at {width}"
+                );
+            }
+            assert!(!summary.commands.iter().any(|command| matches!(command,
+                DrawCommand::Text { text, .. } if matches!(text.as_str(), "Entrada" | "Salida"))));
+            assert!(!visible_text(&summary).contains("settings-provider-later"));
+            assert!(!visible_text(&summary).contains("settings-model-later"));
+            let area = summary
+                .regions
+                .iter()
+                .find(|region| region.id == "composer_context_summary")
+                .unwrap()
+                .rect;
+            assert!(area.width <= 344.0 && area.height <= viewport.height - 16.0);
+            assert!(
+                area.x >= 0.0
+                    && area.y >= 0.0
+                    && area.x + area.width <= width
+                    && area.y + area.height <= viewport.height
+            );
+            click_visible_control(&mut tree, viewport, "composer_context_details_toggle");
+            state.composer_context_details_open = true;
+            tree.set_root(build_session_surface(&state, width, false, false));
+            let details = tree.layout(viewport);
+            assert_eq!(
+                details
+                    .commands
+                    .iter()
+                    .filter(|command| matches!(command,
+                DrawCommand::Text {text,..} if matches!(text.as_str(), "Entrada" | "Salida")))
+                    .count(),
+                2
+            );
+            let text = visible_text(&details)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            for value in [
+                "provider-original",
+                "exact-model-original",
+                "Herramientas",
+                "4 definiciones",
+            ] {
+                assert!(text.contains(value), "missing {value} at {width}: {text}");
+            }
+            assert!(
+                !text.contains("settings-provider-later") && !text.contains("settings-model-later")
+            );
+            let area = details
+                .regions
+                .iter()
+                .find(|region| region.id == "composer_context_details")
+                .unwrap()
+                .rect;
+            assert!(area.width <= 620.0 && area.height <= 428.0);
+            assert!(
+                area.x >= 0.0
+                    && area.y >= 0.0
+                    && area.x + area.width <= width
+                    && area.y + area.height <= viewport.height
+            );
+            click_visible_control(&mut tree, viewport, "composer_context_details_toggle");
+            state.composer_context_details_open = false;
+            tree.set_root(build_session_surface(&state, width, false, false));
+            click_visible_control(&mut tree, viewport, "composer_context_dismiss");
+            state.composer_context_open = false;
+            tree.set_root(build_session_surface(&state, width, false, false));
+            let closed = tree.layout(viewport);
+            assert!(!closed
+                .regions
+                .iter()
+                .any(|region| region.id == "composer_context_summary"));
+            assert!(!closed.regions.iter().any(|region| matches!(
+                region.id.as_str(),
+                "prompt" | "run_toggle" | "run_steer" | "composer_model_toggle"
+            )));
+
+            for changed in 0..4 {
+                let mut stale = automation_state();
+                stale.workspace = workspace.clone();
+                stale.sessions[0].project = workspace.clone();
+                stale.native_context = state.native_context.clone();
+                match changed {
+                    0 => stale.native_context.owner = Some("another-owner".into()),
+                    1 => stale.native_context.workspace = Some("another-workspace".into()),
+                    2 => stale.native_context.provider = "settings-provider-later".into(),
+                    _ => stale.native_context.model = "settings-model-later".into(),
+                }
+                stale.composer_context_open = true;
+                let frame = UiTree::new(build_session_surface(&stale, width, false, false))
+                    .layout(viewport);
+                let text = visible_text(&frame);
+                assert!(text.contains("Sin medición"), "{changed}: {text}");
+                assert!(!text.contains("15%") && !text.contains("300 / 2.0K tokens"));
+            }
+        }
+    }
+
+    #[test]
+    fn automation_running_card_preserves_stop_status_and_errors_without_interactive_sending() {
+        for width in [360.0, 900.0] {
+            let mut state = automation_state();
+            state.background_run_selected = true;
+            state.status = "Automatización en ejecución".into();
+            state.composer_error = Some("Credencial de la ruta guardada no disponible".into());
+            state.session_recovery.insert(
+                "auto-recorded".into(),
+                SessionRecoveryView::InvalidJournal("Snapshot no verificable".into()),
+            );
+            let viewport = Size::new(width, 760.0);
+            let mut tree = UiTree::new(build_session_surface(&state, width, false, false));
+            let frame = tree.layout(viewport);
+            let visible = visible_text(&frame)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(visible.contains("Automatización en ejecución"));
+            assert!(
+                visible.contains("Credencial de la ruta guardada no disponible"),
+                "{visible}"
+            );
+            assert!(visible.contains("Snapshot no verificable"));
+            assert!(!frame.regions.iter().any(|region| matches!(
+                region.id.as_str(),
+                "prompt" | "run_steer" | "session_recover:auto-recorded"
+            )));
+            click_visible_control(&mut tree, viewport, "run_toggle");
+            assert!(visible.contains("Detener ejecución"));
+        }
+    }
+
+    #[test]
+    fn selecting_another_native_session_restores_its_composer_without_reusing_automation_origin() {
+        let mut state = automation_state();
+        state.sessions.push(crate::view::SessionView {
+            id: "interactive".into(),
+            title: "Tarea nueva".into(),
+            project: state.workspace.clone(),
+            backend: "native".into(),
+            pinned: false,
+            archived: false,
+            unread: false,
+            native_automation: None,
+        });
+        state.selected_session = Some("interactive".into());
+        let frame = UiTree::new(build_session_surface(&state, 900.0, false, false))
+            .layout(Size::new(900.0, 760.0));
+        assert!(frame.regions.iter().any(|region| region.id == "prompt"));
+        assert!(!visible_text(&frame).contains("provider-original"));
+        assert!(!visible_text(&frame).contains("987784fa-996e-4f54-83a6-a5c60b652e44"));
     }
 
     #[test]
@@ -1628,23 +4273,70 @@ mod tests {
     }
 
     #[test]
-    fn session_header_labels_the_actual_backend_without_crowding_compact_layout() {
+    fn session_header_preserves_title_without_engine_badges_at_responsive_widths() {
         let mut state = state();
-        state.selected_backend = "codex".into();
-        let wide =
-            UiTree::new(header(&state, 520.0, false, true)).layout(Size::new(520.0, HEADER_HEIGHT));
-        assert!(visible_text(&wide).contains("Codex CLI"));
-        let compact =
-            UiTree::new(header(&state, 320.0, false, true)).layout(Size::new(320.0, HEADER_HEIGHT));
-        assert!(!visible_text(&compact).contains("Codex CLI"));
-        state.selected_backend = "native".into();
-        let native =
-            UiTree::new(header(&state, 520.0, false, true)).layout(Size::new(520.0, HEADER_HEIGHT));
-        assert!(visible_text(&native).contains("Nativo"));
+        for backend in ["codex", "native"] {
+            state.selected_backend = backend.into();
+            for width in [320.0, 520.0] {
+                let frame = UiTree::new(header(&state, width, false, true))
+                    .layout(Size::new(width, HEADER_HEIGHT));
+                let title = visible_text(&frame);
+                let painted_title = frame
+                    .commands
+                    .iter()
+                    .find_map(|command| match command {
+                        DrawCommand::Text { text, .. } if text.starts_with("Revisar") => {
+                            Some(text.as_str())
+                        }
+                        _ => None,
+                    })
+                    .expect("the session title remains visible beside the IDE control");
+                assert_eq!(
+                    painted_title, "Revisar la aplicación",
+                    "compact chrome leaves the short session title intact at {width}px"
+                );
+                assert!(!title.contains("Codex CLI"));
+                assert!(!title.contains("Nativo"));
+                assert!(!frame
+                    .regions
+                    .iter()
+                    .any(|region| region.id == "new_session_header"));
+            }
+        }
+    }
+
+    fn header_title_bands(
+        frame: &openide_ui::Frame,
+        title: &str,
+    ) -> Vec<(Point, u8, openide_ui::Rect)> {
+        let mut clips = Vec::new();
+        let mut bands = Vec::new();
+        for command in &frame.commands {
+            match command {
+                DrawCommand::PushClip(rect) => clips.push(*rect),
+                DrawCommand::PopClip => {
+                    clips.pop();
+                }
+                DrawCommand::Text {
+                    text,
+                    position,
+                    color,
+                    ..
+                } if text == title => {
+                    bands.push((
+                        *position,
+                        color.a,
+                        *clips.last().expect("title is clipped to its own slot"),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        bands
     }
 
     #[test]
-    fn session_header_truncates_by_painted_width_and_preserves_action_slots() {
+    fn session_header_fades_by_painted_width_and_preserves_action_slots() {
         let mut state = state();
         state.selected_session_title = Some("W".repeat(24));
         let mut tree = UiTree::new(header(&state, 300.0, false, true));
@@ -1654,48 +4346,47 @@ mod tests {
                 .map(|character| match character {
                     'W' => 14.0,
                     'i' => 2.0,
-                    '…' => 4.0,
                     _ => 6.0,
                 })
                 .sum()
         });
         let wide = tree.layout(Size::new(300.0, HEADER_HEIGHT));
-        let (wide_title, wide_x) = wide
-            .commands
-            .iter()
-            .find_map(|command| match command {
-                DrawCommand::Text { text, position, .. } if text.starts_with('W') => {
-                    Some((text.as_str(), position.x))
-                }
-                _ => None,
-            })
-            .unwrap();
-        assert!(wide_title.ends_with('…'), "{wide_title}");
-        let new_task = wide
+        let bands = header_title_bands(&wide, state.selected_session_title.as_deref().unwrap());
+        assert!(bands.len() > 1, "overflow fades the original shaped line");
+        assert_eq!(bands[0].1, theme::FOREGROUND.a);
+        assert!(bands.last().unwrap().1 < 16);
+        assert!(bands.windows(2).all(|pair| pair[0].1 >= pair[1].1));
+        assert!(!wide.commands.iter().any(|command| matches!(command,
+            DrawCommand::Text { text, .. } if text.starts_with('W') && text.contains('…')
+        )));
+        let first_action = wide
             .regions
             .iter()
-            .find(|region| region.id == "new_session_header")
+            .find(|region| region.id == "environment_open")
             .unwrap();
-        let painted_width: f32 = wide_title
-            .chars()
-            .map(|character| if character == 'W' { 14.0 } else { 4.0 })
-            .sum();
-        assert!(wide_x + painted_width + HEADER_GAP <= new_task.rect.x);
+        assert!(
+            bands
+                .iter()
+                .all(|(_, _, clip)| clip.x + clip.width + HEADER_GAP <= first_action.rect.x)
+        );
 
         state.selected_session_title = Some("i".repeat(24));
         tree.set_root(header(&state, 300.0, false, true));
         let narrow = tree.layout(Size::new(300.0, HEADER_HEIGHT));
         assert!(visible_text(&narrow).contains(&"i".repeat(24)));
-        let new_task_after = narrow
+        let fitting = header_title_bands(&narrow, state.selected_session_title.as_deref().unwrap());
+        assert_eq!(fitting.len(), 1, "fitting titles retain one opaque pass");
+        assert_eq!(fitting[0].1, theme::FOREGROUND.a);
+        let first_action_after = narrow
             .regions
             .iter()
-            .find(|region| region.id == "new_session_header")
+            .find(|region| region.id == "environment_open")
             .unwrap();
-        assert_eq!(new_task.rect, new_task_after.rect);
+        assert_eq!(first_action.rect, first_action_after.rect);
     }
 
     #[test]
-    fn session_header_keeps_joined_emoji_intact_when_title_is_clipped() {
+    fn session_header_fades_joined_emoji_without_rewriting_the_shaped_line() {
         let mut state = state();
         state.selected_session_title = Some("👩‍💻".repeat(12));
         let mut tree = UiTree::new(header(&state, 300.0, false, true));
@@ -1704,7 +4395,6 @@ mod tests {
                 .graphemes(true)
                 .map(|grapheme| match grapheme {
                     "👩‍💻" => 20.0,
-                    "…" => 4.0,
                     _ => 6.0,
                 })
                 .sum()
@@ -1720,23 +4410,108 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        let visible = title.strip_suffix('…').expect("clipped title");
-        let graphemes = visible.graphemes(true).collect::<Vec<_>>();
-        assert!(graphemes.len() < 12);
+        assert_eq!(title, state.selected_session_title.as_deref().unwrap());
+        let graphemes = title.graphemes(true).collect::<Vec<_>>();
+        assert_eq!(graphemes.len(), 12);
         assert!(graphemes.iter().all(|grapheme| *grapheme == "👩‍💻"));
+        let bands = header_title_bands(&frame, title);
+        assert!(bands.len() > 1);
+        assert!(
+            bands.windows(2).all(|pair| pair[0].0 == pair[1].0),
+            "all alpha bands share the original Unicode shaping origin"
+        );
+    }
+
+    #[test]
+    fn native_session_title_fades_only_overflow_and_never_paints_over_header_actions() {
+        let context = eframe::egui::Context::default();
+        crate::fonts::install(&context);
+        context.begin_pass(eframe::egui::RawInput::default());
+        let mut state = state();
+        let full_title = "Revisar los cambios del proyecto y la integración del editor. ".repeat(8);
+        for width in [220.0, 300.0, 360.0, 520.0, 800.0] {
+            for sidebar_hidden in [false, true] {
+                state.sidebar_collapsed = sidebar_hidden;
+                let mut previous_actions = None;
+                for (title, overflowing) in [(full_title.as_str(), true), ("Revisar", false)] {
+                    state.selected_session_title = Some(title.into());
+                    let mut tree = UiTree::new(header(&state, width, false, true));
+                    let fonts = context.clone();
+                    tree.set_text_measurer(move |text, size, family| {
+                        fonts.fonts_mut(|fonts| {
+                            fonts
+                                .layout_no_wrap(
+                                    text.into(),
+                                    eframe::egui::FontId::new(
+                                        size,
+                                        match family {
+                                            FontFamily::Sans => {
+                                                eframe::egui::FontFamily::Proportional
+                                            }
+                                            FontFamily::Monospace => {
+                                                eframe::egui::FontFamily::Monospace
+                                            }
+                                        },
+                                    ),
+                                    eframe::egui::Color32::WHITE,
+                                )
+                                .size()
+                                .x
+                        })
+                    });
+                    let frame = tree.layout(Size::new(width, HEADER_HEIGHT));
+                    let bands = header_title_bands(&frame, title);
+                    assert!(!bands.is_empty(), "title remains visible at {width}px");
+                    assert_eq!(
+                        bands
+                            .iter()
+                            .any(|(_, alpha, _)| *alpha < theme::FOREGROUND.a),
+                        overflowing,
+                        "native painted width decides whether to fade at {width}px"
+                    );
+                    assert!(frame.commands.iter().all(|command| !matches!(command,
+                        DrawCommand::Text { text, .. } if text.starts_with("Revisar") && text != title
+                    )), "the header never substitutes ellipsis or slices its title");
+                    let actions: Vec<_> = frame
+                        .regions
+                        .iter()
+                        .filter(|region| region.kind == HitKind::Button)
+                        .map(|region| (region.id.clone(), region.rect))
+                        .collect();
+                    for (_, bounds) in &actions {
+                        assert!(
+                            bands.iter().all(|(_, _, clip)| {
+                                clip.x + clip.width <= bounds.x || clip.x >= bounds.x + bounds.width
+                            }),
+                            "title fade cannot overlap the action hitbox at {width}px"
+                        );
+                    }
+                    if let Some(previous) = &previous_actions {
+                        assert_eq!(
+                            &actions, previous,
+                            "changing a title must not move header actions"
+                        );
+                    }
+                    previous_actions = Some(actions);
+                }
+            }
+        }
+        context.end_pass().textures_delta.clear();
     }
 
     #[test]
     fn session_header_actions_stay_in_fixed_bounds_at_responsive_widths() {
         for width in [220.0, 260.0, 300.0, 470.0, 800.0] {
-            let frame = UiTree::new(header(&state(), width, false, true))
-                .layout(Size::new(width, HEADER_HEIGHT));
+            let mut tree = UiTree::new(header(&state(), width, false, true));
+            tree.set_reduced_motion(true);
+            let viewport = Size::new(width, HEADER_HEIGHT);
+            let frame = tree.layout(viewport);
             let mut actions = frame
                 .regions
                 .iter()
                 .filter(|region| {
                     [
-                        "new_session_header",
+                        "environment_open",
                         "toggle_side_pane_header",
                         "toggle_settings_header",
                     ]
@@ -1744,12 +4519,56 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             actions.sort_by(|left, right| left.rect.x.total_cmp(&right.rect.x));
-            assert_eq!(actions.len(), if width >= 300.0 { 3 } else { 2 });
+            assert_eq!(actions.len(), if width >= 300.0 { 3 } else { 1 });
             for action in &actions {
                 assert_eq!(action.rect.width, HEADER_ACTION_SIZE);
                 assert_eq!(action.rect.height, HEADER_ACTION_SIZE);
                 assert!(action.rect.x >= HEADER_PADDING);
                 assert!(action.rect.x + action.rect.width <= width - HEADER_PADDING);
+                assert_eq!(action.rect.y, HEADER_PADDING);
+                assert_eq!(
+                    action.rect.y + action.rect.height,
+                    HEADER_HEIGHT - HEADER_PADDING
+                );
+                let (glyph, ink) = frame
+                    .commands
+                    .iter()
+                    .find_map(|command| match command {
+                        DrawCommand::Icon { rect, tint, .. }
+                            if rect.x >= action.rect.x
+                                && rect.x + rect.width <= action.rect.x + action.rect.width
+                                && rect.y >= action.rect.y
+                                && rect.y + rect.height <= action.rect.y + action.rect.height =>
+                        {
+                            Some((*rect, *tint))
+                        }
+                        _ => None,
+                    })
+                    .expect("every header action retains its native icon");
+                if action.id != "environment_open" {
+                    assert_eq!(ink, theme::FOREGROUND, "available action: {}", action.id);
+                }
+                assert_eq!((glyph.width, glyph.height), (16.0, 16.0));
+                assert_eq!(glyph.x, action.rect.x + 4.0);
+                assert_eq!(glyph.y, action.rect.y + 4.0);
+                let point = Point::new(action.rect.x + 12.0, action.rect.y + 12.0);
+                tree.handle_event(UiEvent::PointerMove(point));
+                let hovered = tree.layout(viewport);
+                assert_eq!(
+                    hovered
+                        .regions
+                        .iter()
+                        .find(|region| region.id == action.id)
+                        .unwrap()
+                        .rect,
+                    action.rect
+                );
+                tree.handle_event(UiEvent::PointerDown(point));
+                assert!(tree.handle_event(UiEvent::PointerUp(point)).contains(
+                    &openide_ui::UiAction::Clicked {
+                        id: action.id.clone(),
+                    }
+                ));
             }
             assert!(actions.windows(2).all(|pair| {
                 pair[0].rect.x + pair[0].rect.width + HEADER_GAP <= pair[1].rect.x
@@ -1767,7 +4586,17 @@ mod tests {
         tree.set_text_measurer(|value, _, _| value.chars().count() as f32 * 6.0);
         let frame = tree.layout(Size::new(300.0, HEADER_HEIGHT));
         let labels = visible_text(&frame);
-        assert!(labels.contains("Revisar la aplicación"));
+        let painted_title = frame
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::Text { text, .. } if text.starts_with("Revisar") => {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .expect("the flat header retains the session title beside the IDE control");
+        assert_eq!(painted_title, "Revisar la aplicación");
         assert!(!labels.contains("Proyecto"));
         assert!(!labels.contains("Agente"));
         assert!(!labels.contains("EN CURSO"));
@@ -1781,16 +4610,38 @@ mod tests {
     #[test]
     fn transcript_fades_under_header_without_covering_controls() {
         let mut state = state();
-        state.transcript.push(TranscriptItem::User {
-            content: "Primer mensaje".into(),
-            images: Vec::new(),
+        state
+            .transcript
+            .extend((0..20).map(|index| TranscriptItem::User {
+                content: format!("Mensaje {index}"),
+                images: Vec::new(),
+            }));
+        let mut tree = UiTree::new(build_session_surface(&state, 520.0, false, true));
+        tree.set_reduced_motion(true);
+        let size = Size::new(520.0, 700.0);
+        let initial = tree.layout(size);
+        assert!(
+            !initial
+                .commands
+                .iter()
+                .any(|command| matches!(command, DrawCommand::FillVerticalGradient { top, bottom, .. } if top.a > bottom.a)),
+            "the first message stays fully legible before scrolling"
+        );
+        let transcript = initial
+            .regions
+            .iter()
+            .find(|region| region.id == "transcript")
+            .unwrap()
+            .rect;
+        tree.handle_event(UiEvent::ScrollDirect {
+            position: Point::new(transcript.x + transcript.width / 2.0, transcript.y + 40.0),
+            delta_y: -120.0,
         });
-        let frame = UiTree::new(build_session_surface(&state, 520.0, false, true))
-            .layout(Size::new(520.0, 700.0));
+        let frame = tree.layout(size);
         let fade_index = frame
             .commands
             .iter()
-            .position(|command| matches!(command, DrawCommand::FillVerticalGradient { .. }))
+            .position(|command| matches!(command, DrawCommand::FillVerticalGradient { top, bottom, .. } if top.a > bottom.a))
             .expect("fade de transcript");
         let DrawCommand::FillVerticalGradient { rect, top, bottom } = frame.commands[fade_index]
         else {
@@ -1805,17 +4656,136 @@ mod tests {
             .iter()
             .find(|region| region.id == "transcript")
             .unwrap();
-        let new_task = frame
+        let settings = frame
             .regions
             .iter()
-            .find(|region| region.id == "new_session_header")
+            .find(|region| region.id == "toggle_settings_header")
             .unwrap();
         assert_eq!(transcript.rect.y, HEADER_HEIGHT);
-        assert!(new_task.rect.y + new_task.rect.height <= transcript.rect.y);
+        assert!(settings.rect.y + settings.rect.height <= transcript.rect.y);
         assert!(frame.commands[..fade_index].iter().any(|command| matches!(
             command,
-            DrawCommand::Text { text, .. } if text.contains("Primer mensaje")
+            DrawCommand::Text { text, .. } if text.contains("Mensaje")
         )));
+    }
+
+    #[test]
+    fn transcript_bottom_fade_stays_above_the_composer_and_clears_at_the_last_message() {
+        for width in [360.0, 900.0] {
+            for show_header in [false, true] {
+                let mut state = state();
+                state.prompt = "Un borrador que debe seguir editable".into();
+                state
+                    .transcript
+                    .extend((0..30).map(|index| TranscriptItem::User {
+                        content: format!("Mensaje de prueba {index}"),
+                        images: Vec::new(),
+                    }));
+                let root = if show_header {
+                    build_session_surface(&state, width, false, true)
+                } else {
+                    build_session_body(&state, width, false, false)
+                };
+                let mut tree = UiTree::new(root);
+                tree.set_reduced_motion(true);
+                let size = Size::new(width, 700.0);
+                let frame = tree.layout(size);
+                let transcript = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == "transcript")
+                    .unwrap()
+                    .rect;
+                let prompt = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == "prompt")
+                    .unwrap()
+                    .rect;
+                let (fade_index, fade) = frame
+                    .commands
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, command)| match command {
+                        DrawCommand::FillVerticalGradient { rect, top, bottom }
+                            if top.a == 0 && bottom.a == 255 =>
+                        {
+                            Some((index, *rect))
+                        }
+                        _ => None,
+                    })
+                    .expect("overflowing conversation has a bottom scrim");
+                assert_eq!(fade.height, TRANSCRIPT_BOTTOM_FADE_HEIGHT);
+                assert!((fade.y + fade.height - transcript.y - transcript.height).abs() < 0.01);
+                assert!(fade.intersection(prompt).is_none());
+                assert!(
+                    frame.commands[..fade_index]
+                        .iter()
+                        .any(|command| matches!(command,
+                    DrawCommand::Text { text, .. } if text.contains("Mensaje de prueba")))
+                );
+                for region in frame.regions.iter().filter(|region| {
+                    region.id == "prompt"
+                        || region.id.starts_with("composer_")
+                        || region.id == "run_toggle"
+                }) {
+                    assert!(
+                        fade.intersection(region.rect).is_none(),
+                        "{} overlaps the transcript scrim",
+                        region.id
+                    );
+                }
+                tree.handle_event(UiEvent::ScrollDirect {
+                    position: Point::new(transcript.x + 40.0, transcript.y + 40.0),
+                    delta_y: -100_000.0,
+                });
+                let end = tree.layout(size);
+                assert!(!end.commands.iter().any(|command| matches!(command,
+                    DrawCommand::FillVerticalGradient { top, bottom, .. } if top.a == 0 && bottom.a == 255)));
+                assert!(visible_text(&end).contains("Mensaje de prueba 29"));
+                assert_eq!(
+                    end.regions
+                        .iter()
+                        .find(|region| region.id == "prompt")
+                        .unwrap()
+                        .rect,
+                    prompt
+                );
+                let point = Point::new(prompt.x + 8.0, prompt.y + 8.0);
+                assert_eq!(end.hit_test(point), Some("prompt"));
+                tree.handle_event(UiEvent::PointerDown(point));
+                tree.handle_event(UiEvent::PointerUp(point));
+                assert_eq!(tree.focused_id(), Some("prompt"));
+                assert!(tree.handle_event(UiEvent::Text("!".into())).iter().any(|action| matches!(action,
+                    openide_ui::UiAction::InputChanged { id, value } if id == "prompt" && value.contains('!'))));
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_alert_keeps_its_action_reachable_on_narrow_surfaces() {
+        for width in [260.0, 520.0] {
+            let mut tree =
+                UiTree::new(native_recovery_card("s1", &SessionRecoveryView::VerifyTool));
+            let frame = tree.layout(Size::new(width, 360.0));
+            let control = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "session_recover:s1")
+                .expect("recovery action");
+            assert!(control.rect.x >= 0.0 && control.rect.y >= 0.0);
+            assert!(control.rect.x + control.rect.width <= width);
+            assert!(control.rect.y + control.rect.height <= 360.0);
+            let point = Point::new(control.rect.x + 8.0, control.rect.y + 8.0);
+            assert_eq!(frame.hit_test(point), Some("session_recover:s1"));
+            tree.handle_event(UiEvent::PointerDown(point));
+            assert_eq!(
+                tree.handle_event(UiEvent::PointerUp(point)),
+                vec![openide_ui::UiAction::Clicked {
+                    id: "session_recover:s1".into()
+                }]
+            );
+        }
     }
 
     #[test]
@@ -1859,6 +4829,13 @@ mod tests {
                 can_build: true,
             },
         );
+        state.transcript.push(TranscriptItem::PlanSnapshot {
+            id: "plan:s1:1".into(),
+            sequence: Some(1),
+            plan: state.session_plans["s1"].snapshot.clone(),
+            is_proposal: true,
+            tool_call_id: None,
+        });
         let frame = UiTree::new(build_session_surface(&state, 520.0, false, true))
             .layout(Size::new(520.0, 700.0));
         assert!(frame
@@ -1879,7 +4856,7 @@ mod tests {
         let frame = UiTree::new(build_session_surface(&state(), 300.0, false, false))
             .layout(Size::new(300.0, 500.0));
         for id in [
-            "new_session_header",
+            "toggle_settings_header",
             "prompt",
             "run_toggle",
             "composer_add_context",
@@ -1903,7 +4880,7 @@ mod tests {
                         rect,
                         color,
                         radius,
-                    } if *color == openide_ui::Color::rgb(38, 38, 38) && *radius == 26.0 => {
+                    } if *color == openide_ui::Color::rgb(38, 38, 38) && *radius == 10.0 => {
                         Some(*rect)
                     }
                     _ => None,
@@ -1947,7 +4924,7 @@ mod tests {
             assert!(frame.commands.iter().any(|command| matches!(
                 command,
                 DrawCommand::StrokeRect { rect, radius, .. }
-                    if *rect == card && *radius == 26.0
+                    if *rect == card && *radius == 10.0
             )));
         }
     }
@@ -1967,7 +4944,7 @@ mod tests {
                     rect,
                     color,
                     radius,
-                } if *color == openide_ui::Color::rgb(38, 38, 38) && *radius == 26.0 => Some(*rect),
+                } if *color == openide_ui::Color::rgb(38, 38, 38) && *radius == 10.0 => Some(*rect),
                 _ => None,
             });
             let card = card.expect("rounded composer card");
@@ -1976,9 +4953,83 @@ mod tests {
                 .iter()
                 .find(|region| region.id == "run_toggle")
                 .expect("stop action");
-            assert_eq!(submit.rect.width, 36.0);
+            assert_eq!(submit.rect.width, 28.0);
             assert!(submit.rect.x + submit.rect.width <= card.x + card.width);
-            assert!(visible_text(&frame).contains("Proyecto"));
+            let project = frame.regions.iter()
+                .find(|region| region.id == "composer_project_toggle")
+                .expect("the clipped project retains its full-path hover target");
+            assert!(project.rect.width >= 72.0);
+            assert!(project.rect.x >= card.x && project.rect.x + project.rect.width <= card.x + card.width);
+            assert!(project.rect.y + project.rect.height <= card.y);
+            assert_eq!(frame.hit_test(openide_ui::Point::new(
+                project.rect.x + project.rect.width / 2.0,
+                project.rect.y + project.rect.height / 2.0,
+            )), Some("composer_project_toggle"));
+        }
+    }
+
+    #[test]
+    fn window_height_limits_editor_growth_and_retains_a_readable_transcript() {
+        for expanded in [false, true] {
+            for (width, height, environment_open) in [
+                (960.0, 320.0, false),
+                (960.0, 540.0, false),
+                (560.0, 540.0, true),
+            ] {
+                let mut state = state();
+                state.selected_session = Some("height-budget".into());
+                state.sidebar_collapsed = true;
+                state.show_side_pane = false;
+                state.environment.open = environment_open;
+                state.composer_expanded = expanded;
+                state.prompt = "Instrucción larga que debe conservarse completa.\n".repeat(40);
+                state.transcript = vec![TranscriptItem::Assistant {
+                    content: format!(
+                        "{}VISIBLE_HEIGHT_BUDGET_TAIL",
+                        "Respuesta retenida.\n\n".repeat(40)
+                    ),
+                    streaming: true,
+                }];
+                let viewport = Size::new(width, height);
+                let mut tree = UiTree::new(crate::view::build_window_view(&state, width, height));
+                tree.set_reduced_motion(true);
+                tree.layout(viewport);
+                tree.scroll_to_end("transcript");
+                let frame = tree.layout(viewport);
+                let region = |id: &str| {
+                    frame
+                        .regions
+                        .iter()
+                        .find(|region| region.id == id)
+                        .unwrap()
+                        .rect
+                };
+                let transcript = region("transcript");
+                let editor = region("prompt");
+                // At the minimum 320px window the one-line editor needs an
+                // extra pixel beyond the target budget, leaving 99px of chat.
+                assert!(
+                    transcript.height >= 98.9,
+                    "{width}x{height}, expanded={expanded}, environment={environment_open}: {transcript:?}"
+                );
+                // The compact header can now leave room for the expanded
+                // editor's 280px minimum. Its existing maximum still applies,
+                // independently of the readable transcript budget above.
+                let editor_limit = if expanded { 320.0 } else { 180.0 };
+                assert!(
+                    editor.height >= 36.0 && editor.height <= editor_limit,
+                    "{editor:?}"
+                );
+                assert!(
+                    transcript.y + transcript.height <= editor.y,
+                    "the growing editor must not overlap the readable transcript"
+                );
+                assert!(region("run_toggle").y >= editor.y + editor.height);
+                let metadata = region("composer_context_toggle");
+                assert!(metadata.y + metadata.height <= height - 4.0);
+                assert!(visible_text(&frame).contains("VISIBLE_HEIGHT_BUDGET_TAIL"));
+                assert!(tree.is_scroll_at_end("transcript", 0.1));
+            }
         }
     }
 
@@ -2039,6 +5090,7 @@ mod tests {
                 arguments: json!({"path": "src/main.rs"}),
                 output: Some("fn main() {}".into()),
                 is_error: false,
+                activity: ActivityStatus::Completed,
             },
             TranscriptItem::Tool {
                 id: "b".into(),
@@ -2046,21 +5098,56 @@ mod tests {
                 arguments: json!({"query": "main"}),
                 output: None,
                 is_error: false,
+                activity: ActivityStatus::Interrupted,
             },
         ];
         state.selected_tool_id = Some("a".into());
-        let frame = UiTree::new(build_session_surface(&state, 520.0, false, true))
-            .layout(Size::new(520.0, 700.0));
+        state.conversation_details.toggle("tool:a", false);
+        state.conversation_details.toggle("tool:b", false);
+        let mut tree = UiTree::new(build_session_surface(&state, 520.0, false, true));
+        let frame = tree.layout(Size::new(520.0, 1000.0));
         let visible = visible_text(&frame);
-        assert!(visible.contains("1 lista · 1 incierta"), "{visible}");
-        assert!(visible.contains("src/main.rs"), "{visible}");
+        assert!(visible.contains("Resultado incierto"), "{visible}");
+        assert!(visible.contains("Leído"), "{visible}");
+        assert!(visible.contains("main.rs"), "{visible}");
         assert!(visible.contains("fn main() {}"), "{visible}");
-        assert!(frame.regions.iter().any(|region| region.id == "tool:a"));
-        assert!(frame.regions.iter().any(|region| region.id == "tool:b"));
+        let open_file = crate::file_activity_ui::open_action(
+            state.selected_session.as_deref().unwrap_or("draft"),
+            "a",
+            0,
+        );
+        assert!(frame.regions.iter().any(|region| region.id == open_file));
+        assert!(frame.regions.iter().any(|region| region.id
+            == crate::file_activity_ui::inspect_action(
+                state.selected_session.as_deref().unwrap_or("draft"),
+                "b",
+            )));
+        let read = frame
+            .regions
+            .iter()
+            .find(|region| region.kind == openide_ui::HitKind::Button && region.id == open_file)
+            .unwrap()
+            .rect;
+        let now = std::time::Instant::now();
+        tree.handle_event_at(
+            openide_ui::UiEvent::PointerMove(openide_ui::Point::new(
+                read.x + read.width / 2.0,
+                read.y + read.height / 2.0,
+            )),
+            now,
+        );
+        let hinted = tree.layout_at(
+            Size::new(520.0, 1000.0),
+            now + std::time::Duration::from_secs(1),
+        );
+        assert!(
+            visible_text(&hinted).contains("src/main.rs"),
+            "read tooltip preserves the full path"
+        );
     }
 
     #[test]
-    fn pending_permission_keeps_decision_actions() {
+    fn pending_permission_keeps_review_reachable_without_inline_grants() {
         let mut state = state();
         state.pending_permissions.push(PermissionView {
             request_id: "request-1".into(),
@@ -2069,18 +5156,253 @@ mod tests {
         });
         let frame = UiTree::new(build_session_surface(&state, 520.0, true, true))
             .layout(Size::new(520.0, 780.0));
-        assert!(frame
+        assert!(
+            frame
+                .regions
+                .iter()
+                .any(|region| region.id.starts_with("approval_review:")
+                    && region.id.ends_with(":banner")),
+            "review notification stays beside the composer"
+        );
+        assert!(!frame
             .regions
             .iter()
-            .any(|region| region.id == "permission_allow:request-1"));
-        assert!(frame
-            .regions
+            .any(|region| region.id.starts_with("permission_allow")
+                || region.id.starts_with("permission_deny")
+                || region.id.starts_with("approval_decide:")));
+    }
+
+    // Frozen pre-index implementation for full render/interaction equivalence.
+    fn legacy_related_subagent_cards(state: &ViewState, compact: bool) -> Option<Element> {
+        let selected = state.selected_session.as_deref()?;
+        let related = |child: &str, parent: &str| selected == child || selected == parent;
+        let mut cards: Vec<Element> = state
+            .pending_subagent_permissions
             .iter()
-            .any(|region| region.id == "permission_allow_session:request-1"));
-        assert!(frame
-            .regions
-            .iter()
-            .any(|region| region.id == "permission_deny:request-1"));
+            .filter(|permission| {
+                related(&permission.child_session_id, &permission.parent_session_id)
+            })
+            .map(|permission| subagent_permission_card(permission, state, compact))
+            .collect();
+        // Put explicit recovery ahead of the durable overview so its action remains
+        // reachable even when a parent has many completed children.
+        if let Some(run) = state
+            .recoverable_subagent
+            .as_ref()
+            .filter(|run| selected == run.child_session_id)
+        {
+            cards.push(recoverable_subagent_card(run));
+        }
+        cards.extend(
+            state
+                .subagent_sessions
+                .iter()
+                .filter(|run| related(&run.child_session_id, &run.parent_session_id))
+                .map(|run| {
+                    persisted_subagent_card(
+                        run,
+                        selected,
+                        state
+                            .active_subagents
+                            .iter()
+                            .any(|live| live.child_session_id == run.child_session_id),
+                        state.expanded_subagent_inputs.as_deref()
+                            == Some(run.child_session_id.as_str()),
+                        state.subagent_input_edit.as_ref(),
+                    )
+                }),
+        );
+        cards.extend(
+            state
+                .active_subagents
+                .iter()
+                .filter(|run| {
+                    related(&run.child_session_id, &run.parent_session_id)
+                        && !state
+                            .subagent_sessions
+                            .iter()
+                            .any(|saved| saved.child_session_id == run.child_session_id)
+                })
+                .map(|run| active_subagent_card(run, selected)),
+        );
+        if cards.is_empty() {
+            return None;
+        }
+        let height = (cards.len() as f32 * 210.0 + 16.0).min(if compact { 330.0 } else { 350.0 });
+        Some(
+            ScrollArea::new(
+                "related_subagents",
+                Element::column(cards).gap(8.0).padding(8.0),
+            )
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .max_height(height)
+            .background(theme::BACKGROUND),
+        )
+    }
+
+    #[test]
+    fn related_subagent_indexes_preserve_full_frames_priority_and_duplicate_ids() {
+        use crate::view::SubagentSessionView;
+        use openide_harness::SubagentStatus;
+
+        let saved = |child: &str, parent: &str, title: &str| SubagentSessionView {
+            child_session_id: child.into(),
+            parent_session_id: parent.into(),
+            title: title.into(),
+            status: SubagentStatus::Running,
+            cancellation_requested: false,
+            open_inputs: 0,
+            inputs: vec![],
+            dispatch_error: None,
+            depth: 1,
+        };
+        let live = |child: &str, parent: &str, title: &str| SubagentRunView {
+            child_session_id: child.into(),
+            parent_session_id: parent.into(),
+            title: title.into(),
+        };
+        let mut fixture = state();
+        fixture.pending_subagent_permissions = vec![
+            SubagentPermissionView {
+                child_session_id: "child-1".into(),
+                parent_session_id: "parent-1".into(),
+                request_id: "priority-request".into(),
+                tool_name: "write_file".into(),
+                arguments: "{\"path\":\"src/main.rs\"}".into(),
+            },
+            SubagentPermissionView {
+                child_session_id: "unrelated-child".into(),
+                parent_session_id: "other-parent".into(),
+                request_id: "unrelated-request".into(),
+                tool_name: "run_command".into(),
+                arguments: "{}".into(),
+            },
+        ];
+        fixture.recoverable_subagent =
+            Some(live("child-1", "parent-1", "Recovery before saved cards"));
+        fixture.subagent_sessions = vec![
+            saved("child-1", "parent-1", "Saved first record"),
+            saved("child-1", "parent-1", "Saved duplicate record"),
+            saved("child-2", "parent-1", "Bridge matched by global live ID"),
+            saved(
+                "shadow",
+                "other-parent",
+                "Unrelated saved record suppresses live duplicate",
+            ),
+        ];
+        fixture.active_subagents = vec![
+            live(
+                "child-1",
+                "parent-1",
+                "Live counterpart suppressed by saved ID",
+            ),
+            live(
+                "child-1",
+                "parent-1",
+                "Duplicate live counterpart suppressed",
+            ),
+            live(
+                "child-2",
+                "other-parent",
+                "Unrelated live record still supplies bridge",
+            ),
+            live("shadow", "parent-1", "Suppressed by unrelated saved record"),
+            live("live-only", "parent-1", "First unsaved live record"),
+            live("live-only", "parent-1", "Second unsaved live record"),
+            live("unrelated-live", "other-parent", "Unrelated live record"),
+        ];
+        // Failed saved records only offer cancellation when a live ID bridge
+        // exists, even if that live record has an unrelated parent.
+        fixture.subagent_sessions[2].status = SubagentStatus::Failed;
+
+        for selected in [
+            None,
+            Some("parent-1"),
+            Some("child-1"),
+            Some("child-2"),
+            Some("not-present"),
+        ] {
+            fixture.selected_session = selected.map(str::to_owned);
+            for settings in [false, true] {
+                fixture.show_settings = settings;
+                for width in [360.0, 900.0] {
+                    let current = related_subagent_cards(&fixture, width < 500.0);
+                    let legacy = legacy_related_subagent_cards(&fixture, width < 500.0);
+                    assert_eq!(current.is_some(), legacy.is_some());
+                    let (Some(current), Some(legacy)) = (current, legacy) else {
+                        continue;
+                    };
+                    let mut current = UiTree::new(current);
+                    let mut legacy = UiTree::new(legacy);
+                    current.set_reduced_motion(true);
+                    legacy.set_reduced_motion(true);
+                    let mut seen_actions = HashSet::new();
+                    let mut seen_text = String::new();
+                    for scroll in 0..24 {
+                        let frame = current.layout(Size::new(width, 600.0));
+                        assert_eq!(
+                            frame,
+                            legacy.layout(Size::new(width, 600.0)),
+                            "selected={selected:?}, width={width}, settings={settings}, scroll={scroll}"
+                        );
+                        seen_actions.extend(frame.regions.iter().map(|region| region.id.clone()));
+                        seen_text.push_str(&visible_text(&frame));
+                        if scroll == 0 && selected == Some("child-1") {
+                            let permission = frame.commands.iter().position(|command| matches!(command, DrawCommand::Text { text, .. } if text.contains("Escribir archivo"))).unwrap();
+                            let recovery = frame.commands.iter().position(|command| matches!(command, DrawCommand::Text { text, .. } if text.contains("Recovery before saved cards")));
+                            if let Some(recovery) = recovery {
+                                assert!(permission < recovery);
+                            }
+                        }
+                        let event = UiEvent::Scroll {
+                            position: Point::new(width / 2.0, 160.0),
+                            delta_y: -180.0,
+                        };
+                        assert_eq!(
+                            current.handle_event(event.clone()),
+                            legacy.handle_event(event)
+                        );
+                    }
+                    if selected == Some("child-1") {
+                        let review = crate::approval_ui::ApprovalTarget {
+                            owner_session_id: "child-1".into(),
+                            workspace: fixture.workspace.clone(),
+                            child_session_id: Some("child-1".into()),
+                            request_id: "priority-request".into(),
+                        }
+                        .review_action();
+                        for id in [
+                            format!("{review}:inline").as_str(),
+                            "subagent_resume:child-1",
+                        ] {
+                            assert!(
+                                seen_actions.contains(id),
+                                "{id} remains reachable at {width}"
+                            );
+                        }
+                    }
+                    if selected == Some("parent-1") {
+                        for title in [
+                            "Saved first record",
+                            "Saved duplicate record",
+                            "First unsaved live record",
+                            "Second unsaved live record",
+                        ] {
+                            assert!(
+                                seen_text.contains(title),
+                                "duplicate vectors still render: {title}"
+                            );
+                        }
+                        assert!(!seen_text.contains("Suppressed by unrelated saved record"));
+                        assert!(
+                            seen_actions.contains("subagent_cancel:child-2"),
+                            "global live ID preserves the saved bridge"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -2109,10 +5431,15 @@ mod tests {
             state.selected_session = Some(selected.into());
             let frame = UiTree::new(build_session_surface(&state, 520.0, false, true))
                 .layout(Size::new(520.0, 780.0));
+            let review = crate::approval_ui::ApprovalTarget {
+                owner_session_id: selected.into(),
+                workspace: state.workspace.clone(),
+                child_session_id: Some("child-1".into()),
+                request_id: "request-1".into(),
+            }
+            .review_action();
             for id in [
-                "subagent_permission_allow:child-1:request-1",
-                "subagent_permission_allow_session:child-1:request-1",
-                "subagent_permission_deny:child-1:request-1",
+                format!("{review}:inline").as_str(),
                 "subagent_cancel:child-1",
             ] {
                 assert!(
@@ -2124,6 +5451,327 @@ mod tests {
                 .regions
                 .iter()
                 .any(|region| region.id == "subagent_cancel:other-child"));
+        }
+    }
+
+    #[test]
+    fn persisted_subagent_states_and_mailboxes_are_visible_without_a_worker() {
+        use openide_harness::SubagentStatus;
+        for (status, label) in [
+            (SubagentStatus::Ready, "Pendiente"),
+            (SubagentStatus::Running, "En ejecución"),
+            (SubagentStatus::Interrupted, "Interrumpido"),
+            (SubagentStatus::Completed, "Completado"),
+            (SubagentStatus::Failed, "Fallido"),
+            (SubagentStatus::Cancelled, "Cancelado"),
+        ] {
+            let mut state = state();
+            state
+                .subagent_sessions
+                .push(crate::view::SubagentSessionView {
+                    child_session_id: "child-1".into(),
+                    parent_session_id: "s1".into(),
+                    title: "Tarea persistida".into(),
+                    status,
+                    cancellation_requested: true,
+                    open_inputs: 2,
+                    inputs: vec![],
+                    dispatch_error: None,
+                    depth: 1,
+                });
+            for selected in ["s1", "child-1"] {
+                state.selected_session = Some(selected.into());
+                for width in [360.0, 900.0] {
+                    let frame = UiTree::new(related_subagent_cards(&state, width < 500.0).unwrap())
+                        .layout(Size::new(width, 600.0));
+                    let content = visible_text(&frame);
+                    assert!(content.contains(label), "{content}");
+                    assert!(content.contains("2 entradas pendientes"), "{content}");
+                    assert!(content.contains("Cancelación solicitada"), "{content}");
+                    let target = if selected == "s1" { "child-1" } else { "s1" };
+                    assert!(frame
+                        .regions
+                        .iter()
+                        .any(|r| r.id == format!("subagent_open:{target}")));
+                    assert!(!frame
+                        .regions
+                        .iter()
+                        .any(|r| r.id.starts_with("subagent_cancel:")));
+                    assert!(!frame
+                        .regions
+                        .iter()
+                        .any(|r| r.id.starts_with("subagent_resume:")));
+                }
+            }
+            state.selected_session = Some("unrelated".into());
+            assert!(related_subagent_cards(&state, false).is_none());
+        }
+    }
+
+    #[test]
+    fn persisted_cancellation_controls_follow_lifecycle_without_live_bridge() {
+        use openide_harness::SubagentStatus;
+        for (status, inputs, offered) in [
+            (SubagentStatus::Ready, 0, true),
+            (SubagentStatus::Running, 0, true),
+            (SubagentStatus::Interrupted, 1, false),
+            (SubagentStatus::Completed, 0, false),
+            (SubagentStatus::Completed, 1, true),
+            (SubagentStatus::Failed, 1, false),
+            (SubagentStatus::Cancelled, 1, false),
+        ] {
+            let mut state = state();
+            state
+                .subagent_sessions
+                .push(crate::view::SubagentSessionView {
+                    child_session_id: "child-1".into(),
+                    parent_session_id: "s1".into(),
+                    title: "Subagente persistido".into(),
+                    status,
+                    cancellation_requested: false,
+                    open_inputs: inputs,
+                    inputs: vec![],
+                    dispatch_error: None,
+                    depth: 1,
+                });
+            for width in [360.0, 900.0] {
+                let frame = UiTree::new(related_subagent_cards(&state, width < 500.0).unwrap())
+                    .layout(Size::new(width, 600.0));
+                assert_eq!(
+                    frame
+                        .regions
+                        .iter()
+                        .any(|r| r.id == "subagent_cancel:child-1"),
+                    offered,
+                    "{status:?}, {width}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn persisted_mailbox_details_are_complete_and_scrollable() {
+        use openide_harness::{SubagentInputSnapshot, SubagentInputStatus, SubagentStatus};
+        let mut state = state();
+        state.expanded_subagent_inputs = Some("child-1".into());
+        state
+            .subagent_sessions
+            .push(crate::view::SubagentSessionView {
+                child_session_id: "child-1".into(),
+                parent_session_id: "s1".into(),
+                title: "Mailbox".into(),
+                status: SubagentStatus::Interrupted,
+                cancellation_requested: false,
+                open_inputs: 2,
+                depth: 1,
+                dispatch_error: None,
+                inputs: [
+                    SubagentInputStatus::Pending,
+                    SubagentInputStatus::Active,
+                    SubagentInputStatus::Done,
+                    SubagentInputStatus::Skipped,
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(index, status)| SubagentInputSnapshot {
+                    id: format!("input-{index}"),
+                    mode: openide_core::TurnMode::Build,
+                    status,
+                    revision: 0,
+                    prompt: format!("Instrucción exacta {index}\n{}", "contexto\n".repeat(100)),
+                })
+                .collect(),
+            });
+        for selected in ["s1", "child-1"] {
+            state.selected_session = Some(selected.into());
+            for width in [360.0, 900.0] {
+                let mut tree = UiTree::new(persisted_subagent_card(
+                    &state.subagent_sessions[0],
+                    selected,
+                    false,
+                    true,
+                    None,
+                ));
+                let start = std::time::Instant::now();
+                let mut now = start;
+                let mut frame = tree.layout_at(Size::new(width, 600.0), now);
+                let viewport = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == "subagent_mailbox:child-1")
+                    .unwrap()
+                    .rect;
+                let position = openide_ui::Point::new(viewport.x + 10.0, viewport.y + 10.0);
+                let mut content = visible_text(&frame);
+                assert!(!tree.is_scroll_at_end("subagent_mailbox:child-1", 0.0));
+                let mut steps = 0;
+                while !tree.is_scroll_at_end("subagent_mailbox:child-1", 0.0) {
+                    tree.handle_event_at(
+                        openide_ui::UiEvent::Scroll {
+                            position,
+                            delta_y: -100.0,
+                        },
+                        now,
+                    );
+                    steps += 1;
+                    now = start + std::time::Duration::from_secs_f64(steps as f64 / 120.0);
+                    frame = tree.layout_at(Size::new(width, 600.0), now);
+                    content.push_str(&visible_text(&frame));
+                    assert!(steps < 256, "mailbox scroll must reach the end");
+                }
+                // is_scroll_at_end reflects the requested wheel target. Let
+                // the visible offset finish easing before inspecting its tail.
+                for _ in 0..36 {
+                    steps += 1;
+                    now = start + std::time::Duration::from_secs_f64(steps as f64 / 120.0);
+                    frame = tree.layout_at(Size::new(width, 600.0), now);
+                    content.push_str(&visible_text(&frame));
+                }
+                for expected in [
+                    "Pendiente",
+                    "Activa",
+                    "Completada",
+                    "Omitida",
+                    "Instrucción exacta 0",
+                    "input-3",
+                    "Ocultar entradas",
+                ] {
+                    assert!(
+                        content.contains(expected),
+                        "{expected} at {width}: {content}"
+                    );
+                }
+                assert!(tree.scroll_offset("subagent_mailbox:child-1") > 0.0);
+                assert!(tree.is_scroll_at_end("subagent_mailbox:child-1", 1.0));
+                assert!(frame
+                    .regions
+                    .iter()
+                    .any(|region| region.id == "subagent_inputs:child-1"));
+            }
+        }
+    }
+
+    #[test]
+    fn mailbox_edit_form_is_reachable_on_small_parent_and_child_surfaces() {
+        let mut state = state();
+        state
+            .subagent_sessions
+            .push(crate::view::SubagentSessionView {
+                child_session_id: "child-1".into(),
+                parent_session_id: "s1".into(),
+                title: "Mailbox".into(),
+                status: openide_harness::SubagentStatus::Completed,
+                cancellation_requested: false,
+                open_inputs: 1,
+                inputs: vec![],
+                dispatch_error: None,
+                depth: 1,
+            });
+        state.subagent_input_edit = Some(crate::view::SubagentInputEditView {
+            child_session_id: "child-1".into(),
+            input_id: "input-1".into(),
+            expected_revision: 0,
+            prompt: "Borrador\ncon contexto".into(),
+        });
+        for selected in ["s1", "child-1"] {
+            state.selected_session = Some(selected.into());
+            for width in [360.0, 900.0] {
+                let mut tree = UiTree::new(related_subagent_cards(&state, width < 500.0).unwrap());
+                tree.layout(Size::new(width, 600.0));
+                for id in [
+                    "subagent_input_prompt",
+                    "subagent_input_save",
+                    "subagent_input_cancel",
+                ] {
+                    assert!(tree.focus(id));
+                    let frame = tree.layout(Size::new(width, 600.0));
+                    let region = frame.regions.iter().find(|region| region.id == id).unwrap();
+                    assert!(region.rect.x >= 0.0 && region.rect.x + region.rect.width <= width);
+                    assert!(region.rect.height > 0.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mailbox_skip_control_is_reachable_only_for_pending_entries() {
+        let mut state = state();
+        state.expanded_subagent_inputs = Some("child-1".into());
+        state
+            .subagent_sessions
+            .push(crate::view::SubagentSessionView {
+                child_session_id: "child-1".into(),
+                parent_session_id: "s1".into(),
+                title: "Mailbox".into(),
+                status: openide_harness::SubagentStatus::Completed,
+                cancellation_requested: false,
+                open_inputs: 2,
+                depth: 1,
+                dispatch_error: None,
+                inputs: vec![
+                    openide_harness::SubagentInputSnapshot {
+                        id: "pending:1".into(),
+                        prompt: "Pending text".into(),
+                        mode: TurnMode::Build,
+                        status: openide_harness::SubagentInputStatus::Pending,
+                        revision: 7,
+                    },
+                    openide_harness::SubagentInputSnapshot {
+                        id: "active".into(),
+                        prompt: "Active text".into(),
+                        mode: TurnMode::Build,
+                        status: openide_harness::SubagentInputStatus::Active,
+                        revision: 0,
+                    },
+                ],
+            });
+        for selected in ["s1", "child-1"] {
+            state.selected_session = Some(selected.into());
+            for width in [360.0, 900.0] {
+                let mut tree = UiTree::new(related_subagent_cards(&state, width < 500.0).unwrap());
+                tree.layout(Size::new(width, 600.0));
+                let id = "subagent_input_skip:child-1:7:pending:1";
+                assert!(tree.focus(id));
+                let frame = tree.layout(Size::new(width, 600.0));
+                let region = frame.regions.iter().find(|r| r.id == id).unwrap();
+                assert!(region.rect.x >= 0.0 && region.rect.x + region.rect.width <= width);
+                assert!(!frame
+                    .regions
+                    .iter()
+                    .any(|r| r.id == "subagent_input_skip:child-1:0:active"));
+            }
+        }
+    }
+
+    #[test]
+    fn mailbox_dispatch_diagnostic_and_retry_remain_visible_without_worker() {
+        let mut state = state();
+        state
+            .subagent_sessions
+            .push(crate::view::SubagentSessionView {
+                child_session_id: "child-1".into(),
+                parent_session_id: "s1".into(),
+                title: "Mailbox".into(),
+                status: openide_harness::SubagentStatus::Completed,
+                cancellation_requested: false,
+                open_inputs: 1,
+                inputs: vec![],
+                depth: 1,
+                dispatch_error: Some("Selecciona el modelo original del subagente".into()),
+            });
+        for selected in ["s1", "child-1"] {
+            state.selected_session = Some(selected.into());
+            for width in [360.0, 900.0] {
+                let mut tree = UiTree::new(related_subagent_cards(&state, width < 500.0).unwrap());
+                tree.layout(Size::new(width, 600.0));
+                assert!(tree.focus("subagent_dispatch:child-1"));
+                let frame = tree.layout(Size::new(width, 600.0));
+                assert!(frame
+                    .regions
+                    .iter()
+                    .any(|region| region.id == "subagent_dispatch:child-1"));
+                assert!(visible_text(&frame).contains("modelo original"));
+            }
         }
     }
 
@@ -2227,6 +5875,7 @@ mod tests {
                 arguments: Value::Null,
                 output: Some("ok".into()),
                 is_error: false,
+                activity: ActivityStatus::Completed,
             },
             TranscriptItem::Tool {
                 id: "two".into(),
@@ -2234,6 +5883,7 @@ mod tests {
                 arguments: Value::Null,
                 output: Some("denied".into()),
                 is_error: true,
+                activity: ActivityStatus::Failed,
             },
             TranscriptItem::Tool {
                 id: "three".into(),
@@ -2241,8 +5891,9 @@ mod tests {
                 arguments: Value::Null,
                 output: None,
                 is_error: false,
+                activity: ActivityStatus::Running,
             },
         ];
-        assert_eq!(work_counts(&tools), (1, 1, 1));
+        assert_eq!(work_counts(&tools), (1, 1, 1, 0, 0, 0));
     }
 }

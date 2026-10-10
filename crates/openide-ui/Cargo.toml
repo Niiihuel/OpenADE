@@ -3,7 +3,7 @@ name = "openide-ui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Original retained-state UI tree, layout, events and backend-neutral drawing for OpenIDE"
+description = "openADE's own components, built on the limn UI library"
 
 [dependencies]
-unicode-segmentation = "1.12"
+limn = { path = "../../../lienzo/crates/limn" }

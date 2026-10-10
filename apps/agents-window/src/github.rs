@@ -77,7 +77,7 @@ fn valid_slug(segment: &str) -> bool {
 
 /// Only recognize github.com exactly. A local or lookalike remote must never
 /// turn into an API request or a browser link labelled as GitHub.
-fn parse_remote(value: &str, remote_name: &str) -> Option<GithubRepository> {
+pub(crate) fn parse_remote(value: &str, remote_name: &str) -> Option<GithubRepository> {
     let value = value.trim();
     let path = value
         .strip_prefix("https://github.com/")
@@ -199,7 +199,11 @@ fn parse_pulls(value: &Value, repository: &GithubRepository, branch: &str) -> Ve
         .collect()
 }
 
-fn fetch_pulls(repository: &GithubRepository, branch: &str) -> Result<Vec<GithubPull>, String> {
+fn fetch_pulls(
+    repository: &GithubRepository,
+    branch: &str,
+    account: Option<&str>,
+) -> Result<Vec<GithubPull>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(7))
         .build()
@@ -214,7 +218,9 @@ fn fetch_pulls(repository: &GithubRepository, branch: &str) -> Result<Vec<Github
         .query(&[("state", "open"), ("head", &head), ("per_page", "20")])
         .header(reqwest::header::USER_AGENT, "OpenIDE-Agent-Window")
         .header(reqwest::header::ACCEPT, "application/vnd.github+json");
-    if let Some(token) = crate::github_account::auth_token() {
+    if let Some(login) = account {
+        let token = crate::github_account::auth_token_for_account(login)
+            .ok_or_else(|| format!("Reconecta la cuenta {login} para consultar GitHub."))?;
         request = request.bearer_auth(token);
     }
     let response = request
@@ -241,7 +247,7 @@ fn fetch_pulls(repository: &GithubRepository, branch: &str) -> Result<Vec<Github
     Ok(parse_pulls(&value, repository, branch))
 }
 
-pub fn load_overview(workspace: &Path) -> Option<GithubOverview> {
+pub fn load_overview(workspace: &Path, account: Option<&str>) -> Option<GithubOverview> {
     let repository = discover_repository(workspace)?;
     let branch = current_branch(workspace).unwrap_or_else(|| "HEAD separado".to_owned());
     let (pulls, notice) = if branch == "HEAD separado" {
@@ -250,7 +256,7 @@ pub fn load_overview(workspace: &Path) -> Option<GithubOverview> {
             Some("HEAD separado: no hay una rama para buscar PR".to_owned()),
         )
     } else {
-        match fetch_pulls(&repository, &branch) {
+        match fetch_pulls(&repository, &branch, account) {
             Ok(pulls) => (pulls, None),
             Err(error) => (Vec::new(), Some(error)),
         }

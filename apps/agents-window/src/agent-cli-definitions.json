@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "agents": [
+    {
+      "id": "claude",
+      "label": "Claude Code",
+      "executables": ["claude"],
+      "accept_all_args": ["--dangerously-skip-permissions"],
+      "bridge": "claude_mcp_config"
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "executables": ["codex"],
+      "accept_all_args": ["--dangerously-bypass-approvals-and-sandbox"],
+      "bridge": "codex_config"
+    },
+    {
+      "id": "opencode",
+      "label": "opencode",
+      "executables": ["opencode"],
+      "accept_all_args": ["--auto"],
+      "bridge": null
+    }
+  ]
+}

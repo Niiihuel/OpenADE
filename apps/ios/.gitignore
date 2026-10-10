@@ -1,0 +1,11 @@
+/.build/
+/build/
+__pycache__/
+.swiftpm/
+node_modules/
+*.xcuserstate
+xcuserdata/
+credentials.json
+*.p12
+*.mobileprovision
+.env*

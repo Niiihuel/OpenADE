@@ -13,8 +13,12 @@ use uuid::Uuid;
 
 #[path = "apply_patch.rs"]
 mod apply_patch;
+pub(crate) use apply_patch::{is_non_deleting_workspace_patch, is_workspace_relative_edit_path};
+#[cfg(test)]
+#[path = "skill_reference_tool_tests.rs"]
+mod skill_reference_tool_tests;
 #[path = "persistent_command_tools.rs"]
-mod persistent_command_tools;
+pub(crate) mod persistent_command_tools;
 pub(crate) use persistent_command_tools::legacy_start_command_definition;
 
 const MAX_READ_BYTES: u64 = 256 * 1024;
@@ -68,11 +72,28 @@ pub trait ToolExecutor: Send + Sync {
         false
     }
 
+    /// Trusted assertion that this implementation performs a nonmutating
+    /// built-in read in Plan. Does not authorize concurrent scheduling.
+    fn certifies_plan_read(&self, name: &str) -> bool {
+        self.certifies_parallel_read(name)
+    }
+
     async fn execute(
         &self,
         call: &ToolCall,
         context: &ToolContext,
     ) -> Result<ToolOutput, AgentError>;
+
+    /// Optional bounded live observations; the returned result remains the
+    /// only authoritative tool output. Older executors need no adaptation.
+    async fn execute_streaming(
+        &self,
+        call: &ToolCall,
+        context: &ToolContext,
+        _output: crate::ToolOutputSender,
+    ) -> Result<ToolOutput, AgentError> {
+        self.execute(call, context).await
+    }
 }
 
 /// Names of the native tools that can be independently exposed and executed.
@@ -158,7 +179,9 @@ impl ToolPermissions {
 #[derive(Default)]
 pub struct LocalTools {
     permissions: ToolPermissions,
+    read_only_roots: Vec<PathBuf>,
     command_isolation: crate::CommandIsolation,
+    allow_elevated_commands: bool,
     persistent_commands: Option<Arc<crate::PersistentCommandManager>>,
 }
 
@@ -181,6 +204,40 @@ impl LocalTools {
         self.permissions
     }
 
+    /// Trusted host roots for installed skill references. Only `read_file`
+    /// accepts absolute paths beneath these roots; directory tools, writes and
+    /// commands keep their existing workspace policy. Roots are revalidated
+    /// on every read, including the opened file's final location.
+    pub fn with_read_only_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.read_only_roots = roots.into_iter().filter(|root| root.is_absolute()).take(128).collect();
+        self
+    }
+
+    fn readable_path(&self, workspace: &Path, requested: &str) -> Result<(PathBuf, PathBuf), AgentError> {
+        match existing_workspace_path(workspace, requested) {
+            Ok(path) => Ok((workspace.canonicalize().map_err(tool_io_error)?, path)),
+            Err(workspace_error) => {
+                let requested_path = Path::new(requested);
+                if requested_path.is_absolute() {
+                    for root in &self.read_only_roots {
+                        if !requested_path.starts_with(root) {
+                            continue;
+                        }
+                        let metadata = fs::symlink_metadata(root).map_err(tool_io_error)?;
+                        if !metadata.is_dir() || is_link_or_reparse(&metadata)
+                            || root.canonicalize().map_err(tool_io_error)? != *root
+                        {
+                            return Err(AgentError::Tool("installed skill directory changed".into()));
+                        }
+                        let path = existing_workspace_path(root, requested)?;
+                        return Ok((root.clone(), path));
+                    }
+                }
+                Err(workspace_error)
+            }
+        }
+    }
+
     /// Choose command isolation from trusted host settings, never tool arguments.
     pub fn with_command_isolation(mut self, isolation: crate::CommandIsolation) -> Self {
         self.command_isolation = isolation;
@@ -189,6 +246,14 @@ impl LocalTools {
 
     pub fn command_isolation(&self) -> crate::CommandIsolation {
         self.command_isolation
+    }
+
+    /// Trusted host opt-in after an explicit administrator-access confirmation.
+    /// Each elevated command still uses Linux Polkit authentication; this does
+    /// not elevate the application, file tools, or persistent commands.
+    pub fn with_elevated_commands(mut self, allowed: bool) -> Self {
+        self.allow_elevated_commands = allowed;
+        self
     }
 
     /// Attach a manager owned by this native session. This does not enable
@@ -204,8 +269,7 @@ impl LocalTools {
 
     fn persistent_commands_enabled(&self) -> bool {
         self.permissions.run_command
-            && (self.command_isolation == crate::CommandIsolation::HostUnrestricted
-                || cfg!(windows))
+            && self.command_isolation.is_available_on_host()
             && self
                 .persistent_commands
                 .as_ref()
@@ -222,6 +286,24 @@ impl LocalTools {
 
 #[async_trait]
 impl ToolExecutor for LocalTools {
+    async fn execute_streaming(
+        &self,
+        call: &ToolCall,
+        context: &ToolContext,
+        output: crate::ToolOutputSender,
+    ) -> Result<ToolOutput, AgentError> {
+        if call.name != "run_command" || !self.permissions.run_command {
+            return self.execute(call, context).await;
+        }
+        crate::command::run_command_streaming(
+            call,
+            context,
+            self.command_isolation,
+            self.allow_elevated_commands,
+            Some(output),
+        )
+        .await
+    }
     fn certifies_parallel_read(&self, name: &str) -> bool {
         matches!(
             LocalTool::from_name(name),
@@ -236,7 +318,7 @@ impl ToolExecutor for LocalTools {
                 description: "Read a UTF-8 text file inside the active workspace.".into(),
                 parameters: json!({
                     "type": "object",
-                    "properties": {"path": {"type": "string"}},
+                    "properties": {"path": {"type": "string", "minLength": 1, "description": "File path relative to the active workspace (for example src/main.rs), or an absolute path inside it."}},
                     "required": ["path"],
                     "additionalProperties": false
                 }),
@@ -246,7 +328,7 @@ impl ToolExecutor for LocalTools {
                 description: "List direct children of a workspace directory.".into(),
                 parameters: json!({
                     "type": "object",
-                    "properties": {"path": {"type": "string"}},
+                    "properties": {"path": {"type": "string", "default": ".", "description": "Directory inside the active workspace. Omit path or use . to list the workspace root; an empty string also means the root. Relative paths are preferred; absolute paths must stay inside the workspace."}},
                     "additionalProperties": false
                 }),
             },
@@ -257,7 +339,7 @@ impl ToolExecutor for LocalTools {
                     "type": "object",
                     "properties": {
                         "pattern": {"type": "string", "maxLength": 16384},
-                        "path": {"type": "string"}
+                        "path": {"type": "string", "default": ".", "description": "File or directory inside the active workspace. Omit path or use . to search the workspace root; an empty string also means the root. Relative paths are preferred; absolute paths must stay inside the workspace."}
                     },
                     "required": ["pattern"],
                     "additionalProperties": false
@@ -271,7 +353,7 @@ impl ToolExecutor for LocalTools {
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string"},
+                        "path": {"type": "string", "minLength": 1, "description": "File path relative to the active workspace, or an absolute path inside it. The parent directory must already exist. Paths containing .. or links are not allowed."},
                         "content": {"type": "string"}
                     },
                     "required": ["path", "content"],
@@ -292,13 +374,9 @@ impl ToolExecutor for LocalTools {
             });
         }
         if self.permissions.run_command {
-            tools.push(ToolDefinition {
+            let mut definition = ToolDefinition {
                 name: "run_command".into(),
-                description: match self.command_isolation {
-                    crate::CommandIsolation::HostUnrestricted => "Run a command with the host user's filesystem and network rights; no implicit shell.",
-                    crate::CommandIsolation::WorkspaceWriteOffline => "Run a command inside a Windows workspace-write/offline OS sandbox; no implicit shell.",
-                }
-                .into(),
+                description: self.command_isolation.run_command_description().into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -309,7 +387,24 @@ impl ToolExecutor for LocalTools {
                     "required": ["command"],
                     "additionalProperties": false
                 }),
-            });
+            };
+            if self.allow_elevated_commands
+                && self.command_isolation == crate::CommandIsolation::HostUnrestricted
+                && cfg!(target_os = "linux")
+            {
+                definition.parameters["properties"]["elevated"] = json!({
+                    "type": "boolean",
+                    "description": "Execute this command as root using the desktop's Polkit authentication dialog. Only when administration is needed; no secrets or interactive input."
+                });
+                definition.description.push_str(" Set elevated=true only for administrator operations; Linux will request authorization through its graphical Polkit agent. Elevated commands are bounded to 120 seconds and cannot read stdin.");
+            }
+            tools.push(definition);
+        }
+        if !self.read_only_roots.is_empty() {
+            if let Some(read) = tools.iter_mut().find(|definition| definition.name == "read_file") {
+                read.description.push_str(" Also accepts absolute reference-file paths inside the installed skill directories provided in your instructions (read-only).");
+                read.parameters["properties"]["path"]["description"] = json!("File path relative to the active workspace, absolute inside it, or an absolute reference-file path under an installed skill directory supplied in the instructions. Parent traversal and links are not allowed.");
+            }
         }
         tools.retain(|definition| {
             LocalTool::from_name(&definition.name).is_some_and(|tool| self.permissions.allows(tool))
@@ -351,9 +446,7 @@ impl ToolExecutor for LocalTools {
         match call.name.as_str() {
             "read_file" => {
                 let path = required_string(&call.arguments, "path")?;
-                let root = context.workspace.canonicalize().map_err(tool_io_error)?;
-                reject_reparse_components(&root, path)?;
-                let path = existing_workspace_path(&root, path)?;
+                let (root, path) = self.readable_path(&context.workspace, path)?;
                 let metadata = fs::symlink_metadata(&path).map_err(tool_io_error)?;
                 if is_link_or_reparse(&metadata) {
                     return Ok(ToolOutput::error("reading through a link is not allowed"));
@@ -386,14 +479,8 @@ impl ToolExecutor for LocalTools {
                 Ok(ToolOutput::success(text))
             }
             "list_files" => {
-                let path = call
-                    .arguments
-                    .get("path")
-                    .and_then(Value::as_str)
-                    .unwrap_or(".");
-                let root = context.workspace.canonicalize().map_err(tool_io_error)?;
-                reject_reparse_components(&root, path)?;
-                let path = existing_workspace_path(&root, path)?;
+                let requested = directory_path_argument(&call.arguments);
+                let path = existing_workspace_path(&context.workspace, requested)?;
                 if !path.is_dir() {
                     return Ok(ToolOutput::error("path is not a directory"));
                 }
@@ -439,8 +526,13 @@ impl ToolExecutor for LocalTools {
                 apply_patch::apply_patch(&context.workspace, patch, &context.cancel)
             }
             "run_command" => {
-                crate::command::run_command_with_isolation(call, context, self.command_isolation)
-                    .await
+                crate::command::run_command_with_policy(
+                    call,
+                    context,
+                    self.command_isolation,
+                    self.allow_elevated_commands,
+                )
+                .await
             }
             _ => unreachable!("all known local tools are handled above"),
         }
@@ -454,28 +546,80 @@ pub(crate) fn required_string<'a>(arguments: &'a Value, key: &str) -> Result<&'a
         .ok_or_else(|| AgentError::Tool(format!("missing string argument: {key}")))
 }
 
+/// Directory tools treat a missing or empty path as the workspace root. Do
+/// not trim other strings: leading/trailing spaces can be real file names.
+pub(crate) fn directory_path_argument(arguments: &Value) -> &str {
+    arguments
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())
+        .unwrap_or(".")
+}
+
 pub(crate) fn existing_workspace_path(
     workspace: &Path,
     requested: &str,
 ) -> Result<PathBuf, AgentError> {
-    validate_relative_path(requested)?;
     let root = workspace.canonicalize().map_err(tool_io_error)?;
-    let path = root.join(requested).canonicalize().map_err(tool_io_error)?;
+    let relative = workspace_relative_path(workspace, &root, requested)?;
+    reject_reparse_components(&root, &relative)?;
+    let path = root.join(relative).canonicalize().map_err(tool_io_error)?;
     if !path.starts_with(&root) {
         return Err(AgentError::Tool("path is outside the workspace".into()));
     }
     Ok(path)
 }
 
-fn reject_reparse_components(root: &Path, requested: &str) -> Result<(), AgentError> {
-    validate_relative_path(requested)?;
+/// Absolute paths are only another spelling of a path beneath the trusted
+/// workspace. Strip a component-aware workspace prefix *before* resolving
+/// links; an arbitrary outside alias pointing inward is still outside scope.
+pub(crate) fn workspace_relative_path(
+    workspace: &Path,
+    root: &Path,
+    requested: &str,
+) -> Result<PathBuf, AgentError> {
+    let path = Path::new(requested);
+    if requested.is_empty()
+        || path
+            .components()
+            .any(|component| component == Component::ParentDir)
+    {
+        return Err(AgentError::Tool("path must name a location inside the workspace without parent traversal (..); use . for the workspace root".into()));
+    }
+    let relative = if path.is_absolute() {
+        // Windows canonicalize uses verbatim prefixes; a user-facing absolute
+        // path can instead start with the original workspace spelling.
+        let original = std::path::absolute(workspace).map_err(tool_io_error)?;
+        path.strip_prefix(root)
+            .or_else(|_| path.strip_prefix(&original))
+            .map_err(|_| AgentError::Tool("path is outside the workspace".into()))?
+            .to_path_buf()
+    } else {
+        path.to_path_buf()
+    };
+    if relative
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(AgentError::Tool(
+            "path must be relative to the workspace or absolute inside it".into(),
+        ));
+    }
+    Ok(if relative.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        relative
+    })
+}
+
+fn reject_reparse_components(root: &Path, relative: &Path) -> Result<(), AgentError> {
     let mut path = root.to_path_buf();
-    for component in Path::new(requested).components() {
+    for component in relative.components() {
         path.push(component);
         let metadata = fs::symlink_metadata(&path).map_err(tool_io_error)?;
         if is_link_or_reparse(&metadata) {
             return Err(AgentError::Tool(
-                "reading through a link or reparse point is not allowed".into(),
+                "access through a link or reparse point is not allowed".into(),
             ));
         }
     }
@@ -483,9 +627,19 @@ fn reject_reparse_components(root: &Path, requested: &str) -> Result<(), AgentEr
 }
 
 fn writable_workspace_path(workspace: &Path, requested: &str) -> Result<PathBuf, AgentError> {
-    validate_relative_path(requested)?;
     let root = workspace.canonicalize().map_err(tool_io_error)?;
-    let candidate = root.join(requested);
+    let relative = workspace_relative_path(workspace, &root, requested)?;
+    if !relative
+        .components()
+        .any(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err(AgentError::Tool(
+            "path must name a file inside the workspace".into(),
+        ));
+    }
+    let relative_parent = relative.parent().unwrap_or_else(|| Path::new("."));
+    reject_reparse_components(&root, relative_parent)?;
+    let candidate = root.join(&relative);
     let parent = candidate
         .parent()
         .ok_or_else(|| AgentError::Tool("path has no parent directory".into()))?
@@ -499,32 +653,14 @@ fn writable_workspace_path(workspace: &Path, requested: &str) -> Result<PathBuf,
         .ok_or_else(|| AgentError::Tool("path has no file name".into()))?;
     let target = parent.join(name);
     match fs::symlink_metadata(&target) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(AgentError::Tool(
-            "writing through a symlink is not allowed".into(),
+        Ok(metadata) if is_link_or_reparse(&metadata) => Err(AgentError::Tool(
+            "writing through a link or reparse point is not allowed".into(),
         )),
         Ok(metadata) if metadata.is_dir() => Err(AgentError::Tool("path is a directory".into())),
         Ok(_) => Ok(target),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(target),
         Err(error) => Err(tool_io_error(error)),
     }
-}
-
-fn validate_relative_path(requested: &str) -> Result<(), AgentError> {
-    let path = Path::new(requested);
-    if requested.is_empty()
-        || path.is_absolute()
-        || path.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
-        return Err(AgentError::Tool(
-            "tool paths must be relative to the workspace".into(),
-        ));
-    }
-    Ok(())
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), AgentError> {
@@ -613,7 +749,32 @@ fn verify_opened_file_in_workspace(file: &File, root: &Path) -> Result<(), Agent
     Ok(())
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn verify_opened_file_in_workspace(file: &File, root: &Path) -> Result<(), AgentError> {
+    use std::os::fd::AsRawFd;
+    let opened = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).map_err(tool_io_error)?;
+    if !opened.starts_with(root) {
+        return Err(AgentError::Tool("opened file is outside the allowed directory".into()));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn verify_opened_file_in_workspace(file: &File, root: &Path) -> Result<(), AgentError> {
+    use std::os::{fd::AsRawFd, unix::ffi::OsStrExt};
+    let mut buffer = [0u8; libc::MAXPATHLEN as usize];
+    // F_GETPATH writes at most MAXPATHLEN bytes into this owned buffer.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buffer.as_mut_ptr()) } == -1 {
+        return Err(tool_io_error(std::io::Error::last_os_error()));
+    }
+    let end = buffer.iter().position(|byte| *byte == 0).ok_or_else(|| AgentError::Tool("cannot verify opened file location".into()))?;
+    if !Path::new(std::ffi::OsStr::from_bytes(&buffer[..end])).starts_with(root) {
+        return Err(AgentError::Tool("opened file is outside the allowed directory".into()));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 fn verify_opened_file_in_workspace(_file: &File, _workspace: &Path) -> Result<(), AgentError> {
     Ok(())
 }
@@ -945,5 +1106,259 @@ mod tests {
         };
         assert!(tool.execute(&call, &context).await.is_err());
         assert_eq!(fs::read_to_string(private).unwrap(), "private");
+    }
+    #[tokio::test]
+    async fn directory_tools_accept_omitted_empty_dot_and_absolute_workspace_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("README.txt"), "project needle").unwrap();
+        let context = ToolContext {
+            workspace: dir.path().to_path_buf(),
+            cancel: CancellationToken::new(),
+        };
+        let tool = LocalTools::new();
+        for path in [
+            None,
+            Some(String::new()),
+            Some(".".into()),
+            Some("./".into()),
+            Some(dir.path().to_string_lossy().into_owned()),
+            Some(
+                dir.path()
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ] {
+            for name in ["list_files", "search_files"] {
+                let mut arguments = json!({});
+                if let Some(path) = &path {
+                    arguments["path"] = json!(path);
+                }
+                if name == "search_files" {
+                    arguments["pattern"] = json!("needle");
+                }
+                let result = tool
+                    .execute(
+                        &ToolCall {
+                            id: "root".into(),
+                            name: name.into(),
+                            arguments,
+                        },
+                        &context,
+                    )
+                    .await
+                    .unwrap();
+                assert!(!result.is_error, "{name} {path:?}: {}", result.content);
+                assert!(
+                    result.content.contains("README.txt"),
+                    "{name} {path:?}: {}",
+                    result.content
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn absolute_in_workspace_files_can_be_read_written_and_searched() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("src")).unwrap();
+        let file = dir.path().join("src").join("a file.txt");
+        let context = ToolContext {
+            workspace: dir.path().to_path_buf(),
+            cancel: CancellationToken::new(),
+        };
+        let tools = LocalTools::new().with_write_access(true);
+        tools
+            .execute(
+                &ToolCall {
+                    id: "write-absolute".into(),
+                    name: "write_file".into(),
+                    arguments: json!({"path":file,"content":"new needle"}),
+                },
+                &context,
+            )
+            .await
+            .unwrap();
+        let read = ToolCall {
+            id: "read-absolute".into(),
+            name: "read_file".into(),
+            arguments: json!({"path":file}),
+        };
+        assert_eq!(
+            tools.execute(&read, &context).await.unwrap().content,
+            "new needle"
+        );
+        let searched = tools
+            .execute(
+                &ToolCall {
+                    id: "search-absolute".into(),
+                    name: "search_files".into(),
+                    arguments: json!({"path":file,"pattern":"needle"}),
+                },
+                &context,
+            )
+            .await
+            .unwrap();
+        assert!(searched.content.contains("a file.txt:1: new needle"));
+        let disabled = LocalTools::new().with_tool_permission(LocalTool::ReadFile, false);
+        assert!(disabled.execute(&read, &context).await.unwrap().is_error);
+        for name in ["read_file", "write_file"] {
+            assert!(tools
+                .execute(
+                    &ToolCall {
+                        id: "empty-file".into(),
+                        name: name.into(),
+                        arguments: json!({"path":"", "content":"no"})
+                    },
+                    &context
+                )
+                .await
+                .is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn absolute_siblings_and_parent_traversal_stay_outside_file_tool_scope() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        let outside = temp.path().join("workspace-sibling");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::create_dir(root.join("sub")).unwrap();
+        let secret = outside.join("private.txt");
+        fs::write(&secret, "outside needle").unwrap();
+        fs::write(root.join("inside.txt"), "inside").unwrap();
+        let context = ToolContext {
+            workspace: root.clone(),
+            cancel: CancellationToken::new(),
+        };
+        // Full host command access does not change the file-tool boundary.
+        let tools = LocalTools::new()
+            .with_write_access(true)
+            .with_command_isolation(crate::CommandIsolation::HostUnrestricted);
+        for name in ["read_file", "list_files", "search_files", "write_file"] {
+            for path in [
+                secret.to_string_lossy().into_owned(),
+                "../workspace-sibling/private.txt".into(),
+                "sub/../inside.txt".into(),
+                root.join("sub/../inside.txt")
+                    .to_string_lossy()
+                    .into_owned(),
+            ] {
+                let result = tools.execute(&ToolCall { id: "outside".into(), name: name.into(), arguments: json!({"path":path,"pattern":"needle","content":"overwritten"}) }, &context).await;
+                assert!(result.is_err(), "{name} accepted {path:?}");
+            }
+        }
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "outside needle");
+        assert_eq!(
+            fs::read_to_string(root.join("inside.txt")).unwrap(),
+            "inside"
+        );
+    }
+
+    #[cfg(any(unix, windows))]
+    #[tokio::test]
+    async fn absolute_paths_do_not_bypass_link_component_checks() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("private.txt"), "outside needle").unwrap();
+        fs::create_dir(root.path().join("real")).unwrap();
+        fs::write(root.path().join("real/inside.txt"), "inside needle").unwrap();
+        for (target, link) in [
+            (
+                outside.path().to_path_buf(),
+                root.path().join("outside-link"),
+            ),
+            (root.path().join("real"), root.path().join("inside-link")),
+        ] {
+            #[cfg(unix)]
+            let created = std::os::unix::fs::symlink(&target, &link);
+            #[cfg(windows)]
+            let created = std::os::windows::fs::symlink_dir(&target, &link);
+            if created.is_err() {
+                return;
+            }
+        }
+        let tools = LocalTools::new().with_write_access(true);
+        let context = ToolContext {
+            workspace: root.path().to_path_buf(),
+            cancel: CancellationToken::new(),
+        };
+        for (link, file) in [
+            ("outside-link", "private.txt"),
+            ("inside-link", "inside.txt"),
+        ] {
+            for name in ["read_file", "list_files", "search_files", "write_file"] {
+                let path = if matches!(name, "list_files" | "search_files") {
+                    root.path().join(link)
+                } else {
+                    root.path().join(link).join(file)
+                };
+                let result = tools.execute(&ToolCall { id: "absolute-link".into(), name: name.into(), arguments: json!({"path":path,"pattern":"needle","content":"overwritten"}) }, &context).await;
+                assert!(
+                    result.is_err(),
+                    "{name} accepted linked absolute path {path:?}"
+                );
+            }
+        }
+        assert_eq!(
+            fs::read_to_string(outside.path().join("private.txt")).unwrap(),
+            "outside needle"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("real/inside.txt")).unwrap(),
+            "inside needle"
+        );
+    }
+
+    #[cfg(any(unix, windows))]
+    #[tokio::test]
+    async fn selected_workspace_alias_accepts_its_own_absolute_spelling() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        fs::write(real.join("readme.txt"), "project").unwrap();
+        let alias = temp.path().join("workspace");
+        #[cfg(unix)]
+        let created = std::os::unix::fs::symlink(&real, &alias);
+        #[cfg(windows)]
+        let created = std::os::windows::fs::symlink_dir(&real, &alias);
+        if created.is_err() {
+            return;
+        }
+        let context = ToolContext {
+            workspace: alias.clone(),
+            cancel: CancellationToken::new(),
+        };
+        let result = LocalTools::new()
+            .execute(
+                &ToolCall {
+                    id: "workspace-alias".into(),
+                    name: "read_file".into(),
+                    arguments: json!({"path":alias.join("readme.txt")}),
+                },
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.content, "project");
+        // A separate outside alias must not become an accepted entry point.
+        let other_alias = temp.path().join("unselected-alias");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &other_alias).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&real, &other_alias).unwrap();
+        assert!(LocalTools::new()
+            .execute(
+                &ToolCall {
+                    id: "outside-alias".into(),
+                    name: "read_file".into(),
+                    arguments: json!({"path":other_alias.join("readme.txt")})
+                },
+                &context
+            )
+            .await
+            .is_err());
     }
 }

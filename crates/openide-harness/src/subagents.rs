@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
-const REGISTRY_VERSION: u32 = 2;
+const REGISTRY_VERSION: u32 = 3;
 const MAX_REGISTRY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INPUTS_PER_CHILD: usize = 16;
 const MAX_INPUT_PROMPT_BYTES: usize = 16 * 1024;
@@ -131,6 +131,32 @@ pub struct SubagentRecord {
     pub cancellation_requested: bool,
 }
 
+/// One consistent registry snapshot for presentation, without worker authority.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SubagentUiSnapshot {
+    pub agent: SubagentRecord,
+    pub open_inputs: usize,
+    pub inputs: Vec<SubagentInputSnapshot>,
+}
+
+/// Read-only mailbox data; this snapshot grants no dispatch or edit authority.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubagentInputSnapshot {
+    pub id: String,
+    pub prompt: String,
+    pub mode: TurnMode,
+    pub status: SubagentInputStatus,
+    pub revision: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SubagentInputStatus {
+    Pending,
+    Active,
+    Done,
+    Skipped,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum QueuedInputState {
@@ -145,8 +171,11 @@ pub(crate) struct QueuedSubagentInput {
     pub id: String,
     pub prompt: String,
     pub mode: TurnMode,
+    /// Immutable digest of the original send_input request for exact retries.
     pub digest: String,
     pub state: QueuedInputState,
+    #[serde(default)]
+    pub revision: u64,
 }
 
 #[derive(Debug, Error)]
@@ -159,6 +188,8 @@ pub enum SubagentError {
     InvalidInput,
     #[error("subagent follow-up input ID was reused with different content")]
     ConflictingInput,
+    #[error("subagent input changed or was claimed; reload before editing")]
+    InputEditConflict,
     #[error("subagent follow-up input limit exceeded")]
     InputLimit,
     #[error("subagent {0} does not accept another input")]
@@ -173,6 +204,14 @@ pub enum SubagentError {
     TotalTaskLimit(String),
     #[error("session {child} is not a direct child of {parent}")]
     NotDirectChild { parent: String, child: String },
+    #[error("subagent {0} requires journal recovery before desktop cancellation")]
+    CancellationRequiresRecovery(String),
+    #[error("live subagent has no durable cancellation authority")]
+    CancellationAuthorityUnavailable,
+    #[error(
+        "durable subagent cancellation committed but command revocation reported an error: {0}"
+    )]
+    CommandRevocation(String),
     #[error("subagent control belongs to another session store")]
     ControlStoreMismatch,
     #[error("subagent {0} has no parent session")]
@@ -216,7 +255,7 @@ impl Default for ChildState {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 struct Registry {
     version: u32,
     children: BTreeMap<String, ChildState>,
@@ -313,6 +352,47 @@ impl SubagentCoordinator {
         self.limits
     }
 
+    /// Remove abandoned publication files under the writer's OS lock. Never
+    /// promote a temporary into authority: only the published registry counts.
+    /// UI snapshots remain read-only; hosts call this during store recovery.
+    pub fn recover_registry_temporaries(&self) -> Result<usize, SubagentError> {
+        let _lock = self.lock_registry()?;
+        self.read_registry()?;
+        self.cleanup_registry_temporaries()
+    }
+
+    // Caller holds the registry lock, so no live writer can own these files.
+    fn cleanup_registry_temporaries(&self) -> Result<usize, SubagentError> {
+        let mut removed = 0;
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Some(id) = name
+                .strip_prefix(".subagents.")
+                .and_then(|name| name.strip_suffix(".tmp"))
+            else {
+                continue;
+            };
+            let Ok(uuid) = Uuid::parse_str(id) else {
+                continue;
+            };
+            if uuid.get_version() != Some(uuid::Version::Random)
+                || uuid.hyphenated().to_string() != id
+                || !entry.file_type()?.is_file()
+            {
+                continue;
+            }
+            fs::remove_file(entry.path())?;
+            removed += 1;
+        }
+        #[cfg(unix)]
+        if removed > 0 {
+            File::open(&self.root)?.sync_all()?;
+        }
+        Ok(removed)
+    }
+
     pub fn issue_control(
         &self,
         parent_lease: &NativeSessionLease,
@@ -352,11 +432,14 @@ impl SubagentCoordinator {
         {
             return Err(SubagentError::DepthLimit);
         }
-        if parent.subagent.is_some() && registry.state(&parent.id).status != SubagentStatus::Running
+        let parent_state = registry.state(&parent.id);
+        if parent.subagent.is_some()
+            && (parent_state.status != SubagentStatus::Running
+                || parent_state.cancellation_requested)
         {
             return Err(SubagentError::InvalidTransition {
                 child: parent.id.clone(),
-                from: registry.state(&parent.id).status,
+                from: parent_state.status,
                 to: SubagentStatus::Running,
             });
         }
@@ -431,6 +514,19 @@ impl SubagentCoordinator {
         &self,
         parent_session_id: &str,
     ) -> Result<Vec<SubagentRecord>, SubagentError> {
+        Ok(self
+            .list_children_snapshot_for_ui(parent_session_id)?
+            .into_iter()
+            .map(|snapshot| snapshot.agent)
+            .collect())
+    }
+
+    /// Read status, cancellation and all mailbox entries under the same registry
+    /// lock. Does not acquire worker leases, dispatch children or mutate disk.
+    pub fn list_children_snapshot_for_ui(
+        &self,
+        parent_session_id: &str,
+    ) -> Result<Vec<SubagentUiSnapshot>, SubagentError> {
         let _registry_lock = self.lock_registry()?;
         let mut registry = self.read_registry()?;
         let sessions = self.reconcile_inner(&mut registry, false)?;
@@ -448,13 +544,45 @@ impl SubagentCoordinator {
                     .as_ref()
                     .is_some_and(|link| link.parent_session_id == parent_session_id)
             })
-            .map(|session| record(session.clone(), registry.state(&session.id)))
+            .map(|session| SubagentUiSnapshot {
+                agent: record(session.clone(), registry.state(&session.id)),
+                open_inputs: registry.inputs.get(&session.id).map_or(0, |inputs| {
+                    inputs
+                        .iter()
+                        .filter(|input| {
+                            matches!(
+                                input.state,
+                                QueuedInputState::Pending | QueuedInputState::Active
+                            )
+                        })
+                        .count()
+                }),
+                inputs: registry
+                    .inputs
+                    .get(&session.id)
+                    .into_iter()
+                    .flatten()
+                    .map(|input| SubagentInputSnapshot {
+                        id: input.id.clone(),
+                        prompt: input.prompt.clone(),
+                        mode: input.mode,
+                        revision: input.revision,
+                        status: match input.state {
+                            QueuedInputState::Pending => SubagentInputStatus::Pending,
+                            QueuedInputState::Active => SubagentInputStatus::Active,
+                            QueuedInputState::Done => SubagentInputStatus::Done,
+                            QueuedInputState::Skipped => SubagentInputStatus::Skipped,
+                        },
+                    })
+                    .collect(),
+            })
             .collect::<Vec<_>>();
         children.sort_by(|left, right| {
-            left.session
+            left.agent
+                .session
                 .created_at_ms
-                .cmp(&right.session.created_at_ms)
-                .then_with(|| left.session.id.cmp(&right.session.id))
+                .cmp(&right.agent.session.created_at_ms)
+                .then_with(|| left.agent.session.id.cmp(&right.agent.session.id))
         });
         Ok(children)
     }
@@ -568,10 +696,120 @@ impl SubagentCoordinator {
             mode,
             digest,
             state: QueuedInputState::Pending,
+            revision: 0,
         };
         inputs.push(entry.clone());
         self.write_registry(&registry)?;
         Ok(entry)
+    }
+
+    /// Replace only unclaimed content under the same lock as worker claims.
+    /// The original request digest is immutable so send_input retries remain
+    /// idempotent. A repeated edit after an ambiguous commit is also idempotent.
+    pub fn edit_pending_input(
+        &self,
+        parent_lease: &NativeSessionLease,
+        child_id: &str,
+        input_id: &str,
+        expected_revision: u64,
+        prompt: &str,
+    ) -> Result<SubagentInputSnapshot, SubagentError> {
+        if prompt.trim().is_empty() || prompt.len() > MAX_INPUT_PROMPT_BYTES {
+            return Err(SubagentError::InvalidInput);
+        }
+        let control = self.issue_control(parent_lease)?;
+        let _lock = self.lock_registry()?;
+        let mut registry = self.read_registry()?;
+        let sessions = self.reconcile(&mut registry)?;
+        self.require_direct_child_control(&control, child_id, &sessions)?;
+        let state = registry.state(child_id);
+        if state.cancellation_requested
+            || matches!(
+                state.status,
+                SubagentStatus::Failed | SubagentStatus::Cancelled
+            )
+        {
+            return Err(SubagentError::InputClosed(child_id.to_owned()));
+        }
+        let input = registry
+            .inputs
+            .get_mut(child_id)
+            .and_then(|entries| entries.iter_mut().find(|input| input.id == input_id))
+            .ok_or(SubagentError::InputEditConflict)?;
+        let next_revision = expected_revision
+            .checked_add(1)
+            .ok_or(SubagentError::InputEditConflict)?;
+        if input.state != QueuedInputState::Pending {
+            return Err(SubagentError::InputEditConflict);
+        }
+        if input.revision == next_revision && input.prompt == prompt {
+            return Ok(SubagentInputSnapshot {
+                id: input.id.clone(),
+                prompt: input.prompt.clone(),
+                mode: input.mode,
+                status: SubagentInputStatus::Pending,
+                revision: input.revision,
+            });
+        }
+        if input.revision != expected_revision {
+            return Err(SubagentError::InputEditConflict);
+        }
+        input.prompt = prompt.to_owned();
+        input.revision = next_revision;
+        let snapshot = SubagentInputSnapshot {
+            id: input.id.clone(),
+            prompt: input.prompt.clone(),
+            mode: input.mode,
+            status: SubagentInputStatus::Pending,
+            revision: input.revision,
+        };
+        self.write_registry(&registry)?;
+        Ok(snapshot)
+    }
+
+    /// Omit one unclaimed input without closing the child or the rest of its
+    /// mailbox. Shares the registry lock with claims and edits. The revision
+    /// makes a retry after an ambiguous commit idempotent, while stale UI
+    /// actions cannot silently discard a newer edit.
+    pub fn skip_pending_input(
+        &self,
+        parent_lease: &NativeSessionLease,
+        child_id: &str,
+        input_id: &str,
+        expected_revision: u64,
+    ) -> Result<SubagentInputSnapshot, SubagentError> {
+        let control = self.issue_control(parent_lease)?;
+        let _lock = self.lock_registry()?;
+        let mut registry = self.read_registry()?;
+        let sessions = self.reconcile(&mut registry)?;
+        self.require_direct_child_control(&control, child_id, &sessions)?;
+        let input = registry
+            .inputs
+            .get_mut(child_id)
+            .and_then(|entries| entries.iter_mut().find(|input| input.id == input_id))
+            .ok_or(SubagentError::InputEditConflict)?;
+        let next_revision = expected_revision
+            .checked_add(1)
+            .ok_or(SubagentError::InputEditConflict)?;
+        let retry = input.state == QueuedInputState::Skipped && input.revision == next_revision;
+        if !retry {
+            if input.state != QueuedInputState::Pending || input.revision != expected_revision {
+                return Err(SubagentError::InputEditConflict);
+            }
+            input.state = QueuedInputState::Skipped;
+            input.revision = next_revision;
+        }
+        let snapshot = SubagentInputSnapshot {
+            id: input.id.clone(),
+            prompt: input.prompt.clone(),
+            mode: input.mode,
+            status: SubagentInputStatus::Skipped,
+            revision: input.revision,
+        };
+        if !retry {
+            self.write_registry(&registry)?;
+        }
+        Ok(snapshot)
     }
 
     pub(crate) fn input_state(
@@ -782,8 +1020,44 @@ impl SubagentCoordinator {
         parent_lease: &NativeSessionLease,
         child_id: &str,
     ) -> Result<SubagentRecord, SubagentError> {
+        self.request_cancel_with_affected(parent_lease, child_id)
+            .map(|(record, _affected)| record)
+    }
+
+    /// Commit cancellation and return the complete affected subtree from the
+    /// same registry transaction. The returned IDs include terminal children;
+    /// hosts may revoke their remaining command managers only after success.
+    pub fn request_cancel_with_affected(
+        &self,
+        parent_lease: &NativeSessionLease,
+        child_id: &str,
+    ) -> Result<(SubagentRecord, Vec<String>), SubagentError> {
         let control = self.issue_control(parent_lease)?;
-        self.request_cancel_control(&control, child_id)
+        self.request_cancel_control_with_affected(&control, child_id)
+    }
+
+    /// Desktop cancellation without a live worker must preserve unresolved
+    /// journals in this entire subtree for explicit recovery. The check and
+    /// cancellation flag are serialized with worker claims by the registry lock.
+    pub fn request_cancel_from_ui(
+        &self,
+        parent_lease: &NativeSessionLease,
+        child_id: &str,
+    ) -> Result<SubagentRecord, SubagentError> {
+        self.request_cancel_from_ui_with_affected(parent_lease, child_id)
+            .map(|(record, _affected)| record)
+    }
+
+    /// Apply the desktop recovery checks and return the exact committed subtree
+    /// without a second lineage read. A rejected request returns no IDs and
+    /// does not publish lifecycle reconciliation or mailbox changes.
+    pub fn request_cancel_from_ui_with_affected(
+        &self,
+        parent_lease: &NativeSessionLease,
+        child_id: &str,
+    ) -> Result<(SubagentRecord, Vec<String>), SubagentError> {
+        let control = self.issue_control(parent_lease)?;
+        self.request_cancel_inner(&control, child_id, true)
     }
 
     pub fn request_cancel_control(
@@ -791,9 +1065,31 @@ impl SubagentCoordinator {
         control: &SubagentControl,
         child_id: &str,
     ) -> Result<SubagentRecord, SubagentError> {
+        self.request_cancel_control_with_affected(control, child_id)
+            .map(|(record, _affected)| record)
+    }
+
+    /// Return the target and all descendants covered by this cancellation,
+    /// including Completed, Failed and already Cancelled sessions. No targets
+    /// are returned until the cancellation and mailbox skips are committed.
+    pub fn request_cancel_control_with_affected(
+        &self,
+        control: &SubagentControl,
+        child_id: &str,
+    ) -> Result<(SubagentRecord, Vec<String>), SubagentError> {
+        self.request_cancel_inner(control, child_id, false)
+    }
+
+    fn request_cancel_inner(
+        &self,
+        control: &SubagentControl,
+        child_id: &str,
+        require_recoverable_journals: bool,
+    ) -> Result<(SubagentRecord, Vec<String>), SubagentError> {
         let _registry_lock = self.lock_registry()?;
         let mut registry = self.read_registry()?;
-        let sessions = self.reconcile(&mut registry)?;
+        let original_registry = registry.clone();
+        let sessions = self.reconcile_inner(&mut registry, false)?;
         let child = self.require_direct_child_control(control, child_id, &sessions)?;
         let mut affected = vec![child_id.to_owned()];
         let mut cursor = 0;
@@ -813,34 +1109,44 @@ impl SubagentCoordinator {
             affected.extend(descendants);
             cursor += 1;
         }
-        let mut changed = false;
-        for id in affected {
-            let mut state = registry.state(&id);
+        if require_recoverable_journals {
+            for id in &affected {
+                let state = registry.state(id);
+                if state.status == SubagentStatus::Interrupted
+                    || (state.status == SubagentStatus::Ready
+                        && self
+                            .sessions
+                            .load(id)?
+                            .is_some_and(|stored| !stored.events.is_empty()))
+                {
+                    return Err(SubagentError::CancellationRequiresRecovery(id.clone()));
+                }
+            }
+        }
+        for id in &affected {
+            let mut state = registry.state(id);
             if !state.status.terminal() {
                 state.cancellation_requested = true;
                 if state.status != SubagentStatus::Running {
                     state.status = SubagentStatus::Cancelled;
                 }
                 registry.children.insert(id.clone(), state);
-                changed = true;
             } else if state.status == SubagentStatus::Completed && !state.cancellation_requested {
                 state.cancellation_requested = true;
                 registry.children.insert(id.clone(), state);
-                changed = true;
             }
-            if let Some(inputs) = registry.inputs.get_mut(&id) {
+            if let Some(inputs) = registry.inputs.get_mut(id) {
                 for input in inputs {
                     if input.state == QueuedInputState::Pending {
                         input.state = QueuedInputState::Skipped;
-                        changed = true;
                     }
                 }
             }
         }
-        if changed {
+        if registry != original_registry {
             self.write_registry(&registry)?;
         }
-        Ok(record(child.clone(), registry.state(child_id)))
+        Ok((record(child.clone(), registry.state(child_id)), affected))
     }
 
     pub fn cancellation_requested(&self, run: &SubagentRunLease) -> Result<bool, SubagentError> {
@@ -1113,7 +1419,7 @@ impl SubagentCoordinator {
             return Err(SubagentError::RegistryTooLarge);
         }
         let registry: Registry = serde_json::from_slice(&bytes)?;
-        if registry.version != 1 && registry.version != REGISTRY_VERSION {
+        if ![1, 2, REGISTRY_VERSION].contains(&registry.version) {
             return Err(SubagentError::UnsupportedRegistryVersion(registry.version));
         }
         Ok(Registry {
@@ -1127,6 +1433,7 @@ impl SubagentCoordinator {
         if serialized.len() + 1 > MAX_REGISTRY_BYTES {
             return Err(SubagentError::RegistryTooLarge);
         }
+        self.cleanup_registry_temporaries()?;
         let temporary = self.root.join(format!(".subagents.{}.tmp", Uuid::new_v4()));
         let result = (|| -> Result<(), SubagentError> {
             let mut file = OpenOptions::new()
@@ -1137,15 +1444,43 @@ impl SubagentCoordinator {
             file.write_all(b"\n")?;
             file.sync_all()?;
             drop(file);
+            #[cfg(test)]
+            registry_publication_cut(registry, "temporary-synced");
             fs::rename(&temporary, self.registry_path())?;
+            #[cfg(test)]
+            registry_publication_cut(registry, "renamed");
             #[cfg(unix)]
             File::open(&self.root)?.sync_all()?;
+            #[cfg(test)]
+            registry_publication_cut(registry, "directory-synced");
             Ok(())
         })();
         if result.is_err() {
             let _ = fs::remove_file(temporary);
         }
         result
+    }
+}
+
+#[cfg(test)]
+fn registry_publication_cut(registry: &Registry, stage: &str) {
+    if std::env::var("OPENIDE_MAILBOX_PUBLICATION_STAGE").as_deref() != Ok(stage) {
+        return;
+    }
+    let operation = std::env::var("OPENIDE_MAILBOX_PUBLICATION_OPERATION").unwrap_or_default();
+    let target = registry.inputs.values().flatten().any(|input| {
+        input.id == "publication-cut"
+            && match operation.as_str() {
+                "enqueue" => input.state == QueuedInputState::Pending && input.revision == 0,
+                "edit" => input.revision == 1,
+                "skip" => input.state == QueuedInputState::Skipped && input.revision == 1,
+                "claim" => input.state == QueuedInputState::Active,
+                _ => false,
+            }
+    });
+    if target {
+        // Exit without Rust destructors: OS locks/leases must release on death.
+        std::process::exit(86);
     }
 }
 
@@ -1207,6 +1542,506 @@ mod tests {
             mode: TurnMode::Build,
             context_digest: "a".repeat(64),
         }
+    }
+
+    #[test]
+    fn cancellation_returns_complete_committed_subtree_after_reopen() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "completed-root", &spec())
+            .unwrap();
+        let sibling = coordinator
+            .create_child(&parent_lease, "foreign-sibling", &spec())
+            .unwrap();
+        let child_run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        let completed = coordinator
+            .create_child(child_run.native_lease(), "completed-descendant", &spec())
+            .unwrap();
+        let idle = coordinator
+            .create_child(child_run.native_lease(), "idle-descendant", &spec())
+            .unwrap();
+        let failed = coordinator
+            .create_child(child_run.native_lease(), "failed-descendant", &spec())
+            .unwrap();
+        let completed_run = coordinator
+            .start_child(child_run.native_lease(), &completed.session.id)
+            .unwrap();
+        let nested = coordinator
+            .create_child(completed_run.native_lease(), "nested-idle", &spec())
+            .unwrap();
+        for (lease, id) in [
+            (child_run.native_lease(), completed.session.id.as_str()),
+            (child_run.native_lease(), idle.session.id.as_str()),
+            (completed_run.native_lease(), nested.session.id.as_str()),
+            (&parent_lease, sibling.session.id.as_str()),
+        ] {
+            coordinator
+                .enqueue_input(lease, id, "pending", "Keep exact input", TurnMode::Build)
+                .unwrap();
+        }
+        coordinator
+            .finish_child(&completed_run, SubagentOutcome::Completed)
+            .unwrap();
+        let failed_run = coordinator
+            .start_child(child_run.native_lease(), &failed.session.id)
+            .unwrap();
+        coordinator
+            .finish_child(&failed_run, SubagentOutcome::Failed)
+            .unwrap();
+        coordinator
+            .finish_child(&child_run, SubagentOutcome::Completed)
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "pending",
+                "Completed mailbox remains open until cancellation",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let stranger = sessions.create(root.path(), "native").unwrap();
+        let stranger_lease = sessions.try_acquire_native_lease(&stranger.id).unwrap();
+        let unrelated = coordinator
+            .create_child(&stranger_lease, "foreign-root-child", &spec())
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &stranger_lease,
+                &unrelated.session.id,
+                "foreign-pending",
+                "Unrelated work",
+                TurnMode::Build,
+            )
+            .unwrap();
+        drop(completed_run);
+        drop(failed_run);
+        drop(child_run);
+        drop(stranger_lease);
+        drop(parent_lease);
+        drop(coordinator);
+        drop(sessions);
+
+        let reopened = Arc::new(SessionStore::open(root.path()).unwrap());
+        let coordinator =
+            SubagentCoordinator::new(Arc::clone(&reopened), Default::default()).unwrap();
+        let parent_lease = reopened.try_acquire_native_lease(&parent.id).unwrap();
+        let sibling_before = coordinator
+            .list_children_snapshot_for_ui(&parent.id)
+            .unwrap()
+            .into_iter()
+            .find(|snapshot| snapshot.agent.session.id == sibling.session.id)
+            .unwrap();
+        let unrelated_before = coordinator
+            .list_children_snapshot_for_ui(&stranger.id)
+            .unwrap();
+        let result = coordinator
+            .request_cancel_from_ui_with_affected(&parent_lease, &child.session.id)
+            .unwrap();
+        let mut descendants = vec![
+            completed.session.id.clone(),
+            idle.session.id.clone(),
+            failed.session.id.clone(),
+        ];
+        descendants.sort();
+        let mut expected = vec![child.session.id.clone()];
+        expected.extend(descendants);
+        expected.push(nested.session.id.clone());
+        assert_eq!(result.1, expected);
+        assert_eq!(result.0.status, SubagentStatus::Completed);
+        assert!(result.0.cancellation_requested);
+        let committed_bytes = fs::read(coordinator.registry_path()).unwrap();
+        drop(parent_lease);
+        drop(coordinator);
+        drop(reopened);
+
+        let reopened = Arc::new(SessionStore::open(root.path()).unwrap());
+        let coordinator =
+            SubagentCoordinator::new(Arc::clone(&reopened), Default::default()).unwrap();
+        let parent_lease = reopened.try_acquire_native_lease(&parent.id).unwrap();
+        let control = coordinator.issue_control(&parent_lease).unwrap();
+        assert_eq!(
+            coordinator
+                .request_cancel_control_with_affected(&control, &child.session.id)
+                .unwrap(),
+            result
+        );
+        assert_eq!(
+            coordinator
+                .request_cancel(&parent_lease, &child.session.id)
+                .unwrap(),
+            result.0
+        );
+        assert_eq!(
+            fs::read(coordinator.registry_path()).unwrap(),
+            committed_bytes
+        );
+        let root_children = coordinator
+            .list_children_snapshot_for_ui(&parent.id)
+            .unwrap();
+        assert_eq!(
+            root_children
+                .iter()
+                .find(|snapshot| snapshot.agent.session.id == sibling.session.id)
+                .unwrap(),
+            &sibling_before
+        );
+        assert_eq!(
+            coordinator
+                .list_children_snapshot_for_ui(&stranger.id)
+                .unwrap(),
+            unrelated_before
+        );
+        let cancelled_child = root_children
+            .iter()
+            .find(|snapshot| snapshot.agent.session.id == child.session.id)
+            .unwrap();
+        assert_eq!(cancelled_child.open_inputs, 0);
+        assert_eq!(
+            cancelled_child.inputs[0].status,
+            SubagentInputStatus::Skipped
+        );
+        let descendants = coordinator
+            .list_children_snapshot_for_ui(&child.session.id)
+            .unwrap();
+        for snapshot in &descendants {
+            if snapshot.agent.session.id == failed.session.id {
+                assert_eq!(snapshot.agent.status, SubagentStatus::Failed);
+            } else {
+                assert!(snapshot.agent.cancellation_requested);
+                assert_eq!(snapshot.open_inputs, 0);
+                assert_eq!(snapshot.inputs[0].status, SubagentInputStatus::Skipped);
+                assert_eq!(
+                    snapshot.agent.status,
+                    if snapshot.agent.session.id == completed.session.id {
+                        SubagentStatus::Completed
+                    } else {
+                        SubagentStatus::Cancelled
+                    }
+                );
+            }
+        }
+        let nested = coordinator
+            .list_children_snapshot_for_ui(&completed.session.id)
+            .unwrap();
+        assert_eq!(nested[0].agent.status, SubagentStatus::Cancelled);
+        assert_eq!(nested[0].open_inputs, 0);
+        assert_eq!(nested[0].inputs[0].status, SubagentInputStatus::Skipped);
+    }
+
+    #[test]
+    fn cancellation_authority_failures_do_not_reconcile_or_publish_targets() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "authority-child", &spec())
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "pending",
+                "Do not skip on rejection",
+                TurnMode::Build,
+            )
+            .unwrap();
+        drop(run);
+        let original_bytes = fs::read(coordinator.registry_path()).unwrap();
+        let stranger = sessions.create(root.path(), "native").unwrap();
+        let stranger_lease = sessions.try_acquire_native_lease(&stranger.id).unwrap();
+        let stranger_control = coordinator.issue_control(&stranger_lease).unwrap();
+        assert!(matches!(
+            coordinator.request_cancel_control_with_affected(&stranger_control, &child.session.id),
+            Err(SubagentError::NotDirectChild { .. })
+        ));
+        assert_eq!(
+            fs::read(coordinator.registry_path()).unwrap(),
+            original_bytes
+        );
+        let (_foreign_root, foreign_store, foreign_coordinator, foreign_parent) =
+            setup(Default::default());
+        let foreign_lease = foreign_store
+            .try_acquire_native_lease(&foreign_parent.id)
+            .unwrap();
+        let foreign_control = foreign_coordinator.issue_control(&foreign_lease).unwrap();
+        assert!(matches!(
+            coordinator.request_cancel_control_with_affected(&foreign_control, &child.session.id),
+            Err(SubagentError::ControlStoreMismatch)
+        ));
+        assert_eq!(
+            fs::read(coordinator.registry_path()).unwrap(),
+            original_bytes
+        );
+        let snapshot = coordinator
+            .list_children_snapshot_for_ui(&parent.id)
+            .unwrap();
+        assert_eq!(snapshot[0].agent.status, SubagentStatus::Interrupted);
+        assert!(!snapshot[0].agent.cancellation_requested);
+        assert_eq!(snapshot[0].inputs[0].status, SubagentInputStatus::Pending);
+        assert_eq!(
+            fs::read(coordinator.registry_path()).unwrap(),
+            original_bytes
+        );
+    }
+
+    #[test]
+    fn cancellation_closes_new_descendant_spawn_but_preserves_existing_retry() {
+        let (_root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "running-child", &spec())
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        let descendant = coordinator
+            .create_child(run.native_lease(), "existing-descendant", &spec())
+            .unwrap();
+        let mut before = sessions
+            .list_with_diagnostics()
+            .unwrap()
+            .sessions
+            .into_iter()
+            .map(|stored| stored.session)
+            .collect::<Vec<_>>();
+        before.sort_by(|left, right| left.id.cmp(&right.id));
+        let (_, affected_before) = coordinator
+            .request_cancel_with_affected(&parent_lease, &child.session.id)
+            .unwrap();
+        assert_eq!(
+            affected_before,
+            vec![child.session.id.clone(), descendant.session.id.clone()]
+        );
+        let committed_bytes = fs::read(coordinator.registry_path()).unwrap();
+        assert!(matches!(
+            coordinator.create_child(run.native_lease(), "late-descendant", &spec()),
+            Err(SubagentError::InvalidTransition { child: id, from, to })
+                if id == child.session.id
+                    && from == SubagentStatus::Running
+                    && to == SubagentStatus::Running
+        ));
+        assert!(sessions
+            .native_child_for_spawn(
+                run.native_lease(),
+                "late-descendant",
+                &spec().digest_hex().unwrap()
+            )
+            .unwrap()
+            .is_none());
+        let retried = coordinator
+            .create_child(run.native_lease(), "existing-descendant", &spec())
+            .unwrap();
+        assert_eq!(retried.session, descendant.session);
+        assert_eq!(retried.status, SubagentStatus::Cancelled);
+        assert!(retried.cancellation_requested);
+        let mut after = sessions
+            .list_with_diagnostics()
+            .unwrap()
+            .sessions
+            .into_iter()
+            .map(|stored| stored.session)
+            .collect::<Vec<_>>();
+        after.sort_by(|left, right| left.id.cmp(&right.id));
+        assert_eq!(after, before);
+        assert_eq!(
+            coordinator
+                .request_cancel_with_affected(&parent_lease, &child.session.id)
+                .unwrap()
+                .1,
+            affected_before
+        );
+        assert_eq!(
+            fs::read(coordinator.registry_path()).unwrap(),
+            committed_bytes
+        );
+    }
+
+    #[test]
+    fn desktop_cancellation_closes_completed_mailbox_after_reopen() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "ui-mailbox", &spec())
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "follow-up",
+                "More work",
+                TurnMode::Build,
+            )
+            .unwrap();
+        drop(parent_lease);
+        drop(coordinator);
+        let coordinator = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(root.path()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let result = coordinator
+            .request_cancel_from_ui(&parent_lease, &child.session.id)
+            .unwrap();
+        assert_eq!(result.status, SubagentStatus::Completed);
+        assert!(result.cancellation_requested);
+        let control = coordinator.issue_control(&parent_lease).unwrap();
+        assert_eq!(
+            coordinator
+                .inputs_control(&control, &child.session.id)
+                .unwrap()[0]
+                .state,
+            QueuedInputState::Skipped
+        );
+        assert!(matches!(
+            coordinator.enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "next",
+                "Not allowed",
+                TurnMode::Build
+            ),
+            Err(SubagentError::InputClosed(_))
+        ));
+        drop(coordinator);
+        let coordinator = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(root.path()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        let snapshot = coordinator
+            .list_children_snapshot_for_ui(&parent.id)
+            .unwrap();
+        assert_eq!(snapshot[0].open_inputs, 0);
+        assert!(snapshot[0].agent.cancellation_requested);
+    }
+
+    #[test]
+    fn desktop_cancellation_rechecks_entire_subtree_before_mutation() {
+        let (_root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "ui-root", &spec())
+            .unwrap();
+        let child_run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        let descendant = coordinator
+            .create_child(child_run.native_lease(), "ui-nested", &spec())
+            .unwrap();
+        let nested_run = coordinator
+            .start_child(child_run.native_lease(), &descendant.session.id)
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "child-pending",
+                "Retain child input",
+                TurnMode::Build,
+            )
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                child_run.native_lease(),
+                &descendant.session.id,
+                "descendant-pending",
+                "Retain descendant input",
+                TurnMode::Build,
+            )
+            .unwrap();
+        drop(nested_run);
+        let registry_before = fs::read(coordinator.registry_path()).unwrap();
+        let child_journal_before = sessions.load(&child.session.id).unwrap().unwrap().events;
+        let nested_journal_before = sessions
+            .load(&descendant.session.id)
+            .unwrap()
+            .unwrap()
+            .events;
+        assert!(matches!(
+            coordinator.request_cancel_from_ui_with_affected(&parent_lease, &child.session.id),
+            Err(SubagentError::CancellationRequiresRecovery(id)) if id == descendant.session.id
+        ));
+        assert_eq!(
+            fs::read(coordinator.registry_path()).unwrap(),
+            registry_before
+        );
+        assert_eq!(
+            sessions.load(&child.session.id).unwrap().unwrap().events,
+            child_journal_before
+        );
+        assert_eq!(
+            sessions
+                .load(&descendant.session.id)
+                .unwrap()
+                .unwrap()
+                .events,
+            nested_journal_before
+        );
+        assert!(!coordinator.cancellation_requested(&child_run).unwrap());
+        let child = coordinator
+            .list_children_snapshot_for_ui(&parent.id)
+            .unwrap();
+        assert_eq!(child[0].inputs[0].status, SubagentInputStatus::Pending);
+        let nested = coordinator
+            .list_children_snapshot_for_ui(&child[0].agent.session.id)
+            .unwrap();
+        assert_eq!(nested[0].agent.status, SubagentStatus::Interrupted);
+        assert_eq!(nested[0].inputs[0].status, SubagentInputStatus::Pending);
+        assert_eq!(
+            fs::read(coordinator.registry_path()).unwrap(),
+            registry_before
+        );
+    }
+
+    #[test]
+    fn desktop_cancellation_preserves_ready_admission_for_recovery() {
+        let (_root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "ui-admitted", &spec())
+            .unwrap();
+        sessions
+            .admit_native_turn(
+                &child.session.id,
+                "ui-admitted",
+                &spec().prompt,
+                "model-a",
+                TurnMode::Build,
+            )
+            .unwrap();
+        assert!(matches!(
+            coordinator.request_cancel_from_ui(&parent_lease, &child.session.id),
+            Err(SubagentError::CancellationRequiresRecovery(id)) if id == child.session.id
+        ));
+        let child = coordinator
+            .list_children_for_ui(&parent.id)
+            .unwrap()
+            .remove(0);
+        assert_eq!(child.status, SubagentStatus::Ready);
+        assert!(!child.cancellation_requested);
+        assert_eq!(
+            sessions
+                .load(&child.session.id)
+                .unwrap()
+                .unwrap()
+                .events
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1659,6 +2494,540 @@ mod tests {
     }
 
     #[test]
+    fn pending_edit_and_claim_share_one_atomic_winner_across_handles() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "edit-race", &spec())
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "race-input",
+                "Original",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let other = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(root.path()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        let control = other.issue_control(&parent_lease).unwrap();
+        let barrier = std::sync::Barrier::new(2);
+        let (edited, claimed) = std::thread::scope(|scope| {
+            let edit = scope.spawn(|| {
+                barrier.wait();
+                coordinator.edit_pending_input(
+                    &parent_lease,
+                    &child.session.id,
+                    "race-input",
+                    0,
+                    "Edited",
+                )
+            });
+            let claim = scope.spawn(|| {
+                barrier.wait();
+                other
+                    .claim_next_input_control(&control, &child.session.id)
+                    .unwrap()
+                    .unwrap()
+            });
+            (edit.join().unwrap(), claim.join().unwrap())
+        });
+        let (run, input) = claimed;
+        match edited {
+            Ok(edit) => {
+                assert_eq!(input.prompt, edit.prompt);
+                assert_eq!(input.revision, 1);
+            }
+            Err(SubagentError::InputEditConflict) => {
+                assert_eq!(input.prompt, "Original");
+                assert_eq!(input.revision, 0);
+            }
+            Err(error) => panic!("unexpected edit failure: {error}"),
+        }
+        assert_eq!(
+            coordinator
+                .list_children_snapshot_for_ui(&parent.id)
+                .unwrap()[0]
+                .inputs[0]
+                .prompt,
+            input.prompt
+        );
+        coordinator
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+    }
+
+    #[test]
+    fn registry_temporary_recovery_is_scoped_preserves_authority_and_rejects_corruption() {
+        let (root, _sessions, coordinator, _parent) = setup(Default::default());
+        let temporary = root
+            .path()
+            .join(format!(".subagents.{}.tmp", Uuid::new_v4()));
+        fs::write(&temporary, b"uncommitted").unwrap();
+        let unrelated = root.path().join(".subagents.user.tmp");
+        fs::write(&unrelated, b"keep").unwrap();
+        let non_v4 = root.path().join(format!(".subagents.{}.tmp", Uuid::nil()));
+        fs::write(&non_v4, b"keep nil").unwrap();
+        let directory = root
+            .path()
+            .join(format!(".subagents.{}.tmp", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        #[cfg(unix)]
+        let link = {
+            let target = root.path().join("external-file");
+            fs::write(&target, b"external").unwrap();
+            let link = root
+                .path()
+                .join(format!(".subagents.{}.tmp", Uuid::new_v4()));
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            (link, target)
+        };
+        // A corrupt authoritative registry prevents any cleanup, including a
+        // perfectly named orphan. Preserve diagnostic evidence.
+        fs::write(coordinator.registry_path(), b"{broken").unwrap();
+        assert!(coordinator.recover_registry_temporaries().is_err());
+        assert!(temporary.exists());
+        let registry = serde_json::to_vec(&Registry::empty()).unwrap();
+        fs::write(coordinator.registry_path(), &registry).unwrap();
+        assert_eq!(coordinator.recover_registry_temporaries().unwrap(), 1);
+        assert!(!temporary.exists());
+        assert_eq!(fs::read(coordinator.registry_path()).unwrap(), registry);
+        assert_eq!(fs::read(unrelated).unwrap(), b"keep");
+        assert!(non_v4.exists());
+        assert!(directory.is_dir());
+        #[cfg(unix)]
+        {
+            assert!(fs::symlink_metadata(&link.0)
+                .unwrap()
+                .file_type()
+                .is_symlink());
+            assert_eq!(fs::read(link.1).unwrap(), b"external");
+        }
+        assert_eq!(coordinator.recover_registry_temporaries().unwrap(), 0);
+    }
+
+    #[test]
+    fn registry_temporary_recovery_waits_for_live_writer_lock() {
+        let (root, sessions, coordinator, _parent) = setup(Default::default());
+        let lock = coordinator.lock_registry().unwrap();
+        let temporary = root
+            .path()
+            .join(format!(".subagents.{}.tmp", Uuid::new_v4()));
+        fs::write(&temporary, b"live writer").unwrap();
+        let other = SubagentCoordinator::new(sessions, Default::default()).unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            done_tx.send(other.recover_registry_temporaries()).unwrap();
+        });
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(matches!(
+            done_rx.recv_timeout(std::time::Duration::from_millis(100)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert!(temporary.exists());
+        // The writer commits/renames its own file before releasing its lock.
+        fs::remove_file(&temporary).unwrap();
+        drop(lock);
+        assert_eq!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn pending_skip_reopens_preserves_retries_and_only_removes_one_entry() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&lease, "skip-child", &spec())
+            .unwrap();
+        let run = coordinator.start_child(&lease, &child.session.id).unwrap();
+        coordinator
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        let original = coordinator
+            .enqueue_input(
+                &lease,
+                &child.session.id,
+                "skip-input",
+                "Original",
+                TurnMode::Build,
+            )
+            .unwrap();
+        coordinator
+            .enqueue_input(
+                &lease,
+                &child.session.id,
+                "keep-input",
+                "Keep",
+                TurnMode::Build,
+            )
+            .unwrap();
+        coordinator
+            .edit_pending_input(&lease, &child.session.id, "skip-input", 0, "Edited")
+            .unwrap();
+        assert!(matches!(
+            coordinator.skip_pending_input(&lease, &child.session.id, "skip-input", 0),
+            Err(SubagentError::InputEditConflict)
+        ));
+        let stranger = sessions.create(root.path(), "native").unwrap();
+        let stranger_lease = sessions.try_acquire_native_lease(&stranger.id).unwrap();
+        assert!(matches!(
+            coordinator.skip_pending_input(&stranger_lease, &child.session.id, "skip-input", 1),
+            Err(SubagentError::NotDirectChild { .. })
+        ));
+        let skipped = coordinator
+            .skip_pending_input(&lease, &child.session.id, "skip-input", 1)
+            .unwrap();
+        assert_eq!(skipped.status, SubagentInputStatus::Skipped);
+        assert_eq!(skipped.revision, 2);
+        let reopened = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(root.path()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            reopened
+                .skip_pending_input(&lease, &child.session.id, "skip-input", 1)
+                .unwrap(),
+            skipped
+        );
+        let retried = reopened
+            .enqueue_input(
+                &lease,
+                &child.session.id,
+                "skip-input",
+                "Original",
+                TurnMode::Build,
+            )
+            .unwrap();
+        assert_eq!(retried.digest, original.digest);
+        assert_eq!(retried.prompt, "Edited");
+        assert_eq!(retried.state, QueuedInputState::Skipped);
+        let control = reopened.issue_control(&lease).unwrap();
+        let (run, input) = reopened
+            .claim_next_input_control(&control, &child.session.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(input.id, "keep-input");
+        assert!(matches!(
+            reopened.skip_pending_input(&lease, &child.session.id, "keep-input", 0),
+            Err(SubagentError::InputEditConflict)
+        ));
+        reopened
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        assert!(reopened
+            .claim_next_input_control(&control, &child.session.id)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn pending_skip_and_claim_share_one_atomic_winner_across_handles() {
+        for _ in 0..8 {
+            let (root, sessions, coordinator, parent) = setup(Default::default());
+            let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+            let child = coordinator
+                .create_child(&lease, "skip-race", &spec())
+                .unwrap();
+            let run = coordinator.start_child(&lease, &child.session.id).unwrap();
+            coordinator
+                .finish_child(&run, SubagentOutcome::Completed)
+                .unwrap();
+            drop(run);
+            coordinator
+                .enqueue_input(&lease, &child.session.id, "race", "Prompt", TurnMode::Build)
+                .unwrap();
+            let other = SubagentCoordinator::new(
+                Arc::new(SessionStore::open(root.path()).unwrap()),
+                Default::default(),
+            )
+            .unwrap();
+            let control = other.issue_control(&lease).unwrap();
+            let barrier = std::sync::Barrier::new(2);
+            let (skip, claim) = std::thread::scope(|scope| {
+                let a = scope.spawn(|| {
+                    barrier.wait();
+                    coordinator.skip_pending_input(&lease, &child.session.id, "race", 0)
+                });
+                let b = scope.spawn(|| {
+                    barrier.wait();
+                    other.claim_next_input_control(&control, &child.session.id)
+                });
+                (a.join().unwrap(), b.join().unwrap().unwrap())
+            });
+            match (skip, claim) {
+                (Ok(input), None) => assert_eq!(input.status, SubagentInputStatus::Skipped),
+                (Err(SubagentError::InputEditConflict), Some((run, input))) => {
+                    assert_eq!(input.state, QueuedInputState::Active);
+                    other
+                        .finish_child(&run, SubagentOutcome::Completed)
+                        .unwrap();
+                }
+                _ => panic!("skip and claim must have exactly one winner"),
+            }
+        }
+    }
+
+    #[test]
+    fn pending_edit_reopens_preserves_original_retry_and_blocks_claimed_changes() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "edit-child", &spec())
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        let original = coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "edit-input",
+                "Original",
+                TurnMode::Build,
+            )
+            .unwrap();
+        assert!(matches!(
+            coordinator.edit_pending_input(&parent_lease, &child.session.id, "edit-input", 0, " "),
+            Err(SubagentError::InvalidInput)
+        ));
+        assert!(matches!(
+            coordinator.edit_pending_input(
+                &parent_lease,
+                &child.session.id,
+                "edit-input",
+                0,
+                &"ñ".repeat(MAX_INPUT_PROMPT_BYTES)
+            ),
+            Err(SubagentError::InvalidInput)
+        ));
+        let edited = coordinator
+            .edit_pending_input(
+                &parent_lease,
+                &child.session.id,
+                "edit-input",
+                0,
+                "Editado\ncon contexto ñ",
+            )
+            .unwrap();
+        assert_eq!(edited.revision, 1);
+        let reopened = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(root.path()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            reopened
+                .edit_pending_input(
+                    &parent_lease,
+                    &child.session.id,
+                    "edit-input",
+                    0,
+                    &edited.prompt
+                )
+                .unwrap(),
+            edited
+        );
+        let retried = reopened
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "edit-input",
+                "Original",
+                TurnMode::Build,
+            )
+            .unwrap();
+        assert_eq!(retried.digest, original.digest);
+        assert_eq!(retried.prompt, edited.prompt);
+        assert!(matches!(
+            reopened.enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "edit-input",
+                &edited.prompt,
+                TurnMode::Build
+            ),
+            Err(SubagentError::ConflictingInput)
+        ));
+        assert!(matches!(
+            reopened.edit_pending_input(&parent_lease, &child.session.id, "edit-input", 0, "Otro"),
+            Err(SubagentError::InputEditConflict)
+        ));
+        let stranger = sessions.create(root.path(), "native").unwrap();
+        let stranger_lease = sessions.try_acquire_native_lease(&stranger.id).unwrap();
+        assert!(matches!(
+            reopened.edit_pending_input(
+                &stranger_lease,
+                &child.session.id,
+                "edit-input",
+                1,
+                "Otro"
+            ),
+            Err(SubagentError::NotDirectChild { .. })
+        ));
+        let control = reopened.issue_control(&parent_lease).unwrap();
+        let (run, claimed) = reopened
+            .claim_next_input_control(&control, &child.session.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(claimed.prompt, edited.prompt);
+        assert_eq!(claimed.revision, 1);
+        assert!(matches!(
+            reopened.edit_pending_input(
+                &parent_lease,
+                &child.session.id,
+                "edit-input",
+                1,
+                "Late edit"
+            ),
+            Err(SubagentError::InputEditConflict)
+        ));
+        reopened
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        assert!(matches!(
+            reopened.edit_pending_input(
+                &parent_lease,
+                &child.session.id,
+                "edit-input",
+                1,
+                "After completion"
+            ),
+            Err(SubagentError::InputEditConflict)
+        ));
+        assert_eq!(
+            reopened.list_children_snapshot_for_ui(&parent.id).unwrap()[0].inputs[0].prompt,
+            edited.prompt
+        );
+    }
+
+    #[test]
+    fn mailbox_snapshot_reopens_exact_prompts_and_all_lifecycle_states() {
+        let (root, sessions, coordinator, parent) = setup(Default::default());
+        let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+        let child = coordinator
+            .create_child(&parent_lease, "inspect-mailbox", &spec())
+            .unwrap();
+        let run = coordinator
+            .start_child(&parent_lease, &child.session.id)
+            .unwrap();
+        coordinator
+            .finish_child(&run, SubagentOutcome::Completed)
+            .unwrap();
+        drop(run);
+        let prompt = format!("Primera línea\n{}", "contexto ñ\n".repeat(1000));
+        for (id, text) in [
+            ("first", prompt.as_str()),
+            ("second", "Second"),
+            ("third", "Third"),
+        ] {
+            coordinator
+                .enqueue_input(&parent_lease, &child.session.id, id, text, TurnMode::Build)
+                .unwrap();
+        }
+        let control = coordinator.issue_control(&parent_lease).unwrap();
+        let snapshot = coordinator
+            .list_children_snapshot_for_ui(&parent.id)
+            .unwrap();
+        assert_eq!(snapshot[0].open_inputs, 3);
+        assert_eq!(snapshot[0].inputs[0].prompt, prompt);
+        assert_eq!(snapshot[0].inputs[0].status, SubagentInputStatus::Pending);
+        let (first, _) = coordinator
+            .claim_next_input_control(&control, &child.session.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .list_children_snapshot_for_ui(&parent.id)
+                .unwrap()[0]
+                .inputs[0]
+                .status,
+            SubagentInputStatus::Active
+        );
+        coordinator
+            .finish_child(&first, SubagentOutcome::Completed)
+            .unwrap();
+        drop(first);
+        let (second, _) = coordinator
+            .claim_next_input_control(&control, &child.session.id)
+            .unwrap()
+            .unwrap();
+        coordinator
+            .request_cancel_control(&control, &child.session.id)
+            .unwrap();
+        let reopened = SubagentCoordinator::new(
+            Arc::new(SessionStore::open(root.path()).unwrap()),
+            Default::default(),
+        )
+        .unwrap();
+        let bytes_before = std::fs::read(root.path().join("subagents.registry.json")).unwrap();
+        let snapshot = reopened.list_children_snapshot_for_ui(&parent.id).unwrap();
+        assert_eq!(snapshot[0].open_inputs, 1);
+        assert_eq!(
+            snapshot[0]
+                .inputs
+                .iter()
+                .map(|input| input.status)
+                .collect::<Vec<_>>(),
+            vec![
+                SubagentInputStatus::Done,
+                SubagentInputStatus::Active,
+                SubagentInputStatus::Skipped
+            ]
+        );
+        assert_eq!(snapshot[0].inputs[0].prompt, prompt);
+        assert_eq!(
+            snapshot[0]
+                .inputs
+                .iter()
+                .map(|input| input.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["first", "second", "third"]
+        );
+        assert!(snapshot[0]
+            .inputs
+            .iter()
+            .all(|input| input.mode == TurnMode::Build));
+        assert_eq!(
+            std::fs::read(root.path().join("subagents.registry.json")).unwrap(),
+            bytes_before
+        );
+        coordinator
+            .finish_child(&second, SubagentOutcome::Cancelled)
+            .unwrap();
+        drop(second);
+    }
+
+    #[test]
     fn ui_snapshot_needs_no_parent_lease_and_does_not_mutate_registry() {
         let (_root, sessions, coordinator, parent) = setup(Default::default());
         let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
@@ -1668,7 +3037,21 @@ mod tests {
         let run = coordinator
             .start_child(&parent_lease, &child.session.id)
             .unwrap();
+        coordinator
+            .enqueue_input(
+                &parent_lease,
+                &child.session.id,
+                "ui-input",
+                "Follow up",
+                TurnMode::Build,
+            )
+            .unwrap();
         drop(parent_lease);
+        let snapshot = coordinator
+            .list_children_snapshot_for_ui(&parent.id)
+            .unwrap();
+        assert_eq!(snapshot[0].open_inputs, 1);
+        assert!(!snapshot[0].agent.cancellation_requested);
         assert_eq!(
             coordinator.list_children_for_ui(&parent.id).unwrap()[0].status,
             SubagentStatus::Running
@@ -1694,6 +3077,11 @@ mod tests {
                 .status,
             SubagentStatus::Running
         );
+        let reopened =
+            SubagentCoordinator::new(sessions.clone(), SubagentLimits::default()).unwrap();
+        let snapshot = reopened.list_children_snapshot_for_ui(&parent.id).unwrap();
+        assert_eq!(snapshot[0].agent.status, SubagentStatus::Interrupted);
+        assert_eq!(snapshot[0].open_inputs, 1);
         let parent_lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
         assert_eq!(
             coordinator.list_children(&parent_lease).unwrap()[0].status,

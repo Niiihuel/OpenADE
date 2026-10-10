@@ -4,7 +4,7 @@
 //! (Apache-2.0). The application uses an achromatic palette for native chrome;
 //! the composer send button and reasoning-effort control carry local accents.
 
-use openide_ui::{Color, ComponentPalette};
+use openide_ui::{Color, ComponentPalette, Element};
 
 pub const BACKGROUND: Color = Color::rgb(22, 22, 22);
 pub const WINDOW: Color = Color::rgb(43, 43, 43);
@@ -21,8 +21,12 @@ pub const SELECTED: Color = Color::rgb(54, 54, 54);
 pub const BORDER: Color = Color::rgb(46, 46, 46);
 pub const TREE_GUIDE: Color = Color::rgb(72, 72, 72);
 pub const BRAND: Color = Color::rgb(255, 255, 255);
+/// Web destinations stay distinct from neutral text and native chrome.
+pub const LINK: Color = Color::rgb(120, 169, 255);
 pub const FOREGROUND: Color = Color::rgb(212, 212, 212);
 pub const FOREGROUND_SUBTLE: Color = Color::rgb(136, 136, 136);
+/// Small supporting text in Settings stays legible on cards and controls.
+pub const SETTINGS_FOREGROUND_SUBTLE: Color = Color::rgb(160, 160, 160);
 pub const PRIMARY_FOREGROUND: Color = Color::rgb(0, 0, 0);
 pub const USER: Color = Color::rgb(235, 235, 235);
 pub const ASSISTANT: Color = Color::rgb(212, 212, 212);
@@ -51,6 +55,21 @@ pub const EFFORT_ULTRA: Color = Color::rgb(190, 126, 255);
 pub const SIDEBAR_WIDTH: f32 = 264.0;
 pub const UI_FONT_SIZE: f32 = 14.0;
 
+/// Neutral toolbar actions share the permissions trigger's surface. Raised
+/// menus and selected rows can use their own palette's interactive_surface
+/// while retaining the same radius, press feedback and transition.
+pub fn interactive_palette() -> ComponentPalette {
+    ComponentPalette {
+        hover: INPUT,
+        selected: SELECTED,
+        ..component_palette()
+    }
+}
+
+pub fn interactive_surface(element: Element) -> Element {
+    interactive_palette().interactive_surface(element)
+}
+
 /// Hover moves one neutral step above the control's own surface. A fixed
 /// global hover color would darken the sidebar while brightening the canvas.
 pub fn hover_for(surface: Color) -> Color {
@@ -69,7 +88,11 @@ pub fn action_palette(surface: Color, ink: Color) -> ComponentPalette {
     ComponentPalette {
         surface,
         raised: surface,
-        hover: hover_for(surface),
+        hover: if surface == Color::TRANSPARENT || surface == BACKGROUND || surface == PANEL {
+            INPUT
+        } else {
+            hover_for(surface)
+        },
         selected: if surface == BRAND || surface == DESTRUCTIVE {
             surface
         } else {
@@ -86,7 +109,10 @@ pub fn component_palette() -> ComponentPalette {
     ComponentPalette {
         surface: BACKGROUND,
         raised: CARD,
-        hover: hover_for(SIDEBAR),
+        // The default palette belongs to the canvas. Raised surfaces opt into
+        // action_palette/menu_palette; using sidebar hover here made every
+        // breadcrumb and shared ghost control brighter than the composer.
+        hover: INPUT,
         selected: SELECTED,
         border: BORDER,
         text: FOREGROUND,
@@ -203,5 +229,69 @@ mod tests {
         }
         assert!(base.background.r < PANEL.r);
         assert!(base.border.r > BORDER.r);
+    }
+}
+
+/// Placeholder rows for a list whose items are still loading. `id` keeps the
+/// pulse in phase across rebuilds; rows vary in length so they read as text.
+pub fn skeleton_rows(id: &str, rows: usize, row_height: f32, icon: bool) -> Vec<Element> {
+    use openide_ui::{Component, Skeleton};
+    (0..rows)
+        .map(|row| {
+            let fraction = [0.46, 0.62, 0.38, 0.54][row % 4];
+            let mut cells = Vec::new();
+            if icon {
+                cells.push(
+                    Skeleton::new(format!("{id}:{row}:icon"), component_palette())
+                        .width(16.0)
+                        .height(16.0)
+                        .radius(4.0)
+                        .render(),
+                );
+            }
+            cells.push(
+                Skeleton::new(format!("{id}:{row}"), component_palette())
+                    .height(10.0)
+                    .radius(5.0)
+                    .render()
+                    .flex(fraction),
+            );
+            cells.push(Element::spacer().flex(1.0 - fraction));
+            Element::column(vec![
+                Element::spacer().flex(1.0),
+                Element::row(cells).gap(10.0),
+                Element::spacer().flex(1.0),
+            ])
+            .size(None, Some(row_height))
+        })
+        .collect()
+}
+
+/// The solid form of an icon, for the active or selected item of a list. An
+/// icon without one is returned as it is.
+pub fn filled_icon(icon: openide_ui::Icon) -> openide_ui::Icon {
+    use openide_ui::Icon;
+    match icon {
+        Icon::PanelLeft => Icon::PanelLeftOpen,
+        Icon::PanelRight => Icon::PanelRightOpen,
+        Icon::Bell => Icon::BellFill,
+        Icon::Folder => Icon::FolderFill,
+        Icon::Play => Icon::PlayFill,
+        Icon::Grid => Icon::GridFill,
+        Icon::Settings => Icon::SettingsFill,
+        Icon::Palette => Icon::PaletteFill,
+        Icon::Laptop => Icon::LaptopFill,
+        Icon::Terminal => Icon::TerminalFill,
+        Icon::Keyboard => Icon::KeyboardFill,
+        Icon::Chat => Icon::ChatFill,
+        Icon::Users => Icon::UsersFill,
+        Icon::Puzzle => Icon::PuzzleFill,
+        Icon::Server => Icon::ServerFill,
+        Icon::Book => Icon::BookFill,
+        Icon::Clock => Icon::ClockFill,
+        Icon::Bolt => Icon::BoltFill,
+        Icon::Archive => Icon::ArchiveFill,
+        Icon::ChartBar => Icon::ChartBarFill,
+        other => other,
     }
 }

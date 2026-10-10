@@ -2,7 +2,7 @@
 //! creates a checkpoint candidate; journal commit and replay belong to the
 //! session coordinator.
 
-use crate::{AgentError, ModelBackend};
+use crate::{AgentError, ModelBackend, TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState};
 use openide_core::{
     AgentMessage, Checkpoint, CheckpointBudgetSnapshot, CheckpointCompatibility, MessageRole,
     RetainedUserMessage, MAX_CHECKPOINT_SUMMARY_BYTES, MAX_RETAINED_USER_MESSAGES,
@@ -176,7 +176,41 @@ impl CompactService {
             _ = cancel.cancelled() => return Err(AgentError::Cancelled),
             result = tokio::time::timeout(
                 self.limits.timeout,
-                self.model.complete(&messages, &[], cancel.clone()),
+                async {
+                    if !request.budget.limits_unverified {
+                        // Compaction is another model request. Its serialized
+                        // transcript and fixed system prompt can exceed the
+                        // model's input ceiling even when the source history
+                        // was previously admitted. Count this actual payload;
+                        // a summary may use the 90–95% region without recursively
+                        // trying to compact its own request.
+                        let policy = TokenBudgetPolicy {
+                            input_limit_tokens: request.budget.input_limit_tokens,
+                            context_window_tokens: request.budget.context_window_tokens,
+                            output_reserve_tokens: request.budget.output_reserve_tokens,
+                            tool_schema_reserve_tokens: request.budget.tool_schema_reserve_tokens,
+                            auto_compact_token_limit: None,
+                        };
+                        let assessment = policy
+                            .assess_model_request(
+                                &mut TokenBudgetState::default(),
+                                self.model.as_ref(),
+                                &messages,
+                                &[],
+                                cancel.clone(),
+                            )
+                            .await?;
+                        if assessment.decision == TokenBudgetDecision::Reject {
+                            return Err(AgentError::Limit(format!(
+                                "compaction model request exceeds its verified token budget: input {}, projected total {}, hard limit {}",
+                                assessment.projected_input_tokens,
+                                assessment.projected_total_tokens,
+                                assessment.hard_limit_tokens,
+                            )));
+                        }
+                    }
+                    self.model.complete(&messages, &[], cancel.clone()).await
+                },
             ) => result.map_err(|_| AgentError::Limit("compaction model request timed out".into()))??,
         };
         if cancel.is_cancelled() {
@@ -279,7 +313,10 @@ fn validate_request(request: &CompactRequest, model_id: &str) -> Result<(), Agen
         ));
     }
     if !request.budget.limits_unverified
-        && (request.budget.context_window_tokens == 0 || request.budget.output_reserve_tokens == 0)
+        && ((request.budget.context_window_tokens == 0
+            && request.budget.input_limit_tokens.is_none())
+            || request.budget.input_limit_tokens == Some(0)
+            || request.budget.output_reserve_tokens == 0)
     {
         return Err(AgentError::InvalidRequest(
             "checkpoint budget is incomplete".into(),
@@ -287,6 +324,7 @@ fn validate_request(request: &CompactRequest, model_id: &str) -> Result<(), Agen
     }
     if request.budget.limits_unverified
         && (request.budget.context_window_tokens != 0
+            || request.budget.input_limit_tokens.is_some()
             || request.budget.output_reserve_tokens != 0
             || request.budget.tool_schema_reserve_tokens != 0)
     {
@@ -570,6 +608,7 @@ mod tests {
                 },
             ],
             budget: CheckpointBudgetSnapshot {
+                input_limit_tokens: None,
                 context_window_tokens: 128_000,
                 estimated_input_tokens: 95_000,
                 observed_input_tokens: Some(28_000),
@@ -628,6 +667,29 @@ mod tests {
             .unwrap();
         assert!(checkpoint.budget.limits_unverified);
         assert_eq!(backend.calls.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn verified_compaction_without_provider_counter_enforces_text_fallback_before_completion()
+    {
+        let backend = mock(ModelOutput {
+            content: summary_json(),
+            tool_calls: vec![],
+        });
+        let mut request = request();
+        request.budget.input_limit_tokens = Some(200);
+        request.budget.context_window_tokens = 0;
+        request.budget.tool_schema_reserve_tokens = 0;
+        // MockBackend uses the trait's None counter. The fixed summary prompt
+        // alone exceeds this ceiling; the previous history's recorded usage
+        // is not a count of this different request.
+        assert!(matches!(
+            CompactService::new(backend.clone())
+                .compact(request, CancellationToken::new())
+                .await,
+            Err(AgentError::Limit(_))
+        ));
+        assert!(backend.calls.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -29,6 +29,9 @@ const MAX_TOTAL_BYTES: usize = 4 * 1024 * 1024;
 pub struct DiscoveredCodexModel {
     pub id: String,
     pub display_name: String,
+    /// Informational metadata from model/list, never an execution policy.
+    pub description: Option<String>,
+    pub input_modalities: Vec<String>,
     pub supported_efforts: Vec<String>,
     pub is_default: bool,
 }
@@ -348,6 +351,29 @@ fn parse_model_page(
         models.push(DiscoveredCodexModel {
             id: slug.to_owned(),
             display_name: display_name.to_owned(),
+            description: entry
+                .get("description")
+                .and_then(Value::as_str)
+                .filter(|value| {
+                    !value.trim().is_empty()
+                        && value.len() <= 4_096
+                        && value.chars().all(|character| {
+                            !character.is_control() || matches!(character, '\n' | '\t')
+                        })
+                })
+                .map(str::to_owned),
+            input_modalities: entry
+                .get("inputModalities")
+                .and_then(Value::as_array)
+                .filter(|values| values.len() <= 16)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter(|value| {
+                    !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
+                })
+                .map(str::to_owned)
+                .collect(),
             supported_efforts,
             is_default,
         });

@@ -295,10 +295,35 @@ impl McpCompositeTools {
 
 #[async_trait]
 impl ToolExecutor for McpCompositeTools {
+    async fn execute_streaming(
+        &self,
+        call: &ToolCall,
+        context: &ToolContext,
+        output: crate::ToolOutputSender,
+    ) -> Result<ToolOutput, AgentError> {
+        if context.cancel.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
+        if let Err(error) = self.catalog.require_valid_call(call) {
+            return Ok(ToolOutput::error(error.to_string()));
+        }
+        if matches!(self.routes.get(&call.name), Some(Route::Local)) {
+            self.local.execute_streaming(call, context, output).await
+        } else {
+            self.execute(call, context).await
+        }
+    }
+
     fn definitions(&self) -> Vec<ToolDefinition> {
         self.catalog.definitions().to_vec()
     }
 
+    fn certifies_plan_read(&self, name: &str) -> bool {
+        match self.routes.get(name) {
+            Some(Route::Local) => self.local.certifies_plan_read(name),
+            Some(Route::Mcp { .. }) | None => false,
+        }
+    }
     fn certifies_parallel_read(&self, name: &str) -> bool {
         match self.routes.get(name) {
             Some(Route::Local) => self.local.certifies_parallel_read(name),

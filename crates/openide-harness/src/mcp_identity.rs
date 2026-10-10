@@ -47,6 +47,8 @@ pub struct McpHttpServerIdentity {
 
 #[derive(Clone, Debug)]
 pub(crate) enum McpHttpAuthIdentity {
+    // Bearer vault identity is available only through Windows Credential Manager.
+    #[cfg_attr(not(windows), allow(dead_code))]
     Bearer(String),
     OAuth(String),
 }

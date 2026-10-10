@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "openADE Remote",
+    "slug": "openade-remote",
+    "owner": "niihuel",
+    "version": "0.4.0",
+    "platforms": [
+      "ios"
+    ],
+    "ios": {
+      "bundleIdentifier": "dev.openade.remote",
+      "buildNumber": "4",
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2efcff36-6df5-4856-a6c1-525bd8529924"
+      }
+    }
+  }
+}

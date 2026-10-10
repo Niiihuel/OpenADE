@@ -9,10 +9,14 @@
 use crate::command::CommandIsolation;
 use crate::process_tree::ProcessTreeGuard;
 use crate::AgentError;
+use openide_core::{
+    NativeCommandOutputBinding, NativeCommandOutputExit, NativeCommandOutputStore,
+    NativeCommandOutputStream, NativeCommandOutputTerminal,
+};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::{Child, Command};
@@ -36,6 +40,7 @@ const READER_CHUNK_BYTES: usize = 8192;
 const MAX_POLL_WAIT: Duration = Duration::from_secs(30);
 const IO_WAIT: Duration = Duration::from_secs(5);
 const READER_DRAIN_WAIT: Duration = Duration::from_secs(5);
+const MAX_NATIVE_OUTPUT_ERROR_BYTES: usize = 4 * 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -76,7 +81,7 @@ impl Default for PersistentCommandLimits {
 }
 
 impl PersistentCommandLimits {
-    fn validate(self) -> Result<Self, AgentError> {
+    pub(crate) fn validate(self) -> Result<Self, AgentError> {
         if !(1..=16).contains(&self.max_sessions)
             || !(Duration::from_millis(100)..=Duration::from_secs(60 * 60))
                 .contains(&self.max_lifetime)
@@ -99,13 +104,13 @@ pub enum PersistentCommandStream {
     Terminal,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PersistentCommandEvent {
     Output {
         stream: PersistentCommandStream,
         bytes: Vec<u8>,
     },
-    /// Some bytes could not be retained within the configured memory limit.
+    /// Some bytes could not be retained within the configured retention limits.
     /// The marker stays in sequence with later output.
     Omitted { bytes: u64 },
 }
@@ -143,21 +148,114 @@ pub struct PersistentCommandSessionInfo {
     pub has_output: bool,
 }
 
+/// A complete copy of the currently retained pending buffer. This observation
+/// has no consumer cursor and never delivers or removes the terminal result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistentCommandInspection {
+    pub id: String,
+    pub pty: bool,
+    pub events: Vec<PersistentCommandEvent>,
+    pub exit: Option<PersistentCommandExit>,
+    pub reader_error: Option<String>,
+    pub retained_bytes: usize,
+    pub max_buffered_output_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PersistentCommandStdinState {
+    Open,
+    Closed,
+    /// The transport lock is currently held by input or process cleanup.
+    Busy,
+    /// An input effect failed or was abandoned after dispatch. It may have
+    /// delivered bytes; observing process exit does not confirm that input.
+    Uncertain,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PersistentCommandDimensions {
+    pub columns: u16,
+    pub rows: u16,
+}
+
+/// Current controls for one registered command, without reading or consuming
+/// pending output. This is an observation, not authorization for a later effect.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistentCommandControlInspection {
+    pub generation: String,
+    pub owner_session_id: Option<String>,
+    pub id: String,
+    pub workspace: PathBuf,
+    pub isolation: CommandIsolation,
+    /// Literal original program followed by its argument array, without shell
+    /// parsing or executable resolution. Hosts must not log sensitive arguments.
+    pub command_argv: Vec<String>,
+    pub revoked: bool,
+    pub stop_requested: bool,
+    pub stdin: PersistentCommandStdinState,
+    pub pty: bool,
+    /// Last dimensions confirmed by ConPTY start/resize, not a console query.
+    /// When uncertain, these remain the last confirmed dimensions only.
+    pub dimensions: Option<PersistentCommandDimensions>,
+    pub dimensions_uncertain: bool,
+    pub resize_enabled: bool,
+    pub max_stdin_bytes: usize,
+    pub exit: Option<PersistentCommandExit>,
+}
+
+impl PersistentCommandControlInspection {
+    pub fn stdin_open(&self) -> bool {
+        self.stdin == PersistentCommandStdinState::Open
+            && !self.revoked
+            && !self.stop_requested
+            && self.exit.is_none()
+    }
+}
+
+struct CommandControlState {
+    command_argv: Vec<String>,
+    stdin_uncertain: bool,
+    dimensions: Option<PersistentCommandDimensions>,
+    dimensions_uncertain: bool,
+}
+
+impl CommandControlState {
+    fn new(program: &str, args: &[String], dimensions: Option<(u16, u16)>) -> Self {
+        Self {
+            command_argv: std::iter::once(program.to_owned())
+                .chain(args.iter().cloned())
+                .collect(),
+            stdin_uncertain: false,
+            dimensions: dimensions
+                .map(|(columns, rows)| PersistentCommandDimensions { columns, rows }),
+            dimensions_uncertain: false,
+        }
+    }
+}
+
 struct Session {
     stdin: Arc<AsyncMutex<Option<Box<dyn AsyncWrite + Send + Unpin>>>>,
     output: Arc<OutputBuffer>,
     stop: CancellationToken,
     tree: Arc<Mutex<Option<SessionTree>>>,
     poll_lock: AsyncMutex<()>,
+    controls: Mutex<CommandControlState>,
     pty: bool,
     #[cfg(windows)]
     pty_console: Option<Arc<Mutex<Option<windows_pty::PseudoConsole>>>>,
+    #[cfg(windows)]
+    resize_lock: AsyncMutex<()>,
     #[cfg(windows)]
     sandbox_stdin: Option<Arc<AsyncMutex<Option<windows_sandbox::InputSender>>>>,
 }
 
 enum SessionTree {
     Pipes(ProcessTreeGuard),
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    LinuxSandbox(crate::command::sandbox::linux::LinuxSandboxGuard),
     #[cfg(windows)]
     Pty(windows_pty::PtyJob),
     #[cfg(windows)]
@@ -168,6 +266,11 @@ impl SessionTree {
     fn close(self) {
         match self {
             Self::Pipes(tree) => drop(tree),
+            #[cfg(all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ))]
+            Self::LinuxSandbox(guard) => drop(guard),
             #[cfg(windows)]
             Self::Pty(job) => drop(job),
             #[cfg(windows)]
@@ -177,6 +280,21 @@ impl SessionTree {
 }
 
 impl Session {
+    fn mark_stdin_uncertain(&self) {
+        self.controls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .stdin_uncertain = true;
+    }
+
+    #[cfg(windows)]
+    fn mark_dimensions_uncertain(&self) {
+        self.controls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .dimensions_uncertain = true;
+    }
+
     fn stop_tree(&self) {
         self.stop.cancel();
         let mut tree = self
@@ -195,19 +313,131 @@ impl Drop for Session {
     }
 }
 
+/// The reactor belongs to the manager, rather than to a model turn. In
+/// particular, Tokio children and pipes must not be registered on a temporary
+/// caller runtime which is dropped after the turn completes.
+struct CommandRuntime {
+    handle: tokio::runtime::Handle,
+    shutdown: CancellationToken,
+    shutdown_outputs: Arc<Mutex<Vec<Arc<OutputBuffer>>>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl CommandRuntime {
+    fn new() -> Result<Self, String> {
+        let shutdown = CancellationToken::new();
+        let worker_shutdown = shutdown.clone();
+        let shutdown_outputs = Arc::new(Mutex::new(Vec::<Arc<OutputBuffer>>::new()));
+        let worker_outputs = Arc::clone(&shutdown_outputs);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let thread = std::thread::Builder::new()
+            .name("openide-command-reactor".into())
+            .spawn(move || {
+                let runtime = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        let _ = sender.send(Err(error.to_string()));
+                        return;
+                    }
+                };
+                if sender.send(Ok(runtime.handle().clone())).is_ok() {
+                    runtime.block_on(worker_shutdown.cancelled());
+                    // Trees have already been closed by manager Drop. Give
+                    // the monitors a bounded opportunity to reap children and
+                    // close readers before cancelling runtime tasks.
+                    let outputs = std::mem::take(
+                        &mut *worker_outputs
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+                    );
+                    runtime.block_on(async {
+                        let _ = timeout(IO_WAIT, async {
+                            while outputs
+                                .iter()
+                                .any(|output| !output.has_exited().unwrap_or(false))
+                            {
+                                sleep(Duration::from_millis(5)).await;
+                            }
+                        })
+                        .await;
+                    });
+                }
+                // Runtime destruction happens on its own thread, including
+                // when the last manager is dropped from an async host task.
+                // Blocking readers on Windows cannot delay shutdown forever.
+                runtime.shutdown_timeout(IO_WAIT);
+            })
+            .map_err(|error| format!("cannot create command reactor: {error}"))?;
+        match receiver.recv_timeout(IO_WAIT) {
+            Ok(Ok(handle)) => Ok(Self {
+                handle,
+                shutdown,
+                shutdown_outputs,
+                thread: Some(thread),
+            }),
+            Ok(Err(error)) => {
+                let _ = thread.join();
+                Err(format!("cannot initialize command reactor: {error}"))
+            }
+            Err(error) => {
+                // If startup itself stalls, it has no command to execute. Do
+                // not block the host joining an unresponsive startup thread.
+                shutdown.cancel();
+                Err(format!(
+                    "command reactor startup was not confirmed: {error}"
+                ))
+            }
+        }
+    }
+}
+
+impl Drop for CommandRuntime {
+    fn drop(&mut self) {
+        self.shutdown.cancel();
+        if let Some(thread) = self.thread.take() {
+            // The UI/async caller cannot wait for pipe-reader or blocking-task
+            // grace periods. The detached worker owns its runtime and bounded
+            // cleanup; process trees were synchronously closed before this.
+            if thread.is_finished() && thread.thread().id() != std::thread::current().id() {
+                let _ = thread.join();
+            }
+        }
+    }
+}
+
 pub struct PersistentCommandManager {
+    generation: String,
+    owner_session_id: Option<String>,
     workspace: PathBuf,
     isolation: CommandIsolation,
     limits: PersistentCommandLimits,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
     closed: std::sync::atomic::AtomicBool,
+    revoked: CancellationToken,
     pty_tools_enabled: bool,
     pty_resize_tools_enabled: bool,
+    runtime: OnceLock<Result<CommandRuntime, String>>,
+    native_output_store: Option<Arc<NativeCommandOutputStore>>,
 }
 
 impl Drop for PersistentCommandManager {
     fn drop(&mut self) {
         self.stop_all();
+        if let Some(Ok(runtime)) = self.runtime.get() {
+            *runtime
+                .shutdown_outputs
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = self
+                .sessions
+                .get_mut()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .values()
+                .map(|session| Arc::clone(&session.output))
+                .collect();
+        }
     }
 }
 
@@ -227,14 +457,129 @@ impl PersistentCommandManager {
             ));
         }
         Ok(Self {
+            generation: Uuid::new_v4().to_string(),
+            owner_session_id: None,
             workspace,
             isolation,
             limits,
             sessions: Mutex::new(HashMap::new()),
             closed: std::sync::atomic::AtomicBool::new(false),
+            revoked: CancellationToken::new(),
             pty_tools_enabled: false,
             pty_resize_tools_enabled: false,
+            runtime: OnceLock::new(),
+            native_output_store: None,
         })
+    }
+
+    /// Bind an instance to one native session before any command is started.
+    /// The trusted host verifies that this owner exists and is native; this
+    /// primitive has no authority to inspect a session store or restore a job.
+    pub fn with_native_session_owner(
+        mut self,
+        owner: impl Into<String>,
+    ) -> Result<Self, AgentError> {
+        let owner = owner.into();
+        if owner.is_empty()
+            || owner.len() > 256
+            || !owner
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+            || self.owner_session_id.is_some()
+            || self.closed.load(std::sync::atomic::Ordering::Acquire)
+            || !self
+                .sessions
+                .get_mut()
+                .map_err(|_| AgentError::Tool("persistent command registry is unavailable".into()))?
+                .is_empty()
+        {
+            return Err(AgentError::Tool(
+                "persistent command native owner must be bound once before starting commands"
+                    .into(),
+            ));
+        }
+        self.owner_session_id = Some(owner);
+        Ok(self)
+    }
+
+    /// Ephemeral UUID identifying this manager instance, never a durable job ID.
+    pub fn generation(&self) -> &str {
+        &self.generation
+    }
+
+    /// Attach the trusted native session's durable output store before starting
+    /// commands. Registration still validates the owner/workspace against fresh
+    /// session metadata; this builder grants no command permission.
+    pub fn with_native_output_store(
+        mut self,
+        store: Arc<NativeCommandOutputStore>,
+    ) -> Result<Self, AgentError> {
+        if self.owner_session_id.is_none()
+            || self.native_output_store.is_some()
+            || self.runtime.get().is_some()
+            || self.closed.load(std::sync::atomic::Ordering::Acquire)
+            || !self
+                .sessions
+                .get_mut()
+                .map_err(|_| AgentError::Tool("persistent command registry is unavailable".into()))?
+                .is_empty()
+        {
+            return Err(AgentError::Tool(
+                "native output store must be bound once to an owned manager before commands start"
+                    .into(),
+            ));
+        }
+        self.native_output_store = Some(store);
+        Ok(self)
+    }
+
+    fn register_output(
+        &self,
+        id: &str,
+        program: &str,
+        args: &[String],
+        pty: bool,
+    ) -> Result<Option<Arc<NativeOutputCapture>>, AgentError> {
+        let Some(store) = self.native_output_store.as_ref() else {
+            return Ok(None);
+        };
+        let binding = NativeCommandOutputBinding {
+            session_id: self.owner_session_id.clone().ok_or_else(|| {
+                AgentError::Tool("native output has no verified manager owner".into())
+            })?,
+            workspace: self.workspace.clone(),
+            manager_generation: self.generation.clone(),
+            command_id: id.to_owned(),
+        };
+        let argv = std::iter::once(program.to_owned())
+            .chain(args.iter().cloned())
+            .collect::<Vec<_>>();
+        let isolation = match self.isolation {
+            CommandIsolation::HostUnrestricted => "host_unrestricted",
+            CommandIsolation::WorkspaceWriteOffline => "workspace_write_offline",
+        };
+        let registered = store
+            .register(&binding, &argv, isolation, pty)
+            .map_err(|error| {
+                AgentError::Tool(format!(
+                    "cannot register durable native output before command launch: {error}"
+                ))
+            })?;
+        if !registered.newly_registered {
+            return Err(AgentError::Tool(
+                "native command output was already registered; a prior command must not be replayed"
+                    .into(),
+            ));
+        }
+        Ok(Some(Arc::new(NativeOutputCapture {
+            store: Arc::clone(store),
+            binding,
+            cursor: Mutex::new(0),
+        })))
+    }
+
+    pub fn native_session_owner(&self) -> Option<&str> {
+        self.owner_session_id.as_deref()
     }
 
     /// Enable the PTY form of `start_command` for sessions created by this
@@ -306,16 +651,129 @@ impl PersistentCommandManager {
         Ok(listed)
     }
 
+    /// Copy the complete bounded pending output at one atomic observation.
+    /// This neither drains bytes nor changes final delivery, registry entries,
+    /// or session capacity. An agent poll may change the next observation or
+    /// remove the ID; copies must replace previous previews, never form an
+    /// incremental output history. No process or journal is created here.
+    pub fn inspect_pending_output(
+        &self,
+        id: &str,
+    ) -> Result<PersistentCommandInspection, AgentError> {
+        let session = self.session(id)?;
+        let state = session.output.state.lock().map_err(|_| {
+            AgentError::Tool("persistent command output inspection is unavailable".into())
+        })?;
+        if state.final_delivered {
+            return Err(AgentError::Tool(
+                "persistent command session was already drained".into(),
+            ));
+        }
+        Ok(PersistentCommandInspection {
+            id: id.to_owned(),
+            pty: session.pty,
+            events: state.events.iter().cloned().collect(),
+            exit: state.exit.clone(),
+            reader_error: state.reader_error.clone(),
+            retained_bytes: state.retained_bytes,
+            max_buffered_output_bytes: self.limits.max_buffered_output_bytes,
+        })
+    }
+
+    /// Observe control state without acquiring an async input lock, draining
+    /// output, delivering a terminal result, or freeing a registered slot.
+    /// Busy/uncertain state never grants input availability. A process, agent
+    /// poll, revocation, or input operation can change the next observation.
+    pub fn control_snapshot(
+        &self,
+        id: &str,
+    ) -> Result<PersistentCommandControlInspection, AgentError> {
+        let session = self.session(id)?;
+        let controls = session.controls.lock().map_err(|_| {
+            AgentError::Tool("persistent command control inspection is unavailable".into())
+        })?;
+        let stdin = if controls.stdin_uncertain {
+            PersistentCommandStdinState::Uncertain
+        } else {
+            #[cfg(windows)]
+            let observed = if let Some(input) = &session.sandbox_stdin {
+                input.try_lock().map(|sender| sender.is_some())
+            } else {
+                session.stdin.try_lock().map(|writer| writer.is_some())
+            };
+            #[cfg(not(windows))]
+            let observed = session.stdin.try_lock().map(|writer| writer.is_some());
+            match observed {
+                Ok(true) => PersistentCommandStdinState::Open,
+                Ok(false) => PersistentCommandStdinState::Closed,
+                Err(_) => PersistentCommandStdinState::Busy,
+            }
+        };
+        let output = session.output.state.lock().map_err(|_| {
+            AgentError::Tool("persistent command control inspection is unavailable".into())
+        })?;
+        if output.final_delivered {
+            return Err(AgentError::Tool(
+                "persistent command session was already drained".into(),
+            ));
+        }
+        let revoked = self.closed.load(std::sync::atomic::Ordering::Acquire);
+        let stop_requested = session.stop.is_cancelled();
+        #[cfg(windows)]
+        let console_open = session
+            .pty_console
+            .as_ref()
+            .is_some_and(|console| console.try_lock().is_ok_and(|console| console.is_some()));
+        #[cfg(not(windows))]
+        let console_open = false;
+        Ok(PersistentCommandControlInspection {
+            generation: self.generation.clone(),
+            owner_session_id: self.owner_session_id.clone(),
+            id: id.to_owned(),
+            workspace: self.workspace.clone(),
+            isolation: self.isolation,
+            command_argv: controls.command_argv.clone(),
+            revoked,
+            stop_requested,
+            stdin,
+            pty: session.pty,
+            dimensions: controls.dimensions,
+            dimensions_uncertain: controls.dimensions_uncertain,
+            resize_enabled: self.pty_resize_tools_enabled()
+                && session.pty
+                && console_open
+                && !controls.dimensions_uncertain
+                && !revoked
+                && !stop_requested
+                && output.exit.is_none(),
+            max_stdin_bytes: self.limits.max_stdin_bytes,
+            exit: output.exit.clone(),
+        })
+    }
+
+    pub fn command_argv(&self, id: &str) -> Result<Vec<String>, AgentError> {
+        let session = self.session(id)?;
+        let controls = session
+            .controls
+            .lock()
+            .map_err(|_| AgentError::Tool("persistent command identity is unavailable".into()))?;
+        Ok(controls.command_argv.clone())
+    }
+
     /// Revoke the manager and synchronously close every process tree it owns.
     /// Existing session IDs can still be polled to deliver buffered output and
     /// their terminal state, but no new commands can be started.
     pub fn stop_all(&self) {
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Release);
+        // A sandbox handshake can hold the registry lock before dispatch.
+        // Publish revocation first so that it cannot release its payload while
+        // the caller waits for that lock to close existing trees.
+        self.revoked.cancel();
         let sessions = self
             .sessions
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        self.closed
-            .store(true, std::sync::atomic::Ordering::Release);
         for session in sessions.values() {
             session.stop_tree();
         }
@@ -370,7 +828,7 @@ impl PersistentCommandManager {
                     .into(),
             ));
         }
-        if self.isolation == CommandIsolation::WorkspaceWriteOffline && !cfg!(windows) {
+        if !self.isolation.is_supported_on_host() {
             return Err(AgentError::Tool(
                 "persistent workspace-write/offline command isolation is unavailable on this host; command was not started".into(),
             ));
@@ -388,8 +846,13 @@ impl PersistentCommandManager {
                 "invalid or oversized persistent command".into(),
             ));
         }
-        let runtime = tokio::runtime::Handle::try_current()
-            .map_err(|_| AgentError::Tool("persistent commands need a Tokio runtime".into()))?;
+        #[cfg(not(windows))]
+        if terminal.is_some() {
+            return Err(AgentError::Tool(
+                "persistent PTY containment is unavailable on this host; command was not started"
+                    .into(),
+            ));
+        }
         let mut sessions = self
             .sessions
             .lock()
@@ -408,6 +871,24 @@ impl PersistentCommandManager {
                     .into(),
             ));
         }
+        let runtime = self
+            .runtime
+            .get_or_init(CommandRuntime::new)
+            .as_ref()
+            .map_err(|error| AgentError::Tool(error.clone()))?
+            .handle
+            .clone();
+        // Register the process/pipes with the manager's reactor even when
+        // `start` is invoked from a different (or no) Tokio runtime.
+        let _runtime_guard = runtime.enter();
+        if cancellation.is_cancelled() || self.revoked.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
+        let id = Uuid::new_v4().to_string();
+        let capture = self.register_output(&id, program, args, terminal.is_some())?;
+        if cancellation.is_cancelled() || self.revoked.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
         #[cfg(windows)]
         if self.isolation == CommandIsolation::WorkspaceWriteOffline {
             return windows_sandbox::start(
@@ -417,60 +898,88 @@ impl PersistentCommandManager {
                 cancellation,
                 &runtime,
                 &mut sessions,
+                NativeOutputRegistration { id, capture },
             );
         }
 
         #[cfg(windows)]
         if let Some((columns, rows)) = terminal {
-            return self.start_pty_locked(program, args, columns, rows, &runtime, &mut sessions);
+            return self.start_pty_locked(
+                program,
+                args,
+                (columns, rows),
+                &runtime,
+                &mut sessions,
+                NativeOutputRegistration { id, capture },
+            );
         }
-        #[cfg(not(windows))]
-        if terminal.is_some() {
-            return Err(AgentError::Tool(
-                "persistent PTY containment is unavailable on this host; command was not started"
+        let (mut child, tree) = if self.isolation == CommandIsolation::WorkspaceWriteOffline {
+            #[cfg(all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ))]
+            {
+                self.spawn_linux_sandbox(program, args, cancellation, &runtime)?
+            }
+            #[cfg(not(all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            )))]
+            {
+                return Err(AgentError::Tool(
+                    "persistent sandbox is unavailable; command was not started".into(),
+                ));
+            }
+        } else {
+            let mut command = Command::new(program);
+            command
+                .args(args)
+                .current_dir(&self.workspace)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true);
+            command.env_clear();
+            for key in HOST_BOOTSTRAP_ENV_KEYS {
+                if let Some(value) = std::env::var_os(key) {
+                    command.env(key, value);
+                }
+            }
+            #[cfg(windows)]
+            command.creation_flags(CREATE_NO_WINDOW | crate::process_tree::CREATE_SUSPENDED);
+            #[cfg(unix)]
+            command.process_group(0);
+            #[cfg(windows)]
+            let tree = ProcessTreeGuard::new().map_err(|error| {
+                AgentError::Tool(format!("cannot create persistent command job: {error}"))
+            })?;
+            let mut child = command.spawn().map_err(|error| {
+                AgentError::Tool(format!("cannot start persistent command: {error}"))
+            })?;
+            #[cfg(windows)]
+            if let Err(error) = tree.assign_and_resume(&child) {
+                let _ = child.start_kill();
+                return Err(AgentError::EffectUncertain(format!(
+                    "cannot contain persistent command after spawn: {error}"
+                )));
+            }
+            #[cfg(unix)]
+            let tree = ProcessTreeGuard::new(child.id()).map_err(|error| {
+                let _ = child.start_kill();
+                AgentError::EffectUncertain(format!(
+                    "cannot contain persistent command after spawn: {error}"
+                ))
+            })?;
+            (child, SessionTree::Pipes(tree))
+        };
+        if cancellation.is_cancelled() || self.revoked.is_cancelled() {
+            tree.close();
+            let _ = child.start_kill();
+            return Err(AgentError::EffectUncertain(
+                "persistent command was cancelled after launch; it may have produced effects"
                     .into(),
             ));
         }
-
-        let mut command = Command::new(program);
-        command
-            .args(args)
-            .current_dir(&self.workspace)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        command.env_clear();
-        for key in HOST_BOOTSTRAP_ENV_KEYS {
-            if let Some(value) = std::env::var_os(key) {
-                command.env(key, value);
-            }
-        }
-        #[cfg(windows)]
-        command.creation_flags(CREATE_NO_WINDOW | crate::process_tree::CREATE_SUSPENDED);
-        #[cfg(unix)]
-        command.process_group(0);
-        #[cfg(windows)]
-        let tree = ProcessTreeGuard::new().map_err(|error| {
-            AgentError::Tool(format!("cannot create persistent command job: {error}"))
-        })?;
-        let mut child = command.spawn().map_err(|error| {
-            AgentError::Tool(format!("cannot start persistent command: {error}"))
-        })?;
-        #[cfg(windows)]
-        if let Err(error) = tree.assign_and_resume(&child) {
-            let _ = child.start_kill();
-            return Err(AgentError::EffectUncertain(format!(
-                "cannot contain persistent command after spawn: {error}"
-            )));
-        }
-        #[cfg(unix)]
-        let tree = ProcessTreeGuard::new(child.id()).map_err(|error| {
-            let _ = child.start_kill();
-            AgentError::EffectUncertain(format!(
-                "cannot contain persistent command after spawn: {error}"
-            ))
-        })?;
         let stdin = child.stdin.take().ok_or_else(|| {
             AgentError::EffectUncertain(
                 "persistent command stdin is unavailable after spawn".into(),
@@ -487,21 +996,27 @@ impl PersistentCommandManager {
             )
         })?;
 
-        let output = Arc::new(OutputBuffer::new(self.limits.max_buffered_output_bytes));
+        let output = Arc::new(
+            OutputBuffer::new(self.limits.max_buffered_output_bytes).with_capture(capture),
+        );
         let stdin = Arc::new(AsyncMutex::new(Some(
             Box::new(stdin) as Box<dyn AsyncWrite + Send + Unpin>
         )));
-        let stop = CancellationToken::new();
-        let tree = Arc::new(Mutex::new(Some(SessionTree::Pipes(tree))));
+        let stop = output.stop.clone();
+        let tree = Arc::new(Mutex::new(Some(tree)));
+        output.attach_tree(Arc::clone(&tree));
         let session = Arc::new(Session {
             stdin: Arc::clone(&stdin),
             output: Arc::clone(&output),
             stop: stop.clone(),
             tree: Arc::clone(&tree),
             poll_lock: AsyncMutex::new(()),
+            controls: Mutex::new(CommandControlState::new(program, args, None)),
             pty: false,
             #[cfg(windows)]
             pty_console: None,
+            #[cfg(windows)]
+            resize_lock: AsyncMutex::new(()),
             #[cfg(windows)]
             sandbox_stdin: None,
         });
@@ -528,9 +1043,76 @@ impl PersistentCommandManager {
             }
             .run(),
         );
-        let id = Uuid::new_v4().to_string();
         sessions.insert(id.clone(), session);
         Ok(PersistentCommandStarted { id })
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    fn spawn_linux_sandbox(
+        &self,
+        program: &str,
+        args: &[String],
+        cancellation: &CancellationToken,
+        runtime: &tokio::runtime::Handle,
+    ) -> Result<(Child, SessionTree), AgentError> {
+        let program = program.to_owned();
+        let args = args.to_vec();
+        let workspace = self.workspace.clone();
+        let revoked = self.revoked.clone();
+        let cancel = cancellation.child_token();
+        let worker_cancel = cancel.clone();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        runtime.spawn(async move {
+            let result = async {
+                // Filesystem validation must not block this manager's live
+                // pipe readers. Dropped/cancelled preparation can finish in
+                // the background, but it has no authority to spawn a target.
+                let prepare_cancel = worker_cancel.clone();
+                let prepare = tokio::task::spawn_blocking(move || {
+                    crate::command::sandbox::linux::prepare_with_cancel(
+                        &program, &args, &workspace, &prepare_cancel,
+                    )
+                });
+                let mut launch = tokio::select! {
+                    biased;
+                    _ = worker_cancel.cancelled() => return Err(AgentError::Cancelled),
+                    _ = revoked.cancelled() => return Err(AgentError::Cancelled),
+                    result = prepare => result.map_err(|error| AgentError::Tool(format!("persistent sandbox preparation failed before launch: {error}")))??,
+                };
+                launch.command().stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+                if worker_cancel.is_cancelled() || revoked.is_cancelled() {
+                    return Err(AgentError::Cancelled);
+                }
+                let spawn = launch.spawn(&worker_cancel);
+                tokio::pin!(spawn);
+                let result = tokio::select! {
+                    biased;
+                    _ = revoked.cancelled() => {
+                        worker_cancel.cancel();
+                        // Keep the backend alive to finish its bounded cleanup
+                        // and preserve its classification at the target gate.
+                        spawn.await
+                    },
+                    result = &mut spawn => result,
+                }?;
+                Ok((result.0, SessionTree::LinuxSandbox(result.1)))
+            }.await;
+            // A caller timeout cannot orphan an unregistered successful launch:
+            // SendError drops both Child and namespace supervisor guard.
+            let _ = sender.send(result);
+        });
+        match receiver.recv_timeout(Duration::from_secs(15)) {
+            Ok(result) => result,
+            Err(error) => {
+                cancel.cancel();
+                Err(AgentError::EffectUncertain(format!(
+                    "persistent sandbox setup completion was not confirmed; cleanup was requested and target outcome is unknown: {error}"
+                )))
+            }
+        }
     }
 
     #[cfg(windows)]
@@ -538,11 +1120,13 @@ impl PersistentCommandManager {
         &self,
         program: &str,
         args: &[String],
-        columns: u16,
-        rows: u16,
+        dimensions: (u16, u16),
         runtime: &tokio::runtime::Handle,
         sessions: &mut HashMap<String, Arc<Session>>,
+        registration: NativeOutputRegistration,
     ) -> Result<PersistentCommandStarted, AgentError> {
+        let (columns, rows) = dimensions;
+        let NativeOutputRegistration { id, capture } = registration;
         let process = windows_pty::spawn(program, args, &self.workspace, columns, rows).map_err(
             |failure| {
                 if failure.launched {
@@ -565,12 +1149,15 @@ impl PersistentCommandManager {
             console,
             job,
         } = process;
-        let output = Arc::new(OutputBuffer::new(self.limits.max_buffered_output_bytes));
+        let output = Arc::new(
+            OutputBuffer::new(self.limits.max_buffered_output_bytes).with_capture(capture),
+        );
         let stdin = Arc::new(AsyncMutex::new(Some(
             Box::new(stdin) as Box<dyn AsyncWrite + Send + Unpin>
         )));
-        let stop = CancellationToken::new();
+        let stop = output.stop.clone();
         let tree = Arc::new(Mutex::new(Some(SessionTree::Pty(job))));
+        output.attach_tree(Arc::clone(&tree));
         let pty_console = Arc::new(Mutex::new(Some(console)));
         let session = Arc::new(Session {
             stdin: Arc::clone(&stdin),
@@ -578,8 +1165,14 @@ impl PersistentCommandManager {
             stop: stop.clone(),
             tree: Arc::clone(&tree),
             poll_lock: AsyncMutex::new(()),
+            controls: Mutex::new(CommandControlState::new(
+                program,
+                args,
+                Some((columns, rows)),
+            )),
             pty: true,
             pty_console: Some(Arc::clone(&pty_console)),
+            resize_lock: AsyncMutex::new(()),
             sandbox_stdin: None,
         });
         let reader_output = Arc::clone(&output);
@@ -612,7 +1205,6 @@ impl PersistentCommandManager {
             }
             .run(),
         );
-        let id = Uuid::new_v4().to_string();
         sessions.insert(id.clone(), session);
         Ok(PersistentCommandStarted { id })
     }
@@ -742,7 +1334,12 @@ impl PersistentCommandManager {
         let session = self.session(id)?;
         #[cfg(windows)]
         if session.sandbox_stdin.is_some() {
-            return windows_sandbox::write_stdin(&session, bytes, close_after, cancellation).await;
+            let result =
+                windows_sandbox::write_stdin(&session, bytes, close_after, cancellation).await;
+            if matches!(result, Err(AgentError::EffectUncertain(_))) {
+                session.mark_stdin_uncertain();
+            }
+            return result;
         }
         let mut stdin = tokio::select! {
             biased;
@@ -758,6 +1355,10 @@ impl PersistentCommandManager {
             let writer = stdin
                 .as_mut()
                 .ok_or_else(|| AgentError::Tool("persistent command stdin is closed".into()))?;
+            let mut operation = InputEffectGuard {
+                session: &session,
+                completed: false,
+            };
             let result = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => Err("cancelled"),
@@ -772,11 +1373,11 @@ impl PersistentCommandManager {
                 },
             };
             if let Err(reason) = result {
-                session.stop_tree();
                 return Err(AgentError::EffectUncertain(format!(
                     "persistent command stdin write {reason}; partial input may have been delivered"
                 )));
             }
+            operation.completed = true;
         }
         if close_after {
             stdin.take();
@@ -816,13 +1417,19 @@ impl PersistentCommandManager {
         #[cfg(not(windows))]
         {
             let _ = id;
-            return Err(AgentError::Tool(
+            Err(AgentError::Tool(
                 "persistent PTY resize is unavailable on this host".into(),
-            ));
+            ))
         }
         #[cfg(windows)]
         {
             let session = self.session(id)?;
+            let _resize_guard = tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Err(AgentError::Cancelled),
+                _ = session.stop.cancelled() => return Err(AgentError::Tool("persistent command is no longer running".into())),
+                guard = session.resize_lock.lock() => guard,
+            };
             let console = session.pty_console.as_ref().ok_or_else(|| {
                 AgentError::Tool("persistent command is not a PTY session".into())
             })?;
@@ -832,6 +1439,11 @@ impl PersistentCommandManager {
                 ));
             }
             let console = Arc::clone(console);
+            session.mark_dimensions_uncertain();
+            let mut effect = ResizeEffectGuard {
+                session: &session,
+                completed: false,
+            };
             let mut operation = tokio::task::spawn_blocking(move || {
                 let mut guard = console
                     .lock()
@@ -852,8 +1464,28 @@ impl PersistentCommandManager {
                 result = timeout(IO_WAIT, &mut operation) => result,
             };
             match result {
-                Ok(Ok(Ok(Some(())))) => Ok(()),
+                Ok(Ok(Ok(Some(())))) => {
+                    let mut controls = session.controls.lock().map_err(|_| {
+                        AgentError::EffectUncertain(
+                            "PTY resized but control state is unavailable".into(),
+                        )
+                    })?;
+                    controls.dimensions = Some(PersistentCommandDimensions { columns, rows });
+                    controls.dimensions_uncertain = false;
+                    effect.completed = true;
+                    Ok(())
+                }
                 Ok(Ok(Ok(None))) => {
+                    session
+                        .controls
+                        .lock()
+                        .map_err(|_| {
+                            AgentError::Tool(
+                                "persistent command control state is unavailable".into(),
+                            )
+                        })?
+                        .dimensions_uncertain = false;
+                    effect.completed = true;
                     Err(AgentError::Tool("persistent PTY has already closed".into()))
                 }
                 Ok(Ok(Err(error))) => {
@@ -899,10 +1531,57 @@ impl PersistentCommandManager {
     }
 }
 
+struct InputEffectGuard<'a> {
+    session: &'a Session,
+    completed: bool,
+}
+
+impl Drop for InputEffectGuard<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.session.mark_stdin_uncertain();
+            self.session.stop_tree();
+        }
+    }
+}
+
+#[cfg(windows)]
+struct ResizeEffectGuard<'a> {
+    session: &'a Session,
+    completed: bool,
+}
+
+#[cfg(windows)]
+impl Drop for ResizeEffectGuard<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.session.mark_dimensions_uncertain();
+            self.session.stop_tree();
+        }
+    }
+}
+
+struct NativeOutputCapture {
+    store: Arc<NativeCommandOutputStore>,
+    binding: NativeCommandOutputBinding,
+    cursor: Mutex<u64>,
+}
+
+#[cfg(windows)]
+struct NativeOutputRegistration {
+    id: String,
+    capture: Option<Arc<NativeOutputCapture>>,
+}
+
 struct OutputBuffer {
     state: Mutex<OutputState>,
     changed: Notify,
     max_bytes: usize,
+    capture: Option<Arc<NativeOutputCapture>>,
+    capture_failed: std::sync::atomic::AtomicBool,
+    capture_error: Mutex<Option<String>>,
+    stop: CancellationToken,
+    failure_tree: Mutex<Option<Arc<Mutex<Option<SessionTree>>>>>,
 }
 
 impl OutputBuffer {
@@ -911,19 +1590,158 @@ impl OutputBuffer {
             state: Mutex::new(OutputState::default()),
             changed: Notify::new(),
             max_bytes,
+            capture: None,
+            capture_failed: std::sync::atomic::AtomicBool::new(false),
+            capture_error: Mutex::new(None),
+            stop: CancellationToken::new(),
+            failure_tree: Mutex::new(None),
         }
     }
 
-    fn push(&self, stream: PersistentCommandStream, bytes: &[u8]) {
+    fn with_capture(mut self, capture: Option<Arc<NativeOutputCapture>>) -> Self {
+        self.capture = capture;
+        self
+    }
+
+    fn attach_tree(&self, tree: Arc<Mutex<Option<SessionTree>>>) {
+        *self
+            .failure_tree
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(tree);
+    }
+
+    fn fail_capture(&self, error: String) -> std::io::Error {
+        self.capture_failed
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.stop.cancel();
+        if let Some(tree) = self
+            .failure_tree
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+        {
+            if let Some(tree) = tree
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                tree.close();
+            }
+        }
+        let mut saved = self
+            .capture_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original = saved.get_or_insert(error).clone();
+        // The monitor owns the tree guard and must stop it immediately rather
+        // than leaving the child alive until its ordinary lifetime deadline.
+        self.changed.notify_waiters();
+        std::io::Error::other(original)
+    }
+
+    fn push(&self, stream: PersistentCommandStream, bytes: &[u8]) -> std::io::Result<()> {
+        let mut committed_cursor = match self.capture.as_ref() {
+            Some(capture) => Some(capture.cursor.lock().map_err(|_| {
+                self.fail_capture("native output producer cursor is unavailable".into())
+            })?),
+            None => None,
+        };
+        if self
+            .capture_failed
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(self.fail_capture("native output capture already failed".into()));
+        }
+        let (keep, omitted) = if let Some(capture) = self.capture.as_ref() {
+            let cursor = committed_cursor.as_mut().expect("capture cursor exists");
+            let stream = match stream {
+                PersistentCommandStream::Stdout => NativeCommandOutputStream::Stdout,
+                PersistentCommandStream::Stderr => NativeCommandOutputStream::Stderr,
+                PersistentCommandStream::Terminal => NativeCommandOutputStream::Terminal,
+            };
+            let ack = capture
+                .store
+                .append(&capture.binding, **cursor, stream, bytes)
+                .map_err(|error| {
+                    self.fail_capture(format!(
+                        "durable native output append was not confirmed; command stopped: {error}"
+                    ))
+                })?;
+            if ack.retained_bytes.checked_add(ack.omitted_bytes) != Some(bytes.len())
+                || (**cursor).checked_add(bytes.len() as u64) != Some(ack.observed_end)
+            {
+                return Err(self.fail_capture("native output ACK has invalid byte bounds".into()));
+            }
+            **cursor = ack.observed_end;
+            (ack.retained_bytes, ack.omitted_bytes)
+        } else {
+            (bytes.len(), 0)
+        };
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        state.push(stream, bytes, self.max_bytes);
+        state.push(stream, &bytes[..keep], self.max_bytes);
+        state.push_omitted(omitted);
+        // The cursor lock stays held through publication, so a second pipe's
+        // ACK cannot overtake this pipe in the observable buffer.
         self.changed.notify_waiters();
+        Ok(())
     }
 
-    fn finish(&self, exit: PersistentCommandExit, reader_error: Option<String>) {
+    fn finish(&self, exit: PersistentCommandExit, mut reader_error: Option<String>) {
+        if let Some(error) = self
+            .capture_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+        {
+            reader_error = Some(match reader_error {
+                Some(reader) if reader.contains(&error) => reader,
+                Some(reader) => format!("{reader}; {error}"),
+                None => error,
+            });
+        }
+        if let Some(capture) = self.capture.as_ref() {
+            let (kind, code) = match &exit {
+                PersistentCommandExit::Exited { code } => (NativeCommandOutputExit::Exited, *code),
+                PersistentCommandExit::Terminated => (NativeCommandOutputExit::Terminated, None),
+                PersistentCommandExit::TimedOut => (NativeCommandOutputExit::TimedOut, None),
+                PersistentCommandExit::WaitFailed(error) => (
+                    NativeCommandOutputExit::WaitFailed {
+                        error: bounded_native_output_error(error),
+                    },
+                    None,
+                ),
+            };
+            let terminal = NativeCommandOutputTerminal {
+                exit_observed: true,
+                exit_kind: Some(kind),
+                exit_code: code,
+                reader_error: reader_error.as_deref().map(bounded_native_output_error),
+            };
+            let result = capture
+                .cursor
+                .lock()
+                .map_err(|_| {
+                    "native output producer cursor is unavailable at terminal observation"
+                        .to_owned()
+                })
+                .and_then(|cursor| {
+                    capture
+                        .store
+                        .finish(&capture.binding, *cursor, &terminal)
+                        .map_err(|error| error.to_string())
+                });
+            if let Err(error) = result {
+                let message = format!("durable native output terminal was not confirmed: {error}");
+                self.fail_capture(message.clone());
+                reader_error = Some(match reader_error {
+                    Some(reader) => format!("{reader}; {message}"),
+                    None => message,
+                });
+            }
+        }
         let mut state = self
             .state
             .lock()
@@ -931,6 +1749,35 @@ impl OutputBuffer {
         state.exit = Some(exit);
         state.reader_error = reader_error;
         self.changed.notify_waiters();
+    }
+
+    async fn finish_async(
+        self: &Arc<Self>,
+        exit: PersistentCommandExit,
+        reader_error: Option<String>,
+    ) {
+        if self.capture.is_none() {
+            self.finish(exit, reader_error);
+            return;
+        }
+        let output = Arc::clone(self);
+        let saved_exit = exit.clone();
+        if let Err(error) =
+            tokio::task::spawn_blocking(move || output.finish(exit, reader_error)).await
+        {
+            self.fail_capture(format!("native output terminal worker failed: {error}"));
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.exit = Some(saved_exit);
+            state.reader_error = self
+                .capture_error
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            self.changed.notify_waiters();
+        }
     }
 
     fn has_exited(&self) -> Result<bool, AgentError> {
@@ -943,6 +1790,18 @@ impl OutputBuffer {
             .exit
             .is_some())
     }
+}
+
+fn bounded_native_output_error(error: &str) -> String {
+    if error.len() <= MAX_NATIVE_OUTPUT_ERROR_BYTES {
+        return error.to_owned();
+    }
+    let marker = "\n[diagnostic truncated to 4096 bytes]";
+    let mut end = MAX_NATIVE_OUTPUT_ERROR_BYTES - marker.len();
+    while !error.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{marker}", &error[..end])
 }
 
 #[derive(Default)]
@@ -987,6 +1846,10 @@ impl OutputState {
             }
         }
         let omitted = bytes.len() - keep;
+        self.push_omitted(omitted);
+    }
+
+    fn push_omitted(&mut self, omitted: usize) {
         if omitted > 0 {
             match self.events.back_mut() {
                 Some(PersistentCommandEvent::Omitted { bytes }) => {
@@ -1038,11 +1901,27 @@ async fn read_pipe<R: AsyncRead + Unpin>(
 ) -> std::io::Result<()> {
     let mut chunk = [0u8; READER_CHUNK_BYTES];
     loop {
-        let count = pipe.read(&mut chunk).await?;
+        let count = match pipe.read(&mut chunk).await {
+            Ok(count) => count,
+            Err(error) => {
+                output.fail_capture(error.to_string());
+                return Err(error);
+            }
+        };
         if count == 0 {
             return Ok(());
         }
-        output.push(stream, &chunk[..count]);
+        if output.capture.is_some() {
+            let captured = Arc::clone(&output);
+            let bytes = chunk[..count].to_vec();
+            tokio::task::spawn_blocking(move || captured.push(stream, &bytes))
+                .await
+                .map_err(|error| {
+                    output.fail_capture(format!("native output reader worker failed: {error}"))
+                })??;
+        } else {
+            output.push(stream, &chunk[..count])?;
+        }
     }
 }
 
@@ -1054,11 +1933,17 @@ fn read_pipe_blocking<R: std::io::Read>(
 ) -> std::io::Result<()> {
     let mut chunk = [0u8; READER_CHUNK_BYTES];
     loop {
-        let count = pipe.read(&mut chunk)?;
+        let count = match pipe.read(&mut chunk) {
+            Ok(count) => count,
+            Err(error) => {
+                output.fail_capture(error.to_string());
+                return Err(error);
+            }
+        };
         if count == 0 {
             return Ok(());
         }
-        output.push(stream, &chunk[..count]);
+        output.push(stream, &chunk[..count])?;
     }
 }
 
@@ -1125,7 +2010,7 @@ impl Monitor {
                 Some("persistent command output readers did not close within limit".into())
             }
         };
-        output.finish(exit, reader_error);
+        output.finish_async(exit, reader_error).await;
     }
 }
 
@@ -1221,7 +2106,7 @@ impl PtyMonitor {
             Ok(Err(error)) => Some(format!("persistent PTY output join failed: {error}")),
             Err(_) => Some("persistent PTY output reader did not close within limit".into()),
         };
-        output.finish(exit, reader_error);
+        output.finish_async(exit, reader_error).await;
     }
 }
 
@@ -1232,6 +2117,18 @@ fn reader_result(result: &Result<std::io::Result<()>, tokio::task::JoinError>) -
         Err(_) => "task error",
     }
 }
+
+#[cfg(test)]
+#[path = "persistent_command_inspection_tests.rs"]
+mod inspection_tests;
+
+#[cfg(test)]
+#[path = "persistent_command_control_tests.rs"]
+mod control_tests;
+
+#[cfg(test)]
+#[path = "persistent_command_output_tests.rs"]
+mod output_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1275,9 +2172,15 @@ mod tests {
         ));
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(
+        windows,
+        all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )
+    )))]
     #[test]
-    fn offline_isolation_rejects_persistent_start_before_spawn() {
+    fn unsupported_platform_offline_isolation_rejects_persistent_start_before_spawn() {
         let workspace = tempfile::tempdir().unwrap();
         let manager = PersistentCommandManager::new(
             workspace.path().to_path_buf(),

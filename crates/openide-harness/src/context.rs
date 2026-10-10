@@ -10,6 +10,9 @@ const CLEARED_TOOL_RESULT: &str = "[Earlier tool result omitted from model conte
 /// that does not fit a smaller model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TokenBudgetPolicy {
+    /// Exact input ceiling when the provider declares it separately from a
+    /// combined context window. A zero window is valid only with this ceiling.
+    pub input_limit_tokens: Option<u64>,
     pub context_window_tokens: u64,
     /// Space reserved for the model's response, including reasoning tokens.
     pub output_reserve_tokens: u64,
@@ -30,10 +33,10 @@ pub enum TokenBudgetDecision {
 }
 
 /// The projection includes input, output reserve, and extra tool framing.
-/// For text-only requests, `estimated_input_tokens` is a byte-based fallback
-/// and `projected_input_tokens` is calibrated from observed provider usage.
-/// For image requests admitted through `assess_model_request`, both input
-/// fields use the provider's exact pre-request count.
+/// A provider preflight fills both input fields with its request count; other
+/// text requests use a byte fallback calibrated from observed usage. Thresholds
+/// apply to the combined window when present, or independently to input when
+/// only an input ceiling is known. Output reserve never occupies that ceiling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TokenBudgetAssessment {
     pub estimated_input_tokens: u64,
@@ -77,9 +80,9 @@ impl TokenBudgetState {
 }
 
 impl TokenBudgetPolicy {
-    /// Assess a model request. Images require a provider preflight count of
-    /// the complete request (including text, images, and tools). Text-only
-    /// requests preserve the existing local fallback and usage calibration.
+    /// Prefer a provider count of the complete request, including its opaque
+    /// blocks and tool framing. Images require this count; other backends may
+    /// return None and retain the conservative local estimate.
     pub async fn assess_model_request(
         self,
         state: &mut TokenBudgetState,
@@ -88,17 +91,13 @@ impl TokenBudgetPolicy {
         tools: &[ToolDefinition],
         cancel: CancellationToken,
     ) -> Result<TokenBudgetAssessment, AgentError> {
-        if messages.iter().any(|message| !message.images.is_empty()) {
-            let exact_input_tokens = model
-                .count_input_tokens(messages, tools, cancel)
-                .await?
-                .ok_or_else(|| {
-                    AgentError::Limit(format!(
+        if let Some(exact_input_tokens) = model.count_input_tokens(messages, tools, cancel).await? {
+            self.assess_request_with_exact_input_tokens(state, exact_input_tokens)
+        } else if messages.iter().any(|message| !message.images.is_empty()) {
+            Err(AgentError::Limit(format!(
                         "image input token count is unknown for model {}; the request cannot pass the verified context budget",
                         model.model_id()
-                    ))
-                })?;
-            self.assess_request_with_exact_input_tokens(state, exact_input_tokens)
+                )))
         } else {
             self.assess_request(state, messages, tools)
         }
@@ -147,9 +146,11 @@ impl TokenBudgetPolicy {
         estimated_input_tokens: u64,
         projected_input_tokens: u64,
     ) -> Result<TokenBudgetAssessment, AgentError> {
-        if self.context_window_tokens == 0 {
+        if self.input_limit_tokens == Some(0)
+            || (self.context_window_tokens == 0 && self.input_limit_tokens.is_none())
+        {
             return Err(AgentError::InvalidRequest(
-                "context_window_tokens must be greater than zero".into(),
+                "a positive context window or input limit is required".into(),
             ));
         }
         if self.output_reserve_tokens == 0 {
@@ -166,15 +167,36 @@ impl TokenBudgetPolicy {
         let projected_total_tokens = projected_input_tokens
             .saturating_add(self.output_reserve_tokens)
             .saturating_add(self.tool_schema_reserve_tokens);
-        let hard_limit_tokens = percent_of(self.context_window_tokens, 95);
-        let default_auto_limit = percent_of(self.context_window_tokens, 90);
+        // Output reserve is charged against a combined window, never against
+        // an independently published input ceiling.
+        let input_projection =
+            projected_input_tokens.saturating_add(self.tool_schema_reserve_tokens);
+        let input_only = self.context_window_tokens == 0;
+        let comparison_tokens = if input_only {
+            input_projection
+        } else {
+            projected_total_tokens
+        };
+        let comparison_limit = if input_only {
+            self.input_limit_tokens.expect("validated input limit")
+        } else {
+            self.context_window_tokens
+        };
+        let hard_limit_tokens = percent_of(comparison_limit, 95);
+        let default_auto_limit = percent_of(comparison_limit, 90);
         let auto_compact_threshold_tokens = self
             .auto_compact_token_limit
             .unwrap_or(default_auto_limit)
             .min(default_auto_limit);
-        let decision = if projected_total_tokens > hard_limit_tokens {
+        let input_exceeded = self
+            .input_limit_tokens
+            .is_some_and(|limit| input_projection > percent_of(limit, 95));
+        let input_compact = self
+            .input_limit_tokens
+            .is_some_and(|limit| input_projection >= percent_of(limit, 90));
+        let decision = if comparison_tokens > hard_limit_tokens || input_exceeded {
             TokenBudgetDecision::Reject
-        } else if projected_total_tokens >= auto_compact_threshold_tokens {
+        } else if comparison_tokens >= auto_compact_threshold_tokens || input_compact {
             TokenBudgetDecision::Compact
         } else {
             TokenBudgetDecision::Continue
@@ -399,11 +421,72 @@ mod tests {
 
     fn token_policy(window: u64, output: u64, tool_reserve: u64) -> TokenBudgetPolicy {
         TokenBudgetPolicy {
+            input_limit_tokens: None,
             context_window_tokens: window,
             output_reserve_tokens: output,
             tool_schema_reserve_tokens: tool_reserve,
             auto_compact_token_limit: None,
         }
+    }
+
+    #[test]
+    fn independent_input_budget_reserves_output_without_charging_it_to_input() {
+        let policy = TokenBudgetPolicy {
+            input_limit_tokens: Some(1_000),
+            context_window_tokens: 0,
+            output_reserve_tokens: 4_096,
+            tool_schema_reserve_tokens: 10,
+            auto_compact_token_limit: None,
+        };
+        let mut state = TokenBudgetState::default();
+        let assess = |input, state: &mut TokenBudgetState| {
+            policy
+                .assess_request_with_exact_input_tokens(state, input)
+                .unwrap()
+        };
+        let below = assess(889, &mut state);
+        assert_eq!(below.projected_total_tokens, 4_995);
+        assert_eq!(below.decision, TokenBudgetDecision::Continue);
+        assert_eq!(
+            assess(890, &mut state).decision,
+            TokenBudgetDecision::Compact
+        );
+        assert_eq!(
+            assess(941, &mut state).decision,
+            TokenBudgetDecision::Reject
+        );
+        let both = TokenBudgetPolicy {
+            context_window_tokens: 10_000,
+            ..policy
+        };
+        assert_eq!(
+            both.assess_request_with_exact_input_tokens(&mut state, 941)
+                .unwrap()
+                .decision,
+            TokenBudgetDecision::Reject
+        );
+    }
+
+    #[tokio::test]
+    async fn text_requests_use_provider_preflight_when_available() {
+        let model = CountingModel {
+            count: Some(123),
+            calls: AtomicUsize::new(0),
+        };
+        let policy = token_policy(1_000, 100, 0);
+        let assessment = policy
+            .assess_model_request(
+                &mut TokenBudgetState::default(),
+                &model,
+                &[AgentMessage::user("Much longer local estimate".repeat(200))],
+                &[],
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(model.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(assessment.projected_input_tokens, 123);
+        assert_eq!(assessment.decision, TokenBudgetDecision::Continue);
     }
 
     #[test]
@@ -541,9 +624,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn text_budget_does_not_call_provider_count_endpoint() {
+    async fn text_budget_keeps_fallback_when_backend_has_no_count_endpoint() {
         let model = CountingModel {
-            count: Some(900),
+            count: None,
             calls: AtomicUsize::new(0),
         };
         let assessment = token_policy(1_000, 100, 0)
@@ -557,7 +640,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(assessment.estimated_input_tokens, 36);
-        assert_eq!(model.calls.load(Ordering::Relaxed), 0);
+        assert_eq!(model.calls.load(Ordering::Relaxed), 1);
     }
 
     #[test]

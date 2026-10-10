@@ -101,6 +101,9 @@ pub struct NativeReplay {
     /// Safe model history. A checkpoint summary is an assistant message, not
     /// a high-priority system instruction.
     pub history: Vec<AgentMessage>,
+    /// Exact route of the materialized provider items. Unlike active authority,
+    /// this survives completion; None means their provenance is unknown.
+    pub history_model_route: Option<crate::ModelRouteSnapshot>,
     /// Complete model messages after the selected checkpoint, with their
     /// source event sequence for a subsequent semantic compaction request.
     pub committed_messages: Vec<ReplayedMessage>,
@@ -136,6 +139,8 @@ pub struct NativeReplay {
     /// Version 1 logs remain readable but cannot prove the model request
     /// profile; recovery must require MODEL_CONTEXT_VERSION.
     pub active_model_context_version: Option<u16>,
+    /// Explicit route of this active turn. Legacy turns have no attribution.
+    pub active_model_route: Option<crate::ModelRouteSnapshot>,
     /// Starting a new turn while an interrupted turn is unresolved is unsafe.
     pub can_start_new_turn: bool,
 }
@@ -154,6 +159,7 @@ struct PendingHook {
     tool_call_id: String,
     hook_id: String,
     phase: String,
+    diagnostic_recorded: bool,
 }
 
 struct ReplayBuilder {
@@ -173,6 +179,7 @@ struct ReplayBuilder {
     /// Consecutive synced starts in one read-only wave. Results are committed
     /// in this order; an interrupted suffix remains uncertain by call ID.
     started_tools: VecDeque<ToolCall>,
+    media_seen_for_started_tool: bool,
     pending_hook: Option<PendingHook>,
     seen_hook_ids_for_call: HashSet<String>,
     read_wave_result_seen: bool,
@@ -197,6 +204,10 @@ struct ReplayBuilder {
     active_system_instructions_version: Option<u16>,
     active_model_context_digest: Option<String>,
     active_model_context_version: Option<u16>,
+    active_model_route: Option<crate::ModelRouteSnapshot>,
+    /// Attribution for materialized history, retained across turn boundaries.
+    /// This is independent of the frozen authority of an interrupted turn.
+    history_model_route: Option<crate::ModelRouteSnapshot>,
 }
 
 /// Replay one ordered native log. The checkpoint store is consulted only when
@@ -282,6 +293,7 @@ pub fn replay_native(
         pending_batch: None,
         pending_permission: None,
         started_tools: VecDeque::new(),
+        media_seen_for_started_tool: false,
         pending_hook: None,
         seen_hook_ids_for_call: HashSet::new(),
         read_wave_result_seen: false,
@@ -306,6 +318,8 @@ pub fn replay_native(
         active_system_instructions_version: None,
         active_model_context_digest: None,
         active_model_context_version: None,
+        active_model_route: None,
+        history_model_route: None,
     };
     if let Some(checkpoint) = &checkpoint {
         for retained in &checkpoint.retained_user_messages {
@@ -347,6 +361,7 @@ pub fn replay_native(
         session_id: session_id.to_owned(),
         last_sequence: previous,
         history: builder.history,
+        history_model_route: builder.history_model_route,
         committed_messages: builder.committed_messages,
         checkpoint,
         latest_plan: builder.latest_plan,
@@ -367,6 +382,7 @@ pub fn replay_native(
         active_system_instructions_version: builder.active_system_instructions_version,
         active_model_context_digest: builder.active_model_context_digest,
         active_model_context_version: builder.active_model_context_version,
+        active_model_route: builder.active_model_route,
         can_start_new_turn,
     })
 }
@@ -470,6 +486,7 @@ impl ReplayBuilder {
                 self.active_system_instructions_version = None;
                 self.active_model_context_digest = None;
                 self.active_model_context_version = None;
+                self.active_model_route = None;
                 self.push_message(
                     event.sequence,
                     AgentMessage::user_with_images(prompt.clone(), images)
@@ -569,6 +586,7 @@ impl ReplayBuilder {
                     self.active_system_instructions_version = None;
                     self.active_model_context_digest = None;
                     self.active_model_context_version = None;
+                    self.active_model_route = None;
                     self.push_message(event.sequence, AgentMessage::user(prompt.clone()));
                 }
             }
@@ -723,6 +741,46 @@ impl ReplayBuilder {
                 self.active_model_context_digest = Some(digest.clone());
                 self.active_model_context_version = Some(*version);
             }
+            AgentEventKind::ModelRouteCommitted { .. } => {
+                let route =
+                    crate::ModelRouteSnapshot::from_event(&event.kind).expect("route variant");
+                if !route.is_valid()
+                    || self.active_model_route.is_some()
+                    || self.active_model_context_digest.is_none()
+                    || self.active_turn.as_ref().is_none_or(|turn| {
+                        !turn.started
+                            || turn.terminated
+                            || turn.last_step != 0
+                            || turn
+                                .model
+                                .as_deref()
+                                .is_some_and(|model| model != route.model_id)
+                    })
+                    || self.model_flight.is_some()
+                    || self.pending_batch.is_some()
+                    || self.pending_permission.is_some()
+                    || !self.started_tools.is_empty()
+                {
+                    return Err(Self::conflict(
+                        event,
+                        "model route snapshot is invalid or out of place",
+                    ));
+                }
+                if self.history_model_route.as_ref() != Some(&route) {
+                    crate::reconcile_model_history_route(
+                        &mut self.history,
+                        self.history_model_route.as_ref(),
+                        &route,
+                    );
+                    // Auto-compaction consumes this second projection. Keep it
+                    // in the same route as requests and interrupted replay.
+                    for message in &mut self.committed_messages {
+                        message.message.provider_output_items.clear();
+                    }
+                }
+                self.history_model_route = Some(route.clone());
+                self.active_model_route = Some(route);
+            }
             AgentEventKind::ModelRequestStarted { step, model } => {
                 let turn = self
                     .active_turn
@@ -733,6 +791,10 @@ impl ReplayBuilder {
                     || *step == 0
                     || *step != turn.last_step.saturating_add(1)
                     || turn.model.as_ref().is_some_and(|saved| saved != model)
+                    || self
+                        .active_model_route
+                        .as_ref()
+                        .is_some_and(|route| &route.model_id != model)
                     || self.model_flight.is_some()
                     || self.pending_batch.is_some()
                     || !self.started_tools.is_empty()
@@ -744,6 +806,12 @@ impl ReplayBuilder {
                     ));
                 }
                 turn.last_step = *step;
+                if self.active_model_route.is_none() {
+                    // A legacy turn may use another provider/endpoint even if
+                    // its model label matches. Its outputs cannot inherit a
+                    // previous modern turn's exact route attribution.
+                    self.history_model_route = None;
+                }
                 self.model_flight = Some(ModelFlight {
                     step: *step,
                     model: model.clone(),
@@ -753,6 +821,22 @@ impl ReplayBuilder {
                 self.duplicate_assistant_content = None;
                 self.last_assistant_content = None;
                 self.modern_response_seen = false;
+            }
+            AgentEventKind::ModelStreamUpdate { step, .. } => {
+                if self
+                    .model_flight
+                    .as_ref()
+                    .is_none_or(|flight| flight.step != *step)
+                    || self.active_turn.is_none()
+                    || self.pending_batch.is_some()
+                {
+                    return Err(Self::conflict(
+                        event,
+                        "stream update has no matching model request",
+                    ));
+                }
+                // Presentation metadata is deliberately excluded from model
+                // history and tool authority. Only a full response commits it.
             }
             AgentEventKind::ModelResponseCommitted {
                 step,
@@ -958,6 +1042,7 @@ impl ReplayBuilder {
                 if queued == 0 {
                     self.seen_hook_ids_for_call.clear();
                     self.plan_updated_for_started_tool = false;
+                    self.media_seen_for_started_tool = false;
                 }
                 self.started_tools.push_back(tool_call.clone());
             }
@@ -983,7 +1068,42 @@ impl ReplayBuilder {
                     tool_call_id: tool_call_id.clone(),
                     hook_id: hook_id.clone(),
                     phase: phase.clone(),
+                    diagnostic_recorded: false,
                 });
+            }
+            AgentEventKind::HookDiagnosticCommitted {
+                tool_call_id,
+                hook_id,
+                phase,
+                reason,
+                stdout,
+                stderr,
+                error,
+            } => {
+                let valid = self.pending_hook.as_ref().is_some_and(|pending| {
+                    pending.tool_call_id == *tool_call_id
+                        && pending.hook_id == *hook_id
+                        && pending.phase == *phase
+                        && !pending.diagnostic_recorded
+                });
+                if !valid
+                    || reason.as_ref().is_some_and(|value| value.len() > 8192)
+                    || error.as_ref().is_some_and(|value| value.len() > 8192)
+                    || stdout
+                        .as_ref()
+                        .map_or(0, String::len)
+                        .saturating_add(stderr.as_ref().map_or(0, String::len))
+                        > 256 * 1024
+                {
+                    return Err(Self::conflict(
+                        event,
+                        "hook diagnostics are invalid or out of place",
+                    ));
+                }
+                self.pending_hook
+                    .as_mut()
+                    .expect("validated pending hook")
+                    .diagnostic_recorded = true;
             }
             AgentEventKind::HookFinished {
                 tool_call_id,
@@ -1003,6 +1123,44 @@ impl ReplayBuilder {
                 {
                     return Err(Self::conflict(event, "hook finish conflicts with start"));
                 }
+            }
+            AgentEventKind::ToolOutputDelta { tool_call_id, .. } => {
+                if self.active_turn.as_ref().is_none_or(|turn| turn.terminated)
+                    || self.pending_hook.is_some()
+                    || !self
+                        .started_tools
+                        .iter()
+                        .any(|call| call.id == *tool_call_id)
+                {
+                    return Err(Self::conflict(
+                        event,
+                        "tool output has no matching started call",
+                    ));
+                }
+                // Partial output never closes the call or enters model history.
+            }
+            AgentEventKind::ToolResultMedia {
+                tool_call_id,
+                images,
+                text,
+                notices,
+            } => {
+                if self.active_turn.as_ref().is_none_or(|turn| turn.terminated)
+                    || self.pending_hook.is_some()
+                    || self.media_seen_for_started_tool
+                    || !self
+                        .started_tools
+                        .iter()
+                        .any(|call| call.id == *tool_call_id && call.name.starts_with("mcp__"))
+                    || crate::validate_tool_result_media(images, text, notices).is_err()
+                {
+                    return Err(Self::conflict(
+                        event,
+                        "tool media is invalid or has no matching started MCP call",
+                    ));
+                }
+                self.media_seen_for_started_tool = true;
+                // Media is presentation-only: no history, completion, or authority.
             }
             AgentEventKind::ToolFinished {
                 tool_call_id,
@@ -1120,6 +1278,7 @@ impl ReplayBuilder {
                 self.active_system_instructions_version = None;
                 self.active_model_context_digest = None;
                 self.active_model_context_version = None;
+                self.active_model_route = None;
             }
             AgentEventKind::TurnCompleted { response, steps } => {
                 let turn = self
@@ -1155,6 +1314,7 @@ impl ReplayBuilder {
                 self.active_system_instructions_version = None;
                 self.active_model_context_digest = None;
                 self.active_model_context_version = None;
+                self.active_model_route = None;
             }
             AgentEventKind::TurnFailed { .. } | AgentEventKind::TurnCancelled => {
                 let turn = self
@@ -1207,6 +1367,7 @@ impl ReplayBuilder {
         self.active_system_instructions_version = None;
         self.active_model_context_digest = None;
         self.active_model_context_version = None;
+        self.active_model_route = None;
     }
 
     fn ensure_tool_batch(
@@ -1394,7 +1555,61 @@ mod tests {
             matches!(interrupted.recovery, ReplayRecovery::ToolOutcomeUncertain { tool_call } if tool_call.id == "call-1")
         );
         assert!(!interrupted.can_start_new_turn);
-
+        let diagnostic = AgentEventKind::HookDiagnosticCommitted {
+            tool_call_id: call.id.clone(),
+            hook_id: "guard".into(),
+            phase: "pre_tool_use".into(),
+            reason: Some("approved".into()),
+            stdout: Some("{}".into()),
+            stderr: Some("note".into()),
+            error: None,
+        };
+        let mut diagnosed = events.clone();
+        diagnosed.push(event(9, diagnostic.clone()));
+        let replay = replay_native("session-1", &diagnosed, None, &compatibility()).unwrap();
+        assert!(
+            matches!(replay.recovery, ReplayRecovery::ToolOutcomeUncertain { .. }),
+            "diagnostics do not confirm a hook outcome"
+        );
+        diagnosed.push(event(10, diagnostic.clone()));
+        assert!(
+            replay_native("session-1", &diagnosed, None, &compatibility()).is_err(),
+            "duplicate diagnostic must fail closed"
+        );
+        for malformed in [
+            AgentEventKind::HookDiagnosticCommitted {
+                tool_call_id: "other".into(),
+                hook_id: "guard".into(),
+                phase: "pre_tool_use".into(),
+                reason: None,
+                stdout: None,
+                stderr: None,
+                error: None,
+            },
+            AgentEventKind::HookDiagnosticCommitted {
+                tool_call_id: call.id.clone(),
+                hook_id: "guard".into(),
+                phase: "pre_tool_use".into(),
+                reason: Some("x".repeat(8193)),
+                stdout: None,
+                stderr: None,
+                error: None,
+            },
+            AgentEventKind::HookDiagnosticCommitted {
+                tool_call_id: call.id.clone(),
+                hook_id: "guard".into(),
+                phase: "pre_tool_use".into(),
+                reason: None,
+                stdout: Some("x".repeat(256 * 1024 + 1)),
+                stderr: None,
+                error: None,
+            },
+        ] {
+            let mut invalid = events.clone();
+            invalid.push(event(9, malformed));
+            assert!(replay_native("session-1", &invalid, None, &compatibility()).is_err());
+        }
+        // The unmodified legacy sequence below remains accepted without diagnostics.
         events.push(event(
             9,
             AgentEventKind::HookFinished {
@@ -2611,6 +2826,7 @@ mod tests {
                 content: "Build this".into(),
             }],
             budget: CheckpointBudgetSnapshot {
+                input_limit_tokens: None,
                 context_window_tokens: 128_000,
                 estimated_input_tokens: 1_000,
                 observed_input_tokens: Some(400),

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "configurations": [
+    {
+      "name": "Rust · LLDB",
+      "adapter": { "command": "lldb-dap", "args": [], "id": "lldb" },
+      "request": "launch",
+      "arguments": {
+        "program": "${workspaceFolder}/target/debug/mi-programa",
+        "cwd": "${workspaceFolder}",
+        "stopOnEntry": false,
+        "disableASLR": false
+      }
+    }
+  ]
+}

@@ -10,7 +10,7 @@ use std::io::{Read, Write};
 use std::net::IpAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use openide_harness::TokenBudgetPolicy;
 use reqwest::blocking::Client;
@@ -39,6 +39,10 @@ pub(crate) struct Adapter {
     /// The request protocol implemented by this adapter, not a promise that
     /// every model exposed by its provider supports our tool loop.
     pub wire_api: NativeWireApi,
+    #[serde(default)]
+    pub auth: ProviderAuth,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
     pub model_list_path: Option<String>,
     #[serde(default)]
     pub catalog_list_path: Option<String>,
@@ -56,6 +60,45 @@ pub(crate) struct Adapter {
     pub key_optional: bool,
     #[serde(default)]
     pub catalog: CatalogMapping,
+    /// Exact, locally reviewed routes for gateways with several protocols.
+    #[serde(default)]
+    pub model_transports: BTreeMap<String, NativeWireApi>,
+    #[serde(default)]
+    pub opencode_go_transports: BTreeMap<String, NativeWireApi>,
+}
+
+impl Adapter {
+    pub(crate) fn use_opencode_go(&mut self) {
+        if self.id == "opencode" {
+            self.endpoint = "https://opencode.ai/zen/go/v1".into();
+            self.name = "OpenCode Go".into();
+            self.model_transports = self.opencode_go_transports.clone();
+        }
+    }
+
+    pub(crate) fn for_model(&self, model: &str) -> Result<Self, String> {
+        let mut selected = self.clone();
+        // Z.ai documents incremental function arguments for these exact
+        // families. An arbitrary custom model does not inherit that option.
+        if self.id == "zai"
+            && matches!(model, "glm-5.3" | "glm-5.2" | "glm-5.1" | "glm-5" | "glm-4.7" | "glm-4.6")
+        {
+            selected.chat_request_fields.insert("tool_stream".into(), Value::Bool(true));
+        }
+        if !self.model_transports.is_empty() {
+            selected.wire_api = *self.model_transports.get(model).ok_or(
+                "Este modelo requiere un protocolo que todavía no está disponible en OpenIDE",
+            )?;
+            if selected.wire_api == NativeWireApi::AnthropicMessages {
+                selected.auth = ProviderAuth::Header {
+                    name: "x-api-key".into(),
+                };
+                selected.headers =
+                    BTreeMap::from([("anthropic-version".into(), "2023-06-01".into())]);
+            }
+        }
+        Ok(selected)
+    }
 }
 
 /// Declarative paths in a provider-owned JSON model listing. A missing path
@@ -66,16 +109,51 @@ pub(crate) struct CatalogMapping {
     pub entries_path: Option<String>,
     pub id_path: Option<String>,
     pub name_path: Option<String>,
+    pub visibility_path: Option<String>,
+    pub visibility_value: Option<String>,
     pub context_window_path: Option<String>,
+    pub input_limit_path: Option<String>,
     pub max_output_path: Option<String>,
     pub tool_call_path: Option<String>,
     pub tool_call_contains: Option<String>,
     pub effort_levels_path: Option<String>,
+    pub effort_format: EffortLevelsFormat,
+    pub capability_support_paths: BTreeMap<String, String>,
+    pub pagination: Option<CatalogPagination>,
     pub input_modalities_path: Option<String>,
     pub output_modalities_path: Option<String>,
     pub pricing_input_path: Option<String>,
     pub pricing_output_path: Option<String>,
     pub price_unit: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum ProviderAuth {
+    #[default]
+    Bearer,
+    Header {
+        name: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum EffortLevelsFormat {
+    #[default]
+    Array,
+    PresetArray,
+    SupportedObject,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CatalogPagination {
+    pub cursor_query: String,
+    pub cursor_path: String,
+    pub has_more_path: String,
+    pub limit_query: Option<String>,
+    pub limit: Option<u16>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -103,6 +181,11 @@ impl ProviderRegistry {
 
     pub fn load(root: &Path) -> Result<Self, String> {
         let mut registry = Self::builtin();
+        if crate::provider_connections::service(root, "opencode") == "go" {
+            if let Some(adapter) = registry.adapters.iter_mut().find(|a| a.id == "opencode") {
+                adapter.use_opencode_go();
+            }
+        }
         let path = root.join(REGISTRY_FILE);
         let metadata = match fs::metadata(&path) {
             Ok(metadata) => metadata,
@@ -184,7 +267,18 @@ pub(crate) fn adapter_at(root: &Path, provider_id: &str) -> Result<Option<Adapte
     Ok(ProviderRegistry::load(root)?.adapter(provider_id).cloned())
 }
 
+pub(crate) fn adapter_for_model_at(
+    root: &Path,
+    provider_id: &str,
+    model: &str,
+) -> Result<Option<Adapter>, String> {
+    adapter_at(root, provider_id)?
+        .map(|adapter| adapter.for_model(model))
+        .transpose()
+}
+
 fn validate_provider_definition(entry: &Adapter) -> Result<(), String> {
+    validate_transport_settings(entry.wire_api, &entry.auth, &entry.headers)?;
     if entry.id.is_empty()
         || entry.id.len() > 64
         || !entry.id.bytes().all(|byte| {
@@ -254,7 +348,9 @@ fn validate_provider_definition(entry: &Adapter) -> Result<(), String> {
         &entry.catalog.entries_path,
         &entry.catalog.id_path,
         &entry.catalog.name_path,
+        &entry.catalog.visibility_path,
         &entry.catalog.context_window_path,
+        &entry.catalog.input_limit_path,
         &entry.catalog.max_output_path,
         &entry.catalog.tool_call_path,
         &entry.catalog.effort_levels_path,
@@ -266,16 +362,55 @@ fn validate_provider_definition(entry: &Adapter) -> Result<(), String> {
     .into_iter()
     .flatten()
     {
-        if path.is_empty()
-            || path.len() > 128
-            || path.split('.').any(|segment| {
-                segment.is_empty()
-                    || !segment
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-            })
-        {
+        if !valid_metadata_path(path) {
             return Err(format!("Ruta de metadatos inválida para {}", entry.id));
+        }
+    }
+    if entry.catalog.visibility_path.is_some() != entry.catalog.visibility_value.is_some()
+        || entry
+            .catalog
+            .visibility_value
+            .as_ref()
+            .is_some_and(|v| v.is_empty() || v.len() > 64 || v.chars().any(char::is_control))
+    {
+        return Err(format!(
+            "Visibilidad de catálogo inválida para {}",
+            entry.id
+        ));
+    }
+    for map in [&entry.model_transports, &entry.opencode_go_transports] {
+        if map.len() > 1_000
+            || map
+                .keys()
+                .any(|id| id.is_empty() || id.len() > 256 || id.chars().any(char::is_whitespace))
+        {
+            return Err(format!("Protocolos por modelo inválidos para {}", entry.id));
+        }
+    }
+    if entry.catalog.capability_support_paths.len() > 32
+        || entry
+            .catalog
+            .capability_support_paths
+            .iter()
+            .any(|(name, path)| !valid_metadata_name(name) || !valid_metadata_path(path))
+    {
+        return Err(format!(
+            "Capacidades declaradas inválidas para {}",
+            entry.id
+        ));
+    }
+    if let Some(page) = &entry.catalog.pagination {
+        if !valid_metadata_name(&page.cursor_query)
+            || !valid_metadata_path(&page.cursor_path)
+            || !valid_metadata_path(&page.has_more_path)
+            || page.limit_query.is_some() != page.limit.is_some()
+            || page
+                .limit_query
+                .as_ref()
+                .is_some_and(|name| !valid_metadata_name(name) || name == &page.cursor_query)
+            || page.limit.is_some_and(|limit| !(1..=1000).contains(&limit))
+        {
+            return Err(format!("Paginación inválida para {}", entry.id));
         }
     }
     if entry
@@ -307,6 +442,9 @@ fn validate_provider_definition(entry: &Adapter) -> Result<(), String> {
                     field.as_str(),
                     "model" | "messages" | "tools" | "stream" | "reasoning_effort"
                 )
+                || (entry.wire_api == NativeWireApi::AnthropicMessages
+                    && (!matches!(field.as_str(), "thinking" | "output_config")
+                        || !value.is_object()))
                 || serde_json::to_vec(value).is_ok_and(|encoded| encoded.len() > 8 * 1024)
         })
     {
@@ -323,6 +461,60 @@ fn validate_provider_definition(entry: &Adapter) -> Result<(), String> {
     }
     validate_custom_endpoint(&entry.endpoint)?;
     Ok(())
+}
+
+fn valid_metadata_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn valid_metadata_path(path: &str) -> bool {
+    !path.is_empty() && path.len() <= 128 && path.split('.').all(valid_metadata_name)
+}
+
+/// Secrets are supplied only by the selected credential environment variable.
+/// Until other transports implement static headers, reject unsupported schemes
+/// rather than silently dropping part of the declared request profile.
+pub(crate) fn validate_transport_settings(
+    wire_api: NativeWireApi,
+    auth: &ProviderAuth,
+    headers: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    match (wire_api, auth) {
+        (NativeWireApi::Responses | NativeWireApi::ChatCompletions, ProviderAuth::Bearer)
+            if headers.is_empty() =>
+        {
+            Ok(())
+        }
+        (NativeWireApi::AnthropicMessages, ProviderAuth::Header { name })
+            if name == "x-api-key" =>
+        {
+            if headers.len() > 2
+                || headers.iter().any(|(name, value)| {
+                    !matches!(
+                        name.as_str(),
+                        "anthropic-version" | "anthropic-workspace-id"
+                    ) || (name == "anthropic-version" && value != "2023-06-01")
+                        || value.is_empty()
+                        || value.len() > 256
+                        || !value.is_ascii()
+                        || value.chars().any(char::is_control)
+                        || reqwest::header::HeaderValue::from_str(value).is_err()
+                })
+            {
+                Err("Cabeceras de Anthropic inválidas o no implementadas".into())
+            } else {
+                Ok(())
+            }
+        }
+        _ => Err(
+            "El esquema de autenticación o las cabeceras no corresponden al protocolo implementado"
+                .into(),
+        ),
+    }
 }
 
 /// Presence is only a local preflight check. It does not prove that the key
@@ -395,6 +587,23 @@ macro_rules! openai_model {
     };
 }
 
+macro_rules! chat_model {
+    ($provider:literal, $id:literal, $context:expr, $output:expr, $efforts:expr, $source:literal) => {
+        NativeModelCapabilities {
+            provider_id: $provider,
+            model_id: $id,
+            wire_api: NativeWireApi::ChatCompletions,
+            function_tools: true,
+            streaming: true,
+            image_input: false,
+            context_window_tokens: Some($context),
+            max_output_tokens: $output,
+            supported_efforts: $efforts,
+            source_url: $source,
+        }
+    };
+}
+
 // Reviewed against provider documentation on 2026-09-28. Every OpenAI row has
 // a model page documenting Responses, streaming, function
 // calling, image input, and the two token limits. The two GPT-4o snapshots are named on the
@@ -408,6 +617,16 @@ macro_rules! openai_model {
 // image input for a model, but this Chat Completions adapter does not send
 // image parts yet, so image_input remains false for the native route.
 const MODEL_CAPABILITIES: &[NativeModelCapabilities] = &[
+    // Reviewed 2026-10-06. MiniMax's M3 API ceiling is explicit; for M2.x
+    // the published API ceiling equals the whole context. Leave the output
+    // reserve unknown rather than inventing an executable input budget.
+    chat_model!("minimax", "MiniMax-M3", 1_000_000, Some(524_288), &[], "https://platform.minimax.io/docs/api-reference/text-chat-openai"),
+    chat_model!("minimax", "MiniMax-M2.7", 204_800, None, &[], "https://platform.minimax.io/docs/api-reference/text-openai-api"),
+    chat_model!("minimax", "MiniMax-M2.7-highspeed", 204_800, None, &[], "https://platform.minimax.io/docs/api-reference/text-openai-api"),
+    chat_model!("minimax", "MiniMax-M2.5", 204_800, None, &[], "https://platform.minimax.io/docs/api-reference/text-openai-api"),
+    chat_model!("minimax", "MiniMax-M2.5-highspeed", 204_800, None, &[], "https://platform.minimax.io/docs/api-reference/text-openai-api"),
+    chat_model!("zai", "glm-5.3", 1_000_000, Some(131_072), &["low", "high", "max"], "https://docs.z.ai/guides/llm/glm-5.3"),
+    chat_model!("zai", "glm-5.2", 1_000_000, Some(131_072), &["none", "minimal", "low", "medium", "high", "xhigh", "max"], "https://docs.z.ai/guides/llm/glm-5.2"),
     openai_model!("gpt-4.1", 1_047_576, 32_768, &[]),
     openai_model!("gpt-4.1-mini", 1_047_576, 32_768, &[]),
     openai_model!("gpt-4o", 128_000, 16_384, &[]),
@@ -525,6 +744,9 @@ fn native_route_execution_with_adapter(
     if model_id.trim().is_empty() {
         return NativeRouteExecution::Unsupported;
     }
+    let Ok(selected) = selected.for_model(model_id) else {
+        return NativeRouteExecution::Unsupported;
+    };
     if native_model_capabilities(provider_id, model_id).is_some_and(|capabilities| {
         capabilities.wire_api == selected.wire_api
             && capabilities.function_tools
@@ -551,6 +773,9 @@ pub(crate) struct ProviderModelDiscovery {
 pub(crate) struct DiscoveredModel {
     pub id: String,
     pub name: String,
+    /// Position in the provider's visible listing, across all response pages.
+    /// None is reserved for fixtures/legacy data whose order is unknown.
+    pub listing_index: Option<usize>,
     /// The provider listing explicitly declares the configured tool field.
     pub provider_reports_tools: bool,
     /// Distinguishes an explicit negative claim from a missing field.
@@ -559,6 +784,22 @@ pub(crate) struct DiscoveredModel {
     /// Exact levels present in this provider-owned listing. An absent field
     /// leaves the control on Automatic rather than guessing by model name.
     pub supported_efforts: Vec<String>,
+    /// This response declares an effort family, including a valid empty list.
+    /// Empty declared levels cannot be filled from an older source.
+    pub efforts_declared: bool,
+    /// Exact declared limits from this account-specific model entry. Missing
+    /// or invalid fields stay unknown, never inferred from the model's name.
+    pub context_window_tokens: Option<u64>,
+    pub max_output_tokens: Option<u64>,
+    /// Provider-reported input ceiling; never added to or inferred as a window.
+    pub max_input_tokens: Option<u64>,
+    /// The adapter maps this response's limits. Missing/null/zero values remain
+    /// unknown instead of inheriting an older catalog or reviewed limit.
+    pub limits_declared: bool,
+    pub declared_capabilities: BTreeMap<String, bool>,
+    /// This response is authoritative for the adapter's configured capability
+    /// fields, including unknowns when the entire family is omitted or invalid.
+    pub capabilities_declared: bool,
 }
 
 /// Call on a worker, never from rendering. Listing paths and mappings come
@@ -571,58 +812,238 @@ pub(crate) fn discover_connected_models_at(
     let selected = adapter_at(root, provider_id)?
         .filter(|adapter| adapter.model_list_path.is_some())
         .ok_or_else(|| format!("No hay catálogo autenticado para {provider_id}"))?;
-    discover_connected_models_with_adapter(&selected)
+    let key = crate::provider_connections::read_key(root, &selected.key_env);
+    if key.is_none() && !selected.key_optional {
+        return Err(format!(
+            "Conecta {} para consultar sus modelos",
+            selected.name
+        ));
+    }
+    discover_connected_models_with_key(&selected, key.as_deref())
 }
 
-fn discover_connected_models_with_adapter(
+pub(crate) fn discover_connected_models_with_key(
     selected: &Adapter,
+    key: Option<&str>,
 ) -> Result<ProviderModelDiscovery, String> {
     let provider_id = &selected.id;
-    let key = std::env::var(&selected.key_env)
-        .ok()
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("Falta {}", selected.key_env))?;
-    if key.len() > 4_096 || key.chars().any(char::is_control) {
-        return Err(format!("{} tiene un formato inválido", selected.key_env));
-    }
-    let path = selected
-        .model_list_path
-        .as_deref()
-        .expect("discovery path checked");
+    let path = selected.model_list_path.as_deref()
+        .ok_or_else(|| format!("No hay catálogo autenticado para {provider_id}"))?;
     let url = format!("{}/{path}", selected.endpoint.trim_end_matches('/'));
     let client = Client::builder()
         .timeout(DISCOVERY_TIMEOUT)
         .redirect(Policy::none())
         .build()
         .map_err(|error| format!("No se pudo preparar el catálogo del proveedor: {error}"))?;
-    let response = client
-        .get(url)
-        .bearer_auth(key)
-        .header("Accept", "application/json")
-        .send()
-        .map_err(|error| format!("No se pudo consultar {provider_id}: {error}"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "{provider_id} rechazó el catálogo de modelos (HTTP {})",
-            response.status()
-        ));
+    let ModelListingFetch::Pages { pages, .. } = fetch_model_listing_pages(
+        &client,
+        &url,
+        &selected.auth,
+        &selected.headers,
+        key,
+        &selected.catalog,
+        None,
+        MAX_DISCOVERY_BYTES,
+        DISCOVERY_TIMEOUT,
+    )?
+    else {
+        return Err("El catálogo autenticado no devolvió sus modelos".into());
+    };
+    let mut models = BTreeMap::new();
+    for bytes in pages {
+        let listing = parse_connected_models_for_adapter(selected, &bytes)?;
+        let page_offset = models.len();
+        for (id, mut model) in listing.models {
+            model.listing_index = model.listing_index.map(|index| page_offset + index);
+            if models.insert(id, model).is_some() {
+                return Err("El catálogo autenticado contiene IDs repetidos".into());
+            }
+        }
     }
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_DISCOVERY_BYTES)
-    {
-        return Err("El catálogo autenticado excede el tamaño permitido".to_owned());
+    Ok(ProviderModelDiscovery {
+        provider_id: provider_id.clone(),
+        models,
+    })
+}
+
+pub(crate) enum ModelListingFetch {
+    NotModified,
+    Pages {
+        pages: Vec<Vec<u8>>,
+        etag: Option<String>,
+    },
+}
+
+/// Shared bounded transport for descriptive and account-specific catalogs.
+/// Pagination can change query values only; it never supplies a next URL.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fetch_model_listing_pages(
+    client: &Client,
+    url: &str,
+    auth: &ProviderAuth,
+    headers: &BTreeMap<String, String>,
+    key: Option<&str>,
+    mapping: &CatalogMapping,
+    etag: Option<&str>,
+    max_bytes: u64,
+    timeout: Duration,
+) -> Result<ModelListingFetch, String> {
+    validate_transport_settings(
+        match auth {
+            ProviderAuth::Bearer => NativeWireApi::ChatCompletions,
+            ProviderAuth::Header { .. } => NativeWireApi::AnthropicMessages,
+        },
+        auth,
+        headers,
+    )?;
+    let key = key.map(str::trim).filter(|key| !key.is_empty());
+    if key.is_some_and(|key| key.len() > 32768 || key.chars().any(char::is_control)) {
+        return Err("La credencial del proveedor tiene un formato inválido".into());
     }
-    let mut bytes = Vec::new();
-    response
-        .take(MAX_DISCOVERY_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("No se pudo leer el catálogo de {provider_id}: {error}"))?;
-    if bytes.len() as u64 > MAX_DISCOVERY_BYTES {
-        return Err("El catálogo autenticado excede el tamaño permitido".to_owned());
+    let mut page_url = reqwest::Url::parse(url).map_err(|_| "URL de catálogo inválida")?;
+    let started = Instant::now();
+    let mut pages = Vec::new();
+    let mut total_bytes = 0_u64;
+    let mut total_models = 0_usize;
+    let mut cursors = HashSet::new();
+    let mut observed_etag = None;
+    if let Some(page) = &mapping.pagination {
+        if let (Some(name), Some(limit)) = (&page.limit_query, page.limit) {
+            replace_query(&mut page_url, name, &limit.to_string());
+        }
     }
-    parse_connected_models_for_adapter(selected, &bytes)
+    loop {
+        if pages.len() >= 64 {
+            return Err("El catálogo excede el límite de páginas".into());
+        }
+        let remaining = timeout
+            .checked_sub(started.elapsed())
+            .filter(|value| !value.is_zero())
+            .ok_or("La consulta completa del catálogo excedió el tiempo permitido")?;
+        let mut request = client
+            .get(page_url.clone())
+            .timeout(remaining)
+            .header("Accept", "application/json");
+        for (name, value) in headers {
+            request = request.header(name.as_str(), value.as_str());
+        }
+        if !headers.contains_key("anthropic-version")
+            && matches!(auth, ProviderAuth::Header { name } if name == "x-api-key")
+        {
+            request = request.header("anthropic-version", "2023-06-01");
+        }
+        if let Some(key) = key {
+            request = match auth {
+                ProviderAuth::Bearer => request.bearer_auth(key),
+                ProviderAuth::Header { name } => request.header(name.as_str(), key),
+            };
+        }
+        let conditional = mapping
+            .pagination
+            .is_none()
+            .then_some(etag)
+            .flatten()
+            .filter(|value| value.len() <= 1024 && !value.chars().any(char::is_control));
+        if let Some(etag) = conditional {
+            request = request.header(reqwest::header::IF_NONE_MATCH, etag);
+        }
+        let response = request
+            .send()
+            .map_err(|_| "La consulta del proveedor falló o excedió el tiempo permitido")?;
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            return if pages.is_empty() && conditional.is_some() {
+                Ok(ModelListingFetch::NotModified)
+            } else {
+                Err("El proveedor devolvió un catálogo incompleto sin contenido".into())
+            };
+        }
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status().as_u16()));
+        }
+        let allowance = max_bytes
+            .checked_sub(total_bytes)
+            .ok_or("Catálogo demasiado grande")?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > allowance)
+        {
+            return Err("El catálogo excede el límite agregado de bytes".into());
+        }
+        if mapping.pagination.is_none() {
+            observed_etag = response
+                .headers()
+                .get(reqwest::header::ETAG)
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| value.len() <= 1024 && !value.chars().any(char::is_control))
+                .map(str::to_owned);
+        }
+        let mut bytes = Vec::new();
+        response
+            .take(allowance + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "No se pudo leer el catálogo del proveedor")?;
+        if bytes.len() as u64 > allowance {
+            return Err("El catálogo excede el límite agregado de bytes".into());
+        }
+        total_bytes += bytes.len() as u64;
+        let document: Value =
+            serde_json::from_slice(&bytes).map_err(|_| "JSON de catálogo inválido")?;
+        let entries = mapped_value(&document, mapping.entries_path.as_deref().unwrap_or("data"))
+            .and_then(Value::as_array)
+            .or_else(|| document.as_array())
+            .ok_or("El catálogo no tiene una lista de modelos")?;
+        total_models = total_models
+            .checked_add(entries.len())
+            .ok_or("Demasiados modelos")?;
+        if total_models > 5000 {
+            return Err("El catálogo contiene demasiados modelos".into());
+        }
+        let next = if let Some(page) = &mapping.pagination {
+            let has_more = mapped_value(&document, &page.has_more_path)
+                .and_then(Value::as_bool)
+                .ok_or("La paginación del catálogo no informa si está completa")?;
+            if has_more {
+                let cursor = mapped_value(&document, &page.cursor_path)
+                    .and_then(Value::as_str)
+                    .filter(|cursor| {
+                        !cursor.is_empty()
+                            && cursor.len() <= 512
+                            && !cursor.chars().any(char::is_control)
+                    })
+                    .ok_or("Falta un cursor válido para continuar el catálogo")?;
+                if entries.is_empty() || !cursors.insert(cursor.to_owned()) {
+                    return Err("La paginación del catálogo no avanza".into());
+                }
+                Some((page.cursor_query.clone(), cursor.to_owned()))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        pages.push(bytes);
+        match next {
+            Some((name, cursor)) => replace_query(&mut page_url, &name, &cursor),
+            None => {
+                return Ok(ModelListingFetch::Pages {
+                    pages,
+                    etag: observed_etag,
+                })
+            }
+        }
+    }
+}
+
+fn replace_query(url: &mut reqwest::Url, name: &str, value: &str) {
+    let pairs = url
+        .query_pairs()
+        .filter(|(key, _)| key != name)
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    url.query_pairs_mut()
+        .clear()
+        .extend_pairs(pairs)
+        .append_pair(name, value);
 }
 
 #[cfg(test)]
@@ -654,12 +1075,18 @@ pub(crate) fn parse_connected_models_for_adapter(
     }
     let mut models = std::collections::BTreeMap::new();
     for entry in entries {
-        let Some(id) = mapped_value(entry, selected.catalog.id_path.as_deref().unwrap_or("id"))
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control))
-        else {
+        if !catalog_entry_visible(entry, &selected.catalog) {
             continue;
-        };
+        }
+        let id = mapped_value(entry, selected.catalog.id_path.as_deref().unwrap_or("id"))
+            .and_then(Value::as_str)
+            .filter(|id| {
+                !id.is_empty()
+                    && id.trim() == *id
+                    && id.len() <= 256
+                    && !id.chars().any(char::is_control)
+            })
+            .ok_or("El catálogo autenticado contiene un ID inválido")?;
         let name = mapped_value(
             entry,
             selected.catalog.name_path.as_deref().unwrap_or("name"),
@@ -697,37 +1124,48 @@ pub(crate) fn parse_connected_models_for_adapter(
                         .any(|value| value.as_str() == Some("text"))
                 })
         });
-        let supported_efforts = selected
-            .catalog
-            .effort_levels_path
-            .as_deref()
-            .and_then(|path| mapped_value(entry, path))
-            .and_then(Value::as_array)
-            .map(|levels| {
-                levels
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .filter(|level| {
-                        !level.is_empty()
-                            && level.len() <= 64
-                            && !level.chars().any(char::is_whitespace)
-                            && !level.chars().any(char::is_control)
-                    })
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        models.insert(
+        let supported_efforts = mapped_effort_levels(entry, &selected.catalog);
+        let listing_index = Some(models.len());
+        let previous = models.insert(
             id.to_owned(),
             DiscoveredModel {
                 id: id.to_owned(),
                 name: name.to_owned(),
+                listing_index,
                 provider_reports_tools,
                 tool_call_declared,
                 text_input_output,
                 supported_efforts,
+                efforts_declared: mapped_efforts_declared(entry, &selected.catalog),
+                context_window_tokens: selected
+                    .catalog
+                    .context_window_path
+                    .as_deref()
+                    .and_then(|path| mapped_value(entry, path))
+                    .and_then(Value::as_u64)
+                    .filter(|limit| *limit > 0),
+                max_output_tokens: selected
+                    .catalog
+                    .max_output_path
+                    .as_deref()
+                    .and_then(|path| mapped_value(entry, path))
+                    .and_then(Value::as_u64)
+                    .filter(|limit| *limit > 0),
+                max_input_tokens: selected
+                    .catalog
+                    .input_limit_path
+                    .as_deref()
+                    .and_then(|path| mapped_value(entry, path))
+                    .and_then(Value::as_u64)
+                    .filter(|limit| *limit > 0),
+                limits_declared: mapped_limits_declared(&selected.catalog),
+                declared_capabilities: mapped_capabilities(entry, &selected.catalog),
+                capabilities_declared: mapped_capabilities_declared(entry, &selected.catalog),
             },
         );
+        if previous.is_some() {
+            return Err("El catálogo autenticado contiene IDs repetidos".into());
+        }
     }
     Ok(ProviderModelDiscovery {
         provider_id: provider_id.to_owned(),
@@ -735,9 +1173,174 @@ pub(crate) fn parse_connected_models_for_adapter(
     })
 }
 
+pub(crate) fn catalog_entry_visible(entry: &Value, mapping: &CatalogMapping) -> bool {
+    mapping.visibility_path.as_deref().is_none_or(|path| {
+        mapped_value(entry, path).and_then(Value::as_str) == mapping.visibility_value.as_deref()
+    })
+}
+
 pub(crate) fn mapped_value<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
     path.split('.')
         .try_fold(value, |current, segment| current.get(segment))
+}
+
+pub(crate) fn mapped_capabilities(
+    entry: &Value,
+    mapping: &CatalogMapping,
+) -> BTreeMap<String, bool> {
+    let mut capabilities = mapping
+        .capability_support_paths
+        .iter()
+        .filter_map(|(name, path)| {
+            mapped_value(entry, path)
+                .and_then(Value::as_bool)
+                .map(|value| (name.clone(), value))
+        })
+        .collect::<BTreeMap<_, _>>();
+    if !capabilities.contains_key("image_input") {
+        if let Some(values) = mapping
+            .input_modalities_path
+            .as_deref()
+            .and_then(|path| mapped_value(entry, path))
+            .and_then(Value::as_array)
+            .filter(|values| {
+                values.len() <= 16
+                    && values.iter().all(|value| {
+                        value.as_str().is_some_and(|modality| {
+                            !modality.is_empty()
+                                && modality.len() <= 64
+                                && !modality.chars().any(char::is_control)
+                        })
+                    })
+            })
+        {
+            capabilities.insert(
+                "image_input".into(),
+                values.iter().any(|value| value.as_str() == Some("image")),
+            );
+        }
+    }
+    capabilities
+}
+
+pub(crate) fn mapped_capabilities_declared(_entry: &Value, mapping: &CatalogMapping) -> bool {
+    // Only provider-configured mappings create authority. For example, OpenAI's
+    // models listing has no capability mapping and keeps the reviewed fallback.
+    mapping.input_modalities_path.is_some() || !mapping.capability_support_paths.is_empty()
+}
+
+pub(crate) fn mapped_limits_declared(mapping: &CatalogMapping) -> bool {
+    mapping.context_window_path.is_some()
+        || mapping.input_limit_path.is_some()
+        || mapping.max_output_path.is_some()
+}
+
+pub(crate) fn mapped_efforts_declared(entry: &Value, mapping: &CatalogMapping) -> bool {
+    let Some(value) = mapping
+        .effort_levels_path
+        .as_deref()
+        .and_then(|path| mapped_value(entry, path))
+    else {
+        return false;
+    };
+    match mapping.effort_format {
+        EffortLevelsFormat::Array => value
+            .as_array()
+            .is_some_and(|values| valid_effort_array(values)),
+        EffortLevelsFormat::PresetArray => value
+            .as_array()
+            .is_some_and(|values| valid_effort_presets(values)),
+        EffortLevelsFormat::SupportedObject => value.as_object().is_some_and(|values| {
+            values.len() <= 33 && values.get("supported").and_then(Value::as_bool).is_some()
+        }),
+    }
+}
+
+fn valid_effort_level(level: &str) -> bool {
+    !level.is_empty()
+        && level.len() <= 64
+        && !level
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+}
+
+fn valid_effort_array(values: &[Value]) -> bool {
+    let mut unique = HashSet::new();
+    values.len() <= 32
+        && values.iter().all(|value| {
+            value
+                .as_str()
+                .is_some_and(|level| valid_effort_level(level) && unique.insert(level))
+        })
+}
+
+fn valid_effort_presets(values: &[Value]) -> bool {
+    let mut unique = HashSet::new();
+    values.len() <= 32
+        && values.iter().all(|value| {
+            value
+                .get("effort")
+                .and_then(Value::as_str)
+                .is_some_and(|level| valid_effort_level(level) && unique.insert(level))
+        })
+}
+
+pub(crate) fn mapped_effort_levels(entry: &Value, mapping: &CatalogMapping) -> Vec<String> {
+    let Some(value) = mapping
+        .effort_levels_path
+        .as_deref()
+        .and_then(|path| mapped_value(entry, path))
+    else {
+        return Vec::new();
+    };
+    let levels = match mapping.effort_format {
+        EffortLevelsFormat::PresetArray => {
+            let Some(values) = value
+                .as_array()
+                .filter(|values| valid_effort_presets(values))
+            else {
+                return Vec::new();
+            };
+            values
+                .iter()
+                .filter_map(|value| value.get("effort").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect()
+        }
+        EffortLevelsFormat::Array => {
+            let Some(values) = value.as_array().filter(|values| valid_effort_array(values)) else {
+                return Vec::new();
+            };
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        }
+        EffortLevelsFormat::SupportedObject => {
+            let Some(values) = value.as_object().filter(|values| values.len() <= 33) else {
+                return Vec::new();
+            };
+            if values.get("supported").and_then(Value::as_bool) != Some(true) {
+                return Vec::new();
+            }
+            let mut levels = values
+                .iter()
+                .filter(|(_, value)| value.get("supported").and_then(Value::as_bool) == Some(true))
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>();
+            levels.sort();
+            levels
+        }
+    };
+    let mut unique = HashSet::new();
+    if levels
+        .iter()
+        .any(|level| !valid_effort_level(level) || !unique.insert(level.clone()))
+    {
+        return Vec::new();
+    }
+    levels
 }
 
 #[cfg(test)]
@@ -750,8 +1353,8 @@ pub(crate) fn deepseek_native_compatible_model(model_id: &str) -> bool {
     native_model_capabilities("deepseek", model_id).is_some()
 }
 
-/// Reserve the documented maximum output because the backends do not yet set
-/// a lower response limit. Unknown provider/model pairs remain unbudgeted.
+/// Default reserve is the documented maximum output. A host-selected cap
+/// sent by the backend may lower it. Unknown pairs remain unbudgeted.
 pub(crate) fn verified_token_budget(
     provider_id: &str,
     model_id: &str,
@@ -764,10 +1367,147 @@ pub(crate) fn verified_token_budget(
     let output_reserve_tokens = capabilities.max_output_tokens?;
     Some(TokenBudgetPolicy {
         context_window_tokens,
+        input_limit_tokens: None,
         output_reserve_tokens,
         tool_schema_reserve_tokens: 1_000,
         auto_compact_token_limit: None,
     })
+}
+
+/// Host-selected generation limits scoped to an exact route. No remote
+/// listing can choose these wire fields or alter the provider endpoint.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeOutputLimit {
+    pub provider_id: String,
+    pub model_id: String,
+    pub wire_api: NativeWireApi,
+    pub field: String,
+    pub tokens: u64,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct NativeOutputLimitsFile {
+    version: u32,
+    limits: Vec<NativeOutputLimit>,
+}
+
+fn load_output_limits(root: &Path) -> Result<NativeOutputLimitsFile, String> {
+    let file = match fs::File::open(root.join("native-output-limits.json")) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(NativeOutputLimitsFile {
+                version: 1,
+                limits: vec![],
+            })
+        }
+        Err(error) => return Err(format!("No se pudieron leer límites de salida: {error}")),
+    };
+    let mut bytes = Vec::new();
+    file.take(MAX_SETTINGS_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("No se pudieron leer límites de salida: {error}"))?;
+    if bytes.len() as u64 > MAX_SETTINGS_BYTES {
+        return Err("Límites de salida demasiado grandes".into());
+    }
+    let file: NativeOutputLimitsFile = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("Límites de salida inválidos: {error}"))?;
+    validate_output_limits(&file)?;
+    Ok(file)
+}
+
+fn validate_output_limits(file: &NativeOutputLimitsFile) -> Result<(), String> {
+    if file.version != 1 || file.limits.len() > 128 {
+        return Err("Versión o cantidad de límites de salida inválida".into());
+    }
+    let mut routes = HashSet::new();
+    for limit in &file.limits {
+        if [&limit.provider_id, &limit.model_id]
+            .into_iter()
+            .any(|id| id.is_empty() || id.len() > 256 || id.chars().any(char::is_control))
+            || limit.tokens == 0
+            || limit.tokens > i64::MAX as u64
+            || match limit.wire_api {
+                NativeWireApi::Responses => limit.field != "max_output_tokens" || limit.tokens < 16,
+                NativeWireApi::AnthropicMessages => {
+                    limit.field != "max_tokens" || limit.tokens > u64::from(u32::MAX)
+                }
+                NativeWireApi::ChatCompletions => {
+                    !matches!(limit.field.as_str(), "max_tokens" | "max_completion_tokens")
+                }
+            }
+            || !routes.insert((&limit.provider_id, &limit.model_id))
+        {
+            return Err("Ruta, parámetro o valor de límite de salida inválido o duplicado".into());
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn configured_output_limit(
+    root: &Path,
+    provider_id: &str,
+    model_id: &str,
+    wire_api: NativeWireApi,
+) -> Result<Option<NativeOutputLimit>, String> {
+    let file = load_output_limits(root)?;
+    if let Some(limit) = file
+        .limits
+        .into_iter()
+        .find(|limit| limit.provider_id == provider_id && limit.model_id == model_id)
+    {
+        if limit.wire_api != wire_api {
+            return Err("El protocolo del límite de salida no coincide con la ruta".into());
+        }
+        return Ok(Some(limit));
+    }
+    Ok(None)
+}
+
+pub(crate) fn save_output_limit(
+    root: &Path,
+    provider_id: &str,
+    model_id: &str,
+    limit: Option<NativeOutputLimit>,
+) -> Result<(), String> {
+    let mut file = load_output_limits(root)?;
+    file.limits
+        .retain(|entry| entry.provider_id != provider_id || entry.model_id != model_id);
+    if let Some(limit) = limit {
+        if limit.provider_id != provider_id || limit.model_id != model_id {
+            return Err("El límite de salida pertenece a otra ruta".into());
+        }
+        file.limits.push(limit);
+    }
+    validate_output_limits(&file)?;
+    let payload = serde_json::to_vec_pretty(&file).map_err(|error| error.to_string())?;
+    if payload.len() as u64 > MAX_SETTINGS_BYTES {
+        return Err("Límites de salida demasiado grandes".into());
+    }
+    fs::create_dir_all(root).map_err(|error| error.to_string())?;
+    let temp = root.join(format!(
+        ".native-output-limits-{}-{}.tmp",
+        std::process::id(),
+        SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| -> std::io::Result<()> {
+        let mut temporary = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        temporary.write_all(&payload)?;
+        temporary.sync_all()?;
+        drop(temporary);
+        replace_settings_atomically(&temp, &root.join("native-output-limits.json"))?;
+        #[cfg(unix)]
+        fs::File::open(root)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result.map_err(|error| format!("No se pudo guardar el límite de salida: {error}"))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -793,6 +1533,7 @@ impl Default for NativeProviderSettings {
 pub(crate) enum NativeWireApi {
     Responses,
     ChatCompletions,
+    AnthropicMessages,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -801,9 +1542,29 @@ pub(crate) struct RuntimeConnection {
     pub api_key: Option<String>,
     pub model_id: String,
     pub wire_api: NativeWireApi,
+    pub auth: ProviderAuth,
+    pub headers: BTreeMap<String, String>,
 }
 
 impl NativeProviderSettings {
+    /// Distinguish an intentional connection from the original app defaults.
+    /// Merely starting OpenIDE does not connect the default custom endpoint.
+    pub(crate) fn has_explicit_configuration(&self, root: &Path) -> bool {
+        if self != &Self::default()
+            || ["OPENIDE_MODEL", "OPENIDE_API_BASE", "OPENIDE_API_KEY"]
+                .iter()
+                .any(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()))
+        {
+            return true;
+        }
+        let path = root.join(SETTINGS_FILE);
+        fs::metadata(&path).is_ok_and(|metadata| metadata.len() <= MAX_SETTINGS_BYTES)
+            && fs::read(path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
+                .is_some()
+    }
+
     /// A persisted choice wins. Without one, import the original native harness
     /// environment variables; migration is written only when `save` is called.
     pub fn load(root: &Path) -> Self {
@@ -855,16 +1616,18 @@ impl NativeProviderSettings {
         result.map_err(|error| format!("No se pudo guardar la configuración nativa: {error}"))
     }
 
+    #[cfg(test)]
     pub fn resolve(&self) -> Result<RuntimeConnection, String> {
         self.resolve_with_key(|name| std::env::var(name).ok())
     }
 
     pub fn resolve_at(&self, root: &Path) -> Result<RuntimeConnection, String> {
         self.resolve_with_registry(&ProviderRegistry::load(root)?, |name| {
-            std::env::var(name).ok()
+            crate::provider_connections::read_key(root, name)
         })
     }
 
+    #[cfg(test)]
     fn resolve_with_key(
         &self,
         read_key: impl FnOnce(&str) -> Option<String>,
@@ -880,7 +1643,8 @@ impl NativeProviderSettings {
         let endpoint = self.validated_endpoint_in(registry)?;
         let selected = registry
             .adapter(self.provider_id.trim())
-            .expect("validated provider");
+            .expect("validated provider")
+            .for_model(&self.model_id)?;
         Ok(RuntimeConnection {
             endpoint,
             api_key: read_key(&selected.key_env)
@@ -888,6 +1652,8 @@ impl NativeProviderSettings {
                 .filter(|value| !value.trim().is_empty()),
             model_id: self.model_id.trim().to_owned(),
             wire_api: selected.wire_api,
+            auth: selected.auth.clone(),
+            headers: selected.headers.clone(),
         })
     }
 
@@ -902,14 +1668,18 @@ impl NativeProviderSettings {
         settings
     }
 
-    fn validated_endpoint_in(&self, registry: &ProviderRegistry) -> Result<String, String> {
+    pub(crate) fn validated_endpoint_in(
+        &self,
+        registry: &ProviderRegistry,
+    ) -> Result<String, String> {
         if self.model_id.trim().is_empty() {
             return Err("Selecciona un modelo para el agente nativo".to_owned());
         }
         let provider_id = self.provider_id.trim();
         let selected = registry
             .adapter(provider_id)
-            .ok_or_else(|| format!("Proveedor nativo no compatible: {provider_id}"))?;
+            .ok_or_else(|| format!("Proveedor no compatible: {provider_id}"))?
+            .for_model(self.model_id.trim())?;
         if let Some(capabilities) = native_model_capabilities(provider_id, self.model_id.trim()) {
             if capabilities.wire_api != selected.wire_api
                 || !capabilities.function_tools
@@ -927,12 +1697,18 @@ impl NativeProviderSettings {
 }
 
 #[cfg(not(windows))]
-fn replace_settings_atomically(temporary: &Path, destination: &Path) -> std::io::Result<()> {
+pub(crate) fn replace_settings_atomically(
+    temporary: &Path,
+    destination: &Path,
+) -> std::io::Result<()> {
     fs::rename(temporary, destination)
 }
 
 #[cfg(windows)]
-fn replace_settings_atomically(temporary: &Path, destination: &Path) -> std::io::Result<()> {
+pub(crate) fn replace_settings_atomically(
+    temporary: &Path,
+    destination: &Path,
+) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;
 
@@ -1016,14 +1792,630 @@ fn validate_custom_endpoint(value: &str) -> Result<String, String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    pub(crate) fn codex_ordered_listing() -> serde_json::Value {
+        serde_json::json!({"models":[
+            {"slug":"model-zulu","display_name":"Modelo Zulu","visibility":"list"},
+            {"slug":"hidden-first","display_name":"Hidden","visibility":"hide"},
+            {"slug":"model-alpha","display_name":"Modelo Alpha","visibility":"list"},
+            {"slug":"model-middle","display_name":"Modelo Middle","visibility":"list"},
+            {"slug":"hidden-second","display_name":"Hidden","visibility":"hide"},
+            {"slug":"model-beta","display_name":"Modelo Beta","visibility":"list"},
+            {"slug":"hidden-third","display_name":"Hidden","visibility":"hide"}
+        ]})
+    }
+
+    #[test]
+    fn codex_account_listing_preserves_server_order_and_filters_visibility_without_a_four_model_cap() {
+        let original = codex_ordered_listing();
+        let mut current = original.clone();
+        current["models"].as_array_mut().unwrap().insert(0,
+            serde_json::json!({"slug":"model-new","display_name":"Current first","visibility":"list"}));
+        let (endpoint, requests, server) = listing_server(vec![
+            (200, original.to_string()), (200, current.to_string()),
+        ]);
+        let mut selected = adapter("codex").unwrap();
+        selected.endpoint = endpoint;
+        for expected in [
+            vec!["model-zulu", "model-alpha", "model-middle", "model-beta"],
+            vec!["model-new", "model-zulu", "model-alpha", "model-middle", "model-beta"],
+        ] {
+            let listing = discover_connected_models_with_key(&selected, Some("fixture-chatgpt-token")).unwrap();
+            let mut models = listing.models.values().collect::<Vec<_>>();
+            models.sort_by_key(|model| model.listing_index);
+            assert_eq!(models.iter().map(|model| model.id.as_str()).collect::<Vec<_>>(), expected);
+            assert_eq!(models.iter().map(|model| model.listing_index).collect::<Vec<_>>(),
+                (0..models.len()).map(Some).collect::<Vec<_>>());
+            assert_eq!(listing.models["model-zulu"].name, "Modelo Zulu");
+            assert!(listing.models.values().all(|model| model.tool_call_declared.is_none()));
+            let request = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert!(request.starts_with("GET /v1/models "));
+            assert!(request.to_ascii_lowercase().contains("authorization: bearer fixture-chatgpt-token\r\n"));
+        }
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn native_listing_order_spans_pages_instead_of_restarting_or_sorting_ids() {
+        let responses = vec![
+            (200, serde_json::json!({"data":[{"id":"zulu"},{"id":"yellow"}],"has_more":true,"last_id":"yellow"}).to_string()),
+            (200, serde_json::json!({"data":[{"id":"alpha"},{"id":"beta"}],"has_more":false}).to_string()),
+        ];
+        let (endpoint, _, server) = listing_server(responses);
+        let listing = discover_connected_models_with_key(&anthropic_adapter(endpoint), Some("fixture-key")).unwrap();
+        for (index, id) in ["zulu", "yellow", "alpha", "beta"].iter().enumerate() {
+            assert_eq!(listing.models[*id].listing_index, Some(index));
+        }
+        server.join().unwrap();
+    }
+
+    pub(crate) fn listing_server(
+        responses: Vec<(u16, String)>,
+    ) -> (
+        String,
+        std::sync::mpsc::Receiver<String>,
+        std::thread::JoinHandle<()>,
+    ) {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            for (status, body) in responses {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut socket = loop {
+                    match listener.accept() {
+                        Ok((socket, _)) => break socket,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "catalog request did not arrive");
+                            std::thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(error) => panic!("catalog accept failed: {error}"),
+                    }
+                };
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut reader = BufReader::new(socket.try_clone().unwrap());
+                let mut request = String::new();
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    request.push_str(&line);
+                    assert!(request.len() < 16 * 1024);
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                let _ = sender.send(request);
+                // A size/status rejection may close before reading the body.
+                let _ = write!(socket,
+                    "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nETag: \"page-only\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            }
+        });
+        (endpoint, receiver, server)
+    }
+
+    pub(crate) fn anthropic_adapter(endpoint: String) -> Adapter {
+        let mut selected = adapter("anthropic").unwrap();
+        // Protocol support must work for a provider and model ID with no
+        // Anthropic-specific name or reviewed static model row.
+        selected.id = "new-gateway".into();
+        selected.name = "New Gateway".into();
+        selected.key_env = "NEW_GATEWAY_FIXTURE_KEY".into();
+        selected.endpoint = endpoint;
+        selected
+    }
+
+    pub(crate) fn complete_listing_pages() -> Vec<(u16, String)> {
+        vec![
+            (200, serde_json::json!({"data":[{"id":"opaque-model","display_name":"First exact model",
+                "max_input_tokens":65536,"max_tokens":4096,"capabilities":{
+                    "effort":{"supported":true,"low":{"supported":true},"high":{"supported":false},
+                        "turbo_2028":{"supported":true},"xhigh":{"supported":true}},
+                    "image_input":{"supported":true},"pdf_input":{"supported":false},
+                    "thinking":{"supported":true,"types":{"adaptive":{"supported":true}}},
+                    "structured_outputs":{"supported":true}}}],"has_more":true,"last_id":"opaque-model"}).to_string()),
+            (200, serde_json::json!({"data":[{"id":"opaque-model-preview","display_name":"Second exact model",
+                "max_input_tokens":null,"max_tokens":0,"capabilities":{
+                    "effort":{"supported":false,"low":{"supported":true}},
+                    "image_input":{"supported":false},"thinking":{"supported":false}}}],
+                "has_more":false,"last_id":"opaque-model-preview"}).to_string()),
+        ]
+    }
+
+    pub(crate) fn authoritative_empty_listing() -> (u16, String) {
+        (
+            200,
+            serde_json::json!({"data":[{"id":"opaque-model","display_name":"Current exact model",
+            "max_input_tokens":null,"max_tokens":0,"capabilities":{
+                "effort":{"supported":true,"low":{"supported":false},"high":{"supported":false}},
+                "image_input":null,"thinking":null,"structured_outputs":null}}],
+            "has_more":false,"last_id":"opaque-model"})
+            .to_string(),
+        )
+    }
+
+    #[test]
+    fn current_declared_empty_efforts_and_unknown_images_do_not_inherit_stale_catalog() {
+        let mut responses = complete_listing_pages();
+        responses.push(authoritative_empty_listing());
+        responses.push((
+            200,
+            serde_json::json!({"data":[{"id":"opaque-model",
+            "capabilities":null}],"has_more":false})
+            .to_string(),
+        ));
+        responses.push((
+            200,
+            serde_json::json!({"data":[{"id":"opaque-model"}],
+            "has_more":false})
+            .to_string(),
+        ));
+        responses.push((
+            200,
+            serde_json::json!({"data":[{"id":"opaque-model",
+            "capabilities":42}],"has_more":false})
+            .to_string(),
+        ));
+        let (endpoint, _, server) = listing_server(responses);
+        let selected = anthropic_adapter(endpoint);
+        let prior = discover_connected_models_with_key(&selected, Some("fixture-key")).unwrap();
+        let old = &prior.models["opaque-model"];
+        assert!(old.efforts_declared);
+        assert!(old.capabilities_declared);
+        assert!(!old.supported_efforts.is_empty());
+        assert!(old.declared_capabilities["image_input"]);
+        let current = discover_connected_models_with_key(&selected, Some("fixture-key")).unwrap();
+        let exact = &current.models["opaque-model"];
+        assert!(exact.efforts_declared);
+        assert!(exact.capabilities_declared);
+        assert!(exact.limits_declared);
+        assert_eq!(exact.max_input_tokens, None);
+        assert_eq!(exact.max_output_tokens, None);
+        assert!(exact.supported_efforts.is_empty());
+        assert!(!exact.declared_capabilities.contains_key("image_input"));
+        assert_eq!(exact.declared_capabilities.get("effort"), Some(&true));
+        let stale: crate::model_catalog::CatalogSnapshot = serde_json::from_value(serde_json::json!({
+            "version":3,"fetched_at_ms":1,"providers":{"new-gateway":{"id":"new-gateway",
+                "name":"New Gateway","models":{"opaque-model":{"id":"opaque-model","name":"Old model",
+                    "provider_efforts":old.supported_efforts,"provider_efforts_declared":true,
+                    "limit":{"input":old.max_input_tokens,"output":old.max_output_tokens},
+                    "provider_limits_declared":true,
+                    "declared_capabilities":old.declared_capabilities,"capabilities_declared":true}}}},
+            "provider_status":{"new-gateway":{"source":"official_api","attempted_at_ms":1,"verified_at_ms":1}}
+        })).unwrap();
+        assert_eq!(
+            crate::app::native_token_budget(&selected, "opaque-model", Some(&stale), &[])
+                .unwrap()
+                .input_limit_tokens,
+            Some(65536)
+        );
+        assert_eq!(
+            crate::app::native_output_maximum(&selected, "opaque-model", Some(&stale), &[]),
+            Some(4096)
+        );
+        assert!(crate::app::native_token_budget(
+            &selected,
+            "opaque-model",
+            Some(&stale),
+            std::slice::from_ref(&current)
+        )
+        .is_none());
+        assert_eq!(
+            crate::app::native_output_maximum(
+                &selected,
+                "opaque-model",
+                Some(&stale),
+                std::slice::from_ref(&current)
+            ),
+            None
+        );
+        assert!(crate::app::native_image_input_supported(
+            &selected,
+            "opaque-model",
+            Some(&stale),
+            &[]
+        ));
+        assert!(!crate::app::native_request_capabilities(
+            &selected,
+            "opaque-model",
+            Some(&stale),
+            &[]
+        )
+        .reasoning_efforts
+        .is_empty());
+        assert!(!crate::app::native_image_input_supported(
+            &selected,
+            "opaque-model",
+            Some(&stale),
+            std::slice::from_ref(&current)
+        ));
+        assert!(crate::app::native_request_capabilities(
+            &selected,
+            "opaque-model",
+            Some(&stale),
+            &[current]
+        )
+        .reasoning_efforts
+        .is_empty());
+        for case in ["null", "absent", "invalid"] {
+            let unknown =
+                discover_connected_models_with_key(&selected, Some("fixture-key")).unwrap();
+            assert!(
+                unknown.models["opaque-model"].capabilities_declared,
+                "{case}"
+            );
+            assert!(unknown.models["opaque-model"].limits_declared, "{case}");
+            assert!(
+                crate::app::native_token_budget(
+                    &selected,
+                    "opaque-model",
+                    Some(&stale),
+                    std::slice::from_ref(&unknown)
+                )
+                .is_none(),
+                "{case}"
+            );
+            assert_eq!(
+                crate::app::native_output_maximum(
+                    &selected,
+                    "opaque-model",
+                    Some(&stale),
+                    std::slice::from_ref(&unknown)
+                ),
+                None,
+                "{case}"
+            );
+            assert!(!unknown.models["opaque-model"].efforts_declared, "{case}");
+            assert!(
+                unknown.models["opaque-model"]
+                    .declared_capabilities
+                    .is_empty(),
+                "{case}"
+            );
+            assert!(
+                !crate::app::native_image_input_supported(
+                    &selected,
+                    "opaque-model",
+                    Some(&stale),
+                    std::slice::from_ref(&unknown)
+                ),
+                "{case}"
+            );
+            assert!(
+                crate::app::native_request_capabilities(
+                    &selected,
+                    "opaque-model",
+                    Some(&stale),
+                    &[unknown]
+                )
+                .reasoning_efforts
+                .is_empty(),
+                "{case}"
+            );
+        }
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn current_exclusive_modalities_and_empty_arrays_have_explicit_declaration_flags() {
+        let body = serde_json::json!({"data":[
+            {"id":"text-only","input_modalities":["text"],"efforts":[]},
+            {"id":"images","input_modalities":["text","image"],"efforts":["high"]},
+            {"id":"negative","input_modalities":["text","image"],
+                "capabilities":{"image_input":{"supported":false}}},
+            {"id":"unknown","input_modalities":null},
+            {"id":"invalid","input_modalities":["text",true],"efforts":["high",42]},
+            {"id":"absent"}
+        ],"has_more":false})
+        .to_string();
+        let (endpoint, _, server) = listing_server(vec![(200, body)]);
+        let mut selected = anthropic_adapter(endpoint);
+        selected.catalog.input_modalities_path = Some("input_modalities".into());
+        selected.catalog.effort_levels_path = Some("efforts".into());
+        selected.catalog.effort_format = EffortLevelsFormat::Array;
+        let listing = discover_connected_models_with_key(&selected, Some("fixture-key")).unwrap();
+        let text = &listing.models["text-only"];
+        assert!(text.efforts_declared);
+        assert!(text.supported_efforts.is_empty());
+        assert!(text.capabilities_declared);
+        assert_eq!(text.declared_capabilities.get("image_input"), Some(&false));
+        assert_eq!(
+            listing.models["images"]
+                .declared_capabilities
+                .get("image_input"),
+            Some(&true)
+        );
+        assert_eq!(
+            listing.models["negative"]
+                .declared_capabilities
+                .get("image_input"),
+            Some(&false)
+        );
+        for id in ["unknown", "invalid"] {
+            assert!(listing.models[id].capabilities_declared);
+            assert!(!listing.models[id]
+                .declared_capabilities
+                .contains_key("image_input"));
+        }
+        assert!(!listing.models["invalid"].efforts_declared);
+        assert!(listing.models["invalid"].supported_efforts.is_empty());
+        assert!(listing.models["absent"].capabilities_declared);
+        let absent = serde_json::json!({"capabilities":{"image_input":{"supported":true}}});
+        let unmapped = CatalogMapping::default();
+        assert!(!mapped_capabilities_declared(&absent, &unmapped));
+        assert!(!mapped_limits_declared(&unmapped));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn anthropic_direct_discovery_reads_all_pages_with_exact_capabilities_and_header_auth() {
+        let (endpoint, requests, server) = listing_server(complete_listing_pages());
+        let selected = anthropic_adapter(endpoint);
+        validate_provider_definition(&selected).unwrap();
+        let listing = discover_connected_models_with_key(&selected, Some("fixture-key")).unwrap();
+        assert_eq!(listing.provider_id, "new-gateway");
+        assert_eq!(listing.models.len(), 2);
+        let first = &listing.models["opaque-model"];
+        assert_eq!(first.name, "First exact model");
+        assert_eq!(first.max_input_tokens, Some(65536));
+        assert_eq!(first.context_window_tokens, None);
+        assert_eq!(first.max_output_tokens, Some(4096));
+        assert_eq!(first.supported_efforts, ["low", "turbo_2028", "xhigh"]);
+        assert!(first.efforts_declared);
+        assert!(first.capabilities_declared);
+        assert!(first.declared_capabilities["image_input"]);
+        assert!(!first.declared_capabilities["pdf_input"]);
+        assert_eq!(first.tool_call_declared, None);
+        let adjacent = &listing.models["opaque-model-preview"];
+        assert_eq!(adjacent.max_input_tokens, None);
+        assert_eq!(adjacent.max_output_tokens, None);
+        assert!(adjacent.supported_efforts.is_empty());
+        assert!(adjacent.efforts_declared);
+        assert!(adjacent.capabilities_declared);
+        assert!(!adjacent.declared_capabilities["image_input"]);
+        assert!(!listing.models.contains_key("opaque-model-latest"));
+        for (index, expected) in [
+            "GET /v1/models?limit=1000 ",
+            "GET /v1/models?limit=1000&after_id=opaque-model ",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let request = requests
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .to_ascii_lowercase();
+            assert!(
+                request.starts_with(&expected.to_ascii_lowercase()),
+                "page {index}"
+            );
+            assert!(request.contains("x-api-key: fixture-key\r\n"));
+            assert!(request.contains("anthropic-version: 2023-06-01\r\n"));
+            assert!(!request.contains("authorization:"));
+            assert!(!request.contains("if-none-match:"));
+        }
+        server.join().unwrap();
+        let saved = serde_json::to_string(&selected).unwrap();
+        assert!(!saved.contains("fixture-key"));
+    }
+
+    #[test]
+    fn anthropic_catalog_redirect_does_not_forward_header_credentials() {
+        use std::io::{BufRead, BufReader};
+        let destination = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        destination.set_nonblocking(true).unwrap();
+        let location = format!("http://{}/stolen", destination.local_addr().unwrap());
+        let source = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/v1", source.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = source.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut request = String::new();
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                request.push_str(&line);
+                assert!(request.len() < 16 * 1024);
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            write!(socket,
+                "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .unwrap();
+            request
+        });
+        let error = discover_connected_models_with_key(
+            &anthropic_adapter(endpoint),
+            Some("redirect-fixture-secret"),
+        )
+        .unwrap_err();
+        assert_eq!(error, "HTTP 302");
+        assert!(!error.contains("redirect-fixture-secret"));
+        let request = server.join().unwrap().to_ascii_lowercase();
+        assert!(request.contains("x-api-key: redirect-fixture-secret\r\n"));
+        assert_eq!(
+            destination.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn anthropic_listing_rejects_incomplete_repeated_and_duplicate_pages() {
+        for (first, second) in [
+            (r#"{"data":[{"id":"a"}],"has_more":true}"#, None),
+            (
+                r#"{"data":[{"id":"a"}],"has_more":"true","last_id":"a"}"#,
+                None,
+            ),
+            (r#"{"data":[],"has_more":true,"last_id":"a"}"#, None),
+            (
+                r#"{"data":[{"id":"a"}],"has_more":true,"last_id":"a"}"#,
+                Some(r#"{"data":[{"id":"b"}],"has_more":true,"last_id":"a"}"#),
+            ),
+            (
+                r#"{"data":[{"id":"a"}],"has_more":true,"last_id":"a"}"#,
+                Some(r#"{"data":[{"id":"a"}],"has_more":false,"last_id":"a"}"#),
+            ),
+        ] {
+            let mut pages = vec![(200, first.to_owned())];
+            pages.extend(second.map(|body| (200, body.to_owned())));
+            let (endpoint, _, server) = listing_server(pages);
+            assert!(discover_connected_models_with_key(
+                &anthropic_adapter(endpoint),
+                Some("fixture-key")
+            )
+            .is_err());
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn catalog_cursor_is_encoded_and_total_response_quota_applies_across_pages() {
+        let bodies = vec![
+            (
+                200,
+                r#"{"data":[{"id":"a"}],"has_more":true,"last_id":"a&limit=1/../?"}"#.to_owned(),
+            ),
+            (
+                200,
+                r#"{"data":[{"id":"b"}],"has_more":false,"last_id":"b"}"#.to_owned(),
+            ),
+        ];
+        let max_bytes = bodies
+            .iter()
+            .map(|(_, body)| body.len() as u64)
+            .sum::<u64>()
+            - 1;
+        let (endpoint, requests, server) = listing_server(bodies);
+        let selected = anthropic_adapter(endpoint);
+        let client = Client::builder().redirect(Policy::none()).build().unwrap();
+        assert!(fetch_model_listing_pages(
+            &client,
+            &format!("{}/models", selected.endpoint),
+            &selected.auth,
+            &selected.headers,
+            Some("fixture-key"),
+            &selected.catalog,
+            Some("\"old-page-etag\""),
+            max_bytes,
+            Duration::from_secs(3)
+        )
+        .is_err());
+        requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        let request = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(request.starts_with("GET /v1/models?limit=1000&after_id=a%26limit%3D1%2F..%2F%3F "));
+        assert!(!request.to_ascii_lowercase().contains("if-none-match:"));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn registry_transport_contract_rejects_cross_protocol_auth_and_literal_secrets() {
+        let selected = adapter("anthropic").unwrap();
+        for auth in [
+            ProviderAuth::Bearer,
+            ProviderAuth::Header {
+                name: "authorization".into(),
+            },
+        ] {
+            assert!(validate_transport_settings(
+                NativeWireApi::AnthropicMessages,
+                &auth,
+                &selected.headers
+            )
+            .is_err());
+        }
+        assert!(validate_transport_settings(
+            NativeWireApi::ChatCompletions,
+            &selected.auth,
+            &BTreeMap::new()
+        )
+        .is_err());
+        assert!(validate_transport_settings(
+            NativeWireApi::Responses,
+            &ProviderAuth::Bearer,
+            &selected.headers
+        )
+        .is_err());
+        for (name, value) in [
+            ("x-api-key", "literal-secret"),
+            ("authorization", "Bearer literal-secret"),
+            ("anthropic-beta", "unsupported-options"),
+            ("anthropic-version", "2099-01-01"),
+            ("anthropic-workspace-id", "workspace\r\nx-api-key: leaked"),
+        ] {
+            let mut headers = selected.headers.clone();
+            headers.insert(name.into(), value.into());
+            assert!(
+                validate_transport_settings(selected.wire_api, &selected.auth, &headers).is_err()
+            );
+        }
+        let root = tempfile::tempdir().unwrap();
+        let custom = anthropic_adapter("https://gateway.example/v1".into());
+        fs::write(
+            root.path().join(REGISTRY_FILE),
+            serde_json::to_vec(&serde_json::json!({"version":1,"providers":[custom]})).unwrap(),
+        )
+        .unwrap();
+        let registry = ProviderRegistry::load(root.path()).unwrap();
+        let settings = NativeProviderSettings {
+            provider_id: "new-gateway".into(),
+            model_id: "opaque-model".into(),
+            ..Default::default()
+        };
+        let connection = settings
+            .resolve_with_registry(&registry, |env| {
+                assert_eq!(env, "NEW_GATEWAY_FIXTURE_KEY");
+                Some("fixture-key".into())
+            })
+            .unwrap();
+        assert_eq!(connection.wire_api, NativeWireApi::AnthropicMessages);
+        assert_eq!(connection.auth, selected.auth);
+        assert_eq!(connection.headers, selected.headers);
+        assert!(!fs::read_to_string(root.path().join(REGISTRY_FILE))
+            .unwrap()
+            .contains("fixture-key"));
+
+        let mut fields = selected.clone();
+        fields
+            .chat_request_fields
+            .insert("thinking".into(), serde_json::json!({"type":"adaptive"}));
+        fields
+            .chat_request_fields
+            .insert("output_config".into(), serde_json::json!({"effort":"high"}));
+        validate_provider_definition(&fields).unwrap();
+        for (name, value) in [
+            ("system", serde_json::json!("override")),
+            ("metadata", serde_json::json!({"user_id":"not-implemented"})),
+            ("thinking", serde_json::json!(true)),
+            ("output_config", serde_json::json!("high")),
+        ] {
+            let mut invalid = fields.clone();
+            invalid.chat_request_fields.insert(name.into(), value);
+            assert!(validate_provider_definition(&invalid).is_err());
+        }
+    }
 
     #[test]
     fn provider_registry_keeps_credentials_provider_specific() {
         let registry = ProviderRegistry::builtin();
-        assert_eq!(registry.adapters().len(), 7);
         assert_eq!(adapter("openai").unwrap().key_env, "OPENAI_API_KEY");
+        let anthropic = registry.adapter("anthropic").unwrap();
+        assert_eq!(anthropic.key_env, "ANTHROPIC_API_KEY");
+        assert_eq!(
+            anthropic.auth,
+            ProviderAuth::Header {
+                name: "x-api-key".into()
+            }
+        );
         assert_eq!(
             adapter("openrouter").unwrap().endpoint,
             "https://openrouter.ai/api/v1"
@@ -1302,20 +2694,27 @@ mod tests {
             assert!(seen.insert((row.provider_id, row.model_id)));
             assert_eq!(row.wire_api, adapter(row.provider_id).unwrap().wire_api);
             assert!(row.function_tools && row.streaming);
-            assert!(row.context_window_tokens.unwrap() > row.max_output_tokens.unwrap());
+            if let Some(output) = row.max_output_tokens {
+                assert!(row.context_window_tokens.unwrap() > output);
+            }
             assert!(row.source_url.starts_with(match row.provider_id {
                 "openai" => "https://developers.openai.com/api/docs/models/",
                 "deepseek" => "https://api-docs.deepseek.com/api/",
+                "minimax" => "https://platform.minimax.io/docs/",
+                "zai" => "https://docs.z.ai/",
                 _ => panic!("unreviewed provider in executable capability matrix"),
             }));
-            let budget = verified_token_budget(row.provider_id, row.model_id).unwrap();
+            let Some(budget) = verified_token_budget(row.provider_id, row.model_id) else {
+                assert!(row.max_output_tokens.is_none());
+                continue;
+            };
             assert_eq!(
                 budget.context_window_tokens,
                 row.context_window_tokens.unwrap()
             );
             assert_eq!(budget.output_reserve_tokens, row.max_output_tokens.unwrap());
         }
-        assert_eq!(seen.len(), 26);
+        assert_eq!(seen.len(), MODEL_CAPABILITIES.len());
     }
 
     #[test]
@@ -1332,8 +2731,8 @@ mod tests {
                 .supported_efforts,
             &["none", "low", "medium", "high", "xhigh", "max"]
         );
-        // This adapter explicitly disables DeepSeek thinking until its
-        // reasoning_content can be journaled and replayed safely.
+        // The separately reviewed DeepSeek route retains its explicit
+        // disabled-thinking policy; new providers do not change that contract.
         assert!(native_model_capabilities("deepseek", "deepseek-v4-pro")
             .unwrap()
             .supported_efforts
@@ -1359,6 +2758,52 @@ mod tests {
                 NativeWireApi::ChatCompletions
             );
         }
+    }
+
+    #[test]
+    fn minimax_and_zai_routes_are_explicit_general_api_contracts() {
+        let minimax = adapter("minimax").unwrap();
+        let zai = adapter("zai").unwrap();
+        for entry in [&minimax, &zai] {
+            validate_provider_definition(entry).unwrap();
+            assert_eq!(entry.auth, ProviderAuth::Bearer);
+            assert_eq!(entry.wire_api, NativeWireApi::ChatCompletions);
+            assert!(!entry.catalog_anonymous && !entry.key_optional && !entry.user_endpoint);
+        }
+        assert_eq!(minimax.endpoint, "https://api.minimax.io/v1");
+        assert_eq!(minimax.key_env, "MINIMAX_API_KEY");
+        assert_eq!(minimax.model_list_path.as_deref(), Some("models"));
+        assert_eq!(minimax.chat_request_fields["reasoning_split"], true);
+        assert_eq!(zai.endpoint, "https://api.z.ai/api/paas/v4");
+        assert_eq!(zai.key_env, "ZAI_API_KEY");
+        assert!(zai.model_list_path.is_none());
+        assert!(discover_connected_models_with_key(&zai, Some("fake-no-request")).unwrap_err().contains("No hay catálogo"));
+        assert_eq!(zai.chat_request_fields["thinking"], serde_json::json!({"type":"enabled","clear_thinking":false}));
+        assert_eq!(zai.for_model("glm-5.3").unwrap().chat_request_fields["tool_stream"], true);
+        assert!(!zai.for_model("glm-future").unwrap().chat_request_fields.contains_key("tool_stream"));
+        assert_eq!(native_route_execution("zai", "glm-5.3", false), NativeRouteExecution::Verified);
+        assert_eq!(native_route_execution("minimax", "MiniMax-M3", false), NativeRouteExecution::Verified);
+        assert!(native_model_capabilities("zai", "glm-5.3-future").is_none());
+        assert!(native_model_capabilities("minimax", "MiniMax-M3.1-Flash-Preview").is_none(), "subscription-only models are not seeded in the general API");
+        assert_eq!(native_model_capabilities("zai", "glm-5.3").unwrap().supported_efforts, &["low", "high", "max"]);
+    }
+
+    #[test]
+    fn minimax_models_contract_uses_authenticated_official_shape_without_invented_capabilities() {
+        let (endpoint, requests, server) = listing_server(vec![(200, r#"{"object":"list","data":[{"id":"MiniMax-M3","object":"model","created":1780272000,"owned_by":"minimax"},{"id":"MiniMax-M2.7","object":"model","created":1773799200,"owned_by":"minimax"}]}"#.into())]);
+        let mut selected = adapter("minimax").unwrap();
+        selected.endpoint = endpoint;
+        let models = discover_connected_models_with_key(&selected, Some("fixture-minimax-key")).unwrap();
+        let request = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(request.starts_with("GET /v1/models "));
+        assert!(request.to_ascii_lowercase().contains("authorization: bearer fixture-minimax-key"));
+        assert_eq!(models.models.len(), 2);
+        let model = &models.models["MiniMax-M3"];
+        assert!(model.context_window_tokens.is_none());
+        assert!(model.max_output_tokens.is_none());
+        assert!(model.supported_efforts.is_empty());
+        assert!(model.tool_call_declared.is_none());
+        server.join().unwrap();
     }
 
     #[test]
@@ -1415,6 +2860,144 @@ mod tests {
             listing.models["my-reasoner"].supported_efforts,
             ["low", "high"]
         );
+    }
+
+    #[test]
+    fn output_limits_reopen_and_match_exact_route() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("native-output-limits.json");
+        fs::write(&path, br#"{"version":1,"limits":[{"provider_id":"new-provider","model_id":"new-model","wire_api":"chat_completions","field":"max_completion_tokens","tokens":4096}]}"#).unwrap();
+        let read = || {
+            configured_output_limit(
+                root.path(),
+                "new-provider",
+                "new-model",
+                NativeWireApi::ChatCompletions,
+            )
+        };
+        assert_eq!(read().unwrap().unwrap().tokens, 4096);
+        assert_eq!(read().unwrap().unwrap().tokens, 4096);
+        assert!(configured_output_limit(
+            root.path(),
+            "new-provider",
+            "new-model-preview",
+            NativeWireApi::ChatCompletions
+        )
+        .unwrap()
+        .is_none());
+        assert!(configured_output_limit(
+            root.path(),
+            "other",
+            "new-model",
+            NativeWireApi::ChatCompletions
+        )
+        .unwrap()
+        .is_none());
+        assert!(configured_output_limit(
+            root.path(),
+            "new-provider",
+            "new-model",
+            NativeWireApi::Responses
+        )
+        .is_err());
+        for (field, tokens) in [("max_completion_tokens", 0), ("messages", 4096)] {
+            fs::write(&path, serde_json::to_vec(&serde_json::json!({"version":1,"limits":[{"provider_id":"new-provider","model_id":"new-model","wire_api":"chat_completions","field":field,"tokens":tokens}]})).unwrap()).unwrap();
+            assert!(read().is_err());
+        }
+        fs::write(&path, "{truncated").unwrap();
+        assert!(read().is_err());
+    }
+
+    #[test]
+    fn anthropic_output_limit_rejects_unusable_values_without_overwriting_saved_route() {
+        let root = tempfile::tempdir().unwrap();
+        let valid = NativeOutputLimit {
+            provider_id: "new-gateway".into(),
+            model_id: "opaque-model".into(),
+            wire_api: NativeWireApi::AnthropicMessages,
+            field: "max_tokens".into(),
+            tokens: 512,
+        };
+        save_output_limit(
+            root.path(),
+            "new-gateway",
+            "opaque-model",
+            Some(valid.clone()),
+        )
+        .unwrap();
+        let path = root.path().join("native-output-limits.json");
+        let original = fs::read(&path).unwrap();
+        for (field, tokens) in [
+            ("max_tokens", 0),
+            ("max_tokens", u64::from(u32::MAX) + 1),
+            ("max_output_tokens", 512),
+        ] {
+            let invalid = NativeOutputLimit {
+                field: field.into(),
+                tokens,
+                ..valid.clone()
+            };
+            assert!(
+                save_output_limit(root.path(), "new-gateway", "opaque-model", Some(invalid))
+                    .is_err()
+            );
+            assert_eq!(fs::read(&path).unwrap(), original);
+            assert_eq!(
+                configured_output_limit(
+                    root.path(),
+                    "new-gateway",
+                    "opaque-model",
+                    NativeWireApi::AnthropicMessages
+                )
+                .unwrap(),
+                Some(valid.clone())
+            );
+        }
+        let upper_bound = NativeOutputLimit {
+            tokens: u64::from(u32::MAX),
+            ..valid
+        };
+        save_output_limit(
+            root.path(),
+            "new-gateway",
+            "opaque-model",
+            Some(upper_bound.clone()),
+        )
+        .unwrap();
+        assert_eq!(
+            configured_output_limit(
+                root.path(),
+                "new-gateway",
+                "opaque-model",
+                NativeWireApi::AnthropicMessages
+            )
+            .unwrap(),
+            Some(upper_bound)
+        );
+    }
+
+    #[test]
+    fn connected_listing_preserves_exact_limits_without_name_inference() {
+        let adapter = ProviderRegistry::builtin().adapter("groq").unwrap().clone();
+        let listing = parse_connected_models_for_adapter(
+            &adapter,
+            br#"{"data":[
+            {"id":"unknown-new","context_window":65536,"max_completion_tokens":4096},
+            {"id":"unknown-new-preview"},
+            {"id":"invalid","context_window":-1,"max_completion_tokens":"4096"},
+            {"id":"zero","context_window":0,"max_completion_tokens":0}
+        ]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            listing.models["unknown-new"].context_window_tokens,
+            Some(65536)
+        );
+        assert_eq!(listing.models["unknown-new"].max_output_tokens, Some(4096));
+        for id in ["unknown-new-preview", "invalid", "zero"] {
+            assert_eq!(listing.models[id].context_window_tokens, None);
+            assert_eq!(listing.models[id].max_output_tokens, None);
+        }
     }
 
     #[test]

@@ -32,6 +32,10 @@ const MAX_OAUTH_SCOPE_BYTES: usize = 256;
 const MAX_OAUTH_SCOPES_TOTAL_BYTES: usize = 4096;
 static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+#[path = "plugin_runtime_tests.rs"]
+mod plugin_runtime_tests;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct McpSettings {
     pub servers: Vec<McpServerSettings>,
@@ -238,6 +242,22 @@ impl McpSettings {
         let settings = Self {
             servers: document.servers,
         };
+        settings.validate_structure()?;
+        Ok(settings)
+    }
+
+    /// Resolve the next Build turn's external tools without starting a process.
+    /// Installed plugins retain their own registry and workspace activation;
+    /// they must never appear in, or be saved back through, the MCP editor.
+    pub fn load_runtime(root: &Path, workspace: &Path) -> Result<Self, String> {
+        let mut settings = Self::load(root, workspace)?;
+        settings
+            .servers
+            .extend(crate::plugins::PluginStore::runtime_servers(
+                root, workspace,
+            )?);
+        // Validate the merged namespace and limit, not only each independent
+        // source. A manually configured server cannot shadow an active plugin.
         settings.validate_structure()?;
         Ok(settings)
     }

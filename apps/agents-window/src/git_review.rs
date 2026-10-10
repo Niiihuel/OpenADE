@@ -1,15 +1,20 @@
 //! Read-only, bounded Git diff projection for the right dock.
 
+use std::collections::BTreeMap;
 use std::io::{self, Read};
+use std::sync::Arc;
+
+use openide_ui::{CodeDiffLine, CodeDiffLineKind};
 use std::path::{Component, Path};
 use std::process::Stdio;
 
 use crate::child_process::command_no_window;
 
-const MAX_DIFF_BYTES: u64 = 512 * 1024;
+const MAX_SUMMARY_BYTES: u64 = 2 * 1024 * 1024;
+#[cfg(test)]
 const MAX_REVIEW_LINES: usize = 3_000;
-const MAX_UNTRACKED_BYTES: u64 = 128 * 1024;
-const MAX_UNTRACKED_FILES: usize = 200;
+const MAX_UNTRACKED_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_UNTRACKED_FILES: usize = 10_000;
 const MAX_FILE_DIFF_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_FILE_DIFF_LINES: usize = 10_000;
 
@@ -23,6 +28,8 @@ pub enum DiffStage {
 pub struct FileDiffDetail {
     pub stage: DiffStage,
     pub file: ReviewFile,
+    /// Prepared once off-thread; cloning a view retains the same editor cache.
+    pub editor_lines: Arc<[CodeDiffLine]>,
     pub truncated: bool,
 }
 
@@ -284,6 +291,7 @@ fn review_line(kind: ReviewLineKind, text: impl Into<String>) -> ReviewLine {
     }
 }
 
+#[cfg(test)]
 fn parse_section(review: &mut GitReview, section: &str, text: &str) {
     parse_section_with_limit(review, section, text, MAX_REVIEW_LINES);
 }
@@ -404,10 +412,6 @@ fn parse_section_with_limit(review: &mut GitReview, section: &str, text: &str, l
     }
 }
 
-fn read_diff(workspace: &Path, staged: bool) -> io::Result<(String, bool)> {
-    read_diff_with_scope(workspace, staged, &[], MAX_DIFF_BYTES)
-}
-
 fn read_diff_with_scope(
     workspace: &Path,
     staged: bool,
@@ -417,6 +421,7 @@ fn read_diff_with_scope(
     let mut command = command_no_window("git");
     command.arg("--literal-pathspecs").arg("diff").args([
         "--no-ext-diff",
+        "--no-textconv",
         "--color=never",
         "--find-renames",
         "--unified=3",
@@ -533,7 +538,11 @@ pub fn load_file_diff(
     let (mut text, mut truncated) =
         read_diff_with_scope(workspace, staged, &[relative], MAX_FILE_DIFF_BYTES)?;
     if text.is_empty() {
-        return Ok(None);
+        return if stage == DiffStage::Unstaged {
+            load_untracked_diff(workspace, relative)
+        } else {
+            Ok(None)
+        };
     }
     let mut review = GitReview::default();
     parse_section_with_limit(&mut review, "ARCHIVO", &text, MAX_FILE_DIFF_LINES);
@@ -567,11 +576,257 @@ pub fn load_file_diff(
         .find(|file| {
             file.path == requested || file.old_path.as_deref() == Some(requested.as_str())
         });
-    Ok(file.map(|file| FileDiffDetail {
+    Ok(file.map(|file| file_detail(stage, file, truncated || review.truncated)))
+}
+
+fn file_detail(stage: DiffStage, file: ReviewFile, truncated: bool) -> FileDiffDetail {
+    let editor_lines = file
+        .lines
+        .iter()
+        .filter_map(|line| {
+            let kind = match line.kind {
+                ReviewLineKind::Added => CodeDiffLineKind::Added,
+                ReviewLineKind::Removed => CodeDiffLineKind::Removed,
+                ReviewLineKind::Context | ReviewLineKind::Hunk => CodeDiffLineKind::Context,
+                _ => return None,
+            };
+            let text = if line.kind == ReviewLineKind::Hunk {
+                line.text.clone()
+            } else {
+                line.text.get(1..).unwrap_or_default().to_owned()
+            };
+            Some(CodeDiffLine {
+                kind,
+                old_line: line.old_number,
+                new_line: line.new_number,
+                text,
+            })
+        })
+        .collect::<Vec<_>>()
+        .into();
+    FileDiffDetail {
         stage,
         file,
-        truncated: truncated || review.truncated,
-    }))
+        editor_lines,
+        truncated,
+    }
+}
+
+/// Untracked files become additions only after Git confirms their status. Do
+/// not follow symlinks out of the workspace or read ignored files on fallback.
+fn load_untracked_diff(workspace: &Path, relative: &Path) -> io::Result<Option<FileDiffDetail>> {
+    let status = command_no_window("git")
+        .args([
+            "--literal-pathspecs",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+        ])
+        .arg(relative)
+        .current_dir(workspace)
+        .stderr(Stdio::null())
+        .output()?;
+    if !status.status.success() || !status.stdout.starts_with(b"?? ") {
+        return Ok(None);
+    }
+    let expected = relative.to_string_lossy();
+    let reported = status.stdout[3..]
+        .split(|byte| *byte == 0)
+        .next()
+        .unwrap_or_default();
+    if String::from_utf8_lossy(reported) != expected {
+        return Ok(None);
+    }
+    let root = workspace.canonicalize()?;
+    let path = workspace.join(relative);
+    let metadata = std::fs::symlink_metadata(&path)?;
+    let mut file = ReviewFile {
+        path: expected.into_owned(),
+        status: "Nuevo".into(),
+        ..Default::default()
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        file.status = "Enlace".into();
+        return Ok(Some(file_detail(DiffStage::Unstaged, file, false)));
+    }
+    if !path.canonicalize()?.starts_with(&root) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "El archivo está fuera del proyecto",
+        ));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_FILE_DIFF_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    let mut truncated = bytes.len() as u64 > MAX_FILE_DIFF_BYTES;
+    bytes.truncate(MAX_FILE_DIFF_BYTES as usize);
+    if bytes.contains(&0) {
+        file.status = "Binario".into();
+    } else {
+        let text = String::from_utf8_lossy(&bytes);
+        for (number, line) in text.lines().enumerate() {
+            if number == MAX_FILE_DIFF_LINES {
+                truncated = true;
+                break;
+            }
+            file.lines.push(ReviewLine {
+                kind: ReviewLineKind::Added,
+                text: format!("+{line}"),
+                old_number: None,
+                new_number: Some(number + 1),
+            });
+        }
+        file.additions = file.lines.len();
+    }
+    Ok(Some(file_detail(DiffStage::Unstaged, file, truncated)))
+}
+
+/// Read only path/status/stat metadata. Unlike a patch, this stays small even
+/// when a generated file has millions of changed lines. NUL-delimited records
+/// preserve tabs, newlines, unicode and rename source/destination pairs.
+fn load_summary_section(
+    workspace: &Path,
+    staged: bool,
+    title: &str,
+) -> io::Result<(ReviewSection, bool)> {
+    let mut command = command_no_window("git");
+    command.args([
+        "diff",
+        "--raw",
+        "--numstat",
+        "-z",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--find-renames",
+        "--color=never",
+    ]);
+    if staged {
+        command.arg("--cached");
+    }
+    let mut child = command
+        .arg("--")
+        .current_dir(workspace)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mut bytes = Vec::new();
+    child
+        .stdout
+        .take()
+        .expect("piped stdout")
+        .take(MAX_SUMMARY_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    let truncated = bytes.len() as u64 > MAX_SUMMARY_BYTES;
+    if truncated {
+        let _ = child.kill();
+        bytes.truncate(MAX_SUMMARY_BYTES as usize);
+        if let Some(last) = bytes.iter().rposition(|byte| *byte == 0) {
+            bytes.truncate(last + 1);
+        } else {
+            bytes.clear();
+        }
+    }
+    let status = child.wait()?;
+    if !truncated && !status.success() {
+        return Err(io::Error::other(
+            "Git no pudo leer los cambios del proyecto",
+        ));
+    }
+    Ok((parse_summary_section(title, &bytes), truncated))
+}
+
+fn parse_summary_section(title: &str, bytes: &[u8]) -> ReviewSection {
+    let mut files = BTreeMap::<String, ReviewFile>::new();
+    let mut fields = bytes.split(|byte| *byte == 0);
+    while let Some(field) = fields.next() {
+        if field.is_empty() {
+            continue;
+        }
+        if field.starts_with(b":") {
+            let status = field
+                .rsplit(|byte| *byte == b' ')
+                .next()
+                .and_then(|value| value.first())
+                .copied()
+                .unwrap_or(b'M');
+            let Some(first_path) = fields.next() else {
+                break;
+            };
+            let (old_path, path) = if matches!(status, b'R' | b'C') {
+                let Some(path) = fields.next() else { break };
+                (Some(String::from_utf8_lossy(first_path).into_owned()), path)
+            } else {
+                (None, first_path)
+            };
+            if path.is_empty() {
+                continue;
+            }
+            let path = String::from_utf8_lossy(path).into_owned();
+            // Unmerged files appear twice in --raw output (U, then M).
+            // Preserve the unresolved status while accepting the later stats.
+            if files
+                .get(&path)
+                .is_some_and(|file| file.status == "Conflicto")
+            {
+                continue;
+            }
+            files.insert(
+                path.clone(),
+                ReviewFile {
+                    path,
+                    old_path,
+                    status: match status {
+                        b'A' => "Nuevo",
+                        b'D' => "Eliminado",
+                        b'R' => "Renombrado",
+                        b'C' => "Copiado",
+                        b'U' => "Conflicto",
+                        b'T' => "Tipo cambiado",
+                        _ => "Modificado",
+                    }
+                    .into(),
+                    ..Default::default()
+                },
+            );
+        } else {
+            let mut parts = field.splitn(3, |byte| *byte == b'\t');
+            let (Some(added), Some(removed), Some(path)) =
+                (parts.next(), parts.next(), parts.next())
+            else {
+                continue;
+            };
+            let path = if path.is_empty() {
+                let _old = fields.next();
+                let Some(path) = fields.next() else { break };
+                path
+            } else {
+                path
+            };
+            if let Some(file) = files.get_mut(String::from_utf8_lossy(path).as_ref()) {
+                file.additions = std::str::from_utf8(added)
+                    .ok()
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0);
+                file.deletions = std::str::from_utf8(removed)
+                    .ok()
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0);
+                if added == b"-" && removed == b"-" {
+                    file.status = "Binario".into();
+                }
+            }
+        }
+    }
+    let files: Vec<_> = files.into_values().collect();
+    ReviewSection {
+        title: title.into(),
+        additions: files.iter().map(|file| file.additions).sum(),
+        deletions: files.iter().map(|file| file.deletions).sum(),
+        files,
+    }
 }
 
 fn read_untracked(workspace: &Path) -> io::Result<(Vec<String>, bool)> {
@@ -614,12 +869,85 @@ fn read_untracked(workspace: &Path) -> io::Result<(Vec<String>, bool)> {
             break;
         }
         let path = String::from_utf8_lossy(path);
-        paths.push(path.chars().filter(|ch| !ch.is_control()).collect());
+        paths.push(path.into_owned());
     }
     Ok((paths, truncated))
 }
 
 pub fn load_git_review(workspace: &Path) -> io::Result<GitReview> {
+    load_review(workspace, None)
+}
+
+/// The review with each changed file's diff lines filled in, for a reader
+/// that has no panel to open files in and may have no way to run git.
+///
+/// `max_diff_chars` is shared between the files rather than spent in order:
+/// small diffs are kept whole and the rest split what is left, so every file
+/// shows at least the start of its change. A file whose diff was shortened
+/// ends with a line saying how much is missing, and the review is marked
+/// truncated.
+pub fn load_git_review_with_diffs(workspace: &Path, max_diff_chars: usize) -> io::Result<GitReview> {
+    let mut review = load_review(workspace, Some(MAX_FILES_WITH_DIFF))?;
+    let mut sizes: Vec<usize> = review
+        .sections
+        .iter()
+        .flat_map(|section| &section.files)
+        .map(|file| diff_chars(&file.lines))
+        .collect();
+    let allowance = fair_allowance(&mut sizes, max_diff_chars);
+    for file in review.sections.iter_mut().flat_map(|section| &mut section.files) {
+        let total_lines = file.lines.len();
+        let mut used = 0;
+        let kept = file
+            .lines
+            .iter()
+            .take_while(|line| {
+                used += line.text.chars().count() + 1;
+                used <= allowance
+            })
+            .count();
+        if kept < total_lines {
+            file.lines.truncate(kept);
+            file.lines.push(review_line(
+                ReviewLineKind::Meta,
+                &format!(
+                    "[diff cut: {} more lines of {} not shown; read the file for the rest]",
+                    total_lines - kept,
+                    file.path
+                ),
+            ));
+            review.truncated = true;
+        }
+    }
+    Ok(review)
+}
+
+/// Beyond this many changed files the rest keep only their summary line; one
+/// git call per file is made up to here.
+const MAX_FILES_WITH_DIFF: usize = 200;
+
+fn diff_chars(lines: &[ReviewLine]) -> usize {
+    lines.iter().map(|line| line.text.chars().count() + 1).sum()
+}
+
+/// The largest per-file size such that giving every file `min(size, result)`
+/// stays within `budget`: files smaller than an equal share keep everything
+/// and pass their unused share on to the larger ones.
+fn fair_allowance(sizes: &mut [usize], budget: usize) -> usize {
+    sizes.sort_unstable();
+    let mut remaining = budget;
+    for (index, size) in sizes.iter().enumerate() {
+        let share = remaining / (sizes.len() - index);
+        if *size > share {
+            return share;
+        }
+        remaining -= size;
+    }
+    usize::MAX
+}
+
+/// `diff_files` loads the diff lines of up to that many files.
+fn load_review(workspace: &Path, diff_files: Option<usize>) -> io::Result<GitReview> {
     if !workspace.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -631,12 +959,37 @@ pub fn load_git_review(workspace: &Path) -> io::Result<GitReview> {
         tracking: read_tracking(workspace),
         ..GitReview::default()
     };
+    let mut loaded = 0usize;
     for (staged, title) in [
         (true, "CAMBIOS PREPARADOS"),
         (false, "CAMBIOS SIN PREPARAR"),
     ] {
-        let (text, truncated) = read_diff(workspace, staged)?;
-        parse_section(&mut review, title, &text);
+        let (mut section, truncated) = load_summary_section(workspace, staged, title)?;
+        if let Some(max_files) = diff_files {
+            let stage = if staged {
+                DiffStage::Staged
+            } else {
+                DiffStage::Unstaged
+            };
+            for file in &mut section.files {
+                if loaded >= max_files {
+                    review.truncated = true;
+                    break;
+                }
+                loaded += 1;
+                // A file whose diff cannot be read keeps its summary line.
+                if let Ok(Some(detail)) = load_file_diff(workspace, Path::new(&file.path), stage) {
+                    review.truncated |= detail.truncated;
+                    file.lines = detail.file.lines;
+                }
+            }
+        }
+        review.files += section.files.len();
+        review.additions += section.additions;
+        review.deletions += section.deletions;
+        if !section.files.is_empty() {
+            review.sections.push(section);
+        }
         review.truncated |= truncated;
     }
     let (untracked, truncated) = read_untracked(workspace)?;
@@ -663,6 +1016,61 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    #[test]
+    fn allowance_keeps_small_diffs_whole_and_splits_the_rest_evenly() {
+        // Everything fits: no limit.
+        assert_eq!(fair_allowance(&mut [10, 20, 30], 60), usize::MAX);
+        assert_eq!(fair_allowance(&mut [], 100), usize::MAX);
+        // Equal shares would be 100 each; the 10 passes its unused 90 on.
+        assert_eq!(fair_allowance(&mut [500, 10, 500], 300), 145);
+        // No small files: a plain equal split.
+        assert_eq!(fair_allowance(&mut [900, 900, 900], 300), 100);
+        // The result always fits the budget.
+        for (sizes, budget) in [(vec![5usize, 400, 70, 3000, 1], 500usize), (vec![1000; 7], 10), (vec![3, 3, 3], 0)] {
+            let mut sorted = sizes.clone();
+            let allowance = fair_allowance(&mut sorted, budget);
+            let spent: usize = sizes.iter().map(|size| (*size).min(allowance)).sum();
+            assert!(spent <= budget, "{sizes:?} within {budget}: spent {spent}");
+        }
+    }
+
+    #[test]
+    fn a_large_change_shows_the_start_of_every_file_and_says_what_is_missing() {
+        let root = tempfile::tempdir().unwrap();
+        git(root.path(), &["init", "-q"]);
+        git(root.path(), &["config", "user.email", "t@example.com"]);
+        git(root.path(), &["config", "user.name", "t"]);
+        for name in ["a.rs", "b.rs", "small.rs"] {
+            fs::write(root.path().join(name), "base\n").unwrap();
+        }
+        git(root.path(), &["add", "."]);
+        git(root.path(), &["commit", "-q", "-m", "base"]);
+        let long = |tag: &str| (0..400).map(|line| format!("{tag} line {line}\n")).collect::<String>();
+        fs::write(root.path().join("a.rs"), long("AAA")).unwrap();
+        fs::write(root.path().join("b.rs"), long("BBB")).unwrap();
+        fs::write(root.path().join("small.rs"), "PEQUENO\n").unwrap();
+
+        let whole = load_git_review_with_diffs(root.path(), 1_000_000).unwrap();
+        assert!(!whole.truncated);
+        let cut = load_git_review_with_diffs(root.path(), 2_000).unwrap();
+        assert!(cut.truncated);
+        let files: Vec<&ReviewFile> = cut.sections.iter().flat_map(|section| &section.files).collect();
+        assert_eq!(files.len(), 3);
+        let text = |file: &ReviewFile| file.lines.iter().map(|line| line.text.as_str()).collect::<Vec<_>>().join("\n");
+        let by_name = |name: &str| *files.iter().find(|file| file.path == name).unwrap();
+        // The small file is whole; in order-of-arrival filling it would have had nothing left.
+        assert!(text(by_name("small.rs")).contains("PEQUENO") && !text(by_name("small.rs")).contains("diff cut"));
+        // Both large files show their beginning and name what is missing.
+        for (name, tag) in [("a.rs", "AAA"), ("b.rs", "BBB")] {
+            let shown = text(by_name(name));
+            assert!(shown.contains(&format!("{tag} line 0")), "{name} shows nothing");
+            assert!(!shown.contains(&format!("{tag} line 399")));
+            assert!(shown.contains("[diff cut:") && shown.contains(name), "{shown}");
+        }
+        let total: usize = files.iter().map(|file| diff_chars(&file.lines)).sum();
+        assert!(total < 2_000 + 3 * 120, "budget plus one marker per file: {total}");
     }
 
     #[test]
@@ -742,8 +1150,12 @@ mod tests {
             (review.files, review.additions, review.deletions),
             (2, 2, 2)
         );
-        assert!(review.lines.iter().any(|line| line.text == "+second"));
-        assert!(review.lines.iter().any(|line| line.text == "+third"));
+        assert!(review.lines.is_empty());
+        assert!(review
+            .sections
+            .iter()
+            .flat_map(|section| &section.files)
+            .all(|file| file.lines.is_empty()));
         assert!(!review.truncated);
         assert_eq!(review.unique_files(), 1);
         assert_eq!(review.sections.len(), 2);
@@ -917,5 +1329,99 @@ mod tests {
         let tracking = load_git_review(&work).unwrap().tracking.unwrap();
         assert_eq!(tracking.upstream, "origin/main");
         assert_eq!((tracking.ahead, tracking.behind), (1, 0));
+    }
+    #[test]
+    fn summary_preserves_renames_binary_and_control_char_paths_without_hunks() {
+        let bytes = b":100644 100644 abc def R100\0old name.txt\0new name.txt\0:100644 100644 abc def M\0a\tb\nc.bin\0:100644 000000 abc 000 D\0removed.txt\0";
+        let mut bytes = bytes.to_vec();
+        bytes.extend_from_slice(
+            b"0\t0\t\0old name.txt\0new name.txt\0-\t-\ta\tb\nc.bin\03\t7\tremoved.txt\0",
+        );
+        let section = parse_summary_section("TEST", &bytes);
+        assert_eq!(section.files.len(), 3);
+        let renamed = section
+            .files
+            .iter()
+            .find(|file| file.path == "new name.txt")
+            .unwrap();
+        assert_eq!(renamed.old_path.as_deref(), Some("old name.txt"));
+        assert_eq!(renamed.status, "Renombrado");
+        assert_eq!(section.files[0].status, "Binario");
+        assert_eq!(section.files[0].path, "a\tb\nc.bin");
+        assert_eq!((section.additions, section.deletions), (3, 7));
+        assert!(section.files.iter().all(|file| file.lines.is_empty()));
+    }
+
+    #[test]
+    fn summary_counts_a_large_patch_exactly_without_retaining_source_lines() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        git(dir, &["init", "-q"]);
+        fs::write(dir.join("generated.txt"), "old\n").unwrap();
+        git(dir, &["add", "."]);
+        fs::write(dir.join("generated.txt"), "new\n".repeat(15_000)).unwrap();
+        let review = load_git_review(dir).unwrap();
+        assert_eq!(review.additions, 15_001);
+        assert_eq!(review.deletions, 1);
+        assert!(!review.truncated);
+        assert!(review.lines.is_empty());
+        assert!(review
+            .sections
+            .iter()
+            .flat_map(|section| &section.files)
+            .all(|file| file.lines.is_empty()));
+    }
+
+    #[test]
+    fn untracked_text_diff_is_loaded_only_on_demand_and_ignored_files_stay_hidden() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        git(dir, &["init", "-q"]);
+        fs::write(dir.join(".gitignore"), "hidden.txt\n").unwrap();
+        fs::write(dir.join("hidden.txt"), "hidden\n").unwrap();
+        fs::write(dir.join("new file.txt"), "one\ntwo\n").unwrap();
+        let detail = load_file_diff(dir, Path::new("new file.txt"), DiffStage::Unstaged)
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.file.status, "Nuevo");
+        assert_eq!(detail.file.additions, 2);
+        assert_eq!(detail.editor_lines[1].text, "two");
+        assert_eq!(detail.editor_lines[1].new_line, Some(2));
+        assert!(
+            load_file_diff(dir, Path::new("hidden.txt"), DiffStage::Unstaged)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            load_file_diff(dir, Path::new("new file.txt"), DiffStage::Staged)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn untracked_symlink_does_not_read_a_file_outside_the_project() {
+        let temp = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        git(temp.path(), &["init", "-q"]);
+        fs::write(external.path().join("private.txt"), "not workspace content").unwrap();
+        std::os::unix::fs::symlink(
+            external.path().join("private.txt"),
+            temp.path().join("link"),
+        )
+        .unwrap();
+        let detail = load_file_diff(temp.path(), Path::new("link"), DiffStage::Unstaged)
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.file.status, "Enlace");
+        assert!(detail.file.lines.is_empty());
+    }
+    #[test]
+    fn unmerged_raw_record_is_not_overwritten_by_the_worktree_record() {
+        let section = parse_summary_section("CHANGES", b":000000 100644 0000000 0000000 U\0conflict.txt\0:100644 100644 ba2906d 0000000 M\0conflict.txt\00\t0\tconflict.txt\04\t0\tconflict.txt\0");
+        assert_eq!(section.files.len(), 1);
+        assert_eq!(section.files[0].status, "Conflicto");
+        assert_eq!(section.files[0].additions, 4);
     }
 }

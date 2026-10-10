@@ -3,6 +3,9 @@
 //! The UI owns drafts. This store owns definitions, due claims and the dispatch
 //! ledger. It never executes a CLI itself: the host turns a claimed dispatch
 //! into a persisted session and calls `complete_run` with that session ID.
+//! Native recovery can attach immutable session provenance without confirming
+//! dispatch. Native results are separate, verified projections of the original
+//! session and journal. This bounded ledger never grants execution authority.
 
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -11,10 +14,14 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{Datelike, Duration, Local, LocalResult, NaiveDate, NaiveDateTime, TimeZone};
+use openide_core::{Session, StoredSession};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::native_provider::NativeProviderSettings;
+use crate::{
+    native_automation_result::{NativeAutomationResultV1, ValidatedNativeAutomationResult},
+    native_provider::NativeProviderSettings,
+};
 
 const VERSION: u32 = 1;
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -37,7 +44,7 @@ impl fmt::Display for AutomationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Invalid(message) | Self::Conflict(message) => formatter.write_str(message),
-            Self::NotFound => formatter.write_str("Automatización no encontrada"),
+            Self::NotFound => formatter.write_str("Automatización o ejecución no encontrada"),
             Self::LimitReached => formatter.write_str("Límite de automatizaciones alcanzado"),
             Self::Io(error) => write!(formatter, "Error de almacenamiento: {error}"),
             Self::Json(error) => write!(formatter, "Datos de automatizaciones inválidos: {error}"),
@@ -187,16 +194,10 @@ pub struct AutomationDraft {
 impl AutomationDraft {
     pub fn validate(&self) -> Result<(), AutomationError> {
         self.validate_structure()?;
-        if self.backend.trim() == "native" {
-            self.native_provider
-                .as_ref()
-                .ok_or_else(|| {
-                    AutomationError::Invalid(
-                        "Elige un proveedor y modelo nativo para esta automatización".to_owned(),
-                    )
-                })?
-                .resolve()
-                .map_err(AutomationError::Invalid)?;
+        if self.backend.trim() == "native" && self.native_provider.is_none() {
+            return Err(AutomationError::Invalid(
+                "Elige un proveedor y modelo nativo para esta automatización".to_owned(),
+            ));
         }
         Ok(())
     }
@@ -219,6 +220,41 @@ impl AutomationDraft {
         }
         if backend.is_empty() || backend.len() > 64 || backend.contains(char::is_whitespace) {
             return Err(AutomationError::Invalid("Agente inválido".to_owned()));
+        }
+        if let Some(selection) = self
+            .native_provider
+            .as_ref()
+            .filter(|_| backend == "native")
+        {
+            // Validate only the stored choice's shape. Registry discovery,
+            // exact model capabilities, endpoint and credentials are checked
+            // by the host against data_root before native admission.
+            if selection.provider_id.trim().is_empty()
+                || selection.provider_id.len() > 64
+                || !selection.provider_id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || byte == b'-'
+                        || byte == b'_'
+                })
+            {
+                return Err(AutomationError::Invalid(
+                    "ID de proveedor nativo inválido".into(),
+                ));
+            }
+            if selection.model_id.trim().is_empty()
+                || selection.model_id.len() > openide_core::MAX_MODEL_ROUTE_MODEL_BYTES
+                || selection.model_id.chars().any(char::is_control)
+            {
+                return Err(AutomationError::Invalid(
+                    "ID de modelo nativo inválido".into(),
+                ));
+            }
+            if selection.custom_endpoint.len() > openide_core::MAX_MODEL_ROUTE_ENDPOINT_BYTES
+                || selection.custom_endpoint.chars().any(char::is_control)
+            {
+                return Err(AutomationError::Invalid("Endpoint nativo inválido".into()));
+            }
         }
         self.schedule.validate()
     }
@@ -259,6 +295,8 @@ pub struct AutomationRun {
     pub manual: bool,
     pub status: AutomationRunStatus,
     pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_result: Option<NativeAutomationResultV1>,
     pub error: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -273,6 +311,8 @@ pub struct AutomationDispatch {
     pub native_provider: Option<NativeProviderSettings>,
     pub prompt: String,
     pub scheduled_at: i64,
+    /// The persisted claim's origin; never inferred from the run ID format.
+    pub manual: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -404,7 +444,8 @@ impl AutomationStore {
                 if run.status == AutomationRunStatus::Pending {
                     run.status = AutomationRunStatus::Interrupted;
                     run.error = Some(
-                        "Ejecución interrumpida; revisa las sesiones antes de repetir".to_owned(),
+                        "Ejecución interrumpida; revisa las sesiones. No se repite automáticamente"
+                            .to_owned(),
                     );
                 }
             }
@@ -555,13 +596,20 @@ impl AutomationStore {
                         AutomationRunStatus::Pending
                     },
                     session_id: None,
+                    native_result: None,
                     error: late
                         .then(|| "La aplicación estuvo cerrada durante esta ejecución".to_owned()),
                     created_at: now_ms,
                     updated_at: now_ms,
                 });
                 if !late {
-                    claims.push(dispatch_for(&self.workspace_path, automation, run_id, due));
+                    claims.push(dispatch_for(
+                        &self.workspace_path,
+                        automation,
+                        run_id,
+                        due,
+                        false,
+                    ));
                 }
                 automation.run_count = automation.run_count.saturating_add(1);
                 automation.last_run_at = Some(due);
@@ -601,6 +649,7 @@ impl AutomationStore {
             manual: true,
             status: AutomationRunStatus::Pending,
             session_id: None,
+            native_result: None,
             error: None,
             created_at: now_ms,
             updated_at: now_ms,
@@ -612,7 +661,154 @@ impl AutomationStore {
             &automation,
             run_id,
             now_ms,
+            true,
         ))
+    }
+
+    /// Link a session whose immutable native origin proves this existing claim.
+    /// This never creates a claim or dispatches work, and preserves Pending or
+    /// Interrupted: a saved session is not proof that the worker was started.
+    /// Returns false for an already identical link, without rewriting the file.
+    /// The host supplies metadata created/loaded through SessionStore and must
+    /// separately validate its authority JSON before executing or resuming it.
+    pub fn attach_existing_native_session(
+        &mut self,
+        run_id: &str,
+        session: &Session,
+        now_ms: i64,
+    ) -> Result<bool, AutomationError> {
+        let index = self
+            .document
+            .runs
+            .iter()
+            .position(|run| run.run_id == run_id)
+            .ok_or(AutomationError::NotFound)?;
+        let run = &self.document.runs[index];
+        if !matches!(
+            run.status,
+            AutomationRunStatus::Pending
+                | AutomationRunStatus::Interrupted
+                | AutomationRunStatus::Dispatched
+        ) {
+            return Err(AutomationError::Conflict(
+                "Esta ejecución no admite recuperar un enlace de sesión".into(),
+            ));
+        }
+        let origin = session.native_automation.as_ref().ok_or_else(|| {
+            AutomationError::Invalid("La sesión no tiene un origen de automatización nativa".into())
+        })?;
+        origin
+            .validate_session(session)
+            .map_err(|error| AutomationError::Invalid(error.to_string()))?;
+        if session.workspace != self.workspace_path
+            || origin.automation_id != run.automation_id
+            || origin.run_id != run.run_id
+            || origin.scheduled_at_ms != run.scheduled_at
+            || origin.manual != run.manual
+        {
+            return Err(AutomationError::Conflict(
+                "El origen de la sesión no corresponde a esta ejecución y proyecto".into(),
+            ));
+        }
+        if let Some(saved) = &run.session_id {
+            return if saved == &session.id {
+                Ok(false)
+            } else {
+                Err(AutomationError::Conflict(
+                    "Esta ejecución ya está vinculada a otra sesión".into(),
+                ))
+            };
+        }
+        let mut next = self.document.clone();
+        next.runs[index].session_id = Some(session.id.clone());
+        next.runs[index].updated_at = now_ms;
+        self.commit(next)?;
+        Ok(true)
+    }
+
+    /// Save a verified native journal projection without changing dispatch
+    /// status. A claimed run must still exist, and a newer observation must
+    /// retain the complete previously observed prefix and terminal outcome.
+    pub fn record_native_result(
+        &mut self,
+        record: &StoredSession,
+        result: &ValidatedNativeAutomationResult,
+        now_ms: i64,
+    ) -> Result<bool, AutomationError> {
+        result
+            .verify_record(record)
+            .map_err(AutomationError::Invalid)?;
+        let index = self
+            .document
+            .runs
+            .iter()
+            .position(|run| run.run_id == result.run_id())
+            .ok_or(AutomationError::NotFound)?;
+        let run = &self.document.runs[index];
+        let origin = record.session.native_automation.as_ref().ok_or_else(|| {
+            AutomationError::Invalid("La sesión no tiene un origen de automatización nativa".into())
+        })?;
+        origin
+            .validate_session(&record.session)
+            .map_err(|error| AutomationError::Invalid(error.to_string()))?;
+        if run.status == AutomationRunStatus::Skipped
+            || record.session.workspace != self.workspace_path
+            || result.workspace() != self.workspace_path
+            || origin.automation_id != run.automation_id
+            || origin.run_id != run.run_id
+            || origin.scheduled_at_ms != run.scheduled_at
+            || origin.manual != run.manual
+            || result.automation_id() != run.automation_id
+            || result.scheduled_at_ms() != run.scheduled_at
+            || result.manual() != run.manual
+            || result.session_id() != record.session.id
+        {
+            return Err(AutomationError::Conflict(
+                "El resultado no corresponde a esta ejecución y proyecto".into(),
+            ));
+        }
+        if run
+            .session_id
+            .as_deref()
+            .is_some_and(|saved| saved != result.session_id())
+        {
+            return Err(AutomationError::Conflict(
+                "Esta ejecución ya está vinculada a otra sesión".into(),
+            ));
+        }
+        if let Some(previous) = &run.native_result {
+            if result.last_sequence() < previous.last_sequence() {
+                return Err(AutomationError::Conflict(
+                    "El resultado es anterior al journal ya registrado".into(),
+                ));
+            }
+            if result.last_sequence() == previous.last_sequence() {
+                return if previous == result.snapshot() {
+                    Ok(false)
+                } else {
+                    Err(AutomationError::Conflict(
+                        "El resultado cambió una observación ya registrada".into(),
+                    ))
+                };
+            }
+            previous
+                .verify_record_prefix(record)
+                .map_err(AutomationError::Conflict)?;
+            if previous.terminal_sequence().is_some()
+                && (previous.terminal_sequence() != result.terminal_sequence()
+                    || previous.outcome() != result.outcome())
+            {
+                return Err(AutomationError::Conflict(
+                    "El resultado intenta reemplazar el terminal registrado".into(),
+                ));
+            }
+        }
+        let mut next = self.document.clone();
+        next.runs[index].session_id = Some(record.session.id.clone());
+        next.runs[index].native_result = Some(result.snapshot().clone());
+        next.runs[index].updated_at = now_ms;
+        self.commit(next)?;
+        Ok(true)
     }
 
     /// `result` reports dispatch to a persistent session, not completion of
@@ -631,6 +827,15 @@ impl AutomationStore {
             .ok_or(AutomationError::NotFound)?;
         let (status, session_id, error) = match result {
             Ok(session_id) if !session_id.trim().is_empty() => {
+                if run
+                    .session_id
+                    .as_ref()
+                    .is_some_and(|saved| saved != &session_id)
+                {
+                    return Err(AutomationError::Conflict(
+                        "El despacho intenta reemplazar la sesión ya vinculada".into(),
+                    ));
+                }
                 (AutomationRunStatus::Dispatched, Some(session_id), None)
             }
             Ok(_) => {
@@ -640,7 +845,7 @@ impl AutomationStore {
             }
             Err(message) => (
                 AutomationRunStatus::Failed,
-                None,
+                run.session_id.clone(),
                 Some(message.chars().take(500).collect()),
             ),
         };
@@ -701,6 +906,8 @@ impl AutomationStore {
                 }
                 let _ = fs::remove_file(backup);
             }
+            #[cfg(unix)]
+            fs::File::open(parent)?.sync_all()?;
             Ok(())
         })();
         if result.is_err() {
@@ -717,6 +924,7 @@ fn dispatch_for(
     automation: &Automation,
     run_id: String,
     scheduled_at: i64,
+    manual: bool,
 ) -> AutomationDispatch {
     AutomationDispatch {
         run_id,
@@ -726,6 +934,7 @@ fn dispatch_for(
         native_provider: automation.native_provider.clone(),
         prompt: automation.prompt.clone(),
         scheduled_at,
+        manual,
     }
 }
 
@@ -766,6 +975,21 @@ fn validate_document(document: &Document) -> Result<(), AutomationError> {
                 "ID de ejecución duplicado o inválido".to_owned(),
             ));
         }
+        if let Some(result) = &run.native_result {
+            result.validate().map_err(AutomationError::Invalid)?;
+            if run.status == AutomationRunStatus::Skipped
+                || run.session_id.as_deref() != Some(result.session_id())
+                || run.automation_id != result.automation_id()
+                || run.run_id != result.run_id()
+                || run.scheduled_at != result.scheduled_at_ms()
+                || run.manual != result.manual()
+                || workspace_key(result.workspace()) != document.workspace_key
+            {
+                return Err(AutomationError::Invalid(
+                    "El resultado nativo no corresponde al enlace de la ejecución".into(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -802,8 +1026,13 @@ pub fn parse_local_once(value: &str) -> Result<i64, AutomationError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::native_automation::FrozenNativeAutomationAuthorityV1;
+    use openide_core::{
+        AgentEvent, AgentEventKind, CheckpointFileStore, NativeAutomationOrigin, SessionStore,
+        TurnMode,
+    };
 
     fn draft(schedule: AutomationSchedule) -> AutomationDraft {
         AutomationDraft {
@@ -821,6 +1050,861 @@ mod tests {
             model_id: model_id.to_owned(),
             custom_endpoint: "https://api.openai.com/v1".to_owned(),
         }
+    }
+
+    fn native_draft(schedule: AutomationSchedule) -> AutomationDraft {
+        let mut value = draft(schedule);
+        value.backend = "native".into();
+        value.native_provider = Some(native_settings("gpt-4.1"));
+        value
+    }
+
+    fn origin_for(dispatch: &AutomationDispatch) -> NativeAutomationOrigin {
+        // Core validates exact metadata bytes and binding. Execution authority
+        // is independently parsed by the host DTO; this fixture does not claim
+        // acceptance of that schema or authorize a worker.
+        NativeAutomationOrigin::new(
+            &dispatch.automation_id,
+            &dispatch.run_id,
+            dispatch.scheduled_at,
+            dispatch.manual,
+            "{ \"ledger_fixture\": \"original read-only metadata\" }",
+            &dispatch.prompt,
+            &dispatch.native_provider.as_ref().unwrap().model_id,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn native_draft_validation_preserves_arbitrary_provider_and_exact_model_without_credentials() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("project");
+        fs::create_dir(&workspace).unwrap();
+        let mut store = AutomationStore::open(directory.path(), &workspace).unwrap();
+        let mut value = native_draft(AutomationSchedule::Once { at_ms: 2_000_000 });
+        value.native_provider = Some(NativeProviderSettings {
+            provider_id: "independent_42-provider".into(),
+            model_id: "organization/Exact Ñ-Model v2 🦀".into(),
+            // Managed providers may ignore this stored user endpoint. Actual
+            // destination validation belongs to registry-aware dispatch.
+            custom_endpoint: String::new(),
+        });
+        value.validate().unwrap();
+        let id = store.create(value.clone(), 1_000_000).unwrap();
+        assert_eq!(
+            store.automations()[0].native_provider,
+            value.native_provider
+        );
+        value.native_provider.as_mut().unwrap().model_id = "Other/Exact-Model-ß".into();
+        store.update(&id, value.clone(), 1_000_010).unwrap();
+        let path = store.path.clone();
+        drop(store);
+        let mut store = AutomationStore::open(directory.path(), &workspace).unwrap();
+        assert_eq!(
+            store.automations()[0].native_provider,
+            value.native_provider
+        );
+        assert!(store.runs().is_empty());
+        let before = fs::read(&path).unwrap();
+        let items = store.automations().to_vec();
+        let mut invalid = Vec::new();
+        let mut missing = value.clone();
+        missing.native_provider = None;
+        invalid.push(missing);
+        for provider in ["", "UPPER", "has space", "has\ncontrol", &"p".repeat(65)] {
+            let mut candidate = value.clone();
+            candidate.native_provider.as_mut().unwrap().provider_id = provider.into();
+            invalid.push(candidate);
+        }
+        for model in [
+            "",
+            "  ",
+            "model\u{0000}",
+            &"m".repeat(openide_core::MAX_MODEL_ROUTE_MODEL_BYTES + 1),
+        ] {
+            let mut candidate = value.clone();
+            candidate.native_provider.as_mut().unwrap().model_id = model.into();
+            invalid.push(candidate);
+        }
+        for endpoint in [
+            "https://example.invalid\n",
+            &"e".repeat(openide_core::MAX_MODEL_ROUTE_ENDPOINT_BYTES + 1),
+        ] {
+            let mut candidate = value.clone();
+            candidate.native_provider.as_mut().unwrap().custom_endpoint = endpoint.into();
+            invalid.push(candidate);
+        }
+        for candidate in invalid {
+            assert!(candidate.validate().is_err());
+            assert!(store.create(candidate.clone(), 1_000_020).is_err());
+            assert!(store.update(&id, candidate, 1_000_020).is_err());
+            assert_eq!(store.automations(), items);
+            assert_eq!(fs::read(&path).unwrap(), before);
+        }
+        let mut invalid_stored: serde_json::Value = serde_json::from_slice(&before).unwrap();
+        invalid_stored["automations"][0]["native_provider"]["model_id"] = "model\u{0000}".into();
+        let invalid_bytes = serde_json::to_vec(&invalid_stored).unwrap();
+        fs::write(&path, &invalid_bytes).unwrap();
+        assert!(AutomationStore::open(directory.path(), &workspace).is_err());
+        assert_eq!(fs::read(&path).unwrap(), invalid_bytes);
+        fs::write(path, before).unwrap();
+    }
+
+    /// A real frozen read-only origin and an admitted journal, without model
+    /// transport or account credentials. The result factory replays these
+    /// persisted events; the scheduler is never used as execution authority.
+    pub(crate) fn native_result_fixture(
+        root: &Path,
+        workspace: &Path,
+        manual: bool,
+    ) -> (
+        AutomationStore,
+        SessionStore,
+        CheckpointFileStore,
+        AutomationDispatch,
+        Session,
+    ) {
+        fs::create_dir_all(workspace).unwrap();
+        let settings = NativeProviderSettings {
+            provider_id: "custom".into(),
+            model_id: "ledger-exact-model-ñ".into(),
+            custom_endpoint: "http://127.0.0.1:9/v1".into(),
+        };
+        let mut store = AutomationStore::open(root, workspace).unwrap();
+        let id = store
+            .create(
+                AutomationDraft {
+                    title: "Resultado nativo".into(),
+                    prompt: "Inspect the original project without external effects.".into(),
+                    backend: "native".into(),
+                    native_provider: Some(settings.clone()),
+                    schedule: AutomationSchedule::Once { at_ms: 2_000_000 },
+                },
+                1_000_000,
+            )
+            .unwrap();
+        let dispatch = if manual {
+            store.claim_manual(&id, 1_500_000).unwrap()
+        } else {
+            store.claim_due(2_000_000).unwrap().remove(0)
+        };
+        let frozen = FrozenNativeAutomationAuthorityV1::freeze(
+            settings.resolve_at(root).unwrap(),
+            "custom",
+            root,
+            workspace,
+            None,
+            &[],
+            None,
+            None,
+            "Original project instructions, ñ and 🦀.\n".into(),
+            dispatch.prompt.clone(),
+            &dispatch.run_id,
+        )
+        .unwrap();
+        let sessions = SessionStore::open(root.join("sessions")).unwrap();
+        let session = sessions
+            .create_native_automation(
+                workspace,
+                frozen
+                    .to_origin(
+                        &dispatch.automation_id,
+                        &dispatch.run_id,
+                        dispatch.scheduled_at,
+                        dispatch.manual,
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(
+            NativeAutomationResultV1::derive(
+                &sessions.load(&session.id).unwrap().unwrap(),
+                &CheckpointFileStore::new(root).unwrap(),
+            )
+            .is_err(),
+            "metadata without admission has no native result"
+        );
+        sessions
+            .admit_native_turn(
+                &session.id,
+                frozen.first_turn_id(),
+                frozen.prompt(),
+                frozen.model_id(),
+                TurnMode::Build,
+            )
+            .unwrap();
+        let checkpoints = CheckpointFileStore::new(root).unwrap();
+        (store, sessions, checkpoints, dispatch, session)
+    }
+
+    pub(crate) fn observed_result(
+        sessions: &SessionStore,
+        checkpoints: &CheckpointFileStore,
+        session_id: &str,
+    ) -> (StoredSession, ValidatedNativeAutomationResult) {
+        let _lease = sessions.try_acquire_native_lease(session_id).unwrap();
+        let record = sessions.load(session_id).unwrap().unwrap();
+        let result = NativeAutomationResultV1::derive(&record, checkpoints).unwrap();
+        (record, result)
+    }
+
+    #[test]
+    fn native_result_recovers_link_and_extends_exact_journal_without_overwriting_dispatch_failure()
+    {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        let (mut store, sessions, checkpoints, dispatch, session) =
+            native_result_fixture(root.path(), &workspace, true);
+        let (record, first) = observed_result(&sessions, &checkpoints, &session.id);
+        assert_eq!(first.last_sequence(), 1);
+        assert!(first.recovery_required());
+        assert!(store
+            .record_native_result(&record, &first, 1_500_010)
+            .unwrap());
+        assert_eq!(store.runs()[0].status, AutomationRunStatus::Pending);
+        assert_eq!(
+            store.runs()[0].session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+        store
+            .complete_run(
+                &dispatch.run_id,
+                Err("Worker admission cut".into()),
+                1_500_020,
+            )
+            .unwrap();
+        drop(store);
+        let mut reopened = AutomationStore::open(root.path(), &workspace).unwrap();
+        let bytes = fs::read(&reopened.path).unwrap();
+        assert!(!reopened
+            .record_native_result(&record, &first, 1_500_030)
+            .unwrap());
+        assert_eq!(fs::read(&reopened.path).unwrap(), bytes);
+        assert_eq!(reopened.runs()[0].status, AutomationRunStatus::Failed);
+        assert_eq!(
+            reopened.runs()[0].error.as_deref(),
+            Some("Worker admission cut")
+        );
+        sessions
+            .append_native_event(&AgentEvent::new(
+                &session.id,
+                2,
+                AgentEventKind::TurnStarted {
+                    prompt: dispatch.prompt.clone(),
+                },
+            ))
+            .unwrap();
+        let (record, second) = observed_result(&sessions, &checkpoints, &session.id);
+        assert!(reopened
+            .record_native_result(&record, &second, 1_500_040)
+            .unwrap());
+        assert_eq!(second.last_sequence(), 2);
+        sessions
+            .append_native_event(&AgentEvent::new(
+                &session.id,
+                3,
+                AgentEventKind::TurnFailed {
+                    error: "Explicit failed turn before inference".into(),
+                },
+            ))
+            .unwrap();
+        let (record, terminal) = observed_result(&sessions, &checkpoints, &session.id);
+        assert_eq!(
+            terminal.outcome(),
+            crate::native_automation_result::NativeAutomationOutcome::Failed
+        );
+        assert_eq!(terminal.terminal_sequence(), Some(3));
+        assert!(!terminal.recovery_required());
+        assert!(reopened
+            .record_native_result(&record, &terminal, 1_500_050)
+            .unwrap());
+        assert_eq!(reopened.runs()[0].status, AutomationRunStatus::Failed);
+        assert_eq!(
+            reopened.runs()[0].error.as_deref(),
+            Some("Worker admission cut")
+        );
+        drop(reopened);
+        let reopened = AutomationStore::open(root.path(), &workspace).unwrap();
+        assert_eq!(
+            reopened.runs()[0].native_result.as_ref(),
+            Some(terminal.snapshot())
+        );
+        assert_eq!(sessions.load(&session.id).unwrap().unwrap(), record);
+    }
+
+    #[test]
+    fn native_result_rejects_stale_changed_prefix_and_terminal_conflicts_without_writing() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        let (mut store, sessions, checkpoints, dispatch, session) =
+            native_result_fixture(root.path(), &workspace, false);
+        let (first_record, first) = observed_result(&sessions, &checkpoints, &session.id);
+        store
+            .record_native_result(&first_record, &first, 2_000_010)
+            .unwrap();
+        let before = fs::read(&store.path).unwrap();
+        let runs = store.runs().to_vec();
+        let mut changed_same_sequence = first_record.clone();
+        changed_same_sequence.events[0].timestamp_ms += 1;
+        let changed =
+            NativeAutomationResultV1::derive(&changed_same_sequence, &checkpoints).unwrap();
+        assert!(matches!(
+            store.record_native_result(&changed_same_sequence, &changed, 2_000_020),
+            Err(AutomationError::Conflict(_))
+        ));
+        changed_same_sequence.events.push(AgentEvent::new(
+            &session.id,
+            2,
+            AgentEventKind::TurnStarted {
+                prompt: dispatch.prompt.clone(),
+            },
+        ));
+        let changed =
+            NativeAutomationResultV1::derive(&changed_same_sequence, &checkpoints).unwrap();
+        assert!(matches!(
+            store.record_native_result(&changed_same_sequence, &changed, 2_000_030),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert_eq!(store.runs(), runs);
+        assert_eq!(fs::read(&store.path).unwrap(), before);
+        sessions
+            .append_native_event(&AgentEvent::new(
+                &session.id,
+                2,
+                AgentEventKind::TurnStarted {
+                    prompt: dispatch.prompt,
+                },
+            ))
+            .unwrap();
+        let (record, newer) = observed_result(&sessions, &checkpoints, &session.id);
+        store
+            .record_native_result(&record, &newer, 2_000_040)
+            .unwrap();
+        let before = fs::read(&store.path).unwrap();
+        assert!(matches!(
+            store.record_native_result(&first_record, &first, 2_000_050),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert!(store
+            .record_native_result(&first_record, &newer, 2_000_050)
+            .is_err());
+        assert_eq!(fs::read(&store.path).unwrap(), before);
+        sessions
+            .append_native_event(&AgentEvent::new(
+                &session.id,
+                3,
+                AgentEventKind::TurnCancelled,
+            ))
+            .unwrap();
+        let (record, terminal) = observed_result(&sessions, &checkpoints, &session.id);
+        store
+            .record_native_result(&record, &terminal, 2_000_060)
+            .unwrap();
+        let mut changed_terminal = record.clone();
+        changed_terminal.events[2].kind = AgentEventKind::TurnFailed {
+            error: "Changed terminal".into(),
+        };
+        let changed = NativeAutomationResultV1::derive(&changed_terminal, &checkpoints).unwrap();
+        let before = fs::read(&store.path).unwrap();
+        assert!(matches!(
+            store.record_native_result(&changed_terminal, &changed, 2_000_070),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert_eq!(fs::read(&store.path).unwrap(), before);
+    }
+
+    #[test]
+    fn native_result_rejects_scope_links_skipped_and_trimmed_claims_and_rolls_back_save_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        let (mut store, sessions, checkpoints, dispatch, session) =
+            native_result_fixture(root.path(), &workspace, false);
+        let (record, result) = observed_result(&sessions, &checkpoints, &session.id);
+        let original = store.document.clone();
+        let foreign_workspace = root.path().join("foreign-project");
+        fs::create_dir(&foreign_workspace).unwrap();
+        let mut foreign_store = AutomationStore::open(root.path(), &foreign_workspace).unwrap();
+        let mut foreign_document = original.clone();
+        foreign_document.workspace_key = workspace_key(&foreign_workspace.canonicalize().unwrap());
+        foreign_store.commit(foreign_document).unwrap();
+        let foreign_before = fs::read(&foreign_store.path).unwrap();
+        assert!(matches!(
+            foreign_store.record_native_result(&record, &result, 2_000_015),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert_eq!(fs::read(&foreign_store.path).unwrap(), foreign_before);
+        assert_eq!(store.runs(), original.runs);
+        assert_eq!(store.automations(), original.automations);
+        for change in 0..5 {
+            let mut next = original.clone();
+            match change {
+                0 => next.runs[0].status = AutomationRunStatus::Skipped,
+                1 => next.runs[0].session_id = Some("different-session".into()),
+                2 => next.runs[0].manual = true,
+                3 => next.runs[0].scheduled_at += 1,
+                _ => next.runs[0].automation_id = Uuid::new_v4().to_string(),
+            }
+            store.commit(next).unwrap();
+            let bytes = fs::read(&store.path).unwrap();
+            let runs = store.runs().to_vec();
+            assert!(matches!(
+                store.record_native_result(&record, &result, 2_000_020),
+                Err(AutomationError::Conflict(_))
+            ));
+            assert_eq!(store.runs(), runs);
+            assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        }
+        store.commit(original).unwrap();
+        let path = store.path.clone();
+        let bytes = fs::read(&path).unwrap();
+        let runs = store.runs().to_vec();
+        let blocker = root.path().join("regular-file");
+        fs::write(&blocker, b"no directory").unwrap();
+        store.path = blocker.join("ledger.json");
+        assert!(matches!(
+            store.record_native_result(&record, &result, 2_000_030),
+            Err(AutomationError::Io(_))
+        ));
+        assert_eq!(store.runs(), runs);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        store.path = path;
+        // Failure of the dispatch before attachment must still permit exact
+        // provenance recovery; its error and status remain dispatch metadata.
+        store
+            .complete_run(&dispatch.run_id, Err("No worker started".into()), 2_000_040)
+            .unwrap();
+        assert!(store
+            .record_native_result(&record, &result, 2_000_050)
+            .unwrap());
+        assert_eq!(store.runs()[0].status, AutomationRunStatus::Failed);
+        let id = dispatch.automation_id;
+        for index in 0..MAX_RUNS_IN_LEDGER {
+            store.claim_manual(&id, 3_000_000 + index as i64).unwrap();
+        }
+        assert!(!store.runs().iter().any(|run| run.run_id == dispatch.run_id));
+        let bytes = fs::read(&store.path).unwrap();
+        assert!(matches!(
+            store.record_native_result(&record, &result, 4_000_000),
+            Err(AutomationError::NotFound)
+        ));
+        assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        assert_eq!(sessions.load(&session.id).unwrap().unwrap(), record);
+    }
+
+    #[test]
+    fn native_result_survives_pending_reopen_and_invalid_persisted_bindings_do_not_get_rewritten() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        let (mut store, sessions, checkpoints, _, session) =
+            native_result_fixture(root.path(), &workspace, false);
+        let (record, result) = observed_result(&sessions, &checkpoints, &session.id);
+        store
+            .record_native_result(&record, &result, 2_000_010)
+            .unwrap();
+        let path = store.path.clone();
+        drop(store);
+        let mut reopened = AutomationStore::open(root.path(), &workspace).unwrap();
+        assert_eq!(reopened.runs()[0].status, AutomationRunStatus::Interrupted);
+        assert_eq!(
+            reopened.runs()[0].native_result.as_ref(),
+            Some(result.snapshot())
+        );
+        let bytes = fs::read(&path).unwrap();
+        assert!(!reopened
+            .record_native_result(&record, &result, 2_000_020)
+            .unwrap());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        let original: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        drop(reopened);
+        for field in [
+            "session_id",
+            "manual",
+            "scheduled_at",
+            "status",
+            "result_unknown_field",
+        ] {
+            let mut changed = original.clone();
+            match field {
+                "session_id" => changed["runs"][0][field] = "different-session".into(),
+                "manual" => changed["runs"][0][field] = true.into(),
+                "scheduled_at" => changed["runs"][0][field] = 2_000_001.into(),
+                "status" => changed["runs"][0][field] = "skipped".into(),
+                _ => changed["runs"][0]["native_result"][field] = "unsupported".into(),
+            }
+            let changed_bytes = serde_json::to_vec_pretty(&changed).unwrap();
+            fs::write(&path, &changed_bytes).unwrap();
+            assert!(
+                AutomationStore::open(root.path(), &workspace).is_err(),
+                "accepted {field}"
+            );
+            assert_eq!(fs::read(&path).unwrap(), changed_bytes);
+            assert_eq!(sessions.load(&session.id).unwrap().unwrap(), record);
+        }
+        fs::write(&path, bytes).unwrap();
+        assert_eq!(
+            AutomationStore::open(root.path(), &workspace)
+                .unwrap()
+                .runs()[0]
+                .native_result
+                .as_ref(),
+            Some(result.snapshot())
+        );
+    }
+
+    #[test]
+    fn native_attachment_recovers_interrupted_claim_without_dispatch_or_replacing_frozen_origin() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        fs::create_dir(&workspace).unwrap();
+        let sessions = SessionStore::open(root.path().join("sessions")).unwrap();
+        let mut store = AutomationStore::open(root.path(), &workspace).unwrap();
+        let id = store
+            .create(
+                native_draft(AutomationSchedule::Once { at_ms: 2_000_000 }),
+                1_000_000,
+            )
+            .unwrap();
+        let dispatch = store.claim_due(2_000_000).unwrap().remove(0);
+        assert!(!dispatch.manual);
+        assert_eq!(store.runs()[0].manual, dispatch.manual);
+        let frozen = origin_for(&dispatch);
+        let session = sessions
+            .create_native_automation(&workspace, frozen.clone())
+            .unwrap();
+        let mut edited = native_draft(AutomationSchedule::Once { at_ms: 3_000_000 });
+        edited.prompt = "Una instrucción posterior no reemplaza el origen".into();
+        edited.native_provider = Some(native_settings("gpt-6-sol"));
+        store.update(&id, edited, 2_000_010).unwrap();
+        let path = store.path.clone();
+        drop(store);
+        let mut reopened = AutomationStore::open(root.path(), &workspace).unwrap();
+        assert_eq!(reopened.runs()[0].status, AutomationRunStatus::Interrupted);
+        assert!(reopened
+            .attach_existing_native_session(&dispatch.run_id, &session, 2_000_020)
+            .unwrap());
+        assert_eq!(reopened.runs()[0].status, AutomationRunStatus::Interrupted);
+        assert_eq!(
+            reopened.runs()[0].session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+        let saved = fs::read(&path).unwrap();
+        assert!(!reopened
+            .attach_existing_native_session(&dispatch.run_id, &session, 2_000_030)
+            .unwrap());
+        assert_eq!(fs::read(&path).unwrap(), saved);
+        assert_eq!(
+            sessions
+                .load(&session.id)
+                .unwrap()
+                .unwrap()
+                .session
+                .native_automation,
+            Some(frozen)
+        );
+        assert!(sessions
+            .load(&session.id)
+            .unwrap()
+            .unwrap()
+            .events
+            .is_empty());
+        assert!(reopened.claim_due(2_000_030).unwrap().is_empty());
+        assert_eq!(reopened.runs().len(), 1);
+        drop(reopened);
+        let reopened = AutomationStore::open(root.path(), &workspace).unwrap();
+        assert_eq!(reopened.runs()[0].status, AutomationRunStatus::Interrupted);
+        assert_eq!(
+            reopened.runs()[0].session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+    }
+
+    #[test]
+    fn native_attachment_rejects_foreign_or_invalid_origins_without_writing_ledger() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        let foreign_workspace = root.path().join("other-project");
+        fs::create_dir(&workspace).unwrap();
+        fs::create_dir(&foreign_workspace).unwrap();
+        let sessions = SessionStore::open(root.path().join("sessions")).unwrap();
+        let mut store = AutomationStore::open(root.path(), &workspace).unwrap();
+        store
+            .create(
+                native_draft(AutomationSchedule::Once { at_ms: 2_000_000 }),
+                1_000_000,
+            )
+            .unwrap();
+        let dispatch = store.claim_due(2_000_000).unwrap().remove(0);
+        let origin = origin_for(&dispatch);
+        let session = sessions
+            .create_native_automation(&workspace, origin.clone())
+            .unwrap();
+        let foreign = sessions
+            .create_native_automation(&foreign_workspace, origin.clone())
+            .unwrap();
+        let other_id = Uuid::new_v4().to_string();
+        let other_origin = NativeAutomationOrigin::new(
+            &other_id,
+            format!("{other_id}:2000000"),
+            2_000_000,
+            false,
+            "{}",
+            &dispatch.prompt,
+            "gpt-4.1",
+        )
+        .unwrap();
+        let other_automation = sessions
+            .create_native_automation(&workspace, other_origin)
+            .unwrap();
+        let next_origin = NativeAutomationOrigin::new(
+            &dispatch.automation_id,
+            format!("{}:2000001", dispatch.automation_id),
+            2_000_001,
+            false,
+            "{}",
+            &dispatch.prompt,
+            "gpt-4.1",
+        )
+        .unwrap();
+        let other_run = sessions
+            .create_native_automation(&workspace, next_origin)
+            .unwrap();
+        let mut missing_origin = session.clone();
+        missing_origin.native_automation = None;
+        let mut invalid_id = session.clone();
+        invalid_id.id = Uuid::new_v4().to_string();
+        let mut invalid_backend = session.clone();
+        invalid_backend.backend = "codex".into();
+        let mut invalid_json = session.clone();
+        invalid_json
+            .native_automation
+            .as_mut()
+            .unwrap()
+            .authority_snapshot_json
+            .push(' ');
+        let mut invalid_version = session.clone();
+        invalid_version
+            .native_automation
+            .as_mut()
+            .unwrap()
+            .authority_snapshot_version += 1;
+        for candidate in [
+            foreign,
+            other_automation,
+            other_run,
+            missing_origin,
+            invalid_id,
+            invalid_backend,
+            invalid_json,
+            invalid_version,
+        ] {
+            let bytes = fs::read(&store.path).unwrap();
+            let runs = store.runs().to_vec();
+            assert!(store
+                .attach_existing_native_session(&dispatch.run_id, &candidate, 2_000_020)
+                .is_err());
+            assert_eq!(store.runs(), runs);
+            assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        }
+        let mut inconsistent_manual = store.document.clone();
+        inconsistent_manual.runs[0].manual = true;
+        store.commit(inconsistent_manual).unwrap();
+        let bytes = fs::read(&store.path).unwrap();
+        assert!(matches!(
+            store.attach_existing_native_session(&dispatch.run_id, &session, 2_000_030),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        let mut conflicting_link = store.document.clone();
+        conflicting_link.runs[0].manual = false;
+        conflicting_link.runs[0].session_id = Some("another-already-linked-session".into());
+        store.commit(conflicting_link).unwrap();
+        let bytes = fs::read(&store.path).unwrap();
+        assert!(matches!(
+            store.attach_existing_native_session(&dispatch.run_id, &session, 2_000_040),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert_eq!(fs::read(&store.path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn native_attachment_keeps_link_after_dispatch_failure_and_preserves_claim_on_save_error() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        fs::create_dir(&workspace).unwrap();
+        let sessions = SessionStore::open(root.path().join("sessions")).unwrap();
+        let mut store = AutomationStore::open(root.path(), &workspace).unwrap();
+        let id = store
+            .create(
+                native_draft(AutomationSchedule::Once { at_ms: 2_000_000 }),
+                1_000_000,
+            )
+            .unwrap();
+        let dispatch = store.claim_manual(&id, 1_500_000).unwrap();
+        assert!(dispatch.manual);
+        assert_eq!(store.runs()[0].manual, dispatch.manual);
+        let session = sessions
+            .create_native_automation(&workspace, origin_for(&dispatch))
+            .unwrap();
+        let original = store.document.clone();
+        let mut wrong_schedule = original.clone();
+        wrong_schedule.runs[0].scheduled_at += 1;
+        store.commit(wrong_schedule).unwrap();
+        let bytes = fs::read(&store.path).unwrap();
+        assert!(matches!(
+            store.attach_existing_native_session(&dispatch.run_id, &session, 1_500_005),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        store.commit(original).unwrap();
+        let path = store.path.clone();
+        let bytes = fs::read(&path).unwrap();
+        let runs = store.runs().to_vec();
+        let blocked_parent = root.path().join("not-a-directory");
+        fs::write(
+            &blocked_parent,
+            b"regular file prevents creating staging directory",
+        )
+        .unwrap();
+        store.path = blocked_parent.join("ledger.json");
+        assert!(matches!(
+            store.attach_existing_native_session(&dispatch.run_id, &session, 1_500_010),
+            Err(AutomationError::Io(_))
+        ));
+        assert_eq!(store.runs(), runs);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        store.path = path;
+        assert!(store
+            .attach_existing_native_session(&dispatch.run_id, &session, 1_500_020)
+            .unwrap());
+        let bytes = fs::read(&store.path).unwrap();
+        assert!(matches!(
+            store.complete_run(
+                &dispatch.run_id,
+                Ok("replacement-session".into()),
+                1_500_030
+            ),
+            Err(AutomationError::Conflict(_))
+        ));
+        assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        store
+            .complete_run(
+                &dispatch.run_id,
+                Err("El worker no pudo arrancar".into()),
+                1_500_040,
+            )
+            .unwrap();
+        assert_eq!(store.runs()[0].status, AutomationRunStatus::Failed);
+        assert_eq!(
+            store.runs()[0].session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+        let bytes = fs::read(&store.path).unwrap();
+        store
+            .complete_run(
+                &dispatch.run_id,
+                Err("El worker no pudo arrancar".into()),
+                1_500_050,
+            )
+            .unwrap();
+        assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        drop(store);
+        let store = AutomationStore::open(root.path(), &workspace).unwrap();
+        assert_eq!(store.runs()[0].status, AutomationRunStatus::Failed);
+        assert_eq!(
+            store.runs()[0].session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+        assert!(sessions
+            .load(&session.id)
+            .unwrap()
+            .unwrap()
+            .events
+            .is_empty());
+    }
+
+    #[test]
+    fn native_attachment_is_idempotent_for_pending_and_confirmed_dispatch_without_claiming_success()
+    {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = SessionStore::open(root.path().join("sessions")).unwrap();
+        let mut store = AutomationStore::open(root.path(), root.path()).unwrap();
+        let id = store
+            .create(
+                native_draft(AutomationSchedule::Once { at_ms: 2_000_000 }),
+                1_000_000,
+            )
+            .unwrap();
+        let dispatch = store.claim_manual(&id, 1_100_000).unwrap();
+        let session = sessions
+            .create_native_automation(root.path(), origin_for(&dispatch))
+            .unwrap();
+        assert!(store
+            .attach_existing_native_session(&dispatch.run_id, &session, 1_100_010)
+            .unwrap());
+        assert_eq!(store.runs()[0].status, AutomationRunStatus::Pending);
+        let bytes = fs::read(&store.path).unwrap();
+        assert!(!store
+            .attach_existing_native_session(&dispatch.run_id, &session, 1_100_020)
+            .unwrap());
+        assert_eq!(fs::read(&store.path).unwrap(), bytes);
+        store
+            .complete_run(&dispatch.run_id, Ok(session.id.clone()), 1_100_030)
+            .unwrap();
+        assert_eq!(store.runs()[0].status, AutomationRunStatus::Dispatched);
+        let path = store.path.clone();
+        drop(store);
+        let mut store = AutomationStore::open(root.path(), root.path()).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        assert!(!store
+            .attach_existing_native_session(&dispatch.run_id, &session, 1_100_040)
+            .unwrap());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        assert_eq!(store.runs()[0].status, AutomationRunStatus::Dispatched);
+        assert!(sessions
+            .load(&session.id)
+            .unwrap()
+            .unwrap()
+            .events
+            .is_empty());
+    }
+
+    #[test]
+    fn trimmed_native_claim_is_not_recreated_from_retained_session_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = SessionStore::open(root.path().join("sessions")).unwrap();
+        let mut store = AutomationStore::open(root.path(), root.path()).unwrap();
+        let id = store
+            .create(
+                native_draft(AutomationSchedule::Once { at_ms: 2_000_000 }),
+                1_000_000,
+            )
+            .unwrap();
+        let dispatch = store.claim_manual(&id, 1_100_000).unwrap();
+        let session = sessions
+            .create_native_automation(root.path(), origin_for(&dispatch))
+            .unwrap();
+        for offset in 0..MAX_RUNS_IN_LEDGER {
+            store.claim_manual(&id, 1_100_001 + offset as i64).unwrap();
+        }
+        assert_eq!(store.runs().len(), MAX_RUNS_IN_LEDGER);
+        assert!(!store.runs().iter().any(|run| run.run_id == dispatch.run_id));
+        let path = store.path.clone();
+        drop(store);
+        let mut store = AutomationStore::open(root.path(), root.path()).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let runs = store.runs().to_vec();
+        assert!(matches!(
+            store.attach_existing_native_session(&dispatch.run_id, &session, 1_200_000),
+            Err(AutomationError::NotFound)
+        ));
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        assert_eq!(store.runs(), runs);
+        assert!(sessions
+            .load(&session.id)
+            .unwrap()
+            .unwrap()
+            .events
+            .is_empty());
     }
 
     #[test]

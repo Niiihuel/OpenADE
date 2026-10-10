@@ -1,0 +1,37 @@
+# Motor nativo de documentos
+
+## Referencias y decisiones
+
+Se consultó Zed en la revisión local `d284cbbc87b55d659303106ced627c8612369827`:
+
+- [`crates/editor/src/element.rs`](https://github.com/zed-industries/zed/blob/d284cbbc87b55d659303106ced627c8612369827/crates/editor/src/element.rs): el editor completo utiliza el tamaño disponible. `calculate_wrap_width` distingue ajustar al viewport de limitar columnas. OpenIDE mantiene su editor, fuente y buffer, y comprueba con tests que el viewport crece al retirar paneles. No se eliminan saltos de línea escritos por el usuario.
+- [`crates/markdown_preview/src/markdown_preview_view.rs`](https://github.com/zed-industries/zed/blob/d284cbbc87b55d659303106ced627c8612369827/crates/markdown_preview/src/markdown_preview_view.rs): preview separado del buffer, apertura dividida y reanálisis con debounce de 200 ms. OpenIDE conserva esa separación mediante un grupo de vista previa independiente del editor fuente.
+- [`crates/image_viewer/src/image_viewer.rs`](https://github.com/zed-industries/zed/blob/d284cbbc87b55d659303106ced627c8612369827/crates/image_viewer/src/image_viewer.rs): ajustar a la vista, zoom y superficie que llena su contenedor. OpenIDE reutiliza sus imágenes raster y scroll nativos.
+
+La documentación web de [ajustes de Zed](https://zed.dev/docs/reference/all-settings) confirma la diferencia entre `editor_width` y ajuste acotado, y el [catálogo de acciones](https://zed.dev/docs/all-actions) expone las acciones de Markdown e imágenes. La referencia local consultada no incluye un visor PDF del núcleo. El soporte PDF de OpenIDE se integra independientemente con [Hayro](https://github.com/LaurenzV/hayro), un intérprete y renderer en Rust. No se incorporaron fuentes ni crates de Zed.
+
+Se contrastó la apertura lateral con VS Code, revisión local `00cc2df8db2d5c4aee55d4ad14f0835da2e4729a`: [`previewManager.ts`](https://github.com/microsoft/vscode/blob/00cc2df8db2d5c4aee55d4ad14f0835da2e4729a/extensions/markdown-language-features/src/preview/previewManager.ts) resuelve `ViewColumn.Beside` al grupo contiguo y conserva la identidad de cada preview; [`preview.ts`](https://github.com/microsoft/vscode/blob/00cc2df8db2d5c4aee55d4ad14f0835da2e4729a/extensions/markdown-language-features/src/preview/preview.ts) administra su ciclo de vida y cancelación independientes. OpenIDE utiliza ese flujo de grupos y cierre propio con componentes Rust nativos.
+
+## Implementación
+
+`crates/openide-preview` recibe workspace, ruta relativa, identidad de pestaña y generación. Cada host usa un worker que conserva como máximo una solicitud pendiente y una respuesta; el grupo Markdown tiene su propio worker para convivir con una imagen o un PDF en el editor principal. Una nueva solicitud reemplaza la pendiente; la UI compara el scope completo y descarta resultados antiguos al cambiar de archivo, proyecto o modo. Un error local también cancela el trabajo anterior, para que una respuesta retrasada no borre el error.
+
+Markdown usa `pulldown-cmark` para producir un modelo de bloques e inlines. La fuente preferida es un snapshot del controlador del editor, nunca una copia guardada automáticamente. La aplicación dibuja encabezados, párrafos, listas, tareas, citas, tablas, código y recursos locales mediante `openide-ui`. El renderer reutiliza los colores de sintaxis existentes; énfasis y texto fuerte se distinguen con tonos del tema, sin introducir otra familia tipográfica. El HTML se muestra como texto inerte. Los enlaces inline conservan sus áreas reales de clic al envolver líneas y reciben foco con Tab; Enter y Espacio los activan. Los encabezados tienen destinos nativos para enlaces `#fragment`.
+
+Las imágenes locales pasan por `image`; SVG por `resvg`. Los enlaces HTTP/HTTPS sólo abren el navegador cuando el usuario los activa. La preview no descarga imágenes remotas ni referencias externas de SVG. Las rutas de archivos y recursos permanecen dentro del proyecto; en Unix se recorren mediante descriptores con `openat`, `O_NOFOLLOW` y `O_NONBLOCK` para evitar seguir enlaces o bloquearse con un FIFO sustituido durante la lectura.
+
+Hayro está fijado a `0.7.1`. El worker conserva un PDF analizado, identificado por ruta, tamaño, fecha de modificación y dispositivo/inodo en Unix, y rasteriza únicamente la página pedida. Las imágenes PNG resultantes pasan al componente raster existente. Los botones de zoom actúan sobre la escala visible, incluyendo cuando el punto de partida es Ajustar al panel.
+
+Los hosts están en `apps/agents-window/src/document_preview_app.rs` y `markdown_preview_app.rs`; la presentación de documentos en `document_preview_ui.rs` y el renderer de Markdown en `document_markdown_ui.rs`. Las acciones del editor oculto se rechazan; guardar el Markdown sigue permitido. Una navegación explícita a una línea desde Buscar vuelve a Código antes de mover el cursor.
+
+La acción **Abrir vista previa al costado** vive junto a Buscar y Más en la fila de pestañas del editor. Debajo queda una fila de breadcrumbs de 22 px. `MarkdownPreviewTab` tiene identidad y pestaña propias, con cierre, volver al código y actualizar; su barra permanece estable mientras cambian las generaciones de contenido. Abrir de nuevo el mismo Markdown reutiliza esa pestaña; seleccionar otro archivo en el editor principal no cambia el documento de la preview. La vista pertenece al proyecto y tarea activos, y se descarta al cambiar ese contexto. Los enlaces del contenido anterior no pueden navegar mientras se procesa una actualización. Cerrar ese grupo devuelve el espacio al editor sin cerrar, guardar ni recrear el buffer fuente. Si se cierra la última pestaña del editor principal, la preview ocupa el grupo completo. Ctrl+S con foco en la pestaña o sus acciones guarda su Markdown por ruta, aunque el editor principal muestre otro archivo. Los grupos se muestran en columnas cuando el área del editor dispone de al menos 640 px; en un área menor se apilan, manteniendo ambas filas de pestañas y sus controles accesibles.
+
+## Límites actuales
+
+- Archivos de hasta 32 MiB; Markdown de hasta 2 MiB, con límites de bloques, eventos y anidación.
+- Imágenes de entrada de hasta 4096 px por lado y 16 megapíxeles; salida de hasta 4 megapíxeles y 8 MiB de PNG. Markdown admite 16 imágenes y 32 MiB de PNG acumulados.
+- PNG, JPEG, WebP, SVG y el primer frame de GIF. Las imágenes enlazadas por symlink, incluso dentro del proyecto, se rechazan.
+- PDF se presenta como página rasterizada, sin selección de texto, edición de formularios/anotaciones ni interfaz de contraseña. Hayro sigue en desarrollo y puede no representar correctamente documentos complejos.
+- La cancelación descarta resultados y evita acumular trabajo. Hayro y resvg no permiten interrumpir una rasterización en curso. Los límites de entrada/salida no acotan todas las asignaciones internas de esos intérpretes. Fuera de Unix, las comprobaciones de rutas son de mejor esfuerzo y no tienen el recorrido por descriptores.
+
+Las licencias de dependencias y recursos PDF están recogidas en [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md); el contrato del motor se documenta también en [su README](../crates/openide-preview/README.md).

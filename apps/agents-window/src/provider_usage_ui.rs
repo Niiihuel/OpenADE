@@ -1,0 +1,2046 @@
+//! Native account usage surfaces. Percentages only come from a provider's
+//! measured limits; catalog prices and conversation context are never billing.
+
+use std::{
+    borrow::Cow,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use openide_ui::{
+    Button, ButtonSize, ButtonVariant, Chip, Color, Component, ComponentPalette, ControlSize,
+    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Tooltip,
+    TooltipPlacement,
+};
+
+use crate::{
+    provider_connections,
+    provider_icons::icon_for_provider,
+    provider_usage::{
+        ProviderUsageSnapshot, ProviderUsageStatus, STALE_AFTER, UsageUnit, UsageWindow,
+    },
+    theme,
+    view::ViewState,
+};
+
+const WARNING: Color = Color::rgb(224, 179, 106);
+const TRACK: Color = Color::rgb(66, 66, 66);
+const POPUP_WIDTH: f32 = 320.0;
+const POPUP_BODY_MAX_HEIGHT: f32 = 320.0;
+
+fn text(value: impl Into<String>, size: f32, color: Color) -> Element {
+    Element::text(value)
+        .font_family(FontFamily::Sans)
+        .font_size(size)
+        .foreground(color)
+}
+
+fn line(value: impl Into<String>, size: f32, color: Color) -> Element {
+    Element::truncated_text(value)
+        .font_family(FontFamily::Sans)
+        .font_size(size)
+        .foreground(color)
+}
+
+fn muted(value: impl Into<String>) -> Element {
+    text(value, 11.0, theme::SETTINGS_FOREGROUND_SUBTLE)
+}
+
+fn plan_badge(value: &str) -> Element {
+    Chip::new(
+        value,
+        ComponentPalette {
+            selected: Color::TRANSPARENT,
+            text: theme::SETTINGS_FOREGROUND_SUBTLE,
+            ..theme::component_palette()
+        },
+    )
+    .height(20.0)
+    .render()
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn elapsed_label(timestamp: u64, now: u64) -> String {
+    let seconds = now.saturating_sub(timestamp) / 1_000;
+    match seconds {
+        0..=59 => "ahora".into(),
+        60..=3_599 => format!("hace {} min", seconds / 60),
+        3_600..=86_399 => format!("hace {} h", seconds / 3_600),
+        _ => format!("hace {} d", seconds / 86_400),
+    }
+}
+
+fn stale(snapshot: &ProviderUsageSnapshot, now: u64) -> bool {
+    snapshot.status == ProviderUsageStatus::Error
+        || snapshot
+            .fetched_at_ms
+            .is_some_and(|timestamp| now.saturating_sub(timestamp) > STALE_AFTER.as_millis() as u64)
+}
+
+fn updated(snapshot: &ProviderUsageSnapshot, now: u64) -> String {
+    let Some(timestamp) = snapshot.fetched_at_ms else {
+        return match snapshot.status {
+            ProviderUsageStatus::Loading => "Consultando tu cuenta…",
+            ProviderUsageStatus::External => "Consulta directa en tu cuenta",
+            ProviderUsageStatus::Disconnected => "Sin conectar",
+            ProviderUsageStatus::NeedsSignIn => "Vuelve a conectar tu cuenta",
+            _ => "Sin medición reciente",
+        }
+        .into();
+    };
+    format!(
+        "{} · {}",
+        if stale(snapshot, now) {
+            "Último dato"
+        } else {
+            "Actualizado"
+        },
+        elapsed_label(timestamp, now)
+    )
+}
+
+fn reset_label(window: &UsageWindow, now: u64) -> Option<String> {
+    if let Some(label) = &window.reset_label {
+        return Some(label.clone());
+    }
+    window.reset_at_ms.map(|reset| {
+        if reset <= now {
+            return "Pendiente de actualización".into();
+        }
+        let minutes = (reset.saturating_sub(now) / 60_000).max(1);
+        let duration = if minutes < 60 {
+            format!("{minutes} min")
+        } else if minutes < 1_440 {
+            let hours = minutes / 60;
+            let rest = minutes % 60;
+            if rest == 0 {
+                format!("{hours} h")
+            } else {
+                format!("{hours} h {rest} min")
+            }
+        } else {
+            format!("{} d {} h", minutes / 1_440, minutes % 1_440 / 60)
+        };
+        format!("Se renueva en {duration}")
+    })
+}
+
+fn amount(value: f64, unit: UsageUnit) -> String {
+    match unit {
+        UsageUnit::Usd => format!("${value:.2}"),
+        UsageUnit::Requests => format!("{value:.0}"),
+        UsageUnit::Percent => format!("{value:.0}%"),
+    }
+}
+
+fn usage_color(percent: f64) -> Color {
+    if percent >= 100.0 {
+        theme::DESTRUCTIVE
+    } else if percent >= 80.0 {
+        WARNING
+    } else {
+        theme::FOREGROUND
+    }
+}
+
+fn balance_amount(snapshot: &ProviderUsageSnapshot) -> Option<String> {
+    let balance = snapshot.balances.first()?;
+    Some(if balance.currency.eq_ignore_ascii_case("USD") {
+        format!("${:.2}", balance.amount)
+    } else {
+        format!("{:.2} {}", balance.amount, balance.currency)
+    })
+}
+
+fn headline(snapshot: &ProviderUsageSnapshot) -> (String, String, Color) {
+    if let Some(value) = balance_amount(snapshot) {
+        return (value, snapshot.balances[0].label.clone(), theme::FOREGROUND);
+    }
+    if let Some(window) = snapshot
+        .windows
+        .iter()
+        .find(|window| window.unit == UsageUnit::Usd && window.remaining.is_some())
+    {
+        return (
+            amount(window.remaining.unwrap(), UsageUnit::Usd),
+            format!("disponible · {}", window.label),
+            theme::FOREGROUND,
+        );
+    }
+    if let Some(window) = snapshot
+        .windows
+        .iter()
+        .find(|window| window.remaining_percent().is_some())
+    {
+        let remaining = window.remaining_percent().unwrap();
+        return (
+            format!("{remaining:.0}%"),
+            format!("disponible · {}", window.label),
+            usage_color(100.0 - remaining),
+        );
+    }
+    if let Some(window) = snapshot.windows.first() {
+        return (
+            amount(window.used, window.unit),
+            window.label.clone(),
+            theme::FOREGROUND,
+        );
+    }
+    let value = match snapshot.status {
+        ProviderUsageStatus::Disconnected => "Conecta tu cuenta",
+        ProviderUsageStatus::NeedsSignIn => "Reconecta tu cuenta",
+        ProviderUsageStatus::Loading => "Consultando…",
+        ProviderUsageStatus::External => "Ver en tu cuenta",
+        ProviderUsageStatus::Error => "No disponible",
+        ProviderUsageStatus::Ready => "Sin medición",
+    };
+    (
+        value.into(),
+        status_label(snapshot.status).into(),
+        theme::FOREGROUND,
+    )
+}
+
+fn status_label(status: ProviderUsageStatus) -> &'static str {
+    match status {
+        ProviderUsageStatus::Disconnected => "Sin conectar",
+        ProviderUsageStatus::NeedsSignIn => "Requiere conexión",
+        ProviderUsageStatus::Loading => "Consultando",
+        ProviderUsageStatus::Ready => "Conectado",
+        ProviderUsageStatus::External => "En tu cuenta",
+        ProviderUsageStatus::Error => "Sin actualizar",
+    }
+}
+
+fn fallback(state: &ViewState, id: &str, name: &str) -> ProviderUsageSnapshot {
+    let connection = state.provider_connections.get(id);
+    let status = if state.native_provider_registry_error.is_some() {
+        ProviderUsageStatus::Error
+    } else if connection.is_some_and(|connection| connection.needs_sign_in) {
+        ProviderUsageStatus::NeedsSignIn
+    } else if connection.is_some_and(|connection| connection.configured) {
+        ProviderUsageStatus::Loading
+    } else {
+        ProviderUsageStatus::Disconnected
+    };
+    ProviderUsageSnapshot {
+        provider_id: id.into(),
+        provider_name: name.into(),
+        status,
+        plan_label: None,
+        account: connection.and_then(|connection| connection.account.clone()),
+        windows: Vec::new(),
+        balances: Vec::new(),
+        fetched_at_ms: None,
+        account_url: None,
+        message: state.native_provider_registry_error.as_ref().map(|_| {
+            "No se pudo cargar el catálogo de proveedores. Revisa su configuración.".into()
+        }),
+    }
+}
+
+fn snapshot<'a>(state: &'a ViewState, id: &str, name: &str) -> Cow<'a, ProviderUsageSnapshot> {
+    // The connection catalog is authoritative after sign-out, even while an
+    // older network result is still being discarded by the runtime.
+    if state
+        .provider_connections
+        .get(id)
+        .is_some_and(|connection| !connection.configured || connection.needs_sign_in)
+    {
+        return Cow::Owned(fallback(state, id, name));
+    }
+    state
+        .provider_usage
+        .get(id)
+        .map(Cow::Borrowed)
+        .unwrap_or_else(|| Cow::Owned(fallback(state, id, name)))
+}
+
+fn connected(state: &ViewState, id: &str) -> bool {
+    state
+        .provider_connections
+        .get(id)
+        .is_some_and(|connection| connection.configured && !connection.needs_sign_in)
+}
+
+fn provider_mark(id: &str) -> Element {
+    Element::panel(Element::icon(icon_for_provider(id)).foreground(theme::ICON_PRIMARY))
+        .size(Some(26.0), Some(26.0))
+        .center_content()
+        .background(theme::SELECTED)
+        .radius(8.0)
+}
+
+fn progress(window: &UsageWindow) -> Option<Element> {
+    let percent = window.used_percent()?;
+    // Flex shares the available width, so the measured track also fits when
+    // the anchored popover is narrowed by the viewport.
+    let fill = percent.clamp(0.0, 100.0) as f32;
+    let mut pieces = Vec::new();
+    if fill > 0.0 {
+        pieces.push(
+            Element::spacer()
+                .background(usage_color(percent))
+                .flex(fill),
+        );
+    }
+    if fill < 100.0 {
+        pieces.push(Element::spacer().background(TRACK).flex(100.0 - fill));
+    }
+    Some(
+        Element::row(pieces)
+            .size(None, Some(4.0))
+            .radius(2.0)
+            .clip_children(),
+    )
+}
+
+fn window_row(window: &UsageWindow, now: u64) -> Element {
+    let value = match window.limit {
+        Some(limit) if window.unit != UsageUnit::Percent => format!(
+            "{} / {}",
+            amount(window.used, window.unit),
+            amount(limit, window.unit)
+        ),
+        // A plan measured in percent is read by what is left of it.
+        _ if window.unit == UsageUnit::Percent && window.remaining.is_some() => format!(
+            "{} restante",
+            amount(window.remaining.unwrap_or_default(), window.unit)
+        ),
+        _ => format!("{} usado", amount(window.used, window.unit)),
+    };
+    let mut rows = vec![
+        Element::row(vec![
+            line(&window.label, 12.0, theme::FOREGROUND).flex(1.0),
+            line(value, 12.0, theme::FOREGROUND),
+        ])
+        .gap(8.0),
+    ];
+    if let Some(track) = progress(window) {
+        rows.push(track);
+    }
+    if let Some(reset) = reset_label(window, now) {
+        rows.push(muted(reset));
+    }
+    Element::column(rows).gap(6.0)
+}
+
+fn account_action(snapshot: &ProviderUsageSnapshot) -> Element {
+    let (id, label, icon) = match snapshot.status {
+        ProviderUsageStatus::Disconnected => (
+            format!("provider_usage_connect:{}", snapshot.provider_id),
+            "Conectar",
+            Icon::Add,
+        ),
+        ProviderUsageStatus::NeedsSignIn => (
+            format!("provider_usage_connect:{}", snapshot.provider_id),
+            "Reconectar",
+            Icon::Refresh,
+        ),
+        _ if snapshot.account_url.is_some() => (
+            format!("provider_usage_account:{}", snapshot.provider_id),
+            "Abrir cuenta",
+            Icon::ArrowRight,
+        ),
+        _ => (
+            format!("provider_usage_connect:{}", snapshot.provider_id),
+            "Ver conexión",
+            Icon::ArrowRight,
+        ),
+    };
+    // The same outlined action, with its icon first, as every other Settings page.
+    Button::new(id, label, crate::settings_ui::control_palette())
+        .icon(icon)
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .render()
+}
+
+fn account_card(
+    state: &ViewState,
+    snapshot: &ProviderUsageSnapshot,
+    width: f32,
+    now: u64,
+) -> Element {
+    let compact = width < 500.0;
+    let status_color = if stale(snapshot, now)
+        || matches!(
+            snapshot.status,
+            ProviderUsageStatus::Error | ProviderUsageStatus::NeedsSignIn
+        ) {
+        WARNING
+    } else {
+        theme::SETTINGS_FOREGROUND_SUBTLE
+    };
+    let mut titles = vec![line(&snapshot.provider_name, 12.0, theme::FOREGROUND)];
+    let subtitle = snapshot
+        .account
+        .as_deref()
+        .unwrap_or(status_label(snapshot.status));
+    titles.push(line(subtitle, 11.0, status_color));
+    let mut header = vec![
+        provider_mark(&snapshot.provider_id),
+        Element::column(titles).gap(4.0).flex(1.0),
+    ];
+    if width >= 420.0 {
+        if let Some(plan) = &snapshot.plan_label {
+            header.push(Element::column(vec![
+                Element::spacer().flex(1.0),
+                plan_badge(plan),
+                Element::spacer().flex(1.0),
+            ]));
+        }
+    }
+    let mut rows = vec![Element::row(header).gap(6.0)];
+    if width < 420.0 {
+        if let Some(plan) = &snapshot.plan_label {
+            rows.push(Element::row(vec![
+                plan_badge(plan),
+                Element::spacer().flex(1.0),
+            ]));
+        }
+    }
+    let measured = !snapshot.windows.is_empty() || !snapshot.balances.is_empty();
+    if measured {
+        let (value, label, color) = headline(snapshot);
+        rows.push(Element::column(vec![text(value, 18.0, color), muted(label)]).gap(4.0));
+        for balance in snapshot.balances.iter().skip(1) {
+            rows.push(
+                Element::row(vec![
+                    muted(&balance.label).flex(1.0),
+                    text(
+                        format!("{:.2} {}", balance.amount, balance.currency),
+                        12.0,
+                        theme::FOREGROUND,
+                    ),
+                ])
+                .gap(8.0),
+            );
+        }
+        rows.extend(
+            snapshot
+                .windows
+                .iter()
+                .map(|window| window_row(window, now)),
+        );
+    } else {
+        let title = match snapshot.status {
+            ProviderUsageStatus::External => "El consumo se consulta en tu cuenta",
+            ProviderUsageStatus::Disconnected => "Conecta una cuenta para ver su uso",
+            ProviderUsageStatus::NeedsSignIn => "La sesión necesita renovarse",
+            ProviderUsageStatus::Loading => "Consultando los límites de tu cuenta…",
+            ProviderUsageStatus::Error => "No se pudo consultar el consumo",
+            ProviderUsageStatus::Ready => "El proveedor no devolvió una medición",
+        };
+        rows.push(text(title, 12.0, theme::FOREGROUND));
+    }
+    if let Some(message) = &snapshot.message {
+        rows.push(text(message, 11.0, status_color));
+    }
+    // The model count shares the same authoritative catalog as Settings and
+    // the composer. A missing catalog stays absent, never a invented count.
+    if !compact {
+        if let Some(provider) = state
+            .catalog
+            .as_ref()
+            .and_then(|catalog| catalog.providers.get(&snapshot.provider_id))
+        {
+            rows.push(muted(format!(
+                "{} modelos en tu catálogo",
+                provider.models.len()
+            )));
+        }
+    }
+    if snapshot.fetched_at_ms.is_some()
+        || matches!(
+            snapshot.status,
+            ProviderUsageStatus::Loading | ProviderUsageStatus::Error
+        )
+    {
+        rows.push(text(updated(snapshot, now), 11.0, status_color));
+    }
+    // Keep actions independent of copy length and account state. The body
+    // absorbs the extra height of its row, so every footer shares a baseline.
+    let footer = Element::column(vec![
+        Element::spacer()
+            .size(None, Some(1.0))
+            .background(theme::BORDER),
+        Element::row(vec![Element::spacer().flex(1.0), account_action(snapshot)]),
+    ])
+    .gap(10.0);
+    Element::panel(
+        Element::column(vec![Element::column(rows).gap(10.0).flex(1.0), footer]).gap(10.0),
+    )
+    .padding(10.0)
+    .background(theme::CARD)
+    .border(theme::BORDER, 1.0)
+    .radius(crate::settings_parts::CARD_RADIUS)
+}
+
+fn refresh(state: &ViewState, compact: bool) -> Element {
+    if compact {
+        Tooltip::new(
+            IconButton::new("usage_refresh", Icon::Refresh, theme::menu_palette())
+                .variant(ButtonVariant::Subtle)
+                .button_size(ButtonSize::IconSmall)
+                .loading(state.provider_usage_refreshing)
+                .render(),
+            "usage_refresh",
+            "Actualizar consumo",
+            theme::component_palette(),
+        )
+        .placement(TooltipPlacement::Below)
+        .render()
+    } else {
+        Button::new("usage_refresh", "Actualizar", theme::component_palette())
+            .icon(Icon::Refresh)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Compact)
+            .loading(state.provider_usage_refreshing)
+            .render()
+    }
+}
+
+fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
+    let (action, action_label, icon) = match snapshot.status {
+        ProviderUsageStatus::Disconnected => (
+            format!("provider_usage_connect:{}", snapshot.provider_id),
+            "Conectar cuenta",
+            Icon::Add,
+        ),
+        ProviderUsageStatus::NeedsSignIn => (
+            format!("provider_usage_connect:{}", snapshot.provider_id),
+            "Reconectar cuenta",
+            Icon::Refresh,
+        ),
+        _ if snapshot.account_url.is_some() => (
+            format!("provider_usage_account:{}", snapshot.provider_id),
+            "Abrir cuenta en el navegador",
+            Icon::ArrowRight,
+        ),
+        _ => (
+            format!("provider_usage_connect:{}", snapshot.provider_id),
+            "Ver conexión del proveedor",
+            Icon::Settings,
+        ),
+    };
+    let mut identity =
+        vec![line(&snapshot.provider_name, 13.0, theme::FOREGROUND).size(None, Some(16.0))];
+    if let Some(plan) = &snapshot.plan_label {
+        identity.push(line(plan, 11.0, theme::FOREGROUND_SUBTLE).size(None, Some(16.0)));
+    }
+    if let Some(account) = &snapshot.account {
+        identity.push(line(account, 11.0, theme::FOREGROUND_SUBTLE).size(None, Some(16.0)));
+    }
+    let header_height = (identity.len() as f32 * 18.0 - 2.0).max(36.0);
+    let account = snapshot
+        .account
+        .as_deref()
+        .unwrap_or(status_label(snapshot.status));
+    let mut help = vec![account.to_owned()];
+    if let Some(plan) = &snapshot.plan_label {
+        help.push(plan.clone());
+    }
+    if let Some(message) = &snapshot.message {
+        help.push(message.clone());
+    }
+    // Narrow numeric columns may elide unusually large limits. Preserve the
+    // exact provider values in the identity tooltip as well as Settings.
+    for window in &snapshot.windows {
+        help.push(match window.limit {
+            Some(limit) => format!(
+                "{}: {} / {}",
+                window.label,
+                amount(window.used, window.unit),
+                amount(limit, window.unit)
+            ),
+            None => format!(
+                "{}: {} usado",
+                window.label,
+                amount(window.used, window.unit)
+            ),
+        });
+    }
+    for balance in &snapshot.balances {
+        help.push(format!(
+            "{}: {:.2} {}",
+            balance.label, balance.amount, balance.currency
+        ));
+    }
+    let identity = Tooltip::new(
+        Element::column(identity).gap(2.0).flex(1.0),
+        format!("provider_usage_identity:{}", snapshot.provider_id),
+        &snapshot.provider_name,
+        theme::component_palette(),
+    )
+    .description(help.join("\n"))
+    .max_width(320.0)
+    .render()
+    .flex(1.0);
+    let action = Tooltip::new(
+        theme::interactive_surface(
+            IconButton::new(&action, icon, theme::menu_palette())
+                .variant(ButtonVariant::Ghost)
+                .button_size(ButtonSize::IconSmall)
+                .render(),
+        ),
+        action,
+        action_label,
+        theme::component_palette(),
+    )
+    .description(format!("{} · {account}", snapshot.provider_name))
+    .render();
+    let mut rows = vec![
+        Element::row(vec![
+            Element::icon(icon_for_provider(&snapshot.provider_id))
+                .foreground(theme::ICON_PRIMARY)
+                .size(Some(24.0), Some(header_height)),
+            identity,
+            action,
+        ])
+        .gap(8.0)
+        .size(None, Some(header_height)),
+    ];
+    let mut content_height = header_height;
+    // Show each measured value once. The Settings page retains the expanded
+    // explanation; this menu does not repeat the first window as a headline.
+    for balance in &snapshot.balances {
+        let value = if balance.currency.eq_ignore_ascii_case("USD") {
+            format!("${:.2}", balance.amount)
+        } else {
+            format!("{:.2} {}", balance.amount, balance.currency)
+        };
+        rows.push(
+            Element::row(vec![
+                line(&balance.label, 12.0, theme::FOREGROUND_SUBTLE).flex(1.0),
+                line(value, 13.0, theme::FOREGROUND).size(Some(112.0), Some(20.0)),
+            ])
+            .gap(8.0)
+            .size(None, Some(20.0)),
+        );
+        content_height += 20.0;
+    }
+    for window in &snapshot.windows {
+        let percent = window.used_percent();
+        let value = match window.limit {
+            Some(limit) if window.unit != UsageUnit::Percent => format!(
+                "{} / {}",
+                amount(window.used, window.unit),
+                amount(limit, window.unit)
+            ),
+            _ => format!("{} usado", amount(window.used, window.unit)),
+        };
+        let mut parts = vec![
+            Element::row(vec![
+                line(&window.label, 12.0, theme::FOREGROUND_SUBTLE).flex(1.0),
+                line(value, 12.0, percent.map_or(theme::FOREGROUND, usage_color))
+                    .size(Some(112.0), Some(18.0)),
+            ])
+            .gap(8.0)
+            .size(None, Some(18.0)),
+        ];
+        let mut height = 18.0;
+        if let Some(track) = progress(window) {
+            parts.push(track);
+            height += 8.0;
+        }
+        if let Some(reset) = reset_label(window, now) {
+            parts.push(line(reset, 10.5, theme::FOREGROUND_SUBTLE).size(None, Some(14.0)));
+            height += 18.0;
+        }
+        rows.push(Element::column(parts).gap(4.0).size(None, Some(height)));
+        content_height += height;
+    }
+    let measured = !snapshot.windows.is_empty() || !snapshot.balances.is_empty();
+    let notice = if stale(snapshot, now) && measured {
+        format!(
+            "Sin actualizar · {}",
+            snapshot.fetched_at_ms.map_or_else(
+                || "último dato".into(),
+                |timestamp| elapsed_label(timestamp, now)
+            )
+        )
+    } else if measured {
+        updated(snapshot, now)
+    } else {
+        match snapshot.status {
+            ProviderUsageStatus::External => "Consulta el consumo en su web",
+            ProviderUsageStatus::Loading => "Consultando consumo…",
+            ProviderUsageStatus::NeedsSignIn => "Vuelve a conectar tu cuenta",
+            ProviderUsageStatus::Disconnected => "Conecta una cuenta para ver su uso",
+            ProviderUsageStatus::Error => "No se pudo actualizar el consumo",
+            ProviderUsageStatus::Ready => "Sin datos de consumo disponibles",
+        }
+        .into()
+    };
+    rows.push(
+        line(
+            notice,
+            10.5,
+            if stale(snapshot, now) || snapshot.status == ProviderUsageStatus::NeedsSignIn {
+                WARNING
+            } else {
+                theme::FOREGROUND_SUBTLE
+            },
+        )
+        .size(None, Some(16.0)),
+    );
+    content_height += 16.0 + 8.0 * rows.len().saturating_sub(1) as f32 + 12.0;
+    (
+        Element::column(rows)
+            .gap(8.0)
+            .padding(6.0)
+            .size(None, Some(content_height)),
+        content_height,
+    )
+}
+
+fn popup(state: &ViewState) -> Element {
+    let now = now_ms();
+    let mut cards = Vec::new();
+    let mut accounts: Vec<_> = provider_connections::PROVIDERS
+        .iter()
+        .filter(|(id, _, _)| {
+            connected(state, id)
+                || state
+                    .provider_connections
+                    .get(*id)
+                    .is_some_and(|connection| connection.needs_sign_in)
+        })
+        .collect();
+    // The provider in the compact summary is the first account inspected.
+    // Remaining accounts keep their stable catalog order.
+    accounts.sort_by_key(|(id, _, _)| *id != state.native_provider_id);
+    let mut body_height = 0.0;
+    for (id, name, _) in accounts {
+        if !cards.is_empty() {
+            cards.push(
+                Element::spacer()
+                    .background(theme::BORDER)
+                    .size(None, Some(1.0)),
+            );
+            body_height += 1.0;
+        }
+        let (row, height) = popup_account(&snapshot(state, id, name), now);
+        cards.push(row);
+        body_height += height;
+    }
+    if cards.is_empty() {
+        let (id, name, _) = provider_connections::PROVIDERS
+            .iter()
+            .find(|(id, _, _)| *id == state.native_provider_id)
+            .unwrap_or(&provider_connections::PROVIDERS[0]);
+        let (row, height) = popup_account(&snapshot(state, id, name), now);
+        cards.push(row);
+        body_height = height;
+    }
+    Element::column(vec![
+        Element::row(vec![
+            Element::column(vec![
+                Element::spacer().flex(1.0),
+                text("Cuenta y uso", 13.0, theme::FOREGROUND).size(None, Some(18.0)),
+                Element::spacer().flex(1.0),
+            ])
+            .flex(1.0),
+            refresh(state, true),
+        ])
+        .gap(6.0)
+        .size(None, Some(32.0)),
+        Element::spacer()
+            .background(theme::BORDER)
+            .size(None, Some(1.0)),
+        ScrollArea::new("provider_usage_popup", Element::column(cards))
+            .tint(theme::FOREGROUND_SUBTLE)
+            .render()
+            .size(None, Some(body_height.min(POPUP_BODY_MAX_HEIGHT)))
+            .flex(1.0),
+        Element::spacer()
+            .background(theme::BORDER)
+            .size(None, Some(1.0)),
+        Button::new(
+            "usage_details",
+            "Ver uso y proveedores",
+            theme::menu_palette(),
+        )
+        .trailing_icon(Icon::ArrowRight)
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Regular)
+        .render()
+        .size(None, Some(32.0)),
+    ])
+    .gap(4.0)
+}
+
+/// Compact card for the sidebar footer. Its height stays independent of the
+/// number of accounts, while the anchored body has its own scroll position.
+pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
+    let padding = 6.0;
+    let summary_height = 32.0;
+    let anchor_height = summary_height + 2.0 * padding;
+    let content_width = (width - 2.0 * padding).max(0.0);
+    let available = |id: &str| {
+        connected(state, id)
+            || state
+                .provider_connections
+                .get(id)
+                .is_some_and(|connection| connection.needs_sign_in)
+    };
+    let count = provider_connections::PROVIDERS
+        .iter()
+        .filter(|(id, _, _)| available(id))
+        .count();
+    let selected = provider_connections::PROVIDERS
+        .iter()
+        .find(|(id, _, _)| *id == state.native_provider_id && available(id))
+        .or_else(|| {
+            provider_connections::PROVIDERS
+                .iter()
+                .find(|(id, _, _)| available(id))
+        });
+    let (icon, summary, help, color) = if let Some((id, name, _)) = selected {
+        let snapshot = snapshot(state, id, name);
+        let (value, label, color) = headline(&snapshot);
+        let out_of_date = stale(&snapshot, now_ms());
+        let detail = if out_of_date {
+            "Sin actualizar".to_owned()
+        } else {
+            value.clone()
+        };
+        (
+            icon_for_provider(id),
+            format!("{name} · {detail}"),
+            format!(
+                "{name}\n{value} · {label}\n{}",
+                updated(&snapshot, now_ms())
+            ),
+            if out_of_date || snapshot.status == ProviderUsageStatus::NeedsSignIn {
+                WARNING
+            } else {
+                color
+            },
+        )
+    } else {
+        (
+            crate::provider_icons::CONTEXT_RING,
+            "Conectar proveedor".into(),
+            "Conecta un proveedor para consultar su cuenta y consumo.".into(),
+            theme::FOREGROUND_SUBTLE,
+        )
+    };
+    let mut heading = vec![line("Cuenta y uso", 12.0, theme::FOREGROUND).flex(1.0)];
+    if count > 1 {
+        heading.push(text(
+            format!("+{}", count - 1),
+            11.0,
+            theme::FOREGROUND_SUBTLE,
+        ));
+    }
+    let anchor = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND)
+        .interactive_surface(Element::clickable(
+            "usage_toggle",
+            Element::row(vec![
+                Element::panel(
+                    Element::icon(icon)
+                        .foreground(theme::ICON_PRIMARY)
+                        .size(Some(16.0), Some(16.0)),
+                )
+                .center_content()
+                .size(Some(16.0), Some(summary_height)),
+                Element::column(vec![
+                    Element::row(heading).gap(4.0).size(None, Some(16.0)),
+                    line(summary, 11.0, color).size(None, Some(16.0)),
+                ])
+                .flex(1.0),
+                Element::panel(
+                    Element::icon(Icon::ChevronRight)
+                        .foreground(theme::FOREGROUND_SUBTLE)
+                        .size(Some(16.0), Some(16.0)),
+                )
+                .center_content()
+                .size(Some(16.0), Some(summary_height)),
+            ])
+            .gap(6.0)
+            .padding(padding),
+        ))
+        .background(if state.provider_usage_open {
+            theme::SELECTED
+        } else {
+            theme::SIDEBAR
+        })
+        .size(Some(content_width), Some(anchor_height));
+    let anchor = Tooltip::new(
+        anchor,
+        "usage_toggle",
+        "Cuenta y uso",
+        theme::component_palette(),
+    )
+    .description(help)
+    .max_width(320.0)
+    .render();
+    let surface = Popover::new(
+        anchor,
+        popup(state),
+        state.provider_usage_open,
+        "usage_dismiss",
+        theme::menu_palette(),
+    )
+    .placement(PopoverPlacement::TopEnd)
+    .width(POPUP_WIDTH)
+    .render()
+    .padding(padding)
+    .size(Some(width), Some(anchor_height + 2.0 * padding));
+    Element::column(vec![surface])
+}
+
+/// Short windows keep account usage reachable beside the account footer.
+pub(crate) fn sidebar_compact(state: &ViewState) -> Element {
+    let anchor = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND).interactive_surface(
+        IconButton::new(
+            "usage_toggle",
+            crate::provider_icons::CONTEXT_RING,
+            theme::action_palette(theme::SIDEBAR, theme::FOREGROUND),
+        )
+        .variant(ButtonVariant::Ghost)
+        .button_size(ButtonSize::IconExtraSmall)
+        .active(state.provider_usage_open)
+        .tooltip("Cuenta y uso")
+        .tooltip_placement(TooltipPlacement::Right)
+        .render(),
+    );
+    let surface = Popover::new(
+        anchor,
+        popup(state),
+        state.provider_usage_open,
+        "usage_dismiss",
+        theme::menu_palette(),
+    )
+    .placement(PopoverPlacement::TopEnd)
+    .width(POPUP_WIDTH)
+    .render()
+    .size(Some(24.0), Some(24.0));
+    Element::column(vec![surface]).size(Some(24.0), Some(24.0))
+}
+
+/// Settings cards for the same four-account catalog used by provider setup.
+/// The outer Settings page owns scrolling and the page heading.
+pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> {
+    let compact = content_width < 500.0;
+    let count = provider_connections::PROVIDERS
+        .iter()
+        .filter(|(id, _, _)| connected(state, id))
+        .count();
+    let intro = Element::column(vec![
+        text("Suscripciones y consumo", 18.0, theme::FOREGROUND),
+        muted(format!(
+            "{count} {} · Información de cada cuenta",
+            if count == 1 {
+                "proveedor conectado"
+            } else {
+                "proveedores conectados"
+            }
+        )),
+    ])
+    .gap(4.0);
+    let mut cards = vec![if compact {
+        Element::column(vec![intro, refresh(state, false)]).gap(12.0)
+    } else {
+        Element::row(vec![intro.flex(1.0), refresh(state, false)]).gap(12.0)
+    }];
+    let now = now_ms();
+    let two_columns = content_width >= 700.0;
+    let card_width = if two_columns {
+        (content_width - 12.0) / 2.0
+    } else {
+        content_width
+    };
+    for accounts in provider_connections::PROVIDERS.chunks(if two_columns { 2 } else { 1 }) {
+        let row = accounts
+            .iter()
+            .map(|(id, name, _)| {
+                account_card(state, &snapshot(state, id, name), card_width, now)
+                    .size(Some(card_width), None)
+            })
+            .collect::<Vec<_>>();
+        cards.push(if two_columns {
+            Element::row(row).gap(12.0)
+        } else {
+            Element::column(row)
+        });
+    }
+    cards.push(muted("Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción."));
+    cards
+}
+
+/// The catalog's connection detail can embed the exact same account data.
+pub(crate) fn provider_card(state: &ViewState, id: &str, width: f32) -> Option<Element> {
+    let (_, name, _) = provider_connections::PROVIDERS
+        .iter()
+        .find(|(provider, _, _)| *provider == id)?;
+    Some(account_card(
+        state,
+        &snapshot(state, id, name),
+        width,
+        now_ms(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider_connections::ConnectionSummary;
+    use openide_ui::{DrawCommand, Frame, Key, Point, Size, UiAction, UiEvent, UiTree};
+
+    fn fixture() -> ViewState {
+        let mut state = crate::view::tests::empty_state();
+        state.native_provider_id = "opencode".into();
+        let now = now_ms();
+        for (id, name, _) in provider_connections::PROVIDERS {
+            let connected = matches!(*id, "codex" | "openrouter" | "opencode");
+            state.provider_connections.insert(
+                (*id).into(),
+                ConnectionSummary {
+                    configured: connected,
+                    account: connected.then(|| "cuenta@example.com".into()),
+                    ..Default::default()
+                },
+            );
+            let mut account = ProviderUsageSnapshot {
+                provider_id: (*id).into(),
+                provider_name: (*name).into(),
+                status: if matches!(*id, "nvidia" | "minimax" | "zai") {
+                    ProviderUsageStatus::Disconnected
+                } else {
+                    ProviderUsageStatus::External
+                },
+                plan_label: None,
+                account: connected.then(|| "cuenta@example.com".into()),
+                windows: Vec::new(),
+                balances: Vec::new(),
+                fetched_at_ms: None,
+                account_url: Some("https://example.com/account".into()),
+                message: None,
+            };
+            if *id == "codex" {
+                account.plan_label = Some("Plan de ChatGPT".into());
+                account.message = Some("Los límites de tu plan se consultan en ChatGPT.".into());
+            }
+            if *id == "openrouter" {
+                account.status = ProviderUsageStatus::Ready;
+                account.fetched_at_ms = Some(now - 120_000);
+                account.plan_label = Some("Créditos de API".into());
+                account.message = Some(
+                    "Consumo de la clave conectada; el saldo total se consulta en OpenRouter."
+                        .into(),
+                );
+                account.windows.push(UsageWindow {
+                    label: "Límite de la clave".into(),
+                    used: 3.0,
+                    limit: Some(10.0),
+                    remaining: Some(7.0),
+                    unit: UsageUnit::Usd,
+                    reset_at_ms: None,
+                    reset_label: None,
+                });
+            }
+            if *id == "opencode" {
+                account.status = ProviderUsageStatus::Ready;
+                account.plan_label = Some("OpenCode Go".into());
+                account.fetched_at_ms = Some(now);
+                account.windows = vec![
+                    UsageWindow {
+                        label: "Sesión · 5 h".into(),
+                        used: 82.0,
+                        limit: Some(100.0),
+                        remaining: Some(18.0),
+                        unit: UsageUnit::Percent,
+                        reset_at_ms: Some(now + 5_400_000),
+                        reset_label: None,
+                    },
+                    UsageWindow {
+                        label: "Semanal".into(),
+                        used: 36.0,
+                        limit: Some(100.0),
+                        remaining: Some(64.0),
+                        unit: UsageUnit::Percent,
+                        reset_at_ms: Some(now + 345_600_000),
+                        reset_label: None,
+                    },
+                ];
+            }
+            state.provider_usage.insert((*id).into(), account);
+        }
+        state
+    }
+
+    fn frame_text(frame: &Frame) -> String {
+        frame
+            .commands
+            .iter()
+            .filter_map(|command| {
+                if let DrawCommand::Text { text, .. } = command {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn point_for(frame: &Frame, id: &str) -> Point {
+        let rect = frame
+            .regions
+            .iter()
+            .find(|region| region.id == id)
+            .unwrap_or_else(|| panic!("missing action {id}"))
+            .rect;
+        Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)
+    }
+
+    fn click(tree: &mut UiTree, frame: &Frame, id: &str) -> Vec<UiAction> {
+        let point = point_for(frame, id);
+        tree.handle_event(UiEvent::PointerDown(point));
+        tree.handle_event(UiEvent::PointerUp(point))
+    }
+
+    fn native_tree(root: Element) -> UiTree {
+        use eframe::egui;
+        use openide_ui::FontMetrics;
+        let context = egui::Context::default();
+        crate::fonts::install(&context);
+        context.begin_pass(egui::RawInput::default());
+        let mut tree = UiTree::new(root);
+        tree.set_reduced_motion(true);
+        let mono = egui::FontId::monospace(14.0);
+        tree.set_metrics(context.fonts_mut(|fonts| FontMetrics {
+            char_width: fonts.glyph_width(&mono, 'M'),
+            line_height: fonts.row_height(&mono),
+        }));
+        let sans = egui::FontId::proportional(14.0);
+        tree.set_sans_metrics(context.fonts_mut(|fonts| {
+            FontMetrics {
+                char_width: "abcdefghijklmnopqrstuvwxyz"
+                    .chars()
+                    .map(|character| fonts.glyph_width(&sans, character))
+                    .sum::<f32>()
+                    / 26.0,
+                line_height: fonts.row_height(&sans),
+            }
+        }));
+        tree.set_text_measurer(move |text, size, family| {
+            context.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(
+                        text.to_owned(),
+                        egui::FontId::new(
+                            size,
+                            match family {
+                                FontFamily::Sans => egui::FontFamily::Proportional,
+                                FontFamily::Monospace => egui::FontFamily::Monospace,
+                            },
+                        ),
+                        egui::Color32::WHITE,
+                    )
+                    .size()
+                    .x
+            })
+        });
+        tree
+    }
+
+    fn popup_tree(state: &ViewState, width: f32) -> UiTree {
+        let mut tree = native_tree(
+            Element::row(vec![
+                Element::column(vec![
+                    Element::spacer().flex(1.0),
+                    sidebar_card(state, width.min(264.0)),
+                ])
+                .size(Some(width.min(264.0)), None)
+                .background(theme::SIDEBAR),
+                Element::spacer().flex(1.0),
+            ])
+            .background(theme::BACKGROUND),
+        );
+        tree.set_reduced_motion(true);
+        tree
+    }
+
+    fn only_account(state: &mut ViewState, selected: &str) {
+        state.native_provider_id = selected.into();
+        for (id, connection) in &mut state.provider_connections {
+            connection.configured = id == selected;
+            connection.needs_sign_in = false;
+        }
+    }
+
+    #[test]
+    fn one_account_popover_has_content_height_and_real_32px_actions_without_empty_scroll() {
+        for (provider, maximum_height) in [("codex", 200.0), ("opencode", 300.0)] {
+            let mut state = fixture();
+            only_account(&mut state, provider);
+            state.provider_usage_open = true;
+            for width in [280.0, 360.0, 900.0] {
+                let mut tree = popup_tree(&state, width);
+                let frame = tree.layout(Size::new(width, 720.0));
+                let surface = frame
+                    .regions
+                    .iter()
+                    .find(|r| r.id == "popover_surface:usage_dismiss")
+                    .unwrap()
+                    .rect;
+                assert!(
+                    surface.width <= POPUP_WIDTH && surface.height <= maximum_height,
+                    "{provider} has an oversized popup: {surface:?}"
+                );
+                assert!(
+                    tree.is_scroll_at_end("provider_usage_popup", 0.1),
+                    "one account should not need scrolling"
+                );
+                for id in [
+                    "usage_refresh".to_owned(),
+                    format!("provider_usage_account:{provider}"),
+                ] {
+                    let rect = frame
+                        .regions
+                        .iter()
+                        .find(|r| r.id == id && r.kind == openide_ui::HitKind::Button)
+                        .unwrap()
+                        .rect;
+                    assert_eq!((rect.width, rect.height), (32.0, 32.0), "{id}: {rect:?}");
+                    assert!(
+                        rect.x >= surface.x
+                            && rect.x + rect.width <= surface.x + surface.width + 0.1
+                    );
+                    assert!(
+                        rect.y >= surface.y
+                            && rect.y + rect.height <= surface.y + surface.height + 0.1
+                    );
+                    assert!(click(&mut tree, &frame, &id).iter().any(
+                        |action| matches!(action, UiAction::Clicked { id: actual } if actual == &id)
+                    ));
+                }
+                if provider == "codex" {
+                    assert!(frame_text(&frame).contains("Plan de ChatGPT"));
+                    assert!(!frame_text(&frame).contains("Límites informados por tus proveedores"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compact_popover_preserves_connection_loading_error_and_stale_states() {
+        for status in [
+            ProviderUsageStatus::Disconnected,
+            ProviderUsageStatus::NeedsSignIn,
+            ProviderUsageStatus::Loading,
+            ProviderUsageStatus::Error,
+            ProviderUsageStatus::Ready,
+        ] {
+            let mut state = fixture();
+            only_account(&mut state, "codex");
+            state.provider_usage_open = true;
+            let connection = state.provider_connections.get_mut("codex").unwrap();
+            connection.configured = status != ProviderUsageStatus::Disconnected;
+            connection.needs_sign_in = status == ProviderUsageStatus::NeedsSignIn;
+            let account = state.provider_usage.get_mut("codex").unwrap();
+            account.status = status;
+            let mut tree = popup_tree(&state, 360.0);
+            let frame = tree.layout(Size::new(360.0, 480.0));
+            let visible = frame_text(&frame);
+            let (notice, action) = match status {
+                ProviderUsageStatus::Disconnected => {
+                    ("Conecta una cuenta", "provider_usage_connect:codex")
+                }
+                ProviderUsageStatus::NeedsSignIn => {
+                    ("Vuelve a conectar", "provider_usage_connect:codex")
+                }
+                ProviderUsageStatus::Loading => {
+                    ("Consultando consumo", "provider_usage_account:codex")
+                }
+                ProviderUsageStatus::Error => {
+                    ("No se pudo actualizar", "provider_usage_account:codex")
+                }
+                _ => ("Sin datos de consumo", "provider_usage_account:codex"),
+            };
+            assert!(visible.contains(notice), "{status:?}: {visible}");
+            assert!(
+                !visible.contains('%'),
+                "unknown usage must never become a percentage"
+            );
+            assert!(tree.focus(action));
+        }
+        let mut state = fixture();
+        only_account(&mut state, "opencode");
+        state.provider_usage_open = true;
+        state.provider_usage.get_mut("opencode").unwrap().status = ProviderUsageStatus::Error;
+        let mut tree = popup_tree(&state, 360.0);
+        let frame = tree.layout(Size::new(360.0, 720.0));
+        assert!(frame_text(&frame).contains("82% usado"));
+        assert!(frame_text(&frame).contains("Sin actualizar"));
+        state
+            .provider_connections
+            .get_mut("opencode")
+            .unwrap()
+            .configured = false;
+        tree.set_root(Element::column(vec![
+            Element::spacer().flex(1.0),
+            sidebar_card(&state, 264.0),
+        ]));
+        let disconnected = tree.layout(Size::new(360.0, 720.0));
+        assert!(!frame_text(&disconnected).contains('%'));
+        assert!(tree.focus("provider_usage_connect:opencode"));
+    }
+
+    #[test]
+    fn sidebar_is_compact_and_uses_selected_accounts_actual_limit() {
+        let state = fixture();
+        for width in [180.0, 264.0, 340.0] {
+            let mut tree = UiTree::new(sidebar_card(&state, width));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 160.0));
+            let action = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "usage_toggle")
+                .unwrap();
+            assert_eq!(action.rect.height, 44.0);
+            assert!(action.rect.x >= 0.0 && action.rect.x + action.rect.width <= width);
+            let painted = frame_text(&frame);
+            assert!(painted.contains("OpenCode"), "{painted}");
+            assert!(painted.contains("18%"), "{painted}");
+            assert!(
+                !painted.contains("$7.00"),
+                "unselected balance leaked into summary: {painted}"
+            );
+            assert_eq!(
+                click(&mut tree, &frame, "usage_toggle"),
+                vec![UiAction::Clicked {
+                    id: "usage_toggle".into()
+                }]
+            );
+            assert!(tree.focus("usage_toggle"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "usage_toggle".into()
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn sidebar_usage_hover_has_visible_surface_feedback_and_keeps_its_hitbox() {
+        use std::time::{Duration, Instant};
+        let state = fixture();
+        for compact in [false, true] {
+            let viewport = Size::new(264.0, 150.0);
+            let root = if compact {
+                sidebar_compact(&state)
+            } else {
+                sidebar_card(&state, viewport.width)
+            };
+            let mut tree = native_tree(root);
+            tree.set_reduced_motion(false);
+            let now = Instant::now();
+            let initial = tree.layout_at(viewport, now);
+            let rect = initial
+                .regions
+                .iter()
+                .find(|region| {
+                    region.id == "usage_toggle" && region.kind == openide_ui::HitKind::Button
+                })
+                .unwrap()
+                .rect;
+            let fill = |frame: &Frame| {
+                frame.commands.iter().find_map(|command| match command {
+                    DrawCommand::FillRect {
+                        rect: painted,
+                        color,
+                        ..
+                    } if *painted == rect => Some(*color),
+                    _ => None,
+                })
+            };
+            let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+            tree.handle_event_at(UiEvent::PointerMove(point), now);
+            tree.layout_at(viewport, now);
+            let hovered = tree.layout_at(viewport, now + Duration::from_millis(160));
+            assert_eq!(hovered.hit_test(point), Some("usage_toggle"));
+            assert_ne!(
+                fill(&initial),
+                fill(&hovered),
+                "hover must remain visible over the sidebar, compact={compact}"
+            );
+            assert_eq!(fill(&hovered), Some(theme::hover_for(theme::SIDEBAR)));
+            let hovered_rect = hovered
+                .regions
+                .iter()
+                .find(|region| {
+                    region.id == "usage_toggle" && region.kind == openide_ui::HitKind::Button
+                })
+                .unwrap()
+                .rect;
+            assert_eq!(rect, hovered_rect);
+            tree.handle_event_at(UiEvent::PointerLeave, now + Duration::from_millis(160));
+            tree.layout_at(viewport, now + Duration::from_millis(160));
+            let restored = tree.layout_at(viewport, now + Duration::from_millis(320));
+            assert_eq!(fill(&restored), fill(&initial));
+        }
+    }
+
+    #[test]
+    fn external_accounts_and_unknown_limits_never_draw_a_percentage() {
+        let mut state = fixture();
+        for id in ["codex", "nvidia"] {
+            state.provider_connections.get_mut(id).unwrap().configured = true;
+            state.provider_usage.get_mut(id).unwrap().status = ProviderUsageStatus::External;
+            let mut tree = UiTree::new(provider_card(&state, id, 340.0).unwrap());
+            let frame = tree.layout(Size::new(340.0, 600.0));
+            let painted = frame_text(&frame);
+            assert!(
+                !painted.contains('%'),
+                "external account fabricated percentage: {painted}"
+            );
+            assert!(painted.contains("se consulta en tu cuenta"));
+            assert!(
+                frame
+                    .regions
+                    .iter()
+                    .any(|region| region.id == format!("provider_usage_account:{id}"))
+            );
+        }
+        let account = state.provider_usage.get_mut("openrouter").unwrap();
+        account.balances.clear();
+        account.windows[0].limit = None;
+        account.windows[0].remaining = None;
+        let mut tree = UiTree::new(provider_card(&state, "openrouter", 340.0).unwrap());
+        let frame = tree.layout(Size::new(340.0, 600.0));
+        assert!(!frame_text(&frame).contains('%'));
+        assert!(frame_text(&frame).contains("$3.00"));
+    }
+
+    #[test]
+    fn errors_keep_the_last_measurement_but_disconnect_removes_it() {
+        let mut state = fixture();
+        let account = state.provider_usage.get_mut("openrouter").unwrap();
+        account.status = ProviderUsageStatus::Error;
+        account.message = Some("No se pudo actualizar. Se conserva la última medición.".into());
+        let mut tree = UiTree::new(provider_card(&state, "openrouter", 360.0).unwrap());
+        let frame = tree.layout(Size::new(360.0, 600.0));
+        let painted = frame_text(&frame);
+        assert!(painted.contains("$7.00"));
+        assert!(painted.contains("Último dato"));
+        assert!(painted.contains("No se pudo actualizar"));
+        state.native_provider_id = "openrouter".into();
+        let mut sidebar = UiTree::new(sidebar_card(&state, 264.0));
+        let summary = sidebar.layout(Size::new(264.0, 160.0));
+        assert!(frame_text(&summary).contains("Sin actualizar"));
+        state.provider_usage.get_mut("openrouter").unwrap().status = ProviderUsageStatus::Ready;
+        state
+            .provider_usage
+            .get_mut("openrouter")
+            .unwrap()
+            .fetched_at_ms = Some(now_ms() - 181_000);
+        sidebar.set_root(sidebar_card(&state, 264.0));
+        assert!(frame_text(&sidebar.layout(Size::new(264.0, 160.0))).contains("Sin actualizar"));
+        state
+            .provider_connections
+            .get_mut("openrouter")
+            .unwrap()
+            .configured = false;
+        tree.set_root(provider_card(&state, "openrouter", 360.0).unwrap());
+        let disconnected = tree.layout(Size::new(360.0, 600.0));
+        assert!(!frame_text(&disconnected).contains('$'));
+        assert!(!frame_text(&disconnected).contains("Último dato"));
+        assert!(tree.focus("provider_usage_connect:openrouter"));
+        assert!(!tree.focus("provider_usage_account:openrouter"));
+    }
+
+    #[test]
+    fn popup_fits_the_viewport_and_keeps_actions_and_all_accounts_reachable() {
+        let mut state = fixture();
+        state.provider_usage_open = true;
+        state
+            .provider_connections
+            .get_mut("nvidia")
+            .unwrap()
+            .configured = true;
+        state.provider_usage.get_mut("nvidia").unwrap().status = ProviderUsageStatus::External;
+        for width in [280.0, 360.0, 900.0] {
+            let mut tree = popup_tree(&state, width);
+            let frame = tree.layout(Size::new(width, 720.0));
+            let surface = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:usage_dismiss")
+                .unwrap()
+                .rect;
+            assert!(
+                frame_text(&frame).contains("OpenCode"),
+                "selected account is not visible first"
+            );
+            assert!(
+                surface.x >= 0.0 && surface.x + surface.width <= width,
+                "{surface:?}"
+            );
+            assert!(
+                surface.y >= 0.0 && surface.y + surface.height <= 720.0,
+                "{surface:?}"
+            );
+            for action in ["usage_refresh", "usage_details"] {
+                assert!(tree.focus(action));
+                assert_eq!(
+                    click(&mut tree, &frame, action),
+                    vec![UiAction::Clicked { id: action.into() }]
+                );
+            }
+            let mut observed = frame_text(&frame);
+            for _ in 0..12 {
+                tree.handle_event(UiEvent::Scroll {
+                    position: Point::new(
+                        surface.x + surface.width / 2.0,
+                        surface.y + surface.height / 2.0,
+                    ),
+                    delta_y: -100.0,
+                });
+                let scrolled = tree.layout(Size::new(width, 720.0));
+                observed.push_str(&frame_text(&scrolled));
+            }
+            assert!(observed.contains("Codex"));
+            assert!(observed.contains("OpenRouter"));
+            assert!(observed.contains("OpenCode"));
+            assert!(observed.contains("NVIDIA NIM"));
+            assert!(tree.focus("provider_usage_account:nvidia"));
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Enter,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "provider_usage_account:nvidia".into()
+                }]
+            );
+            assert_eq!(
+                tree.handle_event(UiEvent::Key {
+                    key: Key::Escape,
+                    shift: false,
+                    ctrl: false
+                }),
+                vec![UiAction::Clicked {
+                    id: "usage_dismiss".into()
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn short_windows_shrink_the_scroll_body_and_preserve_the_fixed_footer() {
+        let mut state = fixture();
+        state.provider_usage_open = true;
+        for (width, height) in [(360.0, 320.0), (360.0, 400.0), (520.0, 320.0)] {
+            let mut tree = popup_tree(&state, width);
+            let frame = tree.layout(Size::new(width, height));
+            let surface = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:usage_dismiss")
+                .unwrap()
+                .rect;
+            let details = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "usage_details")
+                .unwrap()
+                .rect;
+            assert!(
+                details.y >= surface.y && details.y + details.height <= surface.y + surface.height,
+                "footer {details:?} exceeds {surface:?}"
+            );
+            assert!(
+                details.y + details.height <= height,
+                "footer below viewport: {details:?}"
+            );
+            assert_eq!(
+                click(&mut tree, &frame, "usage_details"),
+                vec![UiAction::Clicked {
+                    id: "usage_details".into()
+                }]
+            );
+            tree.scroll_to_end("provider_usage_popup");
+            let scrolled = tree.layout(Size::new(width, height));
+            assert!(frame_text(&scrolled).contains("OpenCode"));
+            assert!(tree.focus("provider_usage_account:opencode"));
+        }
+    }
+
+    #[test]
+    fn compact_usage_trigger_retains_pointer_keyboard_and_popover_actions() {
+        let mut state = fixture();
+        let mut tree = native_tree(sidebar_compact(&state));
+        let frame = tree.layout(Size::new(48.0, 60.0));
+        let rect = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "usage_toggle")
+            .unwrap()
+            .rect;
+        assert_eq!((rect.width, rect.height), (24.0, 24.0));
+        assert_eq!(
+            click(&mut tree, &frame, "usage_toggle"),
+            vec![UiAction::Clicked {
+                id: "usage_toggle".into()
+            }]
+        );
+        assert!(tree.focus("usage_toggle"));
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: Key::Enter,
+                shift: false,
+                ctrl: false
+            }),
+            vec![UiAction::Clicked {
+                id: "usage_toggle".into()
+            }]
+        );
+        state.provider_usage_open = true;
+        tree.set_root(Element::column(vec![
+            Element::spacer().flex(1.0),
+            sidebar_compact(&state),
+        ]));
+        let open = tree.layout(Size::new(520.0, 320.0));
+        let details = open
+            .regions
+            .iter()
+            .find(|region| region.id == "usage_details")
+            .unwrap()
+            .rect;
+        assert!(details.y + details.height <= 320.0);
+        assert!(tree.focus("usage_refresh"));
+        assert!(tree.focus("usage_details"));
+    }
+
+    #[test]
+    fn settings_uses_exact_four_account_catalog_and_connect_actions_at_both_widths() {
+        let mut state = fixture();
+        state
+            .provider_usage
+            .insert("other".into(), state.provider_usage["openrouter"].clone());
+        for width in [320.0, 900.0] {
+            let mut tree = UiTree::new(
+                ScrollArea::new(
+                    "usage_test_page",
+                    Element::column(usage_page(&state, width)).gap(16.0),
+                )
+                .render(),
+            );
+            tree.set_reduced_motion(true);
+            let mut observed = String::new();
+            let mut actions = std::collections::BTreeSet::new();
+            for _ in 0..24 {
+                let frame = tree.layout(Size::new(width, 720.0));
+                observed.push_str(&frame_text(&frame));
+                for region in &frame.regions {
+                    if region.id.starts_with("provider_usage_") {
+                        assert!(
+                            region.rect.x >= 0.0
+                                && region.rect.x + region.rect.width <= width + 0.01,
+                            "{}: {:?}",
+                            region.id,
+                            region.rect
+                        );
+                        actions.insert(region.id.clone());
+                    }
+                }
+                tree.handle_event(UiEvent::Scroll {
+                    position: Point::new(width / 2.0, 360.0),
+                    delta_y: -100.0,
+                });
+            }
+            for (_, name, _) in provider_connections::PROVIDERS {
+                assert!(observed.contains(name), "missing {name}");
+            }
+            assert!(actions.contains("provider_usage_connect:nvidia"));
+            assert!(actions.contains("provider_usage_account:codex"));
+            assert!(actions.contains("provider_usage_account:openrouter"));
+            assert!(actions.contains("provider_usage_account:opencode"));
+            assert_eq!(actions.len(), provider_connections::PROVIDERS.len());
+            assert!(provider_card(&state, "other", width).is_none());
+        }
+    }
+
+    #[test]
+    fn settings_plan_badges_follow_native_text_width_and_keep_actions_separate() {
+        let state = fixture();
+        let mut account = state.provider_usage["codex"].clone();
+        for plan in ["Plan de ChatGPT", "Créditos de API", "OpenCode Go", "API"] {
+            account.plan_label = Some(plan.into());
+            for width in [280.0, 360.0, 420.0, 640.0] {
+                let mut tree = native_tree(account_card(&state, &account, width, now_ms()));
+                let frame = tree.layout(Size::new(width, 500.0));
+                let blocks = frame.text_layouts();
+                let label = blocks
+                    .iter()
+                    .find(|block| block.source == plan)
+                    .unwrap_or_else(|| panic!("missing plan {plan} at {width}px"));
+                assert_eq!(
+                    label.runs.len(),
+                    1,
+                    "plan must remain a compact single line"
+                );
+                assert_eq!(label.runs[0].text, plan);
+                let text = label.runs[0].rect;
+                let badge = frame
+                    .commands
+                    .iter()
+                    .find_map(|command| match command {
+                        DrawCommand::StrokeRect {
+                            rect,
+                            radius,
+                            color,
+                            ..
+                        } if *radius == 10.0
+                            && rect.height == 20.0
+                            && *color == theme::BORDER
+                            && rect.contains(Point::new(
+                                text.x + text.width / 2.0,
+                                text.y + text.height / 2.0,
+                            )) =>
+                        {
+                            Some(*rect)
+                        }
+                        _ => None,
+                    })
+                    .expect("shared passive Chip border");
+                assert!(
+                    (badge.width - text.width - 16.0).abs() < 0.1,
+                    "badge stretched independently of its text: {plan}, {badge:?}, {text:?}"
+                );
+                assert!(badge.width < 140.0, "old fixed-width pill returned");
+                assert!(badge.x >= 10.0 && badge.x + badge.width <= width - 10.0 + 0.1);
+                assert!((text.x + text.width / 2.0 - badge.x - badge.width / 2.0).abs() < 0.1);
+                assert!((text.y + text.height / 2.0 - badge.y - badge.height / 2.0).abs() < 0.1);
+                let point = Point::new(badge.x + badge.width / 2.0, badge.y + badge.height / 2.0);
+                assert_eq!(
+                    frame.hit_test(point),
+                    None,
+                    "plan is information, not an action"
+                );
+                assert!(tree.handle_event(UiEvent::PointerDown(point)).is_empty());
+                assert!(tree.handle_event(UiEvent::PointerUp(point)).is_empty());
+                let action = frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == "provider_usage_account:codex")
+                    .unwrap();
+                assert_eq!(action.rect.height, 28.0);
+                assert!(
+                    tree.handle_event(UiEvent::Key {
+                        key: Key::Tab,
+                        ctrl: false,
+                        shift: false
+                    })
+                    .is_empty()
+                );
+                assert_eq!(tree.focused_id(), Some("provider_usage_account:codex"));
+            }
+        }
+        account.plan_label = None;
+        let frame = native_tree(account_card(&state, &account, 420.0, now_ms()))
+            .layout(Size::new(420.0, 500.0));
+        assert!(!frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::StrokeRect { rect, radius, .. } if *radius == 10.0 && rect.height == 20.0
+        )), "missing plan must not reserve a badge");
+    }
+
+    #[test]
+    fn plan_badge_stays_passive_without_hover_or_keyboard_state() {
+        let mut tree = native_tree(Element::row(vec![
+            plan_badge("Plan de ChatGPT"),
+            Element::spacer().flex(1.0),
+        ]));
+        let size = Size::new(280.0, 32.0);
+        let before = tree.layout(size);
+        assert!(before.regions.is_empty());
+        for event in [
+            UiEvent::PointerMove(Point::new(20.0, 10.0)),
+            UiEvent::PointerDown(Point::new(20.0, 10.0)),
+            UiEvent::PointerUp(Point::new(20.0, 10.0)),
+            UiEvent::Key {
+                key: Key::Tab,
+                shift: false,
+                ctrl: false,
+            },
+            UiEvent::Key {
+                key: Key::Enter,
+                shift: false,
+                ctrl: false,
+            },
+        ] {
+            assert!(tree.handle_event(event).is_empty());
+        }
+        assert_eq!(tree.focused_id(), None);
+        let after = tree.layout(size);
+        assert!(after.regions.is_empty());
+        assert_eq!(frame_text(&before), frame_text(&after));
+        assert!(!tree.is_animating());
+    }
+
+    #[test]
+    fn settings_account_actions_keep_equal_size_and_row_baselines() {
+        let state = fixture();
+        for width in [280.0, 360.0, 700.0, 900.0, 1280.0] {
+            let mut tree = native_tree(Element::column(usage_page(&state, width)).gap(16.0));
+            let frame = tree.layout(Size::new(width, 2400.0));
+            let actions: Vec<_> = frame
+                .regions
+                .iter()
+                .filter(|region| {
+                    region.kind == openide_ui::HitKind::Button
+                        && (region.id.starts_with("provider_usage_account:")
+                            || region.id.starts_with("provider_usage_connect:"))
+                })
+                .collect();
+            assert_eq!(actions.len(), provider_connections::PROVIDERS.len());
+            for action in &actions {
+                assert_eq!(
+                    action.rect.height,
+                    28.0,
+                    "{width}px {}: {:?}",
+                    action.id,
+                    action.rect
+                );
+                assert!(
+                    action.rect.x >= 10.0
+                        && action.rect.x + action.rect.width <= width - 10.0 + 0.01
+                );
+                assert!(
+                    click(&mut tree, &frame, &action.id)
+                        .iter()
+                        .any(|event| matches!(event, UiAction::Clicked { id } if id == &action.id))
+                );
+                assert!(tree.focus(&action.id));
+                assert!(
+                    tree.handle_event(UiEvent::Key {
+                        key: Key::Enter,
+                        shift: false,
+                        ctrl: false
+                    })
+                    .iter()
+                    .any(|event| matches!(event, UiAction::Clicked { id } if id == &action.id))
+                );
+            }
+            if width >= 700.0 {
+                for pair in actions.chunks(2) {
+                    assert_eq!(
+                        pair[0].rect.y, pair[1].rect.y,
+                        "footer baselines at {width}px"
+                    );
+                }
+                let cards: Vec<_> = frame
+                    .commands
+                    .iter()
+                    .filter_map(|command| match command {
+                        DrawCommand::StrokeRect { rect, radius, .. }
+                            if *radius == 8.0
+                                && actions.iter().any(|action| {
+                                    rect.width > action.rect.width
+                                        && rect.height > action.rect.height
+                                        && rect.contains(Point::new(action.rect.x, action.rect.y))
+                                        && rect.contains(Point::new(
+                                            action.rect.x + action.rect.width,
+                                            action.rect.y + action.rect.height,
+                                        ))
+                                }) =>
+                        {
+                            Some(rect)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(cards.len(), provider_connections::PROVIDERS.len());
+                for pair in cards.chunks(2) {
+                    assert_eq!(pair[0].y, pair[1].y);
+                    assert_eq!(pair[0].height, pair[1].height);
+                    assert_eq!(pair[0].width, pair[1].width);
+                }
+            }
+            let painted = frame_text(&frame);
+            assert!(painted.contains("Abrir cuenta") && painted.contains("Conectar"));
+        }
+    }
+
+    #[test]
+    fn account_action_hover_preserves_geometry_and_label_for_every_state() {
+        use std::time::{Duration, Instant};
+        let state = fixture();
+        let mut account = state.provider_usage["codex"].clone();
+        for (status, url, label) in [
+            (ProviderUsageStatus::Disconnected, false, "Conectar"),
+            (ProviderUsageStatus::NeedsSignIn, false, "Reconectar"),
+            (ProviderUsageStatus::External, true, "Abrir cuenta"),
+            (ProviderUsageStatus::Ready, false, "Ver conexión"),
+        ] {
+            account.status = status;
+            account.account_url = url.then(|| "https://example.com/account".into());
+            let mut tree = native_tree(account_action(&account));
+            let now = Instant::now();
+            let viewport = Size::new(136.0, 28.0);
+            let before = tree.layout_at(viewport, now);
+            let rect = before.regions[0].rect;
+            let point = Point::new(rect.x + 40.0, rect.y + 18.0);
+            tree.handle_event_at(UiEvent::PointerMove(point), now);
+            tree.layout_at(viewport, now);
+            let hovered = tree.layout_at(viewport, now + Duration::from_millis(200));
+            assert_eq!(rect, hovered.regions[0].rect);
+            assert!(
+                frame_text(&hovered).contains(label),
+                "full action label: {label}"
+            );
+            assert!(
+                hovered.commands.iter().any(|command| matches!(command,
+                DrawCommand::Icon { rect: icon_rect, .. }
+                    if icon_rect.width == 16.0 && icon_rect.height == 16.0)),
+                "the action icon must remain legible: {label}"
+            );
+            assert!(hovered.commands.iter().any(|command| matches!(command,
+                DrawCommand::FillRect { rect: painted, color, .. }
+                    if *painted == rect && *color == crate::settings_ui::control_palette().hover)));
+        }
+    }
+
+    #[test]
+    fn reset_and_refresh_times_have_clear_elapsed_and_expired_states() {
+        assert_eq!(elapsed_label(1_000, 30_000), "ahora");
+        assert_eq!(elapsed_label(1_000, 121_000), "hace 2 min");
+        assert_eq!(elapsed_label(1_000, 7_201_000), "hace 2 h");
+        let state = fixture();
+        let mut window = state.provider_usage["opencode"].windows[0].clone();
+        window.reset_at_ms = Some(5_401_000);
+        assert_eq!(
+            reset_label(&window, 1_000),
+            Some("Se renueva en 1 h 30 min".into())
+        );
+        assert_eq!(
+            reset_label(&window, 5_401_000),
+            Some("Pendiente de actualización".into())
+        );
+    }
+
+    #[test]
+    #[ignore = "exports native account usage frames for visual review"]
+    fn export_provider_usage_visual_review() {
+        let output = std::path::PathBuf::from(format!(
+            "{}/../../target/provider-usage-visual-qa",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        std::fs::create_dir_all(&output).unwrap();
+        let mut state = fixture();
+        let export = |tree: &mut UiTree, name: &str, width: f32, height: f32| {
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, height));
+            let path = output.join(format!("{name}.svg"));
+            crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, height)
+                .unwrap();
+            let svg = std::fs::read_to_string(&path).unwrap();
+            let options = crate::settings_ui::visual_qa::native_svg_options();
+            let parsed = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+            resvg::render(
+                &parsed,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            eprintln!("{}", path.with_extension("png").display());
+        };
+        for width in [360.0, 900.0] {
+            let root = Element::column(vec![
+                text(
+                    "Cuenta y uso · datos de prueba",
+                    14.0,
+                    theme::SETTINGS_FOREGROUND_SUBTLE,
+                ),
+                Element::column(usage_page(&state, width - 40.0)).gap(16.0),
+            ])
+            .gap(24.0)
+            .padding(20.0)
+            .background(theme::BACKGROUND);
+            export(
+                &mut native_tree(root),
+                &format!("usage-settings-{width:.0}"),
+                width,
+                if width >= 700.0 { 1_000.0 } else { 1_750.0 },
+            );
+        }
+        state.provider_usage_open = true;
+        for width in [360.0, 900.0] {
+            export(
+                &mut popup_tree(&state, width),
+                &format!("usage-popover-{width:.0}"),
+                width,
+                720.0,
+            );
+        }
+        let mut single = fixture();
+        only_account(&mut single, "codex");
+        single.provider_usage_open = true;
+        single.provider_usage.get_mut("codex").unwrap().account =
+            Some("cuenta.de.ejemplo.con.nombre.largo@correo.example".into());
+        for width in [280.0, 360.0, 900.0] {
+            export(
+                &mut popup_tree(&single, width),
+                &format!("usage-popover-single-codex-{width:.0}"),
+                width,
+                520.0,
+            );
+        }
+        for (label, status) in [
+            ("loading", ProviderUsageStatus::Loading),
+            ("error", ProviderUsageStatus::Error),
+            ("reconnect", ProviderUsageStatus::NeedsSignIn),
+            ("disconnected", ProviderUsageStatus::Disconnected),
+        ] {
+            single
+                .provider_connections
+                .get_mut("codex")
+                .unwrap()
+                .configured = status != ProviderUsageStatus::Disconnected;
+            single
+                .provider_connections
+                .get_mut("codex")
+                .unwrap()
+                .needs_sign_in = status == ProviderUsageStatus::NeedsSignIn;
+            single.provider_usage.get_mut("codex").unwrap().status = status;
+            export(
+                &mut popup_tree(&single, 360.0),
+                &format!("usage-popover-{label}"),
+                360.0,
+                520.0,
+            );
+        }
+        state.provider_usage_open = false;
+        export(
+            &mut popup_tree(&state, 264.0),
+            "usage-sidebar",
+            264.0,
+            150.0,
+        );
+        let mut hover = popup_tree(&state, 264.0);
+        let frame = hover.layout(Size::new(264.0, 150.0));
+        hover.handle_event(UiEvent::PointerMove(point_for(&frame, "usage_toggle")));
+        // Native exports deliberately use reduced motion, so this layout
+        // settles the actual pointer hover before its SVG/PNG is captured.
+        hover.layout(Size::new(264.0, 150.0));
+        export(&mut hover, "usage-sidebar-hover", 264.0, 150.0);
+    }
+}

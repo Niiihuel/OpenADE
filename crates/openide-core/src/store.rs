@@ -22,13 +22,29 @@ pub enum StoreError {
     #[error("session store I/O failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("session event encoding failed: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(#[source] serde_json::Error),
     #[error("session store lock is poisoned")]
     PoisonedLock,
     #[error("session event belongs to a different session")]
     SessionMismatch,
+    #[error("session metadata exceeds the 4 MiB size limit")]
+    SessionMetadataTooLarge,
+    #[error("native automation origin is invalid: {0}")]
+    NativeAutomationOrigin(#[from] crate::NativeAutomationOriginError),
+    #[error("native automation occurrence conflicts with its existing session: {0}")]
+    ConflictingNativeAutomationOrigin(String),
+    #[error("native automation occurrence was explicitly deleted and cannot be recreated: {0}")]
+    NativeAutomationOccurrenceDeleted(String),
+    #[error("native automation accepts only its original text-only Build admission")]
+    NativeAutomationAdmissionBlocked,
+    #[error("read-only native automation sessions cannot create subagents")]
+    NativeAutomationSubagentsDisabled,
+    #[error("read-only native automation sessions do not accept steering inputs")]
+    NativeAutomationSteeringDisabled,
     #[error("system instruction snapshot is invalid or exceeds its size limit")]
     InvalidSystemInstructionsSnapshot,
+    #[error("model route snapshot has invalid version, IDs, or digests")]
+    InvalidModelRouteSnapshot,
     #[error("plan snapshot is invalid or exceeds its size limit")]
     InvalidPlanSnapshot,
     #[error("session event record exceeds the 64 MiB journal line limit")]
@@ -115,6 +131,10 @@ pub enum StoreError {
     NativeSteerRequiresAck,
     #[error("native turn has unacknowledged steering input")]
     PendingNativeSteerInput,
+    #[error("native command operation admission blocked: {0}")]
+    NativeCommandOperationAdmissionBlocked(String),
+    #[error("native command output transaction blocked: {0}")]
+    NativeCommandOutputBlocked(String),
     #[error(
         "native turn cannot complete before a committed steering input reaches a model request"
     )]
@@ -164,6 +184,9 @@ impl MemorySessionStore {
 
 impl EventStore for MemorySessionStore {
     fn append(&self, event: &AgentEvent) -> Result<(), StoreError> {
+        if !valid_model_route_snapshot(event) {
+            return Err(StoreError::InvalidModelRouteSnapshot);
+        }
         if !valid_system_instructions_snapshot(event) {
             return Err(StoreError::InvalidSystemInstructionsSnapshot);
         }
@@ -189,6 +212,10 @@ impl EventStore for MemorySessionStore {
             .cloned()
             .unwrap_or_default())
     }
+}
+
+fn valid_model_route_snapshot(event: &AgentEvent) -> bool {
+    crate::ModelRouteSnapshot::from_event(&event.kind).is_none_or(|route| route.is_valid())
 }
 
 fn valid_system_instructions_snapshot(event: &AgentEvent) -> bool {
@@ -519,6 +546,68 @@ fn child_session_id(parent_id: &str, spawn_id: &str) -> String {
     format!("sub-{:x}", hash.finalize())
 }
 
+fn validate_native_automation_metadata(session: &Session) -> Result<(), StoreError> {
+    match &session.native_automation {
+        Some(origin) => origin.validate_session(session).map_err(StoreError::from),
+        None if session
+            .id
+            .starts_with(crate::native_automation_origin::NATIVE_AUTOMATION_SESSION_PREFIX) =>
+        {
+            Err(crate::NativeAutomationOriginError::SessionBindingMismatch.into())
+        }
+        None => Ok(()),
+    }
+}
+
+fn validate_native_automation_admissions(
+    session: &Session,
+    events: &[AgentEvent],
+) -> Result<(), StoreError> {
+    let Some(origin) = &session.native_automation else {
+        return Ok(());
+    };
+    let mut count = 0;
+    for (index, event) in events.iter().enumerate() {
+        if native_steer_fields(event).is_some() {
+            return Err(StoreError::NativeAutomationSteeringDisabled);
+        }
+        if let Some((turn_id, prompt, model, mode, images)) = native_admission_fields(event) {
+            count += 1;
+            if count > 1
+                || index != 0
+                || event.sequence != 1
+                || turn_id != origin.first_turn_id
+                || !images.is_empty()
+                || !crate::native_automation_request_digest(prompt, model, mode)
+                    .is_ok_and(|digest| digest == origin.first_request_digest)
+            {
+                return Err(StoreError::NativeAutomationAdmissionBlocked);
+            }
+        }
+    }
+    if !events.is_empty() && count != 1 {
+        return Err(StoreError::NativeAutomationAdmissionBlocked);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn native_automation_metadata_publication_cut(path: &Path, stage: &str) {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.starts_with(crate::native_automation_origin::NATIVE_AUTOMATION_SESSION_PREFIX)
+                && name.ends_with(".session.json")
+        })
+        && std::env::var("OPENIDE_AUTOMATION_METADATA_PUBLICATION_STAGE").as_deref() == Ok(stage)
+    {
+        // Test subprocess only: release locks by actual process death, without
+        // running destructors or promoting an unpublished temporary.
+        std::process::exit(87);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
@@ -538,7 +627,13 @@ pub struct Session {
     pub last_unread_at_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent: Option<SubagentLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_automation: Option<crate::NativeAutomationOrigin>,
 }
+
+/// Accommodates a 512 KiB exact authority JSON string even when its metadata
+/// representation escapes every byte. Reading never allocates past this cap.
+pub const MAX_SESSION_METADATA_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Immutable lineage committed in the same atomic metadata write that creates
 /// the child session. Runtime status lives in the separate subagent registry.
@@ -885,6 +980,53 @@ impl SessionStore {
             return Err(StoreError::NativeTurnRequiresNativeSession);
         }
         Ok(session)
+    }
+
+    /// Intention-only command inbox writes share admissions/deletion's
+    /// transaction order. They do not acquire the worker's native lease.
+    pub(crate) fn with_native_command_operation_admission<T>(
+        &self,
+        session_id: &str,
+        operation: impl FnOnce(&Session) -> Result<T, crate::NativeCommandOperationError>,
+    ) -> Result<T, crate::NativeCommandOperationError> {
+        validate_session_id(session_id)?;
+        let _guard = self
+            .operation_lock
+            .lock()
+            .map_err(|_| StoreError::PoisonedLock)?;
+        let _journal_transaction = self.lock_native_journal(session_id)?;
+        self.ensure_not_pending_native_deletion(session_id)?;
+        let session = self
+            .read_metadata(session_id)?
+            .ok_or_else(|| StoreError::UnknownSession(session_id.into()))?;
+        if session.backend != "native" {
+            return Err(StoreError::NativeTurnRequiresNativeSession.into());
+        }
+        operation(&session)
+    }
+
+    /// Captures use the same admission/deletion journal transaction, but no
+    /// worker lease or empty human-command inbox is required. A live capture
+    /// can finish after archiving; registration checks archive under this lock.
+    pub(crate) fn with_native_command_output_transaction<T>(
+        &self,
+        session_id: &str,
+        operation: impl FnOnce(&Session) -> Result<T, crate::NativeCommandOutputError>,
+    ) -> Result<T, crate::NativeCommandOutputError> {
+        validate_session_id(session_id)?;
+        let _guard = self
+            .operation_lock
+            .lock()
+            .map_err(|_| StoreError::PoisonedLock)?;
+        let _journal_transaction = self.lock_native_journal(session_id)?;
+        self.ensure_not_pending_native_deletion(session_id)?;
+        let session = self
+            .read_metadata(session_id)?
+            .ok_or_else(|| StoreError::UnknownSession(session_id.into()))?;
+        if session.backend != "native" {
+            return Err(StoreError::NativeTurnRequiresNativeSession.into());
+        }
+        operation(&session)
     }
 
     /// Acquire a nonblocking, process-wide lease before starting a native
@@ -1350,7 +1492,7 @@ impl SessionStore {
             .ok_or_else(|| StoreError::InvalidSubagentRegistry("root".into()))?;
         if !matches!(
             object.get("version").and_then(|value| value.as_u64()),
-            Some(1 | 2)
+            Some(1..=3)
         ) || object
             .get("children")
             .and_then(|value| value.as_object())
@@ -1486,6 +1628,23 @@ impl SessionStore {
         )
     }
 
+    // Caller holds the stable native journal transaction. Even a foreign or
+    // corrupt inbox must not silently enlarge this original request's scope.
+    fn require_no_native_automation_steers(&self, session: &Session) -> Result<(), StoreError> {
+        if let Some(origin) = &session.native_automation {
+            let inbox = self.read_native_steer_inbox(&session.id)?;
+            if !inbox.entries.is_empty()
+                || inbox
+                    .finishing_turn_id
+                    .as_ref()
+                    .is_some_and(|turn_id| turn_id != &origin.first_turn_id)
+            {
+                return Err(StoreError::NativeAutomationSteeringDisabled);
+            }
+        }
+        Ok(())
+    }
+
     fn read_permission_journal(&self, session_id: &str) -> Result<PermissionJournal, StoreError> {
         let path = self.permission_journal_path(session_id)?;
         let file = match File::open(path) {
@@ -1578,18 +1737,28 @@ impl SessionStore {
             .root
             .join(format!(".{temporary_stem}.{}.tmp", Uuid::new_v4()));
         let result = (|| -> Result<(), StoreError> {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)?;
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&temporary)?;
             serde_json::to_writer(&mut file, value)?;
             file.write_all(b"\n")?;
             file.sync_all()?;
             drop(file);
+            #[cfg(test)]
+            native_automation_metadata_publication_cut(&path, "temporary-synced");
             fs::rename(&temporary, &path)?;
+            #[cfg(test)]
+            native_automation_metadata_publication_cut(&path, "renamed");
             OpenOptions::new().write(true).open(&path)?.sync_all()?;
             #[cfg(unix)]
             File::open(path.parent().unwrap_or(&self.events.root))?.sync_all()?;
+            #[cfg(test)]
+            native_automation_metadata_publication_cut(&path, "directory-synced");
             Ok(())
         })();
         if result.is_err() {
@@ -1605,15 +1774,26 @@ impl SessionStore {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
-        let session: Session = serde_json::from_reader(file)?;
+        let mut bytes = Vec::new();
+        file.take(MAX_SESSION_METADATA_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_SESSION_METADATA_BYTES {
+            return Err(StoreError::SessionMetadataTooLarge);
+        }
+        let session: Session = serde_json::from_slice(&bytes)?;
         if session.id != id {
             return Err(StoreError::SessionMismatch);
         }
+        validate_native_automation_metadata(&session)?;
         Ok(Some(session))
     }
 
     /// Replace a metadata file only after a complete, synced copy exists beside it.
     fn write_metadata_atomically(&self, session: &Session) -> Result<(), StoreError> {
+        validate_native_automation_metadata(session)?;
+        if serde_json::to_vec(session)?.len() as u64 + 1 > MAX_SESSION_METADATA_BYTES {
+            return Err(StoreError::SessionMetadataTooLarge);
+        }
         self.write_json_atomically(self.metadata_path(&session.id)?, &session.id, session)
     }
 
@@ -1654,11 +1834,70 @@ impl SessionStore {
             unread_at_ms: None,
             last_unread_at_ms: 0,
             subagent: None,
+            native_automation: None,
         };
         let _guard = self
             .operation_lock
             .lock()
             .map_err(|_| StoreError::PoisonedLock)?;
+        self.write_metadata_atomically(&session)?;
+        Ok(session)
+    }
+
+    /// Create the occurrence's native session and its immutable read-only
+    /// origin in one synced metadata publication. Exact retries return the
+    /// same session; neither the scheduler ledger nor current settings are
+    /// consulted. Creation and deletion share the stable journal OS lock.
+    pub fn create_native_automation(
+        &self,
+        workspace: impl Into<PathBuf>,
+        origin: crate::NativeAutomationOrigin,
+    ) -> Result<Session, StoreError> {
+        origin.validate()?;
+        let workspace = fs::canonicalize(workspace.into())?;
+        if !workspace.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "native automation workspace is not a directory",
+            )
+            .into());
+        }
+        let session_id = crate::native_automation_session_id(&workspace, &origin.run_id)?;
+        let _guard = self
+            .operation_lock
+            .lock()
+            .map_err(|_| StoreError::PoisonedLock)?;
+        let transaction = self.lock_native_journal(&session_id)?;
+        self.ensure_not_pending_native_deletion(&session_id)?;
+        if let Some(existing) = self.read_metadata(&session_id)? {
+            if existing.workspace != workspace
+                || existing.native_automation.as_ref() != Some(&origin)
+            {
+                return Err(StoreError::ConflictingNativeAutomationOrigin(origin.run_id));
+            }
+            return Ok(existing);
+        }
+        if transaction.generation()? != 0 {
+            return Err(StoreError::NativeAutomationOccurrenceDeleted(origin.run_id));
+        }
+        if self.native_journal_len(&session_id)? != 0 {
+            return Err(StoreError::ConflictingNativeAutomationOrigin(origin.run_id));
+        }
+        let now = current_time_ms();
+        let session = Session {
+            id: session_id,
+            workspace,
+            backend: "native".into(),
+            created_at_ms: now,
+            updated_at_ms: now,
+            title: None,
+            pinned: false,
+            archived: false,
+            unread_at_ms: None,
+            last_unread_at_ms: 0,
+            subagent: None,
+            native_automation: Some(origin),
+        };
         self.write_metadata_atomically(&session)?;
         Ok(session)
     }
@@ -1685,6 +1924,9 @@ impl SessionStore {
             .lock()
             .map_err(|_| StoreError::PoisonedLock)?;
         let parent = self.native_session_for_lease(parent_lease)?;
+        if parent.native_automation.is_some() {
+            return Err(StoreError::NativeAutomationSubagentsDisabled);
+        }
         if let Some(existing) =
             self.native_child_for_spawn(parent_lease, spawn_id, request_digest)?
         {
@@ -1716,6 +1958,7 @@ impl SessionStore {
                 spawn_id: spawn_id.to_owned(),
                 request_digest: request_digest.to_ascii_lowercase(),
             }),
+            native_automation: None,
         };
         self.write_metadata_atomically(&child)?;
         Ok(child)
@@ -1732,6 +1975,9 @@ impl SessionStore {
         validate_subagent_spawn_id(spawn_id)?;
         validate_subagent_request_digest(request_digest)?;
         let parent = self.native_session_for_lease(parent_lease)?;
+        if parent.native_automation.is_some() {
+            return Err(StoreError::NativeAutomationSubagentsDisabled);
+        }
         let child_id = child_session_id(&parent.id, spawn_id);
         let Some(child) = self.read_metadata(&child_id)? else {
             return Ok(None);
@@ -1763,6 +2009,10 @@ impl SessionStore {
             .read_metadata(session_id)?
             .ok_or_else(|| StoreError::UnknownSession(session_id.to_owned()))?;
         if session.backend == "native" {
+            self.require_no_native_automation_steers(&session)?;
+            if session.native_automation.is_some() && native_admission_fields(event).is_some() {
+                return Err(StoreError::NativeAutomationAdmissionBlocked);
+            }
             if matches!(
                 &event.kind,
                 AgentEventKind::TurnSteered { .. } | AgentEventKind::TurnSteeredWithImages { .. }
@@ -1772,6 +2022,10 @@ impl SessionStore {
             // The compatibility append API may seed a legacy native journal
             // with any first sequence, but later records must be contiguous.
             let saved = self.events.load(session_id)?;
+            validate_native_automation_admissions(&session, &saved)?;
+            if session.native_automation.is_some() && saved.is_empty() {
+                return Err(StoreError::NativeAutomationAdmissionBlocked);
+            }
             if let Some(last) = saved.last() {
                 if event.sequence <= last.sequence {
                     return if saved.iter().find(|saved| saved.sequence == event.sequence)
@@ -1869,7 +2123,18 @@ impl SessionStore {
         if session.backend != "native" {
             return Err(StoreError::NativeTurnRequiresNativeSession);
         }
+        if let Some(origin) = &session.native_automation {
+            if turn_id != origin.first_turn_id
+                || !images.is_empty()
+                || !crate::native_automation_request_digest(prompt, model, mode)
+                    .is_ok_and(|digest| digest == origin.first_request_digest)
+            {
+                return Err(StoreError::NativeAutomationAdmissionBlocked);
+            }
+        }
+        self.require_no_native_automation_steers(&session)?;
         let events = self.events.load(session_id)?;
+        validate_native_automation_admissions(&session, &events)?;
         let journal_len = self.native_journal_len(session_id)?;
         let journal_generation = journal_transaction.generation()?;
         let mut native_tail = self
@@ -1902,6 +2167,14 @@ impl SessionStore {
                 }
             }
         }
+        let _command_operation_guard =
+            crate::native_command_operation::lock_and_require_no_pending(
+                self.storage_root(),
+                &session,
+            )
+            .map_err(|error| {
+                StoreError::NativeCommandOperationAdmissionBlocked(error.to_string())
+            })?;
         let inbox = self.read_native_steer_inbox(session_id)?;
         if !pending_native_steers_from(&inbox, &committed_native_steers(&events)?)?.is_empty() {
             return Err(StoreError::PendingNativeSteerInput);
@@ -1982,6 +2255,9 @@ impl SessionStore {
         if session.backend != "native" {
             return Err(StoreError::NativeTurnRequiresNativeSession);
         }
+        if session.native_automation.is_some() {
+            return Err(StoreError::NativeAutomationSteeringDisabled);
+        }
         let events = self.events.load(session_id)?;
         let committed = committed_native_steers(&events)?;
         let mut inbox = self.read_native_steer_inbox(session_id)?;
@@ -2057,7 +2333,9 @@ impl SessionStore {
         if session.backend != "native" {
             return Err(StoreError::NativeTurnRequiresNativeSession);
         }
+        self.require_no_native_automation_steers(&session)?;
         let events = self.events.load(session_id)?;
+        validate_native_automation_admissions(&session, &events)?;
         if active_native_turn_id(&events) != Some(turn_id) {
             return Err(StoreError::NativeSteerTurnMismatch(turn_id.to_owned()));
         }
@@ -2087,7 +2365,9 @@ impl SessionStore {
         if session.backend != "native" {
             return Err(StoreError::NativeTurnRequiresNativeSession);
         }
+        self.require_no_native_automation_steers(&session)?;
         let events = self.events.load(session_id)?;
+        validate_native_automation_admissions(&session, &events)?;
         Ok(active_native_turn_id(&events).map(str::to_owned))
     }
 
@@ -2118,7 +2398,9 @@ impl SessionStore {
         if session.backend != "native" {
             return Err(StoreError::NativeTurnRequiresNativeSession);
         }
+        self.require_no_native_automation_steers(&session)?;
         let events = self.events.load(session_id)?;
+        validate_native_automation_admissions(&session, &events)?;
         if active_native_turn_id(&events) != Some(turn_id) {
             return Err(StoreError::NativeSteerTurnMismatch(turn_id.to_owned()));
         }
@@ -2195,6 +2477,9 @@ impl SessionStore {
             .ok_or_else(|| StoreError::UnknownSession(session_id.to_owned()))?;
         if session.backend != "native" {
             return Err(StoreError::NativeTurnRequiresNativeSession);
+        }
+        if session.native_automation.is_some() {
+            return Err(StoreError::NativeAutomationSteeringDisabled);
         }
         let events = self.events.load(session_id)?;
         let committed = committed_native_steers(&events)?;
@@ -2313,6 +2598,7 @@ impl SessionStore {
         if session.backend != "native" {
             return Err(StoreError::NativeTurnRequiresNativeSession);
         }
+        self.require_no_native_automation_steers(&session)?;
         let journal_len = self.native_journal_len(session_id)?;
         let journal_generation = journal_transaction.generation()?;
         let mut tails = self
@@ -2325,6 +2611,7 @@ impl SessionStore {
             != Some((journal_len, journal_generation))
         {
             let events = self.events.load(session_id)?;
+            validate_native_automation_admissions(&session, &events)?;
             let last = events
                 .last()
                 .ok_or(StoreError::NativeEventWithoutAdmission)?;
@@ -2368,6 +2655,29 @@ impl SessionStore {
                 incoming: event.sequence,
             });
         }
+        // A queued manual operation must be consumed by the leased actor,
+        // and an unfinished effect must be explicitly inspected. Retain this
+        // ledger fence through journal publication; a prior read would race
+        // an intention writer on another store handle/process.
+        let _command_operation_guard = if matches!(
+            &event.kind,
+            AgentEventKind::ModelRequestStarted { .. }
+                | AgentEventKind::TurnCompleted { .. }
+                | AgentEventKind::TurnFailed { .. }
+                | AgentEventKind::TurnCancelled
+        ) {
+            Some(
+                crate::native_command_operation::lock_and_require_no_pending(
+                    self.storage_root(),
+                    &session,
+                )
+                .map_err(|error| {
+                    StoreError::NativeCommandOperationAdmissionBlocked(error.to_string())
+                })?,
+            )
+        } else {
+            None
+        };
         if matches!(
             &event.kind,
             AgentEventKind::TurnCompleted { .. }
@@ -2385,7 +2695,12 @@ impl SessionStore {
                 return Err(StoreError::NativeSteerAwaitingModel);
             }
         }
-        let append = if matches!(&event.kind, AgentEventKind::AssistantDelta { .. }) {
+        let append = if matches!(
+            &event.kind,
+            AgentEventKind::AssistantDelta { .. }
+                | AgentEventKind::ModelStreamUpdate { .. }
+                | AgentEventKind::ToolOutputDelta { .. }
+        ) {
             self.events.append(event)
         } else {
             self.events.append_synced(event)
@@ -2433,7 +2748,41 @@ impl SessionStore {
     }
 
     pub fn set_archived(&self, session_id: &str, archived: bool) -> Result<Session, StoreError> {
-        self.update_metadata(session_id, |session| session.archived = archived)
+        validate_session_id(session_id)?;
+        let _guard = self
+            .operation_lock
+            .lock()
+            .map_err(|_| StoreError::PoisonedLock)?;
+        let _journal_transaction = self.lock_native_journal(session_id)?;
+        self.ensure_not_pending_native_deletion(session_id)?;
+        let mut session = self
+            .read_metadata(session_id)?
+            .ok_or_else(|| StoreError::UnknownSession(session_id.into()))?;
+        let _command_operation_guard = if archived && session.backend == "native" {
+            Some(
+                crate::native_command_operation::lock_and_require_no_pending(
+                    self.storage_root(),
+                    &session,
+                )
+                .map_err(|error| {
+                    StoreError::NativeCommandOperationAdmissionBlocked(error.to_string())
+                })?,
+            )
+        } else {
+            None
+        };
+        let _command_output_guard = if session.backend == "native" {
+            Some(
+                crate::native_command_output::lock_and_validate(self.storage_root(), &session)
+                    .map_err(|error| StoreError::NativeCommandOutputBlocked(error.to_string()))?,
+            )
+        } else {
+            None
+        };
+        session.archived = archived;
+        session.updated_at_ms = current_time_ms().max(session.updated_at_ms.saturating_add(1));
+        self.write_metadata_atomically(&session)?;
+        Ok(session)
     }
 
     /// Allocate a strictly increasing unread marker, even when two changes
@@ -2642,6 +2991,43 @@ impl SessionStore {
         } else {
             None
         };
+        let _command_operation_guard =
+            if let Some(session) = session.as_ref().filter(|s| s.backend == "native") {
+                Some(
+                    crate::native_command_operation::lock_and_require_no_pending(
+                        self.storage_root(),
+                        session,
+                    )
+                    .map_err(|error| {
+                        StoreError::NativeCommandOperationAdmissionBlocked(error.to_string())
+                    })?,
+                )
+            } else {
+                if self
+                    .storage_root()
+                    .join(format!("{session_id}.native-command-operations.json"))
+                    .exists()
+                {
+                    return Err(StoreError::NativeCommandOperationAdmissionBlocked(
+                        "orphaned command operation ledger requires explicit repair".into(),
+                    ));
+                }
+                None
+            };
+        let _command_output_guard =
+            if let Some(session) = session.as_ref().filter(|s| s.backend == "native") {
+                Some(crate::native_command_output::lock_and_validate(self.storage_root(), session)
+                    .map_err(|error| StoreError::NativeCommandOutputBlocked(error.to_string()))?)
+            } else {
+                if crate::native_command_output::has_sidecar(self.storage_root(), session_id)
+                    .map_err(|error| StoreError::NativeCommandOutputBlocked(error.to_string()))?
+                {
+                    return Err(StoreError::NativeCommandOutputBlocked(
+                        "orphaned command output requires explicit repair".into(),
+                    ));
+                }
+                None
+            };
         // A previous interrupted deletion may have removed the parent's
         // metadata while leaving its event log. Keep that log if a child
         // still refers to the session ID.
@@ -2663,15 +3049,31 @@ impl SessionStore {
         if metadata.exists() || events.exists() {
             journal_transaction.bump_generation()?;
         }
+        let removed_native_command_operations =
+            crate::native_command_operation::remove_settled_files(self.storage_root(), session_id)
+                .map_err(|error| {
+                    StoreError::NativeCommandOperationAdmissionBlocked(error.to_string())
+                })?;
+        let removed_native_command_output =
+            crate::native_command_output::remove_files(self.storage_root(), session_id)
+                .map_err(|error| StoreError::NativeCommandOutputBlocked(error.to_string()))?;
         let removed_metadata = remove_if_exists(metadata)?;
         let removed_events = remove_if_exists(events)?;
         let removed_permissions = remove_if_exists(permissions)?;
         let removed_native_steers = remove_if_exists(native_steers)?;
+        let removed_native_goals = remove_if_exists(
+            self.events
+                .root
+                .join(format!("{session_id}.native-goals.json")),
+        )?;
         Ok(removed_draft
             || removed_metadata
             || removed_events
             || removed_permissions
-            || removed_native_steers)
+            || removed_native_steers
+            || removed_native_goals
+            || removed_native_command_operations
+            || removed_native_command_output)
     }
 
     /// Remove an entire top-level native session tree after every worker lease
@@ -2723,6 +3125,50 @@ impl SessionStore {
         let mut journal_transactions = HashMap::with_capacity(journal_ids.len());
         for id in journal_ids {
             journal_transactions.insert(id.clone(), self.lock_native_journal(&id)?);
+        }
+
+        // Preserve uncertain human effects before publishing a destructive
+        // tree intent. Intention writers are frozen by the journal locks;
+        // workers by the leases. Retain each ledger lock through cleanup.
+        let mut command_operation_guards = Vec::new();
+        for node in &intent.nodes {
+            if let Some(session) = self.read_metadata(&node.id)? {
+                command_operation_guards.push(
+                    crate::native_command_operation::lock_and_require_no_pending(
+                        self.storage_root(),
+                        &session,
+                    )
+                    .map_err(|error| {
+                        StoreError::NativeCommandOperationAdmissionBlocked(error.to_string())
+                    })?,
+                );
+            } else if self
+                .storage_root()
+                .join(format!("{}.native-command-operations.json", node.id))
+                .exists()
+            {
+                return Err(StoreError::NativeCommandOperationAdmissionBlocked(
+                    "orphaned command operation ledger requires explicit repair".into(),
+                ));
+            }
+        }
+
+        let mut command_output_guards = Vec::new();
+        for node in &intent.nodes {
+            if let Some(session) = self.read_metadata(&node.id)? {
+                command_output_guards.push(
+                    crate::native_command_output::lock_and_validate(self.storage_root(), &session)
+                        .map_err(|error| {
+                            StoreError::NativeCommandOutputBlocked(error.to_string())
+                        })?,
+                );
+            } else if crate::native_command_output::has_sidecar(self.storage_root(), &node.id)
+                .map_err(|error| StoreError::NativeCommandOutputBlocked(error.to_string()))?
+            {
+                return Err(StoreError::NativeCommandOutputBlocked(
+                    "orphaned command output requires explicit repair".into(),
+                ));
+            }
         }
 
         let _registry_guard = self.lock_subagent_registry()?;
@@ -2797,9 +3243,20 @@ impl SessionStore {
                 .get_mut(&node.id)
                 .expect("validated deletion node has a journal lock")
                 .bump_generation()?;
+            crate::native_command_operation::remove_settled_files(self.storage_root(), &node.id)
+                .map_err(|error| {
+                    StoreError::NativeCommandOperationAdmissionBlocked(error.to_string())
+                })?;
+            crate::native_command_output::remove_files(self.storage_root(), &node.id)
+                .map_err(|error| StoreError::NativeCommandOutputBlocked(error.to_string()))?;
             remove_if_exists(self.events.path(&node.id)?)?;
             remove_if_exists(self.permission_journal_path(&node.id)?)?;
             remove_if_exists(self.native_steer_inbox_path(&node.id)?)?;
+            remove_if_exists(
+                self.events
+                    .root
+                    .join(format!("{}.native-goals.json", node.id)),
+            )?;
             remove_if_exists(self.metadata_path(&node.id)?)?;
             #[cfg(unix)]
             File::open(&self.events.root)?.sync_all()?;
@@ -3093,6 +3550,21 @@ impl SessionStore {
     }
 
     pub fn load(&self, session_id: &str) -> Result<Option<StoredSession>, StoreError> {
+        self.load_record(session_id, true)
+    }
+
+    /// Observe a journal without truncating or repairing an unterminated tail.
+    /// A projection must not silently repair its own evidence. Explicit recovery
+    /// and the normal writer retain the existing tail-repair contract.
+    pub fn load_strict(&self, session_id: &str) -> Result<Option<StoredSession>, StoreError> {
+        self.load_record(session_id, false)
+    }
+
+    fn load_record(
+        &self,
+        session_id: &str,
+        repair_tail: bool,
+    ) -> Result<Option<StoredSession>, StoreError> {
         let _guard = self
             .operation_lock
             .lock()
@@ -3101,7 +3573,19 @@ impl SessionStore {
         let Some(mut session) = self.read_metadata(session_id)? else {
             return Ok(None);
         };
-        let events = self.events.load(session_id)?;
+        self.require_no_native_automation_steers(&session)?;
+        let events = if repair_tail {
+            self.events.load(session_id)?
+        } else {
+            let _guard = self
+                .events
+                .write_lock
+                .lock()
+                .map_err(|_| StoreError::PoisonedLock)?;
+            self.events
+                .load_inner_with_repair(&self.events.path(session_id)?, session_id, false)?
+        };
+        validate_native_automation_admissions(&session, &events)?;
         session.updated_at_ms = session.updated_at_ms.max(
             events
                 .last()
@@ -3216,8 +3700,28 @@ fn search_snippets(text: &str, pattern: &Regex, title_matches: bool) -> Vec<Stri
     snippets
 }
 
+// serde_json wraps reader failures in its own Error. Preserve their I/O
+// classification so listing cannot treat an inaccessible store as bad JSON.
+impl From<serde_json::Error> for StoreError {
+    fn from(error: serde_json::Error) -> Self {
+        if error.is_io() {
+            Self::Io(std::io::Error::from(error))
+        } else {
+            Self::Json(error)
+        }
+    }
+}
+
 fn is_session_corruption(error: &StoreError) -> bool {
-    matches!(error, StoreError::Json(_) | StoreError::SessionMismatch)
+    matches!(
+        error,
+        StoreError::Json(_)
+            | StoreError::SessionMismatch
+            | StoreError::SessionMetadataTooLarge
+            | StoreError::NativeAutomationOrigin(_)
+            | StoreError::NativeAutomationAdmissionBlocked
+            | StoreError::NativeAutomationSteeringDisabled
+    )
 }
 
 fn remove_if_exists(path: PathBuf) -> Result<bool, StoreError> {
@@ -3274,6 +3778,15 @@ impl EventStore for JsonlSessionStore {
 impl JsonlSessionStore {
     /// The caller holds `write_lock`, so a repaired tail cannot race an append.
     fn load_inner(&self, path: &Path, session_id: &str) -> Result<Vec<AgentEvent>, StoreError> {
+        self.load_inner_with_repair(path, session_id, true)
+    }
+
+    fn load_inner_with_repair(
+        &self,
+        path: &Path,
+        session_id: &str,
+        repair_tail: bool,
+    ) -> Result<Vec<AgentEvent>, StoreError> {
         let file = match File::open(path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -3311,6 +3824,13 @@ impl JsonlSessionStore {
                     session_id: session_id.to_owned(),
                     line: events.len() + 1,
                     reason: "invalid system instruction snapshot",
+                });
+            }
+            if !valid_model_route_snapshot(&event) {
+                return Err(StoreError::InconsistentEventLog {
+                    session_id: session_id.to_owned(),
+                    line: events.len() + 1,
+                    reason: "invalid model route snapshot",
                 });
             }
             if !valid_plan_snapshot(&event) {
@@ -3355,6 +3875,13 @@ impl JsonlSessionStore {
         };
         drop(reader);
         if let Some(repair) = repair {
+            if !repair_tail {
+                return Err(StoreError::InconsistentEventLog {
+                    session_id: session_id.to_owned(),
+                    line: events.len() + 1,
+                    reason: "unterminated journal tail requires explicit recovery",
+                });
+            }
             let mut file = OpenOptions::new().write(true).open(path)?;
             match repair {
                 TailRepair::Truncate(len) => file.set_len(len)?,
@@ -3374,6 +3901,9 @@ impl JsonlSessionStore {
     }
 
     fn append_inner(&self, event: &AgentEvent, sync: bool) -> Result<(), StoreError> {
+        if !valid_model_route_snapshot(event) {
+            return Err(StoreError::InvalidModelRouteSnapshot);
+        }
         if !valid_system_instructions_snapshot(event) {
             return Err(StoreError::InvalidSystemInstructionsSnapshot);
         }
@@ -3426,6 +3956,42 @@ mod tests {
     use super::*;
     use crate::AgentEventKind;
     use std::sync::Arc;
+
+    #[test]
+    fn strict_session_observation_preserves_torn_and_unterminated_journal_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        let store = SessionStore::open(root.path()).unwrap();
+        let session = store.create(root.path(), "native").unwrap();
+        store
+            .admit_native_turn(
+                &session.id,
+                "strict-turn",
+                "Inspect",
+                "model",
+                TurnMode::Build,
+            )
+            .unwrap();
+        let path = root.path().join(format!("{}.jsonl", session.id));
+        let original = fs::read(&path).unwrap();
+        let mut torn = original.clone();
+        torn.extend_from_slice(b"{\"session_id\":");
+        fs::write(&path, &torn).unwrap();
+        assert!(store.load_strict(&session.id).is_err());
+        assert_eq!(fs::read(&path).unwrap(), torn);
+        let reopened = SessionStore::open(root.path()).unwrap();
+        assert!(reopened.load_strict(&session.id).is_err());
+        assert_eq!(fs::read(&path).unwrap(), torn);
+        assert_eq!(reopened.load(&session.id).unwrap().unwrap().events.len(), 1);
+        assert_eq!(fs::read(&path).unwrap(), original);
+        let mut undelimited = original.clone();
+        assert_eq!(undelimited.pop(), Some(b'\n'));
+        fs::write(&path, &undelimited).unwrap();
+        assert!(reopened.load_strict(&session.id).is_err());
+        assert_eq!(fs::read(&path).unwrap(), undelimited);
+        assert_eq!(reopened.load(&session.id).unwrap().unwrap().events.len(), 1);
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(reopened.load_strict(&session.id).unwrap().is_some());
+    }
 
     #[test]
     fn jsonl_round_trip_and_session_isolation() {
@@ -4690,6 +5256,7 @@ mod tests {
             unread_at_ms: None,
             last_unread_at_ms: 0,
             subagent: None,
+            native_automation: None,
         };
         let blocked_path = dir.path().join("blocked.session.json");
         fs::create_dir(&blocked_path).unwrap();

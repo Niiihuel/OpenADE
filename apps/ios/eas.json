@@ -1,0 +1,48 @@
+{
+  "cli": {
+    "version": ">= 21.7.1",
+    "appVersionSource": "local",
+    "requireCommit": false
+  },
+  "build": {
+    "simulator": {
+      "distribution": "internal",
+      "environment": "development",
+      "ios": {
+        "simulator": true,
+        "scheme": "OpenADERemote",
+        "buildConfiguration": "Debug",
+        "config": "swift-simulator.yml",
+        "image": "latest"
+      }
+    },
+    "device": {
+      "distribution": "internal",
+      "environment": "preview",
+      "credentialsSource": "remote",
+      "ios": {
+        "scheme": "OpenADERemote",
+        "buildConfiguration": "Release",
+        "config": "swift-device.yml",
+        "image": "latest"
+      }
+    },
+    "testflight": {
+      "extends": "device",
+      "distribution": "store",
+      "environment": "production"
+    }
+  },
+  "submit": {
+    "testflight": {
+      "ios": {
+        "ascAppId": "6819871735",
+        "appleTeamId": "2K2U374CJC",
+        "appName": "openADE Remote",
+        "bundleIdentifier": "dev.openade.remote",
+        "sku": "dev.openade.remote",
+        "language": "es-MX"
+      }
+    }
+  }
+}

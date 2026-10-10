@@ -1,0 +1,14 @@
+{
+  "name": "openade-remote-native-build",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Build metadata for the SwiftUI iOS app; no JavaScript app runtime.",
+  "scripts": {
+    "project": "python3 scripts/generate_project.py",
+    "eas:inspect": "node scripts/eas.mjs inspect simulator",
+    "eas:simulator": "node scripts/eas.mjs build simulator",
+    "eas:device": "node scripts/eas.mjs build device",
+    "eas:testflight": "node scripts/eas.mjs build testflight",
+    "eas:submit": "node scripts/eas.mjs submit testflight"
+  }
+}
