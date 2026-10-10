@@ -4,7 +4,7 @@
 //! row height) from a const profile rather than from numbers at each call.
 //! The app's own profiles live here so a screen never restates them.
 
-use openide_ui::{ActionRowSizing, NoticeSizing, PageHeaderSizing, TextRole};
+use openide_ui::{ActionRowSizing, NoticeSizing, PageHeaderSizing, RowSizing, TextRole};
 
 /// A setting: its label and supporting text beside a caller-owned control.
 pub const SETTINGS_ROW: ActionRowSizing = ActionRowSizing {
@@ -80,4 +80,36 @@ pub const TERMINAL_EXIT: NoticeSizing = NoticeSizing {
     height: Some(40.0),
     title_height: Some(32.0),
     description_height: None,
+};
+
+/// A saved project action: its label over the first line of its command.
+pub const PROJECT_ACTION: RowSizing = RowSizing {
+    height: Some(42.0),
+    two_line_height: Some(42.0),
+    padding: 5.0,
+    gap: 7.0,
+    leading_width: 16.0,
+    subtitle_size: 10.0,
+    ..RowSizing::COMPACT
+};
+
+/// A notification: as tall as its two lines, with its count and age beside
+/// the title.
+pub const NOTIFICATION: RowSizing = RowSizing {
+    height: None,
+    two_line_height: None,
+    padding: 6.0,
+    subtitle_size: 11.5,
+    ..RowSizing::COMPACT
+};
+
+/// A web citation in the transcript: a title of 18 over an address of 16.
+pub const WEB_CITATION: RowSizing = RowSizing {
+    height: None,
+    two_line_height: None,
+    padding: 9.0,
+    subtitle_size: 10.0,
+    title_height: Some(18.0),
+    subtitle_height: Some(16.0),
+    ..RowSizing::COMPACT
 };

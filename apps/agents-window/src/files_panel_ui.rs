@@ -75,9 +75,9 @@ fn legacy_empty_state(status: &str, palette: openide_ui::ComponentPalette) -> El
     .padding(12.0)
 }
 
-/// The title already identifies the file. Its parent adds location without
-/// repeating the basename, and root entries need no second line.
-fn path_tooltip(
+// What limn's `Tooltip::for_path` replaced. Delete with the final audit (S18).
+#[cfg(test)]
+fn legacy_path_tooltip(
     content: Element,
     id: &str,
     name: &str,
@@ -114,7 +114,7 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
         .next()
         .filter(|name| !name.is_empty())
         .unwrap_or("Proyecto");
-    let workspace_title = path_tooltip(
+    let workspace_title = Tooltip::for_path(
         Element::row(vec![
             Element::icon(openide_ui::folder_icon(project, true)).size(Some(16.0), Some(TOOL_SIZE)),
             Element::faded_text(project, 16.0)
@@ -127,10 +127,12 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
         .gap(6.0)
         .flex(1.0),
         "files_workspace",
-        project,
-        workspace,
-        TooltipPlacement::Below,
+        // Without a folder the hint is the placeholder name alone.
+        if workspace.is_empty() { project } else { workspace },
+        theme::component_palette(),
     )
+    .placement(TooltipPlacement::Below)
+    .render()
     .flex(1.0);
     let actions = vec![IconButton::new("files_search", Icon::Search, palette)
         .variant(ButtonVariant::Ghost)
@@ -254,17 +256,18 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                         .render(),
                     );
                 }
-                path_tooltip(
+                Tooltip::for_path(
                     row.render(),
                     &action,
-                    &entry.name,
                     &paths[index],
-                    if compact {
-                        TooltipPlacement::Right
-                    } else {
-                        TooltipPlacement::Left
-                    },
+                    theme::component_palette(),
                 )
+                .placement(if compact {
+                    TooltipPlacement::Right
+                } else {
+                    TooltipPlacement::Left
+                })
+                .render()
                 .size(Some(inner), Some(ROW_HEIGHT))
             })
             .tint(theme::FOREGROUND_SUBTLE)
@@ -281,6 +284,33 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn path_hints_match_their_legacy_body() {
+        for (name, path) in [
+            ("commands.rs", "src/commands.rs"),
+            ("Cargo.toml", "Cargo.toml"),
+            ("openADE", "/home/usuario/proyectos/openADE"),
+            ("tmp", "/tmp"),
+            ("Proyecto", "Proyecto"),
+        ] {
+            let hint = |element: Element| format!("{element:?}");
+            assert_eq!(
+                hint(
+                    Tooltip::for_path(Element::spacer(), "file", path, theme::component_palette())
+                        .placement(TooltipPlacement::Left)
+                        .render()
+                ),
+                hint(legacy_path_tooltip(
+                    Element::spacer(),
+                    "file",
+                    name,
+                    path,
+                    TooltipPlacement::Left
+                )),
+            );
+        }
+    }
+
     #[test]
     fn empty_state_matches_its_legacy_body() {
         let palette = crate::theme::sidebar_palette();

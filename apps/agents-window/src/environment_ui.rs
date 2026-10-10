@@ -4,9 +4,9 @@
 use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
-    ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    Element, FontFamily, Icon, IconButton, ScrollArea, SectionHeader, SectionSizing, Separator,
-    SpinnerVariant, Tooltip, TooltipPlacement, TooltipSpec,
+    ButtonVariant, Component, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
+    DropdownMenuItem, Element, FontFamily, Icon, IconButton, ListRow, ScrollArea, SectionHeader,
+    SectionSizing, Separator, SpinnerVariant, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -193,6 +193,8 @@ fn folder_name(workspace: &str) -> &str {
         })
 }
 
+/// Hand-built on purpose: in the card its chevron falls outside the clip,
+/// and a `ListRow` would fit it in. See the ledger (s09a).
 fn selector_trigger(
     id: &str,
     icon: Icon,
@@ -228,11 +230,9 @@ fn selector_trigger(
 }
 
 fn counts(additions: usize, deletions: usize) -> Element {
-    Element::row(vec![
-        text(format!("+{additions}"), false, 12.0).foreground(theme::DIFF_ADDED),
-        text(format!("−{deletions}"), false, 12.0).foreground(theme::DIFF_REMOVED),
-    ])
-    .gap(5.0)
+    DiffStat::new(additions, deletions, theme::component_palette())
+        .inks(theme::DIFF_ADDED, theme::DIFF_REMOVED)
+        .render()
 }
 
 fn changes_help_summary(changes: &SessionChangesSummaryView) -> String {
@@ -279,6 +279,8 @@ fn section_heading(title: &str, detail: Option<String>, width: f32) -> Element {
     heading.render()
 }
 
+/// Hand-built on purpose, like `selector_trigger`: the card lays it out
+/// narrower than `width`, cutting its counts and hiding its chevron.
 fn action_row(
     id: &str,
     icon: Icon,
@@ -608,48 +610,26 @@ fn tab_status(state: &ViewState, kind: SideTab) -> String {
     )
 }
 
+/// A one-line row of the card: the card's hover step, and a hint in the
+/// page's colors. The caller adds its trailing element.
 fn compact_row(
     id: &str,
     icon: Icon,
     title: &str,
-    trailing: Option<Element>,
     help: &str,
     width: f32,
     enabled: bool,
-) -> Element {
-    let mut children = vec![
-        Element::icon(icon)
-            .foreground(theme::ICON_PRIMARY)
-            .size(Some(16.0), Some(20.0)),
-        Element::truncated_text(title)
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(if enabled {
-                theme::FOREGROUND
-            } else {
-                theme::FOREGROUND_SUBTLE
-            })
-            .size(None, Some(20.0))
-            .flex(1.0),
-    ];
-    if let Some(trailing) = trailing {
-        children.push(trailing);
-    }
-    let visual = Element::row(children).gap(8.0).clip_children();
-    let row = interactive_surface(if enabled {
-        Element::clickable(id, visual)
-    } else {
-        Element::panel(visual)
-    })
-    .padding(4.0)
-    .size(Some(width), Some(28.0));
-    Tooltip::new(row, id, help, theme::component_palette()).render()
-}
-
-fn trailing_icon(icon: Icon) -> Element {
-    Element::icon(icon)
-        .foreground(theme::FOREGROUND_SUBTLE)
-        .size(Some(16.0), Some(20.0))
+) -> ListRow {
+    ListRow::new(
+        id,
+        title,
+        theme::action_palette(theme::CARD, theme::FOREGROUND),
+    )
+    .icon(icon)
+    .icon_ink(theme::ICON_PRIMARY)
+    .enabled(enabled)
+    .width(width)
+    .tooltip_with(TooltipSpec::new(help).palette(theme::component_palette()))
 }
 
 fn local_menu(state: &ViewState, width: f32, locked: bool) -> Element {
@@ -723,11 +703,12 @@ fn local_menu(state: &ViewState, width: f32, locked: bool) -> Element {
         "environment_local_toggle",
         Icon::Laptop,
         "Local",
-        Some(trailing_icon(Icon::ChevronDown)),
         &format!("Carpeta de trabajo\n{}", state.workspace),
         width,
         true,
-    );
+    )
+    .trailing_icon(Icon::ChevronDown)
+    .render();
     DropdownMenu::new(
         anchor,
         entries,
@@ -882,11 +863,12 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             "environment_branch_toggle",
             Icon::GitBranch,
             branch,
-            Some(trailing_icon(Icon::ChevronDown)),
             branch_detail,
             group_width,
             !state.composer_branches.switching(),
-        ),
+        )
+        .trailing_icon(Icon::ChevronDown)
+        .render(),
     );
     let action_width = (group_width - 6.0) / 2.0;
     // Rows sit directly on the card; thin rules separate the sections.
@@ -944,15 +926,21 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             .render(),
         section_heading("Control de versiones", None, inner_width),
         group(vec![
-            compact_row(
-                "dock_open:review",
-                Icon::Code,
-                &changes_label,
-                changes_trailing,
-                &changes_help,
-                group_width,
-                true,
-            ),
+            {
+                let changes = compact_row(
+                    "dock_open:review",
+                    Icon::Code,
+                    &changes_label,
+                    &changes_help,
+                    group_width,
+                    true,
+                );
+                match changes_trailing {
+                    Some(trailing) => changes.trailing(trailing),
+                    None => changes,
+                }
+                .render()
+            },
             Element::row(vec![
                 git_action(
                     "environment_git_open_commit",
@@ -977,24 +965,26 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             "project_actions_open",
             Icon::Play,
             "Acciones del proyecto",
-            Some(trailing_icon(Icon::ChevronRight)),
             "Configurar y ejecutar tareas del proyecto",
             inner_width,
             true,
-        ),
+        )
+        .trailing_icon(Icon::ChevronRight)
+        .render(),
         compact_row(
             "environment_details_toggle",
             Icon::Book,
             "Fuentes y herramientas",
-            Some(trailing_icon(if state.environment.details_expanded {
-                Icon::ChevronDown
-            } else {
-                Icon::ChevronRight
-            })),
             "Archivos consultados, referencias y herramientas de esta conversación",
             inner_width,
             true,
-        ),
+        )
+        .trailing_icon(if state.environment.details_expanded {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        })
+        .render(),
     ];
     rows.extend(crate::environment_git_ui::notices(workflow));
     if state.environment.details_expanded {
@@ -1097,6 +1087,121 @@ mod tests {
                 }
             }
         }
+    }
+
+    // The rows this card built by hand before limn's `ListRow` and `DiffStat`.
+    // Delete with the final audit (S18).
+    fn legacy_counts(additions: usize, deletions: usize) -> Element {
+        Element::row(vec![
+            text(format!("+{additions}"), false, 12.0).foreground(theme::DIFF_ADDED),
+            text(format!("−{deletions}"), false, 12.0).foreground(theme::DIFF_REMOVED),
+        ])
+        .gap(5.0)
+    }
+
+    fn legacy_compact_row(
+        id: &str,
+        icon: Icon,
+        title: &str,
+        trailing: Option<Element>,
+        help: &str,
+        width: f32,
+        enabled: bool,
+    ) -> Element {
+        let mut children = vec![
+            Element::icon(icon)
+                .foreground(theme::ICON_PRIMARY)
+                .size(Some(16.0), Some(20.0)),
+            Element::truncated_text(title)
+                .font_family(FontFamily::Sans)
+                .font_size(12.0)
+                .foreground(if enabled {
+                    theme::FOREGROUND
+                } else {
+                    theme::FOREGROUND_SUBTLE
+                })
+                .size(None, Some(20.0))
+                .flex(1.0),
+        ];
+        if let Some(trailing) = trailing {
+            children.push(trailing);
+        }
+        let visual = Element::row(children).gap(8.0).clip_children();
+        let row = interactive_surface(if enabled {
+            Element::clickable(id, visual)
+        } else {
+            Element::panel(visual)
+        })
+        .padding(4.0)
+        .size(Some(width), Some(28.0));
+        Tooltip::new(row, id, help, theme::component_palette()).render()
+    }
+
+    fn legacy_trailing_icon(icon: Icon) -> Element {
+        Element::icon(icon)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .size(Some(16.0), Some(20.0))
+    }
+
+    #[test]
+    fn rows_paint_what_the_hand_built_rows_painted() {
+        use crate::state_panel_parity_tests::assert_same;
+        // No wider than the narrow pane of `assert_same`: a row gets its width.
+        for width in [150.0, 236.0] {
+            for enabled in [true, false] {
+                assert_same(
+                    "compact",
+                    legacy_compact_row(
+                        "branch",
+                        Icon::GitBranch,
+                        "una-rama-de-nombre-largo",
+                        Some(legacy_trailing_icon(Icon::ChevronDown)),
+                        "Cambiar rama de trabajo",
+                        width,
+                        enabled,
+                    ),
+                    compact_row(
+                        "branch",
+                        Icon::GitBranch,
+                        "una-rama-de-nombre-largo",
+                        "Cambiar rama de trabajo",
+                        width,
+                        enabled,
+                    )
+                    .trailing_icon(Icon::ChevronDown)
+                    .render(),
+                );
+            }
+            let spinner = || {
+                Element::spinner("progress", theme::FOREGROUND_SUBTLE, SpinnerVariant::Circle)
+                    .size(Some(16.0), Some(20.0))
+            };
+            for (old, new) in [
+                (Some(legacy_counts(25813, 8475)), Some(counts(25813, 8475))),
+                (Some(spinner()), Some(spinner())),
+                (None, None),
+            ] {
+                let row = compact_row("review", Icon::Code, "12 archivos", "Abrir", width, true);
+                assert_same(
+                    "compact trailing",
+                    legacy_compact_row(
+                        "review",
+                        Icon::Code,
+                        "12 archivos",
+                        old,
+                        "Abrir",
+                        width,
+                        true,
+                    ),
+                    match new {
+                        Some(trailing) => row.trailing(trailing),
+                        None => row,
+                    }
+                    .render(),
+                );
+            }
+        }
+        assert_same("counts", legacy_counts(3, 0), counts(3, 0));
     }
 
     #[test]

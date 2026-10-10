@@ -1,11 +1,11 @@
 //! Project action controls embedded in the environment card.
 use crate::{
     project_actions::{ProjectAction, ProjectActionsState},
-    theme,
+    theme, ui_sizing,
 };
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton, Text,
-    TextRole, Tooltip, TooltipPlacement, TooltipSpec,
+    Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton, ListRow,
+    Text, TextRole, TooltipPlacement, TooltipSpec,
 };
 
 fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
@@ -58,7 +58,8 @@ fn error_line(error: &str) -> Element {
         .render()
 }
 
-fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
+#[cfg(test)]
+fn legacy_launch(action: &ProjectAction, enabled: bool) -> Element {
     let id = format!("project_action_run:{}", action.id);
     let contents = Element::row(vec![
         Element::icon(Icon::Terminal)
@@ -86,15 +87,43 @@ fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
         Element::panel(contents)
     })
     .flex(1.0);
+    openide_ui::Tooltip::new(
+        launch,
+        id,
+        format!("Ejecutar en una terminal nueva\n{}", action.command),
+        theme::component_palette(),
+    )
+    .render()
+}
+
+/// The part of an action's row that runs it.
+fn launch(action: &ProjectAction, enabled: bool) -> Element {
+    let id = format!("project_action_run:{}", action.id);
+    // A saving panel keeps its actions in full ink; only the hit target goes.
+    ListRow::new(
+        &id,
+        &action.label,
+        theme::action_palette(theme::CARD, theme::FOREGROUND),
+    )
+    .leading(Element::icon(Icon::Terminal).foreground(theme::FOREGROUND_SUBTLE))
+    .subtitle(action.command.lines().next().unwrap_or_default())
+    .subtitle_mono(true)
+    .title_ink(theme::FOREGROUND)
+    .enabled(enabled)
+    .tooltip_with(
+        TooltipSpec::new(format!(
+            "Ejecutar en una terminal nueva\n{}",
+            action.command
+        ))
+        .palette(theme::component_palette()),
+    )
+    .sizing(ui_sizing::PROJECT_ACTION)
+    .render()
+}
+
+fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
     Element::row(vec![
-        Tooltip::new(
-            launch,
-            id,
-            format!("Ejecutar en una terminal nueva\n{}", action.command),
-            theme::component_palette(),
-        )
-        .render()
-        .flex(1.0),
+        launch(action, enabled).flex(1.0),
         IconButton::new(
             format!("project_action_edit:{}", action.id),
             Icon::Edit,
@@ -276,6 +305,24 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
+
+    #[test]
+    fn the_launch_row_matches_its_legacy_body() {
+        let action = ProjectAction {
+            id: "dev".into(),
+            label: "Ejecutar el proyecto en modo desarrollo".into(),
+            command: "npm run dev -- --host 0.0.0.0 --port 5173 && echo listo\necho fin".into(),
+        };
+        for enabled in [true, false] {
+            let in_row =
+                |launch: Element| Element::row(vec![launch.flex(1.0)]).size(None, Some(42.0));
+            crate::state_panel_parity_tests::assert_same(
+                "project action",
+                in_row(legacy_launch(&action, enabled)),
+                in_row(launch(&action, enabled)),
+            );
+        }
+    }
 
     #[test]
     fn status_and_error_lines_match_their_legacy_body() {

@@ -10,7 +10,8 @@ use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Collapsible, Color, Component, ControlSize, Element,
-    FontFamily, Icon, IconButton as UiIconButton, Marker, MarkerVariant, PageColumn, ScrollArea,
+    FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker, MarkerVariant, PageColumn,
+    ScrollArea,
     Separator, TextArea, ToolActivity, Tooltip, TooltipPlacement,
 };
 
@@ -279,32 +280,7 @@ fn message(
         TranscriptItem::PlanSnapshot { .. } => plan_snapshot_item(item, item_index, state),
         TranscriptItem::Hook(hook) => hook_activity_card(hook),
         TranscriptItem::Activity(activity) => activity_marker(activity),
-        TranscriptItem::WebCitation { title, url } => {
-            theme::interactive_surface(Element::clickable(
-                format!("web_citation_open:{item_index}"),
-                Element::row(vec![
-                    Element::icon(Icon::Search).foreground(theme::ICON_PRIMARY),
-                    Element::column(vec![
-                        Element::truncated_text(title)
-                            .font_family(FontFamily::Sans)
-                            .font_size(12.0)
-                            .foreground(theme::FOREGROUND)
-                            .size(None, Some(18.0)),
-                        Element::truncated_text(url)
-                            .font_family(FontFamily::Monospace)
-                            .font_size(10.0)
-                            .foreground(theme::FOREGROUND_SUBTLE)
-                            .size(None, Some(16.0)),
-                    ])
-                    .gap(2.0)
-                    .flex(1.0),
-                ])
-                .gap(8.0)
-                .padding(9.0),
-            ))
-            .background(theme::PANEL)
-            .border(theme::BORDER, 1.0)
-        }
+        TranscriptItem::WebCitation { title, url } => web_citation(item_index, title, url),
         TranscriptItem::Notice { message, is_error } => Alert::new(
             if *is_error {
                 "Error en la conversación"
@@ -540,6 +516,52 @@ fn marker_palette(surface: Color, ink: Color) -> openide_ui::ComponentPalette {
     let mut palette = theme::action_palette(surface, ink);
     palette.muted = ink;
     palette
+}
+
+/// A cited page in the transcript: its title over its address.
+fn web_citation(index: usize, title: &str, url: &str) -> Element {
+    ListRow::new(
+        format!("web_citation_open:{index}"),
+        title,
+        theme::action_palette(theme::PANEL, theme::FOREGROUND),
+    )
+    .icon(Icon::Search)
+    .icon_ink(theme::ICON_PRIMARY)
+    .subtitle(url)
+    .subtitle_mono(true)
+    .filled()
+    .sizing(crate::ui_sizing::WEB_CITATION)
+    .render()
+    // A limn row has no outline: the hairline of this card is the app's.
+    .border(theme::BORDER, 1.0)
+}
+
+#[cfg(test)]
+fn legacy_web_citation(index: usize, title: &str, url: &str) -> Element {
+    theme::interactive_surface(Element::clickable(
+        format!("web_citation_open:{index}"),
+        Element::row(vec![
+            Element::icon(Icon::Search).foreground(theme::ICON_PRIMARY),
+            Element::column(vec![
+                Element::truncated_text(title)
+                    .font_family(FontFamily::Sans)
+                    .font_size(12.0)
+                    .foreground(theme::FOREGROUND)
+                    .size(None, Some(18.0)),
+                Element::truncated_text(url)
+                    .font_family(FontFamily::Monospace)
+                    .font_size(10.0)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .size(None, Some(16.0)),
+            ])
+            .gap(2.0)
+            .flex(1.0),
+        ])
+        .gap(8.0)
+        .padding(9.0),
+    ))
+    .background(theme::PANEL)
+    .border(theme::BORDER, 1.0)
 }
 
 pub(crate) fn activity_marker(activity: &TranscriptActivity) -> Element {
@@ -3135,6 +3157,18 @@ mod tests {
     use image::ImageEncoder as _;
     use openide_core::{AgentEvent, AgentEventKind, TurnMode, UserImage, UserImageMime};
     use openide_ui::{DrawCommand, HitKind, Point, Size, UiEvent, UiTree};
+
+    #[test]
+    fn a_web_citation_matches_its_legacy_body() {
+        let url = "https://example.com/una/ruta/bastante/larga/index.html";
+        for title in ["limn", "Un título de página que no cabe en una columna angosta de lectura"] {
+            crate::state_panel_parity_tests::assert_same(
+                "web citation",
+                legacy_web_citation(3, title, url),
+                web_citation(3, title, url),
+            );
+        }
+    }
     use serde_json::{json, Value};
     use unicode_segmentation::UnicodeSegmentation;
 

@@ -3,12 +3,12 @@
 use std::time::SystemTime;
 
 use openide_ui::{
-    ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon, IconButton, Popover,
-    PopoverPlacement, TooltipPlacement, TooltipSpec,
+    ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon, IconButton, ListRow,
+    Popover, PopoverPlacement, TooltipPlacement, TooltipSpec,
 };
 
 use crate::notifications::{Notification, NotificationCenter, Severity};
-use crate::theme;
+use crate::{theme, ui_sizing};
 
 const VISIBLE: usize = 8;
 
@@ -31,7 +31,8 @@ fn age(at: SystemTime) -> String {
     }
 }
 
-fn row(item: &Notification) -> Element {
+#[cfg(test)]
+fn legacy_open_row(item: &Notification) -> Element {
     let ink = match (item.severity, item.read) {
         (Severity::Error, _) => theme::DESTRUCTIVE,
         (_, false) => theme::FOREGROUND,
@@ -48,12 +49,37 @@ fn row(item: &Notification) -> Element {
     ])
     .gap(2.0)
     .padding(6.0);
+    theme::interactive_surface(Element::clickable(
+        format!("notification_open:{}", item.id),
+        body,
+    ))
+}
+
+/// The part of a notification that opens it.
+fn open_row(item: &Notification) -> Element {
+    let ink = match (item.severity, item.read) {
+        (Severity::Error, _) => theme::DESTRUCTIVE,
+        (_, false) => theme::FOREGROUND,
+        (_, true) => theme::FOREGROUND_SUBTLE,
+    };
+    let mut row = ListRow::new(
+        format!("notification_open:{}", item.id),
+        &item.title,
+        theme::component_palette(),
+    )
+    .title_ink(ink)
+    .subtitle(&item.detail)
+    .sizing(ui_sizing::NOTIFICATION);
+    if item.count > 1 {
+        row = row.meta_element(text(format!("×{}", item.count), 11.0, theme::FOREGROUND));
+    }
+    row.meta_element(text(age(item.at), 11.0, theme::FOREGROUND_SUBTLE))
+        .render()
+}
+
+fn row(item: &Notification) -> Element {
     Element::row(vec![
-        theme::interactive_surface(Element::clickable(
-            format!("notification_open:{}", item.id),
-            body,
-        ))
-        .flex(1.0),
+        open_row(item).flex(1.0),
         IconButton::new(
             format!("notification_remove:{}", item.id),
             Icon::Close,
@@ -265,6 +291,31 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join(" | ")
+    }
+
+    #[test]
+    fn the_open_row_matches_its_legacy_body() {
+        for (severity, read, count) in [
+            (Severity::Error, false, 1),
+            (Severity::Info, false, 3),
+            (Severity::Attention, true, 1),
+        ] {
+            let item = Notification {
+                id: 7,
+                severity,
+                title: "Permiso pendiente: run_command en una tarea de nombre largo".into(),
+                detail: "Arreglar el inicio de sesión del panel de administración".into(),
+                target: None,
+                count,
+                read,
+                at: SystemTime::now(),
+            };
+            crate::state_panel_parity_tests::assert_same(
+                "notification",
+                legacy_open_row(&item),
+                open_row(&item),
+            );
+        }
     }
 
     #[test]
