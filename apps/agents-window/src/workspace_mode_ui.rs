@@ -3,41 +3,15 @@
 //! Geometry is driven by the host's native ScalarTransition, not by a web view.
 
 use super::*;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use openide_ui::{RasterImage, RasterImageFormat};
-use sha2::{Digest, Sha256};
+use openide_ui::RasterImage;
 
-// This is the existing cropped vector used by the empty editor, at full
-// opacity. Embed and rasterize it once; painting never reads files or networks.
+// The cropped vector of the empty editor, at full opacity and cached once.
 fn brand_icon() -> Option<RasterImage> {
     static IMAGE: OnceLock<Option<RasterImage>> = OnceLock::new();
     IMAGE
-        .get_or_init(|| {
-            let tree = resvg::usvg::Tree::from_str(
-                include_str!("../assets/brand/openide-editor.svg"),
-                &Default::default(),
-            )
-            .ok()?;
-            let mut pixmap = resvg::tiny_skia::Pixmap::new(64, 64)?;
-            resvg::render(
-                &tree,
-                resvg::tiny_skia::Transform::from_scale(
-                    64.0 / tree.size().width(),
-                    64.0 / tree.size().height(),
-                ),
-                &mut pixmap.as_mut(),
-            );
-            let bytes = pixmap.encode_png().ok()?;
-            RasterImage::new(
-                format!("{:x}", Sha256::digest(&bytes)),
-                RasterImageFormat::Png,
-                bytes.len() as u32,
-                Arc::from(STANDARD.encode(bytes)),
-                "OpenIDE",
-            )
-        })
+        .get_or_init(|| crate::ide_editor_empty::brand_raster(64, 1.0, "OpenIDE"))
         .clone()
 }
 
@@ -103,7 +77,11 @@ pub(super) fn render(state: &ViewState, compact: bool) -> Element {
 mod tests {
     use super::*;
     use crate::ide_workspace::WindowMode;
-    use openide_ui::{DrawCommand, Point, Rect, Size, UiAction, UiEvent, UiTree};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use openide_ui::{
+        DrawCommand, Point, RasterImageFormat, Rect, Size, UiAction, UiEvent, UiTree,
+    };
+    use sha2::{Digest, Sha256};
 
     #[test]
     fn workspace_mode_reveal_preserves_click_target_and_clips_one_label_line() {

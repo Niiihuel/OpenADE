@@ -95,7 +95,8 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
     let layout = crate::ide_workspace::nominal_layout(state, width + 2.0 * OUTER_INSET);
     let compact = width < 900.0;
     let compact_menu = width < 1200.0;
-    let menu_width = menus::width(compact_menu);
+    let menu_bar = menus::menubar(state, compact_menu);
+    let menu_width = menu_bar.width();
     let mode_width = if compact { 24.0 } else { 84.0 };
     let right_min = mode_width + 76.0 + 1.0 + 24.0;
     let left_min = menu_width;
@@ -178,7 +179,7 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
         body_height,
     );
     let left =
-        Element::row(vec![menus::menubar(state, compact_menu)]).size(Some(left_width), Some(24.0));
+        Element::row(vec![menu_bar.render()]).size(Some(left_width), Some(24.0));
     let bottom_open = state.show_terminal_panel || state.ide.bottom_open;
     let layout_controls = Element::row(vec![
         explorer_toggle,

@@ -324,6 +324,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_status_bar_row_is_limns_bar_under_one_hairline() {
+        assert_eq!(STATUSBAR_HEIGHT, openide_ui::StatusBar::HEIGHT + 1.0);
+    }
+
+    #[test]
     fn ide_preferences_round_trip_without_transient_history() {
         let root = tempfile::tempdir().unwrap();
         let mut state = IdeWorkspaceState::load(root.path());

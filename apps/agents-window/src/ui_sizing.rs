@@ -6,7 +6,7 @@
 
 use openide_ui::{
     ActionRowSizing, FormFieldSizing, HeaderSizing, Modal, NoticeSizing, PageHeaderSizing,
-    PagerSizing, RowSizing, TextRole,
+    PagerSizing, RowSizing, StatusBarItemSizing, TextRole,
 };
 
 /// A setting: its label and supporting text beside a caller-owned control.
@@ -298,6 +298,20 @@ pub const NEW_FILE_FIELD: FormFieldSizing = FormFieldSizing {
     hint_role: TextRole::Caption,
     gap: 8.0,
     ..FormFieldSizing::DEFAULT
+};
+
+/// The notifications bell of the status bar: a wider glyph beside its count.
+pub const STATUS_BELL: StatusBarItemSizing = StatusBarItemSizing {
+    icon_width: 15.0,
+    ..StatusBarItemSizing::COUNTS
+};
+
+/// A shortcut of the empty editor: a larger title far from its keycaps.
+pub const EMPTY_EDITOR_ROW: RowSizing = RowSizing {
+    height: Some(32.0),
+    gap: 20.0,
+    title_size: 13.0,
+    ..RowSizing::COMPACT
 };
 
 #[cfg(test)]

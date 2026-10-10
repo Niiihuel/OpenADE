@@ -3,7 +3,7 @@
 use super::*;
 use crate::ide_workspace::IdeActivity;
 use crate::keymap::ShortcutAction;
-use openide_ui::ButtonSize;
+use openide_ui::{MenuBar, MenuBarMenu};
 
 const MENUS: [(&str, &str, f32); 7] = [
     ("file", "Archivo", 60.0),
@@ -14,14 +14,6 @@ const MENUS: [(&str, &str, f32); 7] = [
     ("run", "Ejecutar", 64.0),
     ("terminal", "Terminal", 64.0),
 ];
-
-pub(super) fn width(compact: bool) -> f32 {
-    if compact {
-        32.0
-    } else {
-        392.0
-    }
-}
 
 fn command(state: &ViewState, action: &str, label: &str) -> DropdownMenuItem {
     let editor = state.code_editor.as_ref().and_then(|editor| {
@@ -273,7 +265,7 @@ fn entries(state: &ViewState, menu: &str) -> Vec<DropdownMenuEntry> {
     }
 }
 
-pub(super) fn menubar(state: &ViewState, compact: bool) -> Element {
+pub(super) fn menubar(state: &ViewState, compact: bool) -> MenuBar {
     let current = state.ide.menu_open.as_deref().map(|menu| {
         if !compact && menu == "all" {
             "file"
@@ -281,100 +273,47 @@ pub(super) fn menubar(state: &ViewState, compact: bool) -> Element {
             menu
         }
     });
-    if compact {
-        let items = if current.is_some() {
-            MENUS
-                .iter()
-                .map(|(id, label, _)| {
-                    DropdownMenuItem::new(format!("ide_menu_category:{id}"), *label)
-                        .submenu(entries(state, id))
-                        .into()
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        return DropdownMenu::new(
-            Element::panel(
-                UiIconButton::new(
-                    "ide_menu:all",
-                    Icon::Menu,
-                    theme::action_palette(theme::WINDOW, theme::FOREGROUND),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .active(current.is_some())
-                .active_hover(ActiveHover::Palette)
-                .tooltip_with(TooltipSpec::new("Menú principal").placement(TooltipPlacement::Below))
-                .render(),
-            )
-            .size(Some(32.0), Some(24.0)),
-            items,
-            current.is_some(),
-            "ide_menu_dismiss",
-            theme::menu_palette(),
-        )
-        .context_menu_style()
-        .render();
-    }
-    Element::row(
+    let open_id = current.map(|menu| format!("ide_menu:{menu}"));
+    let bar = MenuBar::new(
         MENUS
             .iter()
             .map(|(id, label, width)| {
-                let palette = theme::action_palette(theme::WINDOW, theme::FOREGROUND);
-                let anchor = palette.interactive_surface(
-                    Button::new(format!("ide_menu:{id}"), *label, palette)
-                        .variant(ButtonVariant::Ghost)
-                        .button_size(ButtonSize::Small)
-                        .render()
-                        .font_size(12.0)
-                        .padding(4.0)
-                        .min_size(0.0, 0.0)
-                        .background(if current == Some(*id) {
-                            theme::SELECTED
-                        } else {
-                            theme::WINDOW
-                        })
-                        .size(Some(*width), Some(24.0)),
-                );
-                let items = if current == Some(*id) {
+                // Only what is shown is built: every menu behind the compact
+                // button, one under the full bar.
+                let items = if current == Some(*id) || (compact && current.is_some()) {
                     entries(state, id)
                 } else {
                     Vec::new()
                 };
-                let initial_focus = items.iter().find_map(|entry| match entry {
-                    DropdownMenuEntry::Item(item)
-                        if item.state == openide_ui::ControlState::Enabled =>
-                    {
-                        Some(item.action_id.clone())
-                    }
-                    _ => None,
-                });
-                let menu = DropdownMenu::new(
-                    anchor,
-                    items,
-                    current == Some(*id),
+                MenuBarMenu::new(
+                    format!("ide_menu:{id}"),
+                    *label,
+                    *width,
                     format!("ide_menu_dismiss:{id}"),
-                    theme::menu_palette(),
+                    items,
                 )
-                .context_menu_style()
-                .render();
-                if let Some(initial_focus) = initial_focus {
-                    menu.popover_initial_focus(initial_focus)
-                } else {
-                    menu
-                }
+                .compact_id(format!("ide_menu_category:{id}"))
             })
             .collect(),
+        open_id.as_deref(),
+        theme::action_palette(theme::WINDOW, theme::FOREGROUND),
     )
-    .gap(2.0)
-    .size(Some(width(false)), Some(24.0))
+    .menu_palette(theme::menu_palette());
+    if compact {
+        bar.compact(
+            "ide_menu:all",
+            "ide_menu_dismiss",
+            TooltipSpec::new("Menú principal").placement(TooltipPlacement::Below),
+        )
+    } else {
+        bar
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{ControlState, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{ButtonSize, ControlState, Size, UiAction, UiEvent, UiTree};
 
     #[test]
     fn navigation_menu_accelerators_follow_the_profile_without_blank_key_labels() {
@@ -496,7 +435,7 @@ mod tests {
     fn ide_menu_compact_categories_use_native_submenus_and_escape_dismissal() {
         let mut state = crate::view::tests::empty_state();
         state.ide.menu_open = Some("all".into());
-        let mut tree = UiTree::new(menubar(&state, true));
+        let mut tree = UiTree::new(menubar(&state, true).render());
         tree.set_reduced_motion(true);
         let frame = tree.layout(Size::new(360.0, 600.0));
         assert!(frame
@@ -521,7 +460,7 @@ mod tests {
             .any(|action| matches!(action, UiAction::Clicked { id }
             if id.contains("ide_new_file"))));
         // A fresh root also verifies Escape before entering a submenu.
-        let mut tree = UiTree::new(menubar(&state, true));
+        let mut tree = UiTree::new(menubar(&state, true).render());
         tree.set_reduced_motion(true);
         tree.layout(Size::new(360.0, 600.0));
         let actions = tree.handle_event(UiEvent::Key {
@@ -532,5 +471,140 @@ mod tests {
         assert!(actions.contains(&UiAction::Clicked {
             id: "ide_menu_dismiss".into()
         }));
+    }
+
+    // The bar as it was built by hand before limn's `MenuBar`, kept to prove
+    // the two paint the same frames. Delete with the final audit (S18).
+    fn legacy_menubar(state: &ViewState, compact: bool) -> Element {
+        let current = state.ide.menu_open.as_deref().map(|menu| {
+            if !compact && menu == "all" {
+                "file"
+            } else {
+                menu
+            }
+        });
+        if compact {
+            let items = if current.is_some() {
+                MENUS
+                    .iter()
+                    .map(|(id, label, _)| {
+                        DropdownMenuItem::new(format!("ide_menu_category:{id}"), *label)
+                            .submenu(entries(state, id))
+                            .into()
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            return DropdownMenu::new(
+                Element::panel(
+                    UiIconButton::new(
+                        "ide_menu:all",
+                        Icon::Menu,
+                        theme::action_palette(theme::WINDOW, theme::FOREGROUND),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .active(current.is_some())
+                    .active_hover(ActiveHover::Palette)
+                    .tooltip_with(TooltipSpec::new("Menú principal").placement(TooltipPlacement::Below))
+                    .render(),
+                )
+                .size(Some(32.0), Some(24.0)),
+                items,
+                current.is_some(),
+                "ide_menu_dismiss",
+                theme::menu_palette(),
+            )
+            .context_menu_style()
+            .render();
+        }
+        Element::row(
+            MENUS
+                .iter()
+                .map(|(id, label, width)| {
+                    let palette = theme::action_palette(theme::WINDOW, theme::FOREGROUND);
+                    let anchor = palette.interactive_surface(
+                        Button::new(format!("ide_menu:{id}"), *label, palette)
+                            .variant(ButtonVariant::Ghost)
+                            .button_size(ButtonSize::Small)
+                            .render()
+                            .font_size(12.0)
+                            .padding(4.0)
+                            .min_size(0.0, 0.0)
+                            .background(if current == Some(*id) {
+                                theme::SELECTED
+                            } else {
+                                theme::WINDOW
+                            })
+                            .size(Some(*width), Some(24.0)),
+                    );
+                    let items = if current == Some(*id) {
+                        entries(state, id)
+                    } else {
+                        Vec::new()
+                    };
+                    let initial_focus = items.iter().find_map(|entry| match entry {
+                        DropdownMenuEntry::Item(item)
+                            if item.state == openide_ui::ControlState::Enabled =>
+                        {
+                            Some(item.action_id.clone())
+                        }
+                        _ => None,
+                    });
+                    let menu = DropdownMenu::new(
+                        anchor,
+                        items,
+                        current == Some(*id),
+                        format!("ide_menu_dismiss:{id}"),
+                        theme::menu_palette(),
+                    )
+                    .context_menu_style()
+                    .render();
+                    if let Some(initial_focus) = initial_focus {
+                        menu.popover_initial_focus(initial_focus)
+                    } else {
+                        menu
+                    }
+                })
+                .collect(),
+        )
+        .gap(2.0)
+        .size(Some(392.0), Some(24.0))
+    }
+
+    #[test]
+    fn the_menu_bar_paints_the_frames_it_did_by_hand() {
+        let frame = |bar: Element, width: f32| {
+            let mut tree = UiTree::new(Element::column(vec![
+                Element::row(vec![bar, Element::spacer().flex(1.0)]),
+                Element::spacer().flex(1.0),
+            ]));
+            tree.set_reduced_motion(true);
+            tree.layout(Size::new(width, 600.0))
+        };
+        let mut state = crate::view::tests::empty_state();
+        let open = ["all", "file", "edit", "selection", "view", "go", "run", "terminal"];
+        for menu in std::iter::once(None).chain(open.into_iter().map(Some)) {
+            state.ide.menu_open = menu.map(str::to_owned);
+            for compact in [false, true] {
+                assert_eq!(
+                    menubar(&state, compact).width(),
+                    if compact { 32.0 } else { 392.0 }
+                );
+                for width in [360.0, 900.0, 1500.0] {
+                    assert_eq!(
+                        frame(menubar(&state, compact).render(), width),
+                        frame(legacy_menubar(&state, compact), width),
+                        "menu={menu:?} compact={compact} width={width}"
+                    );
+                }
+                crate::icon_button_parity_tests::assert_same(
+                    "menu bar",
+                    legacy_menubar(&state, compact),
+                    menubar(&state, compact).render(),
+                );
+            }
+        }
     }
 }

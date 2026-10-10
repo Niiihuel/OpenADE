@@ -5,13 +5,14 @@ use crate::{
 };
 use openide_editor::IndentStyle;
 use openide_ui::{
-    AlertColors, AlertTone, Button, ButtonVariant, CodeLanguage, Color, Component, ControlSize,
-    DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon, Popover,
-    PopoverPlacement, ScrollArea, Separator, TextField, Tooltip, TooltipPlacement,
+    AlertColors, AlertTone, Button, ButtonVariant, CodeLanguage, Color, Component,
+    ComponentPalette, ControlSize, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon,
+    Popover, PopoverPlacement, ScrollArea, Separator, StatusBar, StatusBarItem,
+    StatusBarItemSizing, TextField, TooltipSpec,
 };
 
-// Reserve only the top divider; cells fill the remaining status bar height.
-pub(crate) const STATUS_HEIGHT: f32 = crate::ide_workspace::STATUSBAR_HEIGHT - 1.0;
+// The window reserves one more pixel above the cells, for its divider.
+pub(crate) const STATUS_HEIGHT: f32 = StatusBar::HEIGHT;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StatusMenu {
@@ -182,13 +183,6 @@ fn document_status(state: &ViewState) -> Option<DocumentStatus> {
     })
 }
 
-fn text(value: &str) -> Element {
-    Element::faded_text(value, 6.0)
-        .font_family(FontFamily::Sans)
-        .font_size(11.0)
-        .foreground(theme::FOREGROUND_SUBTLE)
-}
-
 // Conservative reservations for short labels, instead of fixed status columns.
 // Native font measurement still owns glyph layout and clipping.
 fn label_width(value: &str) -> f32 {
@@ -207,58 +201,36 @@ fn label_width(value: &str) -> f32 {
         + 8.0
 }
 
+// The glyphs of the problems and bell cells never took the muted ink of
+// their row; see the ledger before changing it.
+const GLYPH_INK: Color = Color::WHITE;
+
+fn cell_palette(surface: Color) -> ComponentPalette {
+    theme::action_palette(surface, theme::FOREGROUND_SUBTLE)
+}
+
+// A hint above the bar, in the window's own tooltip colors.
+fn hint(title: impl Into<String>) -> TooltipSpec {
+    TooltipSpec::new(title).palette(theme::component_palette())
+}
+
 fn control(
     id: &str,
     action: &str,
     value: &str,
     icon: Option<Icon>,
-    hint: &str,
+    hint: TooltipSpec,
     width: f32,
     surface: Color,
-) -> Element {
-    control_tooltip(id, action, value, icon, hint, width, surface).render()
-}
-
-fn control_tooltip(
-    id: &str,
-    action: &str,
-    value: &str,
-    icon: Option<Icon>,
-    hint: &str,
-    width: f32,
-    surface: Color,
-) -> Tooltip {
-    let mut children = Vec::new();
-    if let Some(icon) = icon {
-        children.push(
-            Element::icon(icon)
-                .foreground(theme::FOREGROUND_SUBTLE)
-                .size(Some(12.0), Some(16.0)),
-        );
+) -> StatusBarItem {
+    let item = StatusBarItem::new(id, width, cell_palette(surface));
+    match icon {
+        Some(icon) => item.icon(icon),
+        None => item,
     }
-    if !value.is_empty() {
-        children.push(text(value).size(None, Some(16.0)).flex(1.0));
-    }
-    Tooltip::new(
-        theme::action_palette(surface, theme::FOREGROUND_SUBTLE).bar_item_surface(
-            Element::clickable(id, Element::row(children).gap(4.0))
-                .dispatch_as(action)
-                .padding(2.0)
-                .size(Some(width), Some(STATUS_HEIGHT)),
-        ),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .placement(TooltipPlacement::Above)
-}
-
-fn menu(anchor: Element, entries: Vec<DropdownMenuEntry>, open: bool, dismiss: &str) -> Element {
-    DropdownMenu::new(anchor, entries, open, dismiss, theme::menu_palette())
-        .context_menu_style()
-        .placement(PopoverPlacement::TopEnd)
-        .width(256.0)
-        .render()
+    .label(value)
+    .dispatch_as(action)
+    .tooltip_with(hint)
 }
 
 fn scoped_entries(
@@ -366,10 +338,10 @@ fn document_control(
     kind: StatusMenu,
     id: &str,
     value: &str,
-    hint: &str,
+    title: &str,
     width: f32,
     surface: Color,
-) -> Element {
+) -> StatusBarItem {
     let key = match kind {
         StatusMenu::Indent => "indent",
         StatusMenu::Ending => "ending",
@@ -380,20 +352,27 @@ fn document_control(
     let prefix = status.scope.prefix();
     let open = state.ide_status.menu == Some(kind)
         && state.ide_status.scope.as_ref() == Some(&status.scope);
-    menu(
-        control(
-            id,
-            &format!("{prefix}:open:{key}"),
-            value,
-            (kind == StatusMenu::Overflow).then_some(Icon::More),
-            hint,
-            width,
-            surface,
-        ),
+    control(
+        id,
+        &format!("{prefix}:open:{key}"),
+        value,
+        (kind == StatusMenu::Overflow).then_some(Icon::More),
+        hint(title),
+        width,
+        surface,
+    )
+    .menu(
         scoped_entries(state, status, kind),
         open,
-        &format!("{prefix}:dismiss"),
+        format!("{prefix}:dismiss"),
+        theme::menu_palette(),
     )
+}
+
+fn services_open(state: &ViewState, status: &DocumentStatus) -> bool {
+    state.ide_status.menu == Some(StatusMenu::Services)
+        && state.ide_status.scope.as_ref() == Some(&status.scope)
+        && state.ide_status.service_language == Some(status.language_id)
 }
 
 fn services_control(
@@ -402,26 +381,38 @@ fn services_control(
     width: f32,
     viewport_width: f32,
     surface: Color,
-) -> Element {
+) -> StatusBarItem {
     let prefix = status.scope.prefix();
-    let workbench = &state.editor_workbench;
-    let anchor = control_tooltip(
-        "ide_editor_language_service",
+    let id = "ide_editor_language_service";
+    let item = control(
+        id,
         &format!("{prefix}:open:services"),
         if width > 20.0 { "LSP" } else { "" },
         Some(Icon::Server),
-        "Servicios de lenguaje",
+        hint("Servicios de lenguaje").description(&state.editor_workbench.language_status),
         width,
         surface,
-    )
-    .description(&workbench.language_status)
-    .render();
-    let open = state.ide_status.menu == Some(StatusMenu::Services)
-        && state.ide_status.scope.as_ref() == Some(&status.scope)
-        && state.ide_status.service_language == Some(status.language_id);
-    if !open {
-        return anchor;
+    );
+    if !services_open(state, status) {
+        return item;
     }
+    // The form is a popover of the app's own, anchored on the rendered cell.
+    StatusBarItem::new(id, width, cell_palette(surface)).hosted(services_popover(
+        state,
+        status,
+        item.render(),
+        viewport_width,
+    ))
+}
+
+fn services_popover(
+    state: &ViewState,
+    status: &DocumentStatus,
+    anchor: Element,
+    viewport_width: f32,
+) -> Element {
+    let prefix = status.scope.prefix();
+    let workbench = &state.editor_workbench;
     let popup_width = (viewport_width - 16.0).clamp(96.0, 340.0);
     // A form has its own focus scope when opened from the overflow menu.
     let dismiss = format!("{prefix}:services_dismiss");
@@ -559,46 +550,47 @@ fn services_control(
     }
 }
 
-fn branch(state: &ViewState, width: f32) -> Element {
+fn branch_entries() -> Vec<DropdownMenuEntry> {
+    vec![
+        DropdownMenuItem::new("ide_status_branch:checkout", "Cambiar rama…")
+            .icon(Icon::GitBranch)
+            .into(),
+        DropdownMenuItem::new("ide_status_branch:review", "Cambios del repositorio")
+            .icon(Icon::Code)
+            .into(),
+    ]
+}
+
+fn branch_open(state: &ViewState) -> bool {
+    state.ide_status.menu == Some(StatusMenu::Branch)
+        && state.ide_status.workspace.as_deref() == Some(&state.workspace)
+}
+
+fn branch(state: &ViewState, width: f32) -> StatusBarItem {
     let value = state.project_branch.as_deref().unwrap_or("Git");
-    let anchor = control(
+    control(
         "ide_git_review",
         "ide_status_branch_open",
         if width > 24.0 { value } else { "" },
         Some(Icon::GitBranch),
-        &format!("{value} · Ramas y cambios del repositorio"),
+        hint(format!("{value} · Ramas y cambios del repositorio")),
         width,
         theme::WINDOW,
-    );
-    menu(
-        anchor,
-        vec![
-            DropdownMenuItem::new("ide_status_branch:checkout", "Cambiar rama…")
-                .icon(Icon::GitBranch)
-                .into(),
-            DropdownMenuItem::new("ide_status_branch:review", "Cambios del repositorio")
-                .icon(Icon::Code)
-                .into(),
-        ],
-        state.ide_status.menu == Some(StatusMenu::Branch)
-            && state.ide_status.workspace.as_deref() == Some(&state.workspace),
+    )
+    .menu(
+        branch_entries(),
+        branch_open(state),
         "ide_status_branch_dismiss",
+        theme::menu_palette(),
     )
 }
 
 /// Full-height cells below the window's status bar divider.
 pub(crate) fn footer(state: &ViewState, width: f32) -> Element {
     if width < 240.0 {
-        return status_cells(state, width, true);
+        return status_cells(state, width, true).render();
     }
     let unread = state.notifications.unread();
-    let mut cell = vec![
-        Element::icon(crate::notifications_ui::bell_icon(&state.notifications))
-            .size(Some(15.0), Some(16.0)),
-    ];
-    if unread > 0 {
-        cell.push(text(&unread.min(99).to_string()).size(None, Some(16.0)));
-    }
     // Kept clear of the window's rounded corner so the hover cell is whole.
     let corner_inset = 12.0;
     let bell_width = if unread > 0 {
@@ -606,28 +598,24 @@ pub(crate) fn footer(state: &ViewState, width: f32) -> Element {
     } else {
         28.0
     };
-    let ink = if unread > 0 {
-        theme::FOREGROUND
-    } else {
-        theme::FOREGROUND_SUBTLE
-    };
-    let bell = Tooltip::new(
-        theme::action_palette(theme::WINDOW, theme::FOREGROUND_SUBTLE).bar_item_surface(
-            Element::clickable(
-                "notifications_toggle",
-                Element::row(cell).gap(3.0).foreground(ink).centered_x(),
-            )
-            .padding(2.0)
-            .size(Some(bell_width), Some(STATUS_HEIGHT)),
-        ),
+    let bell = StatusBarItem::new(
         "notifications_toggle",
-        "Notificaciones",
-        theme::component_palette(),
+        bell_width,
+        cell_palette(theme::WINDOW),
     )
-    .placement(TooltipPlacement::Above)
+    .icon(crate::notifications_ui::bell_icon(&state.notifications));
+    let bell = if unread > 0 {
+        bell.count(unread.min(99))
+    } else {
+        bell
+    }
+    .ink(GLYPH_INK)
+    .centered()
+    .sizing(crate::ui_sizing::STATUS_BELL)
+    .tooltip_with(hint("Notificaciones"))
     .render();
     Element::row(vec![
-        status_cells(state, width - bell_width - corner_inset, true),
+        status_cells(state, width - bell_width - corner_inset, true).render(),
         Element::spacer().flex(1.0),
         crate::notifications_ui::popover(&state.notifications, bell, true),
         Element::spacer().size(Some(corner_inset), None),
@@ -639,28 +627,20 @@ pub(crate) fn footer(state: &ViewState, width: f32) -> Element {
 /// current snapshot, scoped actions and overflow; repository state stays in
 /// the workspace chrome instead of being repeated under each document.
 pub(crate) fn document_footer(state: &ViewState, width: f32) -> Element {
-    let width = width.max(0.0);
-    Element::column(vec![
-        Separator::horizontal(theme::component_palette())
-            .length(width)
-            .render(),
-        status_cells(state, width, false),
-    ])
-    .gap(0.0)
-    .background(theme::BACKGROUND)
-    .size(Some(width), Some(crate::ide_workspace::STATUSBAR_HEIGHT))
-    .clip_children()
+    status_cells(state, width, false).top_hairline(true).render()
 }
 
-fn status_cells(state: &ViewState, width: f32, workspace: bool) -> Element {
+fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
     let width = width.max(0.0);
     let surface = if workspace {
         theme::WINDOW
     } else {
         theme::BACKGROUND
     };
+    let palette = cell_palette(surface);
+    let bar = |leading, trailing| StatusBar::new(leading, trailing, palette).width(width);
     if width < 24.0 {
-        return Element::spacer().size(Some(width), Some(STATUS_HEIGHT));
+        return bar(Vec::new(), Vec::new());
     }
     let status = document_status(state);
     // At an unusually narrow window width, document actions take precedence
@@ -674,16 +654,13 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> Element {
     } else {
         20.0
     };
-    let mut items = if branch_width > 0.0 {
+    let mut leading = if branch_width > 0.0 {
         vec![branch(state, branch_width)]
     } else {
         Vec::new()
     };
     let Some(status) = status else {
-        items.push(Element::spacer().flex(1.0));
-        return Element::row(items)
-            .gap(4.0)
-            .size(Some(width), Some(STATUS_HEIGHT));
+        return bar(leading, Vec::new());
     };
     let prefix = status.scope.prefix();
     let diagnostic_hint = format!(
@@ -701,38 +678,26 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> Element {
     );
     let problem_width =
         label_width(&status.errors.to_string()) + label_width(&status.warnings.to_string()) + 24.0;
-    let problem = Element::row(vec![
-        Element::icon(Icon::ErrorCircle).size(Some(12.0), Some(16.0)),
-        text(&status.errors.to_string()).size(None, Some(16.0)),
-        Element::icon(Icon::WarningTriangle).size(Some(12.0), Some(16.0)),
-        text(&status.warnings.to_string()).size(None, Some(16.0)),
-    ])
-    .gap(3.0)
-    .foreground(theme::FOREGROUND_SUBTLE);
-    items.push(
-        Tooltip::new(
-            theme::action_palette(surface, theme::FOREGROUND_SUBTLE).bar_item_surface(
-                Element::clickable("ide_editor_diagnostics", problem)
-                    .dispatch_as(format!("{prefix}:diagnostics"))
-                    .padding(2.0)
-                    .size(Some(problem_width), Some(STATUS_HEIGHT)),
-            ),
-            "ide_editor_diagnostics",
-            diagnostic_hint,
-            theme::component_palette(),
-        )
-        .placement(TooltipPlacement::Above)
-        .render(),
+    leading.push(
+        StatusBarItem::new("ide_editor_diagnostics", problem_width, palette)
+            .icon(Icon::ErrorCircle)
+            .count(status.errors)
+            .icon(Icon::WarningTriangle)
+            .count(status.warnings)
+            .ink(GLYPH_INK)
+            .sizing(StatusBarItemSizing::COUNTS)
+            .dispatch_as(format!("{prefix}:diagnostics"))
+            .tooltip_with(hint(diagnostic_hint)),
     );
     let service_width = if width >= 520.0 { 44.0 } else { 20.0 };
-    items.push(services_control(
+    leading.push(services_control(
         state,
         &status,
         service_width,
         width,
         surface,
     ));
-    items.push(Element::spacer().flex(1.0));
+    // The reservation is this bar's own rule, so the breakpoints stay put.
     let budget = (width - branch_width - problem_width - service_width - 20.0).max(0.0);
     let full_cursor = if status.selection > 0 {
         format!("{} · {} sel.", status.cursor, status.selection)
@@ -744,97 +709,64 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> Element {
     } else {
         &full_cursor
     };
-    let cursor_width = label_width(cursor);
-    let candidates = [
-        ("cursor", cursor_width),
-        ("language", label_width(status.language)),
-        ("indent", label_width(&status.indent)),
-        ("ending", label_width(status.ending)),
-        ("encoding", label_width("UTF-8")),
-        ("save", label_width(status.save)),
+    let passive = |id: &str, value: &str, hint: TooltipSpec| {
+        StatusBarItem::new(id, label_width(value), palette)
+            .label(value)
+            .passive()
+            .tooltip_with(hint)
+    };
+    let document = |kind, id, value: &str, title: &str| {
+        document_control(state, &status, kind, id, value, title, label_width(value), surface)
+    };
+    // Shown in this order; the priorities say which give way first.
+    let trailing = vec![
+        passive(
+            "ide_editor_save_status",
+            status.save,
+            hint(format!("{} · Guardar archivo", status.save)).shortcut("Ctrl+S"),
+        )
+        .priority(1),
+        control(
+            "ide_editor_cursor",
+            &format!("{prefix}:goto"),
+            cursor,
+            None,
+            hint(format!("{full_cursor} · Ir a línea y columna")).shortcut("Ctrl+G"),
+            label_width(cursor),
+            surface,
+        )
+        .priority(6),
+        document(
+            StatusMenu::Indent,
+            "ide_editor_indent",
+            &status.indent,
+            "Sangría y ancho de tabulación",
+        )
+        .priority(4),
+        passive(
+            "ide_editor_encoding",
+            "UTF-8",
+            hint("UTF-8 · Codificación validada al abrir; los archivos se guardan en UTF-8"),
+        )
+        .priority(2),
+        document(
+            StatusMenu::Ending,
+            "ide_editor_ending",
+            status.ending,
+            "Cambiar finales de línea · Se puede deshacer",
+        )
+        .priority(3),
+        document(
+            StatusMenu::Language,
+            "ide_editor_language",
+            status.language,
+            &format!("{} · Cambiar modo de lenguaje", status.language),
+        )
+        .priority(5),
     ];
-    let full_width = candidates.iter().map(|(_, size)| size + 4.0).sum::<f32>();
-    let overflow = full_width > budget;
-    let mut remaining = (budget - if overflow { 24.0 } else { 0.0 }).max(0.0);
-    let mut visible = Vec::new();
-    for (key, size) in candidates {
-        if size + 4.0 <= remaining {
-            visible.push(key);
-            remaining -= size + 4.0;
-        }
-    }
-    for key in ["save", "cursor", "indent", "encoding", "ending", "language"] {
-        if !visible.contains(&key) {
-            continue;
-        }
-        let element = match key {
-            "cursor" => control_tooltip(
-                "ide_editor_cursor",
-                &format!("{prefix}:goto"),
-                cursor,
-                None,
-                &format!("{full_cursor} · Ir a línea y columna"),
-                cursor_width,
-                surface,
-            )
-            .shortcut("Ctrl+G")
-            .render(),
-            "indent" => document_control(
-                state,
-                &status,
-                StatusMenu::Indent,
-                "ide_editor_indent",
-                &status.indent,
-                "Sangría y ancho de tabulación",
-                label_width(&status.indent),
-                surface,
-            ),
-            "ending" => document_control(
-                state,
-                &status,
-                StatusMenu::Ending,
-                "ide_editor_ending",
-                status.ending,
-                "Cambiar finales de línea · Se puede deshacer",
-                label_width(status.ending),
-                surface,
-            ),
-            "language" => document_control(
-                state,
-                &status,
-                StatusMenu::Language,
-                "ide_editor_language",
-                status.language,
-                &format!("{} · Cambiar modo de lenguaje", status.language),
-                label_width(status.language),
-                surface,
-            ),
-            "encoding" => Tooltip::new(
-                Element::panel(text("UTF-8"))
-                    .padding(2.0)
-                    .size(Some(label_width("UTF-8")), Some(STATUS_HEIGHT)),
-                "ide_editor_encoding",
-                "UTF-8 · Codificación validada al abrir; los archivos se guardan en UTF-8",
-                theme::component_palette(),
-            )
-            .placement(TooltipPlacement::Above)
-            .render(),
-            _ => Tooltip::new(
-                Element::panel(text(status.save))
-                    .padding(2.0)
-                    .size(Some(label_width(status.save)), Some(STATUS_HEIGHT)),
-                "ide_editor_save_status",
-                format!("{} · Guardar archivo", status.save),
-                theme::component_palette(),
-            )
-            .shortcut("Ctrl+S")
-            .placement(TooltipPlacement::Above)
-            .render(),
-        };
-        items.push(element);
-    }
-    if overflow && budget >= 20.0 {
-        items.push(document_control(
+    bar(leading, trailing)
+        .trailing_budget(budget)
+        .overflow(document_control(
             state,
             &status,
             StatusMenu::Overflow,
@@ -843,13 +775,12 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> Element {
             "Estado y opciones del archivo",
             20.0,
             surface,
-        ));
-    }
-    Element::row(items)
-        .gap(4.0)
-        .size(Some(width), Some(STATUS_HEIGHT))
-        .clip_children()
+        ))
 }
+
+#[cfg(test)]
+#[path = "ide_status_parity_tests.rs"]
+mod parity_tests;
 
 #[cfg(test)]
 mod tests {
@@ -857,7 +788,7 @@ mod tests {
     use openide_editor::{Selection, TextBuffer};
     use openide_ui::{EditorController, HitKind, Point, Size, UiAction, UiEvent};
 
-    fn editor_state() -> ViewState {
+    pub(super) fn editor_state() -> ViewState {
         let mut state = crate::view::tests::empty_state();
         state.ide.mode = crate::ide_workspace::WindowMode::Ide;
         state.project_branch = Some("feature/footer".into());
@@ -1211,7 +1142,7 @@ mod tests {
         assert!(document_scope(&state).is_none());
     }
 
-    fn services_state() -> ViewState {
+    pub(super) fn services_state() -> ViewState {
         let mut state = editor_state();
         state.ide.mode = crate::ide_workspace::WindowMode::Agents;
         state.editor_workbench.server_path = "/home/niñuel/bin/rust-analyzer".into();

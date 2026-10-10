@@ -2,45 +2,50 @@
 use std::sync::{Arc, OnceLock};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use openide_ui::{Component, Element, FontFamily, Kbd, RasterImage, RasterImageFormat};
+use openide_ui::{Component, Element, Kbd, ListRow, RasterImage, RasterImageFormat};
 use sha2::{Digest, Sha256};
 
 use crate::{keymap::{KeymapProfile, ShortcutAction}, theme};
 
+/// The embedded brand vector as a square PNG of `side` pixels with every
+/// channel scaled by `strength`. Callers cache the result: painting never
+/// rasterizes, and never reads a disk or a network.
+pub(crate) fn brand_raster(side: u32, strength: f32, alt: &str) -> Option<RasterImage> {
+    let tree = resvg::usvg::Tree::from_str(
+        include_str!("../assets/brand/openide-editor.svg"),
+        &Default::default(),
+    )
+    .ok()?;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(side, side)?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(
+            side as f32 / tree.size().width(),
+            side as f32 / tree.size().height(),
+        ),
+        &mut pixmap.as_mut(),
+    );
+    if strength < 1.0 {
+        for channel in pixmap.data_mut() {
+            *channel = (f32::from(*channel) * strength).round() as u8;
+        }
+    }
+    let bytes = pixmap.encode_png().ok()?;
+    RasterImage::new(
+        format!("{:x}", Sha256::digest(&bytes)),
+        RasterImageFormat::Png,
+        bytes.len() as u32,
+        Arc::from(STANDARD.encode(bytes)),
+        alt,
+    )
+}
+
 fn watermark() -> Option<RasterImage> {
     static IMAGE: OnceLock<Option<RasterImage>> = OnceLock::new();
+    // 2x the largest size shown. Subdued facets keep the logo's shape without
+    // competing with the editor or turning the empty group into a welcome card.
     IMAGE
-        .get_or_init(|| {
-            // Keep the source vector embedded. Rasterize once at 2x the maximum
-            // displayed size, without a disk/network dependency during painting.
-            let tree = resvg::usvg::Tree::from_str(
-                include_str!("../assets/brand/openide-editor.svg"),
-                &Default::default(),
-            )
-            .ok()?;
-            let mut pixmap = resvg::tiny_skia::Pixmap::new(512, 512)?;
-            resvg::render(
-                &tree,
-                resvg::tiny_skia::Transform::from_scale(
-                    512.0 / tree.size().width(),
-                    512.0 / tree.size().height(),
-                ),
-                &mut pixmap.as_mut(),
-            );
-            // Subdued brand facets retain the logo's shape without competing
-            // with the editor or turning the empty workspace into a welcome card.
-            for channel in pixmap.data_mut() {
-                *channel = (f32::from(*channel) * 0.18).round() as u8;
-            }
-            let bytes = pixmap.encode_png().ok()?;
-            RasterImage::new(
-                format!("{:x}", Sha256::digest(&bytes)),
-                RasterImageFormat::Png,
-                bytes.len() as u32,
-                Arc::from(STANDARD.encode(bytes)),
-                "OpenIDE · editor vacío",
-            )
-        })
+        .get_or_init(|| brand_raster(512, 0.18, "OpenIDE · editor vacío"))
         .clone()
 }
 
@@ -80,27 +85,15 @@ pub(crate) fn build(profile: KeymapProfile, width: f32, height: f32) -> Element 
             ShortcutAction::ToggleTerminal,
         ),
     ] {
-        let mut row = vec![
-            Element::truncated_text(title)
-                .font_family(FontFamily::Sans)
-                .font_size(13.0)
-                .foreground(palette.text)
-                .flex(1.0),
-        ];
-        if content_width >= 220.0 {
-            row.push(Kbd::new(profile.shortcut(shortcut), palette).render());
-        }
-        children.push(
-            palette
-                .interactive_surface(Element::clickable(
-                    id,
-                    Element::row(row).gap(20.0).size(None, Some(28.0)),
-                ))
-                .dispatch_as(action)
-                .radius(4.0)
-                .padding(4.0)
-                .size(Some(content_width), Some(32.0)),
-        );
+        let row = ListRow::new(id, title, palette)
+            .sizing(crate::ui_sizing::EMPTY_EDITOR_ROW)
+            .width(content_width);
+        let row = if content_width >= 220.0 {
+            row.trailing(Kbd::new(profile.shortcut(shortcut), palette).render())
+        } else {
+            row
+        };
+        children.push(row.render().dispatch_as(action));
     }
     let content = Element::column(children).size(Some(content_width), None);
     content.centered().clip_children().flex(1.0)
@@ -109,7 +102,7 @@ pub(crate) fn build(profile: KeymapProfile, width: f32, height: f32) -> Element 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{DrawCommand, Point, Size, UiAction, UiEvent, UiTree};
+    use openide_ui::{DrawCommand, FontFamily, Point, Size, UiAction, UiEvent, UiTree};
 
     #[test]
     fn changing_profile_replaces_the_empty_editor_palette_keycaps() {
@@ -168,6 +161,69 @@ mod tests {
                         "missing key {key}"
                     );
                 }
+            }
+        }
+    }
+
+    // A shortcut row as it was built by hand before limn's `ListRow`. Delete
+    // with the final audit (S18).
+    fn legacy_row(id: &str, action: &str, title: &str, keys: Option<&str>, width: f32) -> Element {
+        let palette = theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE);
+        let mut row = vec![
+            Element::truncated_text(title)
+                .font_family(FontFamily::Sans)
+                .font_size(13.0)
+                .foreground(palette.text)
+                .flex(1.0),
+        ];
+        if let Some(keys) = keys {
+            row.push(Kbd::new(keys, palette).render());
+        }
+        palette
+            .interactive_surface(Element::clickable(
+                id,
+                Element::row(row).gap(20.0).size(None, Some(28.0)),
+            ))
+            .dispatch_as(action)
+            .radius(4.0)
+            .padding(4.0)
+            .size(Some(width), Some(32.0))
+    }
+
+    #[test]
+    fn shortcut_rows_paint_what_they_did_by_hand_under_the_rows_clip() {
+        let palette = theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE);
+        for (width, keys) in [(200.0, None), (300.0, Some("Ctrl+Shift+P"))] {
+            let row = ListRow::new("ide_empty_commands", "Buscar y ejecutar", palette)
+                .sizing(crate::ui_sizing::EMPTY_EDITOR_ROW)
+                .width(width);
+            let row = match keys {
+                Some(keys) => row.trailing(Kbd::new(keys, palette).render()),
+                None => row,
+            };
+            let current = row.render().dispatch_as("open_command_center");
+            let legacy = legacy_row("ide_empty_commands", "open_command_center", "Buscar y ejecutar", keys, width);
+            // `ListRow` clips a row of fixed width; nothing here reaches the clip.
+            let unclipped = |frames: Vec<openide_ui::Frame>| -> Vec<(Vec<DrawCommand>, String)> {
+                frames
+                    .into_iter()
+                    .map(|frame| {
+                        let regions = format!("{:?}", frame.regions);
+                        let commands = frame
+                            .commands
+                            .into_iter()
+                            .filter(|command| !matches!(command, DrawCommand::PushClip(_) | DrawCommand::PopClip))
+                            .collect();
+                        (commands, regions)
+                    })
+                    .collect()
+            };
+            for window in [360.0, 900.0] {
+                let (frames, actions) = crate::icon_button_parity_tests::states(current.clone(), window);
+                let (legacy_frames, legacy_actions) = crate::icon_button_parity_tests::states(legacy.clone(), window);
+                assert_eq!(frames.len(), 4);
+                assert_eq!(unclipped(frames), unclipped(legacy_frames), "width={width} window={window}");
+                assert_eq!(actions, legacy_actions);
             }
         }
     }
