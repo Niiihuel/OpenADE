@@ -364,7 +364,10 @@ mod tests {
     // was written in; delete with the final audit (S18).
     #[test]
     fn card_shells_match_the_panels_they_replaced() {
-        use openide_ui::{Card, CardDensity, Component, RadiusRole};
+        use openide_ui::{
+            ButtonVariant, Card, CardDensity, Component, ControlSize, DrawCommand, Icon,
+            IconButton, RadiusRole,
+        };
 
         // Content with a row that centers in a card taller than it.
         let content = || {
@@ -512,16 +515,46 @@ mod tests {
                 crate::icon_button_parity_tests::assert_same(name, legacy, current.clone());
             }
         }
-        // A source row keeps a minimum height over its centered content.
+        // A source row keeps a minimum height over its centered content, so
+        // the content here is one line, shorter than the 32 px left inside.
+        let line = || {
+            Element::row(vec![
+                Element::icon(Icon::Folder)
+                    .foreground(FOREGROUND_SUBTLE)
+                    .centered_y(),
+                Element::truncated_text("openai/skills")
+                    .foreground(FOREGROUND)
+                    .flex(1.0),
+                IconButton::new(
+                    "source_action",
+                    Icon::Trash,
+                    action_palette(PANEL, FOREGROUND_SUBTLE),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .render()
+                .centered_y(),
+            ])
+            .gap(10.0)
+        };
         let source = |element: Element| element.radius(10.0).min_size(0.0, 56.0);
+        let current = source(
+            Card::new(line(), panel_card_palette())
+                .density(CardDensity::Roomy)
+                .render(),
+        );
+        let (frames, _) = crate::icon_button_parity_tests::states(current.clone(), 360.0);
+        assert!(
+            frames[0].commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::FillRect { rect, color, .. } if *color == PANEL && rect.height == 56.0
+            )),
+            "the minimum height must be what sizes the row"
+        );
         crate::icon_button_parity_tests::assert_same(
             "marketplace source row",
-            source(content().padding(12.0).background(PANEL).border(BORDER, 1.0)),
-            source(
-                Card::new(content(), panel_card_palette())
-                    .density(CardDensity::Roomy)
-                    .render(),
-            ),
+            source(line().padding(12.0).background(PANEL).border(BORDER, 1.0)),
+            current,
         );
     }
 
