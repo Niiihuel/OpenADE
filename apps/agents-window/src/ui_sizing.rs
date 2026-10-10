@@ -6,8 +6,8 @@
 
 use openide_ui::{
     ActionRowSizing, ButtonGroupSizing, ButtonSizing, FormFieldSizing, HeaderSizing, Modal,
-    NoticeSizing, PageHeaderSizing, PagerSizing, RowSizing, SectionSizing, StatusBarItemSizing,
-    TextRole,
+    NoticeSizing, PageHeaderSizing, PagerSizing, PopoverPanelSizing, RowSizing, SectionSizing,
+    StatusBarItemSizing, TextRole,
 };
 
 /// The header's labelled navigation buttons: a 14 px label, 5 px from the edge.
@@ -67,6 +67,21 @@ pub const AGENT_TAB_CLOSE: ButtonSizing = ButtonSizing {
 pub const ENTITY_ACTIONS: ButtonGroupSizing = ButtonGroupSizing {
     gap: 8.0,
     stacked_gap: 6.0,
+};
+
+/// The footer of a form's modal: the same distances as an entity's actions.
+pub const FORM_FOOTER: ButtonGroupSizing = ENTITY_ACTIONS;
+
+/// The footer of a modal whose actions sit 8 px apart and never stack.
+pub const MODAL_FOOTER: ButtonGroupSizing = ButtonGroupSizing {
+    gap: 8.0,
+    stacked_gap: 8.0,
+};
+
+/// The two answers of a confirmation, set edge to edge.
+pub const CONFIRM_FOOTER: ButtonGroupSizing = ButtonGroupSizing {
+    gap: 0.0,
+    stacked_gap: 0.0,
 };
 
 /// The actions of the native output limits card.
@@ -476,19 +491,13 @@ pub const RULE_PREVIEW_FIELD: FormFieldSizing = FormFieldSizing {
     ..FormFieldSizing::DEFAULT
 };
 
-/// A field of the task editor: a quiet label on its own 18 px line.
+/// A field of the task editor: a quiet label on its own 18 px line. Each
+/// step sets the field's lines in its own column, so the gap here is unread.
 pub const AUTOMATION_FIELD: FormFieldSizing = FormFieldSizing {
     label_muted: true,
     label_height: 18.0,
     hint_role: TextRole::Caption,
-    gap: 8.0,
     ..FormFieldSizing::DEFAULT
-};
-
-/// The same field on the schedule step, whose rows sit a pixel further apart.
-pub const AUTOMATION_SCHEDULE_FIELD: FormFieldSizing = FormFieldSizing {
-    gap: 9.0,
-    ..AUTOMATION_FIELD
 };
 
 /// The path of a new file: a 13 px label and a 12 px error.
@@ -497,6 +506,14 @@ pub const NEW_FILE_FIELD: FormFieldSizing = FormFieldSizing {
     hint_role: TextRole::Caption,
     gap: 8.0,
     ..FormFieldSizing::DEFAULT
+};
+
+/// The context summary: wider gaps inside a padded popover, and a hairline
+/// only above its actions.
+pub const CONTEXT_POPOVER: PopoverPanelSizing = PopoverPanelSizing {
+    gap: 8.0,
+    padding: 10.0,
+    header_rule: false,
 };
 
 /// The notifications bell of the status bar: a wider glyph beside its count.

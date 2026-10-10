@@ -1,6 +1,6 @@
 //! File creation is a workspace action, including before its first editor exists.
 use super::*;
-use openide_ui::{FormField, Modal};
+use openide_ui::{ButtonGroup, FormField, Modal};
 
 pub(super) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let Some(draft) = state.ide.new_file.as_ref() else {
@@ -45,7 +45,12 @@ pub(super) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     )
     .width(width)
     .body(path.render().size(Some(body_width), None))
-    .footer(Element::row(vec![Element::spacer().flex(1.0), cancel, create]).gap(8.0))
+    .footer(
+        ButtonGroup::new(vec![cancel, create])
+            .align_end()
+            .sizing(crate::ui_sizing::MODAL_FOOTER)
+            .render(),
+    )
     .initial_focus("ide_new_file_path")
     .return_focus(if viewport_width - 2.0 * OUTER_INSET >= 1200.0 {
         "ide_menu:file"

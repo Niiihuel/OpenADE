@@ -564,7 +564,12 @@ pub(crate) fn external_modal(state: &ViewState, base: Element, viewport_width: f
             .muted()
             .render(),
     )
-    .footer(Element::row(vec![Element::spacer().flex(1.0), deny, allow]))
+    .footer(
+        ButtonGroup::new(vec![deny, allow])
+            .align_end()
+            .sizing(crate::ui_sizing::CONFIRM_FOOTER)
+            .render(),
+    )
     .initial_focus("external_approval_deny")
     .render()
 }

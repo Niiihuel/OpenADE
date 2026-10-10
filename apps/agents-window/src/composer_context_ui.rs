@@ -6,9 +6,10 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    Button, ButtonGroup, ButtonVariant, Color, Component, ContextContent, ContextMeter, ContextRow,
-    ControlSize, Element, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Separator, Text,
-    TextRole, Tooltip, TooltipPlacement, TooltipSpec,
+    Button, ButtonGroup, ButtonVariant, Color, Component, ComponentPalette, ContextContent,
+    ContextMeter, ContextRow, ControlSize, Element, Icon, IconButton, Popover, PopoverPanel,
+    PopoverPlacement, Progress, ScrollArea, Text, TextRole, Tooltip, TooltipPlacement,
+    TooltipSpec,
 };
 use std::path::Path;
 
@@ -115,22 +116,16 @@ fn usage_ink(fraction: Option<f32>) -> Color {
     }
 }
 fn progress(fraction: Option<f32>) -> Element {
-    let mut segments = Vec::new();
-    let used = fraction.unwrap_or(0.0).clamp(0.0, 1.0);
-    if used > 0.0 {
-        segments.push(Element::spacer().flex(used).background(usage_ink(fraction)));
-    }
-    if used < 1.0 {
-        segments.push(
-            Element::spacer()
-                .flex(1.0 - used)
-                .background(theme::TREE_GUIDE),
-        );
-    }
-    Element::row(segments)
-        .size(None, Some(4.0))
-        .radius(2.0)
-        .clip_children()
+    Progress::new(
+        fraction.unwrap_or(0.0),
+        ComponentPalette {
+            text: usage_ink(fraction),
+            selected: theme::TREE_GUIDE,
+            ..theme::component_palette()
+        },
+    )
+    .flat()
+    .render()
 }
 
 fn summary(props: &ComposerProps<'_>) -> Element {
@@ -277,20 +272,19 @@ fn summary(props: &ComposerProps<'_>) -> Element {
             .description(action.unavailable.unwrap_or("Resume mensajes anteriores y conserva la conversación. El historial guardado no se elimina."))
             .render());
     }
-    Element::column(vec![
-        header,
-        ScrollArea::new(
-            "composer_context_summary",
-            Element::column(content).gap(5.0),
+    PopoverPanel::new(theme::component_palette())
+        .header(header)
+        .body(
+            ScrollArea::new(
+                "composer_context_summary",
+                Element::column(content).gap(5.0),
+            )
+            .render(),
         )
+        .body_max_height(180.0)
+        .footer(footer.render().size(None, Some(28.0)))
+        .sizing(crate::ui_sizing::CONTEXT_POPOVER)
         .render()
-        .max_height(180.0)
-        .flex(1.0),
-        Separator::horizontal(theme::component_palette()).render(),
-        footer.render().size(None, Some(28.0)),
-    ])
-    .gap(8.0)
-    .padding(10.0)
 }
 
 fn details(props: &ComposerProps<'_>) -> Element {
@@ -579,5 +573,44 @@ mod tests {
             .contains("ya está compactado"));
         state.native_context.measurement_status = NativeContextMeasurementStatus::Unreported;
         assert!(compaction_view(&state).unavailable.is_none());
+    }
+}
+
+// The hand-built bar `progress` replaced, kept until its captures match.
+#[cfg(test)]
+mod converge_parity {
+    use super::*;
+    use crate::converge_panels_parity_tests::assert_same_at;
+
+    fn legacy_progress(fraction: Option<f32>) -> Element {
+        let mut segments = Vec::new();
+        let used = fraction.unwrap_or(0.0).clamp(0.0, 1.0);
+        if used > 0.0 {
+            segments.push(Element::spacer().flex(used).background(usage_ink(fraction)));
+        }
+        if used < 1.0 {
+            segments.push(
+                Element::spacer()
+                    .flex(1.0 - used)
+                    .background(theme::TREE_GUIDE),
+            );
+        }
+        Element::row(segments)
+            .size(None, Some(4.0))
+            .radius(2.0)
+            .clip_children()
+    }
+
+    #[test]
+    fn the_context_bar_matches_its_hand_built_body() {
+        let fractions = (0..=200).map(|step| Some(step as f32 / 160.0 - 0.1));
+        for fraction in fractions.chain([None, Some(0.8), Some(1.0 / 3.0)]) {
+            assert_same_at(
+                &format!("context bar {fraction:?}"),
+                &[237.0, 360.0],
+                legacy_progress(fraction),
+                progress(fraction),
+            );
+        }
     }
 }

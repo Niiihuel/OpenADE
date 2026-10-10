@@ -5,8 +5,9 @@
 //! runtimes and are not offered as installable SKILL.md bundles here.
 
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, CardGrid, Chip, Component,
-    ControlSize, DropdownMenu, DropdownMenuItem, Element, Icon, IconButton, Modal, Notice,
+    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, CardGrid, Chip,
+    Component, ControlSize, DropdownMenu, DropdownMenuItem, Element, FormField, Icon, IconButton,
+    Modal, Notice,
     PageColumn, PageHeader, SearchField, SectionHeader, Separator, Skeleton, Switch,
     Tab, Tabs, Text, TextField, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
@@ -827,18 +828,14 @@ fn item_grid(
 }
 
 fn source_form_body(state: &MarketplaceViewState) -> Element {
-    // Hand-built: a FormField nests a column, and this card sizes itself to
-    // its body; see docs/limn-migration-ledger.md.
     let kind = state.add_source_kind.expect("source form requires a kind");
-    let mut contents = vec![
-        Text::new(
-            match kind {
-                SourceKind::Local => "Ruta de la carpeta",
-                SourceKind::Github => "URL del repositorio",
-            },
-            theme::component_palette(),
-        )
-        .render(),
+    // The field's lines join the status in one column: this card is sized
+    // from its body, and a nested column would round its height apart.
+    let mut contents = FormField::new(
+        match kind {
+            SourceKind::Local => "Ruta de la carpeta",
+            SourceKind::Github => "URL del repositorio",
+        },
         TextField::new(
             "marketplace_source_draft",
             &state.source_draft,
@@ -851,17 +848,13 @@ fn source_form_body(state: &MarketplaceViewState) -> Element {
         .size(ControlSize::Compact)
         .enabled(!state.busy)
         .render(),
-        Text::new(
-            match kind {
-                SourceKind::Local => "Se detectarán las carpetas que contengan SKILL.md.",
-                SourceKind::Github => "Usa una URL de GitHub que contenga archivos SKILL.md.",
-            },
-            theme::component_palette(),
-        )
-        .role(TextRole::Small)
-        .muted()
-        .render(),
-    ];
+        theme::component_palette(),
+    )
+    .hint(match kind {
+        SourceKind::Local => "Se detectarán las carpetas que contengan SKILL.md.",
+        SourceKind::Github => "Usa una URL de GitHub que contenga archivos SKILL.md.",
+    })
+    .rows();
     if let Some(status) = state.status.as_deref() {
         contents.push(
             Alert::new("Aviso de la fuente", status, theme::component_palette())
@@ -878,8 +871,7 @@ fn source_form_body(state: &MarketplaceViewState) -> Element {
 }
 
 fn source_form_footer(state: &MarketplaceViewState) -> Element {
-    Element::row(vec![
-        Element::spacer().flex(1.0),
+    ButtonGroup::new(vec![
         Button::new(
             "marketplace_source_cancel",
             "Cancelar",
@@ -895,7 +887,9 @@ fn source_form_footer(state: &MarketplaceViewState) -> Element {
             .loading(state.busy)
             .render(),
     ])
-    .gap(8.0)
+    .align_end()
+    .sizing(crate::ui_sizing::MODAL_FOOTER)
+    .render()
 }
 
 fn source_list(state: &MarketplaceViewState, width: f32) -> Element {

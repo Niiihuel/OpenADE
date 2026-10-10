@@ -1,7 +1,7 @@
 //! Native account chrome and the browser sign-in alert.
 
 use openide_ui::{
-    AlertDialog, Avatar, Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Modal,
+    AlertDialog, Avatar, Button, ButtonGroup, ButtonVariant, Component, ControlSize, Element, FontFamily, Modal,
     Spinner,
 };
 
@@ -70,17 +70,19 @@ pub fn sign_in_alert(state: &ViewState, base: Element, viewport_width: f32) -> E
         )
         .width(width)
         .body(Element::column(rows).gap(6.0))
-        .footer(Element::row(vec![
-            Element::spacer().flex(1.0),
-            Button::new(
+        .footer(
+            ButtonGroup::new(vec![Button::new(
                 "github_sign_in_cancel",
                 "Cancelar",
                 theme::component_palette(),
             )
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
+            .render()])
+            .align_end()
+            .sizing(crate::ui_sizing::CONFIRM_FOOTER)
             .render(),
-        ]))
+        )
         .initial_focus(focus)
         .backdrop_dismiss(false)
         .render();

@@ -5,7 +5,7 @@
 use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardGrid, Component, ControlSize,
-    DateTimePicker, Element, Empty, FontFamily, FormField, FormFieldSizing, Icon, IconButton,
+    DateTimePicker, Element, Empty, FontFamily, FormField, Icon, IconButton,
     Modal, PageColumn, PageHeader, SearchField, Separator, Step, Stepper, Switch, Tab, Tabs, Text, TextArea,
     TextField, TextRole, TimePicker, Tooltip, TooltipPlacement, TooltipSpec,
 };
@@ -18,7 +18,7 @@ use crate::{
     native_automation_result::NativeAutomationOutcome,
     native_provider::NativeProviderSettings,
     theme,
-    ui_sizing::{AUTOMATION_FIELD, AUTOMATION_SCHEDULE_FIELD},
+    ui_sizing::AUTOMATION_FIELD,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -560,8 +560,10 @@ fn section_label(value: &str) -> Element {
         .render()
 }
 
-fn form_field(label: &str, control: Element, sizing: FormFieldSizing) -> FormField {
-    FormField::new(label, control, theme::component_palette()).sizing(sizing)
+/// A field of the task editor. Its lines join the step's own column, which
+/// sets the distance between them.
+fn form_field(label: &str, control: Element) -> FormField {
+    FormField::new(label, control, theme::component_palette()).sizing(AUTOMATION_FIELD)
 }
 
 fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: bool) -> Element {
@@ -915,14 +917,9 @@ fn frequency_control(form: &AutomationForm, available_width: f32) -> Element {
 
 fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
     let form = &state.form;
-    let field = |label: &str, control: Element| {
-        form_field(label, control, AUTOMATION_SCHEDULE_FIELD).render()
-    };
+    let field = |label: &str, control: Element| form_field(label, control).rows();
     // The track has always stopped 26 px short of the form; see the ledger.
-    let mut rows = vec![field(
-        "Frecuencia",
-        frequency_control(form, content_width - 26.0),
-    )];
+    let mut rows = field("Frecuencia", frequency_control(form, content_width - 26.0));
     match form.frequency {
         AutomationFrequency::Once => {
             let (date, time) = form.once_parts();
@@ -938,7 +935,7 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                 .render(),
             );
         }
-        AutomationFrequency::EveryMinutes => rows.push(field(
+        AutomationFrequency::EveryMinutes => rows.extend(field(
             "Cada cuántos minutos",
             TextField::new(
                 "automation_interval",
@@ -949,13 +946,13 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
             .size(ControlSize::Regular)
             .render(),
         )),
-        AutomationFrequency::Daily => rows.push(field(
+        AutomationFrequency::Daily => rows.extend(field(
             "Hora local",
             TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
         )),
         AutomationFrequency::Weekly => {
             let days = ["L", "M", "X", "J", "V", "S", "D"];
-            rows.push(field(
+            rows.extend(field(
                 "Día de la semana",
                 Element::row(
                     days.into_iter()
@@ -981,7 +978,7 @@ fn schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Eleme
                 )
                 .gap(4.0),
             ));
-            rows.push(field(
+            rows.extend(field(
                 "Hora local",
                 TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
             ));
@@ -1081,9 +1078,10 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
 
 pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
     let form = match state.editor_step {
-        AutomationEditorStep::Content => Element::column(vec![
-            section_label("¿Qué hará esta tarea?"),
-            form_field(
+        AutomationEditorStep::Content => Element::column({
+            let mut rows = vec![section_label("¿Qué hará esta tarea?")];
+            rows.extend(
+                form_field(
                 "Título",
                 TextField::new(
                     "automation_title",
@@ -1093,10 +1091,11 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
                 )
                 .size(ControlSize::Regular)
                 .render(),
-                AUTOMATION_FIELD,
             )
-            .render(),
-            form_field(
+            .rows(),
+            );
+            rows.extend(
+                form_field(
                 "Instrucciones",
                 TextArea::new(
                     "automation_prompt",
@@ -1106,11 +1105,12 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
                 )
                 .height(112.0)
                 .render(),
-                AUTOMATION_FIELD,
             )
             .hint("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos.")
-            .render(),
-        ])
+            .rows(),
+            );
+            rows
+        })
         .gap(8.0),
         AutomationEditorStep::Schedule => Element::column({
             let mut rows = vec![section_label("¿Cuándo se ejecutará?")];

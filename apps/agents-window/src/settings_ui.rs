@@ -274,10 +274,20 @@ fn field(id: &str, value: &str, placeholder: &str) -> Element {
         .render()
 }
 
-fn mono_field(id: &str, value: &str, placeholder: &str) -> Element {
+fn mono_field(id: &str, value: &str, placeholder: &str) -> TextField {
     TextField::new(id, value, placeholder, control_palette())
         .size(ControlSize::Compact)
         .monospace(true)
+}
+
+/// The two actions of a settings form: at the far edge, and in a column
+/// with the primary one first when the card is narrow.
+fn form_footer(cancel: Element, save: Element, width: f32) -> Element {
+    ButtonGroup::new(vec![cancel, save])
+        .align_end()
+        .stacked(width < 350.0)
+        .reverse_when_stacked(true)
+        .sizing(crate::ui_sizing::FORM_FOOTER)
         .render()
 }
 
@@ -474,7 +484,7 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
 }
 
 fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
-    let path = mono_field("workspace", &state.workspace_draft, "Ruta del proyecto");
+    let path = mono_field("workspace", &state.workspace_draft, "Ruta del proyecto").render();
     let open = outline("workspace_apply", "Abrir proyecto")
         .icon(Icon::Folder)
         .render();
@@ -1662,10 +1672,10 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
     }
     // 40 tall is these forms' own height for an input.
     let input = |id: &str, value: &str, placeholder: &str| {
-        mono_field(id, value, placeholder).size(Some(body_width), Some(40.0))
+        mono_field(id, value, placeholder).width(body_width).height(40.0).render()
     };
     fields.extend([
-        form_field("ID del hook", input("hook_draft_id", &draft.draft_id, "ej. revisar-escritura")).render(),
+        form_field("ID del hook", input("hook_draft_id", &draft.draft_id, "ej. revisar-escritura")).rows(),
         form_field(
             "Fase",
             ButtonGroup::new(vec![
@@ -1677,26 +1687,26 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
                     .render(),
             ]).stacked(width < 420.0).render(),
         )
-        .render(),
+        .rows(),
         form_field("Nombre exacto de herramienta", input("hook_draft_tool_name", &draft.draft_tool_name, "ej. write_file"))
             .hint("Por ejemplo: read_file, write_file o mcp__servidor__herramienta. Los hooks sobre lecturas quedan excluidos del modo Plan.")
-            .render(),
+            .rows(),
         form_field("Ejecutable", input("hook_draft_executable", &draft.draft_executable, "C:\\tools\\hook.exe"))
             .hint("Ruta absoluta a un archivo existente. Se ejecuta sin shell; el agente no puede configurar esta ruta.")
-            .render(),
+            .rows(),
         form_field(
             "Argumentos (JSON)",
             TextArea::new("hook_draft_args", &draft.draft_args, "[\"--check\"]", control_palette())
                 .width(body_width).height(80.0).render(),
         )
-        .render(),
+        .rows(),
         form_field("Directorio de trabajo", input("hook_draft_cwd", &draft.draft_cwd, "C:\\repo"))
             .hint("Ruta absoluta a una carpeta existente.")
-            .render(),
-        form_field("Límite de tiempo (ms)", input("hook_draft_timeout_ms", &draft.draft_timeout_ms, "5000")).render(),
-        form_field("Límite de salida (bytes)", input("hook_draft_max_output_bytes", &draft.draft_max_output_bytes, "4096")).render(),
-        Text::new("El comando recibe JSON del evento por stdin. Puede tener efectos externos; sólo configura ejecutables de confianza.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
-    ]);
+            .rows(),
+        form_field("Límite de tiempo (ms)", input("hook_draft_timeout_ms", &draft.draft_timeout_ms, "5000")).rows(),
+        form_field("Límite de salida (bytes)", input("hook_draft_max_output_bytes", &draft.draft_max_output_bytes, "4096")).rows(),
+        vec![Text::new("El comando recibe JSON del evento por stdin. Puede tener efectos externos; sólo configura ejecutables de confianza.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()],
+    ].into_iter().flatten());
     let cancel = outline("hook_cancel", "Cancelar").render();
     let save = theme::primary(
         "hook_save",
@@ -1709,11 +1719,7 @@ pub fn hook_editor_modal(state: &ViewState, base: Element, viewport_width: f32) 
     .size(ControlSize::Compact)
     .enabled(draft.load_error.is_none())
     .render();
-    let footer = if width < 350.0 {
-        Element::column(vec![save, cancel]).gap(6.0)
-    } else {
-        Element::row(vec![Element::spacer().flex(1.0), cancel, save]).gap(8.0)
-    };
+    let footer = form_footer(cancel, save, width);
     Modal::new(
         base,
         true,
@@ -1877,7 +1883,7 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
         )
         .hint("La vista previa de Settings usa las reglas guardadas. Guarda esta edición para evaluar sus cambios.")
         .hint("Ejemplo: [\"git\",[\"push\",\"reset\"]]. El primer token es el ejecutable; los siguientes son argumentos exactos.")
-        .render(),
+        .rows(),
         form_field(
             "Decisión",
             ButtonGroup::new(vec![
@@ -1889,7 +1895,7 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
                     .render(),
             ]).stacked(width < 420.0).render(),
         )
-        .render(),
+        .rows(),
         form_field(
             "Motivo (opcional)",
             TextArea::new(
@@ -1902,8 +1908,8 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
             .height(75.0)
             .render(),
         )
-        .render(),
-    ]);
+        .rows(),
+    ].into_iter().flatten());
     let cancel = outline("exec_rule_cancel", "Cancelar").render();
     let save = theme::primary(
         "exec_rule_save",
@@ -1916,11 +1922,7 @@ pub fn exec_rule_editor_modal(state: &ViewState, base: Element, viewport_width: 
     .size(ControlSize::Compact)
     .enabled(draft.load_error.is_none())
     .render();
-    let footer = if width < 350.0 {
-        Element::column(vec![save, cancel]).gap(6.0)
-    } else {
-        Element::row(vec![Element::spacer().flex(1.0), cancel, save]).gap(8.0)
-    };
+    let footer = form_footer(cancel, save, width);
     Modal::new(
         base,
         true,
@@ -1974,11 +1976,12 @@ pub fn exec_rule_reset_modal(state: &ViewState, base: Element, viewport_width: f
     )
     .width(width)
     .body(Text::new("Esta acción reemplaza el archivo de reglas por una política vacía. Los próximos turnos usarán los permisos generales de herramientas.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render())
-    .footer(Element::row(vec![
-        Element::spacer().flex(1.0),
-        cancel,
-        confirm,
-    ]))
+    .footer(
+        ButtonGroup::new(vec![cancel, confirm])
+            .align_end()
+            .sizing(crate::ui_sizing::CONFIRM_FOOTER)
+            .render(),
+    )
     .initial_focus("exec_rule_reset_cancel")
     .return_focus("exec_rule_reset")
     .render()
@@ -2007,11 +2010,12 @@ pub fn native_skill_reset_modal(state: &ViewState, base: Element, viewport_width
     )
     .width(width)
     .body(Text::new("Esta acción borra las selecciones de skills locales de todos los proyectos. Se pueden volver a seleccionar desde esta página.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render())
-    .footer(Element::row(vec![
-        Element::spacer().flex(1.0),
-        cancel,
-        confirm,
-    ]))
+    .footer(
+        ButtonGroup::new(vec![cancel, confirm])
+            .align_end()
+            .sizing(crate::ui_sizing::CONFIRM_FOOTER)
+            .render(),
+    )
     .initial_focus("native_skill_reset_cancel")
     .return_focus("native_skill_reset")
     .render()
@@ -2042,12 +2046,12 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
     }
     // 40 tall is these forms' own height for an input.
     let input = |id: &str, value: &str, placeholder: &str| {
-        mono_field(id, value, placeholder).size(Some(body_width), Some(40.0))
+        mono_field(id, value, placeholder).width(body_width).height(40.0).render()
     };
     fields.extend([
         form_field("ID del servidor", input("mcp_draft_id", &state.mcp_draft_id, "ej. filesystem"))
             .hint("Minúsculas, números, guiones y guiones bajos. El ID empieza con una letra.")
-            .render(),
+            .rows(),
         form_field(
             "Transporte",
             ButtonGroup::new(vec![
@@ -2061,13 +2065,13 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
             .stacked(width < 420.0)
             .render(),
         )
-        .render(),
-    ]);
+        .rows(),
+    ].into_iter().flatten());
     if state.mcp_draft_http {
         fields.extend([
             form_field("URL MCP", input("mcp_draft_url", &state.mcp_draft_url, "https://example.com/mcp"))
                 .hint("Endpoint HTTPS; HTTP sólo para localhost o loopback. Sin query, credenciales en URL ni redirecciones.")
-                .render(),
+                .rows(),
             form_field(
                 "Autenticación",
                 ButtonGroup::new(vec![
@@ -2082,15 +2086,15 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 .stacked(width < 420.0)
                 .render(),
             )
-            .render(),
-        ]);
+            .rows(),
+        ].into_iter().flatten());
         if state.mcp_draft_oauth_enabled {
             fields.extend([
-                Text::new("Usá un client ID público registrado para este issuer. La autorización se inicia después de guardar; no escribas client secrets ni tokens.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
-                form_field("Client ID público", input("mcp_draft_oauth_client_id", &state.mcp_draft_oauth_client_id, "client-id")).render(),
+                vec![Text::new("Usá un client ID público registrado para este issuer. La autorización se inicia después de guardar; no escribas client secrets ni tokens.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()],
+                form_field("Client ID público", input("mcp_draft_oauth_client_id", &state.mcp_draft_oauth_client_id, "client-id")).rows(),
                 form_field("Issuer OAuth", input("mcp_draft_oauth_issuer", &state.mcp_draft_oauth_issuer, "https://auth.example.com"))
                     .hint("URL HTTPS exacta del servidor de autorización, sin query ni credenciales.")
-                    .render(),
+                    .rows(),
                 form_field(
                     "Scopes solicitados (opcional)",
                     TextArea::new(
@@ -2104,11 +2108,11 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                     .render(),
                 )
                 .hint("Uno por línea. Se unen con los scopes requeridos por el servidor; no son valores secretos.")
-                .render(),
-                Text::new("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render(),
-            ]);
+                .rows(),
+                vec![Text::new("Los tokens se guardan en Credential Manager del usuario en Windows, fuera de Settings y del journal. Para usar el servidor, guardá y elegí Autorizar.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render()],
+            ].into_iter().flatten());
         } else {
-            fields.push(
+            fields.extend(
                 form_field(
                     "Variable del bearer token (opcional)",
                     input(
@@ -2118,7 +2122,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                     ),
                 )
                 .hint("Escribe sólo el nombre de la variable. El valor se lee al conectar y no se guarda. Déjalo vacío si el servidor no exige autenticación.")
-                .render(),
+                .rows(),
             );
         }
         fields.push(Text::new("Streamable HTTP negocia el protocolo al conectar: 2026-07-28 o las versiones compatibles de 2025. Solicitudes de entrada adicional aún no están disponibles.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
@@ -2126,7 +2130,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
         fields.extend([
             form_field("Programa", input("mcp_draft_program", &state.mcp_draft_program, "ej. npx"))
                 .hint("Nombre del ejecutable o ruta absoluta. Se inicia sin shell.")
-                .render(),
+                .rows(),
             form_field(
                 "Argumentos (JSON)",
                 TextArea::new(
@@ -2140,10 +2144,10 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 .render(),
             )
             .hint("Lista JSON de textos; cada elemento es un argumento literal. No escribas tokens, claves ni contraseñas aquí.")
-            .render(),
+            .rows(),
             form_field("Directorio de trabajo", input("mcp_draft_cwd", &state.mcp_draft_cwd, "ej. tools/mcp"))
                 .hint("Ruta relativa dentro del proyecto. Se comprueba al iniciar; vacío usa la carpeta del proyecto.")
-                .render(),
+                .rows(),
             form_field(
                 "Variables de credenciales",
                 TextArea::new(
@@ -2157,8 +2161,8 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
                 .render(),
             )
             .hint("Sólo nombres, uno por línea. Sus valores se leen del entorno al iniciar el servidor y no se guardan.")
-            .render(),
-        ]);
+            .rows(),
+        ].into_iter().flatten());
     }
     fields.push(Text::new("Los servidores nuevos se guardan desactivados. Usa Activar en la lista cuando estén listos.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     let cancel = outline("mcp_cancel", "Cancelar").render();
@@ -2173,11 +2177,7 @@ pub fn mcp_editor_modal(state: &ViewState, base: Element, viewport_width: f32) -
     .size(ControlSize::Compact)
     .enabled(state.mcp_load_error.is_none())
     .render();
-    let footer = if width < 350.0 {
-        Element::column(vec![save, cancel]).gap(6.0)
-    } else {
-        Element::row(vec![Element::spacer().flex(1.0), cancel, save]).gap(8.0)
-    };
+    let footer = form_footer(cancel, save, width);
 
     Modal::new(
         base,
@@ -2300,7 +2300,8 @@ fn terminal_page(state: &ViewState, compact: bool) -> Vec<Element> {
             "settings_terminal_shell_path",
             &state.settings_terminal_shell_draft,
             "Ruta absoluta del ejecutable",
-        );
+        )
+        .render();
         let custom_button = outline(
             "settings_terminal_shell:custom",
             if matches!(shell, TerminalShell::Custom(_)) {

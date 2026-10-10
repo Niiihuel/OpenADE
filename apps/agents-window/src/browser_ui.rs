@@ -1,7 +1,8 @@
 //! Native chrome for the conversation-owned browser; the actor owns its page.
 
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry, Element,
+    Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
+    DropdownMenuItem, Element,
     FontFamily, Icon, IconButton, PopoverPlacement, RasterImage, ScrollArea, Separator, Spinner,
     Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
@@ -45,48 +46,18 @@ fn menu_action(
     description: &str,
     enabled: bool,
 ) -> DropdownMenuEntry {
-    let palette = theme::menu_palette();
-    let ink = if enabled { palette.text } else { palette.muted };
-    let visual = Element::row(vec![
-        Element::icon(icon)
-            .foreground(ink)
-            .size(Some(16.0), Some(20.0)),
-        Element::truncated_text(title)
-            .foreground(ink)
-            .font_family(FontFamily::Sans)
-            .font_size(13.0)
-            .flex(1.0)
-            .size(None, Some(20.0)),
-    ])
-    .gap(8.0)
-    .clip_children();
-    let visual = Element::row(vec![
-        Element::spacer().size(Some(5.0), None),
-        visual.flex(1.0),
-        Element::spacer().size(Some(5.0), None),
-    ]);
-    let row = if enabled {
-        Element::clickable(id, visual).action_menu_item()
-    } else {
-        Element::panel(visual)
-    };
-    DropdownMenuEntry::custom(
-        Tooltip::new(
-            palette
-                .interactive_surface(row)
-                .padding(3.0)
-                .radius(4.0)
-                .transition_ms(0)
-                .size(None, Some(26.0)),
-            id,
-            title,
-            theme::component_palette(),
+    DropdownMenuItem::new(id, title)
+        .icon(icon)
+        .enabled(enabled)
+        .truncate()
+        .tooltip_with(
+            TooltipSpec::new(title)
+                .description(description)
+                .placement(TooltipPlacement::Left)
+                .max_width(320.0)
+                .palette(theme::component_palette()),
         )
-        .description(description)
-        .placement(TooltipPlacement::Left)
-        .max_width(320.0)
-        .render(),
-    )
+        .into()
 }
 
 fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
@@ -550,3 +521,100 @@ mod surface_tests;
 #[cfg(test)]
 #[path = "browser_visual_tests.rs"]
 mod visual_tests;
+
+// The hand-built row `menu_action` replaced, kept until its captures match.
+#[cfg(test)]
+mod converge_parity {
+    use super::*;
+    use crate::converge_panels_parity_tests::assert_same_paint_at;
+    use openide_ui::FontFamily;
+
+    fn legacy_menu_action(
+        id: &str,
+        icon: Icon,
+        title: &str,
+        description: &str,
+        enabled: bool,
+    ) -> DropdownMenuEntry {
+        let palette = theme::menu_palette();
+        let ink = if enabled { palette.text } else { palette.muted };
+        let visual = Element::row(vec![
+            Element::icon(icon)
+                .foreground(ink)
+                .size(Some(16.0), Some(20.0)),
+            Element::truncated_text(title)
+                .foreground(ink)
+                .font_family(FontFamily::Sans)
+                .font_size(13.0)
+                .flex(1.0)
+                .size(None, Some(20.0)),
+        ])
+        .gap(8.0)
+        .clip_children();
+        let visual = Element::row(vec![
+            Element::spacer().size(Some(5.0), None),
+            visual.flex(1.0),
+            Element::spacer().size(Some(5.0), None),
+        ]);
+        let row = if enabled {
+            Element::clickable(id, visual).action_menu_item()
+        } else {
+            Element::panel(visual)
+        };
+        DropdownMenuEntry::custom(
+            Tooltip::new(
+                palette
+                    .interactive_surface(row)
+                    .padding(3.0)
+                    .radius(4.0)
+                    .transition_ms(0)
+                    .size(None, Some(26.0)),
+                id,
+                title,
+                theme::component_palette(),
+            )
+            .description(description)
+            .placement(TooltipPlacement::Left)
+            .max_width(320.0)
+            .render(),
+        )
+    }
+
+    #[test]
+    fn the_browser_menu_rows_match_their_hand_built_bodies() {
+        let entries = |build: fn(&str, Icon, &str, &str, bool) -> DropdownMenuEntry| {
+            vec![
+                build("browser_copy_url", Icon::File, "Copiar dirección", "Copia la dirección visible en la barra al portapapeles.", true),
+                build("browser_snapshot", Icon::Refresh, "Actualizar vista", "Obtiene una captura nueva de la página sin recargarla.", false),
+                DropdownMenuEntry::Separator,
+                build("browser_mcp_config", Icon::Code, "Copiar conexión MCP con un nombre que no cabe", "Copia la configuración para conectar herramientas a esta página.", true),
+                build("browser_restart", Icon::Refresh, "Reiniciar navegador", "Abre un contexto nuevo y vuelve a la dirección actual.", true),
+            ]
+        };
+        for menu_width in [192.0, 252.0] {
+            let menu = |build| {
+                DropdownMenu::new(
+                    IconButton::new("browser_more_toggle", Icon::More, theme::component_palette())
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Dense)
+                        .render(),
+                    entries(build),
+                    true,
+                    "browser_more_dismiss",
+                    theme::menu_palette(),
+                )
+                .context_menu_style()
+                .width(menu_width)
+                .placement(PopoverPlacement::BottomEnd)
+                .render()
+            };
+            // limn cuts a row's content to its 22 px line, the old row to 20.
+            assert_same_paint_at(
+                &format!("browser menu {menu_width}"),
+                &[360.0, 900.0],
+                menu(legacy_menu_action),
+                menu(menu_action),
+            );
+        }
+    }
+}

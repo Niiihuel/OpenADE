@@ -972,12 +972,13 @@ pub(super) fn details_modal(state: &ViewState, base: Element, viewport_width: f3
     .height(600.0)
     .body(Element::column(groups).gap(12.0))
     .footer(
-        Element::row(vec![
-            Element::spacer().flex(1.0),
+        ButtonGroup::new(vec![
             outline("catalog_model_details_dismiss", "Cerrar").render(),
             use_model,
         ])
-        .gap(8.0),
+        .align_end()
+        .sizing(crate::ui_sizing::MODAL_FOOTER)
+        .render(),
     )
     .initial_focus("catalog_model_details_dismiss")
     .return_focus(format!("catalog_model_details:{}", model.id))
@@ -1102,7 +1103,6 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         }
     }
     let mut footer = vec![
-        Element::spacer().flex(1.0),
         Button::new(
             "provider_connect_cancel",
             if welcome { "Entendido" } else { "Cancelar" },
@@ -1162,7 +1162,12 @@ pub(super) fn connect_modal(state: &ViewState, base: Element, viewport_width: f3
         340.0
     })
     .body(Element::column(body).gap(10.0))
-    .footer(Element::row(footer).gap(8.0))
+    .footer(
+        ButtonGroup::new(footer)
+            .align_end()
+            .sizing(crate::ui_sizing::MODAL_FOOTER)
+            .render(),
+    )
     .initial_focus(focus)
     .return_focus(format!("provider_connect:{id}"))
     .backdrop_dismiss(false)
