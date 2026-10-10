@@ -166,7 +166,7 @@ impl AgentsWindow {
                 else {
                     return false;
                 };
-                let id = crate::dock_tab_ui::file_action(&self.view, tab.id.get(), "close");
+                let id = crate::view::dock_chrome::file_action(&self.view, tab.id.get(), "close");
                 self.apply_dock_file_action(&UiAction::Clicked { id }, ctx)
             }
             UiEvent::Key {
@@ -312,7 +312,7 @@ mod tests {
         let first = open(&mut app, "first.md");
         let second = open(&mut app, "second.md");
         let close = UiAction::Clicked {
-            id: crate::dock_tab_ui::file_action(&app.view, first, "close"),
+            id: crate::view::dock_chrome::file_action(&app.view, first, "close"),
         };
         let ctx = egui::Context::default();
         let previous = app.view.selected_session.clone();

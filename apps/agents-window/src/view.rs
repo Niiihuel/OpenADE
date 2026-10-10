@@ -47,7 +47,7 @@ mod command_center;
 #[path = "dock_activity.rs"]
 mod dock_activity;
 #[path = "dock_chrome.rs"]
-mod dock_chrome;
+pub(crate) mod dock_chrome;
 #[cfg(test)]
 #[path = "dock_visual_tests.rs"]
 mod dock_visual_tests;

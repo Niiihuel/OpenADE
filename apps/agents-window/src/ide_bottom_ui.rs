@@ -1,6 +1,6 @@
 use super::*;
 use crate::ide_workspace::IdeBottomPanel;
-use openide_ui::{AlertColors, AlertTone, Component, Separator};
+use openide_ui::{AlertColors, AlertTone, Component, Separator, TabStrip};
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 
@@ -69,7 +69,7 @@ fn sections(state: &ViewState, width: f32) -> (Element, f32) {
         }
         .size(None, Some(crate::dock_tab_ui::TOOL_SIZE));
         let item = Tooltip::new(
-            crate::dock_tab_ui::tab_surface(&id, content, active == panel, size),
+            TabStrip::surface(&id, content, active == panel, size, theme::tab_strip_palette()),
             &id,
             title,
             theme::component_palette(),
@@ -80,7 +80,7 @@ fn sections(state: &ViewState, width: f32) -> (Element, f32) {
         items.push(item);
     }
     (
-        crate::dock_tab_ui::align_tabs(
+        TabStrip::align(
             Element::row(items)
                 .gap(0.0)
                 .size(Some(total), Some(crate::dock_tab_ui::TAB_HEIGHT)),
@@ -360,7 +360,7 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Element {
     if state.show_terminal_panel || closing_terminal {
         return crate::terminal_dock_ui::build_ide(state, width, height, sections, sections_width);
     }
-    let header = crate::dock_tab_ui::header(
+    let header = TabStrip::header(
         sections.flex(1.0),
         UiIconButton::new(
             "ide_bottom_hide",
@@ -372,9 +372,9 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Element {
         .tooltip_with(TooltipSpec::new("Ocultar panel").placement(header_tooltip_placement(state)))
         .render(),
         width,
-        crate::dock_tab_ui::HEADER_SIDE_INSET,
-        8.0,
-    );
+        theme::tab_strip_palette(),
+    )
+    .render();
     let viewport_height = height.max(0.0);
     let content_height = viewport_height.max(HEADER);
     let body_height = content_height - HEADER;

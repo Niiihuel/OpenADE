@@ -135,6 +135,17 @@ pub fn component_palette() -> ComponentPalette {
     SCHEME.palette()
 }
 
+/// The docks' folder tabs: the active tab is the canvas it opens onto, the
+/// bar is the panel, and an inactive tab hovers to `HOVER`.
+pub fn tab_strip_palette() -> ComponentPalette {
+    ComponentPalette {
+        surface: BACKGROUND,
+        raised: PANEL,
+        hover: HOVER,
+        ..component_palette()
+    }
+}
+
 pub fn menu_palette() -> ComponentPalette {
     SCHEME.menu()
 }

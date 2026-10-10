@@ -7,7 +7,7 @@ use crate::{
 use openide_preview::{Document, PreviewKind};
 use openide_ui::{
     ActiveHover, ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon,
-    IconButton, ScrollArea, Separator, TooltipPlacement, TooltipSpec,
+    IconButton, ScrollArea, Separator, TabItem, TabStrip, TooltipPlacement, TooltipSpec,
 };
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -346,15 +346,18 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
         .to_string_lossy();
     let title = format!("Vista previa · {name}");
     let tab_width = (width - 62.0).clamp(0.0, 320.0);
-    let preview_tab = crate::dock_tab_ui::rounded_tab(crate::dock_tab_ui::RoundedTab {
-        id: format!("{prefix}:tab"),
-        extent_id: format!("{prefix}:extent"),
-        title: &title,
-        help: &path,
-        icon: Icon::File,
-        active: true,
-        width: tab_width,
-        close: IconButton::new(
+    let preview_tab = TabItem::new(
+        format!("{prefix}:tab"),
+        format!("{prefix}:extent"),
+        Icon::File,
+        title,
+        tab_width,
+    )
+    .tooltip(&*path)
+    .tooltip_placement(TooltipPlacement::Below)
+    .active(true)
+    .close(
+        IconButton::new(
             &format!("{prefix}:close"),
             Icon::Close,
             theme::component_palette(),
@@ -363,8 +366,8 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
         .size(ControlSize::Dense)
         .tooltip_with(TooltipSpec::new("Cerrar vista previa").placement(TooltipPlacement::Below))
         .render(),
-        tooltip_placement: TooltipPlacement::Below,
-    });
+    )
+    .render(theme::tab_strip_palette());
     let tools = Element::row(vec![
         IconButton::new(
             &format!("{prefix}:source"),
@@ -390,12 +393,16 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
     .gap(2.0)
     .size(Some(50.0), Some(24.0));
     let tabs = Element::row(vec![
-        crate::dock_tab_ui::align_tabs(preview_tab),
+        TabStrip::align(preview_tab),
         Element::spacer().flex(1.0),
     ])
     .size(None, Some(HEADER))
     .flex(1.0);
-    let header = crate::dock_tab_ui::header(tabs, tools, width, 2.0, 2.0).clip_children();
+    let header = TabStrip::header(tabs, tools, width, theme::tab_strip_palette())
+        .side_inset(2.0)
+        .gap(2.0)
+        .render()
+        .clip_children();
     let breadcrumb = crate::code_editor_ui::path_breadcrumb(
         &format!("{prefix}:path"),
         &path,

@@ -2,18 +2,29 @@
 //! Selection reveals the full tab; manual scroll never substitutes a page.
 use super::*;
 
-use crate::dock_tab_ui::{self, RoundedTab, CLOSE_SIZE, HEADER_SIDE_INSET, TOOL_SIZE};
+use crate::dock_tab_ui::{self, HEADER_SIDE_INSET, TOOL_SIZE};
 #[cfg(test)]
-use crate::dock_tab_ui::{TAB_GAP, TAB_HEIGHT};
-use openide_ui::{Component, ContextMenu, ContextMenuEntry, ContextMenuItem, Separator};
+use crate::dock_tab_ui::{CLOSE_SIZE, TAB_GAP, TAB_HEIGHT};
+use openide_ui::{
+    Component, ContextMenu, ContextMenuEntry, ContextMenuItem, Separator, TabItem, TabStrip,
+};
 
 #[cfg(test)]
 const HEADER_PADDING: f32 = 2.0;
 #[cfg(test)]
 const TOOLBAR_WIDTH: f32 = TOOL_SIZE * 4.0;
 
-fn tab_width(tab: &DockTabView, available: f32) -> f32 {
-    dock_tab_ui::tab_width(&tab.title, available)
+pub(crate) fn file_action(state: &ViewState, tab: u64, operation: &str) -> String {
+    format!(
+        "dock_file_action:{}",
+        serde_json::to_string(&(
+            &state.workspace,
+            state.selected_session.as_deref().unwrap_or(""),
+            tab,
+            operation,
+        ))
+        .expect("file tab action is serializable")
+    )
 }
 
 pub(super) fn visible_tabs(state: &ViewState) -> Vec<&DockTabView> {
@@ -47,8 +58,21 @@ fn resource_icon(tab: &DockTabView) -> Icon {
     }
 }
 
-fn tab(tab: &DockTabView, width: f32) -> Element {
-    let close = if tab.closable {
+fn tab(tab: &DockTabView, width: f32) -> TabItem {
+    let item = TabItem::new(
+        format!("dock_tab:{}", tab.id),
+        format!("dock_tab_extent:{}", tab.id),
+        resource_icon(tab),
+        &tab.title,
+        width,
+    )
+    .tooltip(tab.full_path.as_deref().unwrap_or(&tab.title))
+    .tooltip_placement(TooltipPlacement::Below)
+    .active(tab.active);
+    if !tab.closable {
+        return item;
+    }
+    item.close(
         UiIconButton::new(
             format!("dock_close:{}", tab.id),
             Icon::Close,
@@ -59,29 +83,16 @@ fn tab(tab: &DockTabView, width: f32) -> Element {
         .tooltip_with(
             TooltipSpec::new(format!("Cerrar {}", tab.title)).placement(TooltipPlacement::Below),
         )
-        .render()
-    } else {
-        Element::spacer().size(Some(CLOSE_SIZE), Some(CLOSE_SIZE))
-    };
-    dock_tab_ui::rounded_tab(RoundedTab {
-        id: format!("dock_tab:{}", tab.id),
-        extent_id: format!("dock_tab_extent:{}", tab.id),
-        title: &tab.title,
-        help: tab.full_path.as_deref().unwrap_or(&tab.title),
-        icon: resource_icon(tab),
-        active: tab.active,
-        width,
-        close,
-        tooltip_placement: TooltipPlacement::Below,
-    })
+        .render(),
+    )
 }
 
-fn editor_tab(state: &ViewState, tab_view: &DockTabView, width: f32) -> Element {
-    let surface = tab(tab_view, width);
+/// A file tab in the IDE's editor group opens the file menu on right click.
+fn editor_tab(state: &ViewState, tab_view: &DockTabView, surface: Element) -> Element {
     if !crate::ide_workspace::active(state) || tab_view.kind != SideTab::FilePreview {
         return surface;
     }
-    let action = |operation| crate::dock_tab_ui::file_action(state, tab_view.id, operation);
+    let action = |operation| file_action(state, tab_view.id, operation);
     let item =
         |operation, title| ContextMenuEntry::Item(ContextMenuItem::new(action(operation), title));
     let mut entries = vec![item("save", "Guardar"), ContextMenuEntry::Separator];
@@ -230,39 +241,22 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
             .size(None, Some(RIGHT_HEADER_HEIGHT))
             .flex(1.0)
     } else {
-        let widths: Vec<_> = visible_tabs
+        let items = visible_tabs
             .iter()
             .map(|item| {
-                if ide && item.kind == SideTab::FilePreview {
-                    // Fit ordinary filenames before fading; the close target
-                    // and fixed group actions always retain their own space.
-                    (68.0 + item.title.chars().count() as f32 * 7.8)
-                        .clamp(112.0, 360.0)
-                        .min((available - 32.0).max(0.0))
+                // Fit ordinary filenames before fading; the close target
+                // and fixed group actions always retain their own space.
+                let max = if ide && item.kind == SideTab::FilePreview {
+                    360.0
                 } else {
-                    tab_width(item, available)
-                }
+                    dock_tab_ui::TAB_MAX_WIDTH
+                };
+                tab(item, dock_tab_ui::tab_width(&item.title, available, max))
             })
             .collect();
-        let actions = visible_tabs
-            .iter()
-            .map(|item| format!("dock_tab:{}", item.id))
-            .collect();
-        dock_tab_ui::scrolling_tabs(
-            "right_dock_tabs",
-            visible_tabs
-                .iter()
-                .zip(&widths)
-                .map(|(item, width)| editor_tab(state, item, *width))
-                .collect(),
-            actions,
-            &widths,
-            visible_tabs
-                .iter()
-                .find(|tab| tab.active)
-                .map(|tab| format!("dock_tab_extent:{}", tab.id)),
-            visible_tabs.iter().position(|tab| tab.active),
-        )
+        TabStrip::new("right_dock_tabs", items, theme::tab_strip_palette())
+            .each_tab(|index, surface| editor_tab(state, visible_tabs[index], surface))
+            .render()
     };
     if !editor_controls.is_empty() {
         if group_separator > 0.0 {
@@ -281,7 +275,9 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
     let controls = Element::row(controls).size(Some(toolbar_width), Some(TOOL_SIZE));
     // Leave room for the workspace's rounded outer frame without separating
     // the active tab from the editor surface below it.
-    dock_tab_ui::header(tabs, controls, width, HEADER_SIDE_INSET, toolbar_gap)
+    TabStrip::header(tabs, controls, width, theme::tab_strip_palette())
+        .gap(toolbar_gap)
+        .render()
 }
 
 #[cfg(test)]

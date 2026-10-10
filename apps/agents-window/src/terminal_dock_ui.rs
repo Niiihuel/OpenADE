@@ -10,7 +10,7 @@ use crate::{
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element, FontFamily, Icon, IconButton, MenuItem, Popover, PopoverPlacement,
-    Separator, Tooltip, TooltipPlacement, TooltipSpec,
+    Separator, TabItem, TabStrip, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 pub(crate) const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -416,7 +416,7 @@ fn actions_menu(state: &ViewState, width: f32) -> Element {
     .popover_return_focus("terminal_menu_toggle")
 }
 
-fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> Element {
+fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> TabItem {
     let title = tab_label(state, tab);
     let visible_in_split = state
         .terminal_controls
@@ -441,17 +441,17 @@ fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> Element {
                 .placement(header_tooltip_placement(state)),
         )
         .render();
-    crate::dock_tab_ui::rounded_tab(crate::dock_tab_ui::RoundedTab {
-        id: format!("terminal_tab:{}", tab.id),
-        extent_id: format!("terminal_tab_extent:{}", tab.id),
-        title: &title,
-        help: &help,
-        icon: Icon::Terminal,
-        active: tab.active,
+    TabItem::new(
+        format!("terminal_tab:{}", tab.id),
+        format!("terminal_tab_extent:{}", tab.id),
+        Icon::Terminal,
+        title,
         width,
-        close,
-        tooltip_placement: header_tooltip_placement(state),
-    })
+    )
+    .tooltip(help)
+    .tooltip_placement(header_tooltip_placement(state))
+    .active(tab.active)
+    .close(close)
 }
 
 pub(crate) fn header(state: &ViewState, width: f32) -> Element {
@@ -459,21 +459,19 @@ pub(crate) fn header(state: &ViewState, width: f32) -> Element {
 }
 
 fn session_tabs(state: &ViewState, available: f32) -> Element {
-    let widths: Vec<_> = state
+    let items = state
         .terminal_tabs
         .iter()
-        .map(|tab| crate::dock_tab_ui::tab_width(&tab_label(state, tab), available))
+        .map(|tab| {
+            let width = crate::dock_tab_ui::tab_width(
+                &tab_label(state, tab),
+                available,
+                crate::dock_tab_ui::TAB_MAX_WIDTH,
+            );
+            terminal_tab(state, tab, width)
+        })
         .collect();
-    crate::dock_tab_ui::scrolling_tabs(
-        "terminal_tabs",
-        state.terminal_tabs.iter().zip(&widths)
-            .map(|(tab, width)| terminal_tab(state, tab, *width)).collect(),
-        state.terminal_tabs.iter().map(|tab| format!("terminal_tab:{}", tab.id)).collect(),
-        &widths,
-        state.terminal_tabs.iter().find(|tab| tab.active)
-            .map(|tab| format!("terminal_tab_extent:{}", tab.id)),
-        state.terminal_tabs.iter().position(|tab| tab.active),
-    )
+    TabStrip::new("terminal_tabs", items, theme::tab_strip_palette()).render()
 }
 
 fn header_with_sections(
@@ -585,7 +583,7 @@ fn header_with_sections(
     let actions = Element::row(actions)
         .gap(2.0)
         .size(Some(actions_width), Some(TOOL_SIZE));
-    let header = crate::dock_tab_ui::header(leading, actions, width, HEADER_SIDE_INSET, 8.0);
+    let header = TabStrip::header(leading, actions, width, theme::tab_strip_palette()).render();
     Element::overlay(
         header,
         Element::column(vec![
