@@ -4,29 +4,55 @@
 //! (Apache-2.0). The application uses an achromatic palette for native chrome;
 //! the composer send button and reasoning-effort control carry local accents.
 
-use openide_ui::{Color, ComponentPalette, Element};
+use openide_ui::{Color, ComponentPalette, ControlColors, Element, Scheme, Surface};
 
-pub const BACKGROUND: Color = Color::rgb(22, 22, 22);
-pub const WINDOW: Color = Color::rgb(43, 43, 43);
-pub const SIDEBAR: Color = Color::rgb(43, 43, 43);
-pub const PANEL: Color = Color::rgb(32, 32, 32);
-pub const CARD: Color = Color::rgb(43, 43, 43);
+/// Every neutral of the native chrome, by role. The palettes below are
+/// derived from it, so two of them cannot disagree about a shared color.
+pub const SCHEME: Scheme = Scheme {
+    canvas: Color::rgb(22, 22, 22),
+    panel: Color::rgb(32, 32, 32),
+    raised: Color::rgb(43, 43, 43),
+    hover: Color::rgb(43, 43, 43),
+    selected: Color::rgb(54, 54, 54),
+    border: Color::rgb(46, 46, 46),
+    text: Color::rgb(212, 212, 212),
+    muted: Color::rgb(136, 136, 136),
+    muted_on_raised: Color::rgb(160, 160, 160),
+    menu: Color::rgb(30, 30, 30),
+    menu_hover: Color::rgb(48, 48, 48),
+    menu_muted: Color::rgb(158, 158, 158),
+    shadow: Color::rgba(0, 0, 0, 125),
+    control: ControlColors {
+        surface: Color::rgb(55, 55, 55),
+        hover: Color::rgb(66, 66, 66),
+        pressed: Color::rgb(76, 76, 76),
+        border: Color::rgb(78, 78, 78),
+        text: Color::rgb(235, 235, 235),
+    },
+};
+
+pub const BACKGROUND: Color = SCHEME.canvas;
+pub const WINDOW: Color = SCHEME.raised;
+pub const SIDEBAR: Color = SCHEME.raised;
+pub const PANEL: Color = SCHEME.panel;
+pub const CARD: Color = SCHEME.raised;
 /// Floating action menus share the composer popover's dark surface.
-pub const MENU_SURFACE: Color = Color::rgb(30, 30, 30);
-pub const MENU_HOVER: Color = Color::rgb(48, 48, 48);
-pub const MENU_MUTED: Color = Color::rgb(158, 158, 158);
-pub const INPUT: Color = Color::rgb(43, 43, 43);
+pub const MENU_SURFACE: Color = SCHEME.menu;
+pub const MENU_HOVER: Color = SCHEME.menu_hover;
+pub const MENU_MUTED: Color = SCHEME.menu_muted;
+pub const INPUT: Color = SCHEME.hover;
+// Not a scheme role: still painted as a fill by the dock tabs and sidebar.
 pub const HOVER: Color = Color::rgb(34, 34, 34);
-pub const SELECTED: Color = Color::rgb(54, 54, 54);
-pub const BORDER: Color = Color::rgb(46, 46, 46);
+pub const SELECTED: Color = SCHEME.selected;
+pub const BORDER: Color = SCHEME.border;
 pub const TREE_GUIDE: Color = Color::rgb(72, 72, 72);
 pub const BRAND: Color = Color::rgb(255, 255, 255);
 /// Web destinations stay distinct from neutral text and native chrome.
 pub const LINK: Color = Color::rgb(120, 169, 255);
-pub const FOREGROUND: Color = Color::rgb(212, 212, 212);
-pub const FOREGROUND_SUBTLE: Color = Color::rgb(136, 136, 136);
+pub const FOREGROUND: Color = SCHEME.text;
+pub const FOREGROUND_SUBTLE: Color = SCHEME.muted;
 /// Small supporting text in Settings stays legible on cards and controls.
-pub const SETTINGS_FOREGROUND_SUBTLE: Color = Color::rgb(160, 160, 160);
+pub const SETTINGS_FOREGROUND_SUBTLE: Color = SCHEME.muted_on_raised;
 pub const PRIMARY_FOREGROUND: Color = Color::rgb(0, 0, 0);
 pub const USER: Color = Color::rgb(235, 235, 235);
 pub const ASSISTANT: Color = Color::rgb(212, 212, 212);
@@ -50,23 +76,33 @@ pub const ICON_PRIMARY: Color = Color::rgb(224, 224, 224);
 /// Accent tones used only by the reasoning-effort control.
 pub const EFFORT_BLUE: Color = Color::rgb(80, 145, 255);
 pub const EFFORT_ULTRA: Color = Color::rgb(190, 126, 255);
+/// A provider's quota nearing its limit.
+pub const WARNING: Color = Color::rgb(224, 179, 106);
+/// The context meter nearing its limit; a second amber kept as it is.
+pub const CONTEXT_WARNING: Color = Color::rgb(225, 169, 65);
+/// The unfilled part of a usage bar.
+pub const TRACK: Color = Color::rgb(66, 66, 66);
+/// Composer pills, their quiet ink and the send button's accent.
+pub const PILL_SURFACE: Color = Color::rgb(38, 38, 38);
+pub const MUTED_INK: Color = Color::rgb(117, 117, 117);
+pub const SEND_BLUE: Color = Color::rgb(37, 113, 251);
+pub const TERMINAL_SELECTION: Color = Color::rgb(61, 76, 96);
+/// The edge of the focused pane in a split terminal.
+pub const ACTIVE_PANE_INDICATOR: Color = Color {
+    a: 140,
+    ..FOREGROUND_SUBTLE
+};
+/// A light control on the dark canvas, such as the jump-to-latest button.
+pub const INVERSE_SURFACE: Color = Color::rgb(246, 246, 246);
+pub const INVERSE_INK: Color = Color::rgb(32, 32, 32);
+/// Emphasized prose in rendered Markdown.
+pub const EMPHASIS_INK: Color = Color::rgb(194, 194, 194);
 
 pub const SIDEBAR_WIDTH: f32 = 264.0;
 pub const UI_FONT_SIZE: f32 = 14.0;
 
-/// Neutral toolbar actions share the permissions trigger's surface. Raised
-/// menus and selected rows can use their own palette's interactive_surface
-/// while retaining the same radius, press feedback and transition.
-pub fn interactive_palette() -> ComponentPalette {
-    ComponentPalette {
-        hover: INPUT,
-        selected: SELECTED,
-        ..component_palette()
-    }
-}
-
 pub fn interactive_surface(element: Element) -> Element {
-    interactive_palette().interactive_surface(element)
+    component_palette().interactive_surface(element)
 }
 
 /// Hover moves one neutral step above the control's own surface. A fixed
@@ -75,62 +111,57 @@ pub fn hover_for(surface: Color) -> Color {
     if surface == BRAND || surface == DESTRUCTIVE {
         return surface;
     }
-    Color::rgba(
-        surface.r.saturating_add(8),
-        surface.g.saturating_add(8),
-        surface.b.saturating_add(8),
-        surface.a,
-    )
+    SCHEME.step(surface)
 }
 
+/// The palette of an action painted on `surface`. The role limn needs is
+/// read here from the color, since only the app knows which of its colors
+/// are flat, raised or solid.
 pub fn action_palette(surface: Color, ink: Color) -> ComponentPalette {
-    ComponentPalette {
-        surface,
-        raised: surface,
-        hover: if surface == Color::TRANSPARENT || surface == BACKGROUND || surface == PANEL {
-            INPUT
-        } else {
-            hover_for(surface)
-        },
-        selected: if surface == BRAND || surface == DESTRUCTIVE {
-            surface
-        } else {
-            SELECTED
-        },
-        border: BORDER,
-        text: ink,
-        muted: FOREGROUND_SUBTLE,
-        shadow: Color::rgba(0, 0, 0, 125),
-    }
+    let role = if surface == Color::TRANSPARENT || surface == BACKGROUND || surface == PANEL {
+        Surface::Flat(surface)
+    } else if surface == BRAND || surface == DESTRUCTIVE {
+        Surface::Solid(surface)
+    } else {
+        Surface::Raised(surface)
+    };
+    SCHEME.on(role, ink)
 }
 
+/// The default palette belongs to the canvas. Raised surfaces opt into
+/// action_palette/menu_palette; using sidebar hover here made every
+/// breadcrumb and shared ghost control brighter than the composer.
 pub fn component_palette() -> ComponentPalette {
-    ComponentPalette {
-        surface: BACKGROUND,
-        raised: CARD,
-        // The default palette belongs to the canvas. Raised surfaces opt into
-        // action_palette/menu_palette; using sidebar hover here made every
-        // breadcrumb and shared ghost control brighter than the composer.
-        hover: INPUT,
-        selected: SELECTED,
-        border: BORDER,
-        text: FOREGROUND,
-        muted: FOREGROUND_SUBTLE,
-        shadow: Color::rgba(0, 0, 0, 125),
-    }
+    SCHEME.palette()
 }
 
 pub fn menu_palette() -> ComponentPalette {
+    SCHEME.menu()
+}
+
+/// A menu whose rows hover and press like controls on the canvas: the
+/// composer's selectors and the text context menu.
+pub fn selector_palette() -> ComponentPalette {
     ComponentPalette {
-        surface: MENU_SURFACE,
-        raised: MENU_SURFACE,
-        hover: MENU_HOVER,
-        selected: MENU_HOVER,
-        border: BORDER,
-        text: FOREGROUND,
-        muted: MENU_MUTED,
-        shadow: Color::rgba(0, 0, 0, 125),
+        hover: SCHEME.hover,
+        selected: SCHEME.selected,
+        ..SCHEME.menu()
     }
+}
+
+/// Filled controls inside Settings cards.
+pub fn control_palette() -> ComponentPalette {
+    SCHEME.on_raised()
+}
+
+/// Content laid directly on a Settings card.
+pub fn card_palette() -> ComponentPalette {
+    SCHEME.card()
+}
+
+/// Actions in a workspace sidebar.
+pub fn sidebar_palette() -> ComponentPalette {
+    action_palette(SIDEBAR, FOREGROUND)
 }
 
 pub fn segmented_palette() -> ComponentPalette {
@@ -142,7 +173,7 @@ pub fn segmented_palette() -> ComponentPalette {
         border: BORDER,
         text: FOREGROUND,
         muted: FOREGROUND_SUBTLE,
-        shadow: Color::rgba(0, 0, 0, 125),
+        shadow: SCHEME.shadow,
     }
 }
 
@@ -182,6 +213,108 @@ mod tests {
             ICON_PRIMARY,
         ] {
             assert_eq!((color.r, color.g), (color.g, color.b));
+        }
+    }
+
+    const fn gray(value: u8) -> Color {
+        Color::rgb(value, value, value)
+    }
+
+    // The values each palette function returned before it was derived from
+    // SCHEME, copied as literals.
+    #[test]
+    fn every_palette_keeps_the_colors_it_had_before_the_scheme() {
+        let shadow = Color::rgba(0, 0, 0, 125);
+        let palette = |surface, raised, hover, selected, border, text, muted| ComponentPalette {
+            surface,
+            raised,
+            hover,
+            selected,
+            border,
+            text,
+            muted,
+            shadow,
+        };
+        let g = gray;
+        assert_eq!(component_palette(), palette(g(22), g(43), g(43), g(54), g(46), g(212), g(136)));
+        assert_eq!(menu_palette(), palette(g(30), g(30), g(48), g(48), g(46), g(212), g(158)));
+        assert_eq!(control_palette(), palette(g(55), g(55), g(66), g(76), g(78), g(235), g(136)));
+        assert_eq!(card_palette(), palette(g(43), g(43), g(43), g(54), g(46), g(212), g(160)));
+        assert_eq!(selector_palette(), palette(g(30), g(30), g(43), g(54), g(46), g(212), g(158)));
+        assert_eq!(segmented_palette(), palette(g(54), g(54), g(63), g(22), g(46), g(212), g(136)));
+        assert_eq!(sidebar_palette(), palette(g(43), g(43), g(51), g(54), g(46), g(212), g(136)));
+
+        let ink = Color::rgb(1, 2, 3);
+        let destructive = Color::rgb(255, 92, 92);
+        for (surface, hover, selected) in [
+            (g(22), g(43), g(54)),
+            (g(32), g(43), g(54)),
+            (g(43), g(51), g(54)),
+            (g(54), g(62), g(54)),
+            (g(246), g(254), g(54)),
+            (g(255), g(255), g(255)),
+            (destructive, destructive, destructive),
+            (Color::TRANSPARENT, g(43), g(54)),
+        ] {
+            assert_eq!(
+                action_palette(surface, ink),
+                palette(surface, surface, hover, selected, g(46), ink, g(136)),
+                "{surface:?}"
+            );
+        }
+
+        assert_eq!(HOVER, g(34));
+        assert_eq!(hover_for(g(43)), g(51));
+        assert_eq!(hover_for(destructive), destructive);
+        assert_eq!(hover_for(Color::rgba(250, 250, 250, 9)), Color::rgba(255, 255, 255, 9));
+    }
+
+    #[test]
+    fn the_solid_icon_and_skeleton_rows_match_the_helpers_limn_absorbed() {
+        use openide_ui::{DrawCommand, Icon, Size, SkeletonGroup, UiTree};
+
+        for icon in [
+            Icon::PanelLeft,
+            Icon::PanelRight,
+            Icon::Bell,
+            Icon::Folder,
+            Icon::Play,
+            Icon::Grid,
+            Icon::Settings,
+            Icon::Palette,
+            Icon::Laptop,
+            Icon::Terminal,
+            Icon::Keyboard,
+            Icon::Chat,
+            Icon::Users,
+            Icon::Puzzle,
+            Icon::Server,
+            Icon::Book,
+            Icon::Clock,
+            Icon::Bolt,
+            Icon::Archive,
+            Icon::ChartBar,
+            Icon::Search,
+            Icon::SettingsFill,
+            Icon::PanelLeftClose,
+        ] {
+            assert_eq!(icon.filled(), legacy_filled_icon(icon));
+        }
+
+        let commands = |rows: Vec<Element>, width: f32| -> Vec<DrawCommand> {
+            let mut tree = UiTree::new(Element::column(rows));
+            tree.set_reduced_motion(true);
+            tree.layout(Size::new(width, 400.0)).commands
+        };
+        for width in [220.0, 760.0] {
+            for (count, row_height, icon) in [(4, 30.0, false), (3, 26.0, true), (6, 34.0, true)] {
+                let limn = SkeletonGroup::rows("progress", component_palette(), count)
+                    .row_height(row_height)
+                    .icon(icon)
+                    .into_rows();
+                let legacy = legacy_skeleton_rows("progress", count, row_height, icon);
+                assert_eq!(commands(limn, width), commands(legacy, width));
+            }
         }
     }
 
@@ -241,9 +374,10 @@ pub fn text_px(value: impl Into<String>, px: f32, ink: Color) -> Element {
         .foreground(ink)
 }
 
-/// Placeholder rows for a list whose items are still loading. `id` keeps the
-/// pulse in phase across rebuilds; rows vary in length so they read as text.
-pub fn skeleton_rows(id: &str, rows: usize, row_height: f32, icon: bool) -> Vec<Element> {
+/// `SkeletonGroup::rows` as it was before limn absorbed it; kept for the
+/// parity test until the final audit.
+#[cfg(test)]
+fn legacy_skeleton_rows(id: &str, rows: usize, row_height: f32, icon: bool) -> Vec<Element> {
     use openide_ui::{Component, Skeleton};
     (0..rows)
         .map(|row| {
@@ -274,9 +408,10 @@ pub fn skeleton_rows(id: &str, rows: usize, row_height: f32, icon: bool) -> Vec<
         .collect()
 }
 
-/// The solid form of an icon, for the active or selected item of a list. An
-/// icon without one is returned as it is.
-pub fn filled_icon(icon: openide_ui::Icon) -> openide_ui::Icon {
+/// `Icon::filled` as it was before limn absorbed it; kept for the parity
+/// test until the final audit.
+#[cfg(test)]
+fn legacy_filled_icon(icon: openide_ui::Icon) -> openide_ui::Icon {
     use openide_ui::Icon;
     match icon {
         Icon::PanelLeft => Icon::PanelLeftOpen,

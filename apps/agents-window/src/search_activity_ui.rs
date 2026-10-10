@@ -373,7 +373,7 @@ pub(crate) fn build(item: &TranscriptItem, state: &ViewState) -> Option<Element>
         format!("conversation_detail:{owner}:{disclosure}"),
         bounded(display_target, 300),
         Element::column(body).gap(3.0),
-        theme::interactive_palette(),
+        theme::component_palette(),
     )
     .icon(if name == "web_fetch" {
         Icon::Globe
@@ -496,7 +496,7 @@ pub(crate) fn hosted(item: &TranscriptItem, state: &ViewState) -> Element {
         format!("conversation_detail:{owner}:{id}"),
         bounded(target, 300),
         Element::column(rows).gap(3.0),
-        theme::interactive_palette(),
+        theme::component_palette(),
     )
     .icon(if action == "search" {
         Icon::Search

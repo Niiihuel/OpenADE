@@ -4,7 +4,7 @@
 //! action IDs; an optional action is rendered only when it is supplied.
 
 use openide_ui::{
-    Alert, Color, Component, ComponentPalette, Element, FontFamily, Icon, PreferencesGroup, Skeleton,
+    Alert, Color, Component, Element, FontFamily, Icon, PreferencesGroup, Skeleton,
 };
 
 pub use openide_ui::AlertTone as FeedbackTone;
@@ -146,17 +146,6 @@ pub fn settings_row(
 
 /// The colors of a Settings card: the card surface, a border that barely
 /// separates it from the page, and the subtle label ink.
-fn card_palette() -> ComponentPalette {
-    ComponentPalette {
-        surface: theme::CARD,
-        raised: theme::CARD,
-        border: theme::BORDER,
-        text: theme::FOREGROUND,
-        muted: theme::SETTINGS_FOREGROUND_SUBTLE,
-        ..theme::component_palette()
-    }
-}
-
 /// A card with hairline separators between supplied rows.
 pub fn settings_card(rows: Vec<Element>) -> Element {
     settings_group("", rows)
@@ -166,7 +155,7 @@ pub fn settings_card(rows: Vec<Element>) -> Element {
 /// This is limn's preference group in the Settings colors, so every page,
 /// whatever builds its rows, shares one card.
 pub fn settings_group(title: impl Into<String>, rows: Vec<Element>) -> Element {
-    PreferencesGroup::new(title, rows, card_palette()).render()
+    PreferencesGroup::new(title, rows, theme::card_palette()).render()
 }
 
 fn state_panel(

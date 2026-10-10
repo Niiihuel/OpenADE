@@ -57,7 +57,7 @@ impl MarkdownPresentation {
             colors: [
                 theme::FOREGROUND,
                 theme::BRAND,
-                Color::rgb(194, 194, 194),
+                theme::EMPHASIS_INK,
                 theme::USER,
                 theme::SELECTED,
                 theme::FOREGROUND_SUBTLE,
@@ -1041,7 +1041,7 @@ fn span_element(run: &InlineRun, size: f32) -> TextSpan {
         InlineKind::Normal => theme::FOREGROUND,
         InlineKind::Strong => theme::BRAND,
         InlineKind::Link => theme::LINK,
-        InlineKind::Emphasis => Color::rgb(194, 194, 194),
+        InlineKind::Emphasis => theme::EMPHASIS_INK,
         InlineKind::Code => theme::USER,
     };
     let mut span = TextSpan::new(

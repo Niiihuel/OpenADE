@@ -2,6 +2,10 @@
 
 use crate::{Color, Component, ComponentPalette, Element, FontFamily};
 
+/// Ink of a meter that is full, and of one past four fifths.
+const USAGE_FULL: Color = Color::rgb(235, 115, 119);
+const USAGE_HIGH: Color = Color::rgb(225, 169, 65);
+
 fn context_text(value: impl Into<String>, color: Color, size: f32) -> Element {
     Element::text(value)
         .font_family(FontFamily::Sans)
@@ -25,8 +29,8 @@ fn percent_label(fraction: f32) -> String {
 
 fn usage_color(fraction: Option<f32>, palette: ComponentPalette) -> Color {
     match fraction {
-        Some(value) if value >= 1.0 => Color::rgb(235, 115, 119),
-        Some(value) if value >= 0.8 => Color::rgb(225, 169, 65),
+        Some(value) if value >= 1.0 => USAGE_FULL,
+        Some(value) if value >= 0.8 => USAGE_HIGH,
         Some(_) => palette.text,
         None => palette.muted,
     }

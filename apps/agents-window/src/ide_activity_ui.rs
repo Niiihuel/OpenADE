@@ -73,7 +73,7 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
         ],
         inner,
     );
-    let commit = Button::new("ide_git_commit", "Commit y publicación", chrome::palette())
+    let commit = Button::new("ide_git_commit", "Commit y publicación", crate::theme::sidebar_palette())
         .icon(Icon::Check)
         .variant(ButtonVariant::Outline)
         .size(ControlSize::Compact)

@@ -1678,7 +1678,7 @@ pub(crate) fn jump_to_bottom_control() -> Element {
         UiIconButton::new(
             "jump_to_bottom",
             Icon::ArrowDown,
-            theme::action_palette(Color::rgb(246, 246, 246), Color::rgb(32, 32, 32)),
+            theme::action_palette(theme::INVERSE_SURFACE, theme::INVERSE_INK),
         )
         .variant(ButtonVariant::Subtle)
         .size(ControlSize::Regular)

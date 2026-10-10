@@ -232,7 +232,7 @@ pub(super) fn pagination_controls(total: usize, page: usize, sidebar: bool) -> E
     let previous_id = format!("{prefix}_prev");
     let next_id = format!("{prefix}_next");
     let previous = Tooltip::new(
-        IconButton::new(&previous_id, Icon::ArrowLeft, theme::interactive_palette())
+        IconButton::new(&previous_id, Icon::ArrowLeft, theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
             .enabled(page > 0)
@@ -244,7 +244,7 @@ pub(super) fn pagination_controls(total: usize, page: usize, sidebar: bool) -> E
     )
     .render();
     let next = Tooltip::new(
-        IconButton::new(&next_id, Icon::ArrowRight, theme::interactive_palette())
+        IconButton::new(&next_id, Icon::ArrowRight, theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
             .enabled(page + 1 < pages)
@@ -299,7 +299,7 @@ fn category_control(state: &MarketplaceViewState) -> Element {
         Button::new(
             "marketplace_category_toggle",
             state.category.as_deref().unwrap_or("Todas las categorías"),
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .icon(Icon::ChevronDown)
         .variant(ButtonVariant::Outline)
@@ -350,7 +350,7 @@ pub(super) fn search_controls(state: &MarketplaceViewState, width: f32, sidebar:
             IconButton::new(
                 "ide_marketplace_explore_search",
                 Icon::ArrowRight,
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Ghost)
             .button_size(ButtonSize::IconExtraSmall)
@@ -369,7 +369,7 @@ pub(super) fn search_controls(state: &MarketplaceViewState, width: f32, sidebar:
         Button::new(
             "marketplace_explore_search",
             "Buscar",
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .variant(ButtonVariant::Outline)
         .size(ControlSize::Compact)
@@ -453,7 +453,7 @@ fn explore_status(state: &MarketplaceViewState, width: f32) -> Element {
             Button::new(
                 "marketplace_explore_retry",
                 "Reintentar",
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
@@ -491,7 +491,7 @@ fn update_status(state: &MarketplaceViewState) -> Element {
         IconButton::new(
             "marketplace_check_updates",
             Icon::Refresh,
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Compact)
@@ -622,7 +622,7 @@ fn item_card_content(
             IconButton::new(
                 format!("marketplace_details:{}", item.id),
                 Icon::InfoCircle,
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
@@ -720,7 +720,7 @@ fn item_card_content(
         let install = Button::new(
             format!("marketplace_install:{}", item.id),
             "Instalar",
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .variant(ButtonVariant::Outline)
         .size(ControlSize::Compact)
@@ -742,7 +742,7 @@ fn item_card_content(
                     Button::new(
                         format!("marketplace_update:{}", item.id),
                         "Actualizar",
-                        theme::interactive_palette(),
+                        theme::component_palette(),
                     )
                     .variant(ButtonVariant::Outline)
                     .size(ControlSize::Compact)
@@ -882,7 +882,7 @@ fn source_form_footer(state: &MarketplaceViewState) -> Element {
         Button::new(
             "marketplace_source_cancel",
             "Cancelar",
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .variant(ButtonVariant::Outline)
         .size(ControlSize::Compact)
@@ -977,7 +977,7 @@ fn empty_catalog(state: &MarketplaceViewState) -> Element {
             Button::new(
                 "marketplace_empty_all",
                 "Explorar catálogo",
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
@@ -1035,7 +1035,7 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
                 Button::new(
                     format!("marketplace_open_source:{}", item.id),
                     "Abrir origen",
-                    theme::interactive_palette(),
+                    theme::component_palette(),
                 )
                 .icon(Icon::Github)
                 .variant(ButtonVariant::Outline)
@@ -1099,7 +1099,7 @@ fn detail_body(state: &MarketplaceViewState, item: &MarketplaceItem, description
             Button::new(
                 format!("marketplace_open_source:{}", item.id),
                 "Abrir origen",
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .icon(Icon::Github)
             .variant(ButtonVariant::Outline)
@@ -1157,7 +1157,7 @@ fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Elemen
                     } else {
                         "Activar"
                     },
-                    theme::interactive_palette(),
+                    theme::component_palette(),
                 )
                 .variant(ButtonVariant::Outline)
                 .size(ControlSize::Compact)
@@ -1168,7 +1168,7 @@ fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Elemen
                 Button::new(
                     format!("marketplace_details_uninstall:{}", item.id),
                     "Desinstalar",
-                    theme::interactive_palette(),
+                    theme::component_palette(),
                 )
                 .variant(ButtonVariant::Outline)
                 .size(ControlSize::Compact)
@@ -1184,7 +1184,7 @@ fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Elemen
                 Button::new(
                     format!("marketplace_details_update:{}", item.id),
                     "Actualizar",
-                    theme::interactive_palette(),
+                    theme::component_palette(),
                 )
                 .variant(ButtonVariant::Outline)
                 .size(ControlSize::Compact)
@@ -1202,7 +1202,7 @@ fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Elemen
             Button::new(
                 "marketplace_details_scope_user",
                 "Usuario",
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
@@ -1213,7 +1213,7 @@ fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Elemen
             Button::new(
                 "marketplace_details_scope_workspace",
                 "Proyecto",
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
@@ -1229,7 +1229,7 @@ fn detail_footer(state: &MarketplaceViewState, item: &MarketplaceItem) -> Elemen
             Button::new(
                 format!("marketplace_details_install:{}", item.id),
                 "Instalar",
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Outline)
             .size(ControlSize::Compact)
@@ -1338,7 +1338,7 @@ fn catalog_surface(
     let refresh = IconButton::new(
         "marketplace_refresh",
         Icon::Refresh,
-        theme::interactive_palette(),
+        theme::component_palette(),
     )
     .variant(ButtonVariant::Ghost)
     .size(ControlSize::Regular)
@@ -1370,7 +1370,7 @@ fn catalog_surface(
         IconButton::new(
             "marketplace_add_menu",
             Icon::Add,
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .variant(ButtonVariant::Outline)
         .size(ControlSize::Regular)
@@ -1382,7 +1382,7 @@ fn catalog_surface(
         Button::new(
             "marketplace_add_menu",
             "Agregar origen",
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .icon(Icon::Add)
         .variant(ButtonVariant::Outline)

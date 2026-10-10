@@ -363,7 +363,7 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
         } else {
             ("browser_restart", "Reintentar")
         };
-        let retry = Button::new(action_id, action_label, theme::interactive_palette())
+        let retry = Button::new(action_id, action_label, theme::component_palette())
             .variant(ButtonVariant::Secondary)
             .enabled(!browser.installing)
             .loading(browser.installing)
@@ -372,7 +372,7 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
         let edit = Button::new(
             "browser_focus_url",
             "Editar dirección",
-            theme::interactive_palette(),
+            theme::component_palette(),
         )
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Compact)
@@ -388,7 +388,7 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
             Button::new(
                 "browser_focus_url",
                 "Escribir dirección",
-                theme::interactive_palette(),
+                theme::component_palette(),
             )
             .variant(ButtonVariant::Secondary)
             .size(ControlSize::Compact)

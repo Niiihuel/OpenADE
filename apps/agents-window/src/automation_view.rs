@@ -569,7 +569,7 @@ fn action(
     icon: Option<Icon>,
     variant: ButtonVariant,
 ) -> Element {
-    let mut button = Button::new(id, title, theme::interactive_palette())
+    let mut button = Button::new(id, title, theme::component_palette())
         .variant(variant)
         .size(ControlSize::Regular);
     if let Some(icon) = icon {
@@ -579,7 +579,7 @@ fn action(
 }
 
 fn icon_action(id: String, icon: Icon, tooltip: &str, enabled: bool) -> Element {
-    IconButton::new(id, icon, theme::interactive_palette())
+    IconButton::new(id, icon, theme::component_palette())
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Regular)
         .tooltip(tooltip)

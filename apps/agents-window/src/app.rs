@@ -6132,11 +6132,7 @@ impl AgentsWindow {
             workspace: PathBuf::from(&view.workspace),
         });
         let reduced_motion = settings_preferences.reduced_motion;
-        let text_menu_palette = openide_ui::ComponentPalette {
-            hover: crate::theme::INPUT,
-            selected: crate::theme::SELECTED,
-            ..crate::theme::menu_palette()
-        };
+        let text_menu_palette = crate::theme::selector_palette();
         let mut tree = UiTree::new(Element::spacer());
         tree.set_reduced_motion(reduced_motion);
         tree.set_context_menu_palette(text_menu_palette);

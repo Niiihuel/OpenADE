@@ -12,7 +12,7 @@ use std::{
 use openide_core::TurnMode;
 use openide_ui::{
     Attachment, AttachmentOrientation, Button, ButtonVariant, Color, Component,
-    ComponentPalette, Composer, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
+    Composer, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
     Element, ElementKind, FontFamily, Icon, IconButton, MenuMotion, PopoverPlacement,
     SearchField, SelectorSizing, Skeleton, Tooltip, TooltipItem, TooltipPlacement,
 };
@@ -38,15 +38,7 @@ const CONTEXT_HEIGHT: f32 = 28.0;
 const CONTEXT_STRIP_HEIGHT: f32 = 32.0;
 const CONTEXT_STRIP_INSET: f32 = 8.0;
 const CONTEXT_STRIP_PADDING: f32 = 4.0;
-const PILL_SURFACE: Color = Color::rgb(38, 38, 38);
-const MUTED_INK: Color = Color::rgb(117, 117, 117);
-const SEND_BLUE: Color = Color::rgb(37, 113, 251);
-const SELECTOR_CARD: Color = theme::MENU_SURFACE;
-const SELECTOR_PILL: Color = theme::INPUT;
-const SELECTOR_PILL_HOVER: Color = theme::SELECTED;
-const SELECTOR_INK: Color = theme::FOREGROUND;
-const SELECTOR_MUTED: Color = theme::MENU_MUTED;
-const SELECTOR_HAIRLINE: Color = theme::BORDER;
+use crate::theme::{MUTED_INK, PILL_SURFACE, SEND_BLUE};
 
 #[derive(Clone, Copy)]
 pub(crate) struct ComposerProps<'a> {
@@ -795,45 +787,32 @@ fn preview_effort<'a>(props: &'a ComposerProps<'_>) -> Option<(usize, usize, &'a
     Some((index, levels.len(), levels[index].1.as_str()))
 }
 
-fn selector_palette() -> ComponentPalette {
-    ComponentPalette {
-        surface: SELECTOR_CARD,
-        raised: SELECTOR_CARD,
-        hover: SELECTOR_PILL,
-        selected: SELECTOR_PILL_HOVER,
-        border: SELECTOR_HAIRLINE,
-        text: SELECTOR_INK,
-        muted: SELECTOR_MUTED,
-        shadow: theme::menu_palette().shadow,
-    }
-}
-
 fn selector_row(id: &str, title: &str, value: &str, icon: Icon, width: f32) -> Element {
     let sizing = SelectorSizing::COMPACT;
     let body_height = sizing.detail_row_height - sizing.padding * 2.0;
-    selector_palette()
+    theme::selector_palette()
         .interactive_surface(
             Element::clickable(
                 id,
                 Element::row(vec![
                     Element::icon(icon)
-                        .foreground(SELECTOR_MUTED)
+                        .foreground(theme::MENU_MUTED)
                         .size(Some(sizing.icon_size), Some(body_height)),
                     Element::column(vec![
                         Element::truncated_text(title)
                             .font_family(FontFamily::Sans)
                             .font_size(sizing.label_size)
-                            .foreground(SELECTOR_INK)
+                            .foreground(theme::FOREGROUND)
                             .size(None, Some(body_height / 2.0)),
                         Element::truncated_text(value)
                             .font_family(FontFamily::Sans)
                             .font_size(sizing.detail_size)
-                            .foreground(SELECTOR_MUTED)
+                            .foreground(theme::MENU_MUTED)
                             .size(None, Some(body_height / 2.0)),
                     ])
                     .flex(1.0),
                     Element::icon(Icon::ChevronRight)
-                        .foreground(SELECTOR_MUTED)
+                        .foreground(theme::MENU_MUTED)
                         .size(Some(sizing.icon_size), Some(body_height)),
                 ])
                 .gap(sizing.gap),
@@ -869,17 +848,17 @@ fn effort_panel(props: &ComposerProps<'_>, width: f32) -> Element {
         // Center the current tier in the space between the two actions.
         // A flexible label keeps both margins equal as its text changes.
         let mut items = vec![
-            selector_palette()
+            theme::selector_palette()
                 .interactive_surface(Element::clickable(
                     "composer_advanced_back",
                     Element::row(vec![
                         Element::icon(Icon::ArrowLeft)
-                            .foreground(SELECTOR_MUTED)
+                            .foreground(theme::MENU_MUTED)
                             .size(Some(sizing.icon_size), Some(sizing.icon_size)),
                         Element::truncated_text("Esfuerzo")
                             .font_family(FontFamily::Sans)
                             .font_size(sizing.label_size)
-                            .foreground(SELECTOR_INK)
+                            .foreground(theme::FOREGROUND)
                             .size(
                                 Some(
                                     back_width
@@ -913,7 +892,7 @@ fn effort_panel(props: &ComposerProps<'_>, width: f32) -> Element {
         ];
         if has_default {
             items.push(
-                selector_palette()
+                theme::selector_palette()
                     .interactive_surface(Element::clickable(
                         "composer_effort:default",
                         Element::truncated_text("Auto")
@@ -922,7 +901,7 @@ fn effort_panel(props: &ComposerProps<'_>, width: f32) -> Element {
                             .foreground(if props.selected_effort == "default" {
                                 theme::EFFORT_BLUE
                             } else {
-                                SELECTOR_MUTED
+                                theme::MENU_MUTED
                             })
                             .center_content()
                             .size(
@@ -931,7 +910,7 @@ fn effort_panel(props: &ComposerProps<'_>, width: f32) -> Element {
                             ),
                     ))
                     .background(if props.selected_effort == "default" {
-                        SELECTOR_PILL
+                        theme::INPUT
                     } else {
                         Color::TRANSPARENT
                     })
@@ -960,7 +939,7 @@ fn effort_panel(props: &ComposerProps<'_>, width: f32) -> Element {
             })
             .font_family(FontFamily::Sans)
             .font_size(sizing.detail_size)
-            .foreground(SELECTOR_MUTED)
+            .foreground(theme::MENU_MUTED)
             .size(Some(width), Some(sizing.row_height)),
         );
     }
@@ -1017,7 +996,7 @@ fn model_provider_section(
     collapsed: bool,
     width: f32,
 ) -> Element {
-    let palette = selector_palette();
+    let palette = theme::selector_palette();
     let sizing = SelectorSizing::CATALOG;
     palette
         .interactive_surface(
@@ -1065,7 +1044,7 @@ struct ModelPickerRow<'a> {
 
 impl ModelPickerRow<'_> {
     fn render(self) -> Element {
-        let palette = selector_palette();
+        let palette = theme::selector_palette();
         let sizing = SelectorSizing::CATALOG;
         let body_height = sizing.row_height;
         let row_padding = (sizing.detail_row_height - body_height) / 2.0;
@@ -1195,14 +1174,14 @@ fn model_list_header(width: f32) -> Element {
         IconButton::new(
             "composer_model_list_toggle",
             Icon::ArrowLeft,
-            selector_palette(),
+            theme::selector_palette(),
         )
         .label("Modelo")
         .variant(ButtonVariant::Subtle)
         .size(ControlSize::Compact)
         .width((width - ControlSize::Compact.height() - sizing.gap).max(0.0))
         .render(),
-        IconButton::new("composer_routes_refresh", Icon::Refresh, selector_palette())
+        IconButton::new("composer_routes_refresh", Icon::Refresh, theme::selector_palette())
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
             .tooltip("Actualizar listado de proveedores")
@@ -1218,7 +1197,7 @@ fn model_list_header(width: f32) -> Element {
 }
 
 fn model_list_fixed_header(props: &ComposerProps<'_>, width: f32) -> Element {
-    let mut palette = selector_palette();
+    let mut palette = theme::selector_palette();
     palette.raised = theme::INPUT;
     Element::column(vec![
         model_list_header(width),
@@ -1336,7 +1315,7 @@ fn model_route_tooltip(
         .model_metadata
         .and_then(|models| models.get(&route.route_id))
         .unwrap_or(&fallback);
-    let mut tooltip = Tooltip::new(anchor, tooltip_id, &route.model_name, selector_palette())
+    let mut tooltip = Tooltip::new(anchor, tooltip_id, &route.model_name, theme::selector_palette())
         .placement(TooltipPlacement::Left)
         .max_width(SelectorSizing::CATALOG.tooltip_width)
         .footer(format!(
@@ -1580,7 +1559,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                         .render(),
                         &action_id,
                         format!("{provider_id} · {id}"),
-                        selector_palette(),
+                        theme::selector_palette(),
                     )
                     .placement(TooltipPlacement::Left)
                     .max_width(sizing.tooltip_width)
@@ -1679,7 +1658,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                 })
                 .font_family(FontFamily::Sans)
                 .font_size(sizing.label_size)
-                .foreground(selector_palette().muted)
+                .foreground(theme::selector_palette().muted)
                 .padding(sizing.padding)
                 .size(Some(inner_width), None),
             ));
@@ -1817,7 +1796,7 @@ fn model_effort_group(props: &ComposerProps<'_>, compact: bool) -> Option<Elemen
     let mut parts = vec![Element::truncated_text(model)
         .font_family(FontFamily::Sans)
         .font_size(12.0)
-        .foreground(SELECTOR_INK)
+        .foreground(theme::FOREGROUND)
         .size(None, Some(16.0))
         .max_width(model_budget)];
     if !visible_effort.is_empty() {
@@ -1825,14 +1804,14 @@ fn model_effort_group(props: &ComposerProps<'_>, compact: bool) -> Option<Elemen
             Element::truncated_text(visible_effort)
                 .font_family(FontFamily::Sans)
                 .font_size(12.0)
-                .foreground(SELECTOR_MUTED)
+                .foreground(theme::MENU_MUTED)
                 .size(None, Some(16.0))
                 .max_width(effort_width),
         );
     }
     parts.push(
         Element::icon(Icon::ChevronDown)
-            .foreground(SELECTOR_MUTED)
+            .foreground(theme::MENU_MUTED)
             .size(Some(12.0), Some(16.0)),
     );
     let visual = Element::row(parts).gap(6.0).size(None, Some(16.0));
@@ -1869,7 +1848,7 @@ fn model_effort_group(props: &ComposerProps<'_>, compact: bool) -> Option<Elemen
         menu_entries,
         open,
         "composer_model_dismiss",
-        selector_palette(),
+        theme::selector_palette(),
     )
     .context_menu_style()
     .width(menu_width)
@@ -1893,12 +1872,12 @@ fn model_effort_group(props: &ComposerProps<'_>, compact: bool) -> Option<Elemen
                 **content = Element::column(vec![
                     body.flex(1.0),
                     Element::spacer()
-                        .background(SELECTOR_HAIRLINE)
+                        .background(theme::BORDER)
                         .size(None, Some(1.0)),
                     Button::new(
                         "composer_connect_provider",
                         "Conectar proveedor",
-                        selector_palette(),
+                        theme::selector_palette(),
                     )
                     .icon(Icon::Add)
                     .variant(ButtonVariant::Ghost)
@@ -2137,7 +2116,7 @@ fn attachment_rows(props: &ComposerProps<'_>) -> Vec<Element> {
         "composer_attachments",
         Element::column(rows).gap(8.0).size(Some(inner_width), None),
     )
-    .appearance(openide_ui::ScrollbarAppearance::reserved().tint(SELECTOR_MUTED))
+    .appearance(openide_ui::ScrollbarAppearance::reserved().tint(theme::MENU_MUTED))
     .render()
     .size(Some(viewport_width), Some(height.min(160.0)))]
 }
@@ -2207,7 +2186,7 @@ fn expand_control(props: &ComposerProps<'_>) -> Element {
         } else {
             Icon::Expand
         },
-        theme::action_palette(PILL_SURFACE, SELECTOR_MUTED),
+        theme::action_palette(PILL_SURFACE, theme::MENU_MUTED),
     )
     .variant(ButtonVariant::Ghost)
     .size(ControlSize::Compact)
@@ -3849,8 +3828,8 @@ pub(crate) mod tests {
         let frame = tree.layout(Size::new(620.0, 520.0));
         assert!(frame.commands.iter().any(|command| matches!(command,
             DrawCommand::FillRect { color, radius, .. }
-                if color.r == SELECTOR_CARD.r && color.g == SELECTOR_CARD.g
-                    && color.b == SELECTOR_CARD.b && *radius == 6.0
+                if color.r == theme::MENU_SURFACE.r && color.g == theme::MENU_SURFACE.g
+                    && color.b == theme::MENU_SURFACE.b && *radius == 6.0
         )));
         assert!(!frame.commands.iter().any(|command| matches!(command,
             DrawCommand::Text { text, .. } if text == "Velocidad" || text == "No disponible"
@@ -3930,14 +3909,14 @@ pub(crate) mod tests {
             assert!(
                 frame.commands.iter().any(|command| matches!(command,
                     DrawCommand::FillRect { rect, color, .. }
-                    if same_rect(*rect, highlighted) && *color == SELECTOR_PILL
+                    if same_rect(*rect, highlighted) && *color == theme::INPUT
                 )),
                 "{expected_id}: expected {highlighted:?}; surfaces: {:?}",
                 frame
                     .commands
                     .iter()
                     .filter_map(|command| match command {
-                        DrawCommand::FillRect { rect, color, .. } if *color == SELECTOR_PILL =>
+                        DrawCommand::FillRect { rect, color, .. } if *color == theme::INPUT =>
                             Some(*rect),
                         _ => None,
                     })
@@ -3945,7 +3924,7 @@ pub(crate) mod tests {
             );
             assert!(!frame.commands.iter().any(|command| matches!(command,
                 DrawCommand::FillRect { rect, color, .. }
-                    if same_rect(*rect, idle) && *color == SELECTOR_PILL
+                    if same_rect(*rect, idle) && *color == theme::INPUT
             )));
         }
     }
@@ -3994,7 +3973,7 @@ pub(crate) mod tests {
             assert!(frame.commands.iter().any(
                 |c| matches!(c, DrawCommand::Text { text, .. } if text == "Para el próximo mensaje")
             ));
-            assert!(frame.commands.iter().any(|c| matches!(c, DrawCommand::FillRect { color, radius, .. } if *color == SELECTOR_CARD && *radius == 6.0)));
+            assert!(frame.commands.iter().any(|c| matches!(c, DrawCommand::FillRect { color, radius, .. } if *color == theme::MENU_SURFACE && *radius == 6.0)));
         }
     }
 
@@ -4486,7 +4465,7 @@ pub(crate) mod tests {
                     && (rect.y - refresh.y).abs() < 0.001
                     && (rect.width - refresh.width).abs() < 0.001
                     && (rect.height - refresh.height).abs() < 0.001
-                    && *color == selector_palette().hover
+                    && *color == theme::selector_palette().hover
         )));
         assert!(!hovered.commands.iter().any(|command| matches!(command,
             DrawCommand::FillRect { rect, color, .. }
@@ -4494,7 +4473,7 @@ pub(crate) mod tests {
                     && (rect.y - back.y).abs() < 0.001
                     && (rect.width - back.width).abs() < 0.001
                     && (rect.height - back.height).abs() < 0.001
-                    && *color == selector_palette().hover
+                    && *color == theme::selector_palette().hover
         )));
     }
 
@@ -4658,7 +4637,7 @@ pub(crate) mod tests {
                         rect,
                         color,
                         radius,
-                    } if *color == SELECTOR_CARD && *radius == 6.0 => Some(rect.height),
+                    } if *color == theme::MENU_SURFACE && *radius == 6.0 => Some(rect.height),
                     _ => None,
                 })
                 .expect("opaque model menu shell")

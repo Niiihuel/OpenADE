@@ -56,7 +56,7 @@ fn tool_on_surface_shortcut(
     let palette = theme::action_palette(surface, theme::FOREGROUND);
     // An active control wears the solid form of its icon, where it has one.
     let icon = if active {
-        theme::filled_icon(icon)
+        icon.filled()
     } else {
         icon
     };
@@ -384,7 +384,7 @@ fn agent_tab(id: Option<&str>, title: &str, icon: Icon, active: bool, width: f32
     };
     let label = Element::row(vec![
         Element::icon(if active {
-            theme::filled_icon(icon)
+            icon.filled()
         } else {
             icon
         })
@@ -515,7 +515,7 @@ fn agent_list(state: &ViewState, width: f32, height: f32) -> Element {
             id,
             Element::row(vec![
                 Element::icon(if selected {
-                    theme::filled_icon(icon)
+                    icon.filled()
                 } else {
                     icon
                 })
@@ -1268,8 +1268,8 @@ mod tests {
             ("window_mode_toggle", None),
             ("ide_terminal_toggle", Some(Icon::PanelBottom)),
             // Both side panels are open, so their toggles wear the solid form.
-            ("ide_agent_toggle", Some(theme::filled_icon(Icon::PanelRight))),
-            ("ide_explorer_toggle", Some(theme::filled_icon(Icon::PanelLeft))),
+            ("ide_agent_toggle", Some(Icon::PanelRight.filled())),
+            ("ide_explorer_toggle", Some(Icon::PanelLeft.filled())),
             ("ide_agent_new_toggle", Some(Icon::Add)),
         ] {
             let control = rect(&frame, id);

@@ -113,7 +113,7 @@ fn terminal_row(snapshot: &TerminalSnapshot, index: usize, width: f32) -> Elemen
                 );
             }
             if run.style.selected {
-                background = Some(Color::rgb(61, 76, 96));
+                background = Some(theme::TERMINAL_SELECTION);
                 foreground = theme::BRAND;
             }
             // PTY rows are already laid out in cells. Keep each styled run on

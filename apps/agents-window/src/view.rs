@@ -5550,7 +5550,7 @@ pub(crate) mod tests {
             "dock_tabs_menu",
             Icon::Menu,
             crate::dock_tab_ui::TOOL_SIZE,
-            theme::interactive_palette().hover,
+            theme::component_palette().hover,
         );
         assert_dock_icon_hover_geometry(
             side_pane(&state, 430.0),
@@ -5558,7 +5558,7 @@ pub(crate) mod tests {
             "toggle_side_pane",
             Icon::PanelRightClose,
             crate::dock_tab_ui::TOOL_SIZE,
-            theme::interactive_palette().hover,
+            theme::component_palette().hover,
         );
     }
 

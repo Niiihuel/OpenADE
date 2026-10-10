@@ -1,7 +1,7 @@
 //! Shared density and interaction surfaces for workspace sidebars.
 use crate::theme;
 use openide_ui::{
-    ButtonSize, ButtonVariant, Component, ComponentPalette, ControlSize, Element, FontFamily, Icon,
+    ButtonSize, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon,
     IconButton, SearchField, Tooltip, TooltipPlacement,
 };
 
@@ -12,10 +12,6 @@ pub(crate) const SEARCH_HEIGHT: f32 = 28.0;
 pub(crate) const TOOL_SIZE: f32 = ControlSize::Dense.height();
 pub(crate) const NAV_ROW_HEIGHT: f32 = 28.0;
 pub(crate) const ACCOUNT_FOOTER_HEIGHT: f32 = TOOL_SIZE + INSET * 2.0;
-
-pub(crate) fn palette() -> ComponentPalette {
-    theme::action_palette(theme::SIDEBAR, theme::FOREGROUND)
-}
 
 pub(crate) fn title(text: impl Into<String>) -> Element {
     Element::truncated_text(text)
@@ -35,7 +31,7 @@ pub(crate) fn header(label: Element, actions: Vec<Element>, width: f32) -> Eleme
 
 pub(crate) fn tool(id: &str, action: &str, icon: Icon, hint: &str) -> Element {
     Tooltip::new(
-        IconButton::new(id, icon, palette())
+        IconButton::new(id, icon, theme::sidebar_palette())
             .variant(ButtonVariant::Ghost)
             .button_size(ButtonSize::IconExtraSmall)
             .render()

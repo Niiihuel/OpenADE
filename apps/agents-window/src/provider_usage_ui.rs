@@ -22,8 +22,6 @@ use crate::{
     view::ViewState,
 };
 
-const WARNING: Color = Color::rgb(224, 179, 106);
-const TRACK: Color = Color::rgb(66, 66, 66);
 const POPUP_WIDTH: f32 = 320.0;
 const POPUP_BODY_MAX_HEIGHT: f32 = 320.0;
 
@@ -142,7 +140,7 @@ fn usage_color(percent: f64) -> Color {
     if percent >= 100.0 {
         theme::DESTRUCTIVE
     } else if percent >= 80.0 {
-        WARNING
+        theme::WARNING
     } else {
         theme::FOREGROUND
     }
@@ -290,7 +288,7 @@ fn progress(window: &UsageWindow) -> Option<Element> {
         );
     }
     if fill < 100.0 {
-        pieces.push(Element::spacer().background(TRACK).flex(100.0 - fill));
+        pieces.push(Element::spacer().background(theme::TRACK).flex(100.0 - fill));
     }
     Some(
         Element::row(pieces)
@@ -373,7 +371,7 @@ fn account_card(
             snapshot.status,
             ProviderUsageStatus::Error | ProviderUsageStatus::NeedsSignIn
         ) {
-        WARNING
+        theme::WARNING
     } else {
         theme::SETTINGS_FOREGROUND_SUBTLE
     };
@@ -677,7 +675,7 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
             notice,
             10.5,
             if stale(snapshot, now) || snapshot.status == ProviderUsageStatus::NeedsSignIn {
-                WARNING
+                theme::WARNING
             } else {
                 theme::FOREGROUND_SUBTLE
             },
@@ -803,7 +801,7 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
                 updated(&snapshot, now_ms())
             ),
             if out_of_date || snapshot.status == ProviderUsageStatus::NeedsSignIn {
-                WARNING
+                theme::WARNING
             } else {
                 color
             },

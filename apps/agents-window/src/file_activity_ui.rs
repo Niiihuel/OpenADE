@@ -59,7 +59,7 @@ pub(crate) fn icon_action(id: String, icon: Icon, hint: &str) -> Element {
 
 fn icon_action_alias(id: String, action: String, icon: Icon, hint: &str) -> Element {
     Tooltip::new(
-        IconButton::new(&id, icon, theme::interactive_palette())
+        IconButton::new(&id, icon, theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .button_size(ButtonSize::IconExtraSmall)
             .render()
@@ -438,7 +438,7 @@ pub(crate) fn build(
             ));
         }
     }
-    let mut palette = theme::interactive_palette();
+    let mut palette = theme::component_palette();
     palette.surface = theme::CODE_SURFACE;
     let body = Element::column(body).gap(6.0);
     let body = if name == "read_file" {

@@ -116,7 +116,7 @@ fn percentage(fraction: f32) -> String {
 fn usage_ink(fraction: Option<f32>) -> Color {
     match fraction {
         Some(value) if value >= 1.0 => theme::DESTRUCTIVE,
-        Some(value) if value >= 0.8 => Color::rgb(225, 169, 65),
+        Some(value) if value >= 0.8 => theme::CONTEXT_WARNING,
         _ => theme::FOREGROUND,
     }
 }

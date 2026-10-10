@@ -15,10 +15,7 @@ use openide_ui::{
 
 pub(crate) const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 const TOOL_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
-const ACTIVE_PANE_INDICATOR: openide_ui::Color = openide_ui::Color {
-    a: 140,
-    ..theme::FOREGROUND_SUBTLE
-};
+use crate::theme::ACTIVE_PANE_INDICATOR;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TerminalControlsView {
@@ -199,7 +196,7 @@ fn session_selector(state: &ViewState, panel_width: f32) -> Element {
                 Button::new(
                     "terminal_rename_dismiss",
                     "Cancelar",
-                    theme::interactive_palette(),
+                    theme::component_palette(),
                 )
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Compact)

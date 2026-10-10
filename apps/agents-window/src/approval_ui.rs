@@ -450,7 +450,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, width: f32, height: f32) -
         return base;
     };
     let summary = summary(name, arguments);
-    let palette = theme::interactive_palette();
+    let palette = theme::component_palette();
     // What will happen, in the user's terms, and the exact target.
     let mut sections = vec![
         paragraph(summary.description, false, false),

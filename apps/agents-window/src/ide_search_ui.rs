@@ -14,7 +14,7 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
         content_width,
     );
     let case = Tooltip::new(
-        chrome::palette()
+        theme::sidebar_palette()
             .interactive_surface(Element::clickable(
                 "ide_search_case",
                 label(
@@ -42,7 +42,7 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
     .placement(TooltipPlacement::Below)
     .render();
     let submit = Tooltip::new(
-        UiIconButton::new("ide_search_submit", Icon::Search, chrome::palette())
+        UiIconButton::new("ide_search_submit", Icon::Search, theme::sidebar_palette())
             .variant(ButtonVariant::Ghost)
             .enabled(!search.query.trim().is_empty())
             .render()
@@ -108,7 +108,7 @@ pub(super) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
             .size(None, Some(16.0));
         rows.push(
             Tooltip::new(
-                chrome::palette()
+                theme::sidebar_palette()
                     .interactive_surface(Element::clickable(
                         &id,
                         Element::column(vec![title, snippet]).gap(1.0),

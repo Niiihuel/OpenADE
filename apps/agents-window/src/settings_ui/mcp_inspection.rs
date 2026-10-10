@@ -4,7 +4,7 @@
 use super::{mcp_action_button_loading, page_note, subtle, text};
 use crate::mcp_inspection::{McpInspectionPhase, McpInspectionUiState};
 use crate::{settings_parts, theme};
-use openide_ui::{Component, Element, FontFamily, Icon, ScrollArea};
+use openide_ui::{Component, Element, FontFamily, Icon, ScrollArea, SkeletonGroup};
 
 pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
     let mut rows = vec![page_note(
@@ -35,13 +35,11 @@ pub(super) fn render(state: &McpInspectionUiState, compact: bool) -> Element {
     rows.push(subtle(status).padding(settings_parts::ROW_PADDING));
     if state.phase == McpInspectionPhase::Running {
         rows.push(
-            Element::column(theme::skeleton_rows(
-                "mcp_inspection_progress",
-                3,
-                26.0,
-                true,
-            ))
-            .padding(settings_parts::ROW_PADDING),
+            SkeletonGroup::rows("mcp_inspection_progress", theme::component_palette(), 3)
+                .row_height(26.0)
+                .icon(true)
+                .render()
+                .padding(settings_parts::ROW_PADDING),
         );
     }
     if state.is_busy() {

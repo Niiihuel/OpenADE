@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use openide_ui::{
     Color, Component, ControlSize, Element, Empty, FontFamily, Icon, Kbd, Point,
-    ScrollArea, ScrollbarAppearance, Search, SegmentedControl, Separator, Tab, Tooltip,
+    ScrollArea, ScrollbarAppearance, Search, SegmentedControl, Separator, SkeletonGroup, Tab,
+    Tooltip,
 };
 
 use super::ViewState;
@@ -28,6 +29,15 @@ fn inset(child: Element) -> Element {
         child.flex(1.0),
         Element::spacer().size(Some(8.0), None),
     ])
+}
+
+/// Placeholder rows shown while a search is still producing results.
+fn search_placeholders(rows: usize) -> impl Iterator<Item = Element> {
+    SkeletonGroup::rows("command_search_progress", theme::component_palette(), rows)
+        .row_height(ROW_HEIGHT)
+        .icon(true)
+        .into_rows()
+        .into_iter()
 }
 
 fn effective_scope(state: &ViewState) -> Scope {
@@ -233,11 +243,7 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
     let results = if state.command_results.is_empty() {
         let body = if state.command_search_loading {
             let rows = ((results_height / ROW_HEIGHT) as usize).min(6);
-            let mut placeholders: Vec<_> =
-                theme::skeleton_rows("command_search_progress", rows, ROW_HEIGHT, true)
-                    .into_iter()
-                    .map(inset)
-                    .collect();
+            let mut placeholders: Vec<_> = search_placeholders(rows).map(inset).collect();
             placeholders.push(Element::spacer().flex(1.0));
             Element::column(placeholders).size(None, Some(results_height))
         } else {
@@ -295,11 +301,7 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
             ));
         }
         if state.command_search_loading {
-            entries.extend(
-                theme::skeleton_rows("command_search_progress", 1, ROW_HEIGHT, true)
-                    .into_iter()
-                    .map(inset),
-            );
+            entries.extend(search_placeholders(1).map(inset));
         }
         let entries = Arc::new(entries);
         ScrollArea::uniform_list("command_results", entries.len(), ROW_HEIGHT, move |row| {

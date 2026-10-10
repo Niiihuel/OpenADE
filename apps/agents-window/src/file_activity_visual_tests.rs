@@ -843,7 +843,7 @@ fn expanded_read_uses_one_frame_captured_line_numbers_and_an_inset_collapse_hove
             .iter()
             .filter_map(|command| match command {
                 DrawCommand::FillRect { rect, color, .. }
-                    if *color == crate::theme::interactive_palette().hover =>
+                    if *color == crate::theme::component_palette().hover =>
                 {
                     Some(*rect)
                 }

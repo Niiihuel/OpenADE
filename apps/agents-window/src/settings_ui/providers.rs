@@ -12,7 +12,7 @@ use crate::{
 };
 use openide_ui::{
     ActionRow, Button, ButtonVariant, Component, ControlSize, CornerRadii, Element, FontFamily,
-    Icon, Modal, ScrollArea, SearchField, Spinner, TextField,
+    Icon, Modal, ScrollArea, SearchField, SkeletonGroup, Spinner, TextField,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -389,13 +389,10 @@ fn model_list(state: &ViewState, id: &str, width: f32) -> Element {
     let rows = model_rows(state, id, &query);
     if rows.is_empty() {
         if connected(state, id) && state.catalog_refreshing {
-            return Element::column(theme::skeleton_rows(
-                "catalog_models_progress",
-                4,
-                30.0,
-                false,
-            ))
-            .padding(10.0);
+            return SkeletonGroup::rows("catalog_models_progress", theme::component_palette(), 4)
+                .row_height(30.0)
+                .render()
+                .padding(10.0);
         }
         return subtle(if !connected(state, id) {
             "Conecta este proveedor para consultar los modelos de tu cuenta."

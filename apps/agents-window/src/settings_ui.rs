@@ -28,7 +28,7 @@ pub(crate) use skills_preview::modal as native_skill_preview_modal;
 use openide_core::SessionSort;
 use openide_harness::{CommandIsolation, ExecDecision, HookPhase, LocalTool, SkillOrigin};
 use openide_ui::{
-    Button, ButtonVariant, Color, Component, ComponentPalette, ControlSize, DropdownList,
+    Button, ButtonVariant, Color, Component, ControlSize, DropdownList,
     DropdownOption, Element, FontFamily, Icon, IconButton as UiIconButton, Kbd, Modal,
     PopoverPlacement, ScrollArea, ScrollbarAppearance, SearchField, SelectorSizing, Separator,
     Switch, TextArea, TextField,
@@ -293,17 +293,7 @@ fn field(id: &str, value: &str, placeholder: &str) -> Element {
 /// Settings controls need their own visible edge above the surrounding card.
 /// Keep this local so quiet navigation and the rest of the native chrome retain
 /// their existing treatment.
-pub(crate) fn control_palette() -> ComponentPalette {
-    ComponentPalette {
-        surface: Color::rgb(55, 55, 55),
-        raised: Color::rgb(55, 55, 55),
-        hover: Color::rgb(66, 66, 66),
-        selected: Color::rgb(76, 76, 76),
-        border: Color::rgb(78, 78, 78),
-        text: Color::rgb(235, 235, 235),
-        ..theme::component_palette()
-    }
-}
+pub(crate) use crate::theme::control_palette;
 
 /// A read-only value. It is plain text so it is not mistaken for a control.
 fn value_badge(value: impl Into<String>) -> Element {
@@ -421,7 +411,7 @@ fn nav_item(page: SettingsPage, active: bool) -> Element {
     UiIconButton::new(
         page.action_id(),
         if active {
-            theme::filled_icon(page.icon())
+            page.icon().filled()
         } else {
             page.icon()
         },
@@ -2634,7 +2624,7 @@ mod tests {
                 )));
                 let active = UiTree::new(nav_item(*page, true)).layout(Size::new(260.0, 28.0));
                 assert!(active.commands.iter().any(|command| matches!(command,
-                    DrawCommand::Icon { icon, .. } if *icon == theme::filled_icon(page.icon())
+                    DrawCommand::Icon { icon, .. } if *icon == page.icon().filled()
                 )));
             }
         }

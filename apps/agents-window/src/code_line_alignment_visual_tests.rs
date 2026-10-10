@@ -144,7 +144,7 @@ impl Surface {
                     .height(188.0)
                     .palette(crate::theme::component_palette())
                     .render(),
-                crate::theme::interactive_palette(),
+                crate::theme::component_palette(),
             )
             .status("Vista previa · contenido capturado")
             .expanded(true)

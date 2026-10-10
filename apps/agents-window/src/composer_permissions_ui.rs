@@ -174,14 +174,6 @@ pub(crate) fn control_width(
     (label.chars().count() as f32 * 7.0 + 76.0).clamp(80.0, 180.0)
 }
 
-fn selector_palette() -> ComponentPalette {
-    ComponentPalette {
-        hover: theme::interactive_palette().hover,
-        selected: theme::interactive_palette().selected,
-        ..theme::menu_palette()
-    }
-}
-
 pub(crate) fn selector(props: ComposerPermissionsProps<'_>) -> Element {
     let native = props.backend == "native";
     let selected = preset_for_permissions(props.permissions, props.full_access);
@@ -228,7 +220,7 @@ pub(crate) fn selector(props: ComposerPermissionsProps<'_>) -> Element {
         trigger_label,
         ComponentPalette {
             text: theme::FOREGROUND_SUBTLE,
-            ..selector_palette()
+            ..theme::selector_palette()
         },
     )
     .icon(icon)
@@ -313,7 +305,7 @@ pub(crate) fn selector(props: ComposerPermissionsProps<'_>) -> Element {
         options,
         props.open && native,
         "dismiss:composer_permissions",
-        selector_palette(),
+        theme::selector_palette(),
     )
     .heading("Modo y permisos")
     .description(
