@@ -524,8 +524,9 @@ pub(crate) fn model_stream_item(
     }
 }
 
-// The palette whose secondary text is the status ink: `ToolActivity` until
-// S16, and the parity copies of the markers that now take `.ink`.
+// The palette whose secondary text is the status ink, for the parity copies
+// of the markers that now take `.ink`.
+#[cfg(test)]
 fn marker_palette(surface: Color, ink: Color) -> openide_ui::ComponentPalette {
     let mut palette = theme::action_palette(surface, ink);
     palette.muted = ink;
@@ -1008,8 +1009,9 @@ pub(crate) fn tool_line_with_output(
         detail_action(state, &disclosure),
         &presentation.title,
         Element::column(details).gap(7.0),
-        marker_palette(theme::BACKGROUND, ink),
+        theme::action_palette(theme::BACKGROUND, ink),
     )
+    .ink(ink)
     .icon(presentation.icon)
     .target(&presentation.target)
     .command(presentation.kind == ToolKind::Command)
@@ -1163,15 +1165,7 @@ fn terminal_activity(
         body.push(Separator::horizontal(theme::component_palette()).render());
         let content = Element::column(content).gap(4.0);
         body.push(if expanded {
-            let content = Element::column(vec![
-                Element::spacer().size(None, Some(8.0)),
-                Element::row(vec![
-                    Element::spacer().size(Some(8.0), None),
-                    content.flex(1.0),
-                    Element::spacer().size(Some(8.0), None),
-                ]),
-                Element::spacer().size(None, Some(2.0)),
-            ]);
+            let content = openide_ui::activity_body_inset(content);
             ScrollArea::new(
                 format!(
                     "tool-result:{owner}:{id}:{}",
@@ -1205,24 +1199,27 @@ fn terminal_activity(
         );
     }
     let failed = *is_error || *activity == ActivityStatus::Failed;
-    let mut palette = theme::component_palette();
-    palette.surface = theme::CODE_SURFACE;
+    let mut terminal = ToolActivity::new(
+        &disclosure,
+        title,
+        Element::column(body),
+        theme::code_palette(),
+    )
+    .terminal(true)
+    .tooltip(tooltip)
+    .icon(Icon::Terminal)
+    .expanded(expanded)
+    .running(*activity == ActivityStatus::Running && !failed)
+    .header_action(
+        UiIconButton::new(format!("tool:{id}"), Icon::More, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .tooltip("Inspeccionar actividad")
+            .size(ControlSize::Dense)
+            .render(),
+    );
     if failed {
-        palette.muted = theme::DESTRUCTIVE;
+        terminal = terminal.ink(theme::DESTRUCTIVE);
     }
-    let mut terminal = ToolActivity::new(&disclosure, title, Element::column(body), palette)
-        .terminal(true)
-        .tooltip(tooltip)
-        .icon(Icon::Terminal)
-        .expanded(expanded)
-        .running(*activity == ActivityStatus::Running && !failed)
-        .header_action(
-            UiIconButton::new(format!("tool:{id}"), Icon::More, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .tooltip("Inspeccionar actividad")
-                .size(ControlSize::Dense)
-                .render(),
-        );
     let status = if failed {
         Some("Error")
     } else {

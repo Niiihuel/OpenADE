@@ -2,6 +2,7 @@
 
 use crate::{
     Button, ButtonVariant, Component, ComponentPalette, ControlSize, Element, FontFamily, Icon,
+    Text, TextRole,
 };
 
 /// A compact, controlled request summary for a transcript or composer notice.
@@ -85,6 +86,84 @@ impl Component for ApprovalRequest {
         } else {
             vec![
                 waiting(&self.status, 11.0),
+                Text::new(self.title, self.palette).truncate().render(),
+            ]
+        };
+        if let Some(target) = self
+            .target
+            .filter(|target| !self.compact && !target.is_empty())
+        {
+            summary.push(
+                Text::new(target, self.palette)
+                    .role(TextRole::Small)
+                    .mono()
+                    .muted()
+                    .truncate()
+                    .render(),
+            );
+        }
+        let review = Button::new(
+            self.identity.unwrap_or_else(|| self.review_id.clone()),
+            "Revisar",
+            self.palette,
+        )
+        .variant(ButtonVariant::Outline)
+        .size(if self.compact {
+            ControlSize::Dense
+        } else {
+            ControlSize::Compact
+        })
+        .render()
+        .dispatch_as(self.review_id);
+        Element::panel(
+            Element::row(vec![
+                Element::column(vec![
+                    Element::spacer().flex(1.0),
+                    Element::icon(self.icon)
+                        .foreground(self.palette.muted)
+                        .size(Some(16.0), Some(16.0)),
+                    Element::spacer().flex(1.0),
+                ])
+                .size(Some(16.0), None),
+                Element::column(summary).gap(4.0).flex(1.0),
+                Element::column(vec![
+                    Element::spacer().flex(1.0),
+                    review,
+                    Element::spacer().flex(1.0),
+                ]),
+            ])
+            .gap(8.0),
+        )
+        .padding(if self.compact { 8.0 } else { 10.0 })
+        .background(self.palette.surface)
+        .border(self.palette.border, 1.0)
+        .radius(8.0)
+    }
+}
+
+// The body before its text moved to limn's Text, kept for the parity test.
+#[cfg(test)]
+impl ApprovalRequest {
+    fn legacy_render(self) -> Element {
+        // The status moves like streaming text: the turn is alive and waiting.
+        let waiting = |status: &str, size: f32| {
+            Element::shimmer_truncated_text(
+                format!(
+                    "{}:status",
+                    self.identity.as_deref().unwrap_or(&self.review_id)
+                ),
+                status,
+                self.palette.text,
+            )
+            .font_family(FontFamily::Sans)
+            .font_size(size)
+            .foreground(self.palette.muted)
+        };
+        let mut summary = if self.compact {
+            vec![waiting(&self.status, 12.0)]
+        } else {
+            vec![
+                waiting(&self.status, 11.0),
                 Element::truncated_text(self.title)
                     .font_family(FontFamily::Sans)
                     .font_size(12.0)
@@ -145,6 +224,31 @@ impl Component for ApprovalRequest {
 mod tests {
     use super::*;
     use crate::{HitKind, Key, Size, UiAction, UiEvent, UiTree};
+
+    #[test]
+    fn the_request_on_limn_text_matches_the_body_it_replaced() {
+        for width in [240.0, 720.0] {
+            for compact in [false, true] {
+                let request = || {
+                    ApprovalRequest::new(
+                        "review",
+                        "Eliminar archivo",
+                        ComponentPalette::neutral_dark(),
+                    )
+                    .compact(compact)
+                    .target("src/una/carpeta/con/un/nombre/bastante/largo/documentación.md")
+                };
+                let frame = |element| {
+                    let mut tree = UiTree::new(Element::column(vec![element]));
+                    tree.set_reduced_motion(true);
+                    tree.layout(Size::new(width, 120.0))
+                };
+                let (old, new) = (frame(request().legacy_render()), frame(request().render()));
+                assert_eq!(old.commands, new.commands, "compact {compact} at {width}");
+                assert_eq!(format!("{:?}", old.regions), format!("{:?}", new.regions));
+            }
+        }
+    }
 
     #[test]
     fn composer_reminder_is_compact_and_keeps_review_reachable() {

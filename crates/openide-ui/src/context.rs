@@ -1,8 +1,9 @@
 //! Composable context usage presentation; all measurements belong to the host.
 
-use crate::{Color, Component, ComponentPalette, Element, FontFamily};
+use crate::{Color, Component, ComponentPalette, Element, FontFamily, Separator, Text, TextRole};
 
-/// Ink of a meter that is full, and of one past four fifths.
+/// Ink of a meter that is full, and of one past four fifths, until the host
+/// passes its own with `usage_inks`.
 const USAGE_FULL: Color = Color::rgb(235, 115, 119);
 const USAGE_HIGH: Color = Color::rgb(225, 169, 65);
 
@@ -27,10 +28,14 @@ fn percent_label(fraction: f32) -> String {
     }
 }
 
-fn usage_color(fraction: Option<f32>, palette: ComponentPalette) -> Color {
+fn usage_color(
+    fraction: Option<f32>,
+    (high, full): (Color, Color),
+    palette: ComponentPalette,
+) -> Color {
     match fraction {
-        Some(value) if value >= 1.0 => USAGE_FULL,
-        Some(value) if value >= 0.8 => USAGE_HIGH,
+        Some(value) if value >= 1.0 => full,
+        Some(value) if value >= 0.8 => high,
         Some(_) => palette.text,
         None => palette.muted,
     }
@@ -224,7 +229,7 @@ impl Component for ContextUsage {
                 palette,
             ));
         }
-        let ink = usage_color(self.fraction, palette);
+        let ink = usage_color(self.fraction, (USAGE_HIGH, USAGE_FULL), palette);
         let mut overview = vec![context_text(self.summary, ink, 20.0)];
         if !self.total.is_empty() {
             overview.push(context_text(self.total, palette.muted, 12.0));
@@ -389,6 +394,7 @@ pub struct ContextMeter {
     compact: bool,
     percent: Option<u8>,
     fraction: Option<Option<f32>>,
+    usage_inks: (Color, Color),
     palette: ComponentPalette,
 }
 
@@ -399,8 +405,14 @@ impl ContextMeter {
             compact: false,
             percent: percent.map(|value| value.min(100)),
             fraction: None,
+            usage_inks: (USAGE_HIGH, USAGE_FULL),
             palette,
         }
+    }
+    /// The host's inks for a meter past four fifths and for a full one.
+    pub fn usage_inks(mut self, high: Color, full: Color) -> Self {
+        self.usage_inks = (high, full);
+        self
     }
     /// Prefer an exact measurement over the legacy integer percentage. An
     /// explicit None clears the measurement instead of falling back to zero.
@@ -422,20 +434,13 @@ impl Component for ContextMeter {
             .fraction
             .unwrap_or_else(|| self.percent.map(|value| value as f32 / 100.0));
         let label = fraction.map_or_else(|| "Contexto".to_owned(), percent_label);
-        let ink = usage_color(fraction, self.palette);
+        let ink = usage_color(fraction, self.usage_inks, self.palette);
         let mut content =
             vec![Element::progress_ring(fraction, self.palette.border, ink)
                 .size(Some(16.0), Some(16.0))];
         if !self.compact {
-            content.push(context_text(
-                label,
-                if fraction.is_some() {
-                    ink
-                } else {
-                    self.palette.muted
-                },
-                12.0,
-            ));
+            // Without a measurement `ink` is already the palette's muted.
+            content.push(Text::new(label, self.palette).ink(ink).render());
         }
         self.palette
             .interactive_surface(Element::clickable(
@@ -504,6 +509,47 @@ impl ContextContent {
 }
 impl Component for ContextContent {
     fn render(self) -> Element {
+        let palette = self.palette;
+        let small = |value: String| {
+            Text::new(value, palette)
+                .role(TextRole::Small)
+                .muted()
+                .render()
+        };
+        let mut content = vec![
+            Text::new(self.title, palette).render(),
+            small(self.description),
+        ];
+        for (title, rows) in self.sections {
+            let mut group = vec![
+                Separator::horizontal(palette).render(),
+                Text::new(title, palette).render(),
+            ];
+            for row in rows {
+                let mut parts = vec![Element::row(vec![
+                    Text::new(row.label, palette).muted().render().flex(1.0),
+                    Text::new(row.value, palette).render().flex(1.0),
+                ])
+                .gap(12.0)];
+                if let Some(description) = row.description {
+                    parts.push(small(description));
+                }
+                group.push(Element::column(parts).gap(4.0));
+            }
+            content.push(Element::column(group).gap(6.0));
+        }
+        if let Some(footer) = self.footer {
+            content.push(small(footer));
+        }
+        Element::column(content).gap(10.0).padding(10.0)
+    }
+}
+
+// The bodies before they moved to limn's Text and Separator, kept for the
+// parity test.
+#[cfg(test)]
+impl ContextContent {
+    fn legacy_render(self) -> Element {
         let text = |value: String, color: Color, size: f32| {
             Element::text(value)
                 .font_family(FontFamily::Sans)
@@ -542,9 +588,106 @@ impl Component for ContextContent {
 }
 
 #[cfg(test)]
+impl ContextMeter {
+    fn legacy_render(self) -> Element {
+        let fraction = self
+            .fraction
+            .unwrap_or_else(|| self.percent.map(|value| value as f32 / 100.0));
+        let label = fraction.map_or_else(|| "Contexto".to_owned(), percent_label);
+        let ink = usage_color(fraction, (USAGE_HIGH, USAGE_FULL), self.palette);
+        let mut content =
+            vec![Element::progress_ring(fraction, self.palette.border, ink)
+                .size(Some(16.0), Some(16.0))];
+        if !self.compact {
+            content.push(context_text(
+                label,
+                if fraction.is_some() {
+                    ink
+                } else {
+                    self.palette.muted
+                },
+                12.0,
+            ));
+        }
+        self.palette
+            .interactive_surface(Element::clickable(
+                self.id,
+                Element::column(vec![
+                    Element::spacer().flex(1.0),
+                    Element::row(content).gap(6.0).size(None, Some(16.0)),
+                    Element::spacer().flex(1.0),
+                ]),
+            ))
+            .padding(6.0)
+            .min_size(0.0, 28.0)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{DrawCommand, Key, Size, UiAction, UiEvent, UiTree};
+
+    fn same_frames(old: impl Fn() -> Element, new: impl Fn() -> Element) {
+        for width in [300.0, 660.0] {
+            let frame = |element| {
+                let mut tree = UiTree::new(Element::column(vec![element]));
+                tree.set_reduced_motion(true);
+                tree.layout(Size::new(width, 420.0))
+            };
+            let (old, new) = (frame(old()), frame(new()));
+            assert_eq!(old.commands, new.commands, "at {width}");
+            assert_eq!(format!("{:?}", old.regions), format!("{:?}", new.regions));
+        }
+    }
+
+    #[test]
+    fn details_and_meter_on_limn_text_match_the_bodies_they_replaced() {
+        let palette = ComponentPalette::neutral_dark();
+        let details = || {
+            ContextContent::new("Detalles del contexto", "Proveedor · modelo", palette)
+                .section(
+                    "Última respuesta",
+                    vec![
+                        ContextRow::new("Entrada", "24 000 tokens"),
+                        ContextRow::new("Razonamiento", "3 000 tokens")
+                            .description("Incluido en la salida reportada por el proveedor."),
+                    ],
+                )
+                .section(
+                    "Límites",
+                    vec![ContextRow::new("Ventana", "100 000 tokens")],
+                )
+                .footer("Caché y razonamiento ya están incluidos en los tokens reportados.")
+        };
+        same_frames(|| details().legacy_render(), || details().render());
+        for fraction in [None, Some(0.0), Some(0.42), Some(0.8), Some(1.0)] {
+            for compact in [false, true] {
+                let meter = || {
+                    ContextMeter::new("context", None, palette)
+                        .fraction(fraction)
+                        .compact(compact)
+                };
+                same_frames(|| meter().legacy_render(), || meter().render());
+            }
+        }
+    }
+
+    #[test]
+    fn the_meter_takes_its_threshold_inks_from_the_host() {
+        let (high, full) = (Color::rgb(1, 2, 3), Color::rgb(4, 5, 6));
+        for (fraction, ink) in [(0.8, high), (1.0, full)] {
+            let mut tree = UiTree::new(
+                ContextMeter::new("context", None, ComponentPalette::neutral_dark())
+                    .fraction(Some(fraction))
+                    .usage_inks(high, full)
+                    .render(),
+            );
+            let frame = tree.layout(Size::new(120.0, 32.0));
+            assert!(frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::ProgressRing { fill, .. } if *fill == ink)));
+        }
+    }
     #[test]
     fn compact_usage_bar_uses_measured_fractions_and_explicit_actions() {
         let palette = ComponentPalette::neutral_dark();

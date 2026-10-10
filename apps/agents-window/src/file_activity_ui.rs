@@ -420,28 +420,15 @@ pub(crate) fn build(
             ));
         }
     }
-    let mut palette = theme::component_palette();
-    palette.surface = theme::CODE_SURFACE;
-    let body = Element::column(body).gap(6.0);
-    let body = if name == "read_file" {
-        Element::column(vec![
-            Element::spacer().size(None, Some(8.0)),
-            Element::row(vec![
-                Element::spacer().size(Some(8.0), None),
-                body.flex(1.0),
-                Element::spacer().size(Some(8.0), None),
-            ]),
-            Element::spacer().size(None, Some(2.0)),
-        ])
-    } else {
-        body
-    };
     let mut card = FileActivity::new(
         format!("conversation_detail:{owner}:{disclosure}"),
         filename,
-        body,
-        palette,
+        Element::column(body).gap(6.0),
+        theme::code_palette(),
     )
+    // An edit's body is the diff view, which brings its own inset.
+    .body_inset(name == "read_file")
+    .diff_inks(theme::ACTIVITY_ADDED, theme::ACTIVITY_REMOVED)
     .path(parent)
     .status(if confirmed_edit {
         String::new()

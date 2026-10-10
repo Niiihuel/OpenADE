@@ -410,6 +410,7 @@ pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
     let trigger = Tooltip::new(
         ContextMeter::new("composer_context_toggle", None, theme::component_palette())
             .fraction(fraction)
+            .usage_inks(theme::CONTEXT_WARNING, theme::CONTEXT_FULL)
             .compact(props.width < 490.0)
             .render()
             .size(Some(control_width(props)), Some(28.0)),

@@ -16,6 +16,6 @@ pub use approval_request::ApprovalRequest;
 pub use context::{
     ContextContent, ContextMeter, ContextRow, ContextSegment, ContextUsage, ContextUsageRow,
 };
-pub use file_activity::FileActivity;
+pub use file_activity::{activity_body_inset, FileActivity};
 pub use permission_selector::{PermissionOption, PermissionSelector};
 pub use tool_activity::ToolActivity;

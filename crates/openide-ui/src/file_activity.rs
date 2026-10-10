@@ -4,7 +4,8 @@
 //! files, calculate diffs, infer success, or treat streamed arguments as writes.
 
 use crate::{
-    Color, Component, ComponentPalette, Element, FontFamily, Icon, Tooltip, TooltipPlacement,
+    Card, CardDensity, Color, Component, ComponentPalette, Element, FontFamily, Icon, Separator,
+    Text, TextRole, Tooltip, TooltipPlacement,
 };
 
 const HEADER_HEIGHT: f32 = 28.0;
@@ -13,6 +14,7 @@ const HEADER_INSET: f32 = 6.0;
 const CONTROL_SIDE: f32 = 24.0;
 const FILENAME_PADDING: f32 = 3.0;
 const ICON_SIDE: f32 = 14.0;
+/// The inks of the counts until the host passes its own with `diff_inks`.
 const ADDED: Color = Color::rgb(105, 210, 145);
 const REMOVED: Color = Color::rgb(240, 125, 130);
 
@@ -30,6 +32,8 @@ pub struct FileActivity {
     compact: bool,
     running: bool,
     stats: Option<(usize, usize)>,
+    diff_inks: (Color, Color),
+    body_inset: bool,
     actions: Vec<Element>,
     open_action: Option<(String, String)>,
     note: Option<String>,
@@ -59,6 +63,8 @@ impl FileActivity {
             compact: false,
             running: false,
             stats: None,
+            diff_inks: (ADDED, REMOVED),
+            body_inset: false,
             actions: Vec::new(),
             open_action: None,
             note: None,
@@ -105,6 +111,19 @@ impl FileActivity {
         self
     }
 
+    /// The host's colors for the added and the removed count.
+    pub fn diff_inks(mut self, added: Color, removed: Color) -> Self {
+        self.diff_inks = (added, removed);
+        self
+    }
+
+    /// Hold the body off the frame with [`activity_body_inset`], for content
+    /// that brings no inset of its own.
+    pub fn body_inset(mut self, inset: bool) -> Self {
+        self.body_inset = inset;
+        self
+    }
+
     /// Compact 24px controls, usually one or two icon buttons. Their action IDs
     /// are independent of the disclosure and remain available when it is closed.
     pub fn actions(mut self, actions: Vec<Element>) -> Self {
@@ -138,6 +157,20 @@ impl FileActivity {
         self.icon = icon;
         self
     }
+}
+
+/// The inset of an activity's body: 8 above and beside it. The disclosure
+/// footer supplies its own inset, so only 2 below.
+pub fn activity_body_inset(content: Element) -> Element {
+    Element::column(vec![
+        Element::spacer().size(None, Some(8.0)),
+        Element::row(vec![
+            Element::spacer().size(Some(8.0), None),
+            content.flex(1.0),
+            Element::spacer().size(Some(8.0), None),
+        ]),
+        Element::spacer().size(None, Some(2.0)),
+    ])
 }
 
 fn centered_icon(icon: Icon, color: Color) -> Element {
@@ -184,6 +217,177 @@ fn status_label(id: &str, label: &str, running: bool, palette: ComponentPalette)
 
 impl Component for FileActivity {
     fn render(self) -> Element {
+        let disclosure_hint = if self.expanded {
+            "Ocultar contenido"
+        } else {
+            "Mostrar contenido"
+        };
+        let navigates = self.open_action.is_some();
+        let (filename_id, filename_action) = match self.open_action {
+            Some((id, _)) => (id.clone(), id),
+            None => (format!("{}:filename", self.id), self.id.clone()),
+        };
+        let full_path = if self.path.is_empty() {
+            self.filename.clone()
+        } else {
+            format!(
+                "{}/{}",
+                self.path.trim_end_matches(['/', '\\']),
+                self.filename
+            )
+        };
+        let mut filename = Element::button(&filename_id, &self.filename)
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(self.palette.text)
+            .dispatch_as(filename_action)
+            .padding(FILENAME_PADDING)
+            .size(None, Some(CONTROL_SIDE));
+        if navigates {
+            filename = filename.underline_on_hover();
+        }
+        let filename = Tooltip::new(filename, &filename_id, "", self.palette)
+            .description(full_path)
+            .placement(TooltipPlacement::Right)
+            .max_width(360.0)
+            .render();
+        // The title remains intrinsic inside a bounded slot. Spare space,
+        // parent path and state belong to the surrounding disclosure target.
+        let title_slot = Element::row(vec![filename, Element::spacer().flex(1.0)])
+            .clip_children()
+            .min_size(0.0, 0.0)
+            .flex(3.0);
+        let mut identity = vec![centered_icon(self.icon, self.palette.muted), title_slot];
+        if let Some((additions, deletions)) = self.stats {
+            let counts = [
+                (additions, "+", self.diff_inks.0),
+                (deletions, "−", self.diff_inks.1),
+            ]
+            .into_iter()
+            .filter(|(count, _, _)| *count > 0)
+            .map(|(count, sign, color)| {
+                Text::new(format!("{sign}{}", count_label(count)), self.palette)
+                    .role(TextRole::Small)
+                    .mono()
+                    .ink(color)
+                    .render()
+            })
+            .collect();
+            identity.push(
+                Element::column(vec![
+                    Element::spacer().flex(1.0),
+                    Element::row(counts).gap(6.0).size(None, Some(16.0)),
+                    Element::spacer().flex(1.0),
+                ])
+                .size(None, Some(CONTROL_SIDE)),
+            );
+        } else if !self.status.is_empty() {
+            // Size short states to their text so they don't take space away
+            // from the filename in a narrow card. The cap still bounds long
+            // permission/error labels; the gutter keeps both roles distinct.
+            identity.push(Element::spacer().size(Some(4.0), None));
+            identity.push(
+                Element::column(vec![
+                    Element::spacer().flex(1.0),
+                    status_label(&self.id, &self.status, self.running, self.palette).flex(0.0),
+                    Element::spacer().flex(1.0),
+                ])
+                .size(None, Some(CONTROL_SIDE))
+                .max_width(104.0),
+            );
+        }
+        let mut header = vec![Element::row(identity).gap(2.0).clip_children().flex(1.0)];
+        if !self.actions.is_empty() {
+            header.push(Element::row(self.actions).gap(2.0));
+        }
+        let disclosure = Element::panel(
+            Element::icon(if self.expanded {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            })
+            .foreground(self.palette.muted),
+        )
+        .padding((CONTROL_SIDE - ICON_SIDE) / 2.0)
+        .size(Some(CONTROL_SIDE), Some(CONTROL_SIDE));
+        header.push(disclosure);
+        let header_height = if self.compact {
+            COMPACT_HEADER_HEIGHT
+        } else {
+            HEADER_HEIGHT
+        };
+        let header_padding = (header_height - CONTROL_SIDE) / 2.0;
+        let rows = vec![Element::column(vec![
+            Element::spacer().size(None, Some(header_padding)),
+            Element::row(vec![
+                Element::spacer().size(Some(HEADER_INSET), None),
+                Element::row(header)
+                    .gap(2.0)
+                    .size(None, Some(CONTROL_SIDE))
+                    .flex(1.0),
+                Element::spacer().size(Some(HEADER_INSET), None),
+            ])
+            .size(None, Some(CONTROL_SIDE)),
+            Element::spacer().size(None, Some(header_padding)),
+        ])
+        .size(None, Some(header_height))
+        .clip_children()];
+        // UiTree resolves the innermost target once: filename/actions win over
+        // this disclosure, and only that resolved target receives hover paint.
+        let header = self.palette.interactive_surface(Element::clickable(
+            &self.id,
+            Element::column(rows).clip_children(),
+        ));
+        let mut header = Tooltip::new(header, &self.id, disclosure_hint, self.palette);
+        if let Some(detail) = self.detail {
+            header = header.description(detail);
+        } else if let Some((additions, deletions)) = self.stats {
+            header = header.description(format!("Cambios: +{additions} · −{deletions}"));
+        } else if !self.status.is_empty() {
+            header = header.description(&self.status);
+        }
+        let mut rows = vec![header.render()];
+        if let Some(note) = self.note.filter(|note| !note.is_empty()) {
+            rows.push(
+                Text::new(note, self.palette)
+                    .role(TextRole::Small)
+                    .muted()
+                    .render()
+                    .padding(8.0),
+            );
+        }
+        if self.expanded {
+            rows.push(Separator::horizontal(self.palette).render());
+            rows.push(if self.body_inset {
+                activity_body_inset(self.content)
+            } else {
+                self.content
+            });
+            rows.push(crate::collapse_footer(&self.id, self.palette));
+        }
+        let element = Element::column(rows).clip_children();
+        if self.compact && !self.expanded {
+            element
+        } else {
+            // The one pixel keeps the header's hover inside the hairline; the
+            // palette's surface is the card's fill.
+            Card::new(
+                element.padding(1.0),
+                ComponentPalette {
+                    raised: self.palette.surface,
+                    ..self.palette
+                },
+            )
+            .density(CardDensity::Flush)
+            .render()
+        }
+    }
+}
+
+// The body before the shell moved to limn, kept for the parity test.
+#[cfg(test)]
+impl FileActivity {
+    fn legacy_render(self) -> Element {
         let disclosure_hint = if self.expanded {
             "Ocultar contenido"
         } else {
@@ -369,6 +573,87 @@ mod tests {
             Element::button("file:review", "R").size(Some(CONTROL_SIDE), Some(CONTROL_SIDE)),
         ])
         .render()
+    }
+
+    #[test]
+    fn the_shell_on_limn_matches_the_body_it_replaced() {
+        let content = || Element::text("contenido leído");
+        let build = |expanded: bool, compact: bool, stats: bool, inset: bool| {
+            let make = |content| {
+                let mut palette = ComponentPalette::neutral_dark();
+                palette.surface = Color::rgb(25, 25, 25);
+                let mut card = FileActivity::new("file:call", "saludo.rs", content, palette)
+                    .path("src/conversation")
+                    .status("Leyendo")
+                    .expanded(expanded)
+                    .compact(compact)
+                    .running(!stats)
+                    .note("Permiso pendiente");
+                if stats {
+                    card = card
+                        .stats(12_345, 3)
+                        .detail("Evidencia confirmada")
+                        .actions(vec![Element::button("file:open", "O")
+                            .size(Some(CONTROL_SIDE), Some(CONTROL_SIDE))]);
+                }
+                card
+            };
+            let old = make(if inset {
+                Element::column(vec![
+                    Element::spacer().size(None, Some(8.0)),
+                    Element::row(vec![
+                        Element::spacer().size(Some(8.0), None),
+                        content().flex(1.0),
+                        Element::spacer().size(Some(8.0), None),
+                    ]),
+                    Element::spacer().size(None, Some(2.0)),
+                ])
+            } else {
+                content()
+            });
+            (
+                old.legacy_render(),
+                make(content()).body_inset(inset).render(),
+            )
+        };
+        for width in [240.0, 720.0] {
+            for case in 0..16 {
+                let (old, new) = build(case & 1 != 0, case & 2 != 0, case & 4 != 0, case & 8 != 0);
+                let frame = |element| {
+                    let mut tree = UiTree::new(Element::column(vec![element]));
+                    tree.set_reduced_motion(true);
+                    tree.layout(Size::new(width, 240.0))
+                };
+                let (old, new) = (frame(old), frame(new));
+                assert_eq!(old.commands, new.commands, "case {case} at {width}");
+                assert_eq!(
+                    format!("{:?}", old.regions),
+                    format!("{:?}", new.regions),
+                    "case {case} at {width}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_counts_take_the_inks_of_the_host() {
+        let (added, removed) = (Color::rgb(1, 2, 3), Color::rgb(4, 5, 6));
+        let mut tree = UiTree::new(
+            FileActivity::new(
+                "file:call",
+                "saludo.rs",
+                Element::spacer(),
+                ComponentPalette::neutral_dark(),
+            )
+            .stats(7, 2)
+            .diff_inks(added, removed)
+            .render(),
+        );
+        let frame = tree.layout(Size::new(360.0, 80.0));
+        for (label, ink) in [("+7", added), ("−2", removed)] {
+            assert!(frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::Text { text, color, .. } if text == label && *color == ink)));
+        }
     }
 
     #[test]

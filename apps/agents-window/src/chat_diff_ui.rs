@@ -302,15 +302,7 @@ pub(crate) fn body(state: &ViewState, tool: &str) -> Element {
     }
     // Keep the code/notes inset above and beside the body. The disclosure
     // footer supplies its own inset, so avoid a second large gap below it.
-    Element::column(vec![
-        Element::spacer().size(None, Some(8.0)),
-        Element::row(vec![
-            Element::spacer().size(Some(8.0), None),
-            Element::column(rows).gap(6.0).flex(1.0),
-            Element::spacer().size(Some(8.0), None),
-        ]),
-        Element::spacer().size(None, Some(2.0)),
-    ])
+    openide_ui::activity_body_inset(Element::column(rows).gap(6.0))
 }
 
 #[cfg(test)]
