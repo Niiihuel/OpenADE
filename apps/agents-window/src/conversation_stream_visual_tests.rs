@@ -1108,21 +1108,23 @@ fn export_terminal_timeline_native_visual_review() {
             "running",
             "expanded",
             "failed",
+            "failed-action-hover",
             "scrolled",
             "end",
         ] {
+            let failed = phase.starts_with("failed");
             let mut state = state();
             state.prompt = "Revisá el resultado antes de continuar.".into();
             state.transcript.push(TranscriptItem::Tool {
                 id: "terminal-review".into(), name: "run_command".into(),
                 arguments: json!({"command":"cargo test -p openide-ui --lib", "cwd":"/projects/openADE"}),
-                output: if phase == "running" { None } else { Some(if phase == "failed" {
+                output: if phase == "running" { None } else { Some(if failed {
                     "error: no se pudo completar la compilación\nRevisa la salida y vuelve a ejecutar las pruebas.\n".into()
                 } else {
                     (0..24).map(|index| format!("test editor::selección_unicode_{index:02} ... ok\n")).collect()
                 }) },
-                is_error: phase == "failed",
-                activity: if phase == "running" { ActivityStatus::Running } else if phase == "failed" { ActivityStatus::Failed } else { ActivityStatus::Completed },
+                is_error: failed,
+                activity: if phase == "running" { ActivityStatus::Running } else if failed { ActivityStatus::Failed } else { ActivityStatus::Completed },
             });
             if phase == "running" {
                 state.transcript.push(TranscriptItem::ToolOutput {
@@ -1157,6 +1159,19 @@ fn export_terminal_timeline_native_visual_review() {
                     position: Point::new(transcript.x + 20.0, transcript.y + 40.0),
                     delta_y: if phase == "end" { -100_000.0 } else { -160.0 },
                 });
+            }
+            if phase == "failed-action-hover" {
+                let action = tree
+                    .layout(Size::new(width, 900.0))
+                    .regions
+                    .iter()
+                    .find(|region| region.id == "tool:terminal-review")
+                    .unwrap()
+                    .rect;
+                tree.handle_event(UiEvent::PointerMove(Point::new(
+                    action.x + action.width / 2.0,
+                    action.y + action.height / 2.0,
+                )));
             }
             let frame = tree.layout(Size::new(width, 900.0));
             let path = directory.join(format!("terminal-{phase}-{width:.0}.svg"));

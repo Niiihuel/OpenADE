@@ -171,11 +171,15 @@ impl ToolActivity {
             header
         };
         let header = if let Some(action) = self.header_action {
+            // The action's 24 px hover keeps 2 px from the card's top,
+            // bottom and trailing edge alike.
+            let inset = || Element::spacer().size(Some(2.0), None);
             Element::row(vec![
                 header.flex(1.0),
+                inset(),
                 centered(action).size(Some(24.0), None),
+                inset(),
             ])
-            .gap(2.0)
             .size(None, Some(HEADER_HEIGHT))
         } else {
             header
@@ -353,7 +357,9 @@ mod tests {
                 .rect;
             assert_eq!(header.height, HEADER_HEIGHT);
             assert!(header.x + header.width <= inspect.x);
-            assert!(inspect.x + inspect.width <= width);
+            // The same 2 px margin at the trailing edge as above and below.
+            assert_eq!(inspect.x + inspect.width, width - 2.0);
+            assert_eq!((inspect.y, inspect.height), (2.0, HEADER_HEIGHT - 4.0));
             assert!((inspect.y + inspect.height / 2.0 - HEADER_HEIGHT / 2.0).abs() < 0.01);
             let point = crate::Point::new(
                 inspect.x + inspect.width / 2.0,
