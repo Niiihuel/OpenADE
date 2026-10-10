@@ -4,8 +4,8 @@ use crate::{
     theme,
 };
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton, Tooltip,
-    TooltipPlacement, TooltipSpec,
+    Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton, Text,
+    TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
@@ -17,6 +17,45 @@ fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
         } else {
             theme::FOREGROUND
         })
+}
+
+#[cfg(test)]
+fn legacy_status_line(saving: bool) -> Element {
+    text(
+        if saving {
+            "Guardando…"
+        } else {
+            "Cargando…"
+        },
+        true,
+        10.0,
+    )
+}
+
+fn status_line(saving: bool) -> Element {
+    Text::new(
+        if saving {
+            "Guardando…"
+        } else {
+            "Cargando…"
+        },
+        theme::component_palette(),
+    )
+    .role(TextRole::Micro)
+    .muted()
+    .render()
+}
+
+#[cfg(test)]
+fn legacy_error_line(error: &str) -> Element {
+    text(error, false, 11.0).foreground(theme::DESTRUCTIVE)
+}
+
+fn error_line(error: &str) -> Element {
+    Text::new(error, theme::component_palette())
+        .role(TextRole::Small)
+        .ink(theme::DESTRUCTIVE)
+        .render()
 }
 
 fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
@@ -157,18 +196,7 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
     let width = width.max(160.0);
     let mut rows = Vec::new();
     if state.saving || state.loading {
-        rows.push(
-            text(
-                if state.saving {
-                    "Guardando…"
-                } else {
-                    "Cargando…"
-                },
-                true,
-                10.0,
-            )
-            .size(Some(width), Some(20.0)),
-        );
+        rows.push(status_line(state.saving).size(Some(width), Some(20.0)));
     }
     if state.editor_open {
         rows.push(editor(state, width));
@@ -239,7 +267,7 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
         }
     }
     if let Some(error) = &state.error {
-        rows.push(text(error, false, 11.0).foreground(theme::DESTRUCTIVE));
+        rows.push(error_line(error));
     }
     Element::column(rows).gap(5.0).size(Some(width), None)
 }
@@ -248,6 +276,23 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
+
+    #[test]
+    fn status_and_error_lines_match_their_legacy_body() {
+        for saving in [true, false] {
+            crate::state_panel_parity_tests::assert_same(
+                "project actions status",
+                legacy_status_line(saving).size(Some(200.0), Some(20.0)),
+                status_line(saving).size(Some(200.0), Some(20.0)),
+            );
+        }
+        let error = "No se pudieron guardar las acciones del proyecto: permiso denegado";
+        crate::state_panel_parity_tests::assert_same(
+            "project actions error",
+            legacy_error_line(error),
+            error_line(error),
+        );
+    }
 
     #[test]
     fn saved_actions_have_explicit_launch_edit_delete_targets_and_presets_only_add() {
