@@ -4,9 +4,6 @@ use super::*;
 use openide_ui::{
     Breadcrumb, BreadcrumbItem, CodeDiff, CodeLanguage, Component, Separator,
 };
-// The row's radius is limn's now; the tests still name the size it came from.
-#[cfg(test)]
-use openide_ui::ButtonSize;
 
 const CHANGE_ROW_HEIGHT: f32 = crate::sidebar_chrome::NAV_ROW_HEIGHT;
 const CHANGE_ACTION_SIZE: f32 = crate::sidebar_chrome::TOOL_SIZE;
@@ -151,32 +148,25 @@ fn change_row(row: &ChangeRow, width: f32, pending: bool, surface: Color) -> Ele
                         .size(Some((width * 0.28).min(160.0)), Some(CHANGE_ACTION_SIZE)),
                 );
             }
+            // The row's shared surface is the control's hover.
             let control = UiIconButton::new(
                 stage_action,
                 if *prepared { Icon::Minus } else { Icon::Add },
-                palette,
+                theme::in_row(palette),
             )
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Dense)
+            .radius(RadiusRole::Square)
             .enabled(!pending)
-            .render();
-            // The row's shared surface is the control's hover.
-            let control = Tooltip::new(
-                control
-                    .background(Color::TRANSPARENT)
-                    .hover_background(Color::TRANSPARENT)
-                    .pressed_background(Color::TRANSPARENT)
-                    .radius(0.0)
-                    .transition_ms(0),
-                stage_action,
-                if *prepared {
+            .tooltip_with(
+                TooltipSpec::new(if *prepared {
                     "Quitar de preparados"
                 } else {
                     "Preparar archivo"
-                },
-                theme::component_palette(),
+                })
+                .placement(TooltipPlacement::Below)
+                .palette(theme::component_palette()),
             )
-            .placement(TooltipPlacement::Below)
             .render();
             let mut details = Vec::new();
             if let Some(parent) = parent {
@@ -224,16 +214,16 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
     let palette = theme::action_palette(surface, theme::FOREGROUND);
     match status {
         GithubStatus::Ready(github) => {
-            let mut rows = vec![Tooltip::new(
-                Button::new("github_repo_open", github.repository.full_name(), palette)
-                    .icon(Icon::Github)
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .render()
-                    .font_size(11.0),
+            let mut rows = vec![Button::new(
                 "github_repo_open",
-                "Abrir repositorio en GitHub",
-                theme::component_palette(),
+                github.repository.full_name(),
+                palette,
+            )
+            .icon(Icon::Github)
+            .variant(ButtonVariant::Ghost)
+            .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+            .tooltip_with(
+                TooltipSpec::new("Abrir repositorio en GitHub").palette(theme::component_palette()),
             )
             .render()];
             if let Some(pull) = github.pulls.first() {
@@ -244,9 +234,8 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
                         palette,
                     )
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .render()
-                    .font_size(11.0),
+                    .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+                    .render(),
                 );
             }
             // Keep repository access issues visible without making them the

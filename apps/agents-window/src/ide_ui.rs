@@ -388,23 +388,18 @@ fn agent_tab(id: Option<&str>, title: &str, icon: Icon, active: bool, width: f32
     if let Some(id) = id {
         let close = format!("ide_agent_tab_close:{id}");
         cells.push(
-            Tooltip::new(
-                UiIconButton::new(
-                    &close,
-                    Icon::Close,
-                    theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .render()
-                // The tab is 20 px tall; no control size is that small.
-                .padding(2.0)
-                .size(Some(20.0), Some(20.0)),
+            UiIconButton::new(
                 &close,
-                "Cerrar pestaña",
-                theme::component_palette(),
+                Icon::Close,
+                theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
             )
-            .placement(TooltipPlacement::Below)
+            .variant(ButtonVariant::Ghost)
+            .sizing(crate::ui_sizing::AGENT_TAB_CLOSE)
+            .tooltip_with(
+                TooltipSpec::new("Cerrar pestaña")
+                    .placement(TooltipPlacement::Below)
+                    .palette(theme::component_palette()),
+            )
             .render(),
         );
     }

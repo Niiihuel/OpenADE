@@ -137,21 +137,32 @@ fn editor(state: &ProjectActionsState, width: f32) -> Element {
                         && !state.command_draft.trim().is_empty(),
                 )
                 .render(),
-            crate::environment_ui::interactive_surface(
-                Button::new(
-                    "project_action_cancel",
-                    "Cancelar",
-                    theme::component_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .render(),
-            ),
+            Button::new(
+                "project_action_cancel",
+                "Cancelar",
+                crate::environment_ui::card_button_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .render(),
         ])
         .gap(6.0),
     ])
     .gap(5.0)
     .size(Some(width), None)
+}
+
+pub(crate) fn preset_add(id: String, enabled: bool) -> Element {
+    let button = Button::new(id, "Añadir", crate::environment_ui::card_button_palette())
+        .variant(ButtonVariant::Ghost)
+        .enabled(enabled);
+    // Disabled, the label keeps the Compact 12 px it always had.
+    if enabled {
+        button.sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+    } else {
+        button.size(ControlSize::Compact)
+    }
+    .render()
 }
 
 pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
@@ -176,17 +187,17 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
                 .muted()
                 .render(),
             );
-            rows.push(crate::environment_ui::interactive_surface(
+            rows.push(
                 Button::new(
                     "project_action_new",
                     "Crear acción",
-                    theme::component_palette(),
+                    crate::environment_ui::card_button_palette(),
                 )
                 .variant(ButtonVariant::Subtle)
                 .size(ControlSize::Compact)
                 .enabled(!state.saving)
                 .render(),
-            ));
+            );
         }
         let suggestions: Vec<_> = state
             .presets
@@ -220,17 +231,9 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
                         ])
                         .gap(1.0)
                         .flex(1.0),
-                        crate::environment_ui::interactive_surface(
-                            Button::new(
-                                format!("project_action_preset:{}", preset.id),
-                                "Añadir",
-                                theme::component_palette(),
-                            )
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Compact)
-                            .enabled(!state.saving && !state.loading)
-                            .render()
-                            .font_size(11.0),
+                        preset_add(
+                            format!("project_action_preset:{}", preset.id),
+                            !state.saving && !state.loading,
                         ),
                     ])
                     .gap(5.0)

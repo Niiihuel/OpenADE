@@ -137,6 +137,16 @@ pub fn action_palette(surface: Color, ink: Color) -> ComponentPalette {
     SCHEME.on(role, ink)
 }
 
+/// A control inside a row that hovers as a whole: it paints no fill of its
+/// own under the pointer or pressed.
+pub fn in_row(palette: ComponentPalette) -> ComponentPalette {
+    ComponentPalette {
+        hover: Color::TRANSPARENT,
+        selected: Color::TRANSPARENT,
+        ..palette
+    }
+}
+
 /// The default palette belongs to the canvas. Raised surfaces opt into
 /// action_palette/menu_palette; using sidebar hover here made every
 /// breadcrumb and shared ghost control brighter than the composer.

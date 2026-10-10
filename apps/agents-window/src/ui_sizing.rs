@@ -5,8 +5,88 @@
 //! The app's own profiles live here so a screen never restates them.
 
 use openide_ui::{
-    ActionRowSizing, FormFieldSizing, HeaderSizing, Modal, NoticeSizing, PageHeaderSizing,
-    PagerSizing, RowSizing, StatusBarItemSizing, TextRole,
+    ActionRowSizing, ButtonGroupSizing, ButtonSizing, FormFieldSizing, HeaderSizing, Modal,
+    NoticeSizing, PageHeaderSizing, PagerSizing, RowSizing, StatusBarItemSizing, TextRole,
+};
+
+/// The header's labelled navigation buttons: a 14 px label, 5 px from the edge.
+pub const NAV_BUTTON: ButtonSizing = ButtonSizing {
+    height: 32.0,
+    font_size: 14.0,
+    icon_size: 16.0,
+    horizontal_padding: 5.0,
+    inner_spacing: 6.0,
+};
+
+/// A tab row of the dock overview.
+pub const OVERVIEW_TAB: ButtonSizing = ButtonSizing {
+    height: 28.0,
+    font_size: 12.0,
+    ..NAV_BUTTON
+};
+
+/// "Solo", beside a tab row of the overview.
+pub const OVERVIEW_TAB_ACTION: ButtonSizing = ButtonSizing {
+    font_size: 10.0,
+    ..OVERVIEW_TAB
+};
+
+/// "Cerrar todas", on the overview's 24 px heading line.
+pub const OVERVIEW_HEADING_ACTION: ButtonSizing = ButtonSizing {
+    height: 24.0,
+    font_size: 11.0,
+    ..NAV_BUTTON
+};
+
+/// A Compact button with an 11 px label: the repository links and "Añadir".
+pub const SMALL_LABEL_BUTTON: ButtonSizing = ButtonSizing {
+    height: 28.0,
+    font_size: 11.0,
+    icon_size: 16.0,
+    horizontal_padding: 6.0,
+    inner_spacing: 6.0,
+};
+
+/// "Revocar": the same label in a 32 px row of granted approvals.
+pub const GRANT_ACTION: ButtonSizing = ButtonSizing {
+    height: 32.0,
+    ..SMALL_LABEL_BUTTON
+};
+
+/// The close button of a 20 px agent tab.
+pub const AGENT_TAB_CLOSE: ButtonSizing = ButtonSizing {
+    height: 20.0,
+    font_size: 12.0,
+    icon_size: 16.0,
+    horizontal_padding: 2.0,
+    inner_spacing: 6.0,
+};
+
+/// The actions of a settings entity: 8 px apart in a row, 6 in a column.
+pub const ENTITY_ACTIONS: ButtonGroupSizing = ButtonGroupSizing {
+    gap: 8.0,
+    stacked_gap: 6.0,
+};
+
+/// The actions of the native output limits card.
+pub const OUTPUT_LIMIT_ACTIONS: ButtonGroupSizing = ButtonGroupSizing {
+    gap: 8.0,
+    stacked_gap: 8.0,
+};
+
+/// The two ways out of an interrupted run.
+pub const INTERRUPTION_ACTIONS: ButtonGroupSizing = ButtonGroupSizing {
+    gap: 10.0,
+    stacked_gap: 8.0,
+};
+
+/// A keyboard shortcut: its description beside the keycaps.
+pub const SHORTCUT_ROW: ActionRowSizing = ActionRowSizing {
+    gap: 12.0,
+    copy_gap: 0.0,
+    icon_column: 0.0,
+    min_height: 38.0,
+    min_height_with_subtitle: 38.0,
 };
 
 /// A setting: its label and supporting text beside a caller-owned control.

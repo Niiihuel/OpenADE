@@ -521,12 +521,11 @@ fn append_processes(items: &mut Vec<Element>, state: &ViewState, width: f32) {
                         theme::component_palette(),
                     )
                     .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
+                    .sizing(crate::ui_sizing::GRANT_ACTION)
+                    .width(72.0)
                     .ink(theme::DESTRUCTIVE)
                     .hover_ink(theme::FOREGROUND)
-                    .render()
-                    .font_size(11.0)
-                    .size(Some(72.0), Some(32.0)),
+                    .render(),
                 ])
                 .gap(6.0)
                 .size(None, Some(32.0)),

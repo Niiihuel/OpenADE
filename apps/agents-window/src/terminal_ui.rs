@@ -179,12 +179,12 @@ pub(crate) fn build_pane(
             .size(None, Some(24.0)),
         ];
         if terminal_error.is_some() {
-            content.push(theme::interactive_surface(
+            content.push(
                 Button::new(&restart, "Reintentar", theme::component_palette())
                     .variant(ButtonVariant::Ghost)
-                    .render()
-                    .size(Some(110.0), Some(32.0)),
-            ));
+                    .width(110.0)
+                    .render(),
+            );
         }
         content.push(Element::spacer().flex(1.0));
         return Element::column(content)
@@ -208,13 +208,11 @@ pub(crate) fn build_pane(
         Some(
             Element::row(vec![
                 Element::spacer().flex(1.0),
-                theme::interactive_surface(
-                    Button::new(&bottom, "Volver al prompt", theme::component_palette())
-                        .icon(Icon::ArrowDown)
-                        .variant(ButtonVariant::Subtle)
-                        .render()
-                        .size(Some(164.0), Some(32.0)),
-                ),
+                Button::new(&bottom, "Volver al prompt", theme::component_palette())
+                    .icon(Icon::ArrowDown)
+                    .variant(ButtonVariant::Subtle)
+                    .width(164.0)
+                    .render(),
             ])
             .size(None, Some(32.0)),
         )
@@ -236,12 +234,10 @@ pub(crate) fn build_pane(
 }
 
 fn restart_button(id: &str) -> Element {
-    theme::interactive_surface(
-        Button::new(id, "Reiniciar", theme::component_palette())
-            .variant(ButtonVariant::Ghost)
-            .render()
-            .size(Some(88.0), Some(32.0)),
-    )
+    Button::new(id, "Reiniciar", theme::component_palette())
+        .variant(ButtonVariant::Ghost)
+        .width(88.0)
+        .render()
 }
 
 /// The bar over a terminal that ended or failed, with the way to restart it.
@@ -286,12 +282,10 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             .role(TextRole::Small)
             .muted()
             .render(),
-            theme::interactive_surface(
-                Button::new("terminal_restart", "Reintentar", theme::component_palette())
-                    .variant(ButtonVariant::Subtle)
-                    .render()
-                    .size(Some(110.0), Some(32.0)),
-            ),
+            Button::new("terminal_restart", "Reintentar", theme::component_palette())
+                .variant(ButtonVariant::Subtle)
+                .width(110.0)
+                .render(),
             Element::spacer().flex(1.0),
         ])
         .padding(20.0)

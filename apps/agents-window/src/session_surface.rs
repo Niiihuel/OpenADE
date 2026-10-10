@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonVariant, Card, CardDensity, Collapsible, Component,
+    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, Collapsible, Component,
     ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
     MarkerVariant, PageColumn, ScrollArea, Separator, Text, TextArea, TextRole, ToolActivity,
     Tooltip, TooltipPlacement,
@@ -2901,11 +2901,12 @@ fn interruption_card(
         Separator::horizontal(theme::component_palette()).render(),
     ];
     details.extend(rows);
-    details.push(if compact {
-        Element::column(actions.into()).gap(8.0)
-    } else {
-        Element::row(actions.into()).gap(10.0)
-    });
+    details.push(
+        ButtonGroup::new(actions.into())
+            .sizing(crate::ui_sizing::INTERRUPTION_ACTIONS)
+            .stacked(compact)
+            .render(),
+    );
     Card::new(Element::column(details).gap(10.0), theme::card_palette()).render()
 }
 

@@ -11,7 +11,8 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    ActionRow, Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, Modal,
+    ActionRow, Button, ButtonGroup, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon,
+    Modal,
     ScrollArea, SearchField, SkeletonGroup, Spinner, Text, TextField, TextRole,
 };
 use std::{
@@ -729,11 +730,12 @@ pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
                     .render()
             })
             .collect();
-        controls.push(if compact {
-            Element::column(buttons).gap(8.0)
-        } else {
-            Element::row(buttons).gap(8.0)
-        });
+        controls.push(
+            ButtonGroup::new(buttons)
+                .sizing(crate::ui_sizing::OUTPUT_LIMIT_ACTIONS)
+                .stacked(compact)
+                .render(),
+        );
     }
     if let Some(error) = &state.native_output_limit_load_error {
         controls.push(settings_parts::feedback_banner(
@@ -769,11 +771,12 @@ pub(super) fn output_settings(state: &ViewState, compact: bool) -> Element {
     let reset = outline("native_output_limit_reset", "Usar política automática")
         .enabled(editable)
         .render();
-    controls.push(if compact {
-        Element::column(vec![save, reset]).gap(8.0)
-    } else {
-        Element::row(vec![save, reset]).gap(8.0)
-    });
+    controls.push(
+        ButtonGroup::new(vec![save, reset])
+            .sizing(crate::ui_sizing::OUTPUT_LIMIT_ACTIONS)
+            .stacked(compact)
+            .render(),
+    );
     settings_parts::settings_group(
         "Salida de la ruta nativa activa",
         vec![Element::column(controls).gap(10.0).padding(10.0)],

@@ -10,7 +10,7 @@ use openide_harness::{
     SubagentStatus, ToolPermissions,
 };
 use openide_ui::{
-    ActiveHover, AlertDialog, Button, ButtonVariant, Card, CardDensity, Color, Component, ControlSize, DropdownList,
+    ActiveHover, AlertDialog, Button, ButtonSizing, ButtonVariant, Card, CardDensity, Color, Component, ControlSize, DropdownList,
     DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily,
     Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, Search, SegmentedControl,
     Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
@@ -652,20 +652,22 @@ pub struct ViewState {
     pub github_contributions: GithubContributionsStatus,
 }
 
-fn button(id: impl Into<String>, title: impl Into<String>, fill: Color, ink: Color) -> Element {
+fn button(
+    id: impl Into<String>,
+    title: impl Into<String>,
+    fill: Color,
+    ink: Color,
+    sizing: ButtonSizing,
+) -> Button {
     Button::new(id, title, theme::action_palette(fill, ink))
         .variant(if fill == theme::BRAND || fill == theme::DESTRUCTIVE {
             ButtonVariant::Solid
         } else {
             ButtonVariant::Subtle
         })
-        .size(ControlSize::Regular)
+        .sizing(sizing)
+        .radius(RadiusRole::Card)
         .active(fill == theme::SELECTED)
-        .render()
-        .font_size(theme::UI_FONT_SIZE)
-        .padding(5.0)
-        .radius(8.0)
-        .min_size(0.0, 30.0)
 }
 
 /// A labelled navigation button with a leading icon.
@@ -675,7 +677,7 @@ fn icon_button(
     title: impl Into<String>,
     fill: Color,
     ink: Color,
-) -> Element {
+) -> UiIconButton {
     UiIconButton::new(id, icon, theme::action_palette(fill, ink))
         .label(title)
         .variant(if fill == theme::BRAND || fill == theme::DESTRUCTIVE {
@@ -683,12 +685,8 @@ fn icon_button(
         } else {
             ButtonVariant::Subtle
         })
-        .size(ControlSize::Regular)
+        .sizing(crate::ui_sizing::NAV_BUTTON)
         .active(fill == theme::SELECTED)
-        .render()
-        .font_size(theme::UI_FONT_SIZE)
-        .padding(5.0)
-        .min_size(0.0, 30.0)
 }
 
 fn field(id: &str, value: &str, placeholder: &str) -> Element {
@@ -1053,30 +1051,17 @@ fn session_row_parts(
     let menu_button = UiIconButton::new(
         menu_action_id.clone(),
         Icon::More,
-        theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE),
+        theme::in_row(theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE)),
     )
     .variant(ButtonVariant::Ghost)
     .size(ControlSize::Dense)
-    .render()
-    .background(Color::TRANSPARENT)
-    .hover_background(Color::TRANSPARENT)
-    .pressed_background(Color::TRANSPARENT)
-    .transition_ms(0)
-    .padding(4.0)
-    .min_size(0.0, 0.0)
-    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE));
-    let menu_button = if menu_open {
-        menu_button
-    } else {
-        Tooltip::new(
-            menu_button,
-            menu_action_id.clone(),
-            "Más acciones",
-            theme::component_palette(),
-        )
-        .placement(TooltipPlacement::Right)
-        .render()
-    };
+    .tooltip_with(
+        TooltipSpec::new("Más acciones")
+            .placement(TooltipPlacement::Right)
+            .palette(theme::component_palette())
+            .suppressed(menu_open),
+    )
+    .render();
     let menu_button = DropdownMenu::new(
         menu_button,
         actions,
@@ -1162,19 +1147,12 @@ fn group_header(
     .size(ControlSize::Dense)
     .width(SIDEBAR_TOOL_SIZE)
     .active(menu_open)
+    .tooltip_with(
+        TooltipSpec::new("Opciones del grupo")
+            .placement(TooltipPlacement::Right)
+            .suppressed(menu_open),
+    )
     .render();
-    let more_anchor = if menu_open {
-        more_anchor
-    } else {
-        Tooltip::new(
-            more_anchor,
-            format!("session_group_menu:{}", group.id),
-            "Opciones del grupo",
-            theme::component_palette(),
-        )
-        .placement(TooltipPlacement::Right)
-        .render()
-    };
     let more = DropdownMenu::new(
         more_anchor,
         menu_actions,
@@ -1658,20 +1636,17 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
         if project_paths.is_empty() || state.session_organization == SessionOrganization::Recent {
             expand = expand.disabled();
         }
-        Tooltip::new(
-            expand
-                .render()
-                .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
-            "session_expand_all",
-            if all_projects_collapsed {
-                "Expandir proyectos"
-            } else {
-                "Contraer proyectos"
-            },
-            theme::component_palette(),
-        )
-        .placement(TooltipPlacement::Below)
-        .render()
+        expand
+            .tooltip_with(
+                TooltipSpec::new(if all_projects_collapsed {
+                    "Expandir proyectos"
+                } else {
+                    "Contraer proyectos"
+                })
+                .placement(TooltipPlacement::Below)
+                .palette(theme::component_palette()),
+            )
+            .render()
     };
     let archive_control = UiIconButton::new(
         "toggle_archived_view",
@@ -2159,50 +2134,48 @@ fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f3
     }
     if available && !visible {
         actions.push(
-            Tooltip::new(
-                icon_button(
-                    "toggle_side_pane",
-                    Icon::PanelRightOpen,
-                    "Panel",
-                    theme::HOVER,
-                    theme::FOREGROUND,
-                )
-                .size(Some(74.0), Some(32.0)),
+            icon_button(
                 "toggle_side_pane",
-                "Mostrar panel derecho: archivos, cambios, terminal y navegador",
-                theme::component_palette(),
+                Icon::PanelRightOpen,
+                "Panel",
+                theme::HOVER,
+                theme::FOREGROUND,
             )
-            .placement(TooltipPlacement::Below)
+            .width(74.0)
+            .tooltip_with(
+                TooltipSpec::new("Mostrar panel derecho: archivos, cambios, terminal y navegador")
+                    .placement(TooltipPlacement::Below)
+                    .palette(theme::component_palette()),
+            )
             .render(),
         );
     }
     actions.push(
-        Tooltip::new(
-            icon_button(
-                "toggle_settings",
-                if state.show_settings {
-                    Icon::Close
-                } else {
-                    Icon::Settings
-                },
-                if state.show_settings {
-                    "Volver"
-                } else {
-                    "Opciones"
-                },
-                theme::HOVER,
-                theme::FOREGROUND,
-            )
-            .size(Some(96.0), Some(32.0)),
+        icon_button(
             "toggle_settings",
             if state.show_settings {
+                Icon::Close
+            } else {
+                Icon::Settings
+            },
+            if state.show_settings {
+                "Volver"
+            } else {
+                "Opciones"
+            },
+            theme::HOVER,
+            theme::FOREGROUND,
+        )
+        .width(96.0)
+        .tooltip_with(
+            TooltipSpec::new(if state.show_settings {
                 "Volver al chat"
             } else {
                 "Abrir configuración de OpenIDE"
-            },
-            theme::component_palette(),
+            })
+            .placement(TooltipPlacement::Below)
+            .palette(theme::component_palette()),
         )
-        .placement(TooltipPlacement::Below)
         .render(),
     );
     Element::column(vec![
@@ -9389,5 +9362,131 @@ pub(crate) mod tests {
             .find(|region| region.id == "command_result:0")
             .expect("first result row");
         assert!(row.rect.x + row.rect.width < rail.rect.x);
+    }
+}
+
+#[cfg(test)]
+mod converge_controls_parity {
+    //! `button` and the labelled `icon_button` as they were before
+    //! c01-converge-controls, with the overrides their callers added.
+
+    use super::*;
+    use crate::converge_controls_parity_tests::assert_same;
+
+    fn legacy_button(id: &str, title: &str, fill: Color, ink: Color) -> Element {
+        Button::new(id, title, theme::action_palette(fill, ink))
+            .variant(if fill == theme::BRAND || fill == theme::DESTRUCTIVE {
+                ButtonVariant::Solid
+            } else {
+                ButtonVariant::Subtle
+            })
+            .size(ControlSize::Regular)
+            .active(fill == theme::SELECTED)
+            .render()
+            .font_size(theme::UI_FONT_SIZE)
+            .padding(5.0)
+            .radius(8.0)
+            .min_size(0.0, 30.0)
+    }
+
+    fn legacy_icon_button(id: &str, icon: Icon, title: &str, fill: Color, ink: Color) -> Element {
+        UiIconButton::new(id, icon, theme::action_palette(fill, ink))
+            .label(title)
+            .variant(if fill == theme::BRAND || fill == theme::DESTRUCTIVE {
+                ButtonVariant::Solid
+            } else {
+                ButtonVariant::Subtle
+            })
+            .size(ControlSize::Regular)
+            .active(fill == theme::SELECTED)
+            .render()
+            .font_size(theme::UI_FONT_SIZE)
+            .padding(5.0)
+            .min_size(0.0, 30.0)
+    }
+
+    #[test]
+    fn overview_buttons_match_the_patched_regular_button() {
+        assert_same(
+            "Cerrar todas",
+            legacy_button("all", "Cerrar todas", theme::HOVER, theme::FOREGROUND_SUBTLE)
+                .font_size(11.0)
+                .min_size(0.0, 0.0)
+                .size(Some(86.0), Some(24.0)),
+            button(
+                "all",
+                "Cerrar todas",
+                theme::HOVER,
+                theme::FOREGROUND_SUBTLE,
+                crate::ui_sizing::OVERVIEW_HEADING_ACTION,
+            )
+            .width(86.0)
+            .render(),
+        );
+        for fill in [theme::SELECTED, theme::BACKGROUND] {
+            assert_same(
+                "overview tab",
+                legacy_button("tab", "session_surface.rs", fill, theme::FOREGROUND)
+                    .font_size(12.0)
+                    .min_size(0.0, 0.0)
+                    .flex(1.0)
+                    .size(None, Some(28.0)),
+                button(
+                    "tab",
+                    "session_surface.rs",
+                    fill,
+                    theme::FOREGROUND,
+                    crate::ui_sizing::OVERVIEW_TAB,
+                )
+                .render()
+                .flex(1.0),
+            );
+        }
+        assert_same(
+            "Solo",
+            legacy_button("solo", "Solo", theme::BACKGROUND, theme::FOREGROUND_SUBTLE)
+                .font_size(10.0)
+                .min_size(0.0, 0.0)
+                .size(Some(34.0), Some(28.0)),
+            button(
+                "solo",
+                "Solo",
+                theme::BACKGROUND,
+                theme::FOREGROUND_SUBTLE,
+                crate::ui_sizing::OVERVIEW_TAB_ACTION,
+            )
+            .width(34.0)
+            .render(),
+        );
+    }
+
+    #[test]
+    fn header_navigation_buttons_match_the_patched_icon_button_in_a_tooltip() {
+        for (icon, title, width) in [
+            (Icon::PanelRightOpen, "Panel", 74.0),
+            (Icon::Settings, "Opciones", 96.0),
+            (Icon::Close, "Volver", 96.0),
+        ] {
+            assert_same(
+                title,
+                Tooltip::new(
+                    legacy_icon_button("nav", icon, title, theme::HOVER, theme::FOREGROUND)
+                        .size(Some(width), Some(32.0)),
+                    "nav",
+                    "Abrir configuración de OpenIDE",
+                    theme::component_palette(),
+                )
+                .placement(TooltipPlacement::Below)
+                .render(),
+                icon_button("nav", icon, title, theme::HOVER, theme::FOREGROUND)
+                    .width(width)
+                    .tooltip_with(
+                        TooltipSpec::new("Abrir configuración de OpenIDE")
+                            .placement(TooltipPlacement::Below)
+                            .palette(theme::component_palette()),
+                    )
+                    .render(),
+            );
+        }
     }
 }

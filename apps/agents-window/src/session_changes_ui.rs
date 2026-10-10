@@ -42,22 +42,15 @@ fn build_content(ui: &SessionChangesUiState, width: f32) -> Element {
         .size(None, Some(32.0));
     let mut rows = vec![openide_ui::PanelHeader::new("", theme::component_palette())
         .leading(title)
-        .trailing(vec![Tooltip::new(
-            theme::interactive_surface(
-                IconButton::new(
-                    "session_changes_refresh",
-                    Icon::Refresh,
-                    theme::component_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .button_size(openide_ui::ButtonSize::IconSmall)
-                .enabled(!ui.loading)
-                .render(),
-            ),
+        .trailing(vec![IconButton::new(
             "session_changes_refresh",
-            "Actualizar cambios del chat",
+            Icon::Refresh,
             theme::component_palette(),
         )
+        .variant(ButtonVariant::Ghost)
+        .button_size(openide_ui::ButtonSize::IconSmall)
+        .enabled(!ui.loading)
+        .tooltip("Actualizar cambios del chat")
         .render()])
         .width(inner)
         .sizing(crate::ui_sizing::TALL_HEADER)

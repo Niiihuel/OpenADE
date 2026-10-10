@@ -48,10 +48,10 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
                     "Cerrar todas",
                     theme::HOVER,
                     theme::FOREGROUND_SUBTLE,
+                    crate::ui_sizing::OVERVIEW_HEADING_ACTION,
                 )
-                .font_size(11.0)
-                .min_size(0.0, 0.0)
-                .size(Some(86.0), Some(24.0))
+                .width(86.0)
+                .render()
             },
         ])
         .size(None, Some(24.0)),
@@ -86,20 +86,19 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
                         theme::BACKGROUND
                     },
                     theme::FOREGROUND,
+                    crate::ui_sizing::OVERVIEW_TAB,
                 )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .flex(1.0)
-                .size(None, Some(28.0)),
+                .render()
+                .flex(1.0),
                 button(
                     format!("dock_close_others:{}", tab.id),
                     "Solo",
                     theme::BACKGROUND,
                     theme::FOREGROUND_SUBTLE,
+                    crate::ui_sizing::OVERVIEW_TAB_ACTION,
                 )
-                .font_size(10.0)
-                .min_size(0.0, 0.0)
-                .size(Some(34.0), Some(28.0)),
+                .width(34.0)
+                .render(),
                 if first_id == Some(tab.id) {
                     Element::icon(Icon::ArrowUp)
                         .foreground(theme::BORDER)

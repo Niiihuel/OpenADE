@@ -549,7 +549,7 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
             let anchor = Button::new(
                 "environment_git_compare_toggle",
                 selection,
-                theme::component_palette(),
+                crate::environment_ui::card_button_palette(),
             )
             .icon(Icon::GitBranch)
             .trailing_icon(Icon::ChevronDown)
@@ -558,7 +558,6 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
             .enabled(enabled && !entries.is_empty())
             .width(width - 16.0)
             .render();
-            let anchor = crate::environment_ui::interactive_surface(anchor);
             rows.push(
                 DropdownMenu::new(
                     anchor,
@@ -616,28 +615,28 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                     .border(false)
                     .render(),
                 );
-                rows.push(crate::environment_ui::interactive_surface(
+                rows.push(
                     Button::new(
                         "environment_git_compare_refresh",
                         "Actualizar comparación",
-                        theme::component_palette(),
+                        crate::environment_ui::card_button_palette(),
                     )
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Regular)
                     .enabled(enabled)
                     .render(),
-                ));
+                );
                 if state.compare_url.is_some() {
-                    rows.push(crate::environment_ui::interactive_surface(
+                    rows.push(
                         Button::new(
                             "environment_git_compare_open_web",
                             "Ver comparación en GitHub",
-                            theme::component_palette(),
+                            crate::environment_ui::card_button_palette(),
                         )
                         .variant(ButtonVariant::Ghost)
                         .size(ControlSize::Regular)
                         .render(),
-                    ));
+                    );
                 }
             } else if !state.compare_reference.is_empty() {
                 rows.push(

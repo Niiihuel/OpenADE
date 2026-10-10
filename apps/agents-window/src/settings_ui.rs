@@ -1263,15 +1263,13 @@ pub fn provider_connect_modal(state: &ViewState, base: Element, viewport_width: 
 // Hand-built: an ActionRow centers its trailing element, and these keycaps
 // stay on the first line when the description wraps.
 fn shortcut_row(description: &str, keys: &str) -> Element {
-    Element::row(vec![
-        Text::new(description, theme::component_palette())
-            .render()
-            .flex(1.0),
-        Kbd::new(keys, theme::component_palette()).render(),
-    ])
-    .gap(12.0)
-    .padding(settings_parts::ROW_PADDING)
-    .min_size(0.0, 38.0)
+    ActionRow::new(description, theme::component_palette())
+        .wrap_title(true)
+        .align_top(true)
+        .trailing(Kbd::new(keys, theme::component_palette()).render())
+        .trailing_top(true)
+        .sizing(crate::ui_sizing::SHORTCUT_ROW)
+        .render()
 }
 
 fn keymap_selector(state: &ViewState) -> Element {
@@ -1531,17 +1529,15 @@ fn mcp_page(state: &ViewState, compact: bool) -> Vec<Element> {
             }
         }
         server_content.push(inspection);
-        server_content.push(if compact {
-            Element::column(controls).gap(6.0)
-        } else {
-            Element::row(controls).gap(8.0)
-        });
+        server_content.push(ButtonGroup::new(controls)
+            .sizing(crate::ui_sizing::ENTITY_ACTIONS)
+            .stacked(compact)
+            .render());
         if !oauth_controls.is_empty() {
-            server_content.push(if compact {
-                Element::column(oauth_controls).gap(6.0)
-            } else {
-                Element::row(oauth_controls).gap(8.0)
-            });
+            server_content.push(ButtonGroup::new(oauth_controls)
+                .sizing(crate::ui_sizing::ENTITY_ACTIONS)
+                .stacked(compact)
+                .render());
         }
         servers.push(
             Element::column(server_content)
@@ -1621,11 +1617,10 @@ fn hooks_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 .role(TextRole::Small)
                 .ink(theme::SETTINGS_FOREGROUND_SUBTLE)
                 .render(),
-                if compact {
-                    Element::column(controls).gap(6.0)
-                } else {
-                    Element::row(controls).gap(8.0)
-                },
+                ButtonGroup::new(controls)
+                    .sizing(crate::ui_sizing::ENTITY_ACTIONS)
+                    .stacked(compact)
+                    .render(),
             ])
             .gap(10.0)
             .padding(settings_parts::ROW_PADDING),
@@ -1819,11 +1814,10 @@ fn exec_rules_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 .enabled(editable)
                 .render(),
         ];
-        body.push(if compact {
-            Element::column(controls).gap(6.0)
-        } else {
-            Element::row(controls).gap(8.0)
-        });
+        body.push(ButtonGroup::new(controls)
+            .sizing(crate::ui_sizing::ENTITY_ACTIONS)
+            .stacked(compact)
+            .render());
         rows.push(
             Element::column(body)
                 .gap(10.0)
@@ -2525,6 +2519,44 @@ pub(crate) fn native_output_settings_for_test(state: &ViewState, compact: bool) 
 mod tests {
     use super::*;
     use openide_ui::{DrawCommand, Frame, Key, Point, Size, UiAction, UiEvent, UiTree};
+
+    // `shortcut_row` as it was before c01-converge-controls.
+    fn legacy_shortcut_row(description: &str, keys: &str) -> Element {
+        Element::row(vec![
+            Text::new(description, theme::component_palette())
+                .render()
+                .flex(1.0),
+            Kbd::new(keys, theme::component_palette()).render(),
+        ])
+        .gap(12.0)
+        .padding(settings_parts::ROW_PADDING)
+        .min_size(0.0, 38.0)
+    }
+
+    #[test]
+    fn shortcut_row_matches_the_hand_row_on_one_line_and_wrapped() {
+        let frame = |row: Element, width: f32| {
+            let mut tree = UiTree::new(Element::column(vec![row, Element::spacer().flex(1.0)]));
+            tree.set_reduced_motion(true);
+            tree.layout(Size::new(width, 400.0))
+        };
+        let long = "Abrir la paleta de comandos y buscar una acción por su nombre sin soltar el teclado";
+        for description in ["Guardar", long] {
+            for keys in ["Ctrl+S", "Ctrl+Shift+P"] {
+                for width in [200.0, 360.0, 900.0] {
+                    assert_eq!(
+                        frame(shortcut_row(description, keys), width),
+                        frame(legacy_shortcut_row(description, keys), width),
+                        "{description} {keys} width={width}"
+                    );
+                }
+            }
+        }
+        // The long description does wrap at the narrow widths compared.
+        let wrapped = frame(shortcut_row(long, "Ctrl+S"), 200.0);
+        let lines = wrapped.text_layouts().iter().find(|block| block.source == long).unwrap().runs.len();
+        assert!(lines > 1);
+    }
 
     fn key(key: Key) -> UiEvent {
         UiEvent::Key {

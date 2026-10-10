@@ -4,7 +4,7 @@
 use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
-    ButtonVariant, Component, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
+    ButtonVariant, Component, ComponentPalette, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element, FontFamily, HeaderSizing, Icon, IconButton, ListRow, PanelHeader,
     ScrollArea, SectionHeader, SectionSizing, Separator, SpinnerVariant, Text, TextRole, Tooltip,
     TooltipPlacement, TooltipSpec,
@@ -51,6 +51,17 @@ pub(crate) struct EnvironmentUiState {
 
 pub(crate) fn interactive_surface(element: Element) -> Element {
     theme::action_palette(theme::CARD, theme::FOREGROUND).interactive_surface(element)
+}
+
+/// The canvas palette with the card's hover and press, for a limn button
+/// inside the environment card.
+pub(crate) fn card_button_palette() -> ComponentPalette {
+    let card = theme::action_palette(theme::CARD, theme::FOREGROUND);
+    ComponentPalette {
+        hover: card.hover,
+        selected: card.selected,
+        ..theme::component_palette()
+    }
 }
 
 /// The environment shares the conversation's trailing space with the utility

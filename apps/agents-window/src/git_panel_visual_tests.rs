@@ -230,7 +230,7 @@ fn native_git_hover_is_continuous_across_file_and_staging_without_changing_targe
                     );
                     assert_eq!(hovered.hit_test(point), Some(id));
                     let expected = theme::action_palette(surface, theme::FOREGROUND).hover;
-                    let expected_radius = ButtonSize::Small.sizing().radius;
+                    let expected_radius = openide_ui::RadiusRole::Control.px();
                     // Probe inside the outer curves and either side of the seam.
                     // Top/bottom strips avoid text and the centered 24px glyph
                     // control, catching a gray cell or rounded hover island.
