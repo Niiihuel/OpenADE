@@ -176,3 +176,24 @@ pub const DOCK_OPEN: RowSizing = RowSizing {
     title_size: crate::theme::UI_FONT_SIZE,
     ..RowSizing::COMPACT
 };
+
+/// A line of the Problems panel: a file or one of its diagnostics.
+pub const PROBLEM_ROW: RowSizing = RowSizing {
+    height: Some(26.0),
+    padding: 5.0,
+    gap: 6.0,
+    icon_size: 14.0,
+    leading_width: 14.0,
+    leading_height: Some(16.0),
+    meta_gap: 6.0,
+    ..RowSizing::COMPACT
+};
+
+/// A tool call in the dock's Activity list: one line of 24 in a row of 38.
+pub const DOCK_TOOL: RowSizing = RowSizing {
+    height: Some(38.0),
+    padding: 7.0,
+    leading_height: Some(24.0),
+    title_height: Some(24.0),
+    ..RowSizing::COMPACT
+};

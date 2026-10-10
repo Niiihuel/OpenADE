@@ -17,6 +17,38 @@ struct ToolRow {
     selected: bool,
 }
 
+/// A tool call in the list: its state, its name and what it is doing. The
+/// selected one keeps its fill under the pointer.
+fn tool_row(row: &ToolRow, width: f32) -> Element {
+    let palette = openide_ui::ComponentPalette {
+        surface: if row.selected {
+            theme::SELECTED
+        } else {
+            theme::BACKGROUND
+        },
+        hover: if row.selected {
+            theme::SELECTED
+        } else {
+            theme::INPUT
+        },
+        ..theme::component_palette()
+    };
+    ListRow::new(format!("tool:{}", row.id), &row.title, palette)
+        .icon(row.icon)
+        .icon_ink(row.ink)
+        .trailing(
+            Element::truncated_text(row.status)
+                .font_family(FontFamily::Sans)
+                .font_size(10.5)
+                .foreground(row.ink)
+                .size(Some((width * 0.35).min(130.0)), Some(24.0)),
+        )
+        .filled()
+        .sizing(crate::ui_sizing::DOCK_TOOL)
+        .render()
+        .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT))
+}
+
 pub(super) fn content(state: &ViewState, width: f32) -> Element {
     let width = (width - 24.0).max(160.0);
     let tools: Vec<_> = state
@@ -126,41 +158,7 @@ pub(super) fn content(state: &ViewState, width: f32) -> Element {
         let count = rows.len();
         items.push(
             ScrollArea::uniform_list("dock_activity_tools", count, ROW_HEIGHT, move |index| {
-                let row = &rows[index];
-                theme::interactive_surface(
-                    Element::clickable(
-                        format!("tool:{}", row.id),
-                        Element::row(vec![
-                            Element::icon(row.icon)
-                                .foreground(row.ink)
-                                .size(Some(16.0), Some(24.0)),
-                            Element::truncated_text(&row.title)
-                                .font_family(FontFamily::Sans)
-                                .font_size(12.0)
-                                .foreground(theme::FOREGROUND)
-                                .flex(1.0)
-                                .size(None, Some(24.0)),
-                            Element::truncated_text(row.status)
-                                .font_family(FontFamily::Sans)
-                                .font_size(10.5)
-                                .foreground(row.ink)
-                                .size(Some((width * 0.35).min(130.0)), Some(24.0)),
-                        ])
-                        .gap(8.0),
-                    )
-                    .padding(7.0)
-                    .background(if row.selected {
-                        theme::SELECTED
-                    } else {
-                        theme::BACKGROUND
-                    }),
-                )
-                .hover_background(if row.selected {
-                    theme::SELECTED
-                } else {
-                    theme::INPUT
-                })
-                .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT))
+                tool_row(&rows[index], width)
             })
             .render()
             .top_fade(theme::BACKGROUND, 12.0)
@@ -601,6 +599,84 @@ fn bounded_json(value: &Value) -> String {
 mod tests {
     use super::*;
     use openide_ui::{Size, UiTree};
+
+    fn legacy_tool_row(row: &ToolRow, width: f32) -> Element {
+        theme::interactive_surface(
+            Element::clickable(
+                format!("tool:{}", row.id),
+                Element::row(vec![
+                    Element::icon(row.icon)
+                        .foreground(row.ink)
+                        .size(Some(16.0), Some(24.0)),
+                    Element::truncated_text(&row.title)
+                        .font_family(FontFamily::Sans)
+                        .font_size(12.0)
+                        .foreground(theme::FOREGROUND)
+                        .flex(1.0)
+                        .size(None, Some(24.0)),
+                    Element::truncated_text(row.status)
+                        .font_family(FontFamily::Sans)
+                        .font_size(10.5)
+                        .foreground(row.ink)
+                        .size(Some((width * 0.35).min(130.0)), Some(24.0)),
+                ])
+                .gap(8.0),
+            )
+            .padding(7.0)
+            .background(if row.selected {
+                theme::SELECTED
+            } else {
+                theme::BACKGROUND
+            }),
+        )
+        .hover_background(if row.selected {
+            theme::SELECTED
+        } else {
+            theme::INPUT
+        })
+        .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT))
+    }
+
+    #[test]
+    fn tool_rows_match_their_legacy_body() {
+        let long = "mcp__workspace__read_many_files_and_summarize_every_one_of_them";
+        for selected in [false, true] {
+            for (title, icon, ink) in [
+                ("Bash", Icon::History, theme::BRAND),
+                (long, Icon::WarningTriangle, theme::DESTRUCTIVE),
+            ] {
+                let row = ToolRow {
+                    id: "t1".into(),
+                    title: title.into(),
+                    status: "En ejecución",
+                    icon,
+                    ink,
+                    selected,
+                };
+                let row = std::sync::Arc::new(row);
+                // In the list, which lays its rows out wider than they ask.
+                let listed = |build: fn(&ToolRow, f32) -> Element, width: f32| {
+                    let row = row.clone();
+                    ScrollArea::uniform_list("tools", 1, ROW_HEIGHT, move |_| build(&row, width))
+                        .render()
+                        .size(Some(width), Some(ROW_HEIGHT))
+                };
+                for width in [148.0, 420.0] {
+                    let name = format!("tool row {title} selected={selected} at {width}");
+                    crate::icon_button_parity_tests::assert_same(
+                        &name,
+                        legacy_tool_row(&row, width),
+                        tool_row(&row, width),
+                    );
+                    crate::icon_button_parity_tests::assert_same(
+                        &name,
+                        listed(legacy_tool_row, width),
+                        listed(tool_row, width),
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn large_outputs_build_only_visible_rows() {

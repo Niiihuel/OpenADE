@@ -1,6 +1,6 @@
 use super::*;
 use crate::ide_workspace::IdeBottomPanel;
-use openide_ui::{AlertColors, AlertTone, Component, Separator, TabStrip};
+use openide_ui::{AlertColors, AlertTone, Component, ListRow, Separator, TabStrip};
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 
@@ -158,6 +158,116 @@ fn legacy_problem_status(icon: Icon, title: &str, detail: &str, width: f32) -> E
     .render()
 }
 
+/// The file the problems belong to, with how many it has.
+fn problems_file(path: &str, name: &str, count: String, width: f32) -> Element {
+    ListRow::new("ide_problems_file", name, theme::component_palette())
+        .leading(Element::icon(openide_ui::file_icon(path)))
+        .title_ink(theme::FOREGROUND)
+        .meta_element(
+            label(count, theme::FOREGROUND_SUBTLE)
+                .font_size(11.0)
+                .size(None, Some(16.0)),
+        )
+        .enabled(false)
+        .sizing(crate::ui_sizing::PROBLEM_ROW)
+        .render()
+        .size(Some(width), Some(26.0))
+}
+
+#[cfg(test)]
+fn legacy_problems_file(path: &str, name: &str, count: String, width: f32) -> Element {
+    Element::row(vec![
+        Element::icon(openide_ui::file_icon(path)).size(Some(14.0), Some(16.0)),
+        Element::truncated_text(name)
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(theme::FOREGROUND)
+            .flex(1.0),
+        label(count, theme::FOREGROUND_SUBTLE)
+            .font_size(11.0)
+            .size(None, Some(16.0)),
+    ])
+    .gap(6.0)
+    .padding(5.0)
+    .size(Some(width), Some(26.0))
+}
+
+/// One problem: its severity, its message, where it is and, with room, who
+/// reported it.
+fn diagnostic_row(
+    id: &str,
+    icon: Icon,
+    accent: openide_ui::Color,
+    message: &str,
+    source: Option<&str>,
+    position: &str,
+    width: f32,
+) -> Element {
+    let mut row = ListRow::new(id, message.replace(['\n', '\r'], " "), theme::component_palette())
+        .icon(icon)
+        .icon_ink(accent)
+        .sizing(crate::ui_sizing::PROBLEM_ROW);
+    if let Some(source) = source {
+        row = row.meta_element(
+            Element::truncated_text(source)
+                .font_family(FontFamily::Sans)
+                .font_size(11.0)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(100.0), Some(16.0)),
+        );
+    }
+    row.meta_element(
+        Element::text(position)
+            .font_family(FontFamily::Monospace)
+            .font_size(11.0)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .size(Some(position.len() as f32 * 7.0), Some(16.0)),
+    )
+    .render()
+    .size(Some(width), Some(26.0))
+}
+
+#[cfg(test)]
+fn legacy_diagnostic_row(
+    id: &str,
+    icon: Icon,
+    accent: openide_ui::Color,
+    message: &str,
+    source: Option<&str>,
+    position: &str,
+    width: f32,
+) -> Element {
+    let mut content = vec![
+        Element::icon(icon)
+            .foreground(accent)
+            .size(Some(14.0), Some(16.0)),
+        Element::truncated_text(message.replace(['\n', '\r'], " "))
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(theme::FOREGROUND)
+            .flex(1.0),
+    ];
+    if let Some(source) = source {
+        content.push(
+            Element::truncated_text(source)
+                .font_family(FontFamily::Sans)
+                .font_size(11.0)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(100.0), Some(16.0)),
+        );
+    }
+    content.push(
+        Element::text(position)
+            .font_family(FontFamily::Monospace)
+            .font_size(11.0)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .size(Some(position.len() as f32 * 7.0), Some(16.0)),
+    );
+    theme::interactive_surface(Element::clickable(id, Element::row(content).gap(6.0)))
+        .padding(5.0)
+        .size(Some(width), Some(26.0))
+}
+
 fn problems(state: &ViewState, width: f32, height: f32) -> Element {
     let workbench = &state.editor_workbench;
     let editor = state
@@ -182,23 +292,9 @@ fn problems(state: &ViewState, width: f32, height: f32) -> Element {
         } else {
             "—".into()
         };
-        let file = Element::row(vec![
-            Element::icon(openide_ui::file_icon(&editor.path)).size(Some(14.0), Some(16.0)),
-            Element::truncated_text(file_name)
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .foreground(theme::FOREGROUND)
-                .flex(1.0),
-            label(count, theme::FOREGROUND_SUBTLE)
-                .font_size(11.0)
-                .size(None, Some(16.0)),
-        ])
-        .gap(6.0)
-        .padding(5.0)
-        .size(Some(row_width), Some(26.0));
         rows.push(
             Tooltip::new(
-                file,
+                problems_file(&editor.path, &file_name, count, row_width),
                 "ide_problems_file",
                 &editor.path,
                 theme::component_palette(),
@@ -261,38 +357,10 @@ fn problems(state: &ViewState, width: f32, height: f32) -> Element {
                 diagnostic.range.start.character.saturating_add(1)
             );
             let (icon, accent, severity) = diagnostic_style(diagnostic.severity);
-            let mut content = vec![
-                Element::icon(icon)
-                    .foreground(accent)
-                    .size(Some(14.0), Some(16.0)),
-                Element::truncated_text(diagnostic.message.replace(['\n', '\r'], " "))
-                    .font_family(FontFamily::Sans)
-                    .font_size(12.0)
-                    .foreground(theme::FOREGROUND)
-                    .flex(1.0),
-            ];
-            if width >= 700.0 {
-                if let Some(source) = diagnostic
-                    .source
-                    .as_deref()
-                    .filter(|source| !source.is_empty())
-                {
-                    content.push(
-                        Element::truncated_text(source)
-                            .font_family(FontFamily::Sans)
-                            .font_size(11.0)
-                            .foreground(theme::FOREGROUND_SUBTLE)
-                            .size(Some(100.0), Some(16.0)),
-                    );
-                }
-            }
-            content.push(
-                Element::text(&position)
-                    .font_family(FontFamily::Monospace)
-                    .font_size(11.0)
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(Some(position.len() as f32 * 7.0), Some(16.0)),
-            );
+            let source = diagnostic
+                .source
+                .as_deref()
+                .filter(|source| width >= 700.0 && !source.is_empty());
             let metadata = match (&diagnostic.source, &diagnostic.code) {
                 (Some(source), Some(code)) => format!("{source} · {code}"),
                 (Some(source), None) => source.clone(),
@@ -301,12 +369,15 @@ fn problems(state: &ViewState, width: f32, height: f32) -> Element {
             };
             rows.push(
                 Tooltip::new(
-                    theme::interactive_surface(Element::clickable(
+                    diagnostic_row(
                         &id,
-                        Element::row(content).gap(6.0),
-                    ))
-                    .padding(5.0)
-                    .size(Some(row_width), Some(26.0)),
+                        icon,
+                        accent,
+                        &diagnostic.message,
+                        source,
+                        &position,
+                        row_width,
+                    ),
                     &id,
                     format!("{severity}: {}", diagnostic.message),
                     theme::component_palette(),
@@ -474,6 +545,30 @@ mod tests {
             })
             .collect();
         state
+    }
+
+    #[test]
+    fn problem_rows_match_their_legacy_bodies() {
+        let long = "crates/openide-ui/src/a_file_whose_name_is_longer_than_the_problems_panel.rs";
+        for width in [140.0, 420.0] {
+            for path in ["src/main.rs", long] {
+                crate::icon_button_parity_tests::assert_same(
+                    &format!("problems file {path} at {width}"),
+                    legacy_problems_file(path, path, "12".into(), width),
+                    problems_file(path, path, "12".into(), width),
+                );
+            }
+            for (severity, source) in [(Some(1), None), (Some(2), Some("rustc")), (None, None)] {
+                let (icon, accent, _) = diagnostic_style(severity);
+                for message in ["unused variable", "mismatched types:\nexpected `usize`, found `&str` in the call that builds the row"] {
+                    crate::icon_button_parity_tests::assert_same(
+                        &format!("diagnostic {severity:?} {source:?} at {width}"),
+                        legacy_diagnostic_row("row", icon, accent, message, source, "128:14", width),
+                        diagnostic_row("row", icon, accent, message, source, "128:14", width),
+                    );
+                }
+            }
+        }
     }
 
     #[test]
