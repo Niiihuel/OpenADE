@@ -1161,6 +1161,185 @@ fn export_session_rows_visual_review() {
     }
 }
 
+/// The c01 pieces no other export reaches: each is the production builder,
+/// with the pointer over the control whose hint or hover the section moved.
+#[test]
+#[ignore = "opt-in export of the controls converged on limn profiles"]
+fn export_converged_controls_visual_review() {
+    use ExportInteraction::Hover;
+    let mut state = super::tests::empty_state();
+    state.dock_tabs = ["Entorno", "src/view/dock_overview.rs", "Terminal"]
+        .into_iter()
+        .zip([SideTab::Context, SideTab::FilePreview, SideTab::Terminal])
+        .enumerate()
+        .map(|(index, (title, kind))| DockTabView {
+            id: index as u64 + 1,
+            full_path: None,
+            title: title.into(),
+            active: index == 1,
+            kind,
+            closable: true,
+        })
+        .collect();
+    for (name, hover) in [("idle", None), ("close-all-hover", Some(Hover("dock_close_all")))] {
+        export_with_interaction(
+            dock_overview::content(&state, 360.0).padding(12.0),
+            360.0,
+            520.0,
+            &format!("converged-dock-overview-{name}"),
+            hover,
+        );
+    }
+
+    state.selected_session = Some("session-1".into());
+    state.selected_backend = "native".into();
+    state.session_approval_grants = ["run_command", "write_file"]
+        .into_iter()
+        .map(|tool| SessionApprovalGrantView {
+            tool_name: tool.into(),
+            key_digest: tool.repeat(8),
+        })
+        .collect();
+    let revoke = format!("session_approval_revoke:{}", "run_command".repeat(8)).leak();
+    for (name, hover) in [("idle", None), ("revoke-hover", Some(Hover(revoke)))] {
+        export_with_interaction(
+            activity_content(&state),
+            360.0,
+            360.0,
+            &format!("converged-session-grants-{name}"),
+            hover,
+        );
+    }
+
+    let preset = crate::project_actions::ProjectAction {
+        id: "dev".into(),
+        label: "Ejecutar proyecto".into(),
+        command: "npm run dev".into(),
+    };
+    let suggested = crate::project_actions::ProjectActionsState {
+        presets: vec![preset],
+        ..Default::default()
+    };
+    let saving = crate::project_actions::ProjectActionsState {
+        saving: true,
+        ..suggested.clone()
+    };
+    let mut editing = suggested.clone();
+    editing.begin_new();
+    export(
+        Element::column(
+            [&suggested, &saving, &editing]
+                .into_iter()
+                .map(|actions| crate::project_actions_ui::build(actions, 296.0))
+                .collect(),
+        )
+        .gap(20.0)
+        .padding(12.0)
+        .background(theme::CARD),
+        320.0,
+        560.0,
+        "converged-project-actions",
+    );
+
+    for (name, loading, hover) in [
+        ("idle", false, None),
+        ("refresh-hover", false, Some(Hover("session_changes_refresh"))),
+        ("loading", true, None),
+    ] {
+        state.session_changes.loading = loading;
+        export_with_interaction(
+            crate::session_changes_ui::build(&state, 360.0).padding(12.0),
+            360.0,
+            140.0,
+            &format!("converged-session-changes-{name}"),
+            hover,
+        );
+    }
+
+    state.native_hooks.hooks = vec![openide_harness::CommandHookConfig {
+        id: "formatear-al-escribir".into(),
+        phase: openide_harness::HookPhase::PostToolUse,
+        tool_name: "write_file".into(),
+        executable: "/usr/bin/rustfmt".into(),
+        args: Vec::new(),
+        cwd: "/project".into(),
+        timeout_ms: 3_000,
+        max_output_bytes: 1_024,
+    }];
+    state.native_exec_rules.rules = vec![openide_harness::ExecRule::new(
+        vec![
+            openide_harness::ExecPatternToken::Literal("git".into()),
+            openide_harness::ExecPatternToken::Literal("push".into()),
+        ],
+        openide_harness::ExecDecision::Ask,
+        None,
+    )
+    .unwrap()];
+    state.show_settings = true;
+    state.native_provider_id = "openai".into();
+    state.model = "gpt-4.1".into();
+    for width in [360.0, 1300.0] {
+        for page in [SettingsPage::Hooks, SettingsPage::Commands] {
+            state.settings_page = page;
+            export(
+                crate::settings_ui::build_settings_page(&state, page, width, true),
+                width,
+                900.0,
+                &format!("converged-settings-{page:?}-{width}"),
+            );
+        }
+        // Chat Completions: the parameter group and the save group together.
+        export(
+            crate::settings_ui::native_output_settings_for_test(&state, width < 640.0)
+                .padding(16.0),
+            width,
+            420.0,
+            &format!("converged-settings-output-limit-{width}"),
+        );
+    }
+
+    let mut state = super::tests::empty_state();
+    state.sessions = [("uno", "Revisar el panel derecho"), ("dos", "Notas")]
+        .into_iter()
+        .map(|(id, title)| SessionView {
+            id: id.into(),
+            title: title.into(),
+            project: "/project".into(),
+            backend: "native".into(),
+            pinned: false,
+            unread: false,
+            archived: false,
+            native_automation: None,
+        })
+        .collect();
+    for (name, hover) in [
+        ("projects-expand-hover", "session_expand_all"),
+        ("projects-session-menu-hover", "session_menu:uno"),
+    ] {
+        export_with_interaction(
+            sidebar_for_height(&state, 264.0, 420.0),
+            264.0,
+            420.0,
+            &format!("converged-sidebar-{name}"),
+            Some(Hover(hover)),
+        );
+    }
+    state.session_organization = SessionOrganization::Group;
+    state.session_groups.groups.push(crate::session_groups::SessionGroup {
+        id: "g1".into(),
+        title: "Interfaz".into(),
+        collapsed: false,
+    });
+    state.session_groups.members.insert("uno".into(), "g1".into());
+    export_with_interaction(
+        sidebar_for_height(&state, 264.0, 420.0),
+        264.0,
+        420.0,
+        "converged-sidebar-groups-menu-hover",
+        Some(Hover("session_group_menu:g1")),
+    );
+}
+
 #[test]
 #[ignore = "opt-in native breadcrumbs and horizontal dock strip"]
 fn export_breadcrumb_and_tab_strip_visual_review() {

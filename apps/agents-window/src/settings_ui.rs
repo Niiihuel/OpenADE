@@ -1260,8 +1260,8 @@ pub fn provider_connect_modal(state: &ViewState, base: Element, viewport_width: 
     providers::connect_modal(state, base, viewport_width)
 }
 
-// Hand-built: an ActionRow centers its trailing element, and these keycaps
-// stay on the first line when the description wraps.
+// Top-aligned on both sides: the keycaps stay on the first line when the
+// description wraps.
 fn shortcut_row(description: &str, keys: &str) -> Element {
     ActionRow::new(description, theme::component_palette())
         .wrap_title(true)
