@@ -659,7 +659,6 @@ pub(crate) fn popup(
     }
 }
 
-
 /// The hand-built popup that limn's `SuggestionList` replaced, kept so the
 /// replacement stays provably identical. Delete with the final audit (S18).
 #[cfg(test)]
@@ -868,7 +867,11 @@ mod popup_parity_tests {
         let mut state = ComposerSuggestionsState::default();
         state.trigger = Some(ComposerTrigger {
             kind,
-            query: if items == 0 { "zzz".into() } else { String::new() },
+            query: if items == 0 {
+                "zzz".into()
+            } else {
+                String::new()
+            },
             start: 0,
             cursor: 1,
             end: 1,
@@ -893,9 +896,11 @@ mod popup_parity_tests {
         for width in [240.0, 520.0] {
             for kind in [ComposerTriggerKind::Command, ComposerTriggerKind::File] {
                 for items in [0, 3, 20] {
-                    for (loading, error, truncated) in
-                        [(false, None, false), (true, None, true), (false, Some("Sin acceso".to_owned()), false)]
-                    {
+                    for (loading, error, truncated) in [
+                        (false, None, false),
+                        (true, None, true),
+                        (false, Some("Sin acceso".to_owned()), false),
+                    ] {
                         let mut state = state(kind, items);
                         state.loading = loading;
                         state.error = error.clone();

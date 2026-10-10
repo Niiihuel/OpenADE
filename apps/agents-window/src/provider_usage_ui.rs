@@ -7,10 +7,9 @@ use std::{
 };
 
 use openide_ui::{
-    ActiveHover, Button, ButtonVariant, Card, Chip, Color, Component, ComponentPalette, ControlSize,
-    Element, FontFamily, Icon, IconButton, Popover, PopoverPanel, PopoverPlacement, ScrollArea,
-    Separator,
-    Tooltip, TooltipPlacement, TooltipSpec,
+    ActiveHover, Button, ButtonVariant, Card, Chip, Color, Component, ComponentPalette,
+    ControlSize, Element, FontFamily, Icon, IconButton, Popover, PopoverPanel, PopoverPlacement,
+    ScrollArea, Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -1176,7 +1175,10 @@ mod tests {
             for (rows, height) in [(1, 700.0), (12, 700.0), (12, 260.0)] {
                 let frame = |panel: fn(&ViewState, Vec<Element>, f32) -> Element| {
                     let cards = (0..rows)
-                        .map(|row| text(format!("Cuenta {row}"), 12.0, theme::FOREGROUND).size(None, Some(48.0)))
+                        .map(|row| {
+                            text(format!("Cuenta {row}"), 12.0, theme::FOREGROUND)
+                                .size(None, Some(48.0))
+                        })
                         .collect();
                     let mut tree = UiTree::new(Element::column(vec![
                         Element::spacer().flex(1.0),

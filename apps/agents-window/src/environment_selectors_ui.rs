@@ -268,14 +268,18 @@ fn branch_selector_presentation(
                 .font_size(sizing.label_size)
                 .foreground(theme::FOREGROUND)
                 .flex(1.0),
-            IconButton::new("composer_branch_refresh", Icon::Refresh, theme::menu_palette())
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .enabled(!picker.loading && !picker.switching())
-                .tooltip("Actualizar ramas del repositorio")
-                .tooltip_placement(TooltipPlacement::Below)
-                .render()
-                .size(Some(28.0), Some(28.0)),
+            IconButton::new(
+                "composer_branch_refresh",
+                Icon::Refresh,
+                theme::menu_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .enabled(!picker.loading && !picker.switching())
+            .tooltip("Actualizar ramas del repositorio")
+            .tooltip_placement(TooltipPlacement::Below)
+            .render()
+            .size(Some(28.0), Some(28.0)),
         ])
         .padding((sizing.header_height - ControlSize::Compact.height()) / 2.0)
         .size(Some(inner_width), Some(sizing.header_height)),
@@ -491,7 +495,11 @@ pub(crate) fn local_selector(
         "composer_environment_dismiss",
         theme::menu_palette(),
     )
-    .header(MenuHeader::new(theme::menu_palette()).title("Entorno local").render())
+    .header(
+        MenuHeader::new(theme::menu_palette())
+            .title("Entorno local")
+            .render(),
+    )
     .context_menu_style()
     .width(340.0)
     .max_visible_items(8)

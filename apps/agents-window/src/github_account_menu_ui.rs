@@ -511,11 +511,21 @@ pub(crate) fn build(state: &ViewState, width: f32, sidebar_width: f32) -> Elemen
                 anchor,
                 Some(identity),
                 vec![
-                    DropdownMenuItem::new("github_account_manage", "Administrar GitHub").icon(Icon::Settings).into(),
-                    DropdownMenuItem::new("github_account_open", "Ver perfil en GitHub").icon(Icon::ArrowRight).into(),
+                    DropdownMenuItem::new("github_account_manage", "Administrar GitHub")
+                        .icon(Icon::Settings)
+                        .into(),
+                    DropdownMenuItem::new("github_account_open", "Ver perfil en GitHub")
+                        .icon(Icon::ArrowRight)
+                        .into(),
                     DropdownMenuEntry::Separator,
-                    DropdownMenuItem::new("github_account_refresh", "Actualizar conexión").icon(Icon::Refresh).enabled(!busy).into(),
-                    DropdownMenuItem::new("github_account_connect", "Conectar otra cuenta…").icon(Icon::Add).enabled(!busy).into(),
+                    DropdownMenuItem::new("github_account_refresh", "Actualizar conexión")
+                        .icon(Icon::Refresh)
+                        .enabled(!busy)
+                        .into(),
+                    DropdownMenuItem::new("github_account_connect", "Conectar otra cuenta…")
+                        .icon(Icon::Add)
+                        .enabled(!busy)
+                        .into(),
                     DropdownMenuEntry::Separator,
                     DropdownMenuItem::new("github_account_disconnect", "Desconectar de OpenIDE")
                         .icon(Icon::CloseCircle)
@@ -556,14 +566,28 @@ pub(crate) fn build(state: &ViewState, width: f32, sidebar_width: f32) -> Elemen
             let mut entries: Vec<_> = accounts
                 .iter()
                 .map(|login| {
-                    DropdownMenuItem::new(format!("github_account_verify:{login}"), format!("@{login}")).icon(Icon::Github).enabled(!busy(state)).into()
+                    DropdownMenuItem::new(
+                        format!("github_account_verify:{login}"),
+                        format!("@{login}"),
+                    )
+                    .icon(Icon::Github)
+                    .enabled(!busy(state))
+                    .into()
                 })
                 .collect();
             entries.extend([
                 DropdownMenuEntry::Separator,
-                DropdownMenuItem::new("github_account_manage", "Administrar GitHub").icon(Icon::Settings).into(),
-                DropdownMenuItem::new("github_account_refresh", "Actualizar cuentas").icon(Icon::Refresh).enabled(!busy(state)).into(),
-                DropdownMenuItem::new("github_account_connect", "Conectar otra cuenta…").icon(Icon::Add).enabled(!busy(state)).into(),
+                DropdownMenuItem::new("github_account_manage", "Administrar GitHub")
+                    .icon(Icon::Settings)
+                    .into(),
+                DropdownMenuItem::new("github_account_refresh", "Actualizar cuentas")
+                    .icon(Icon::Refresh)
+                    .enabled(!busy(state))
+                    .into(),
+                DropdownMenuItem::new("github_account_connect", "Conectar otra cuenta…")
+                    .icon(Icon::Add)
+                    .enabled(!busy(state))
+                    .into(),
             ]);
             menu(state, anchor, None, entries)
         }

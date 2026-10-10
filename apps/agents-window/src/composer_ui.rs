@@ -11,11 +11,10 @@ use std::{
 
 use openide_core::TurnMode;
 use openide_ui::{
-    Attachment, AttachmentOrientation, Button, ButtonVariant, Color, Component,
-    Composer, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    DropdownMenuSection, Element, FontFamily, Icon, IconButton, MenuHeader, MenuItem,
-    MenuMotion, PopoverPlacement, SelectorSizing, Skeleton, Tooltip, TooltipItem,
-    TooltipPlacement,
+    Attachment, AttachmentOrientation, Button, ButtonVariant, Color, Component, Composer,
+    ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownMenuSection, Element,
+    FontFamily, Icon, IconButton, MenuHeader, MenuItem, MenuMotion, PopoverPlacement,
+    SelectorSizing, Skeleton, Tooltip, TooltipItem, TooltipPlacement,
 };
 
 use crate::{
@@ -255,23 +254,6 @@ fn project_name(workspace: &str) -> &str {
         .unwrap_or("Elegir proyecto")
 }
 
-fn metadata_item(icon: Icon, value: &str, max_label_width: f32) -> Element {
-    let label_width = metadata_label_width(value, max_label_width);
-    Element::row(vec![
-        Element::icon(icon)
-            .foreground(MUTED_INK)
-            .size(Some(16.0), Some(16.0)),
-        Element::truncated_text(value)
-            .font_family(FontFamily::Sans)
-            .font_size(12.0)
-            .foreground(MUTED_INK)
-            .size(Some(label_width), Some(16.0)),
-    ])
-    .gap(5.0)
-    .padding(6.0)
-    .size(None, Some(CONTEXT_HEIGHT))
-}
-
 fn metadata_label_width(value: &str, max_label_width: f32) -> f32 {
     (value.chars().count() as f32 * 7.2).clamp(24.0, max_label_width)
 }
@@ -280,6 +262,19 @@ fn metadata_label_width(value: &str, max_label_width: f32) -> f32 {
 /// trigger, including press feedback and the short hover transition.
 fn metadata_trigger(trigger: Element) -> Element {
     theme::interactive_surface(trigger)
+}
+
+/// A metadata action in the strip under the composer: muted ink on the strip
+/// itself, live or not, with the hover and press of every other control.
+fn metadata_button(id: &str, label: &str, icon: Icon, width: f32) -> Button {
+    let mut palette = theme::action_palette(Color::TRANSPARENT, MUTED_INK);
+    palette.muted = MUTED_INK;
+    Button::new(id, label, palette)
+        .icon(icon)
+        .variant(ButtonVariant::Subtle)
+        .size(ControlSize::Compact)
+        .gap(5.0)
+        .width(width)
 }
 
 fn project_control_width(props: &ComposerProps<'_>, available: f32) -> f32 {
@@ -325,37 +320,17 @@ fn project_control(props: &ComposerProps<'_>, width: f32) -> Element {
 }
 
 fn branch_control(props: &ComposerProps<'_>, width: f32) -> Element {
-    let padding = 6.0;
     let picker = props.branch_picker;
     let label = props.project_branch.unwrap_or("Ramas");
-    let mut visual = vec![Element::icon(Icon::GitBranch)
-        .foreground(MUTED_INK)
-        .size(Some(16.0), Some(16.0))];
-    if width >= 72.0 {
-        visual.push(
-            Element::truncated_text(label)
-                .foreground(MUTED_INK)
-                .font_family(FontFamily::Sans)
-                .font_size(12.0)
-                .flex(1.0)
-                .size(None, Some(16.0)),
-        );
-        visual.push(
-            Element::icon(Icon::ChevronDown)
-                .foreground(MUTED_INK)
-                .size(Some(16.0), Some(16.0)),
-        );
-    }
-    let visual = Element::row(visual)
-        .gap(5.0)
-        .size(Some((width - 2.0 * padding).max(0.0)), Some(16.0));
-    let trigger = metadata_trigger(if picker.is_some_and(|picker| picker.switching()) {
-        Element::panel(visual)
+    // Under 72 px only the icon fits.
+    let trigger = if width >= 72.0 {
+        metadata_button("composer_branch_toggle", label, Icon::GitBranch, width)
+            .trailing_icon(Icon::ChevronDown)
     } else {
-        Element::clickable("composer_branch_toggle", visual)
-    })
-    .padding(padding)
-    .size(Some(width), Some(CONTEXT_HEIGHT));
+        metadata_button("composer_branch_toggle", "", Icon::GitBranch, width)
+    }
+    .enabled(!picker.is_some_and(|picker| picker.switching()))
+    .render();
     let trigger = Tooltip::new(
         trigger,
         "composer_branch_toggle",
@@ -468,10 +443,14 @@ fn project_metadata(props: &ComposerProps<'_>) -> Element {
     }) {
         row.push(
             Tooltip::new(
-                metadata_trigger(Element::clickable(
+                // 33: the padding on both sides, the icon and its gap.
+                metadata_button(
                     "composer_goal_open",
-                    metadata_item(Icon::Target, goal, 120.0),
-                )),
+                    goal,
+                    Icon::Target,
+                    metadata_label_width(goal, 120.0) + 33.0,
+                )
+                .render(),
                 "composer_goal_open",
                 format!("Objetivo: {goal}"),
                 theme::component_palette(),
@@ -782,12 +761,17 @@ fn preview_effort<'a>(props: &'a ComposerProps<'_>) -> Option<(usize, usize, &'a
 
 /// A row of the model menu's first view: what it sets, its current value and
 /// a chevron into the view that changes it.
-fn selector_row(id: &str, title: &str, value: &str, icon: Icon) -> DropdownMenuEntry {
-    DropdownMenuItem::new(id, title)
-        .icon(icon)
-        .description(value)
-        .chevron()
-        .into()
+fn selector_row(id: &str, title: &str, value: &str, icon: Icon, width: f32) -> DropdownMenuEntry {
+    DropdownMenuEntry::custom(
+        MenuItem::new(id, title, theme::selector_palette())
+            .icon(icon)
+            .description(value)
+            .chevron()
+            .width(width)
+            .render()
+            // limn's two-line row answers at once; these two keep their fade.
+            .transition_ms(openide_ui::tokens().motion.hover_ms),
+    )
 }
 
 fn effort_panel(props: &ComposerProps<'_>, width: f32) -> Element {
@@ -971,23 +955,79 @@ struct ModelPickerRow<'a> {
 
 impl ModelPickerRow<'_> {
     fn render(self) -> Element {
+        let palette = theme::selector_palette();
         let sizing = SelectorSizing::CATALOG;
+        let body_height = sizing.row_height;
+        let row_padding = (sizing.detail_row_height - body_height) / 2.0;
         let text_width =
-            (self.width - sizing.padding * 2.0 - sizing.icon_size * 2.0 - sizing.gap * 2.0).max(0.0);
-        // The status takes what its characters need, never half of the row.
-        let status_width =
-            (self.status.chars().count() as f32 * 5.8 + 10.0).min(text_width * 0.46);
-        let mut row = MenuItem::new(self.action_id, self.title, theme::selector_palette())
-            .icon(self.icon)
-            .description(self.detail)
-            .detail_mono(true)
-            .selected(self.selected)
-            .enabled(self.enabled)
-            .width(self.width);
-        if !self.status.is_empty() && status_width > 0.0 {
-            row = row.status(self.status).status_width(status_width);
+            (self.width - row_padding * 2.0 - sizing.icon_size * 2.0 - sizing.gap * 2.0).max(0.0);
+        let status_width = if self.status.is_empty() {
+            0.0
+        } else {
+            (self.status.chars().count() as f32 * 5.8 + 10.0).min(text_width * 0.46)
+        };
+        let mut detail = vec![
+            Element::truncated_text(self.detail)
+                .font_family(FontFamily::Monospace)
+                .font_size(sizing.detail_size)
+                .foreground(palette.muted)
+                .flex(1.0)
+                .size(None, Some(body_height / 2.0)),
+        ];
+        if status_width > 0.0 {
+            detail.push(
+                Element::truncated_text(self.status)
+                    .font_family(FontFamily::Sans)
+                    .font_size(sizing.detail_size)
+                    .foreground(palette.muted)
+                    .size(Some(status_width), Some(body_height / 2.0)),
+            );
         }
-        row.render()
+        let visual = Element::row(vec![
+            Element::icon(self.icon)
+                .foreground(if self.enabled {
+                    palette.text
+                } else {
+                    palette.muted
+                })
+                .size(Some(sizing.icon_size), Some(body_height)),
+            Element::column(vec![
+                Element::truncated_text(self.title)
+                    .font_family(FontFamily::Sans)
+                    .font_size(sizing.label_size)
+                    .foreground(if self.enabled {
+                        palette.text
+                    } else {
+                        palette.muted
+                    })
+                    .size(Some(text_width), Some(body_height / 2.0)),
+                Element::row(detail)
+                    .gap(sizing.gap)
+                    .size(Some(text_width), Some(body_height / 2.0)),
+            ])
+            .size(Some(text_width), Some(body_height)),
+            if self.selected {
+                Element::icon(Icon::Check).foreground(palette.text)
+            } else {
+                Element::spacer()
+            }
+            .size(Some(sizing.icon_size), Some(body_height)),
+        ])
+        .gap(sizing.gap)
+        .clip_children();
+        let row = if self.enabled {
+            Element::clickable(self.action_id, visual)
+                .action_menu_item()
+                .transition_ms(0)
+        } else {
+            Element::panel(visual)
+        };
+        palette
+            .interactive_surface(row)
+            .transition_ms(0)
+            .background(Color::TRANSPARENT)
+            .padding(row_padding)
+            .size(Some(self.width), Some(sizing.detail_row_height))
     }
 }
 
@@ -998,12 +1038,15 @@ fn model_provider_section(
     collapsed: bool,
     width: f32,
 ) -> DropdownMenuEntry {
-    DropdownMenuSection::new(format!("composer_model_provider_toggle:{provider_id}"), label)
-        .icon(icon_for_provider(provider_id))
-        .count(count)
-        .collapsed(collapsed)
-        .width(width)
-        .into()
+    DropdownMenuSection::new(
+        format!("composer_model_provider_toggle:{provider_id}"),
+        label,
+    )
+    .icon(icon_for_provider(provider_id))
+    .count(count)
+    .collapsed(collapsed)
+    .width(width)
+    .into()
 }
 
 fn model_route_status(route: &ModelRouteOption) -> &'static str {
@@ -1060,12 +1103,16 @@ fn model_list_fixed_header(props: &ComposerProps<'_>, width: f32) -> Element {
     MenuHeader::new(palette)
         .back("composer_model_list_toggle", "Modelo")
         .trailing(
-            IconButton::new("composer_routes_refresh", Icon::Refresh, theme::selector_palette())
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .tooltip("Actualizar listado de proveedores")
-                .tooltip_placement(TooltipPlacement::Below)
-                .render(),
+            IconButton::new(
+                "composer_routes_refresh",
+                Icon::Refresh,
+                theme::selector_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .tooltip("Actualizar listado de proveedores")
+            .tooltip_placement(TooltipPlacement::Below)
+            .render(),
         )
         .search(
             "composer_model_search",
@@ -1549,6 +1596,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
             } else {
                 props.selected_backend
             }),
+            inner_width,
         ));
     }
     if has_effort {
@@ -1562,6 +1610,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                 props.effort_label
             },
             Icon::Brain,
+            inner_width,
         ));
     }
     entries

@@ -1,7 +1,7 @@
-//! The hand-built rows, headers and footer of the model menu that limn's
-//! `DropdownMenuItem`, `MenuItem`, `DropdownMenuSection`, `MenuHeader` and
-//! `DropdownMenu::footer` replaced, kept so the replacements stay provably
-//! identical. Delete with the final audit (S18).
+//! The hand-built rows, headers and footer of the model menu, and the branch
+//! and goal triggers, that limn's `MenuItem`, `DropdownMenuSection`,
+//! `MenuHeader`, `DropdownMenu::footer` and `Button` replaced, kept so the
+//! replacements stay provably identical. Delete with the final audit (S18).
 
 use super::*;
 use openide_ui::{Button, DrawCommand, ElementKind, Frame, SearchField, Size, UiTree};
@@ -66,7 +66,6 @@ fn legacy_selector_row(id: &str, title: &str, value: &str, icon: Icon, width: f3
         .size(Some(width), Some(sizing.detail_row_height))
 }
 
-
 fn legacy_model_provider_section(
     provider_id: &str,
     label: &str,
@@ -109,96 +108,6 @@ fn legacy_model_provider_section(
         .size(Some(width), Some(sizing.row_height))
 }
 
-struct LegacyModelPickerRow<'a> {
-    action_id: &'a str,
-    title: &'a str,
-    detail: &'a str,
-    status: &'a str,
-    icon: Icon,
-    width: f32,
-    selected: bool,
-    enabled: bool,
-}
-
-impl LegacyModelPickerRow<'_> {
-    fn render(self) -> Element {
-        let palette = theme::selector_palette();
-        let sizing = SelectorSizing::CATALOG;
-        let body_height = sizing.row_height;
-        let row_padding = (sizing.detail_row_height - body_height) / 2.0;
-        let text_width =
-            (self.width - row_padding * 2.0 - sizing.icon_size * 2.0 - sizing.gap * 2.0).max(0.0);
-        let status_width = if self.status.is_empty() {
-            0.0
-        } else {
-            (self.status.chars().count() as f32 * 5.8 + 10.0).min(text_width * 0.46)
-        };
-        let mut detail = vec![
-            Element::truncated_text(self.detail)
-                .font_family(FontFamily::Monospace)
-                .font_size(sizing.detail_size)
-                .foreground(palette.muted)
-                .flex(1.0)
-                .size(None, Some(body_height / 2.0)),
-        ];
-        if status_width > 0.0 {
-            detail.push(
-                Element::truncated_text(self.status)
-                    .font_family(FontFamily::Sans)
-                    .font_size(sizing.detail_size)
-                    .foreground(palette.muted)
-                    .size(Some(status_width), Some(body_height / 2.0)),
-            );
-        }
-        let visual = Element::row(vec![
-            Element::icon(self.icon)
-                .foreground(if self.enabled {
-                    palette.text
-                } else {
-                    palette.muted
-                })
-                .size(Some(sizing.icon_size), Some(body_height)),
-            Element::column(vec![
-                Element::truncated_text(self.title)
-                    .font_family(FontFamily::Sans)
-                    .font_size(sizing.label_size)
-                    .foreground(if self.enabled {
-                        palette.text
-                    } else {
-                        palette.muted
-                    })
-                    .size(Some(text_width), Some(body_height / 2.0)),
-                Element::row(detail)
-                    .gap(sizing.gap)
-                    .size(Some(text_width), Some(body_height / 2.0)),
-            ])
-            .size(Some(text_width), Some(body_height)),
-            if self.selected {
-                Element::icon(Icon::Check).foreground(palette.text)
-            } else {
-                Element::spacer()
-            }
-            .size(Some(sizing.icon_size), Some(body_height)),
-        ])
-        .gap(sizing.gap)
-        .clip_children();
-        let row = if self.enabled {
-            Element::clickable(self.action_id, visual)
-                .action_menu_item()
-                .transition_ms(0)
-        } else {
-            Element::panel(visual)
-        };
-        palette
-            .interactive_surface(row)
-            .transition_ms(0)
-            .background(Color::TRANSPARENT)
-            .padding(row_padding)
-            .size(Some(self.width), Some(sizing.detail_row_height))
-    }
-}
-
-
 fn legacy_model_list_header(width: f32) -> Element {
     let sizing = SelectorSizing::CATALOG;
     Element::row(vec![
@@ -212,16 +121,20 @@ fn legacy_model_list_header(width: f32) -> Element {
         .size(ControlSize::Compact)
         .width((width - ControlSize::Compact.height() - sizing.gap).max(0.0))
         .render(),
-        IconButton::new("composer_routes_refresh", Icon::Refresh, theme::selector_palette())
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Compact)
-            .tooltip("Actualizar listado de proveedores")
-            .tooltip_placement(TooltipPlacement::Below)
-            .render()
-            .size(
-                Some(ControlSize::Compact.height()),
-                Some(ControlSize::Compact.height()),
-            ),
+        IconButton::new(
+            "composer_routes_refresh",
+            Icon::Refresh,
+            theme::selector_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Compact)
+        .tooltip("Actualizar listado de proveedores")
+        .tooltip_placement(TooltipPlacement::Below)
+        .render()
+        .size(
+            Some(ControlSize::Compact.height()),
+            Some(ControlSize::Compact.height()),
+        ),
     ])
     .gap(sizing.gap)
     .size(Some(width), Some(sizing.header_height))
@@ -245,7 +158,6 @@ fn legacy_model_list_fixed_header(props: &ComposerProps<'_>, width: f32) -> Elem
     .gap(2.0)
 }
 
-
 #[test]
 fn the_model_header_matches_its_hand_built_row_and_search() {
     let mut state = crate::view::tests::empty_state();
@@ -263,55 +175,17 @@ fn the_model_header_matches_its_hand_built_row_and_search() {
 }
 
 #[test]
-fn a_model_row_matches_its_hand_built_body_in_every_state() {
-    for width in WIDTHS {
-        for (selected, enabled, status) in [
-            (false, true, ""),
-            (true, true, "Revisado"),
-            (false, false, "No compatible"),
-            (true, false, "Sin verificar"),
-        ] {
-            let inner = width - 24.0;
-            let current = ModelPickerRow {
-                action_id: "composer_route:a",
-                title: "Claude Sonnet 4.5 con un nombre largo de catálogo",
-                detail: "anthropic/claude-sonnet-4-5-20250929",
-                status,
-                icon: Icon::Brain,
-                width: inner,
-                selected,
-                enabled,
-            }
-            .render();
-            let legacy = LegacyModelPickerRow {
-                action_id: "composer_route:a",
-                title: "Claude Sonnet 4.5 con un nombre largo de catálogo",
-                detail: "anthropic/claude-sonnet-4-5-20250929",
-                status,
-                icon: Icon::Brain,
-                width: inner,
-                selected,
-                enabled,
-            }
-            .render();
-            // The hand-built row set a transparent background, which paints
-            // a fill nobody can see; the limn row sets none.
-            let mut legacy = frame(menu(vec![DropdownMenuEntry::custom(legacy)], width).render(), width);
-            legacy.commands.retain(|command| {
-                !matches!(command, DrawCommand::FillRect { color, .. } if color.a == 0)
-            });
-            let current = frame(menu(vec![DropdownMenuEntry::custom(current)], width).render(), width);
-            assert!(current == legacy, "{width} {selected} {enabled} {status:?}");
-        }
-    }
-}
-
-#[test]
 fn a_provider_section_matches_its_hand_built_heading() {
     for width in WIDTHS {
         for collapsed in [false, true] {
             let inner = width - 24.0;
-            let current = model_provider_section("anthropic", "Anthropic · En tu cuenta", 12, collapsed, inner);
+            let current = model_provider_section(
+                "anthropic",
+                "Anthropic · En tu cuenta",
+                12,
+                collapsed,
+                inner,
+            );
             let legacy = DropdownMenuEntry::custom(legacy_model_provider_section(
                 "anthropic",
                 "Anthropic · En tu cuenta",
@@ -338,18 +212,39 @@ fn unclipped(frame: Frame) -> (Vec<DrawCommand>, Vec<String>) {
             .into_iter()
             .filter(|command| !matches!(command, DrawCommand::PushClip(_) | DrawCommand::PopClip))
             .collect(),
-        frame.regions.iter().map(|region| format!("{region:?}")).collect(),
+        frame
+            .regions
+            .iter()
+            .map(|region| format!("{region:?}"))
+            .collect(),
     )
 }
 
 #[test]
 fn the_first_view_rows_match_their_hand_built_bodies() {
     for width in WIDTHS {
+        let row = |id| selector_row(id, "Modelo", "Claude Sonnet 4.5", Icon::Brain, width - 8.0);
+        // Frames at rest cannot see the hover fade, so the roots are compared.
+        let DropdownMenuEntry::Custom(root) = row("composer_model_list_toggle") else {
+            panic!("the row is a custom entry");
+        };
+        let legacy_root = legacy_selector_row("a", "Modelo", "Modelo", Icon::Brain, width - 8.0);
+        assert_eq!(root.style.transition_ms, legacy_root.style.transition_ms);
+        assert_eq!(
+            root.style.hover_background,
+            legacy_root.style.hover_background
+        );
         let current = vec![
             DropdownMenuEntry::Heading("Para el próximo mensaje".into()),
-            selector_row("composer_model_list_toggle", "Modelo", "Claude Sonnet 4.5", Icon::Brain),
+            row("composer_model_list_toggle"),
             DropdownMenuEntry::Separator,
-            selector_row("composer_advanced_toggle", "Esfuerzo", "Automático", Icon::Brain),
+            selector_row(
+                "composer_advanced_toggle",
+                "Esfuerzo",
+                "Automático",
+                Icon::Brain,
+                width - 8.0,
+            ),
         ];
         let legacy = vec![
             DropdownMenuEntry::Heading("Para el próximo mensaje".into()),
@@ -428,7 +323,8 @@ fn the_connect_footer_matches_the_one_injected_into_the_popover() {
                         )
                     })
                     .collect();
-                let menu = menu(entries, width).header(model_list_fixed_header(&props, width - 8.0));
+                let menu =
+                    menu(entries, width).header(model_list_fixed_header(&props, width - 8.0));
                 if footer {
                     menu.footer(connect_provider_action(width - 8.0))
                 } else {
@@ -446,27 +342,59 @@ fn the_connect_footer_matches_the_one_injected_into_the_popover() {
 
 fn review_routes() -> Vec<ModelRouteOption> {
     [
-        ("openai", "OpenAI", "gpt-6-sol", "GPT-6 Sol", ExecutionSupport::Verified),
-        ("openai", "OpenAI", "gpt-6-luna", "GPT-6 Luna", ExecutionSupport::ProviderAdvertisedUnverified),
-        ("anthropic", "Anthropic", "claude-sonnet-4-5", "Claude Sonnet 4.5", ExecutionSupport::Verified),
-        ("anthropic", "Anthropic", "claude-haiku-4-5", "Claude Haiku 4.5", ExecutionSupport::ProviderListedUnverified),
-        ("anthropic", "Anthropic", "claude-opus-4-1", "Claude Opus 4.1", ExecutionSupport::Verified),
+        (
+            "openai",
+            "OpenAI",
+            "gpt-6-sol",
+            "GPT-6 Sol",
+            ExecutionSupport::Verified,
+        ),
+        (
+            "openai",
+            "OpenAI",
+            "gpt-6-luna",
+            "GPT-6 Luna",
+            ExecutionSupport::ProviderAdvertisedUnverified,
+        ),
+        (
+            "anthropic",
+            "Anthropic",
+            "claude-sonnet-4-5",
+            "Claude Sonnet 4.5",
+            ExecutionSupport::Verified,
+        ),
+        (
+            "anthropic",
+            "Anthropic",
+            "claude-haiku-4-5",
+            "Claude Haiku 4.5",
+            ExecutionSupport::ProviderListedUnverified,
+        ),
+        (
+            "anthropic",
+            "Anthropic",
+            "claude-opus-4-1",
+            "Claude Opus 4.1",
+            ExecutionSupport::Verified,
+        ),
     ]
     .into_iter()
-    .map(|(provider_id, provider_name, id, name, execution)| ModelRouteOption {
-        route_id: format!("native:{provider_id}:{id}"),
-        backend: "native".into(),
-        provider_id: provider_id.into(),
-        provider_name: provider_name.into(),
-        model_id: id.into(),
-        model_name: name.into(),
-        credential: CredentialAvailability::EnvPresentUnverified,
-        execution,
-        source: RouteSource::AdapterReview,
-        catalog_present: true,
-        provider_listed: Some(true),
-        effort_options: Vec::new(),
-    })
+    .map(
+        |(provider_id, provider_name, id, name, execution)| ModelRouteOption {
+            route_id: format!("native:{provider_id}:{id}"),
+            backend: "native".into(),
+            provider_id: provider_id.into(),
+            provider_name: provider_name.into(),
+            model_id: id.into(),
+            model_name: name.into(),
+            credential: CredentialAvailability::EnvPresentUnverified,
+            execution,
+            source: RouteSource::AdapterReview,
+            catalog_present: true,
+            provider_listed: Some(true),
+            effort_options: Vec::new(),
+        },
+    )
     .collect()
 }
 
@@ -481,7 +409,8 @@ fn export_menus_popovers_visual_review() {
     use std::{fs, path::Path};
 
     const HEIGHT: f32 = 620.0;
-    let output = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/menus-popovers-visual-qa");
+    let output =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/menus-popovers-visual-qa");
     fs::create_dir_all(&output).unwrap();
     let options = visual_qa::native_svg_options();
     let routes = review_routes();
@@ -491,8 +420,14 @@ fn export_menus_popovers_visual_review() {
         ("high".to_owned(), "Alto".to_owned()),
     ];
     let projects = vec![
-        ("/home/usuario/proyectos/openADE".to_owned(), "openADE".to_owned()),
-        ("/home/usuario/proyectos/personal/limn".to_owned(), "limn".to_owned()),
+        (
+            "/home/usuario/proyectos/openADE".to_owned(),
+            "openADE".to_owned(),
+        ),
+        (
+            "/home/usuario/proyectos/personal/limn".to_owned(),
+            "limn".to_owned(),
+        ),
     ];
     // Leaked so the props, which borrow for any lifetime, can hold it.
     let collapsed: &'static BTreeSet<String> = Box::leak(Box::new(["openai".to_owned()].into()));
@@ -520,7 +455,10 @@ fn export_menus_popovers_visual_review() {
         )
     };
     let scenes: Vec<(&str, Box<dyn Fn(f32) -> Element + '_>)> = vec![
-        ("model-first-view", Box::new(|width| composer(&|props| props.model_menu_open = true, width))),
+        (
+            "model-first-view",
+            Box::new(|width| composer(&|props| props.model_menu_open = true, width)),
+        ),
         (
             "model-catalog",
             Box::new(|width| {
@@ -546,8 +484,14 @@ fn export_menus_popovers_visual_review() {
                 )
             }),
         ),
-        ("project-selector", Box::new(|width| composer(&|props| props.project_menu_open = true, width))),
-        ("suggestions-commands", Box::new(|width| suggestions("/", width))),
+        (
+            "project-selector",
+            Box::new(|width| composer(&|props| props.project_menu_open = true, width)),
+        ),
+        (
+            "suggestions-commands",
+            Box::new(|width| suggestions("/", width)),
+        ),
         (
             "usage-popover",
             Box::new(|width| {
@@ -569,9 +513,145 @@ fn export_menus_popovers_visual_review() {
             let parsed =
                 resvg::usvg::Tree::from_str(&fs::read_to_string(&path).unwrap(), &options).unwrap();
             let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, HEIGHT as u32).unwrap();
-            resvg::render(&parsed, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+            resvg::render(
+                &parsed,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
             pixmap.save_png(path.with_extension("png")).unwrap();
             drop(context);
+        }
+    }
+}
+
+fn legacy_metadata_item(icon: Icon, value: &str, max_label_width: f32) -> Element {
+    let label_width = metadata_label_width(value, max_label_width);
+    Element::row(vec![
+        Element::icon(icon)
+            .foreground(MUTED_INK)
+            .size(Some(16.0), Some(16.0)),
+        Element::truncated_text(value)
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(MUTED_INK)
+            .size(Some(label_width), Some(16.0)),
+    ])
+    .gap(5.0)
+    .padding(6.0)
+    .size(None, Some(CONTEXT_HEIGHT))
+}
+
+fn legacy_branch_control(props: &ComposerProps<'_>, width: f32) -> Element {
+    let padding = 6.0;
+    let picker = props.branch_picker;
+    let label = props.project_branch.unwrap_or("Ramas");
+    let mut visual = vec![Element::icon(Icon::GitBranch)
+        .foreground(MUTED_INK)
+        .size(Some(16.0), Some(16.0))];
+    if width >= 72.0 {
+        visual.push(
+            Element::truncated_text(label)
+                .foreground(MUTED_INK)
+                .font_family(FontFamily::Sans)
+                .font_size(12.0)
+                .flex(1.0)
+                .size(None, Some(16.0)),
+        );
+        visual.push(
+            Element::icon(Icon::ChevronDown)
+                .foreground(MUTED_INK)
+                .size(Some(16.0), Some(16.0)),
+        );
+    }
+    let visual = Element::row(visual)
+        .gap(5.0)
+        .size(Some((width - 2.0 * padding).max(0.0)), Some(16.0));
+    let trigger = metadata_trigger(if picker.is_some_and(|picker| picker.switching()) {
+        Element::panel(visual)
+    } else {
+        Element::clickable("composer_branch_toggle", visual)
+    })
+    .padding(padding)
+    .size(Some(width), Some(CONTEXT_HEIGHT));
+    let trigger = Tooltip::new(
+        trigger,
+        "composer_branch_toggle",
+        format!("Rama: {label}"),
+        theme::component_palette(),
+    )
+    .render();
+    branch_selector(
+        props,
+        trigger,
+        PopoverPlacement::TopStart,
+        "composer_branch_toggle",
+    )
+}
+
+/// The frame without its fully transparent fills. A limn `Button` on a
+/// transparent surface states that fill at rest; the hand-built trigger had
+/// none, and nobody can see either.
+fn visible(mut frame: Frame) -> Frame {
+    frame
+        .commands
+        .retain(|command| !matches!(command, DrawCommand::FillRect { color, .. } if color.a == 0));
+    frame
+}
+
+// What a pointer or a key changes, which a frame at rest does not show.
+fn feedback(element: &Element) -> impl PartialEq + std::fmt::Debug {
+    let style = &element.style;
+    (
+        style.hover_background,
+        style.pressed_background,
+        style.radius,
+        style.transition_ms,
+        style.focus_ring,
+    )
+}
+
+#[test]
+fn the_branch_trigger_matches_its_hand_built_body() {
+    let mut state = crate::view::tests::empty_state();
+    for switching in [false, true] {
+        state.composer_branches.switching = switching.then(|| "main".into());
+        for branch in [None, Some("feature/menus-y-selectores")] {
+            // The strip gives the trigger 28 px, for the icon alone, or 72 and up.
+            for width in [28.0, 72.0, 112.0, 300.0] {
+                let mut props = ComposerProps::from_state(&state, 900.0, false, None, "", None);
+                props.project_branch = branch;
+                assert_eq!(
+                    visible(frame(branch_control(&props, width), 320.0)),
+                    frame(legacy_branch_control(&props, width), 320.0),
+                    "{switching} {branch:?} {width}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_goal_trigger_matches_its_hand_built_body() {
+    for goal in ["ab", "Objetivo", "Terminar la migración de los menús"] {
+        let current = metadata_button(
+            "composer_goal_open",
+            goal,
+            Icon::Target,
+            metadata_label_width(goal, 120.0) + 33.0,
+        )
+        .render();
+        let legacy = metadata_trigger(Element::clickable(
+            "composer_goal_open",
+            legacy_metadata_item(Icon::Target, goal, 120.0),
+        ));
+        assert_eq!(feedback(&current), feedback(&legacy), "{goal}");
+        let beside = |element| Element::row(vec![element, Element::spacer().flex(1.0)]);
+        for width in WIDTHS {
+            assert_eq!(
+                visible(frame(beside(current.clone()), width)),
+                frame(beside(legacy.clone()), width),
+                "{goal} {width}"
+            );
         }
     }
 }

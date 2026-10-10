@@ -403,7 +403,12 @@ pub fn build_command_center(state: &ViewState, width: f32, height: f32) -> Eleme
         .background(theme::PANEL)
         .border(theme::BORDER, 1.0)
         .radius(12.0)
-        .shadow(theme::COMMAND_PALETTE_SHADOW, Point::new(0.0, 16.0), 28.0, 1.0)
+        .shadow(
+            theme::COMMAND_PALETTE_SHADOW,
+            Point::new(0.0, 16.0),
+            28.0,
+            1.0,
+        )
         .size(Some(width), Some(height))
         .clip_children()
 }

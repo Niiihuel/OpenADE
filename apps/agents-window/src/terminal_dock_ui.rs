@@ -774,21 +774,26 @@ mod menu_parity_tests {
     #[test]
     fn the_session_rows_match_their_hand_built_bodies() {
         let state = crate::view::tests::empty_state();
-        let tabs: Vec<_> = [("Terminal", true), ("Un nombre de sesión bastante largo para la fila", false)]
-            .into_iter()
-            .enumerate()
-            .map(|(index, (title, active))| DockTabView {
-                id: index as u64 + 1,
-                title: title.into(),
-                full_path: (!active).then(|| "/home/usuario/proyecto".into()),
-                active,
-                kind: SideTab::Terminal,
-                closable: true,
-            })
-            .collect();
+        let tabs: Vec<_> = [
+            ("Terminal", true),
+            ("Un nombre de sesión bastante largo para la fila", false),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (title, active))| DockTabView {
+            id: index as u64 + 1,
+            title: title.into(),
+            full_path: (!active).then(|| "/home/usuario/proyecto".into()),
+            active,
+            kind: SideTab::Terminal,
+            closable: true,
+        })
+        .collect();
         for width in [200.0, 520.0] {
             let rows = |build: fn(&ViewState, &DockTabView) -> Element| {
-                tabs.iter().map(|tab| build(&state, tab)).collect::<Vec<_>>()
+                tabs.iter()
+                    .map(|tab| build(&state, tab))
+                    .collect::<Vec<_>>()
             };
             assert!(
                 frame(rows(session_menu_row), width) == frame(rows(legacy_session_menu_row), width),
