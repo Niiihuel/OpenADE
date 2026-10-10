@@ -13,29 +13,6 @@ fn frame(element: Element, width: f32) -> Frame {
     tree.layout(Size::new(width, 700.0))
 }
 
-/// What a frame paints and where it can be hit, with every coordinate
-/// rounded to a hundredth of a pixel: a `FormField` is a column inside the
-/// form's column, and summing the same heights in another order moves a
-/// coordinate by a rounding error.
-fn painted(frame: &Frame) -> String {
-    let source = format!("{:?}{:?}", frame.commands, frame.regions);
-    let mut out = String::with_capacity(source.len());
-    let mut number = String::new();
-    for character in source.chars().chain(std::iter::once(' ')) {
-        if character.is_ascii_digit() || character == '.' || (character == '-' && number.is_empty()) {
-            number.push(character);
-            continue;
-        }
-        match number.parse::<f32>() {
-            Ok(value) if number.contains('.') => out.push_str(&format!("{:.2}", value + 0.0)),
-            _ => out.push_str(&number),
-        }
-        number.clear();
-        out.push(character);
-    }
-    out
-}
-
 fn legacy_mono_input(id: &str, value: &str, placeholder: &str, width: f32) -> Element {
     field(id, value, placeholder)
         .font_family(FontFamily::Monospace)
@@ -87,10 +64,10 @@ fn a_settings_form_field_matches_the_hand_built_rows() {
             .gap(7.0)
             .size(Some(width), None);
             for viewport in [360.0, 900.0] {
-                assert_eq!(
-                    painted(&frame(current.clone(), viewport)),
-                    painted(&frame(legacy.clone(), viewport)),
-                    "{hints:?} width={width} viewport={viewport}"
+                visual_qa::assert_same_paint_when_nested(
+                    &frame(current.clone(), viewport),
+                    &frame(legacy.clone(), viewport),
+                    &format!("{hints:?} width={width} viewport={viewport}"),
                 );
             }
         }

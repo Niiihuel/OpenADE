@@ -15,6 +15,61 @@ use openide_ui::{
     SpinnerVariant,
 };
 
+/// A frame's paint commands and hit regions with every decimal number taken
+/// out, and those numbers in order.
+fn paint_numbers(frame: &Frame) -> (String, Vec<f32>) {
+    let source = format!("{:?}{:?}", frame.commands, frame.regions);
+    let (mut shape, mut numbers) = (String::with_capacity(source.len()), Vec::new());
+    let mut number = String::new();
+    for character in source.chars().chain(std::iter::once(' ')) {
+        if character.is_ascii_digit() || character == '.' || (character == '-' && number.is_empty()) {
+            number.push(character);
+            continue;
+        }
+        match number.parse::<f32>() {
+            Ok(value) if number.contains('.') => {
+                numbers.push(value);
+                shape.push('#');
+            }
+            _ => shape.push_str(&number),
+        }
+        number.clear();
+        shape.push(character);
+    }
+    (shape, numbers)
+}
+
+/// Asserts that two frames paint and hit-test the same once a field's rows
+/// are nested in a column of their own. Everything but the coordinates must
+/// be exactly equal, and no coordinate may differ by more than a thousandth
+/// of a pixel: summing the same heights in another order moves an `f32` by
+/// its last digit, which is all this allows.
+pub(crate) fn assert_same_paint_when_nested(current: &Frame, legacy: &Frame, context: &str) {
+    let (current_shape, current_numbers) = paint_numbers(current);
+    let (legacy_shape, legacy_numbers) = paint_numbers(legacy);
+    assert_eq!(current_shape, legacy_shape, "{context}");
+    for (current, legacy) in current_numbers.iter().zip(&legacy_numbers) {
+        assert!((current - legacy).abs() <= 0.001, "{context}: {current} against {legacy}");
+    }
+}
+
+#[test]
+fn nested_paint_comparison_allows_a_rounding_error_and_nothing_else() {
+    let frame = |y: f32, label: &str| {
+        let mut tree = openide_ui::UiTree::new(
+            openide_ui::Element::text(label).padding(y),
+        );
+        tree.set_reduced_motion(true);
+        tree.layout(openide_ui::Size::new(200.0, 100.0))
+    };
+    assert_same_paint_when_nested(&frame(7.14285, "a"), &frame(7.14288, "a"), "noise");
+    let differs = |current: Frame, legacy: Frame| {
+        std::panic::catch_unwind(|| assert_same_paint_when_nested(&current, &legacy, "")).is_err()
+    };
+    assert!(differs(frame(7.14285, "a"), frame(7.15, "a")));
+    assert!(differs(frame(7.14285, "a"), frame(7.14285, "b")));
+}
+
 pub(crate) fn write_frame_svg(
     frame: &Frame,
     path: &Path,

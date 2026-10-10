@@ -1051,17 +1051,6 @@ fn editor_agent_step(state: &AutomationViewState, content_width: f32) -> Element
 }
 
 pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
-    let stepper = Stepper::new(
-        vec![
-            Step::new("automation_step:content", "Contenido").description("Define la tarea"),
-            Step::new("automation_step:schedule", "Horario").description("Elige cuándo"),
-            Step::new("automation_step:agent", "Agente").description("Modelo y acceso"),
-        ],
-        state.editor_step.index(),
-        theme::component_palette(),
-    )
-    .width(width)
-    .render();
     let form = match state.editor_step {
         AutomationEditorStep::Content => Element::column(vec![
             section_label("¿Qué hará esta tarea?"),
@@ -1102,6 +1091,21 @@ pub fn editor_modal_body(state: &AutomationViewState, width: f32) -> Element {
         .gap(9.0),
         AutomationEditorStep::Agent => editor_agent_step(state, width),
     };
+    editor_modal_layout(state, width, form)
+}
+
+fn editor_modal_layout(state: &AutomationViewState, width: f32, form: Element) -> Element {
+    let stepper = Stepper::new(
+        vec![
+            Step::new("automation_step:content", "Contenido").description("Define la tarea"),
+            Step::new("automation_step:schedule", "Horario").description("Elige cuándo"),
+            Step::new("automation_step:agent", "Agente").description("Modelo y acceso"),
+        ],
+        state.editor_step.index(),
+        theme::component_palette(),
+    )
+    .width(width)
+    .render();
     let mut content = vec![
         stepper,
         Separator::horizontal(theme::component_palette()).render(),
@@ -1417,36 +1421,41 @@ pub fn build_automations(state: &AutomationViewState, width: f32) -> Element {
     let base = page.children(body).render();
     if state.screen == AutomationScreen::Edit {
         let width = Modal::fit_width(width, 560.0).max(240.0);
-        let initial_focus = match state.editor_step {
-            AutomationEditorStep::Content => "automation_title".to_owned(),
-            AutomationEditorStep::Schedule => state.form.frequency.action_id().to_owned(),
-            AutomationEditorStep::Agent => state
-                .backends
-                .first()
-                .map(|(id, _)| format!("automation_backend:{id}"))
-                .unwrap_or_else(|| "automation_previous".to_owned()),
-        };
-        Modal::new(
-            base,
-            true,
-            if state.selected_id.is_some() {
-                "Editar tarea"
-            } else {
-                "Nueva tarea programada"
-            },
-            "Inicia una sesión nueva en este proyecto cuando llegue el horario.",
-            "automation_cancel",
-            theme::component_palette(),
-        )
-        .width(width)
-        .height(520.0)
-        .body(editor_modal_body(state, crate::ui_sizing::form_width(width)))
-        .footer(editor_modal_footer(state))
-        .initial_focus(initial_focus)
-        .render()
+        let body = editor_modal_body(state, crate::ui_sizing::form_width(width));
+        editor_modal(state, base, width, body)
     } else {
         base
     }
+}
+
+fn editor_modal(state: &AutomationViewState, base: Element, width: f32, body: Element) -> Element {
+    let initial_focus = match state.editor_step {
+        AutomationEditorStep::Content => "automation_title".to_owned(),
+        AutomationEditorStep::Schedule => state.form.frequency.action_id().to_owned(),
+        AutomationEditorStep::Agent => state
+            .backends
+            .first()
+            .map(|(id, _)| format!("automation_backend:{id}"))
+            .unwrap_or_else(|| "automation_previous".to_owned()),
+    };
+    Modal::new(
+        base,
+        true,
+        if state.selected_id.is_some() {
+            "Editar tarea"
+        } else {
+            "Nueva tarea programada"
+        },
+        "Inicia una sesión nueva en este proyecto cuando llegue el horario.",
+        "automation_cancel",
+        theme::component_palette(),
+    )
+    .width(width)
+    .height(520.0)
+    .body(body)
+    .footer(editor_modal_footer(state))
+    .initial_focus(initial_focus)
+    .render()
 }
 
 #[cfg(test)]
@@ -1507,6 +1516,178 @@ mod tests {
                 format!("{:?}", legacy_frequency_control(&form, width)),
                 "{width}"
             );
+        }
+    }
+
+    // The task editor's hand-built rows that `FormField` replaced. Delete
+    // with the final audit (S18).
+    fn legacy_form_label(value: &str) -> Element {
+        text(value, 12.0, theme::FOREGROUND_SUBTLE).min_size(0.0, 18.0)
+    }
+
+    fn legacy_schedule_editor(state: &AutomationViewState, content_width: f32) -> Vec<Element> {
+        let form = &state.form;
+        let mut rows = vec![
+            legacy_form_label("Frecuencia"),
+            frequency_control(form, content_width - 26.0),
+        ];
+        match form.frequency {
+            AutomationFrequency::Once => {
+                let (date, time) = form.once_parts();
+                rows.push(
+                    DateTimePicker::new(
+                        "automation_once_date",
+                        "automation_once_time",
+                        date,
+                        time,
+                        theme::component_palette(),
+                    )
+                    .display_month(state.calendar_year, state.calendar_month)
+                    .render(),
+                );
+            }
+            AutomationFrequency::EveryMinutes => rows.extend([
+                legacy_form_label("Cada cuántos minutos"),
+                TextField::new(
+                    "automation_interval",
+                    &form.interval_minutes,
+                    "60",
+                    theme::component_palette(),
+                )
+                .size(ControlSize::Regular)
+                .render(),
+            ]),
+            AutomationFrequency::Daily => rows.extend([
+                legacy_form_label("Hora local"),
+                TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
+            ]),
+            AutomationFrequency::Weekly => {
+                let days = ["L", "M", "X", "J", "V", "S", "D"];
+                rows.push(legacy_form_label("Día de la semana"));
+                rows.push(
+                    Element::row(
+                        days.into_iter()
+                            .enumerate()
+                            .map(|(index, day)| {
+                                let selected = usize::from(form.weekday) == index;
+                                Button::new(
+                                    format!("automation_weekday:{index}"),
+                                    day,
+                                    theme::component_palette(),
+                                )
+                                .variant(if selected {
+                                    ButtonVariant::Secondary
+                                } else {
+                                    ButtonVariant::Ghost
+                                })
+                                .size(ControlSize::Compact)
+                                .width(((content_width - 26.0 - 24.0) / 7.0).max(28.0))
+                                .active(selected)
+                                .render()
+                            })
+                            .collect(),
+                    )
+                    .gap(4.0),
+                );
+                rows.push(legacy_form_label("Hora local"));
+                rows.push(
+                    TimePicker::new("automation_time", &form.time, theme::component_palette()).render(),
+                );
+            }
+        }
+        rows
+    }
+
+    fn legacy_editor_form(state: &AutomationViewState, width: f32) -> Element {
+        match state.editor_step {
+            AutomationEditorStep::Content => Element::column(vec![
+                section_label("¿Qué hará esta tarea?"),
+                legacy_form_label("Título"),
+                TextField::new(
+                    "automation_title",
+                    &state.form.title,
+                    "Ej. Resumen diario",
+                    theme::component_palette(),
+                )
+                .size(ControlSize::Regular)
+                .render(),
+                legacy_form_label("Instrucciones"),
+                TextArea::new(
+                    "automation_prompt",
+                    &state.form.prompt,
+                    "Describe el resultado esperado y los límites de esta tarea…",
+                    theme::component_palette(),
+                )
+                .height(112.0)
+                .render(),
+                muted("Las ejecuciones sin supervisión pueden esperar una aprobación antes de modificar archivos."),
+            ])
+            .gap(8.0),
+            AutomationEditorStep::Schedule => Element::column({
+                let mut rows = vec![section_label("¿Cuándo se ejecutará?")];
+                rows.extend(legacy_schedule_editor(state, width));
+                rows
+            })
+            .gap(9.0),
+            AutomationEditorStep::Agent => editor_agent_step(state, width),
+        }
+    }
+
+    #[test]
+    fn task_editor_fields_match_the_hand_built_rows() {
+        // Alone, a field is the same element tree as its rows in a column.
+        let control = || TimePicker::new("automation_time", "09:30", theme::component_palette()).render();
+        for (sizing, gap) in [(AUTOMATION_FIELD, 8.0), (AUTOMATION_SCHEDULE_FIELD, 9.0)] {
+            assert_eq!(
+                format!("{:?}", form_field("Hora local", control(), sizing).render()),
+                format!("{:?}", Element::column(vec![legacy_form_label("Hora local"), control()]).gap(gap)),
+                "gap={gap}"
+            );
+            assert_eq!(
+                format!("{:?}", form_field("Hora local", control(), sizing).hint("Tu zona horaria.").render()),
+                format!(
+                    "{:?}",
+                    Element::column(vec![legacy_form_label("Hora local"), control(), muted("Tu zona horaria.")])
+                        .gap(gap)
+                ),
+                "gap={gap}"
+            );
+        }
+
+        // In the editor the fields nest where the rows used to be siblings.
+        let frame = |element: Element, width: f32| {
+            let mut tree = UiTree::new(element);
+            tree.set_reduced_motion(true);
+            tree.layout(Size::new(width, 700.0))
+        };
+        let steps = [
+            (AutomationEditorStep::Content, AutomationFrequency::Daily),
+            (AutomationEditorStep::Schedule, AutomationFrequency::Once),
+            (AutomationEditorStep::Schedule, AutomationFrequency::EveryMinutes),
+            (AutomationEditorStep::Schedule, AutomationFrequency::Daily),
+            (AutomationEditorStep::Schedule, AutomationFrequency::Weekly),
+        ];
+        for (step, frequency) in steps {
+            let mut state = state();
+            state.screen = AutomationScreen::Edit;
+            state.editor_step = step;
+            state.form.title = "Resumen diario".into();
+            state.form.frequency = frequency;
+            state.form.once_at = "2026-03-14T09:30".into();
+            for viewport in [360.0, 900.0] {
+                let width = Modal::fit_width(viewport, 560.0).max(240.0);
+                let form_width = crate::ui_sizing::form_width(width);
+                let legacy = editor_modal_layout(&state, form_width, legacy_editor_form(&state, form_width));
+                // The page under the modal is what the closed editor shows.
+                let mut closed = state.clone();
+                closed.screen = AutomationScreen::List;
+                let base = build_automations(&closed, viewport);
+                crate::settings_ui::visual_qa::assert_same_paint_when_nested(
+                    &frame(build_automations(&state, viewport), viewport),
+                    &frame(editor_modal(&state, base, width, legacy), viewport),
+                    &format!("{step:?} {frequency:?} viewport={viewport}"),
+                );
+            }
         }
     }
 
