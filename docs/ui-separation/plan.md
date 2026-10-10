@@ -695,6 +695,83 @@ Size: large. Depends on: s16-openide-ui-shells, s17-markdown, s14-ide-chrome, s0
 
 **Verification.** openADE suite equals the S00 red list. Full-app baseline diff of every area captured in S00: zero pixels outside the changes the owner approved during the plan. The audit greps return only ledger rows. cargo test -p limn -p limn-egui -p limn-gallery green; the gallery shows every component added by this plan in dark and light, and with square corners (Radius::SQUARE).
 
+
+## Convergence pass (added 2026-10-10)
+
+The owner's rule for this pass: openADE's design does not change; limn adapts to openADE. These sections run after s18, in order.
+
+### c01-converge-controls: Convergence: primitives, theme, buttons, tabs, settings rows
+
+**Goal.** The owner decided (2026-10-10): openADE's design is the reference and must not change; limn adapts to it. For every ledger row of sections s01, s02, s03, s04, s05, s06 where a piece stays hand-built, keeps a post-render override, or waits on an owner decision because limn could not paint it identically, extend limn until it can, then migrate the piece.
+
+**limn**
+- Give the owning limn component what it lacks to reproduce openADE's frame exactly: a sizing-profile field, a builder, a variant or a slot. Prefer a field on the existing *Sizing profile over a new component. limn's own defaults (what the gallery shows today) do not change.
+- Every addition gets a unit test, a gallery demo and a docs/components.md mention, as in the earlier sections.
+
+**openADE**
+- Migrate each such piece to the limn component with an openADE profile in apps/agents-window/src/ui_sizing.rs (or the palette it already uses). Write the parity test against the legacy body FIRST, migrate, then delete the legacy body once the exports match the s00 baseline.
+- Zero visible change: no owner decision is resolved by moving openADE's pixels. Decisions of the form 'converge on limn's value?' are answered NO; limn takes openADE's value as a profile instead. The visible changes already made in s03 (Minus glyph, tooltip on disabled) stay.
+- Update each ledger row you resolve: append 'RESOLVED in c01-converge-controls: <how>' to its decision column. A row that is genuinely app layout or domain-specific composition gets 'STAYS in openADE by design: <reason>' instead. Do not leave a row of your source sections without one of the two marks, except rows that are pure records (baseline notes, reconciliations).
+- If reproducing a piece would need a limn API that only openADE could ever use and that distorts the component (more than about three one-off knobs), leave it, mark it STAYS with that reason.
+
+**Depends on:** s18-text-sweep-audit. **Visible changes:** none.
+
+**Verification.** Both suites show only the four known failures; all exports diffed against the s00 baseline with no new difference; captures of each migrated piece in shots/c01-converge-controls/.
+
+### c02-converge-pages-rows: Convergence: pages, state panels and list rows
+
+**Goal.** The owner decided (2026-10-10): openADE's design is the reference and must not change; limn adapts to it. For every ledger row of sections s07, s08, s09a, s09b, s09c where a piece stays hand-built, keeps a post-render override, or waits on an owner decision because limn could not paint it identically, extend limn until it can, then migrate the piece.
+
+**limn**
+- Give the owning limn component what it lacks to reproduce openADE's frame exactly: a sizing-profile field, a builder, a variant or a slot. Prefer a field on the existing *Sizing profile over a new component. limn's own defaults (what the gallery shows today) do not change.
+- Every addition gets a unit test, a gallery demo and a docs/components.md mention, as in the earlier sections.
+
+**openADE**
+- Migrate each such piece to the limn component with an openADE profile in apps/agents-window/src/ui_sizing.rs (or the palette it already uses). Write the parity test against the legacy body FIRST, migrate, then delete the legacy body once the exports match the s00 baseline.
+- Zero visible change: no owner decision is resolved by moving openADE's pixels. Decisions of the form 'converge on limn's value?' are answered NO; limn takes openADE's value as a profile instead. The visible changes already made in s03 (Minus glyph, tooltip on disabled) stay.
+- Update each ledger row you resolve: append 'RESOLVED in c02-converge-pages-rows: <how>' to its decision column. A row that is genuinely app layout or domain-specific composition gets 'STAYS in openADE by design: <reason>' instead. Do not leave a row of your source sections without one of the two marks, except rows that are pure records (baseline notes, reconciliations).
+- If reproducing a piece would need a limn API that only openADE could ever use and that distorts the component (more than about three one-off knobs), leave it, mark it STAYS with that reason.
+
+**Depends on:** c01-converge-controls. **Visible changes:** none.
+
+**Verification.** Both suites show only the four known failures; all exports diffed against the s00 baseline with no new difference; captures of each migrated piece in shots/c02-converge-pages-rows/.
+
+### c03-converge-panels-forms-menus: Convergence: panel headers, cards, forms, modals and menus
+
+**Goal.** The owner decided (2026-10-10): openADE's design is the reference and must not change; limn adapts to it. For every ledger row of sections s10, s11, s12, s13 where a piece stays hand-built, keeps a post-render override, or waits on an owner decision because limn could not paint it identically, extend limn until it can, then migrate the piece.
+
+**limn**
+- Give the owning limn component what it lacks to reproduce openADE's frame exactly: a sizing-profile field, a builder, a variant or a slot. Prefer a field on the existing *Sizing profile over a new component. limn's own defaults (what the gallery shows today) do not change.
+- Every addition gets a unit test, a gallery demo and a docs/components.md mention, as in the earlier sections.
+
+**openADE**
+- Migrate each such piece to the limn component with an openADE profile in apps/agents-window/src/ui_sizing.rs (or the palette it already uses). Write the parity test against the legacy body FIRST, migrate, then delete the legacy body once the exports match the s00 baseline.
+- Zero visible change: no owner decision is resolved by moving openADE's pixels. Decisions of the form 'converge on limn's value?' are answered NO; limn takes openADE's value as a profile instead. The visible changes already made in s03 (Minus glyph, tooltip on disabled) stay.
+- Update each ledger row you resolve: append 'RESOLVED in c03-converge-panels-forms-menus: <how>' to its decision column. A row that is genuinely app layout or domain-specific composition gets 'STAYS in openADE by design: <reason>' instead. Do not leave a row of your source sections without one of the two marks, except rows that are pure records (baseline notes, reconciliations).
+- If reproducing a piece would need a limn API that only openADE could ever use and that distorts the component (more than about three one-off knobs), leave it, mark it STAYS with that reason.
+
+**Depends on:** c02-converge-pages-rows. **Visible changes:** none.
+
+**Verification.** Both suites show only the four known failures; all exports diffed against the s00 baseline with no new difference; captures of each migrated piece in shots/c03-converge-panels-forms-menus/.
+
+### c04-converge-chrome-chat: Convergence: IDE chrome, composer, editor, app shells, Markdown and text
+
+**Goal.** The owner decided (2026-10-10): openADE's design is the reference and must not change; limn adapts to it. For every ledger row of sections s14, s15, s16, s17, s18 where a piece stays hand-built, keeps a post-render override, or waits on an owner decision because limn could not paint it identically, extend limn until it can, then migrate the piece.
+
+**limn**
+- Give the owning limn component what it lacks to reproduce openADE's frame exactly: a sizing-profile field, a builder, a variant or a slot. Prefer a field on the existing *Sizing profile over a new component. limn's own defaults (what the gallery shows today) do not change.
+- Every addition gets a unit test, a gallery demo and a docs/components.md mention, as in the earlier sections.
+
+**openADE**
+- Migrate each such piece to the limn component with an openADE profile in apps/agents-window/src/ui_sizing.rs (or the palette it already uses). Write the parity test against the legacy body FIRST, migrate, then delete the legacy body once the exports match the s00 baseline.
+- Zero visible change: no owner decision is resolved by moving openADE's pixels. Decisions of the form 'converge on limn's value?' are answered NO; limn takes openADE's value as a profile instead. The visible changes already made in s03 (Minus glyph, tooltip on disabled) stay.
+- Update each ledger row you resolve: append 'RESOLVED in c04-converge-chrome-chat: <how>' to its decision column. A row that is genuinely app layout or domain-specific composition gets 'STAYS in openADE by design: <reason>' instead. Do not leave a row of your source sections without one of the two marks, except rows that are pure records (baseline notes, reconciliations).
+- If reproducing a piece would need a limn API that only openADE could ever use and that distorts the component (more than about three one-off knobs), leave it, mark it STAYS with that reason.
+
+**Depends on:** c03-converge-panels-forms-menus. **Visible changes:** none.
+
+**Verification.** Both suites show only the four known failures; all exports diffed against the s00 baseline with no new difference; captures of each migrated piece in shots/c04-converge-chrome-chat/.
+
 ## Stays in openADE
 
 - All routing and state mapping: build_view, build_view_sized, build_window_view, workspace_modals, dock_layout and the three-dock arrangement with its layout constants, build_settings_page routing and every *_page builder, ide_ui::build, explorer and agent, session_surface::build_session_*, message and transcript_item dispatchers, timeline, composer placement, home::build_home_layout, cli_entry.
