@@ -1731,7 +1731,7 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         .reserve_rail(true);
     let reading_width = page.content_width();
     let _markdown_frame =
-        rich_text::begin_markdown_frame(state.selected_session.as_deref(), reading_width.max(96.0));
+        openide_ui::Markdown::begin_frame(state.selected_session.as_deref(), reading_width.max(96.0));
     // Keep first content below the scrim at scroll position zero. When the
     // transcript scrolls, earlier rows pass beneath the fade like Codex.
     let mut rows = vec![Element::spacer().size(None, Some(22.0))];
@@ -3853,7 +3853,7 @@ mod tests {
         assert!(!crate::conversation_source_ui::apply_action(
             &mut state, next_id
         ));
-        let page = rich_text::markdown_source_page(&content, start);
+        let page = openide_ui::Markdown::source_page(&content, start);
         assert!(page.text.ends_with("ULTIMA_PAGINA"));
         assert!(crate::conversation_source_ui::apply_action(
             &mut state,

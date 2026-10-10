@@ -1,8 +1,8 @@
 //! Paged access to complete assistant text without unbounded Markdown layout.
 
-use openide_ui::{Button, ButtonVariant, Component, ControlSize, Element, Icon, Modal};
+use openide_ui::{Button, ButtonVariant, Component, ControlSize, Element, Icon, Markdown, Modal};
 
-use crate::{rich_text, theme, transcript::TranscriptItem, view::ViewState};
+use crate::{theme, transcript::TranscriptItem, view::ViewState};
 
 fn action_id(state: &ViewState, index: usize, start: usize, action: &str) -> String {
     format!(
@@ -89,7 +89,7 @@ pub(crate) fn apply_action(state: &mut ViewState, id: &str) -> bool {
     if state.conversation_details.source_view() != Some((index, start)) {
         return false;
     }
-    let page = rich_text::markdown_source_page(content, start);
+    let page = Markdown::source_page(content, start);
     if page.start_byte != start {
         return false;
     }
@@ -123,7 +123,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     let Some(content) = source(state, index) else {
         return base;
     };
-    let page = rich_text::markdown_source_page(content, start);
+    let page = Markdown::source_page(content, start);
     let width = Modal::fit_width(viewport_width, 860.0);
     let body_width = crate::ui_sizing::form_width(width).max(48.0);
     let navigation = |action: &str, label: &str, enabled: bool| {
@@ -166,9 +166,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
     )
     .width(width)
     .height(560.0)
-    .body(rich_text::render_markdown_source_page_at_width(
-        &page, body_width,
-    ))
+    .body(page.render(body_width, theme::component_palette()))
     .footer(footer)
     .initial_focus(format!("{close_id}:close"))
     .return_focus(action_id(state, index, 0, "open"))

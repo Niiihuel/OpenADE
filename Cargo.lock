@@ -2650,6 +2650,7 @@ dependencies = [
  "unicode-linebreak",
  "unicode-segmentation",
  "unicode-width",
+ "url",
 ]
 
 [[package]]

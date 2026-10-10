@@ -1,5 +1,5 @@
 use super::*;
-use openide_ui::{DrawCommand, Key, Size, UiAction, UiEvent, UiTree};
+use openide_ui::{DrawCommand, FontFamily, Key, Size, UiAction, UiEvent, UiTree};
 
 fn actions(element: Element) -> Vec<String> {
     UiTree::new(element)
@@ -53,33 +53,6 @@ fn web_destinations_reject_unsafe_schemes_and_spoofed_github_hosts() {
 }
 
 #[test]
-fn markdown_urls_keep_labels_balanced_parentheses_and_literal_file_paths() {
-    let source = "Mirá [repositorio](https://github.com/a/b) y https://example.test/a_(b). `https://code.test` [archivo](src/main.rs)";
-    let runs = parse_inline_mode(source, false);
-    let links: Vec<_> = runs
-        .iter()
-        .filter_map(|run| run.destination.as_deref())
-        .collect();
-    assert_eq!(
-        links,
-        ["https://github.com/a/b", "https://example.test/a_(b)"]
-    );
-    let text = runs.iter().map(|run| run.text.as_str()).collect::<String>();
-    assert!(text.contains("Mirá repositorio y https://example.test/a_(b)."));
-    assert!(!text.contains("repositorio (https"));
-    assert!(text.contains("[archivo](src/main.rs)"));
-    let nested = parse_inline_mode("[manual](https://example.test/a_(b))", false);
-    assert_eq!(
-        nested[0].destination.as_deref(),
-        Some("https://example.test/a_(b)")
-    );
-    assert_eq!(
-        url_token_len(&format!("https://example.test/{}", ")".repeat(30_000))),
-        0
-    );
-}
-
-#[test]
 fn partial_stream_urls_become_actionable_only_when_the_target_is_complete() {
     for source in [
         "Ver https://github.",
@@ -87,9 +60,6 @@ fn partial_stream_urls_become_actionable_only_when_the_target_is_complete() {
         "Ver https://github.com/a/b",
     ] {
         assert!(actions(render_streaming_markdown_at_width(source, 420.0)).is_empty());
-        assert!(parse_inline_mode(source, true)
-            .iter()
-            .any(|run| run.kind == InlineKind::Link));
     }
     let source = "Ver https://github.com/a/b ";
     let links = actions(render_streaming_markdown_at_width(source, 420.0));
@@ -111,7 +81,8 @@ fn partial_stream_urls_become_actionable_only_when_the_target_is_complete() {
 
 #[test]
 fn bounded_composer_and_markdown_never_open_a_truncated_host() {
-    let prefix = "x".repeat(MAX_SOURCE_CHARS - " https://github.co".chars().count());
+    // 20,000 characters is the default `MarkdownLimits::source_chars`.
+    let prefix = "x".repeat(20_000 - " https://github.co".chars().count());
     let source = format!("{prefix} https://github.com/a/b");
     let draft_links = composer_web_links(&source);
     assert_eq!(draft_links.len(), 1);
