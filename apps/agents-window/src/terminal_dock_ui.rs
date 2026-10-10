@@ -10,7 +10,7 @@ use crate::{
 use openide_ui::{
     Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element, FontFamily, Icon, IconButton, MenuItem, Popover, PopoverPlacement,
-    Separator, Tooltip, TooltipPlacement,
+    Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 pub(crate) const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -62,30 +62,6 @@ fn header_tooltip_placement(state: &ViewState) -> TooltipPlacement {
     } else {
         TooltipPlacement::Above
     }
-}
-
-fn tool(
-    state: &ViewState,
-    id: impl Into<String>,
-    action: impl Into<String>,
-    icon: Icon,
-    hint: impl Into<String>,
-) -> Element {
-    let id = id.into();
-    Tooltip::new(
-        theme::interactive_surface(
-            IconButton::new(&id, icon, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconExtraSmall)
-                .render()
-                .dispatch_as(action),
-        ),
-        &id,
-        hint,
-        theme::component_palette(),
-    )
-    .placement(header_tooltip_placement(state))
-    .render()
 }
 
 fn tab_label(state: &ViewState, tab: &DockTabView) -> String {
@@ -158,13 +134,17 @@ fn session_menu_row(state: &ViewState, tab: &DockTabView) -> Element {
 }
 
 fn session_selector(state: &ViewState, panel_width: f32) -> Element {
-    let trigger = tool(
-        state,
-        "terminal_sessions_toggle",
+    let trigger = IconButton::new(
         "terminal_sessions_toggle",
         Icon::Menu,
-        "Todas las terminales",
-    );
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .tooltip_with(
+        TooltipSpec::new("Todas las terminales").placement(header_tooltip_placement(state)),
+    )
+    .render();
     if let Some(rename) = &state.terminal_controls.rename {
         let field = format!("terminal_rename_input:{}", rename.id);
         let mut rows = vec![
@@ -288,13 +268,17 @@ fn profiles_menu(state: &ViewState, width: f32) -> Element {
             .into(),
     );
     DropdownMenu::new(
-        tool(
-            state,
-            "terminal_profiles_toggle",
+        IconButton::new(
             "terminal_profiles_toggle",
             Icon::ChevronDown,
-            "Perfiles de terminal",
-        ),
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Perfiles de terminal").placement(header_tooltip_placement(state)),
+        )
+        .render(),
         entries,
         state.terminal_controls.profiles_open,
         "terminal_profiles_dismiss",
@@ -408,13 +392,17 @@ fn actions_menu(state: &ViewState, width: f32) -> Element {
         );
     }
     DropdownMenu::new(
-        tool(
-            state,
-            "terminal_menu_toggle",
+        IconButton::new(
             "terminal_menu_toggle",
             Icon::More,
-            "Acciones de la terminal",
-        ),
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Acciones de la terminal").placement(header_tooltip_placement(state)),
+        )
+        .render(),
         entries,
         state.terminal_menu_open,
         "terminal_menu_dismiss",
@@ -445,19 +433,14 @@ fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> Element {
         tab.full_path.as_deref().unwrap_or(&state.workspace)
     );
     let close_id = format!("terminal_close:{}", tab.id);
-    let close = Tooltip::new(
-        theme::interactive_surface(
-            IconButton::new(&close_id, Icon::Close, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconExtraSmall)
-                .render(),
-        ),
-        &close_id,
-        format!("Terminar {title}"),
-        theme::component_palette(),
-    )
-    .placement(header_tooltip_placement(state))
-    .render();
+    let close = IconButton::new(close_id, Icon::Close, theme::component_palette())
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new(format!("Terminar {title}"))
+                .placement(header_tooltip_placement(state)),
+        )
+        .render();
     crate::dock_tab_ui::rounded_tab(crate::dock_tab_ui::RoundedTab {
         id: format!("terminal_tab:{}", tab.id),
         extent_id: format!("terminal_tab_extent:{}", tab.id),
@@ -500,60 +483,83 @@ fn header_with_sections(
 ) -> Element {
     let wide = width >= 580.0;
     let mut actions = vec![Element::row(vec![
-        tool(
-            state,
-            "terminal_new",
-            "terminal_new",
-            Icon::Add,
-            "Nueva terminal",
-        ),
+        IconButton::new("terminal_new", Icon::Add, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Nueva terminal").placement(header_tooltip_placement(state)),
+            )
+            .render(),
         profiles_menu(state, width),
     ])
     .gap(0.0)
     .size(Some(TOOL_SIZE * 2.0), Some(TOOL_SIZE))];
     if wide {
-        actions.push(tool(
-            state,
-            "terminal_split",
-            if state.terminal_controls.panes.len() == 2 {
+        actions.push(
+            IconButton::new(
+                "terminal_split",
+                Icon::PanelRight,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .dispatch_as(if state.terminal_controls.panes.len() == 2 {
                 "terminal_unsplit"
             } else {
                 "terminal_split"
-            },
-            Icon::PanelRight,
-            if state.terminal_controls.panes.len() == 2 {
-                "Quitar división · conservar ambas sesiones"
-            } else {
-                "Dividir terminal · nueva sesión independiente"
-            },
-        ));
+            })
+            .tooltip_with(
+                TooltipSpec::new(if state.terminal_controls.panes.len() == 2 {
+                    "Quitar división · conservar ambas sesiones"
+                } else {
+                    "Dividir terminal · nueva sesión independiente"
+                })
+                .placement(header_tooltip_placement(state)),
+            )
+            .render(),
+        );
     }
     actions.push(actions_menu(state, width));
     actions.push(session_selector(state, width));
     if wide {
-        actions.push(tool(
-            state,
-            "terminal_panel_maximize_button",
-            "terminal_panel_maximize",
-            if state.terminal_maximized {
-                Icon::Collapse
-            } else {
-                Icon::Expand
-            },
-            if state.terminal_maximized {
-                "Restaurar tamaño del panel"
-            } else {
-                "Ampliar panel"
-            },
-        ));
+        actions.push(
+            IconButton::new(
+                "terminal_panel_maximize_button",
+                if state.terminal_maximized {
+                    Icon::Collapse
+                } else {
+                    Icon::Expand
+                },
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .dispatch_as("terminal_panel_maximize")
+            .tooltip_with(
+                TooltipSpec::new(if state.terminal_maximized {
+                    "Restaurar tamaño del panel"
+                } else {
+                    "Ampliar panel"
+                })
+                .placement(header_tooltip_placement(state)),
+            )
+            .render(),
+        );
     }
-    actions.push(tool(
-        state,
-        "terminal_panel_hide",
-        "terminal_panel_hide",
-        Icon::Close,
-        "Ocultar panel · las sesiones siguen activas",
-    ));
+    actions.push(
+        IconButton::new(
+            "terminal_panel_hide",
+            Icon::Close,
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Ocultar panel · las sesiones siguen activas")
+                .placement(header_tooltip_placement(state)),
+        )
+        .render(),
+    );
     let actions_width = TOOL_SIZE * 2.0 + (actions.len() - 1) as f32 * (TOOL_SIZE + 2.0);
     let available = (width - HEADER_SIDE_INSET * 2.0 - 8.0 - actions_width).max(0.0);
     let leading = if let Some((sections, sections_width)) = sections {

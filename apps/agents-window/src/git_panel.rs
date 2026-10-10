@@ -153,20 +153,15 @@ fn change_row(row: &ChangeRow, width: f32, pending: bool, surface: Color) -> Ele
                         .size(Some((width * 0.28).min(160.0)), Some(CHANGE_ACTION_SIZE)),
                 );
             }
-            let control = if *prepared {
-                Button::new(stage_action, "−", palette)
-                    .variant(ButtonVariant::Ghost)
-                    .button_size(ButtonSize::IconExtraSmall)
-                    .width(CHANGE_ACTION_SIZE)
-                    .enabled(!pending)
-                    .render()
-            } else {
-                UiIconButton::new(stage_action, Icon::Add, palette)
-                    .variant(ButtonVariant::Ghost)
-                    .button_size(ButtonSize::IconExtraSmall)
-                    .enabled(!pending)
-                    .render()
-            };
+            let control = UiIconButton::new(
+                stage_action,
+                if *prepared { Icon::Minus } else { Icon::Add },
+                palette,
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!pending)
+            .render();
             labels.push(
                 Element::truncated_text(code)
                     .font_family(FontFamily::Monospace)
@@ -420,24 +415,24 @@ fn detail_view(detail: &ReviewDetailView, width: f32, back: bool) -> Element {
     }
     header.push(Element::spacer().flex(1.0));
     header.extend([
-        hinted_icon_button(
+        UiIconButton::new(
             "review_detail_open_editor",
             Icon::Code,
-            "Abrir en editor",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            crate::dock_tab_ui::TOOL_SIZE,
+            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
         )
-        .tooltip_placement(TooltipPlacement::Below),
-        hinted_icon_button(
+        .variant(ButtonVariant::Subtle)
+        .size(ControlSize::Dense)
+        .tooltip_with(TooltipSpec::new("Abrir en editor").placement(TooltipPlacement::Below))
+        .render(),
+        UiIconButton::new(
             "review_detail_retry",
             Icon::Refresh,
-            "Actualizar diff",
-            theme::BACKGROUND,
-            theme::FOREGROUND_SUBTLE,
-            crate::dock_tab_ui::TOOL_SIZE,
+            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
         )
-        .tooltip_placement(TooltipPlacement::Below),
+        .variant(ButtonVariant::Subtle)
+        .size(ControlSize::Dense)
+        .tooltip_with(TooltipSpec::new("Actualizar diff").placement(TooltipPlacement::Below))
+        .render(),
     ]);
     let mut children = vec![Element::panel(
         Element::row(header)
@@ -568,12 +563,15 @@ pub(super) fn navigator(state: &ViewState, width: f32) -> Element {
             } else {
                 "Cambios"
             }),
-            vec![crate::sidebar_chrome::tool(
-                "review_refresh",
-                "review_refresh",
-                Icon::Refresh,
-                "Actualizar cambios",
-            )],
+            vec![
+                UiIconButton::new("review_refresh", Icon::Refresh, theme::sidebar_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .tooltip_with(
+                        TooltipSpec::new("Actualizar cambios").placement(TooltipPlacement::Below),
+                    )
+                    .render(),
+            ],
             inner_width,
         ),
         navigator_body(state, inner_width),

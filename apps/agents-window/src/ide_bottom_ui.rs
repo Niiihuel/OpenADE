@@ -362,19 +362,15 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Element {
     }
     let header = crate::dock_tab_ui::header(
         sections.flex(1.0),
-        tool(
-            "ide_bottom_hide",
+        UiIconButton::new(
             "ide_bottom_hide",
             Icon::Close,
-            "Ocultar panel",
-            false,
-            crate::dock_tab_ui::TOOL_SIZE,
+            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
         )
-        .tooltip_placement(header_tooltip_placement(state))
-        .size(
-            Some(crate::dock_tab_ui::TOOL_SIZE),
-            Some(crate::dock_tab_ui::TOOL_SIZE),
-        ),
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(TooltipSpec::new("Ocultar panel").placement(header_tooltip_placement(state)))
+        .render(),
         width,
         crate::dock_tab_ui::HEADER_SIDE_INSET,
         8.0,

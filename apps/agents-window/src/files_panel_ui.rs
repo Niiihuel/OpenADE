@@ -1,8 +1,8 @@
 //! Project files inside the right dock: compact tools and a virtual tree.
 use crate::{theme, view::ViewState};
 use openide_ui::{
-    guides_for_depths, Button, ButtonSize, ButtonVariant, Color, Component, ComponentPalette,
-    Element, FontFamily, Icon, IconButton, ScrollArea, Tooltip, TooltipPlacement, TreeRow,
+    guides_for_depths, Button, ButtonSize, ButtonVariant, Color, Component, ControlSize, Element,
+    FontFamily, Icon, IconButton, ScrollArea, Tooltip, TooltipPlacement, TooltipSpec, TreeRow,
 };
 use std::sync::Arc;
 
@@ -19,15 +19,6 @@ fn text(value: impl Into<String>, muted: bool) -> Element {
         } else {
             theme::FOREGROUND
         })
-}
-
-fn tool(id: &str, icon: Icon, hint: &str, palette: ComponentPalette) -> Element {
-    IconButton::new(id, icon, palette)
-        .variant(ButtonVariant::Ghost)
-        .button_size(ButtonSize::IconExtraSmall)
-        .tooltip(hint)
-        .tooltip_placement(TooltipPlacement::Below)
-        .render()
 }
 
 /// The title already identifies the file. Its parent adds location without
@@ -87,14 +78,13 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
         TooltipPlacement::Below,
     )
     .flex(1.0);
-    let actions = vec![
-        tool(
-            "files_search",
-            Icon::Search,
-            "Buscar archivos del proyecto",
-            palette,
-        ),
-    ];
+    let actions = vec![IconButton::new("files_search", Icon::Search, palette)
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Buscar archivos del proyecto").placement(TooltipPlacement::Below),
+        )
+        .render()];
     let mut header = vec![workspace_title];
     if compact {
         header.push(Element::row(actions));

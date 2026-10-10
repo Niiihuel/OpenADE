@@ -4,9 +4,9 @@
 use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
-    ButtonSize, ButtonVariant, Component, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
+    ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
     Element, FontFamily, Icon, IconButton, ScrollArea, Separator, SpinnerVariant, Tooltip,
-    TooltipPlacement,
+    TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -52,37 +52,25 @@ pub(crate) fn interactive_surface(element: Element) -> Element {
     theme::action_palette(theme::CARD, theme::FOREGROUND).interactive_surface(element)
 }
 
-pub(crate) fn icon_control(id: &str, icon: Icon, hint: &str, enabled: bool) -> Element {
-    interactive_surface(
-        IconButton::new(id, icon, theme::component_palette())
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::IconExtraSmall)
-            .tooltip(hint)
-            .tooltip_placement(TooltipPlacement::Below)
-            .enabled(enabled)
-            .render(),
-    )
-}
-
 /// The environment shares the conversation's trailing space with the utility
 /// sidebar. The host makes their expanded presentations mutually exclusive.
 pub(crate) fn header_control(state: &ViewState) -> Element {
-    theme::interactive_surface(
-        IconButton::new("environment_open", Icon::Laptop, theme::component_palette())
-            .variant(if state.environment.open {
-                ButtonVariant::Subtle
-            } else {
-                ButtonVariant::Ghost
-            })
-            .tooltip(if state.environment.open {
+    IconButton::new("environment_open", Icon::Laptop, theme::component_palette())
+        .variant(if state.environment.open {
+            ButtonVariant::Subtle
+        } else {
+            ButtonVariant::Ghost
+        })
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new(if state.environment.open {
                 "Cerrar entorno del chat"
             } else {
                 "Entorno del chat"
             })
-            .tooltip_placement(TooltipPlacement::Below)
-            .button_size(ButtonSize::IconExtraSmall)
-            .render(),
-    )
+            .placement(TooltipPlacement::Below),
+        )
+        .render()
 }
 
 /// Space reserved beside the conversation. The panel has an independent
@@ -166,15 +154,6 @@ pub(crate) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
     .radius(12.0)
     .size(Some(width), Some(height))
     .clip_children()
-}
-
-pub(crate) fn close_control() -> Element {
-    icon_control(
-        "environment_dismiss",
-        Icon::Close,
-        "Cerrar entorno del chat",
-        true,
-    )
 }
 
 fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
@@ -773,23 +752,44 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
         || state.composer_branches.switching();
     if workflow.panel == EnvironmentGitPanel::Actions {
         let mut controls = vec![
-            icon_control(
+            IconButton::new(
                 "environment_git_back",
                 Icon::ArrowLeft,
-                "Volver al entorno",
-                true,
-            ),
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Volver al entorno").placement(TooltipPlacement::Below))
+            .render(),
             text("Acciones del proyecto", false, 14.0).flex(1.0),
         ];
         if !state.project_actions.actions.is_empty() && !state.project_actions.editor_open {
-            controls.push(icon_control(
-                "project_action_new",
-                Icon::Add,
-                "Crear acción",
-                !state.project_actions.saving,
-            ));
+            controls.push(
+                IconButton::new(
+                    "project_action_new",
+                    Icon::Add,
+                    theme::action_palette(theme::CARD, theme::FOREGROUND),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .enabled(!state.project_actions.saving)
+                .tooltip_with(TooltipSpec::new("Crear acción").placement(TooltipPlacement::Below))
+                .render(),
+            );
         }
-        controls.push(close_control());
+        controls.push(
+            IconButton::new(
+                "environment_dismiss",
+                Icon::Close,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
+            )
+            .render(),
+        );
         return Element::column(vec![
             Element::row(controls)
                 .gap(6.0)
@@ -910,13 +910,27 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
     let mut rows = vec![
         Element::row(vec![
             text("Entorno", false, 14.0).flex(1.0),
-            icon_control(
+            IconButton::new(
                 "environment_git_refresh",
                 Icon::Refresh,
-                "Actualizar entorno",
-                !workflow.loading,
-            ),
-            close_control(),
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!workflow.loading)
+            .tooltip_with(TooltipSpec::new("Actualizar entorno").placement(TooltipPlacement::Below))
+            .render(),
+            IconButton::new(
+                "environment_dismiss",
+                Icon::Close,
+                theme::action_palette(theme::CARD, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Cerrar entorno del chat").placement(TooltipPlacement::Below),
+            )
+            .render(),
         ])
         .gap(4.0)
         .padding(2.0)

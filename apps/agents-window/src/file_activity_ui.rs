@@ -7,8 +7,8 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    ButtonSize, ButtonVariant, CodeDiff, CodeLanguage, Component, Element, FileActivity,
-    FontFamily, Icon, IconButton, Skeleton, Tooltip, TooltipPlacement,
+    CodeDiff, CodeLanguage, Component, Element, FileActivity, FontFamily, Skeleton, Tooltip,
+    TooltipPlacement,
 };
 use std::path::Path;
 
@@ -51,24 +51,6 @@ fn label(value: impl Into<String>) -> Element {
         .font_size(11.0)
         .foreground(theme::FOREGROUND_SUBTLE)
         .padding(8.0)
-}
-
-pub(crate) fn icon_action(id: String, icon: Icon, hint: &str) -> Element {
-    icon_action_alias(id.clone(), id, icon, hint)
-}
-
-fn icon_action_alias(id: String, action: String, icon: Icon, hint: &str) -> Element {
-    Tooltip::new(
-        IconButton::new(&id, icon, theme::component_palette())
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::IconExtraSmall)
-            .render()
-            .dispatch_as(action),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .render()
 }
 
 /// Resolve paths against this captured row at click time, never from an action

@@ -7,9 +7,9 @@ use std::{
 };
 
 use openide_ui::{
-    Button, ButtonSize, ButtonVariant, Chip, Color, Component, ComponentPalette, ControlSize,
+    ActiveHover, Button, ButtonVariant, Chip, Color, Component, ComponentPalette, ControlSize,
     Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Separator,
-    Tooltip, TooltipPlacement,
+    Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -476,18 +476,16 @@ fn account_card(
 
 fn refresh(state: &ViewState, compact: bool) -> Element {
     if compact {
-        Tooltip::new(
-            IconButton::new("usage_refresh", Icon::Refresh, theme::menu_palette())
-                .variant(ButtonVariant::Subtle)
-                .button_size(ButtonSize::IconSmall)
-                .loading(state.provider_usage_refreshing)
-                .render(),
-            "usage_refresh",
-            "Actualizar consumo",
-            theme::component_palette(),
-        )
-        .placement(TooltipPlacement::Below)
-        .render()
+        IconButton::new("usage_refresh", Icon::Refresh, theme::menu_palette())
+            .variant(ButtonVariant::Subtle)
+            .size(ControlSize::Regular)
+            .loading(state.provider_usage_refreshing)
+            .tooltip_with(
+                TooltipSpec::new("Actualizar consumo")
+                    .placement(TooltipPlacement::Below)
+                    .palette(theme::component_palette()),
+            )
+            .render()
     } else {
         Button::new("usage_refresh", "Actualizar", theme::component_palette())
             .icon(Icon::Refresh)
@@ -574,19 +572,15 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
     .max_width(320.0)
     .render()
     .flex(1.0);
-    let action = Tooltip::new(
-        theme::interactive_surface(
-            IconButton::new(&action, icon, theme::menu_palette())
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconSmall)
-                .render(),
-        ),
-        action,
-        action_label,
-        theme::component_palette(),
-    )
-    .description(format!("{} · {account}", snapshot.provider_name))
-    .render();
+    let action = IconButton::new(action, icon, theme::component_palette())
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Regular)
+        .tooltip_with(
+            TooltipSpec::new(action_label)
+                .description(format!("{} · {account}", snapshot.provider_name))
+                .placement(TooltipPlacement::Above),
+        )
+        .render();
     let mut rows = vec![
         Element::row(vec![
             Element::icon(icon_for_provider(&snapshot.provider_id))
@@ -881,19 +875,17 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
 
 /// Short windows keep account usage reachable beside the account footer.
 pub(crate) fn sidebar_compact(state: &ViewState) -> Element {
-    let anchor = theme::action_palette(theme::SIDEBAR, theme::FOREGROUND).interactive_surface(
-        IconButton::new(
-            "usage_toggle",
-            crate::provider_icons::CONTEXT_RING,
-            theme::action_palette(theme::SIDEBAR, theme::FOREGROUND),
-        )
-        .variant(ButtonVariant::Ghost)
-        .button_size(ButtonSize::IconExtraSmall)
-        .active(state.provider_usage_open)
-        .tooltip("Cuenta y uso")
-        .tooltip_placement(TooltipPlacement::Right)
-        .render(),
-    );
+    let anchor = IconButton::new(
+        "usage_toggle",
+        crate::provider_icons::CONTEXT_RING,
+        theme::sidebar_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(state.provider_usage_open)
+    .active_hover(ActiveHover::Palette)
+    .tooltip_with(TooltipSpec::new("Cuenta y uso").placement(TooltipPlacement::Right))
+    .render();
     let surface = Popover::new(
         anchor,
         popup(state),

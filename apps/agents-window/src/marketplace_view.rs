@@ -5,10 +5,10 @@
 //! runtimes and are not offered as installable SKILL.md bundles here.
 
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonSize, ButtonVariant, Chip, Color, Component, ControlSize,
-    DropdownMenu, DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, ScrollArea,
+    Alert, AlertTone, Button, ButtonVariant, Chip, Color, Component, ControlSize, DropdownMenu,
+    DropdownMenuItem, Element, FontFamily, Icon, IconButton, Modal, ScrollArea,
     ScrollbarAppearance, SearchField, Separator, Skeleton, Switch, Tab, Tabs, TextField, Tooltip,
-    TooltipPlacement,
+    TooltipPlacement, TooltipSpec,
 };
 
 use std::{borrow::Cow, collections::BTreeMap};
@@ -346,24 +346,21 @@ pub(super) fn search_controls(state: &MarketplaceViewState, width: f32, sidebar:
     }
     let enabled = !state.explore.busy && state.explore.query.trim().chars().count() >= 2;
     let submit = if sidebar {
-        Tooltip::new(
-            IconButton::new(
-                "ide_marketplace_explore_search",
-                Icon::ArrowRight,
-                theme::component_palette(),
-            )
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::IconExtraSmall)
-            .loading(state.explore.busy)
-            .enabled(enabled)
-            .render()
-            .dispatch_as("marketplace_explore_search"),
+        IconButton::new(
             "ide_marketplace_explore_search",
-            "Buscar en skills.sh",
+            Icon::ArrowRight,
             theme::component_palette(),
         )
-        .shortcut("Enter")
-        .placement(TooltipPlacement::Below)
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .loading(state.explore.busy)
+        .enabled(enabled)
+        .dispatch_as("marketplace_explore_search")
+        .tooltip_with(
+            TooltipSpec::new("Buscar en skills.sh")
+                .shortcut("Enter")
+                .placement(TooltipPlacement::Below),
+        )
         .render()
     } else {
         Button::new(

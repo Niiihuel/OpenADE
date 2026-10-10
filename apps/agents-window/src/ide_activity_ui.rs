@@ -10,10 +10,6 @@ fn caption(text: impl Into<String>) -> Element {
         .foreground(theme::FOREGROUND)
 }
 
-fn tool(id: &str, action: &str, icon: Icon, hint: &str) -> Element {
-    chrome::tool(id, action, icon, hint)
-}
-
 pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element {
     use crate::environment_git_ui::{self, EnvironmentGitPanel};
     let inner = (width - chrome::INSET * 2.0).max(0.0);
@@ -33,12 +29,13 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
         .size(Some(width), Some(height));
     }
     let more = DropdownMenu::new(
-        tool(
-            "ide_git_more",
-            "ide_git_more",
-            Icon::More,
-            "Más acciones de Git",
-        ),
+        UiIconButton::new("ide_git_more", Icon::More, theme::sidebar_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Más acciones de Git").placement(TooltipPlacement::Below),
+            )
+            .render(),
         vec![
             DropdownMenuItem::new("environment_git_open_compare", "Comparar rama")
                 .icon(Icon::GitBranch)
@@ -57,18 +54,19 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
     let header = chrome::header(
         chrome::title("Control de versiones"),
         vec![
-            tool(
-                "review_refresh",
-                "review_refresh",
-                Icon::Refresh,
-                "Actualizar cambios",
-            ),
-            tool(
-                "ide_git_branch",
-                "environment_git_open_branch",
-                Icon::GitBranch,
-                "Crear rama",
-            ),
+            UiIconButton::new("review_refresh", Icon::Refresh, theme::sidebar_palette())
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .tooltip_with(
+                    TooltipSpec::new("Actualizar cambios").placement(TooltipPlacement::Below),
+                )
+                .render(),
+            UiIconButton::new("ide_git_branch", Icon::GitBranch, theme::sidebar_palette())
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .dispatch_as("environment_git_open_branch")
+                .tooltip_with(TooltipSpec::new("Crear rama").placement(TooltipPlacement::Below))
+                .render(),
             more,
         ],
         inner,
@@ -210,25 +208,39 @@ pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> 
             chrome::header(
                 chrome::title("Complementos"),
                 vec![
-                    tool(
+                    UiIconButton::new(
                         "ide_extensions_refresh",
+                        Icon::Refresh,
+                        theme::sidebar_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .dispatch_as(
                         if inventory.active_tab() == marketplace_view::MarketplaceTab::Explore {
                             "marketplace_explore_retry"
                         } else {
                             "marketplace_refresh"
                         },
-                        Icon::Refresh,
-                        "Actualizar catálogo",
-                    ),
+                    )
+                    .tooltip_with(
+                        TooltipSpec::new("Actualizar catálogo").placement(TooltipPlacement::Below),
+                    )
+                    .render(),
                     if state.ide.extensions_open {
                         Element::spacer().size(Some(0.0), Some(24.0))
                     } else {
-                        tool(
+                        UiIconButton::new(
                             "ide_extensions_open_catalog",
-                            "ide_extensions_catalog",
                             Icon::Grid,
-                            "Abrir catálogo",
+                            theme::sidebar_palette(),
                         )
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Dense)
+                        .dispatch_as("ide_extensions_catalog")
+                        .tooltip_with(
+                            TooltipSpec::new("Abrir catálogo").placement(TooltipPlacement::Below),
+                        )
+                        .render()
                     },
                 ],
                 inner,
@@ -256,12 +268,15 @@ pub(super) fn extensions_center(
     Element::column(vec![
         Element::row(vec![
             caption("Complementos").flex(1.0),
-            tool(
-                "ide_extensions_close",
+            UiIconButton::new(
                 "ide_extensions_close",
                 Icon::Close,
-                "Volver al editor",
-            ),
+                theme::sidebar_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Volver al editor").placement(TooltipPlacement::Below))
+            .render(),
         ])
         .gap(4.0)
         .padding(4.0)

@@ -1,9 +1,6 @@
 //! Shared density and interaction surfaces for workspace sidebars.
 use crate::theme;
-use openide_ui::{
-    ButtonSize, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon,
-    IconButton, SearchField, Tooltip, TooltipPlacement,
-};
+use openide_ui::{Component, ControlSize, Element, FontFamily, SearchField};
 
 pub(crate) const INSET: f32 = 6.0;
 pub(crate) const GAP: f32 = 6.0;
@@ -27,21 +24,6 @@ pub(crate) fn header(label: Element, actions: Vec<Element>, width: f32) -> Eleme
     Element::row(children)
         .gap(2.0)
         .size(Some(width), Some(HEADER_HEIGHT))
-}
-
-pub(crate) fn tool(id: &str, action: &str, icon: Icon, hint: &str) -> Element {
-    Tooltip::new(
-        IconButton::new(id, icon, theme::sidebar_palette())
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::IconExtraSmall)
-            .render()
-            .dispatch_as(action),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .placement(TooltipPlacement::Below)
-    .render()
 }
 
 pub(crate) fn search(id: &str, value: &str, placeholder: &str, width: f32) -> Element {

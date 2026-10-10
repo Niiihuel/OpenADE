@@ -6,9 +6,9 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    Button, ButtonSize, ButtonVariant, Color, Component, ContextContent, ContextMeter, ContextRow,
-    ControlSize, Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea,
-    Separator, Tooltip, TooltipPlacement,
+    Button, ButtonVariant, Color, Component, ContextContent, ContextMeter, ContextRow, ControlSize,
+    Element, FontFamily, Icon, IconButton, Popover, PopoverPlacement, ScrollArea, Separator,
+    Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::path::Path;
 
@@ -120,19 +120,6 @@ fn usage_ink(fraction: Option<f32>) -> Color {
         _ => theme::FOREGROUND,
     }
 }
-fn close() -> Element {
-    IconButton::new(
-        "composer_context_dismiss",
-        Icon::Close,
-        theme::menu_palette(),
-    )
-    .button_size(ButtonSize::IconExtraSmall)
-    .variant(ButtonVariant::Ghost)
-    .tooltip("Cerrar contexto")
-    .tooltip_shortcut("Esc")
-    .tooltip_placement(TooltipPlacement::Below)
-    .render()
-}
 fn progress(fraction: Option<f32>) -> Element {
     let mut segments = Vec::new();
     let used = fraction.unwrap_or(0.0).clamp(0.0, 1.0);
@@ -189,7 +176,19 @@ fn summary(props: &ComposerProps<'_>) -> Element {
             theme::FOREGROUND,
         )
         .flex(1.0),
-        close(),
+        IconButton::new(
+            "composer_context_dismiss",
+            Icon::Close,
+            theme::menu_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Cerrar contexto")
+                .shortcut("Esc")
+                .placement(TooltipPlacement::Below),
+        )
+        .render(),
     ])
     .gap(6.0)
     .size(None, Some(24.0));
@@ -372,7 +371,19 @@ fn details(props: &ComposerProps<'_>) -> Element {
         .size(ControlSize::Compact)
         .render(),
         Element::spacer().flex(1.0),
-        close(),
+        IconButton::new(
+            "composer_context_dismiss",
+            Icon::Close,
+            theme::menu_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Cerrar contexto")
+                .shortcut("Esc")
+                .placement(TooltipPlacement::Below),
+        )
+        .render(),
     ])
     .size(None, Some(28.0));
     Element::column(vec![header, ScrollArea::new("composer_context_details",

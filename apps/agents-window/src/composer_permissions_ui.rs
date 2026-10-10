@@ -4,7 +4,7 @@
 use openide_core::TurnMode;
 use openide_harness::{CommandIsolation, LocalTool, ToolPermissions};
 use openide_ui::{
-    Button, ButtonVariant, Component, ComponentPalette, ControlSize, Element, ElementKind, Icon,
+    Button, ButtonVariant, Component, ComponentPalette, ControlSize, Element, Icon,
     PermissionOption, PermissionSelector, SelectorSizing, Tooltip,
 };
 
@@ -242,11 +242,7 @@ pub(crate) fn selector(props: ComposerPermissionsProps<'_>) -> Element {
     }
     // A disabled Button paints no hit target. The shared Tooltip adds only
     // a hover region, keeping its explanation available without activation.
-    // Keep the sixteen-pixel icon intact in the twenty-eight-pixel toolbar.
-    let mut anchor = anchor.render();
-    if matches!(anchor.kind, ElementKind::IconButton { .. }) {
-        anchor = anchor.padding(6.0);
-    }
+    let anchor = anchor.render();
     let anchor = if props.open && native {
         // The options already provide contextual help. Do not paint the
         // trigger's hint over the menu it just opened.

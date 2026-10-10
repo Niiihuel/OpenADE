@@ -49,16 +49,17 @@ fn resource_icon(tab: &DockTabView) -> Icon {
 
 fn tab(tab: &DockTabView, width: f32) -> Element {
     let close = if tab.closable {
-        hinted_icon_button(
+        UiIconButton::new(
             format!("dock_close:{}", tab.id),
             Icon::Close,
-            &format!("Cerrar {}", tab.title),
-            Color::TRANSPARENT,
-            theme::FOREGROUND_SUBTLE,
-            CLOSE_SIZE,
+            theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE),
         )
-        .tooltip_placement(TooltipPlacement::Below)
-        .size(Some(CLOSE_SIZE), Some(CLOSE_SIZE))
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new(format!("Cerrar {}", tab.title)).placement(TooltipPlacement::Below),
+        )
+        .render()
     } else {
         Element::spacer().size(Some(CLOSE_SIZE), Some(CLOSE_SIZE))
     };
@@ -123,16 +124,19 @@ fn all_tabs_menu(state: &ViewState) -> Element {
             .icon(Icon::Menu)
             .into(),
     );
-    let anchor = hinted_shortcut_icon_button(
+    let anchor = UiIconButton::new(
         "dock_tabs_menu",
         Icon::Menu,
-        "Todas las pestañas",
-        "Ctrl+Tab",
-        Color::TRANSPARENT,
-        theme::FOREGROUND,
-        TOOL_SIZE,
+        theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND),
     )
-    .tooltip_placement(TooltipPlacement::Below);
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .tooltip_with(
+        TooltipSpec::new("Todas las pestañas")
+            .shortcut("Ctrl+Tab")
+            .placement(TooltipPlacement::Below),
+    )
+    .render();
     DropdownMenu::new(
         anchor,
         entries,
@@ -166,26 +170,28 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
     }
     if !ide {
         controls.push(
-            hinted_shortcut_icon_button(
+            UiIconButton::new(
                 "terminal_toggle",
                 Icon::Terminal,
-                if state.show_terminal_panel {
+                theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .active(state.show_terminal_panel)
+            .tooltip_with(
+                TooltipSpec::new(if state.show_terminal_panel {
                     "Ocultar terminal"
                 } else {
                     "Mostrar terminal"
-                },
-                state
-                    .keymap_profile
-                    .shortcut(crate::keymap::ShortcutAction::ToggleTerminal),
-                if state.show_terminal_panel {
-                    theme::SELECTED
-                } else {
-                    Color::TRANSPARENT
-                },
-                theme::FOREGROUND,
-                TOOL_SIZE,
+                })
+                .shortcut(
+                    state
+                        .keymap_profile
+                        .shortcut(crate::keymap::ShortcutAction::ToggleTerminal),
+                )
+                .placement(TooltipPlacement::Below),
             )
-            .tooltip_placement(TooltipPlacement::Below),
+            .render(),
         );
     }
     // The resource launcher and overview belong to the Agents dock. IDE
@@ -196,15 +202,17 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
     }
     if !ide {
         controls.push(
-            hinted_icon_button(
+            UiIconButton::new(
                 "toggle_side_pane",
                 Icon::PanelRightClose,
-                "Ocultar panel derecho",
-                Color::TRANSPARENT,
-                theme::FOREGROUND,
-                TOOL_SIZE,
+                theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND),
             )
-            .tooltip_placement(TooltipPlacement::Below),
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Ocultar panel derecho").placement(TooltipPlacement::Below),
+            )
+            .render(),
         );
     }
     let group_separator = if editor_controls.is_empty() || controls.is_empty() {

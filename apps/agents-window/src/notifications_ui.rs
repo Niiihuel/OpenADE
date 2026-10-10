@@ -3,8 +3,8 @@
 use std::time::SystemTime;
 
 use openide_ui::{
-    ButtonSize, ButtonVariant, Color, Component, Element, FontFamily, Icon, IconButton, Popover,
-    PopoverPlacement, TooltipPlacement,
+    ButtonVariant, Color, Component, ControlSize, Element, FontFamily, Icon, IconButton, Popover,
+    PopoverPlacement, TooltipPlacement, TooltipSpec,
 };
 
 use crate::notifications::{Notification, NotificationCenter, Severity};
@@ -59,10 +59,9 @@ fn row(item: &Notification) -> Element {
             Icon::Close,
             theme::menu_palette(),
         )
-        .button_size(ButtonSize::IconExtraSmall)
         .variant(ButtonVariant::Ghost)
-        .tooltip("Descartar")
-        .tooltip_placement(TooltipPlacement::Below)
+        .size(ControlSize::Dense)
+        .tooltip_with(TooltipSpec::new("Descartar").placement(TooltipPlacement::Below))
         .render(),
     ])
     .gap(2.0)
@@ -203,18 +202,20 @@ pub(crate) fn bell(center: &NotificationCenter, surface: Color, size: f32, above
             theme::FOREGROUND,
         ),
     )
-    .button_size(ButtonSize::IconExtraSmall)
     .variant(ButtonVariant::Subtle)
-    .tooltip(match unread {
-        0 => "Notificaciones".to_owned(),
-        1 => "1 notificación nueva".to_owned(),
-        count => format!("{count} notificaciones nuevas"),
-    })
-    .tooltip_placement(if above {
-        TooltipPlacement::Above
-    } else {
-        TooltipPlacement::Below
-    })
+    .size(ControlSize::Dense)
+    .tooltip_with(
+        TooltipSpec::new(match unread {
+            0 => "Notificaciones".to_owned(),
+            1 => "1 notificación nueva".to_owned(),
+            count => format!("{count} notificaciones nuevas"),
+        })
+        .placement(if above {
+            TooltipPlacement::Above
+        } else {
+            TooltipPlacement::Below
+        }),
+    )
     .render()
     .size(Some(size), Some(size));
     let mut trigger = vec![button];

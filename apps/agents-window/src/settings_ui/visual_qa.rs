@@ -499,6 +499,7 @@ fn icon_svg(icon: Icon) -> &'static str {
         Icon::PanelRightOpen => include_str!("../../assets/bootstrap/layout-sidebar-inset-reverse.svg"),
         Icon::PanelRightClose => include_str!("../../assets/bootstrap/layout-sidebar-inset-reverse.svg"),
         Icon::Add => include_str!("../../assets/bootstrap/plus-lg.svg"),
+        Icon::Minus => include_str!("../../assets/bootstrap/dash.svg"),
         Icon::Microphone => include_str!("../../assets/bootstrap/mic.svg"),
         Icon::Text => include_str!("../../assets/bootstrap/card-text.svg"),
         Icon::Image => include_str!("../../assets/bootstrap/image.svg"),

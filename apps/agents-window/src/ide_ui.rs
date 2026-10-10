@@ -8,7 +8,7 @@ use crate::ide_workspace::{
     TITLEBAR_HEIGHT,
 };
 use crate::keymap::{KeymapProfile, ShortcutAction};
-use openide_ui::{ButtonSize, Component, Separator, TooltipPlacement};
+use openide_ui::{Component, Separator, TooltipPlacement};
 
 #[path = "ide_menu_ui.rs"]
 mod menus;
@@ -26,61 +26,6 @@ use crate::ide_status_ui as status;
 pub(crate) mod bottom;
 
 const PANE_HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
-
-fn tool(id: &str, action: &str, icon: Icon, hint: &str, active: bool, size: f32) -> Element {
-    tool_on_surface(id, action, icon, hint, active, size, theme::BACKGROUND)
-}
-
-fn tool_on_surface(
-    id: &str,
-    action: &str,
-    icon: Icon,
-    hint: &str,
-    active: bool,
-    size: f32,
-    surface: Color,
-) -> Element {
-    tool_on_surface_shortcut(id, action, icon, hint, None, active, size, surface)
-}
-
-fn tool_on_surface_shortcut(
-    id: &str,
-    action: &str,
-    icon: Icon,
-    hint: &str,
-    shortcut: Option<&str>,
-    active: bool,
-    size: f32,
-    surface: Color,
-) -> Element {
-    let palette = theme::action_palette(surface, theme::FOREGROUND);
-    // An active control wears the solid form of its icon, where it has one.
-    let icon = if active {
-        icon.filled()
-    } else {
-        icon
-    };
-    let mut tooltip = Tooltip::new(
-        palette.interactive_surface(
-            UiIconButton::new(id, icon, palette)
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconSmall)
-                .active(active)
-                .render()
-                .dispatch_as(action)
-                .padding(((size - 16.0) / 2.0).max(0.0))
-                .size(Some(size), Some(size)),
-        ),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .placement(TooltipPlacement::Below);
-    if let Some(shortcut) = shortcut.filter(|shortcut| !shortcut.is_empty()) {
-        tooltip = tooltip.shortcut(shortcut);
-    }
-    tooltip.render()
-}
 
 /// The mode switch is shared by both workspace presentations.
 pub(super) fn mode_button(state: &ViewState) -> Element {
@@ -172,21 +117,31 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
     let agent_visible = layout.right.is_some();
     let explorer_open = explorer_visible || state.ide.compact_panel == Some(IdePanel::Explorer);
     let agent_open = agent_visible || state.ide.compact_panel == Some(IdePanel::Agent);
+    let titlebar_palette = theme::action_palette(theme::WINDOW, theme::FOREGROUND);
     let explorer_toggle = compact_panel(
-        tool_on_surface_shortcut(
+        UiIconButton::new(
             "ide_explorer_toggle",
-            "ide_explorer_toggle",
-            Icon::PanelLeft,
             if explorer_open {
+                Icon::PanelLeft.filled()
+            } else {
+                Icon::PanelLeft
+            },
+            titlebar_palette,
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .active(explorer_open)
+        .active_hover(ActiveHover::Palette)
+        .tooltip_with(
+            TooltipSpec::new(if explorer_open {
                 "Ocultar barra lateral"
             } else {
                 "Mostrar barra lateral"
-            },
-            Some(state.keymap_profile.shortcut(ShortcutAction::ToggleSidebar)),
-            explorer_open,
-            24.0,
-            theme::WINDOW,
-        ),
+            })
+            .shortcut(state.keymap_profile.shortcut(ShortcutAction::ToggleSidebar))
+            .placement(TooltipPlacement::Below),
+        )
+        .render(),
         state,
         IdePanel::Explorer,
         explorer_visible,
@@ -194,19 +149,28 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
         body_height,
     );
     let agent_toggle = compact_panel(
-        tool_on_surface(
+        UiIconButton::new(
             "ide_agent_toggle",
-            "ide_agent_toggle",
-            Icon::PanelRight,
             if agent_open {
+                Icon::PanelRight.filled()
+            } else {
+                Icon::PanelRight
+            },
+            titlebar_palette,
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .active(agent_open)
+        .active_hover(ActiveHover::Palette)
+        .tooltip_with(
+            TooltipSpec::new(if agent_open {
                 "Ocultar agente"
             } else {
                 "Mostrar agente"
-            },
-            agent_open,
-            24.0,
-            theme::WINDOW,
-        ),
+            })
+            .placement(TooltipPlacement::Below),
+        )
+        .render(),
         state,
         IdePanel::Agent,
         agent_visible,
@@ -215,26 +179,37 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
     );
     let left =
         Element::row(vec![menus::menubar(state, compact_menu)]).size(Some(left_width), Some(24.0));
+    let bottom_open = state.show_terminal_panel || state.ide.bottom_open;
     let layout_controls = Element::row(vec![
         explorer_toggle,
-        tool_on_surface_shortcut(
+        UiIconButton::new(
             "ide_terminal_toggle",
-            "ide_bottom_toggle",
-            Icon::PanelBottom,
-            if state.show_terminal_panel || state.ide.bottom_open {
+            if bottom_open {
+                Icon::PanelBottom.filled()
+            } else {
+                Icon::PanelBottom
+            },
+            titlebar_palette,
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .active(bottom_open)
+        .active_hover(ActiveHover::Palette)
+        .dispatch_as("ide_bottom_toggle")
+        .tooltip_with(
+            TooltipSpec::new(if bottom_open {
                 "Ocultar panel inferior"
             } else {
                 "Mostrar panel inferior"
-            },
-            Some(
+            })
+            .shortcut(
                 state
                     .keymap_profile
                     .shortcut(ShortcutAction::ToggleBottomPanel),
-            ),
-            state.show_terminal_panel || state.ide.bottom_open,
-            24.0,
-            theme::WINDOW,
-        ),
+            )
+            .placement(TooltipPlacement::Below),
+        )
+        .render(),
         agent_toggle,
     ])
     .gap(2.0)
@@ -264,6 +239,7 @@ fn titlebar(state: &ViewState, width: f32, body_height: f32) -> Element {
 }
 
 fn activity_bar(state: &ViewState, width: f32, height: f32) -> Element {
+    let palette = theme::action_palette(theme::WINDOW, theme::FOREGROUND);
     let mut items = Vec::new();
     for (activity, icon) in [
         (IdeActivity::Files, Icon::Folder),
@@ -284,32 +260,31 @@ fn activity_bar(state: &ViewState, width: f32, height: f32) -> Element {
             IdeActivity::Extensions => ("Complementos", ShortcutAction::Extensions),
         };
         items.push(
-            tool_on_surface_shortcut(
-                &id,
-                &id,
-                icon,
-                hint,
-                Some(state.keymap_profile.shortcut(shortcut)),
-                shown,
-                32.0,
-                theme::WINDOW,
-            )
-            .tooltip_placement(TooltipPlacement::Right),
+            UiIconButton::new(&id, if shown { icon.filled() } else { icon }, palette)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Regular)
+                .active(shown)
+                .active_hover(ActiveHover::Palette)
+                .tooltip_with(
+                    TooltipSpec::new(hint)
+                        .shortcut(state.keymap_profile.shortcut(shortcut))
+                        .placement(TooltipPlacement::Right),
+                )
+                .render(),
         );
     }
     items.push(Element::spacer().flex(1.0));
     items.push(
-        tool_on_surface_shortcut(
-            "ide_settings",
-            "toggle_settings_header",
-            Icon::Settings,
-            "Configuración",
-            Some(state.keymap_profile.shortcut(ShortcutAction::Settings)),
-            false,
-            32.0,
-            theme::WINDOW,
-        )
-        .tooltip_placement(TooltipPlacement::Right),
+        UiIconButton::new("ide_settings", Icon::Settings, palette)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Regular)
+            .dispatch_as("toggle_settings_header")
+            .tooltip_with(
+                TooltipSpec::new("Configuración")
+                    .shortcut(state.keymap_profile.shortcut(ShortcutAction::Settings))
+                    .placement(TooltipPlacement::Right),
+            )
+            .render(),
     );
     Element::column(items)
         .gap(4.0)
@@ -407,14 +382,27 @@ fn agent_tab(id: Option<&str>, title: &str, icon: Icon, active: bool, width: f32
         None => label.flex(1.0),
     }];
     if let Some(id) = id {
-        cells.push(tool(
-            &format!("ide_agent_tab_close:{id}"),
-            &format!("ide_agent_tab_close:{id}"),
-            Icon::Close,
-            "Cerrar pestaña",
-            false,
-            20.0,
-        ));
+        let close = format!("ide_agent_tab_close:{id}");
+        cells.push(
+            Tooltip::new(
+                UiIconButton::new(
+                    &close,
+                    Icon::Close,
+                    theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .render()
+                // The tab is 20 px tall; no control size is that small.
+                .padding(2.0)
+                .size(Some(20.0), Some(20.0)),
+                &close,
+                "Cerrar pestaña",
+                theme::component_palette(),
+            )
+            .placement(TooltipPlacement::Below)
+            .render(),
+        );
     }
     Element::row(cells)
         .gap(0.0)
@@ -465,14 +453,17 @@ fn agent_tabs(state: &ViewState, width: f32) -> Element {
 
 /// Starts a task with the native agent or with an installed CLI.
 fn agent_new_menu(state: &ViewState) -> Element {
-    let trigger = tool(
-        "ide_agent_new_toggle",
+    let trigger = UiIconButton::new(
         "ide_agent_new_toggle",
         Icon::Add,
-        "Nueva tarea",
-        state.ide.agent_new_open,
-        24.0,
-    );
+        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(state.ide.agent_new_open)
+    .active_hover(ActiveHover::Palette)
+    .tooltip_with(TooltipSpec::new("Nueva tarea").placement(TooltipPlacement::Below))
+    .render();
     let mut entries = vec![
         DropdownMenuEntry::Heading("Nueva tarea con".into()),
         DropdownMenuItem::new("new_session_header", "OpenIDE")
@@ -603,18 +594,28 @@ fn agent_list(state: &ViewState, width: f32, height: f32) -> Element {
 }
 
 fn agent_list_toggle(open: bool) -> Element {
-    tool(
+    UiIconButton::new(
         "ide_agent_list_toggle",
-        "ide_agent_list_toggle",
-        Icon::PanelRight,
         if open {
+            Icon::PanelRight.filled()
+        } else {
+            Icon::PanelRight
+        },
+        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(open)
+    .active_hover(ActiveHover::Palette)
+    .tooltip_with(
+        TooltipSpec::new(if open {
             "Ocultar la lista de tareas"
         } else {
             "Mostrar la lista de tareas"
-        },
-        open,
-        24.0,
+        })
+        .placement(TooltipPlacement::Below),
     )
+    .render()
 }
 
 fn agent(state: &ViewState, width: f32, height: f32, list_shown: bool) -> Element {

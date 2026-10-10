@@ -1,11 +1,11 @@
 //! Controlled editor tools. Rendering never searches, reads files or starts a server.
 use crate::{code_editor_ui::CodeEditorView, keymap::{KeymapProfile, ShortcutAction}, theme};
 use openide_editor::{IndentStyle, SearchOptions, SearchResults};
-use openide_language::{AnalysisSnapshot, lsp::Diagnostic};
+use openide_language::{lsp::Diagnostic, AnalysisSnapshot};
 use openide_ui::{
-    Button, ButtonSize, ButtonVariant, CodeLanguage, Component, ContextMenuEntry, ContextMenuItem,
-    ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon,
-    IconButton, PopoverPlacement, TextField, TooltipPlacement,
+    ActiveHover, Button, ButtonSize, ButtonVariant, CodeLanguage, Component, ContextMenuEntry,
+    ContextMenuItem, ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element,
+    FontFamily, Icon, IconButton, PopoverPlacement, TextField, TooltipPlacement, TooltipSpec,
 };
 use std::{ops::Range, sync::Arc};
 
@@ -350,35 +350,30 @@ pub(crate) fn header_actions_with_debug(
     debugging: bool,
     profile: KeymapProfile,
 ) -> Vec<Element> {
-    let icon_action = |id, icon, tip, shortcut: Option<&str>, active| {
-        let mut button = IconButton::new(id, icon, theme::component_palette())
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::IconExtraSmall)
-            .active(active)
-            .tooltip(tip)
-            .tooltip_placement(TooltipPlacement::Below);
-        if let Some(shortcut) = shortcut {
-            button = button.tooltip_shortcut(shortcut);
-        }
-        theme::interactive_surface(button.render())
-    };
     let actions = menu_entries(view, state, debugging, profile);
     vec![
-        icon_action(
-            "editor_find",
-            Icon::Search,
-            "Buscar en el documento",
-            Some("Ctrl+F"),
-            state.search_open,
-        ),
+        IconButton::new("editor_find", Icon::Search, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .active(state.search_open)
+            .active_hover(ActiveHover::Palette)
+            .tooltip_with(
+                TooltipSpec::new("Buscar en el documento")
+                    .shortcut("Ctrl+F")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
         DropdownMenu::new(
-            icon_action(
-                "editor_menu",
-                Icon::More,
-                "Acciones del archivo y del editor",
-                None,
-                state.menu_open,
-            ),
+            IconButton::new("editor_menu", Icon::More, theme::component_palette())
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .active(state.menu_open)
+                .active_hover(ActiveHover::Palette)
+                .tooltip_with(
+                    TooltipSpec::new("Acciones del archivo y del editor")
+                        .placement(TooltipPlacement::Below),
+                )
+                .render(),
             actions,
             state.menu_open,
             "editor_menu_close",
@@ -500,27 +495,6 @@ pub(crate) fn search_popover(
         theme::component_palette(),
     )
     .render();
-    let icon = |id, glyph, tip, shortcut: Option<&str>, active, enabled| {
-        // Disabled actions still explain themselves on hover, without becoming
-        // focusable or clickable. Button's internal tooltip covers enabled only.
-        let mut tooltip = openide_ui::Tooltip::new(
-            theme::interactive_surface(
-                IconButton::new(id, glyph, theme::component_palette())
-                    .variant(ButtonVariant::Ghost)
-                    .button_size(ButtonSize::IconExtraSmall)
-                    .active(active)
-                    .enabled(enabled)
-                    .render(),
-            ),
-            id,
-            tip,
-            theme::component_palette(),
-        );
-        if let Some(shortcut) = shortcut {
-            tooltip = tooltip.shortcut(shortcut);
-        }
-        tooltip.render()
-    };
     let search_field = |id, value: &str, placeholder| {
         TextField::new(id, value, placeholder, theme::component_palette())
             .size(ControlSize::Compact)
@@ -558,30 +532,39 @@ pub(crate) fn search_popover(
             "Expresión regular",
             state.search_options.regex,
         ),
-        icon(
-            "editor_scope",
-            Icon::Filter,
-            "Buscar dentro de la selección",
-            None,
-            state.search_options.scope.is_some(),
-            true,
-        ),
+        IconButton::new("editor_scope", Icon::Filter, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .active(state.search_options.scope.is_some())
+            .active_hover(ActiveHover::Palette)
+            .tooltip_with(
+                TooltipSpec::new("Buscar dentro de la selección")
+                    .placement(TooltipPlacement::Above),
+            )
+            .render(),
     ])
     .gap(2.0)
     .size(None, Some(28.0));
     let mut query = vec![
-        icon(
+        IconButton::new(
             "editor_replace_toggle",
             if state.replace_open {
                 Icon::ChevronDown
             } else {
                 Icon::ChevronRight
             },
-            "Mostrar u ocultar reemplazo",
-            Some("Ctrl+H"),
-            state.replace_open,
-            true,
-        ),
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .active(state.replace_open)
+        .active_hover(ActiveHover::Palette)
+        .tooltip_with(
+            TooltipSpec::new("Mostrar u ocultar reemplazo")
+                .shortcut("Ctrl+H")
+                .placement(TooltipPlacement::Above),
+        )
+        .render(),
         search_field("editor_query", &state.query, "Buscar en el archivo"),
     ];
     if !options_below {
@@ -589,30 +572,47 @@ pub(crate) fn search_popover(
         query.push(count.clone());
     }
     query.extend([
-        icon(
+        IconButton::new(
             "editor_search_prev",
             Icon::ArrowUp,
-            "Coincidencia anterior",
-            Some("Shift+Enter"),
-            false,
-            has_matches,
-        ),
-        icon(
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .enabled(has_matches)
+        .tooltip_with(
+            TooltipSpec::new("Coincidencia anterior")
+                .shortcut("Shift+Enter")
+                .placement(TooltipPlacement::Above),
+        )
+        .render(),
+        IconButton::new(
             "editor_search_next",
             Icon::ArrowDown,
-            "Coincidencia siguiente",
-            Some("Enter"),
-            false,
-            has_matches,
-        ),
-        icon(
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .enabled(has_matches)
+        .tooltip_with(
+            TooltipSpec::new("Coincidencia siguiente")
+                .shortcut("Enter")
+                .placement(TooltipPlacement::Above),
+        )
+        .render(),
+        IconButton::new(
             "editor_search_close",
             Icon::Close,
-            "Cerrar búsqueda",
-            Some("Esc"),
-            false,
-            true,
-        ),
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Cerrar búsqueda")
+                .shortcut("Esc")
+                .placement(TooltipPlacement::Above),
+        )
+        .render(),
     ]);
     let mut rows = vec![Element::row(query).gap(3.0).size(None, Some(28.0))];
     if state.replace_open {
@@ -622,22 +622,33 @@ pub(crate) fn search_popover(
             Element::row(vec![
                 Element::spacer().size(Some(24.0), None),
                 search_field("editor_replacement", &state.replacement, "Reemplazar por"),
-                icon(
+                IconButton::new(
                     "editor_replace_one",
                     crate::provider_icons::REPLACE,
-                    "Reemplazar coincidencia",
-                    Some("Enter"),
-                    false,
-                    current.is_some(),
-                ),
-                icon(
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .enabled(current.is_some())
+                .tooltip_with(
+                    TooltipSpec::new("Reemplazar coincidencia")
+                        .shortcut("Enter")
+                        .placement(TooltipPlacement::Above),
+                )
+                .render(),
+                IconButton::new(
                     "editor_replace_all",
                     crate::provider_icons::REPLACE_ALL,
-                    "Reemplazar todas las coincidencias",
-                    None,
-                    false,
-                    has_matches,
-                ),
+                    theme::component_palette(),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .enabled(has_matches)
+                .tooltip_with(
+                    TooltipSpec::new("Reemplazar todas las coincidencias")
+                        .placement(TooltipPlacement::Above),
+                )
+                .render(),
                 Element::spacer().size(Some(24.0), None),
             ])
             .gap(3.0)

@@ -141,6 +141,8 @@ mod tool_presentation;
 mod tool_result_media;
 mod transcript;
 #[cfg(test)]
+mod icon_button_parity_tests;
+#[cfg(test)]
 mod ui_primitives_parity_tests;
 mod ui_sizing;
 mod view;

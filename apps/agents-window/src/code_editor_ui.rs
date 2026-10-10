@@ -1,8 +1,9 @@
 //! Native document presentation. File ownership and persistence stay in the host.
 use crate::{keymap::KeymapProfile, theme, view::ViewState};
 use openide_ui::{
-    AlertDialog, Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, CodeEditor,
-    CodeLanguage, Component, EditorController, Element, FontFamily, Icon, IconButton,
+    AlertDialog, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, CodeEditor, CodeLanguage,
+    Component, ControlSize, EditorController, Element, FontFamily, Icon, IconButton,
+    TooltipPlacement, TooltipSpec,
 };
 use std::path::Path;
 
@@ -179,17 +180,18 @@ pub(crate) fn titlebar_actions(
     {
         actions.insert(
             1,
-            theme::interactive_surface(
-                IconButton::new(
-                    format!("markdown_preview_open:{}", view.tab_id),
-                    Icon::PanelRightOpen,
-                    theme::component_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconExtraSmall)
-                .tooltip("Abrir vista previa al costado")
-                .render(),
-            ),
+            IconButton::new(
+                format!("markdown_preview_open:{}", view.tab_id),
+                Icon::PanelRightOpen,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Abrir vista previa al costado")
+                    .placement(TooltipPlacement::Above),
+            )
+            .render(),
         );
     }
     actions

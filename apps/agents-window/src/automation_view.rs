@@ -6,7 +6,8 @@ use chrono::{Datelike, Local, TimeZone};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonVariant, Color, Component, ControlSize, DateTimePicker,
     Element, Empty, FontFamily, Icon, IconButton, Modal, ScrollArea, SearchField, Separator, Step,
-    Stepper, Switch, Tab, Tabs, TextArea, TextField, TimePicker, Tooltip,
+    Stepper, Switch, Tab, Tabs, TextArea, TextField, TimePicker, Tooltip, TooltipPlacement,
+    TooltipSpec,
 };
 
 use crate::{
@@ -578,15 +579,6 @@ fn action(
     button.render()
 }
 
-fn icon_action(id: String, icon: Icon, tooltip: &str, enabled: bool) -> Element {
-    IconButton::new(id, icon, theme::component_palette())
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Regular)
-        .tooltip(tooltip)
-        .enabled(enabled)
-        .render()
-}
-
 fn field(id: &str, value: &str, placeholder: &str) -> Element {
     TextField::new(id, value, placeholder, theme::component_palette())
         .size(ControlSize::Regular)
@@ -661,34 +653,50 @@ fn automation_card(item: &Automation, runs: &[AutomationRun], width: f32, busy: 
         ])
         .gap(5.0),
     ];
-    let edit = icon_action(
+    let edit = IconButton::new(
         format!("automation_edit:{}", item.id),
         Icon::Edit,
-        "Editar tarea",
-        true,
-    );
-    let history = icon_action(
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Regular)
+    .tooltip_with(TooltipSpec::new("Editar tarea").placement(TooltipPlacement::Above))
+    .render();
+    let history = IconButton::new(
         format!("automation_history:{}", item.id),
         Icon::History,
-        "Ver historial",
-        true,
-    );
-    let run = icon_action(
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Regular)
+    .tooltip_with(TooltipSpec::new("Ver historial").placement(TooltipPlacement::Above))
+    .render();
+    let run = IconButton::new(
         format!("automation_run:{}", item.id),
         Icon::ArrowUp,
-        if busy {
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Regular)
+    .enabled(!busy)
+    .tooltip_with(
+        TooltipSpec::new(if busy {
             "Iniciando…"
         } else {
             "Ejecutar ahora"
-        },
-        !busy,
-    );
-    let delete = icon_action(
+        })
+        .placement(TooltipPlacement::Above),
+    )
+    .render();
+    let delete = IconButton::new(
         format!("automation_delete_request:{}", item.id),
         Icon::Trash,
-        "Eliminar tarea",
-        true,
-    );
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Regular)
+    .tooltip_with(TooltipSpec::new("Eliminar tarea").placement(TooltipPlacement::Above))
+    .render();
     let mut actions = vec![edit, history, run];
     if busy {
         actions.push(muted("Iniciando…").font_size(10.0));
@@ -2055,6 +2063,11 @@ mod tests {
 
         state.busy_id = Some("one".into());
         let busy = UiTree::new(build_automations(&state, viewport.width)).layout(viewport);
-        assert!(!busy.regions.iter().any(|r| r.id == "automation_run:one"));
+        // The busy button keeps its hint, so only a hover region remains.
+        assert!(busy
+            .regions
+            .iter()
+            .filter(|r| r.id == "automation_run:one")
+            .all(|r| r.kind == openide_ui::HitKind::Hover));
     }
 }

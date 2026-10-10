@@ -1,9 +1,9 @@
 //! Native chrome for the conversation-owned browser; the actor owns its page.
 
 use openide_ui::{
-    Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
-    Element, FontFamily, Icon, IconButton, PopoverPlacement, RasterImage, ScrollArea, Separator,
-    Spinner, Tooltip, TooltipPlacement,
+    Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry, Element,
+    FontFamily, Icon, IconButton, PopoverPlacement, RasterImage, ScrollArea, Separator, Spinner,
+    Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{theme, view::ViewState};
@@ -45,23 +45,6 @@ fn label(value: impl Into<String>, muted: bool) -> Element {
         } else {
             theme::FOREGROUND
         })
-}
-
-fn action(id: &str, icon: Icon, tooltip: &str, enabled: bool) -> Element {
-    Tooltip::new(
-        theme::interactive_surface(
-            IconButton::new(id, icon, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconExtraSmall)
-                .enabled(enabled)
-                .render(),
-        ),
-        id,
-        tooltip,
-        theme::component_palette(),
-    )
-    .placement(TooltipPlacement::Below)
-    .render()
 }
 
 fn menu_action(
@@ -119,12 +102,12 @@ fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
     let ready = browser.started && !browser.navigating;
     let address = !browser.url_draft.is_empty() || !browser.url.is_empty();
     DropdownMenu::new(
-        action(
-            "browser_more_toggle",
-            Icon::More,
-            "Más opciones del navegador",
-            true,
-        ),
+        IconButton::new("browser_more_toggle", Icon::More, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(true)
+            .tooltip_with(TooltipSpec::new("Más opciones del navegador").placement(TooltipPlacement::Below))
+            .render(),
         vec![
             menu_action("browser_copy_url", Icon::File, "Copiar dirección", "Copia la dirección visible en la barra al portapapeles.", address),
             menu_action("browser_snapshot", Icon::Refresh, "Actualizar vista", "Obtiene una captura nueva de la página sin recargarla.", ready),
@@ -164,19 +147,28 @@ fn navigation(browser: &BrowserUiState, width: f32) -> Element {
     .render()
     .flex(1.0);
     Element::row(vec![
-        action(
-            "browser_back",
-            Icon::ArrowLeft,
-            "Atrás",
-            ready && browser.can_go_back,
-        ),
-        action(
+        IconButton::new("browser_back", Icon::ArrowLeft, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(ready && browser.can_go_back)
+            .tooltip_with(TooltipSpec::new("Atrás").placement(TooltipPlacement::Below))
+            .render(),
+        IconButton::new(
             "browser_forward",
             Icon::ArrowRight,
-            "Adelante",
-            ready && browser.can_go_forward,
-        ),
-        action("browser_reload", Icon::Refresh, "Recargar página", ready),
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .enabled(ready && browser.can_go_forward)
+        .tooltip_with(TooltipSpec::new("Adelante").placement(TooltipPlacement::Below))
+        .render(),
+        IconButton::new("browser_reload", Icon::Refresh, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(ready)
+            .tooltip_with(TooltipSpec::new("Recargar página").placement(TooltipPlacement::Below))
+            .render(),
         address,
         more_menu(browser, width),
     ])
@@ -499,7 +491,14 @@ mod tests {
     #[test]
     fn navigation_icon_has_a_centered_glyph_and_disabled_controls_stay_passive() {
         for enabled in [false, true] {
-            let mut tree = UiTree::new(action("browser_back", Icon::ArrowLeft, "Atrás", enabled));
+            let mut tree = UiTree::new(
+                IconButton::new("browser_back", Icon::ArrowLeft, theme::component_palette())
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .enabled(enabled)
+                    .tooltip_with(TooltipSpec::new("Atrás").placement(TooltipPlacement::Below))
+                    .render(),
+            );
             let frame = tree.layout(Size::new(NAVIGATION_SIZE, NAVIGATION_SIZE));
             assert_eq!(tree.focus("browser_back"), enabled);
             assert_eq!(

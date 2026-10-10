@@ -4,9 +4,9 @@
 //! ReviewBlockWidget provides text actions for the active change inside the editor.
 use crate::theme;
 use openide_ui::{
-    Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
+    Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element, FontFamily, Icon, IconButton, PopoverPlacement, Separator, Tooltip,
-    TooltipPlacement,
+    TooltipPlacement, TooltipSpec,
 };
 
 pub(crate) const HEIGHT: f32 = 28.0;
@@ -132,12 +132,6 @@ fn button(
     variant: ButtonVariant,
 ) -> Element {
     let id = action(&review.token, operation);
-    let button = Button::new(&id, text, theme::component_palette())
-        .variant(variant)
-        .size(ControlSize::Dense)
-        .width(width)
-        .enabled(enabled)
-        .render();
     let reason = if operation == "reject_file" {
         review.reject_reason.as_deref().or(review.reason.as_deref())
     } else {
@@ -154,37 +148,19 @@ fn button(
         (false, true) => "Ctrl+Shift+Backspace",
         (false, false) => "Ctrl+Enter",
     };
-    Tooltip::new(button, id, tip, theme::component_palette())
-        .shortcut(shortcut)
-        .placement(TooltipPlacement::Below)
+    Button::new(id, text, theme::component_palette())
+        .variant(variant)
+        .size(ControlSize::Dense)
+        .width(width)
+        .enabled(enabled)
+        .tooltip_with(
+            TooltipSpec::new(tip)
+                .shortcut(shortcut)
+                .placement(TooltipPlacement::Below),
+        )
         .render()
         .centered_y()
         .size(Some(width), Some(CONTROL))
-}
-
-fn arrow(
-    review: &EditorReviewView,
-    operation: &str,
-    icon: Icon,
-    title: &str,
-    enabled: bool,
-) -> Element {
-    let id = action(&review.token, operation);
-    let mut tooltip = Tooltip::new(
-        IconButton::new(&id, icon, theme::component_palette())
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::IconExtraSmall)
-            .enabled(enabled && !review.busy)
-            .render(),
-        id,
-        title,
-        theme::component_palette(),
-    )
-    .placement(TooltipPlacement::Below);
-    if let Some(shortcut) = navigation_shortcut(operation) {
-        tooltip = tooltip.shortcut(shortcut);
-    }
-    tooltip.render()
 }
 
 fn navigation_shortcut(operation: &str) -> Option<&'static str> {
@@ -297,14 +273,16 @@ fn navigation_menu(
         theme::component_palette(),
     )
     .variant(ButtonVariant::Ghost)
-    .button_size(ButtonSize::IconExtraSmall)
+    .size(ControlSize::Dense)
     .active(review.menu_open)
-    .tooltip(if has_editor_actions {
-        "Cambios y acciones del editor"
-    } else {
-        "Navegar por los cambios"
-    })
-    .tooltip_placement(TooltipPlacement::Below)
+    .tooltip_with(
+        TooltipSpec::new(if has_editor_actions {
+            "Cambios y acciones del editor"
+        } else {
+            "Navegar por los cambios"
+        })
+        .placement(TooltipPlacement::Below),
+    )
     .render();
     DropdownMenu::new(
         anchor,
@@ -335,13 +313,20 @@ pub(crate) fn controls_with_menu(
     let mut navigation = Vec::new();
     if layout.hunks {
         navigation.extend([
-            arrow(
-                review,
-                "previous",
+            IconButton::new(
+                action(&review.token, "previous"),
                 Icon::ArrowUp,
-                "Cambio anterior",
-                review.current_hunk > 0 && review.hunk_count > 0,
-            ),
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(review.current_hunk > 0 && review.hunk_count > 0 && !review.busy)
+            .tooltip_with(
+                TooltipSpec::new("Cambio anterior")
+                    .shortcut(navigation_shortcut("previous").unwrap_or_default())
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
             counter(
                 review,
                 "position",
@@ -350,13 +335,20 @@ pub(crate) fn controls_with_menu(
                 COUNT_WIDTH,
                 "Cambio",
             ),
-            arrow(
-                review,
-                "next",
+            IconButton::new(
+                action(&review.token, "next"),
                 Icon::ArrowDown,
-                "Cambio siguiente",
-                review.current_hunk.saturating_add(1) < review.hunk_count,
-            ),
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(review.current_hunk.saturating_add(1) < review.hunk_count && !review.busy)
+            .tooltip_with(
+                TooltipSpec::new("Cambio siguiente")
+                    .shortcut(navigation_shortcut("next").unwrap_or_default())
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
         ]);
         navigation.push(
             Separator::vertical(theme::component_palette())
@@ -369,13 +361,19 @@ pub(crate) fn controls_with_menu(
     }
     if layout.files {
         navigation.extend([
-            arrow(
-                review,
-                "previous_file",
+            IconButton::new(
+                action(&review.token, "previous_file"),
                 Icon::ArrowLeft,
-                "Archivo anterior de esta conversación",
-                review.can_accept && review.current_file > 0,
-            ),
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(review.can_accept && review.current_file > 0 && !review.busy)
+            .tooltip_with(
+                TooltipSpec::new("Archivo anterior de esta conversación")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
             counter(
                 review,
                 "file_position",
@@ -384,13 +382,23 @@ pub(crate) fn controls_with_menu(
                 FILE_COUNT_WIDTH,
                 "Archivo",
             ),
-            arrow(
-                review,
-                "next_file",
+            IconButton::new(
+                action(&review.token, "next_file"),
                 Icon::ArrowRight,
-                "Archivo siguiente de esta conversación",
-                review.can_accept && review.current_file.saturating_add(1) < review.file_count,
-            ),
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(
+                review.can_accept
+                    && review.current_file.saturating_add(1) < review.file_count
+                    && !review.busy,
+            )
+            .tooltip_with(
+                TooltipSpec::new("Archivo siguiente de esta conversación")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
         ]);
         navigation.push(
             Separator::vertical(theme::component_palette())

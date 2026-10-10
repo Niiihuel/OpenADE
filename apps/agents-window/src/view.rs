@@ -10,10 +10,11 @@ use openide_harness::{
     SubagentStatus, ToolPermissions,
 };
 use openide_ui::{
-    AlertDialog, Button, ButtonVariant, Color, Component, ControlSize, DropdownList, DropdownMenu,
-    DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily, Icon,
-    IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search, SegmentedControl,
-    Separator, Skeleton, Tab, TextSpan, Tooltip, TooltipPlacement, TreeGuides, TreeRow, ICON_SIZE,
+    ActiveHover, AlertDialog, Button, ButtonVariant, Color, Component, ControlSize, DropdownList,
+    DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily,
+    Icon, IconButton as UiIconButton, Kbd, PopoverPlacement, ScrollArea, Search, SegmentedControl,
+    Separator, Skeleton, Tab, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
+    TreeRow, ICON_SIZE,
 };
 use serde_json::Value;
 
@@ -678,6 +679,7 @@ fn button(id: impl Into<String>, title: impl Into<String>, fill: Color, ink: Col
         .min_size(0.0, 30.0)
 }
 
+/// A labelled navigation button with a leading icon.
 fn icon_button(
     id: impl Into<String>,
     icon: Icon,
@@ -685,9 +687,7 @@ fn icon_button(
     fill: Color,
     ink: Color,
 ) -> Element {
-    let title = title.into();
-    let icon_only = title.is_empty();
-    let control = UiIconButton::new(id, icon, theme::action_palette(fill, ink))
+    UiIconButton::new(id, icon, theme::action_palette(fill, ink))
         .label(title)
         .variant(if fill == theme::BRAND || fill == theme::DESTRUCTIVE {
             ButtonVariant::Solid
@@ -697,57 +697,9 @@ fn icon_button(
         .size(ControlSize::Regular)
         .active(fill == theme::SELECTED)
         .render()
-        .font_size(theme::UI_FONT_SIZE);
-    if icon_only {
-        // The caller may request a 24/26/28 px toolbar target. A 30 px
-        // minimum made its hover fill and hit region exceed the row, while a
-        // text-button inset could leave the glyph visually off-center.
-        control.padding(4.0).min_size(0.0, 0.0)
-    } else {
-        control.padding(5.0).min_size(0.0, 30.0)
-    }
-}
-
-fn hinted_icon_button(
-    id: impl Into<String>,
-    icon: Icon,
-    hint: &str,
-    fill: Color,
-    ink: Color,
-    size: f32,
-) -> Element {
-    let id = id.into();
-    Tooltip::new(
-        icon_button(id.clone(), icon, "", fill, ink)
-            .padding(((size - 16.0) / 2.0).max(0.0))
-            .size(Some(size), Some(size)),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .render()
-}
-
-fn hinted_shortcut_icon_button(
-    id: impl Into<String>,
-    icon: Icon,
-    hint: &str,
-    shortcut: &str,
-    fill: Color,
-    ink: Color,
-    size: f32,
-) -> Element {
-    let id = id.into();
-    Tooltip::new(
-        icon_button(id.clone(), icon, "", fill, ink)
-            .padding(((size - 16.0) / 2.0).max(0.0))
-            .size(Some(size), Some(size)),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .shortcut(shortcut)
-    .render()
+        .font_size(theme::UI_FONT_SIZE)
+        .padding(5.0)
+        .min_size(0.0, 30.0)
 }
 
 fn field(id: &str, value: &str, placeholder: &str) -> Element {
@@ -1555,20 +1507,14 @@ pub(crate) fn sidebar_account_footer(state: &ViewState, width: f32) -> Element {
         })
     .max(0.0);
     let account = crate::github_account_menu_ui::build(state, account_width, width);
-    let settings = Tooltip::new(
-        UiIconButton::new(
-            "toggle_settings",
-            Icon::Settings,
-            theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
-        )
-        .variant(ButtonVariant::Subtle)
-        .button_size(openide_ui::ButtonSize::IconExtraSmall)
-        .render(),
+    let settings = UiIconButton::new(
         "toggle_settings",
-        "Configuración",
-        theme::component_palette(),
+        Icon::Settings,
+        theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
     )
-    .placement(TooltipPlacement::Right)
+    .variant(ButtonVariant::Subtle)
+    .size(ControlSize::Dense)
+    .tooltip_with(TooltipSpec::new("Configuración").placement(TooltipPlacement::Right))
     .render();
     let mut footer = vec![account.flex(1.0)];
     if !state.show_settings {
@@ -1588,21 +1534,21 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     let header = Element::panel(Element::row(vec![
         Element::spacer().size(Some(2.0), None),
         Element::row(vec![
-            Tooltip::new(
-                icon_button(
-                    "toggle_sidebar",
-                    Icon::PanelLeftClose,
-                    "",
-                    theme::SIDEBAR,
-                    theme::FOREGROUND,
-                )
-                .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
+            UiIconButton::new(
                 "toggle_sidebar",
-                "Ocultar barra lateral",
-                theme::component_palette(),
+                Icon::PanelLeftClose,
+                theme::sidebar_palette(),
             )
-            .shortcut(crate::keymap::KeymapProfile::default().shortcut(crate::keymap::ShortcutAction::ToggleSidebar))
-            .placement(TooltipPlacement::Below)
+            .variant(ButtonVariant::Subtle)
+            .size(ControlSize::Dense)
+            .tooltip_with(
+                TooltipSpec::new("Ocultar barra lateral")
+                    .shortcut(
+                        crate::keymap::KeymapProfile::default()
+                            .shortcut(crate::keymap::ShortcutAction::ToggleSidebar),
+                    )
+                    .placement(TooltipPlacement::Below),
+            )
             .render(),
             // TruncatedText vertically centers its line inside the 24 px
             // header row; Text paints at the top and sat above the toggle.
@@ -1671,31 +1617,22 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
             .groups
             .iter()
             .all(|group| group.collapsed);
-    let sort_trigger = icon_button(
+    let sort_trigger = UiIconButton::new(
         "session_sort_toggle",
         Icon::Filter,
-        "",
-        if state.session_sort_menu_open || state.session_organization == SessionOrganization::Recent
-        {
-            theme::SELECTED
-        } else {
-            theme::SIDEBAR
-        },
-        theme::FOREGROUND_SUBTLE,
+        theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
     )
-    .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE));
-    let sort_trigger = if state.session_sort_menu_open {
-        sort_trigger
-    } else {
-        Tooltip::new(
-            sort_trigger,
-            "session_sort_toggle",
-            "Filtrar y ordenar tareas",
-            theme::component_palette(),
-        )
-        .placement(TooltipPlacement::Below)
-        .render()
-    };
+    .variant(ButtonVariant::Subtle)
+    .size(ControlSize::Dense)
+    .active(
+        state.session_sort_menu_open || state.session_organization == SessionOrganization::Recent,
+    )
+    .tooltip_with(
+        TooltipSpec::new("Filtrar y ordenar tareas")
+            .placement(TooltipPlacement::Below)
+            .suppressed(state.session_sort_menu_open),
+    )
+    .render();
     let sort_control = DropdownList::new(
         sort_trigger,
         {
@@ -1742,24 +1679,15 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
     .placement(PopoverPlacement::BottomEnd)
     .render();
     let context_action = if state.session_organization == SessionOrganization::Group {
-        Tooltip::new(
-            icon_button(
-                "session_group_new",
-                Icon::Hash,
-                "",
-                if state.group_create_open {
-                    theme::SELECTED
-                } else {
-                    theme::SIDEBAR
-                },
-                theme::FOREGROUND_SUBTLE,
-            )
-            .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
+        UiIconButton::new(
             "session_group_new",
-            "Nuevo grupo",
-            theme::component_palette(),
+            Icon::Hash,
+            theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
         )
-        .placement(TooltipPlacement::Below)
+        .variant(ButtonVariant::Subtle)
+        .size(ControlSize::Dense)
+        .active(state.group_create_open)
+        .tooltip_with(TooltipSpec::new("Nuevo grupo").placement(TooltipPlacement::Below))
         .render()
     } else {
         let mut expand = UiIconButton::new(
@@ -1791,32 +1719,26 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
         .placement(TooltipPlacement::Below)
         .render()
     };
-    let archive_control = Tooltip::new(
-        icon_button(
-            "toggle_archived_view",
-            if state.show_archived {
-                Icon::Close
-            } else {
-                Icon::Archive
-            },
-            "",
-            if state.show_archived {
-                theme::SELECTED
-            } else {
-                theme::SIDEBAR
-            },
-            theme::FOREGROUND_SUBTLE,
-        )
-        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
+    let archive_control = UiIconButton::new(
         "toggle_archived_view",
         if state.show_archived {
+            Icon::Close
+        } else {
+            Icon::Archive
+        },
+        theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
+    )
+    .variant(ButtonVariant::Subtle)
+    .size(ControlSize::Dense)
+    .active(state.show_archived)
+    .tooltip_with(
+        TooltipSpec::new(if state.show_archived {
             "Cerrar archivo"
         } else {
             "Ver archivo"
-        },
-        theme::component_palette(),
+        })
+        .placement(TooltipPlacement::Below),
     )
-    .placement(TooltipPlacement::Below)
     .render();
     let align_tool = |control: Element| {
         control
@@ -1907,24 +1829,25 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
                 .min_size(0.0, 0.0)
                 .flex(1.0)
                 .size(None, Some(28.0)),
-                hinted_icon_button(
+                UiIconButton::new(
                     "session_group_create_commit",
                     Icon::Check,
-                    "Crear grupo",
-                    theme::SELECTED,
-                    theme::FOREGROUND,
-                    28.0,
+                    theme::sidebar_palette(),
                 )
-                .tooltip_placement(TooltipPlacement::Below),
-                hinted_icon_button(
+                .variant(ButtonVariant::Subtle)
+                .size(ControlSize::Compact)
+                .active(true)
+                .tooltip_with(TooltipSpec::new("Crear grupo").placement(TooltipPlacement::Below))
+                .render(),
+                UiIconButton::new(
                     "session_group_create_cancel",
                     Icon::Close,
-                    "Cancelar grupo",
-                    theme::SIDEBAR,
-                    theme::FOREGROUND_SUBTLE,
-                    28.0,
+                    theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
                 )
-                .tooltip_placement(TooltipPlacement::Below),
+                .variant(ButtonVariant::Subtle)
+                .size(ControlSize::Compact)
+                .tooltip_with(TooltipSpec::new("Cancelar grupo").placement(TooltipPlacement::Below))
+                .render(),
             ])
             .gap(3.0)
             .size(None, Some(28.0)),
@@ -2286,21 +2209,21 @@ fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f3
 /// The same action is used by every center surface. A collapsed sidebar
 /// never inserts a separate row above the center dock.
 pub(super) fn sidebar_reopen_control(background: Color) -> Element {
-    Tooltip::new(
-        icon_button(
-            "toggle_sidebar_reopen",
-            Icon::PanelLeftOpen,
-            "",
-            background,
-            theme::FOREGROUND,
-        )
-        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
+    UiIconButton::new(
         "toggle_sidebar_reopen",
-        "Mostrar barra lateral",
-        theme::component_palette(),
+        Icon::PanelLeftOpen,
+        theme::action_palette(background, theme::FOREGROUND),
     )
-    .shortcut(crate::keymap::KeymapProfile::default().shortcut(crate::keymap::ShortcutAction::ToggleSidebar))
-    .placement(TooltipPlacement::Below)
+    .variant(ButtonVariant::Subtle)
+    .size(ControlSize::Dense)
+    .tooltip_with(
+        TooltipSpec::new("Mostrar barra lateral")
+            .shortcut(
+                crate::keymap::KeymapProfile::default()
+                    .shortcut(crate::keymap::ShortcutAction::ToggleSidebar),
+            )
+            .placement(TooltipPlacement::Below),
+    )
     .render()
 }
 
@@ -2778,26 +2701,32 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
             );
             if preview.page_index > 0 || page.has_more {
                 let previous = if preview.page_index > 0 {
-                    hinted_icon_button(
+                    UiIconButton::new(
                         "file_preview_previous",
                         Icon::ArrowLeft,
-                        "Página anterior",
-                        theme::BACKGROUND,
-                        theme::FOREGROUND,
-                        28.0,
+                        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
                     )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ControlSize::Compact)
+                    .tooltip_with(
+                        TooltipSpec::new("Página anterior").placement(TooltipPlacement::Above),
+                    )
+                    .render()
                 } else {
                     Element::spacer().size(Some(28.0), Some(28.0))
                 };
                 let next = if page.has_more {
-                    hinted_icon_button(
+                    UiIconButton::new(
                         "file_preview_next",
                         Icon::ArrowRight,
-                        "Página siguiente",
-                        theme::BACKGROUND,
-                        theme::FOREGROUND,
-                        28.0,
+                        theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
                     )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ControlSize::Compact)
+                    .tooltip_with(
+                        TooltipSpec::new("Página siguiente").placement(TooltipPlacement::Above),
+                    )
+                    .render()
                 } else {
                     Element::spacer().size(Some(28.0), Some(28.0))
                 };
@@ -2921,29 +2850,20 @@ fn dock_add_menu(state: &ViewState) -> Element {
                 .into(),
         );
     }
-    let anchor = if state.show_dock_add_menu {
-        icon_button(
-            "dock_add_tab",
-            Icon::Add,
-            "",
-            theme::SELECTED,
-            theme::FOREGROUND,
-        )
-        .size(
-            Some(crate::dock_tab_ui::TOOL_SIZE),
-            Some(crate::dock_tab_ui::TOOL_SIZE),
-        )
-    } else {
-        hinted_icon_button(
-            "dock_add_tab",
-            Icon::Add,
-            "Abrir pestaña",
-            Color::TRANSPARENT,
-            theme::FOREGROUND,
-            crate::dock_tab_ui::TOOL_SIZE,
-        )
-        .tooltip_placement(TooltipPlacement::Below)
-    };
+    let anchor = UiIconButton::new(
+        "dock_add_tab",
+        Icon::Add,
+        theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(ControlSize::Dense)
+    .active(state.show_dock_add_menu)
+    .tooltip_with(
+        TooltipSpec::new("Abrir pestaña")
+            .placement(TooltipPlacement::Below)
+            .suppressed(state.show_dock_add_menu),
+    )
+    .render();
     DropdownMenu::new(
         anchor,
         menu,
@@ -3142,38 +3062,43 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
                             .foreground(theme::BORDER)
                             .size(Some(24.0), Some(24.0))
                     } else {
-                        hinted_icon_button(
+                        UiIconButton::new(
                             format!("dock_move_up:{}", tab.id),
                             Icon::ArrowUp,
-                            "Subir",
-                            theme::BACKGROUND,
-                            theme::FOREGROUND_SUBTLE,
-                            24.0,
+                            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
                         )
+                        .variant(ButtonVariant::Subtle)
+                        .size(ControlSize::Dense)
+                        .tooltip_with(TooltipSpec::new("Subir").placement(TooltipPlacement::Above))
+                        .render()
                     },
                     if last_id == Some(tab.id) {
                         Element::icon(Icon::ArrowDown)
                             .foreground(theme::BORDER)
                             .size(Some(24.0), Some(24.0))
                     } else {
-                        hinted_icon_button(
+                        UiIconButton::new(
                             format!("dock_move_down:{}", tab.id),
                             Icon::ArrowDown,
-                            "Bajar",
-                            theme::BACKGROUND,
-                            theme::FOREGROUND_SUBTLE,
-                            24.0,
+                            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
                         )
+                        .variant(ButtonVariant::Subtle)
+                        .size(ControlSize::Dense)
+                        .tooltip_with(TooltipSpec::new("Bajar").placement(TooltipPlacement::Above))
+                        .render()
                     },
                     if tab.closable {
-                        hinted_icon_button(
+                        UiIconButton::new(
                             format!("dock_close:{}", tab.id),
                             Icon::Close,
-                            "Cerrar pestaña",
-                            theme::BACKGROUND,
-                            theme::FOREGROUND_SUBTLE,
-                            28.0,
+                            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE),
                         )
+                        .variant(ButtonVariant::Subtle)
+                        .size(ControlSize::Compact)
+                        .tooltip_with(
+                            TooltipSpec::new("Cerrar pestaña").placement(TooltipPlacement::Above),
+                        )
+                        .render()
                     } else {
                         Element::spacer().size(Some(28.0), Some(28.0))
                     },
@@ -3618,20 +3543,17 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
         center
     };
     let center = if is_home {
-        let toggle = Tooltip::new(
-            icon_button(
-                "toggle_side_pane_header",
-                Icon::PanelRightOpen,
-                "",
-                theme::BACKGROUND,
-                theme::FOREGROUND,
-            )
-            .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_TOOL_SIZE)),
+        let toggle = UiIconButton::new(
             "toggle_side_pane_header",
-            "Mostrar panel derecho: archivos, cambios, terminal y navegador",
-            theme::component_palette(),
+            Icon::PanelRightOpen,
+            theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
         )
-        .placement(TooltipPlacement::Below)
+        .variant(ButtonVariant::Subtle)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Mostrar panel derecho: archivos, cambios, terminal y navegador")
+                .placement(TooltipPlacement::Below),
+        )
         .render();
         let mut actions = vec![
             window_mode_control(state),

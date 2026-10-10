@@ -6,8 +6,8 @@ use crate::{
 };
 use openide_preview::{Document, PreviewKind};
 use openide_ui::{
-    ButtonSize, ButtonVariant, Component, Element, FontFamily, Icon, IconButton, ScrollArea,
-    Separator, Tooltip, TooltipPlacement,
+    ActiveHover, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton,
+    ScrollArea, Separator, TooltipPlacement, TooltipSpec,
 };
 
 const HEADER: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
@@ -17,42 +17,6 @@ fn label(value: impl Into<String>) -> Element {
         .font_family(FontFamily::Sans)
         .font_size(11.0)
         .foreground(theme::FOREGROUND_SUBTLE)
-}
-
-fn tool(
-    view: &PreviewView,
-    key: &str,
-    icon: Icon,
-    hint: &str,
-    active: bool,
-    enabled: bool,
-) -> Element {
-    action_tool(
-        &format!("{}:{key}", view.chrome_action_prefix()),
-        icon,
-        hint,
-        active,
-        enabled,
-    )
-}
-
-fn action_tool(id: &str, icon: Icon, hint: &str, active: bool, enabled: bool) -> Element {
-    Tooltip::new(
-        theme::interactive_surface(
-            IconButton::new(id, icon, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconExtraSmall)
-                .active(active)
-                .enabled(enabled)
-                .render(),
-        )
-        .size(Some(24.0), Some(24.0)),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .placement(TooltipPlacement::Below)
-    .render()
 }
 
 fn modes(view: &PreviewView) -> Vec<Element> {
@@ -72,7 +36,19 @@ fn modes(view: &PreviewView) -> Vec<Element> {
         ),
     ]
     .into_iter()
-    .map(|(key, icon, hint, mode)| tool(view, key, icon, hint, view.mode == mode, true))
+    .map(|(key, icon, hint, mode)| {
+        IconButton::new(
+            format!("{}:{key}", view.chrome_action_prefix()),
+            icon,
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .active(view.mode == mode)
+        .active_hover(ActiveHover::Palette)
+        .tooltip_with(TooltipSpec::new(hint).placement(TooltipPlacement::Below))
+        .render()
+    })
     .collect()
 }
 
@@ -84,14 +60,18 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
     };
     let mut used = actions.len() as f32 * 28.0;
     if view.kind == PreviewKind::Pdf {
-        actions.push(tool(
-            view,
-            "previous",
-            Icon::ArrowLeft,
-            "Página anterior",
-            false,
-            !view.loading && view.page > 0,
-        ));
+        actions.push(
+            IconButton::new(
+                format!("{}:previous", view.chrome_action_prefix()),
+                Icon::ArrowLeft,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!view.loading && view.page > 0)
+            .tooltip_with(TooltipSpec::new("Página anterior").placement(TooltipPlacement::Below))
+            .render(),
+        );
         actions.push(
             label(if view.pages > 0 {
                 format!("{} / {}", view.page + 1, view.pages)
@@ -101,52 +81,72 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
             .size(Some(52.0), Some(24.0))
             .center_content(),
         );
-        actions.push(tool(
-            view,
-            "next",
-            Icon::ArrowRight,
-            "Página siguiente",
-            false,
-            !view.loading && view.page + 1 < view.pages,
-        ));
+        actions.push(
+            IconButton::new(
+                format!("{}:next", view.chrome_action_prefix()),
+                Icon::ArrowRight,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!view.loading && view.page + 1 < view.pages)
+            .tooltip_with(TooltipSpec::new("Página siguiente").placement(TooltipPlacement::Below))
+            .render(),
+        );
         used += 112.0;
     }
     if view.kind != PreviewKind::Markdown {
-        // The minus sign is textual because our icon family has no Minus glyph.
-        let id = format!("{}:zoom_out", view.chrome_action_prefix());
         actions.push(
-            Tooltip::new(
-                theme::interactive_surface(Element::clickable(
-                    &id,
-                    label("−").font_size(18.0).center_content(),
-                ))
-                .size(Some(24.0), Some(24.0)),
-                &id,
-                "Alejar",
+            IconButton::new(
+                format!("{}:zoom_out", view.chrome_action_prefix()),
+                Icon::Minus,
                 theme::component_palette(),
             )
-            .placement(TooltipPlacement::Below)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Alejar").placement(TooltipPlacement::Below))
             .render(),
         );
-        actions.push(tool(
-            view,
-            "fit",
-            Icon::Expand,
-            "Ajustar al panel",
-            view.zoom.is_none(),
-            true,
-        ));
-        actions.push(tool(view, "zoom_in", Icon::Add, "Acercar", false, true));
+        actions.push(
+            IconButton::new(
+                format!("{}:fit", view.chrome_action_prefix()),
+                Icon::Expand,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .active(view.zoom.is_none())
+            .active_hover(ActiveHover::Palette)
+            .tooltip_with(TooltipSpec::new("Ajustar al panel").placement(TooltipPlacement::Below))
+            .render(),
+        );
+        actions.push(
+            IconButton::new(
+                format!("{}:zoom_in", view.chrome_action_prefix()),
+                Icon::Add,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Acercar").placement(TooltipPlacement::Below))
+            .render(),
+        );
         used += 84.0;
     }
-    actions.push(tool(
-        view,
-        "reload",
-        Icon::Refresh,
-        "Actualizar vista previa",
-        false,
-        !view.loading,
-    ));
+    actions.push(
+        IconButton::new(
+            format!("{}:reload", view.chrome_action_prefix()),
+            Icon::Refresh,
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .enabled(!view.loading)
+        .tooltip_with(
+            TooltipSpec::new("Actualizar vista previa").placement(TooltipPlacement::Below),
+        )
+        .render(),
+    );
     used += 28.0;
     let path = if split {
         label("Vista previa")
@@ -283,13 +283,18 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Option<Elemen
                 if crate::ide_workspace::active(state) {
                     Vec::new()
                 } else {
-                    vec![action_tool(
+                    vec![IconButton::new(
                         &format!("markdown_preview_open:{}", editor.tab_id),
                         Icon::PanelRight,
-                        "Abrir vista previa al costado",
-                        false,
-                        true,
-                    )]
+                        theme::component_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Dense)
+                    .tooltip_with(
+                        TooltipSpec::new("Abrir vista previa al costado")
+                            .placement(TooltipPlacement::Below),
+                    )
+                    .render()]
                 },
                 state.keymap_profile,
                 state.vim_mode,
@@ -344,30 +349,38 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
         icon: Icon::File,
         active: true,
         width: tab_width,
-        close: action_tool(
+        close: IconButton::new(
             &format!("{prefix}:close"),
             Icon::Close,
-            "Cerrar vista previa",
-            false,
-            true,
-        ),
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(TooltipSpec::new("Cerrar vista previa").placement(TooltipPlacement::Below))
+        .render(),
         tooltip_placement: TooltipPlacement::Below,
     });
     let tools = Element::row(vec![
-        action_tool(
+        IconButton::new(
             &format!("{prefix}:source"),
             Icon::Code,
-            "Mostrar código fuente",
-            false,
-            true,
-        ),
-        action_tool(
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(TooltipSpec::new("Mostrar código fuente").placement(TooltipPlacement::Below))
+        .render(),
+        IconButton::new(
             &format!("{prefix}:reload"),
             Icon::Refresh,
-            "Actualizar vista previa",
-            false,
-            true,
-        ),
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Actualizar vista previa").placement(TooltipPlacement::Below),
+        )
+        .render(),
     ])
     .gap(2.0)
     .size(Some(50.0), Some(24.0));

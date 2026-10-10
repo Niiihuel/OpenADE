@@ -2,8 +2,8 @@
 //! workspace/session epoch; this module never sends DAP or starts a process.
 use crate::theme;
 use openide_ui::{
-    Button, ButtonSize, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuItem,
-    Element, FontFamily, Icon, IconButton, Separator, Tooltip, TooltipPlacement,
+    Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuItem, Element,
+    FontFamily, Icon, IconButton, Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::sync::Arc;
 
@@ -144,70 +144,49 @@ fn label(text: impl Into<String>, width: f32, color: openide_ui::Color) -> Eleme
         .size(Some(width.max(0.0)), Some(ROW))
 }
 fn tool(state: &DebugView, op: &str, icon: Icon, hint: &str, enabled: bool) -> Element {
-    sized_tool(state, op, icon, hint, enabled, false)
-}
-fn sized_tool(
-    state: &DebugView,
-    op: &str,
-    icon: Icon,
-    hint: &str,
-    enabled: bool,
-    compact: bool,
-) -> Element {
     surface_tool(
         state,
         op,
         icon,
         hint,
         enabled,
-        if compact {
-            ButtonSize::IconExtraSmall
-        } else {
-            ButtonSize::IconSmall
-        },
-        if compact {
-            theme::SIDEBAR
-        } else {
-            theme::PANEL
-        },
+        ControlSize::Regular,
+        theme::PANEL,
     )
 }
+/// A debug action: its id comes from the scope and its shortcut from the
+/// operation, so the three debug surfaces agree on both.
 fn surface_tool(
     state: &DebugView,
     op: &str,
     icon: Icon,
     hint: &str,
     enabled: bool,
-    size: ButtonSize,
+    size: ControlSize,
     surface: openide_ui::Color,
 ) -> Element {
-    let id = action(&state.scope, op);
-    let palette = theme::action_palette(surface, theme::FOREGROUND);
-    let mut tooltip = Tooltip::new(
-        palette.interactive_surface(
-            IconButton::new(&id, icon, palette)
-                .variant(ButtonVariant::Ghost)
-                .button_size(size)
-                .enabled(enabled && !state.scope.is_empty())
-                .render(),
-        ),
-        &id,
-        hint,
-        theme::component_palette(),
-    )
-    .placement(TooltipPlacement::Above);
     let shortcut = match op {
-        "start" | "resume" => Some("F5"),
-        "step_over" => Some("F10"),
-        "step_into" => Some("F11"),
-        "step_out" => Some("Shift+F11"),
-        "stop" => Some("Shift+F5"),
-        _ => None,
+        "start" | "resume" => "F5",
+        "step_over" => "F10",
+        "step_into" => "F11",
+        "step_out" => "Shift+F11",
+        "stop" => "Shift+F5",
+        _ => "",
     };
-    if let Some(shortcut) = shortcut {
-        tooltip = tooltip.shortcut(shortcut);
-    }
-    tooltip.render()
+    IconButton::new(
+        action(&state.scope, op),
+        icon,
+        theme::action_palette(surface, theme::FOREGROUND),
+    )
+    .variant(ButtonVariant::Ghost)
+    .size(size)
+    .enabled(enabled && !state.scope.is_empty())
+    .tooltip_with(
+        TooltipSpec::new(hint)
+            .shortcut(shortcut)
+            .placement(TooltipPlacement::Above),
+    )
+    .render()
 }
 fn status_text(status: DebugStatus) -> &'static str {
     match status {
@@ -856,7 +835,17 @@ pub(crate) fn build_sidebar(state: &DebugView, width: f32, height: f32) -> Eleme
     let width = width.max(0.0);
     let inner = (width - chrome::INSET * 2.0).max(0.0);
     let active = session_active(state.status);
-    let control = |op, icon, hint, enabled| sized_tool(state, op, icon, hint, enabled, true);
+    let control = |op, icon, hint, enabled| {
+        surface_tool(
+            state,
+            op,
+            icon,
+            hint,
+            enabled,
+            ControlSize::Dense,
+            theme::SIDEBAR,
+        )
+    };
     let header = chrome::header(
         chrome::title("Depuración"),
         vec![
@@ -1037,7 +1026,7 @@ fn sidebar_controls(state: &DebugView, width: f32) -> Element {
             icon,
             hint,
             enabled,
-            ButtonSize::IconExtraSmall,
+            ControlSize::Dense,
             theme::PANEL,
         )
     };

@@ -3,9 +3,9 @@
 //! than placing a second command editor below the PTY.
 
 use openide_ui::{
-    Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, Color, Component, ContextMenu,
+    Breadcrumb, BreadcrumbItem, Button, ButtonVariant, Color, Component, ContextMenu,
     ContextMenuEntry, ContextMenuItem, ControlSize, Element, FontFamily, Icon, IconButton,
-    Separator, Tooltip, TooltipPlacement,
+    Separator, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -21,23 +21,6 @@ fn text(value: impl Into<String>, color: Color) -> Element {
         .font_family(FontFamily::Sans)
         .font_size(11.0)
         .foreground(color)
-}
-
-fn tool(id: &str, icon: Icon, hint: &str, shortcut: &str) -> Element {
-    Tooltip::new(
-        theme::interactive_surface(
-            IconButton::new(id, icon, theme::component_palette())
-                .variant(ButtonVariant::Ghost)
-                .button_size(ButtonSize::IconSmall)
-                .render(),
-        ),
-        id,
-        hint,
-        theme::component_palette(),
-    )
-    .shortcut(shortcut)
-    .placement(TooltipPlacement::Below)
-    .render()
 }
 
 fn terminal_color(color: TerminalColor, default: Color) -> Color {
@@ -458,13 +441,24 @@ fn build_snapshot(
         .shortcut("Ctrl+Shift+C")
         .placement(TooltipPlacement::Below)
         .render(),
-        tool("terminal_clear", Icon::Trash, "Limpiar pantalla", "Ctrl+L"),
-        tool(
-            "terminal_interrupt",
-            Icon::Stop,
-            "Interrumpir proceso",
-            "Ctrl+C",
-        ),
+        IconButton::new("terminal_clear", Icon::Trash, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Regular)
+            .tooltip_with(
+                TooltipSpec::new("Limpiar pantalla")
+                    .shortcut("Ctrl+L")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
+        IconButton::new("terminal_interrupt", Icon::Stop, theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Regular)
+            .tooltip_with(
+                TooltipSpec::new("Interrumpir proceso")
+                    .shortcut("Ctrl+C")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
     ])
     .padding(4.0)
     .gap(6.0)

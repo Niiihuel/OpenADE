@@ -3,6 +3,7 @@
 use super::*;
 use crate::ide_workspace::IdeActivity;
 use crate::keymap::ShortcutAction;
+use openide_ui::ButtonSize;
 
 const MENUS: [(&str, &str, f32); 7] = [
     ("file", "Archivo", 60.0),
@@ -294,15 +295,19 @@ pub(super) fn menubar(state: &ViewState, compact: bool) -> Element {
             Vec::new()
         };
         return DropdownMenu::new(
-            Element::panel(tool_on_surface(
-                "ide_menu:all",
-                "ide_menu:all",
-                Icon::Menu,
-                "Menú principal",
-                current.is_some(),
-                24.0,
-                theme::WINDOW,
-            ))
+            Element::panel(
+                UiIconButton::new(
+                    "ide_menu:all",
+                    Icon::Menu,
+                    theme::action_palette(theme::WINDOW, theme::FOREGROUND),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Dense)
+                .active(current.is_some())
+                .active_hover(ActiveHover::Palette)
+                .tooltip_with(TooltipSpec::new("Menú principal").placement(TooltipPlacement::Below))
+                .render(),
+            )
             .size(Some(32.0), Some(24.0)),
             items,
             current.is_some(),

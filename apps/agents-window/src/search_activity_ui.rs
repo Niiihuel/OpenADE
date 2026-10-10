@@ -6,7 +6,7 @@ use crate::{
 };
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, Element, FileActivity, FontFamily, Icon,
-    Tooltip, TooltipPlacement,
+    IconButton, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use serde_json::Value;
 use std::borrow::Cow;
@@ -409,11 +409,15 @@ pub(crate) fn build(item: &TranscriptItem, state: &ViewState) -> Option<Element>
                 Some(tool_presentation::ToolNavigationTarget::Url(_))
             )
         {
-            card = card.actions(vec![crate::file_activity_ui::icon_action(
+            card = card.actions(vec![IconButton::new(
                 tool_presentation::navigation_action(owner, id),
                 Icon::Globe,
-                "Abrir enlace",
-            )]);
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Abrir enlace").placement(TooltipPlacement::Above))
+            .render()]);
         }
     }
     if let Some(note) = note {
@@ -484,11 +488,17 @@ pub(crate) fn hosted(item: &TranscriptItem, state: &ViewState) -> Element {
     }
     let source_count = sources.iter().filter(|(_, url)| valid_web_url(url)).count();
     let actions = if is_page_action(action) && url.as_deref().is_some_and(valid_web_url) {
-        vec![crate::file_activity_ui::icon_action(
+        vec![IconButton::new(
             page_action(owner, id),
             Icon::Globe,
-            "Abrir página consultada",
-        )]
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Abrir página consultada").placement(TooltipPlacement::Above),
+        )
+        .render()]
     } else {
         Vec::new()
     };

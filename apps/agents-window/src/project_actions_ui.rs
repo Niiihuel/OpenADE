@@ -4,8 +4,8 @@ use crate::{
     theme,
 };
 use openide_ui::{
-    Button, ButtonSize, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon,
-    IconButton, Tooltip,
+    Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton, Tooltip,
+    TooltipPlacement, TooltipSpec,
 };
 
 fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
@@ -17,18 +17,6 @@ fn text(value: impl Into<String>, muted: bool, size: f32) -> Element {
         } else {
             theme::FOREGROUND
         })
-}
-
-fn icon_action(id: String, icon: Icon, hint: &str, enabled: bool) -> Element {
-    crate::environment_ui::interactive_surface(
-        IconButton::new(id, icon, theme::component_palette())
-            .variant(ButtonVariant::Ghost)
-            .button_size(ButtonSize::IconSmall)
-            .tooltip(hint)
-            .enabled(enabled)
-            .render()
-            .size(Some(32.0), Some(32.0)),
-    )
 }
 
 fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
@@ -68,18 +56,26 @@ fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
         )
         .render()
         .flex(1.0),
-        icon_action(
+        IconButton::new(
             format!("project_action_edit:{}", action.id),
             Icon::Edit,
-            "Editar acción",
-            enabled,
-        ),
-        icon_action(
+            theme::action_palette(theme::CARD, theme::FOREGROUND),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Regular)
+        .enabled(enabled)
+        .tooltip_with(TooltipSpec::new("Editar acción").placement(TooltipPlacement::Above))
+        .render(),
+        IconButton::new(
             format!("project_action_delete:{}", action.id),
             Icon::Trash,
-            "Eliminar acción",
-            enabled,
-        ),
+            theme::action_palette(theme::CARD, theme::FOREGROUND),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Regular)
+        .enabled(enabled)
+        .tooltip_with(TooltipSpec::new("Eliminar acción").placement(TooltipPlacement::Above))
+        .render(),
     ])
     .gap(2.0)
     .size(Some(width), Some(42.0))
