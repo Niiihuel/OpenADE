@@ -977,6 +977,25 @@ fn parse_summary_section(title: &str, bytes: &[u8]) -> ReviewSection {
     }
 }
 
+/// What counting the lines of new files may read in one review.
+const MAX_UNTRACKED_LINE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// The lines of a new text file. A binary file, and one beyond what is left
+/// of `budget`, counts none.
+fn untracked_lines(path: &Path, budget: &mut u64) -> usize {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return 0;
+    };
+    if !metadata.is_file() || metadata.len() > *budget {
+        return 0;
+    }
+    *budget -= metadata.len();
+    match std::fs::read(path) {
+        Ok(bytes) if !bytes.contains(&0) => bytes.split_inclusive(|byte| *byte == b'\n').count(),
+        _ => 0,
+    }
+}
+
 fn read_untracked(workspace: &Path) -> io::Result<(Vec<String>, bool)> {
     let mut child = command_no_window("git")
         .args(["ls-files", "--others", "--exclude-standard", "-z"])
@@ -1150,6 +1169,12 @@ fn load_review(workspace: &Path, diff_files: Option<usize>) -> io::Result<GitRev
         review.truncated |= truncated;
     }
     let (untracked, truncated) = read_untracked(workspace)?;
+    // A new file is all additions, as its diff shows once it is added.
+    let mut budget = MAX_UNTRACKED_LINE_BYTES;
+    review.additions += untracked
+        .iter()
+        .map(|path| untracked_lines(&workspace.join(path), &mut budget))
+        .sum::<usize>();
     review.untracked = untracked;
     review.truncated |= truncated;
     review.group_conflicts();
@@ -1192,6 +1217,17 @@ mod tests {
             let spent: usize = sizes.iter().map(|size| (*size).min(allowance)).sum();
             assert!(spent <= budget, "{sizes:?} within {budget}: spent {spent}");
         }
+    }
+
+    #[test]
+    fn a_new_untracked_file_counts_its_lines_as_additions() {
+        let root = tempfile::tempdir().unwrap();
+        git(root.path(), &["init", "-q"]);
+        fs::write(root.path().join("prueba.md"), "# Prueba\n\nsin salto final").unwrap();
+        fs::write(root.path().join("logo.bin"), [1, 0, 2, b'\n']).unwrap();
+        let review = load_git_review(root.path()).unwrap();
+        assert_eq!((review.files, review.untracked.len()), (0, 2));
+        assert_eq!((review.additions, review.deletions), (3, 0));
     }
 
     #[test]
@@ -1408,7 +1444,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_untracked_paths_without_reading_their_contents() {
+    fn lists_untracked_paths_and_never_reads_an_ignored_file() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path();
         git(dir, &["init", "-q"]);
@@ -1422,9 +1458,11 @@ mod tests {
         .unwrap();
 
         let review = load_git_review(dir).unwrap();
+        // One line each for `.gitignore` and the large file; none for the
+        // ignored one.
         assert_eq!(
             (review.files, review.additions, review.deletions),
-            (0, 0, 0)
+            (0, 2, 0)
         );
         assert!(review
             .untracked

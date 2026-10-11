@@ -794,10 +794,11 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
     let changes_label = repo.map_or_else(
         || "Cambios del repositorio".into(),
         |review| {
-            if review.files == 0 {
-                "Sin cambios".into()
-            } else {
-                format!("{} archivos", review.files)
+            // New files are changes too, before git tracks them.
+            match review.files + review.untracked.len() {
+                0 => "Sin cambios".into(),
+                1 => "1 archivo".into(),
+                files => format!("{files} archivos"),
             }
         },
     );
@@ -806,7 +807,7 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
         |review| {
             format!(
                 "{} archivos · +{} · −{}{}",
-                review.files,
+                review.files + review.untracked.len(),
                 review.additions,
                 review.deletions,
                 if review.truncated {
