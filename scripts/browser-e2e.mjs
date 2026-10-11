@@ -271,6 +271,320 @@ test('deep managed data path does not exceed Chromium Unix socket limits', { tim
   assert.equal((await bridge.exited).code, 0);
 });
 
+// ---- Agent tools: refs, explicit actions, page observers and bounded output ----
+
+const toolsPage = `<!doctype html><html lang="es"><head><title>Herramientas</title><style>
+  body{font:16px sans-serif;margin:16px}button,input,select{font:inherit;margin:2px}
+  #drag,#drop{display:inline-block;width:120px;height:32px;border:1px solid #333}iframe{width:200px;height:48px}
+  </style></head><body><h1>Herramientas</h1>
+  <button id="a" onclick="out.textContent='A pulsado'">Borrar</button>
+  <button id="b" onclick="out.textContent='B pulsado'">Borrar</button>
+  <button id="temp" onclick="this.remove()">Efímero</button>
+  <input aria-label="Correo">
+  <button id="menu" onmouseenter="out.textContent='Sobre el menú'">Menú</button>
+  <select aria-label="Color" onchange="out.textContent='Color '+this.value"><option value="r">Rojo</option><option value="g">Verde</option></select>
+  <label><input type="checkbox" id="terms" onchange="out.textContent='Acepto '+this.checked"> Acepto</label>
+  <div id="drag" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','carta')">Carta</div>
+  <div id="drop" ondragover="event.preventDefault()" ondrop="event.preventDefault();this.textContent='Soltada '+event.dataTransfer.getData('text/plain')">Zona</div>
+  <button id="later" onclick="setTimeout(()=>{out.textContent='Listo tarde'},300)">Tardar</button>
+  <button id="confirm" onclick="out.textContent='Confirmó '+confirm('¿Borrar todo?')">Confirmar</button>
+  <button id="prompt" onclick="out.textContent='Respondió '+prompt('¿Nombre?','x')">Preguntar</button>
+  <p id="out">Sin cambios</p><p style="display:none">Texto oculto</p>
+  <iframe src="/frame" title="Marco"></iframe>
+  <script>const out=document.querySelector('#out')</script><script src="/missing.js"></script>
+  <script>console.log('carga',{n:1});console.warn('aviso');console.error('falla');console.debug('depura');
+  fetch('/api/items?token=visible',{method:'POST',body:'cuerpo secreto',headers:{'X-Secret':'cabecera secreta'}});
+  setTimeout(()=>{throw new Error('sin capturar')},0)</script></body></html>`;
+
+// One fixture server and one production bridge per test, as in the cases above.
+async function agentBrowser(t) {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'openide-browser-tools-e2e-'));
+  const fixture = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    const url = new URL(req.url, 'http://fixture');
+    if (url.pathname === '/redirect') { res.writeHead(302, { Location: '/tools' }).end(); return; }
+    if (url.pathname === '/missing.js') { res.writeHead(404).end('no'); return; }
+    if (url.pathname === '/api/items') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'X-Reply-Secret': 'cabecera de respuesta' }).end('{"secret":"respuesta secreta"}');
+      return;
+    }
+    if (url.pathname === '/frame') { res.end(`<!doctype html><title>Marco</title><button onclick="this.textContent='Dentro pulsado'">Dentro</button>`); return; }
+    if (url.pathname === '/tall') { res.end('<!doctype html><title>Alta</title><body style="margin:0"><div style="height:1500px;background:linear-gradient(#fff,#369)">Arriba</div><p>Fondo</p>'); return; }
+    // Noise does not compress: the full page is far above the capture limit.
+    if (url.pathname === '/noise') {
+      res.end(`<!doctype html><title>Ruido</title><body style="margin:0"><canvas width="640" height="2400"></canvas><script>
+        const context=document.querySelector('canvas').getContext('2d'),image=context.createImageData(640,2400);
+        for(let i=0;i<image.data.length;i++)image.data[i]=i%4===3?255:Math.random()*256;context.putImageData(image,0,0)</script>`);
+      return;
+    }
+    if (url.pathname === '/quiet') { res.end('<!doctype html><title>Silencio</title><h1>Silencio</h1>'); return; }
+    res.end(toolsPage);
+  });
+  fixture.listen(0, '127.0.0.1');
+  await once(fixture, 'listening');
+  const origin = `http://127.0.0.1:${fixture.address().port}`;
+  const bridge = client('apps/agents-window/src/browser_bridge.mjs', environment(temporary), temporary);
+  t.after(async () => {
+    await bridge.stop();
+    fixture.closeAllConnections();
+    await new Promise(resolve => fixture.close(resolve));
+    await fs.rm(temporary, { recursive: true, force: true });
+  });
+  const ok = async command => {
+    const response = await bridge.command(command);
+    assert.equal(response.ok, true, response.error);
+    return response.snapshot;
+  };
+  // A tool's own answer: an ordinary reply that carries `output`.
+  const output = async command => {
+    const snapshot = await ok(command);
+    assert.ok(snapshot.output, `${command.type} returns output`);
+    return snapshot.output;
+  };
+  const failure = async (command, pattern) => {
+    const snapshot = await ok(command);
+    assert.match(snapshot.output?.error ?? '', pattern, `${command.type} is answered as a tool failure`);
+    assert.equal(snapshot.screenshot, undefined);
+    assert.equal(snapshot.aria_snapshot, undefined);
+    return snapshot.output.error;
+  };
+  const evaluate = async (expression, target = {}) => {
+    const result = await output({ type: 'evaluate', expression, ...target });
+    assert.equal(result.error, undefined, result.error);
+    return result;
+  };
+  assert.equal((await ok({ type: 'start', module_dir: moduleDir, executable_path: executable, width: 640, height: 480 })).url, 'about:blank');
+  return { origin, bridge, ok, output, failure, evaluate };
+}
+
+function refOf(snapshot, label) {
+  const found = new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\n]*\\[ref=((?:f\\d+)?e\\d+)\\]`).exec(snapshot.aria_snapshot);
+  assert.ok(found, `${label} carries a ref in:\n${snapshot.aria_snapshot}`);
+  return found[1];
+}
+
+test('agent tools act on snapshot refs and answer stale or ambiguous targets without touching the page', { timeout: 120_000 }, async t => {
+  const { origin, ok, output, failure, evaluate } = await agentBrowser(t);
+  // Every agent-facing result carries the AI-mode tree, so an action returns fresh refs.
+  let snapshot = await ok({ type: 'navigate', url: origin + '/tools' });
+  assert.match(snapshot.aria_snapshot, /button "Efímero" \[ref=e\d+\]/);
+  assert.ok(Buffer.byteLength(snapshot.aria_snapshot) <= 64 * 1024);
+  snapshot = await ok({ type: 'snapshot' });
+  const heading = refOf(snapshot, 'heading "Herramientas"');
+  const second = [...snapshot.aria_snapshot.matchAll(/button "Borrar" \[ref=(e\d+)\]/g)].map(match => match[1]);
+  assert.equal(second.length, 2, 'both buttons have their own ref');
+
+  // A ref names exactly one of two elements that share role and name.
+  snapshot = await ok({ type: 'click_locator', ref: second[1] });
+  assert.match(snapshot.aria_snapshot, /B pulsado/);
+  assert.equal(refOf(snapshot, 'heading "Herramientas"'), heading, 'an element keeps its ref across snapshots');
+  const ambiguous = await failure({ type: 'click_locator', role: 'button', name: 'Borrar' }, /coincide con 2 elementos/);
+  assert.match(ambiguous, /browser_snapshot/);
+  await failure({ type: 'click_locator', selector: '#absent' }, /coincide con 0 elementos/);
+  assert.equal((await evaluate('document.querySelector("#out").textContent')).text, '"B pulsado"', 'a refused target changed nothing');
+
+  // User input omits ARIA and leaves the agent's refs usable.
+  const quiet = await ok({ type: 'click', x: 600, y: 440, include_aria: false });
+  assert.equal(quiet.aria_snapshot, undefined);
+  await ok({ type: 'fill', ref: refOf(snapshot, 'textbox "Correo"'), text: 'ada@example.test' });
+  assert.equal((await evaluate('el => el.value', { selector: 'input[aria-label=Correo]' })).text, '"ada@example.test"');
+
+  // A removed element's ref goes stale; so do refs that never existed.
+  const temporary = refOf(snapshot, 'button "Efímero"');
+  snapshot = await ok({ type: 'click_locator', ref: temporary });
+  assert.doesNotMatch(snapshot.aria_snapshot, /Efímero/);
+  const stale = await failure({ type: 'click_locator', ref: temporary }, new RegExp(`La referencia ${temporary} no corresponde`));
+  assert.match(stale, /Tomá una captura nueva con browser_snapshot/);
+  await failure({ type: 'fill', ref: 'e99999', text: 'x' }, /La referencia e99999 no corresponde/);
+  await failure({ type: 'hover', ref: 'f9e1' }, /La referencia f9e1 no corresponde/);
+  await failure({ type: 'drag', from: { ref: heading }, to: { ref: 'e99999' } }, /La referencia e99999 no corresponde/);
+  await failure({ type: 'evaluate', expression: 'el => { window.touched = true; }', ref: temporary }, /no corresponde/);
+  assert.equal((await evaluate('window.touched')).text, 'undefined', 'the script of a stale target never ran');
+
+  // Refs reach inside an iframe.
+  const inner = refOf(snapshot, 'button "Dentro"');
+  assert.match(inner, /^f\d+e\d+$/);
+  snapshot = await ok({ type: 'click_locator', ref: inner });
+  assert.match(snapshot.aria_snapshot, /Dentro pulsado/);
+
+  // Explicit actions, each by a different way of naming its element.
+  snapshot = await ok({ type: 'hover', ref: refOf(snapshot, 'button "Menú"') });
+  assert.match(snapshot.aria_snapshot, /Sobre el menú/);
+  snapshot = await ok({ type: 'select_option', role: 'combobox', name: 'Color', values: ['Verde'] });
+  assert.match(snapshot.aria_snapshot, /Color g/);
+  snapshot = await ok({ type: 'check', selector: '#terms', checked: true });
+  assert.match(snapshot.aria_snapshot, /Acepto true/);
+  assert.match(snapshot.aria_snapshot, /checkbox "Acepto" \[checked\]/);
+  snapshot = await ok({ type: 'check', ref: refOf(snapshot, 'checkbox "Acepto"'), checked: false });
+  assert.match(snapshot.aria_snapshot, /Acepto false/);
+  snapshot = await ok({ type: 'drag', from: { selector: '#drag' }, to: { selector: '#drop' } });
+  assert.match(snapshot.aria_snapshot, /Soltada carta/);
+
+  // Waiting: text that arrives, text already gone, a fixed pause, and a wait that runs out.
+  await ok({ type: 'click_locator', selector: '#later' });
+  snapshot = await ok({ type: 'wait_for', text: 'Listo tarde' });
+  assert.match(snapshot.aria_snapshot, /Listo tarde/);
+  await ok({ type: 'wait_for', text_gone: 'Soltada nunca' });
+  await ok({ type: 'wait_for', text_gone: 'Texto oculto' });
+  let started = Date.now();
+  await ok({ type: 'wait_for', seconds: 0.3 });
+  assert.ok(Date.now() - started >= 290);
+  started = Date.now();
+  await failure({ type: 'wait_for', text: 'Texto oculto' }, /no apareció después de 10 s/);
+  assert.ok(Date.now() - started >= 9_000, 'hidden text does not count as visible');
+
+  // Evaluate: values, functions, an element, errors as text and a bounded result.
+  assert.deepEqual(await evaluate('document.title'), { text: '"Herramientas"', data: { truncated: false } });
+  assert.equal((await evaluate('() => ({ n: 1, list: [1, "dos"] })')).text, '{"n":1,"list":[1,"dos"]}');
+  assert.equal((await evaluate('async () => { await new Promise(done => setTimeout(done, 20)); return 7; }')).text, '7');
+  assert.equal((await evaluate('el => el.textContent', { ref: heading })).text, '"Herramientas"');
+  assert.equal((await evaluate('el => el.id', { role: 'button', name: 'Confirmar' })).text, '"confirm"');
+  assert.equal((await evaluate('document.querySelector("#out").click()')).text, 'undefined');
+  assert.equal((await evaluate('typeof process + "/" + typeof require')).text, '"undefined/undefined"', 'no Node access from a page script');
+  assert.equal(await failure({ type: 'evaluate', expression: '(() => { throw new Error("explota"); })()' }, /explota/), 'Error: explota');
+  await failure({ type: 'evaluate', expression: 'noExiste + 1' }, /^ReferenceError: noExiste is not defined$/);
+  await failure({ type: 'evaluate', expression: 'function (' }, /^SyntaxError/);
+  const oversized = await evaluate('() => "é".repeat(60000)');
+  assert.equal(oversized.data.truncated, true);
+  assert.ok(Buffer.byteLength(oversized.text) <= 16 * 1024 && Buffer.byteLength(oversized.text) > 16 * 1024 - 4);
+  assert.ok(!oversized.text.includes('\ufffd'), 'the cut never splits a character');
+  const nested = depth => `() => { let value = 1; for (let level = 0; level < ${depth}; level++) value = [value]; return value; }`;
+  assert.equal((await evaluate(nested(60))).text, '['.repeat(60) + '1' + ']'.repeat(60), 'nested page data travels as text');
+  await failure({ type: 'evaluate', expression: nested(500) }, /Cannot serialize result/);
+  started = Date.now();
+  await failure({ type: 'evaluate', expression: 'new Promise(() => {})' }, /El script no terminó en 10 s/);
+  assert.ok(Date.now() - started < 20_000);
+  snapshot = await ok({ type: 'snapshot' });
+  assert.match(snapshot.title, /Herramientas/, 'the page is still served after an abandoned script');
+});
+
+test('agent tools report console, network, dialogs and screenshots within their bounds', { timeout: 120_000 }, async t => {
+  const { origin, ok, output, failure, evaluate } = await agentBrowser(t);
+  const consoleEntries = async level => (await output({ type: 'console_messages', ...(level ? { level } : {}) })).data.console;
+  const requests = async () => (await output({ type: 'network_requests' })).data.network;
+  await ok({ type: 'navigate', url: origin + '/tools' });
+  await ok({ type: 'wait_for', seconds: 0.5 });
+
+  // Console: levels, uncaught errors and where each message came from.
+  let log = await consoleEntries();
+  assert.equal(log.omitted, 0);
+  assert.ok(log.entries.some(entry => entry.level === 'info' && entry.type === 'log' && /^carga/.test(entry.text) && entry.location === `${origin}/tools:20:19`), JSON.stringify(log.entries));
+  assert.ok(log.entries.some(entry => entry.level === 'warning' && entry.text === 'aviso'));
+  assert.ok(log.entries.some(entry => entry.level === 'error' && entry.type === 'error' && entry.text === 'falla'));
+  assert.ok(log.entries.some(entry => entry.level === 'error' && entry.type === 'pageerror' && /sin capturar/.test(entry.text)));
+  assert.ok(log.entries.some(entry => entry.level === 'error' && /404/.test(entry.text) && entry.location.startsWith(`${origin}/missing.js`)));
+  assert.ok(!log.entries.some(entry => entry.text === 'depura'), 'debug is below the default level');
+  assert.ok((await consoleEntries('debug')).entries.some(entry => entry.level === 'debug' && entry.text === 'depura'));
+  const errors = await consoleEntries('error');
+  assert.ok(errors.entries.length >= 3 && errors.entries.every(entry => entry.level === 'error'));
+  const response = await ok({ type: 'console_messages' });
+  assert.equal(response.screenshot, undefined, 'reading the console takes no capture');
+  assert.equal(response.aria_snapshot, undefined);
+
+  // Network: method, URL, status, type and failure, and nothing else.
+  await evaluate('fetch("http://127.0.0.1:1/caido").catch(() => "sin conexión")');
+  await evaluate('fetch("/api/items?q=" + "z".repeat(2000)).then(reply => reply.status)');
+  let network = await requests();
+  const find = pattern => network.entries.find(entry => pattern.test(entry.url));
+  assert.deepEqual(network.entries[0], { method: 'GET', url: `${origin}/tools`, resource_type: 'document', status: 200 });
+  assert.deepEqual(find(/token=visible/), { method: 'POST', url: `${origin}/api/items?token=visible`, resource_type: 'fetch', status: 200 }, 'URLs are returned as they are');
+  assert.equal(find(/missing\.js/).status, 404);
+  assert.equal(find(/\/frame$/).resource_type, 'document');
+  assert.match(find(/caido/).failure, /^net::ERR_/);
+  assert.equal(find(/caido/).status, undefined);
+  assert.equal(Buffer.byteLength(find(/q=zzz/).url), 512, 'a long URL is cut at its bound');
+  for (const entry of network.entries) {
+    assert.deepEqual(Object.keys(entry).filter(key => !['method', 'url', 'resource_type', 'status', 'failure'].includes(key)), []);
+  }
+  assert.doesNotMatch(JSON.stringify(network), /cuerpo secreto|cabecera secreta|respuesta secreta|cabecera de respuesta|X-Secret/i);
+
+  // Both buffers are bounded: the newest entries that fit, and a count of the rest.
+  await evaluate('() => { for (let i = 0; i < 450; i++) console.log(`linea ${i} ` + "y".repeat(180)); console.log("ñ".repeat(4000)); }');
+  log = await consoleEntries();
+  assert.ok(log.omitted > 250, `omitted ${log.omitted}`);
+  assert.ok(log.entries.length > 20 && log.entries.length < 200);
+  assert.ok(Buffer.byteLength(JSON.stringify(log.entries)) <= 12 * 1024 + 2);
+  const newest = log.entries.at(-1);
+  assert.ok(Buffer.byteLength(newest.text) <= 1024 && /^ñ+$/.test(newest.text), 'the newest entry is kept and its text is cut');
+  assert.match(log.entries.at(-2).text, /^linea 449 /);
+  await evaluate('() => Promise.all(Array.from({ length: 260 }, (_, i) => fetch("/api/items?n=" + i)))');
+  network = await requests();
+  assert.ok(network.omitted > 100, `omitted ${network.omitted}`);
+  assert.ok(Buffer.byteLength(JSON.stringify(network.entries)) <= 12 * 1024 + 2);
+  assert.ok(network.entries.every(entry => entry.status === 200));
+
+  // Dialogs are dismissed by default and each one is recorded.
+  let snapshot = await ok({ type: 'click_locator', selector: '#confirm' });
+  assert.match(snapshot.aria_snapshot, /Confirmó false/);
+  const dialogs = async () => (await consoleEntries('warning')).entries.filter(entry => entry.type === 'dialog');
+  assert.deepEqual((await dialogs()).at(-1), { level: 'warning', type: 'dialog', dialog: 'confirm', action: 'dismissed', text: '¿Borrar todo?' });
+  // Armed for the next dialog only.
+  assert.deepEqual((await output({ type: 'handle_dialog', accept: true, prompt_text: 'Ada 🧠' })).data, { next_dialog: 'accept' });
+  snapshot = await ok({ type: 'click_locator', selector: '#prompt' });
+  assert.match(snapshot.aria_snapshot, /Respondió Ada 🧠/);
+  assert.deepEqual((await dialogs()).at(-1), { level: 'warning', type: 'dialog', dialog: 'prompt', action: 'accepted', text: '¿Nombre?' });
+  snapshot = await ok({ type: 'click_locator', selector: '#confirm' });
+  assert.match(snapshot.aria_snapshot, /Confirmó false/, 'the answer was used once');
+  await ok({ type: 'handle_dialog', accept: true });
+  snapshot = await ok({ type: 'click_locator', selector: '#confirm' });
+  assert.match(snapshot.aria_snapshot, /Confirmó true/);
+
+  // A navigation starts both buffers over and disarms an unused answer; its redirect does not.
+  await ok({ type: 'handle_dialog', accept: true });
+  await ok({ type: 'navigate', url: origin + '/redirect' });
+  await ok({ type: 'wait_for', seconds: 0.5 });
+  network = await requests();
+  assert.deepEqual(network.entries.slice(0, 2).map(entry => [entry.url, entry.status]), [[`${origin}/redirect`, 302], [`${origin}/tools`, 200]]);
+  assert.equal(network.omitted, 0);
+  assert.ok(!find(/caido/) && !network.entries.some(entry => /n=\d/.test(entry.url)));
+  log = await consoleEntries('debug');
+  assert.ok(!log.entries.some(entry => /^linea/.test(entry.text) || entry.type === 'dialog'));
+  assert.ok(log.entries.some(entry => /^carga/.test(entry.text)));
+  snapshot = await ok({ type: 'click_locator', selector: '#confirm' });
+  assert.match(snapshot.aria_snapshot, /Confirmó false/, 'an answer armed for the previous page is forgotten');
+  await ok({ type: 'navigate', url: origin + '/quiet' });
+  assert.deepEqual(await consoleEntries('debug'), { omitted: 0, entries: [] });
+
+  // Screenshots: viewport, element and full page as PNG at CSS scale.
+  const capture = async command => {
+    const snapshot = await ok({ type: 'take_screenshot', ...command });
+    assert.equal(snapshot.output.error, undefined, snapshot.output.error);
+    assert.equal(snapshot.screenshot, undefined, 'only the requested image travels in this reply');
+    const bytes = Buffer.from(snapshot.output.image.base64, 'base64');
+    assert.equal(snapshot.output.image.mime_type, 'image/png');
+    assert.deepEqual(bytes.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    assert.ok(bytes.length <= 2 * 1024 * 1024);
+    assert.deepEqual(snapshot.output.data.screenshot, { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), bytes: bytes.length });
+    return { ...snapshot.output.data.screenshot, bytes };
+  };
+  await ok({ type: 'navigate', url: origin + '/tall' });
+  const viewport = await capture({});
+  assert.deepEqual([viewport.width, viewport.height], [640, 480]);
+  const page = await capture({ full_page: true });
+  assert.equal(page.width, 640);
+  assert.ok(page.height >= 1500, `full page height ${page.height}`);
+  snapshot = await ok({ type: 'snapshot' });
+  const element = await capture({ ref: refOf(snapshot, 'paragraph') });
+  assert.ok(element.width <= 640 && element.height > 0 && element.height < 100, `element ${element.width}x${element.height}`);
+  if (process.env.OPENIDE_BROWSER_E2E_ARTIFACTS) {
+    await fs.mkdir(process.env.OPENIDE_BROWSER_E2E_ARTIFACTS, { recursive: true });
+    await fs.writeFile(path.join(process.env.OPENIDE_BROWSER_E2E_ARTIFACTS, 'browser-tool-full-page.png'), page.bytes);
+    await fs.writeFile(path.join(process.env.OPENIDE_BROWSER_E2E_ARTIFACTS, 'browser-tool-element.png'), element.bytes);
+  }
+  await failure({ type: 'take_screenshot', ref: 'e99999' }, /La referencia e99999 no corresponde/);
+  // An element that cannot be captured is this tool's answer, not a page error.
+  await ok({ type: 'evaluate', expression: '() => { document.querySelector("p").style.display = "none"; }' });
+  const hidden = await failure({ type: 'take_screenshot', selector: 'p' }, /^Timeout [\d.]+ms exceeded/);
+  assert.doesNotMatch(hidden, /\n/);
+  // Above the limit the capture is refused with a way forward, and the page stays usable.
+  await ok({ type: 'navigate', url: origin + '/noise' });
+  const refused = await ok({ type: 'take_screenshot', full_page: true });
+  assert.match(refused.output.error, /supera el límite de 2 MiB; capturá el viewport o un elemento/);
+  assert.equal(refused.output.image, undefined);
+  const noisy = await capture({});
+  assert.deepEqual([noisy.width, noisy.height], [640, 480]);
+});
+
 test('MCP proxy transports scoped localhost commands and never starts a browser itself', { timeout: 10_000 }, async t => {
   const token = 'a'.repeat(64);
   const received = [];
@@ -300,6 +614,9 @@ test('MCP proxy transports scoped localhost commands and never starts a browser 
   assert.match((await proxy.request({ jsonrpc: '2.0', method: 'tools/list' })).error.message, /Initialize/);
   const initialized = await proxy.request({ jsonrpc: '2.0', method: 'initialize', params: { protocolVersion: '2025-11-25' } });
   assert.equal(initialized.result.serverInfo.name, 'openide-browser');
+  for (const phrase of ['browser_snapshot', '[ref=e12]', 'snapshot again after a navigation', 'over browser_evaluate', 'untrusted data']) {
+    assert.ok(initialized.result.instructions.includes(phrase), `server instructions carry: ${phrase}`);
+  }
   const list = await proxy.request({ jsonrpc: '2.0', method: 'tools/list' });
   assert.equal(list.result.tools[0].name, 'browser_snapshot');
   const called = await proxy.request({ jsonrpc: '2.0', method: 'tools/call', params: { name: 'browser_snapshot', arguments: {} } });

@@ -344,4 +344,74 @@ mod tests {
         fs::write(installed[0].path.join("server.sh"), "exit 0\n").unwrap();
         assert!(stale.runtime_servers(workspace.path()).await.is_err());
     }
+
+    #[tokio::test]
+    async fn every_browser_tool_is_advertised_and_requires_the_users_approval() {
+        use openide_harness::{LocalTools, PermissionMode, PermissionPolicy};
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let (runtime, _commands) = crate::browser_runtime::tests::fixture(
+            crate::browser_runtime::BrowserScope {
+                workspace: workspace.path().to_path_buf(),
+                session_id: "fixture".into(),
+            },
+            Default::default(),
+        );
+        let prepared = EnvironmentToolPreparation::new(
+            root.path().to_path_buf(),
+            "fixture".into(),
+            Arc::new(Vec::new()),
+            Vec::new(),
+            Some(runtime.mcp_client()),
+        )
+        .prepare(
+            workspace.path(),
+            Arc::new(LocalTools::new()),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let advertised: Vec<_> = prepared
+            .tools()
+            .definitions()
+            .into_iter()
+            .map(|tool| tool.name)
+            .filter(|name| name.starts_with("mcp__openide_browser__"))
+            .collect();
+        let expected: Vec<_> = crate::browser_runtime::browser_mcp_tools()
+            .into_iter()
+            .map(|tool| format!("mcp__openide_browser__{}", tool.name))
+            .collect();
+        assert_eq!(advertised.len(), 20);
+        for name in &expected {
+            assert!(advertised.contains(name), "{name} is not advertised");
+            assert!(prepared.ask_tool_names().contains(name), "{name} skips approval");
+        }
+        // What the runner does with that list: a host that allows everything
+        // still asks before a page script, and a host denial is never relaxed.
+        let evaluate = openide_core::ToolCall {
+            id: "call".into(),
+            name: "mcp__openide_browser__browser_evaluate".into(),
+            arguments: json!({"expression":"document.cookie"}),
+        };
+        let mode = |mut policy: PermissionPolicy| {
+            for name in prepared.ask_tool_names() {
+                policy.require_ask_unless_denied(name);
+            }
+            policy.mode_for_call_with_session_grants(
+                "fixture",
+                workspace.path(),
+                workspace.path(),
+                "",
+                &evaluate,
+                &[],
+            )
+        };
+        let open = PermissionPolicy::new().with_default_mode(PermissionMode::Allow);
+        assert_eq!(mode(open.clone()), PermissionMode::Ask);
+        assert_eq!(
+            mode(open.with_tool(evaluate.name.clone(), PermissionMode::Deny)),
+            PermissionMode::Deny
+        );
+    }
 }
