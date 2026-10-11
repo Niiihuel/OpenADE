@@ -84,7 +84,7 @@ impl AgentsWindow {
             paths,
         };
         if self.git_action_worker.is_none() {
-            self.git_action_worker = GitActionWorker::spawn().ok();
+            self.git_action_worker = GitActionWorker::spawn(self.file_trash).ok();
         }
         self.view.git_action_error = None;
         if self

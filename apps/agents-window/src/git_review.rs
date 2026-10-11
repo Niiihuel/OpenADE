@@ -88,6 +88,62 @@ pub struct GitReview {
     pub additions: usize,
     pub deletions: usize,
     pub truncated: bool,
+    /// Unresolved files, which lead the unstaged section.
+    pub conflicts: usize,
+    /// Short hash and subject of HEAD, when there is a commit.
+    pub last_commit: Option<(String, String)>,
+}
+
+/// The groups a list of changes shows, in their order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChangeGroup {
+    Conflicts,
+    Staged,
+    Changes,
+    Untracked,
+}
+
+impl ChangeGroup {
+    pub const ALL: [Self; 4] = [Self::Conflicts, Self::Staged, Self::Changes, Self::Untracked];
+
+    /// The letter that names the group in an action ID.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Conflicts => "c",
+            Self::Staged => "s",
+            Self::Changes => "u",
+            Self::Untracked => "n",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|group| group.key() == key)
+    }
+}
+
+/// Where a group's files are: `len` files of `sections[section]` from
+/// `start`, or of `untracked` for that group.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GroupRange {
+    pub section: usize,
+    pub start: usize,
+    pub len: usize,
+}
+
+/// The error of a review asked of a folder outside any work tree.
+pub const NOT_A_REPOSITORY: &str = "Esta carpeta no es un repositorio de Git";
+
+fn read_last_commit(workspace: &Path) -> Option<(String, String)> {
+    let output = command_no_window("git")
+        .args(["log", "-1", "--format=%h%x00%s"])
+        .current_dir(workspace)
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let (hash, subject) = text.trim_end().split_once('\0')?;
+    (output.status.success() && !hash.is_empty())
+        .then(|| (hash.to_owned(), subject.chars().take(200).collect()))
 }
 
 pub(crate) fn read_branch(workspace: &Path) -> String {
@@ -165,6 +221,98 @@ fn read_tracking(workspace: &Path) -> Option<GitTracking> {
 }
 
 impl GitReview {
+    /// Unresolved files lead the unstaged section and leave the staged one,
+    /// so a list can show them as one group by range, without copying paths.
+    pub fn group_conflicts(&mut self) {
+        self.conflicts = 0;
+        for section in &mut self.sections {
+            if section.title == "CAMBIOS PREPARADOS" {
+                let before = section.files.len();
+                section.files.retain(|file| file.status != "Conflicto");
+                self.files = self.files.saturating_sub(before - section.files.len());
+            } else {
+                section.files.sort_by_key(|file| file.status != "Conflicto");
+                self.conflicts = section
+                    .files
+                    .iter()
+                    .take_while(|file| file.status == "Conflicto")
+                    .count();
+            }
+        }
+        self.sections.retain(|section| !section.files.is_empty());
+    }
+
+    pub fn group(&self, group: ChangeGroup) -> GroupRange {
+        let section = |title: &str| {
+            self.sections
+                .iter()
+                .enumerate()
+                .find(|(_, section)| section.title == title)
+                .map(|(index, section)| (index, section.files.len()))
+        };
+        let unstaged = section("CAMBIOS SIN PREPARAR").unwrap_or_default();
+        let conflicts = self.conflicts.min(unstaged.1);
+        let (section, start, len) = match group {
+            ChangeGroup::Conflicts => (unstaged.0, 0, conflicts),
+            ChangeGroup::Changes => (unstaged.0, conflicts, unstaged.1 - conflicts),
+            ChangeGroup::Staged => {
+                let staged = section("CAMBIOS PREPARADOS").unwrap_or_default();
+                (staged.0, 0, staged.1)
+            }
+            ChangeGroup::Untracked => (0, 0, self.untracked.len()),
+        };
+        GroupRange { section, start, len }
+    }
+
+    /// The group and the place in it of a row named `section:file`, or
+    /// `n:index` for a file without tracking.
+    pub fn locate(&self, target: &str) -> Option<(ChangeGroup, usize)> {
+        let (first, second) = target.split_once(':')?;
+        let index = second.parse::<usize>().ok()?;
+        if first == "n" {
+            return (index < self.untracked.len()).then_some((ChangeGroup::Untracked, index));
+        }
+        let section = first.parse::<usize>().ok()?;
+        [ChangeGroup::Conflicts, ChangeGroup::Staged, ChangeGroup::Changes]
+            .into_iter()
+            .find_map(|group| {
+                let range = self.group(group);
+                (range.len > 0
+                    && range.section == section
+                    && (range.start..range.start + range.len).contains(&index))
+                .then(|| (group, index - range.start))
+            })
+    }
+
+    /// The name a row's actions carry for the file at `index` of `group`.
+    pub fn target(&self, group: ChangeGroup, index: usize) -> String {
+        let range = self.group(group);
+        if group == ChangeGroup::Untracked {
+            format!("n:{index}")
+        } else {
+            format!("{}:{}", range.section, range.start + index)
+        }
+    }
+
+    /// What Git is given for the file at `index` of `group`: its path, then
+    /// the path a rename left.
+    pub fn paths(&self, group: ChangeGroup, index: usize) -> Vec<std::path::PathBuf> {
+        if group == ChangeGroup::Untracked {
+            return self.untracked.get(index).map(Into::into).into_iter().collect();
+        }
+        let range = self.group(group);
+        let Some(file) = (index < range.len)
+            .then(|| self.sections.get(range.section)?.files.get(range.start + index))
+            .flatten()
+        else {
+            return Vec::new();
+        };
+        std::iter::once(&file.path)
+            .chain(file.old_path.iter().filter(|old| *old != &file.path))
+            .map(Into::into)
+            .collect()
+    }
+
     pub fn unique_files(&self) -> usize {
         let mut paths = std::collections::HashSet::new();
         for section in &self.sections {
@@ -954,9 +1102,18 @@ fn load_review(workspace: &Path, diff_files: Option<usize>) -> io::Result<GitRev
             "El proyecto no existe",
         ));
     }
+    let inside = command_no_window("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(workspace)
+        .stderr(Stdio::null())
+        .output()?;
+    if !inside.status.success() || inside.stdout.trim_ascii() != b"true" {
+        return Err(io::Error::other(NOT_A_REPOSITORY));
+    }
     let mut review = GitReview {
         branch: read_branch(workspace),
         tracking: read_tracking(workspace),
+        last_commit: read_last_commit(workspace),
         ..GitReview::default()
     };
     let mut loaded = 0usize;
@@ -995,6 +1152,7 @@ fn load_review(workspace: &Path, diff_files: Option<usize>) -> io::Result<GitRev
     let (untracked, truncated) = read_untracked(workspace)?;
     review.untracked = untracked;
     review.truncated |= truncated;
+    review.group_conflicts();
     Ok(review)
 }
 
@@ -1299,6 +1457,97 @@ mod tests {
     fn non_repository_has_no_false_detached_head_label() {
         let temp = tempfile::tempdir().unwrap();
         assert_eq!(read_branch(temp.path()), "Rama desconocida");
+        assert_eq!(
+            load_git_review(temp.path()).unwrap_err().to_string(),
+            NOT_A_REPOSITORY
+        );
+    }
+
+    #[test]
+    fn groups_locate_rows_by_the_names_their_actions_carry() {
+        let file = |path: &str, status: &str| ReviewFile {
+            path: path.into(),
+            status: status.into(),
+            ..Default::default()
+        };
+        let mut review = GitReview {
+            sections: vec![
+                ReviewSection {
+                    title: "CAMBIOS PREPARADOS".into(),
+                    files: vec![file("staged.rs", "Modificado"), file("z.rs", "Conflicto")],
+                    ..Default::default()
+                },
+                ReviewSection {
+                    title: "CAMBIOS SIN PREPARAR".into(),
+                    files: vec![
+                        file("a.rs", "Modificado"),
+                        ReviewFile {
+                            old_path: Some("old.rs".into()),
+                            ..file("new.rs", "Renombrado")
+                        },
+                        file("z.rs", "Conflicto"),
+                    ],
+                    ..Default::default()
+                },
+            ],
+            untracked: vec!["notes.md".into()],
+            files: 5,
+            ..Default::default()
+        };
+        review.group_conflicts();
+        assert_eq!((review.conflicts, review.files), (1, 4));
+        assert_eq!(review.group(ChangeGroup::Staged), GroupRange { section: 0, start: 0, len: 1 });
+        assert_eq!(review.group(ChangeGroup::Conflicts), GroupRange { section: 1, start: 0, len: 1 });
+        assert_eq!(review.group(ChangeGroup::Changes), GroupRange { section: 1, start: 1, len: 2 });
+        assert_eq!(review.locate("1:0"), Some((ChangeGroup::Conflicts, 0)));
+        assert_eq!(review.locate("1:2"), Some((ChangeGroup::Changes, 1)));
+        assert_eq!(review.locate("0:0"), Some((ChangeGroup::Staged, 0)));
+        assert_eq!(review.locate("n:0"), Some((ChangeGroup::Untracked, 0)));
+        for missing in ["0:1", "1:3", "2:0", "n:1", "x", "n:x"] {
+            assert_eq!(review.locate(missing), None, "{missing}");
+        }
+        assert_eq!(review.target(ChangeGroup::Changes, 1), "1:2");
+        assert_eq!(review.target(ChangeGroup::Untracked, 0), "n:0");
+        assert_eq!(
+            review.paths(ChangeGroup::Changes, 1),
+            vec![std::path::PathBuf::from("new.rs"), "old.rs".into()]
+        );
+        assert_eq!(review.paths(ChangeGroup::Untracked, 0), vec![std::path::PathBuf::from("notes.md")]);
+        assert!(review.paths(ChangeGroup::Changes, 2).is_empty());
+    }
+
+    #[test]
+    fn a_merge_conflict_leads_the_unstaged_files_and_the_last_commit_is_named() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        git(dir, &["init", "-q", "--initial-branch=main"]);
+        git(dir, &["config", "user.name", "Test"]);
+        git(dir, &["config", "user.email", "test@example.invalid"]);
+        git(dir, &["config", "commit.gpgsign", "false"]);
+        fs::write(dir.join("z.txt"), "base\n").unwrap();
+        fs::write(dir.join("a.txt"), "base\n").unwrap();
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-qm", "Base"]);
+        git(dir, &["switch", "-q", "-c", "other"]);
+        fs::write(dir.join("z.txt"), "theirs\n").unwrap();
+        git(dir, &["commit", "-qam", "Theirs"]);
+        git(dir, &["switch", "-q", "main"]);
+        fs::write(dir.join("z.txt"), "ours\n").unwrap();
+        git(dir, &["commit", "-qam", "Ours on main"]);
+        let _ = command_no_window("git")
+            .args(["merge", "-q", "other"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        fs::write(dir.join("a.txt"), "edited\n").unwrap();
+        let review = load_git_review(dir).unwrap();
+        assert_eq!(review.conflicts, 1);
+        assert_eq!(review.sections.len(), 1);
+        let files = &review.sections[0].files;
+        assert_eq!(review.sections[0].title, "CAMBIOS SIN PREPARAR");
+        assert_eq!((files[0].path.as_str(), files[0].status.as_str()), ("z.txt", "Conflicto"));
+        assert_eq!(files[1].path, "a.txt");
+        assert_eq!(review.last_commit.as_ref().unwrap().1, "Ours on main");
     }
 
     #[test]

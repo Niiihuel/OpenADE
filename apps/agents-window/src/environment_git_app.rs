@@ -11,6 +11,8 @@ impl AgentsWindow {
             Operation::Compare { .. } => Some("Comparando ramas…"),
             Operation::Commit { .. } => Some(COMMIT_BUSY),
             Operation::Push { .. } => Some("Enviando commits…"),
+            Operation::Fetch { .. } => Some("Buscando cambios en el remoto…"),
+            Operation::Pull { .. } => Some("Recibiendo commits…"),
             Operation::CreateBranch { .. } | Operation::Switch { .. } => Some("Cambiando de rama…"),
             Operation::CreateWorktree { .. } => Some("Creando worktree…"),
         };
@@ -18,8 +20,9 @@ impl AgentsWindow {
             return;
         }
         match &operation {
-            Operation::Refresh | Operation::Compare { .. } => {}
-            Operation::Switch { snapshot, .. }
+            Operation::Refresh | Operation::Compare { .. } | Operation::Fetch { .. } => {}
+            Operation::Pull { snapshot }
+            | Operation::Switch { snapshot, .. }
             | Operation::CreateBranch { snapshot, .. }
             | Operation::CreateWorktree { snapshot, .. }
             | Operation::Commit { snapshot, .. }

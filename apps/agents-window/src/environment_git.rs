@@ -93,6 +93,41 @@ impl GitSnapshot {
     }
 }
 
+#[cfg(test)]
+impl GitSnapshot {
+    /// A snapshot with no repository behind it, for a view fixture.
+    pub(crate) fn fixture(
+        branch: Option<&str>,
+        upstream: Option<&str>,
+        remotes: &[&str],
+        ahead: usize,
+        behind: usize,
+    ) -> Self {
+        let branches = BranchSnapshot::fixture(branch, &["main"]);
+        Self {
+            head: branches.head_commit().map(str::to_owned),
+            branches,
+            upstream: upstream.map(str::to_owned),
+            remotes: remotes.iter().map(|remote| (*remote).to_owned()).collect(),
+            staged: 0,
+            unstaged: 0,
+            untracked: 0,
+            conflicts: 0,
+            ahead,
+            behind,
+            worktrees: Vec::new(),
+            index_tree: None,
+            push_urls: BTreeMap::new(),
+            tracking_remote: upstream
+                .and_then(|upstream| upstream.split_once('/'))
+                .map(|(remote, _)| remote.to_owned()),
+            tracking_branch: upstream
+                .and_then(|upstream| upstream.split_once('/'))
+                .map(|(_, branch)| branch.to_owned()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct BranchComparison {
     pub reference: String,
@@ -131,6 +166,15 @@ pub(crate) enum Operation {
     Compare {
         snapshot: GitSnapshot,
         reference: String,
+    },
+    /// Update the remote-tracking refs of one remote. Nothing local moves.
+    Fetch {
+        snapshot: GitSnapshot,
+        remote: String,
+    },
+    /// Fast-forward the current branch to its upstream, or fail.
+    Pull {
+        snapshot: GitSnapshot,
     },
 }
 
@@ -202,6 +246,14 @@ impl Worker {
                                 set_upstream,
                             )
                             .map(|()| format!("Push completado: {remote}/{branch}")),
+                        ),
+                        Operation::Fetch { snapshot, remote } => Some(
+                            fetch(&request.workspace, &snapshot, &remote)
+                                .map(|()| format!("Referencias actualizadas desde {remote}")),
+                        ),
+                        Operation::Pull { snapshot } => Some(
+                            pull(&request.workspace, &snapshot)
+                                .map(|upstream| format!("Rama al día con {upstream}")),
                         ),
                         Operation::Compare {
                             snapshot,
@@ -587,6 +639,30 @@ fn push(
     Ok(())
 }
 
+fn fetch(workspace: &Path, snapshot: &GitSnapshot, remote: &str) -> Result<(), String> {
+    if !snapshot.remotes.iter().any(|known| known == remote) || remote.starts_with('-') {
+        return Err("Elegí un remoto del repositorio".into());
+    }
+    checked_git(workspace, &["fetch", "--no-recurse-submodules", "--", remote])
+}
+
+/// Only a fast-forward: a diverged branch is left as it is, with Git's reason.
+fn pull(workspace: &Path, snapshot: &GitSnapshot) -> Result<String, String> {
+    let upstream = snapshot
+        .upstream
+        .clone()
+        .ok_or("La rama no tiene una rama de seguimiento. Publicala primero.")?;
+    if snapshot.conflicts > 0 {
+        return Err("Resolvé los conflictos antes de recibir cambios".into());
+    }
+    git_branches::validate_snapshot(workspace, &snapshot.branches)?;
+    checked_git(
+        workspace,
+        &["pull", "--ff-only", "--no-rebase", "--no-recurse-submodules"],
+    )?;
+    Ok(upstream)
+}
+
 fn compare(
     workspace: &Path,
     snapshot: &GitSnapshot,
@@ -730,6 +806,61 @@ mod tests {
         ] {
             checked_git(root, &["config", key, value]).unwrap();
         }
+    }
+
+    /// A second clone commits `name` and pushes it to the bare remote.
+    fn push_from_another_clone(repository: &Repository, remote: &Path, name: &str) {
+        let clone = repository.directory.path().join(format!("clone-{name}"));
+        checked_git(
+            repository.directory.path(),
+            &["clone", "-q", remote.to_str().unwrap(), clone.to_str().unwrap()],
+        )
+        .unwrap();
+        configure_identity(&clone);
+        std::fs::write(clone.join(name), "remote\n").unwrap();
+        checked_git(&clone, &["add", "--", name]).unwrap();
+        checked_git(&clone, &["commit", "-m", name]).unwrap();
+        checked_git(&clone, &["push", "-q", "origin", "main"]).unwrap();
+    }
+
+    #[test]
+    fn fetch_counts_what_is_behind_and_pull_only_fast_forwards() {
+        let repository = Repository::new(true);
+        let remote = repository.bare_remote();
+        repository.git(&["push", "-q", "--set-upstream", "origin", "main"]);
+        push_from_another_clone(&repository, &remote, "first.txt");
+        let snapshot = load_snapshot(&repository.root).unwrap();
+        assert_eq!(snapshot.behind, 0, "nothing is known before a fetch");
+        assert!(fetch(&repository.root, &snapshot, "elsewhere").is_err());
+        fetch(&repository.root, &snapshot, "origin").unwrap();
+        assert!(!repository.root.join("first.txt").exists(), "a fetch moves nothing local");
+        let snapshot = load_snapshot(&repository.root).unwrap();
+        assert_eq!((snapshot.ahead, snapshot.behind), (0, 1));
+        assert_eq!(pull(&repository.root, &snapshot).unwrap(), "origin/main");
+        assert!(repository.root.join("first.txt").exists());
+        let snapshot = load_snapshot(&repository.root).unwrap();
+        assert_eq!((snapshot.ahead, snapshot.behind), (0, 0));
+
+        // A diverged branch is refused and left where it was.
+        push_from_another_clone(&repository, &remote, "second.txt");
+        std::fs::write(repository.root.join("local.txt"), "local\n").unwrap();
+        repository.git(&["add", "--", "local.txt"]);
+        repository.git(&["commit", "-m", "Local"]);
+        let head = repository.git(&["rev-parse", "HEAD"]);
+        let snapshot = load_snapshot(&repository.root).unwrap();
+        fetch(&repository.root, &snapshot, "origin").unwrap();
+        let snapshot = load_snapshot(&repository.root).unwrap();
+        assert_eq!((snapshot.ahead, snapshot.behind), (1, 1));
+        assert!(pull(&repository.root, &snapshot).is_err());
+        assert_eq!(repository.git(&["rev-parse", "HEAD"]), head);
+        assert!(!repository.root.join("second.txt").exists());
+    }
+
+    #[test]
+    fn pull_needs_an_upstream() {
+        let repository = Repository::new(true);
+        let snapshot = load_snapshot(&repository.root).unwrap();
+        assert!(pull(&repository.root, &snapshot).unwrap_err().contains("seguimiento"));
     }
 
     #[test]

@@ -49,6 +49,36 @@ impl BranchSnapshot {
     }
 }
 
+#[cfg(test)]
+impl BranchSnapshot {
+    /// A snapshot with no repository behind it, for a view fixture: on
+    /// `branch`, or detached at a commit without one.
+    pub(crate) fn fixture(branch: Option<&str>, others: &[&str]) -> Self {
+        let local = |name: &str, current| Branch {
+            reference: format!("refs/heads/{name}"),
+            name: name.into(),
+            remote: false,
+            upstream: None,
+            current,
+            other_worktree: None,
+        };
+        Self {
+            head: RepositoryHead {
+                root: "/workspace/fixture".into(),
+                git_dir: "/workspace/fixture/.git".into(),
+                reference: branch.map(|name| format!("refs/heads/{name}")),
+                commit: Some("0123456789abcdef0123456789abcdef01234567".into()),
+            },
+            label: branch.unwrap_or("HEAD separado").into(),
+            branches: branch
+                .map(|name| local(name, true))
+                .into_iter()
+                .chain(others.iter().map(|name| local(name, false)))
+                .collect(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct BranchPickerView {
     pub workspace: Option<PathBuf>,
