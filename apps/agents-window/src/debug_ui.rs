@@ -3,9 +3,10 @@
 use crate::theme;
 use openide_ui::{
     AlertDialog, Button, ButtonSize, ButtonVariant, Collapse, Component, ContextMenu,
-    ContextMenuEntry, ContextMenuItem, ControlSize, DropdownOption, Element, Empty, FontFamily,
+    ContextMenuEntry, ContextMenuItem, ControlSize, DropdownMenu, DropdownMenuItem, Element, Empty,
+    FontFamily,
     Icon, IconButton, ListRow, Notice, NoticeSizing, PanelHeader, PopoverPlacement, ScrollArea,
-    SectionHeader, Select, Separator, SidebarPanel, Spinner, Text, TextRole, Tooltip,
+    SectionHeader, Separator, SidebarPanel, Spinner, Text, TextRole, Tooltip,
     TooltipPlacement, TooltipSpec, TreeGuides, TreeRow,
 };
 use serde::{Deserialize, Serialize};
@@ -312,39 +313,49 @@ pub(crate) fn build_sidebar(state: &DebugView, width: f32, height: f32) -> Eleme
 /// Idle: which program, a primary start and the way to its configuration.
 fn start_row(state: &DebugView, width: f32) -> Element {
     let select_width = (width - START_HEIGHT * 2.0 - 8.0).max(0.0);
-    let select = Select::new(
+    // The same trigger and menu as every other selector in the app: a row
+    // with its chevron, and the standard menu with a check on the choice.
+    let trigger = ListRow::new(
         action(&state.scope, "configurations"),
         bounded(&state.configuration),
+        sidebar_actions(),
+    )
+    .trailing_icon(Icon::ChevronDown)
+    .enabled(!state.scope.is_empty())
+    .width(select_width)
+    .render();
+    let select = DropdownMenu::new(
+        trigger,
         state
             .configurations
             .iter()
             .take(16)
             .enumerate()
             .map(|(index, name)| {
-                DropdownOption::new(
+                DropdownMenuItem::new(
                     row_action(&state.scope, "configuration", index),
                     bounded(name),
                 )
                 .selected(index == state.selected_configuration)
+                .into()
             })
             .collect(),
-        state.configuration_menu,
+        state.configuration_menu && !state.scope.is_empty(),
         action(&state.scope, "dismiss_configurations"),
-        theme::component_palette(),
+        theme::menu_palette(),
     )
-    .menu_palette(theme::menu_palette())
+    .context_menu_style()
     .placement(PopoverPlacement::BottomStart)
-    .width(select_width)
-    .menu_width(select_width.max(200.0))
-    .enabled(!state.scope.is_empty())
+    .width(select_width.max(200.0))
     .render();
     let start = IconButton::new(
         action(&state.scope, "start"),
         Icon::PlayFill,
-        theme::action_palette(theme::BRAND, theme::PRIMARY_FOREGROUND),
+        crate::composer_ui::round_action_palette(state.controls.start && !state.scope.is_empty()),
     )
-    .variant(ButtonVariant::Solid)
+    .variant(ButtonVariant::Subtle)
     .size(ControlSize::Compact)
+    .round()
     .enabled(state.controls.start && !state.scope.is_empty())
     .tooltip_with(
         TooltipSpec::new("Iniciar depuración")

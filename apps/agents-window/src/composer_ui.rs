@@ -1830,7 +1830,9 @@ fn connect_provider_action(width: f32) -> Element {
 
 /// The one shape of send and stop, wherever a composer or a message shows
 /// them: a light circle with a dark glyph. Disabled, it is a muted circle.
-fn round_action(id: &str, icon: Icon, size: ControlSize, enabled: bool) -> Element {
+/// The light circle of the app's one primary action in a bar: send, stop,
+/// start. Disabled, it recedes into the surface.
+pub(crate) fn round_action_palette(enabled: bool) -> openide_ui::ComponentPalette {
     let mut palette = theme::action_palette(Color::WHITE, PILL_SURFACE);
     palette.hover = Color::rgb(224, 224, 224);
     palette.selected = Color::rgb(204, 204, 204);
@@ -1838,6 +1840,11 @@ fn round_action(id: &str, icon: Icon, size: ControlSize, enabled: bool) -> Eleme
         palette.surface = theme::SELECTED;
         palette.muted = MUTED_INK;
     }
+    palette
+}
+
+fn round_action(id: &str, icon: Icon, size: ControlSize, enabled: bool) -> Element {
+    let palette = round_action_palette(enabled);
     IconButton::new(id, icon, palette)
         .variant(ButtonVariant::Subtle)
         .size(size)
