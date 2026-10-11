@@ -119,6 +119,7 @@ pub use permission::{
 pub use persistent_command::{
     PersistentCommandControlInspection, PersistentCommandDimensions, PersistentCommandEvent,
     PersistentCommandExit, PersistentCommandInspection, PersistentCommandLimits,
+    PersistentTerminal, PersistentTerminalEvent,
     PersistentCommandManager, PersistentCommandSessionInfo, PersistentCommandSnapshot,
     PersistentCommandStarted, PersistentCommandStdinState, PersistentCommandStream,
 };

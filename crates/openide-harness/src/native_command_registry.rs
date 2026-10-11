@@ -24,6 +24,10 @@ pub struct NativeCommandProfileOptions {
     pub pty: bool,
     /// Host opt-in. Effective only when PTY is also enabled.
     pub resize: bool,
+    /// Host opt-in: on Unix, host-unrestricted commands run on a terminal the
+    /// host can show and type into. A transport, not an advertised capability:
+    /// it is checked when sharing a manager but is not part of the identity.
+    pub host_terminal: bool,
     /// Hosts leave this false; `NativeCommandProfile::before_command_revision` sets
     /// it: the tool schema and identity a child was reserved with before
     /// `timeout_ms` existed.
@@ -37,6 +41,7 @@ impl Default for NativeCommandProfileOptions {
             limits: PersistentCommandLimits::default(),
             pty: false,
             resize: false,
+            host_terminal: false,
             before_command_revision: false,
         }
     }
@@ -71,6 +76,7 @@ impl NativeCommandProfileOptions {
         self.isolation == other.isolation
             && self.pty == other.pty
             && self.resize == other.resize
+            && self.host_terminal == other.host_terminal
             && self.before_command_revision == other.before_command_revision
             && self.limits.max_sessions == other.limits.max_sessions
             && self.limits.max_lifetime == other.limits.max_lifetime
@@ -331,6 +337,9 @@ impl NativeCommandRegistry {
         }
         if options.before_command_revision {
             manager = manager.with_tools_before_command_revision();
+        }
+        if options.host_terminal {
+            manager = manager.with_host_terminal();
         }
         let manager = Arc::new(manager);
         state.managers.insert(
