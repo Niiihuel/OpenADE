@@ -25,7 +25,7 @@ const VIEWPORTS: [Size; 3] = [
     Size::new(1700.0, 1000.0),
 ];
 
-fn fixture(long_transcript: bool) -> ViewState {
+pub(super) fn fixture(long_transcript: bool) -> ViewState {
     let mut state = state();
     state.workspace = "/projects/openADE".into();
     state.selected_session = Some(OWNER.into());
@@ -145,12 +145,12 @@ fn history_fixture() -> ViewState {
     state
 }
 
-fn root(state: &ViewState, viewport: Size) -> Element {
+pub(super) fn root(state: &ViewState, viewport: Size) -> Element {
     Element::panel(build_session_surface(state, viewport.width, false, false))
         .background(crate::theme::BACKGROUND)
 }
 
-fn native_tree(root: Element) -> (egui::Context, UiTree) {
+pub(super) fn native_tree(root: Element) -> (egui::Context, UiTree) {
     let context = egui::Context::default();
     crate::fonts::install(&context);
     context.begin_pass(egui::RawInput::default());
@@ -868,7 +868,7 @@ fn permissions_recovery_and_subagents_share_chat_without_resizing_the_composer()
     }
 }
 
-fn export(frame: &Frame, directory: &Path, name: &str, viewport: Size) {
+pub(super) fn export(frame: &Frame, directory: &Path, name: &str, viewport: Size) {
     let path = directory.join(format!("{name}-{:.0}.svg", viewport.width));
     crate::settings_ui::visual_qa::write_native_frame_svg(
         frame,

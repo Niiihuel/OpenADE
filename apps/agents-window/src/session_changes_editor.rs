@@ -177,6 +177,36 @@ pub(crate) fn editor_save_boundary(
     )
 }
 
+/// A rewind is about to remove the journal from `before_sequence` on. A
+/// boundary inside that part would sit past the journal's end and fail every
+/// later reading, so it moves to the last sequence that stays. Earlier is
+/// the conservative direction. Call before the journal changes: if the
+/// rewind then fails, the earlier boundary is still valid.
+pub(crate) fn rewind_marker(
+    storage_root: &Path,
+    session_id: &str,
+    before_sequence: u64,
+) -> io::Result<()> {
+    let filename = marker_filename(session_id)?;
+    let Some(directory) = Directory::open(storage_root, false)? else {
+        return Ok(());
+    };
+    let Some(marker) = read_marker(&directory, &filename, session_id, None)? else {
+        return Ok(());
+    };
+    if marker.after_sequence < before_sequence {
+        return Ok(());
+    }
+    directory.remove(&filename)?;
+    directory.sync()?;
+    mark_session(
+        storage_root,
+        session_id,
+        Path::new(&marker.workspace),
+        before_sequence.saturating_sub(1),
+    )
+}
+
 /// Call only after the baseline and corresponding chat were durably deleted.
 pub(crate) fn remove_marker(storage_root: &Path, session_id: &str) -> io::Result<()> {
     let filename = marker_filename(session_id)?;
@@ -930,6 +960,22 @@ mod tests {
         fs::remove_file(fixture.store.join("session-changes/foreign.json")).unwrap();
         fixture.mark().unwrap();
         assert_eq!(fixture.cut("session"), Some(1));
+    }
+
+    #[test]
+    fn rewind_moves_a_boundary_inside_the_removed_part_and_keeps_an_earlier_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let (storage, workspace) = (temp.path().join("store"), temp.path().join("work"));
+        fs::create_dir_all(&storage).unwrap();
+        fs::create_dir_all(&workspace).unwrap();
+        mark_session(&storage, "session", &workspace, 12).unwrap();
+        rewind_marker(&storage, "session", 20).unwrap();
+        assert_eq!(editor_save_boundary(&storage, "session", &workspace).unwrap(), Some(12));
+        rewind_marker(&storage, "session", 9).unwrap();
+        assert_eq!(editor_save_boundary(&storage, "session", &workspace).unwrap(), Some(8));
+        // The journal regrows from 9: a save after it is accepted again.
+        mark_session(&storage, "session", &workspace, 10).unwrap();
+        rewind_marker(&storage, "missing", 3).unwrap();
     }
 
     #[test]

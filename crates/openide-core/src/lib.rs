@@ -82,7 +82,8 @@ pub use replay::{
     ReplayedTurn,
 };
 pub use store::{
-    EventStore, JsonlSessionStore, MemorySessionStore, NativeEventJournal, NativeSessionLease,
+    EventStore, JsonlSessionStore, MemorySessionStore, NativeEventJournal, NativeRewind, NativeRewindRefusal,
+    NativeSessionLease,
     NativeSteerInput, PermissionDecision, RecordedPermissionDecision, Session,
     SessionApprovalGrantRecord, SessionDiagnostic, SessionListKind, SessionListing, SessionQuery,
     SessionQueryItem, SessionQueryResult, SessionSort, SessionStore, StoreError, StoredSession,

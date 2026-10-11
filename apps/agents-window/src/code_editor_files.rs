@@ -819,6 +819,17 @@ fn save_file_commit_using(
     })
 }
 
+/// Whether [`write_review_file_guarded`] would write exactly these bytes.
+pub(crate) fn review_text_round_trips(bytes: &[u8]) -> bool {
+    let mut written = Vec::with_capacity(bytes.len());
+    bytes.len() <= MAX_EDITABLE_FILE_BYTES
+        && std::str::from_utf8(bytes)
+            .ok()
+            .and_then(|text| TextBuffer::new(text).ok())
+            .is_some_and(|buffer| buffer.snapshot().write_to(&mut written).is_ok())
+        && written == bytes
+}
+
 /// Worker-only review write while the caller retains the workspace lock.
 /// Shares the editor's anchored paths, metadata preservation and last-moment
 /// identity/content checks. Creation is exclusive; deletion never follows links.

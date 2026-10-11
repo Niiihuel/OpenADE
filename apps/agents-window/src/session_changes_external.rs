@@ -104,6 +104,35 @@ fn require_earliest_boundary(marker: &Marker, after_sequence: u64) -> io::Result
     Ok(())
 }
 
+/// A rewind is about to remove the journal from `before_sequence` on. A
+/// boundary inside that part would be later than every boundary a new turn
+/// can offer, and refuse them all, so it moves to the last sequence that
+/// stays. Call before the journal changes.
+pub(crate) fn rewind_marker(
+    storage_root: &Path,
+    session_id: &str,
+    before_sequence: u64,
+) -> io::Result<()> {
+    let filename = marker_filename(session_id)?;
+    let Some(directory) = Directory::open(storage_root, false)? else {
+        return Ok(());
+    };
+    let Some(marker) = read_marker(&directory, &filename, session_id, None)? else {
+        return Ok(());
+    };
+    if marker.after_sequence < before_sequence {
+        return Ok(());
+    }
+    directory.remove(&filename)?;
+    directory.sync()?;
+    mark_external_runtime(
+        storage_root,
+        session_id,
+        Path::new(&marker.workspace),
+        before_sequence.saturating_sub(1),
+    )
+}
+
 /// Remove only after the corresponding session deletion has committed.
 /// Does not need the workspace to still exist, and never follows a symlink.
 pub(crate) fn remove_marker(storage_root: &Path, session_id: &str) -> io::Result<()> {

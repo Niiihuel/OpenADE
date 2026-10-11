@@ -23,6 +23,29 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[path = "session_changes_tool_snapshots.rs"]
 mod tool_snapshots;
 pub(crate) use tool_snapshots::with_file_snapshots;
+
+/// The file captures of calls a rewind removed, taken out of the store.
+pub(crate) fn take_tool_snapshots(
+    storage_root: &Path,
+    session_id: &str,
+    calls: &[&str],
+) -> io::Result<Vec<(String, Vec<u8>)>> {
+    tool_snapshots::take_calls(storage_root, session_id, calls)
+}
+
+/// Captures returned to the store when a rewind is undone.
+pub(crate) fn restore_tool_snapshots(
+    storage_root: &Path,
+    files: &[(String, Vec<u8>)],
+) -> io::Result<()> {
+    tool_snapshots::restore_calls(storage_root, files)
+}
+#[path = "session_changes_revert.rs"]
+mod revert;
+pub(crate) use revert::{
+    reapply_reverted_files, revert_files, revert_preflight, OpaqueEffects, RevertFile,
+    RevertPreflight, RevertSkip,
+};
 #[path = "session_file_review.rs"]
 mod file_review;
 pub(crate) use file_review::{
