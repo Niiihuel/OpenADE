@@ -1189,7 +1189,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                 event.kind,
                 AgentEventKind::TurnCompleted { .. }
                     | AgentEventKind::TurnFailed { .. }
-                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
             );
             if let AgentEventKind::PermissionRequested { request_id, .. } = &event.kind {
                 assert!(handle.resolve_permission(request_id, PermissionChoice::Allow));

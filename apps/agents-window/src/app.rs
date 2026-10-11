@@ -442,8 +442,15 @@ pub(crate) fn native_model_backend(
     }
     match connection.wire_api {
         NativeWireApi::Responses => {
+            let model_id_for_caps = connection.model_id.clone();
             let mut model =
                 ResponsesBackend::new(connection.endpoint, connection.api_key, connection.model_id);
+            model = model.with_image_input_enabled(native_image_input_supported(
+                &adapter,
+                &model_id_for_caps,
+                catalog,
+                discoveries,
+            ));
             if provider_id == "codex" {
                 model = model.with_chatgpt_plan().with_bearer_token_provider(
                     crate::provider_connections::codex_token_source(data_root.to_path_buf())?,
@@ -474,6 +481,11 @@ pub(crate) fn native_model_backend(
             )
             .with_capabilities(capabilities)
             .map_err(|error| error.to_string())?;
+            if provider_id == "mistral" {
+                // Mistral refuses a tool call identifier that is not nine
+                // alphanumerics, which no other provider's identifiers are.
+                model = model.with_tool_call_id_rule(openide_harness::ToolIdRule::Alnum9);
+            }
             if let Some(limit) = &output_limit {
                 if adapter
                     .chat_request_fields
@@ -501,9 +513,16 @@ pub(crate) fn native_model_backend(
         NativeWireApi::AnthropicMessages => {
             let maximum =
                 native_output_maximum(&adapter, &connection.model_id, catalog, discoveries);
+            // Ask for what the budget reserves: the model's declared maximum
+            // output when it is known, never the old fixed 4096 that cut long
+            // answers short. An undeclared model keeps that default.
             let tokens = output_limit
                 .as_ref()
                 .map(|limit| limit.tokens)
+                .or_else(|| {
+                    native_token_budget(&adapter, &connection.model_id, catalog, discoveries)
+                        .map(|budget| budget.output_reserve_tokens)
+                })
                 .unwrap_or_else(|| {
                     maximum.map_or(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS, |max| {
                         max.min(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
@@ -856,7 +875,7 @@ pub(crate) fn native_token_budget(
                     .then_some(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
             })?;
         let output_reserve_tokens = if adapter.wire_api == NativeWireApi::AnthropicMessages {
-            maximum.min(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
+            native_output_reserve(maximum, context_window_tokens)
         } else {
             maximum
         };
@@ -870,7 +889,22 @@ pub(crate) fn native_token_budget(
     }
     native_provider::native_model_capabilities(&adapter.id, model_id)
         .filter(|capabilities| capabilities.wire_api == adapter.wire_api)?;
-    native_provider::verified_token_budget(&adapter.id, model_id)
+    let mut budget = native_provider::verified_token_budget(&adapter.id, model_id)?;
+    if adapter.wire_api == NativeWireApi::AnthropicMessages {
+        budget.output_reserve_tokens =
+            native_output_reserve(budget.output_reserve_tokens, budget.context_window_tokens);
+    }
+    Some(budget)
+}
+
+/// Room kept for the answer: the model's maximum output, at most a fifth of
+/// its window so a large maximum cannot crowd the conversation out.
+pub(crate) fn native_output_reserve(maximum: u64, context_window_tokens: u64) -> u64 {
+    if context_window_tokens == 0 {
+        maximum
+    } else {
+        maximum.min(context_window_tokens / 5).max(1)
+    }
 }
 
 /// The one rule every turn path uses to decide whether a provider can
@@ -2605,7 +2639,7 @@ fn history_from_events(events: &[AgentEvent]) -> Vec<AgentMessage> {
                     );
                 }
             }
-            AgentEventKind::TurnCancelled | AgentEventKind::TurnFailed { .. } => {
+            AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } | AgentEventKind::TurnFailed { .. } => {
                 if !calls.is_empty() {
                     flush_tool_batch(
                         &mut history,
@@ -8046,7 +8080,7 @@ impl AgentsWindow {
                         AgentEventKind::TurnStarted { .. }
                             | AgentEventKind::TurnCompleted { .. }
                             | AgentEventKind::TurnFailed { .. }
-                            | AgentEventKind::TurnCancelled
+                            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                     );
                 }
                 Ok(SubagentBridgeEvent::Closed { child_session_id }) => {
@@ -12731,7 +12765,7 @@ impl AgentsWindow {
             AgentEventKind::ToolFinished { .. }
                 | AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                 | AgentEventKind::ModelRequestStarted { .. }
         ) {
             self.environment_dirty = true;

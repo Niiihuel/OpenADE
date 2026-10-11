@@ -14,6 +14,7 @@ mod limit_gate;
 mod provider_failure;
 mod exec_policy;
 mod goal_tools;
+mod history_adapter;
 mod hooks;
 mod manual_command;
 mod compat_hooks;
@@ -73,6 +74,10 @@ pub use context::{
     ContextPolicy, TokenBudgetAssessment, TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState,
 };
 pub use error::AgentError;
+pub use history_adapter::{
+    adapt_history, adapt_request, image_placeholder, AdaptedRequest, Blocker, TargetCaps,
+    ToolIdRule, INTERRUPTED_TOOL_RESULT,
+};
 pub use limit_gate::{limit_gate_block, limit_gate_check, limit_gate_clear, LimitBlock};
 pub use provider_failure::{FailureClass, ProviderFailure};
 pub use exec_policy::{
@@ -157,7 +162,7 @@ pub use resume::{cancel_paused_turn,
     discard_aborted_tool_batch, record_verified_tool_outcome, ResumeDisposition, ResumeEngine,
     ResumeError, ResumeEventObserver, ResumeStep,
 };
-pub use runner::{AgentRunHandle, AgentRunner, RunLimits};
+pub use runner::{AgentRunHandle, AgentRunner, RunLimits, HOST_CONTINUE_INPUT};
 pub use skills::{
     activate_skills, discover_skills, ActivatedSkills, DiscoveredSkill, SkillActivationError,
     SkillDiscoveryError, SkillOrigin, SkillProvenance, SkillRoot, SkillSelection,

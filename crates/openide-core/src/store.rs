@@ -387,7 +387,7 @@ fn active_native_turn_id(events: &[AgentEvent]) -> Option<&str> {
             }
             AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled => active = None,
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => active = None,
             _ => {}
         }
     }
@@ -476,7 +476,7 @@ fn native_steer_awaiting_model(events: &[AgentEvent]) -> bool {
             | AgentEventKind::TurnAdmittedWithImages { .. }
             | AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled => awaiting = false,
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => awaiting = false,
             _ => {}
         }
     }
@@ -2062,7 +2062,7 @@ impl SessionStore {
                 &event.kind,
                 AgentEventKind::TurnCompleted { .. }
                     | AgentEventKind::TurnFailed { .. }
-                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
             ) {
                 let inbox = self.read_native_steer_inbox(session_id)?;
                 if !pending_native_steers_from(&inbox, &committed_native_steers(&saved)?)?
@@ -2679,7 +2679,7 @@ impl SessionStore {
             AgentEventKind::ModelRequestStarted { .. }
                 | AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
         ) {
             Some(
                 crate::native_command_operation::lock_and_require_no_pending(
@@ -2697,7 +2697,7 @@ impl SessionStore {
             &event.kind,
             AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
         ) {
             let inbox = self.read_native_steer_inbox(session_id)?;
             let events = self.events.load(session_id)?;

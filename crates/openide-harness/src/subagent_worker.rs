@@ -2075,7 +2075,7 @@ fn is_terminal(kind: &AgentEventKind) -> bool {
         kind,
         AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
     )
 }
 

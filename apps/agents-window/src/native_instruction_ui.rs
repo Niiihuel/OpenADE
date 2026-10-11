@@ -129,7 +129,7 @@ impl NativeInstructionUiState {
                 }),
                 AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled => {
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => {
                     turn_id = None;
                     turn_start_sequence = 0;
                 }

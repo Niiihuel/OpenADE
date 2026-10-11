@@ -123,7 +123,7 @@ impl DesktopSessions {
                 }
                 AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled => active = None,
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => active = None,
                 _ => {}
             }
         }

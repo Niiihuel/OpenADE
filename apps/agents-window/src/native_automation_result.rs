@@ -134,7 +134,7 @@ impl NativeAutomationResultV1 {
                     event.kind,
                     AgentEventKind::TurnCompleted { .. }
                         | AgentEventKind::TurnFailed { .. }
-                        | AgentEventKind::TurnCancelled
+                        | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                 )
             })
             .collect::<Vec<_>>();
@@ -276,7 +276,7 @@ impl NativeAutomationResultV1 {
                     event.kind,
                     AgentEventKind::TurnCompleted { .. }
                         | AgentEventKind::TurnFailed { .. }
-                        | AgentEventKind::TurnCancelled
+                        | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                 )
             })
             .collect::<Vec<_>>();

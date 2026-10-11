@@ -91,6 +91,9 @@ impl TokenBudgetPolicy {
         tools: &[ToolDefinition],
         cancel: CancellationToken,
     ) -> Result<TokenBudgetAssessment, AgentError> {
+        // Budget what will be sent: the request as the target accepts it.
+        let adapted = crate::history_adapter::adapt_for(model, messages, tools)?;
+        let (messages, tools) = (adapted.messages.as_slice(), adapted.tools.as_slice());
         if let Some(exact_input_tokens) = model.count_input_tokens(messages, tools, cancel).await? {
             self.assess_request_with_exact_input_tokens(state, exact_input_tokens)
         } else if messages.iter().any(|message| !message.images.is_empty()) {

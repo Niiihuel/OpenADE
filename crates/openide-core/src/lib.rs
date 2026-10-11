@@ -26,6 +26,7 @@ pub use checkpoint::{
     MAX_RETAINED_USER_MESSAGE_BYTES,
 };
 pub use event::{
+    NOTICE_OUTPUT_LIMIT,
     system_instructions_digest, AgentEvent, AgentEventKind, ModelStreamEvent, ModelTokenUsage,
     OutputStream, PermissionResolution, TurnPauseClass, EXEC_POLICY_IDENTITY_VERSION, HOOK_CONFIG_IDENTITY_VERSION,
     MAX_SYSTEM_INSTRUCTIONS_BYTES, MCP_RUNTIME_IDENTITY_VERSION, MODEL_CONTEXT_VERSION,
@@ -78,6 +79,7 @@ pub use plan::{
     MAX_PLAN_STEPS, MAX_PLAN_STEP_BYTES,
 };
 pub use replay::{
+    ReplaySuperseded,
     replay_native, NativeReplay, ReplayError, ReplayRecovery, ReplayedMessage, ReplayedToolBatch,
     ReplayedTurn,
 };

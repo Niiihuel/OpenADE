@@ -458,6 +458,15 @@ impl ModelBackend for AnthropicMessagesBackend {
     fn supports_user_images(&self) -> bool {
         self.image_input_enabled
     }
+    fn target_caps(&self) -> crate::TargetCaps {
+        crate::TargetCaps {
+            vision: self.image_input_enabled,
+            tools: true,
+            // tool_use.id must match ^[a-zA-Z0-9_-]+$; names are capped at 64.
+            tool_call_id: crate::ToolIdRule::Token { max_len: 64 },
+            tool_name_max: Some(64),
+        }
+    }
     fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
         Some(stable_request_profile_fingerprint(&[
             "anthropic-messages-v1",
@@ -838,10 +847,13 @@ fn parse_message(
         .get("content")
         .and_then(Value::as_array)
         .ok_or_else(|| model_error("missing Anthropic content array"))?;
-    let output = extract_blocks(blocks)?;
+    let mut output = extract_blocks(blocks)?;
+    let truncated = string(value, "stop_reason")? == "max_tokens";
     match string(value, "stop_reason")? {
         "end_turn" if output.tool_calls.is_empty() => {}
         "tool_use" if !output.tool_calls.is_empty() => {}
+        // A call cut by the limit has no usable input: keep the text only.
+        "max_tokens" => output.tool_calls.clear(),
         reason => {
             return Err(model_error(format!(
                 "unsafe or inconsistent Anthropic stop reason: {reason}"
@@ -863,9 +875,15 @@ fn parse_message(
         output,
         response_id: Some(id.into()),
         usage: Some(usage),
-        provider_output_items: vec![
-            json!({"type":"openide_anthropic_message_v1","model_id":model,"endpoint_digest":endpoint_digest,"message_id":id,"content":blocks}),
-        ],
+        // The blocks of a cut response may hold half a tool use: not replayed.
+        provider_output_items: if truncated {
+            Vec::new()
+        } else {
+            vec![
+                json!({"type":"openide_anthropic_message_v1","model_id":model,"endpoint_digest":endpoint_digest,"message_id":id,"content":blocks}),
+            ]
+        },
+        truncated,
     })
 }
 
@@ -875,6 +893,7 @@ struct AnthropicStream {
     blocks: Vec<Value>,
     active: Option<usize>,
     partial_json: String,
+    cut_tool_json: Option<String>,
     retained: usize,
     observed: bool,
     delta_seen: bool,
@@ -1155,10 +1174,14 @@ impl AnthropicStream {
                     return Err(model_error("out-of-order Anthropic block stop"));
                 }
                 if self.blocks[index]["type"] == "tool_use" && !self.partial_json.is_empty() {
-                    let input: Value =
-                        serde_json::from_str(&self.partial_json).map_err(|error| {
-                            model_error(format!("invalid completed Anthropic tool JSON: {error}"))
-                        })?;
+                    let input: Value = match serde_json::from_str(&self.partial_json) {
+                        Ok(input) => input,
+                        // Only a max_tokens stop excuses this; `finish` checks.
+                        Err(error) => {
+                            self.cut_tool_json = Some(error.to_string());
+                            json!({})
+                        }
+                    };
                     if !input.is_object() {
                         return Err(model_error(
                             "completed Anthropic tool input is not an object",
@@ -1296,6 +1319,9 @@ impl AnthropicStream {
             .take()
             .ok_or_else(|| model_error("missing Anthropic message_start"))?;
         message["content"] = json!(self.blocks);
+        if let Some(error) = self.cut_tool_json.filter(|_| message["stop_reason"] != "max_tokens") {
+            return Err(model_error(format!("invalid completed Anthropic tool JSON: {error}")));
+        }
         parse_message(&message, model, endpoint_digest)
     }
 }

@@ -1468,13 +1468,19 @@ impl ResumeEngine {
             )
             .await?;
         }
+        // The target sees a copy it accepts; the journal keeps what was said.
+        let adapted = crate::history_adapter::adapt_for(
+            self.model.as_ref(),
+            &messages,
+            catalog.definitions(),
+        )?;
         let (sender, mut receiver) = crate::model_event_channel(cancel.clone());
         let mut pending_delivery = None;
         let mut delivery_failed = false;
         let completion_result = {
             let future =
                 self.model
-                    .stream_events(&messages, catalog.definitions(), cancel.clone(), sender);
+                    .stream_events(&adapted.messages, &adapted.tools, cancel.clone(), sender);
             tokio::pin!(future);
             loop {
                 tokio::select! {
@@ -1526,9 +1532,14 @@ impl ResumeEngine {
                 self.append(lease, replay.last_sequence, events, kind)?;
             }
         }
-        let completion = completion_result?;
+        let mut completion = completion_result?;
+        adapted.restore(&mut completion);
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled.into());
+        }
+        let truncated = completion.truncated;
+        if truncated && completion.output.content.trim().is_empty() {
+            return Err(AgentError::Model(crate::runner::OUTPUT_LIMIT_WITHOUT_TEXT.into()).into());
         }
         let mut assistant =
             AgentMessage::assistant(completion.output.content, completion.output.tool_calls);
@@ -1600,6 +1611,33 @@ impl ResumeEngine {
                         plan: PlanSnapshot::from_plan_response(&assistant.content),
                     },
                 )?;
+            }
+            if truncated {
+                let asked = crate::runner::trailing_output_continuations(&record.events);
+                if let Some(turn_id) = turn
+                    .turn_id
+                    .as_deref()
+                    .filter(|_| asked < crate::runner::MAX_OUTPUT_CONTINUATIONS)
+                {
+                    // The drain in `finish_model_response` commits it and
+                    // leaves the turn ready for the next request.
+                    self.sessions.enqueue_native_steer(
+                        lease.session_id(),
+                        turn_id,
+                        &format!("{}{step}", crate::runner::HOST_CONTINUE_INPUT),
+                        crate::runner::OUTPUT_LIMIT_CONTINUATION,
+                    )?;
+                } else {
+                    self.append(
+                        lease,
+                        replay.last_sequence,
+                        events,
+                        AgentEventKind::HostNotice {
+                            code: openide_core::NOTICE_OUTPUT_LIMIT.into(),
+                            detail: self.model.model_id().to_owned(),
+                        },
+                    )?;
+                }
             }
             self.finish_model_response(lease, replay, events, assistant.content, step, &cancel)
                 .await?;

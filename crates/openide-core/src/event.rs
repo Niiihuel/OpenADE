@@ -368,6 +368,27 @@ pub enum AgentEventKind {
         error: String,
     },
     TurnCancelled,
+    /// The paused turn was closed so the conversation can continue on
+    /// another model route. Terminal, like a cancellation, and only valid on
+    /// a turn paused at a model boundary: every tool has its result and no
+    /// request is in flight. The turn `next_turn_id` continues it; until that
+    /// admission is in the journal the switch is unfinished and a host
+    /// completes it from these fields.
+    TurnSuperseded {
+        provider_id: String,
+        model_id: String,
+        next_turn_id: String,
+        /// The next turn opens with text the host wrote, because this turn
+        /// had committed work; false when it re-admits this turn's own prompt.
+        host_prompt: bool,
+    },
+    /// Something the host did on its own and the person must be able to see:
+    /// `code` is one of the `NOTICE_*` values, `detail` its subject (a model
+    /// name). Presentation only: never model history, never authority.
+    HostNotice {
+        code: String,
+        detail: String,
+    },
     /// The turn stopped at a model boundary and did not end: no request of
     /// `step` was committed and no tool is open, so it can be continued
     /// without repeating anything. Not terminal; replay keeps the turn's
@@ -381,6 +402,9 @@ pub enum AgentEventKind {
         detail: String,
     },
 }
+
+/// A response stayed cut at the output limit after every continuation.
+pub const NOTICE_OUTPUT_LIMIT: &str = "output_limit";
 
 /// Why a turn is paused at a model boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

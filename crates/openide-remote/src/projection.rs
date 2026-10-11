@@ -102,7 +102,7 @@ pub fn pending_permissions(events: &[AgentEvent]) -> Vec<PendingPermission> {
             Kind::PermissionResolved { request_id, .. } => {
                 pending.remove(request_id);
             }
-            Kind::TurnCompleted { .. } | Kind::TurnCancelled | Kind::TurnFailed { .. } => {
+            Kind::TurnCompleted { .. } | Kind::TurnCancelled | Kind::TurnSuperseded { .. } | Kind::TurnFailed { .. } => {
                 pending.clear()
             }
             _ => {}

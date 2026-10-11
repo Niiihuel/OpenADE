@@ -379,7 +379,7 @@ pub fn project_instruction_metadata_sequences(
             }
             AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled => {
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => {
                 calls.clear();
                 turn_active = false;
             }

@@ -577,6 +577,8 @@ impl FrozenNativeAutomationAuthorityV1 {
                     .configured_output_limit
                     .as_ref()
                     .map(|limit| limit.tokens)
+                    // The same rule as an interactive turn: what the budget reserves.
+                    .or_else(|| self.budget.as_ref().map(|budget| budget.output_reserve_tokens))
                     .unwrap_or_else(|| {
                         self.model_output_maximum
                             .map_or(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS, |max| {
