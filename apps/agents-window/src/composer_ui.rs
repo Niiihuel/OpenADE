@@ -949,7 +949,7 @@ struct ModelPickerRow<'a> {
     title: &'a str,
     detail: &'a str,
     status: &'a str,
-    glyphs: Vec<Icon>,
+    glyphs: Vec<(Icon, &'static str)>,
     icon: Icon,
     width: f32,
     selected: bool,
@@ -978,11 +978,19 @@ impl ModelPickerRow<'_> {
                 .flex(1.0)
                 .size(None, Some(body_height / 2.0)),
         ];
-        for glyph in self.glyphs {
+        for (glyph, label) in self.glyphs {
+            // Each glyph names itself under the pointer; the row's card
+            // shows the same icons without labels.
             detail.push(
-                Element::icon(glyph)
-                    .foreground(palette.muted)
-                    .size(Some(GLYPH), Some(body_height / 2.0)),
+                Tooltip::new(
+                    Element::icon(glyph)
+                        .foreground(palette.muted)
+                        .size(Some(GLYPH), Some(body_height / 2.0)),
+                    format!("model_capability:{}:{label}", self.action_id),
+                    label,
+                    theme::component_palette(),
+                )
+                .render(),
             );
         }
         if status_width > 0.0 {
@@ -1226,18 +1234,18 @@ fn model_source_line(metadata: &crate::model_metadata::ModelMetadataView) -> Opt
 fn model_row_info(
     route: &ModelRouteOption,
     props: &ComposerProps<'_>,
-) -> (String, Vec<Icon>) {
+) -> (String, Vec<(Icon, &'static str)>) {
     let metadata = props
         .model_metadata
         .and_then(|models| models.get(&route.route_id));
     let glyphs = metadata.map_or_else(Vec::new, |metadata| {
         [
-            (metadata.tool_call, Icon::Bolt),
-            (metadata.image_input, Icon::Image),
-            (metadata.reasoning, Icon::Brain),
+            (metadata.tool_call, Icon::Bolt, "Herramientas"),
+            (metadata.image_input, Icon::Image, "Visión"),
+            (metadata.reasoning, Icon::Brain, "Razonamiento"),
         ]
         .into_iter()
-        .filter_map(|(known, icon)| (known == Some(true)).then_some(icon))
+        .filter_map(|(known, icon, label)| (known == Some(true)).then_some((icon, label)))
         .collect()
     });
     let window = metadata.and_then(|metadata| metadata.context_tokens.or(metadata.max_input_tokens));
@@ -1292,7 +1300,7 @@ fn model_route_tooltip(
         (metadata.structured_output, "Salida estructurada", Icon::Code),
     ] {
         match known {
-            Some(true) => can.push(TooltipItem::new(label).icon(icon)),
+            Some(true) => can.push(TooltipItem::new(label).icon(icon).icon_only()),
             Some(false) => cannot.push(TooltipItem::new(label)),
             None => {}
         }
@@ -1303,7 +1311,7 @@ fn model_route_tooltip(
         ("video", "Video", Icon::Video),
     ] {
         if metadata.input_modalities.iter().any(|input| input == kind) {
-            can.push(TooltipItem::new(label).icon(icon));
+            can.push(TooltipItem::new(label).icon(icon).icon_only());
         }
     }
     let fact = |value: Option<String>| value.map(TooltipItem::new);

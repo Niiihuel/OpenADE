@@ -116,9 +116,38 @@ fn card_shows_only_known_facts_with_their_source_and_the_row_shows_the_window() 
     }
     assert!(!list.contains("Sin verificar"));
 
+    // A capability glyph names itself under the pointer and still belongs to
+    // its row: a click on it chooses the model.
+    let mut tree = UiTree::new(build_composer(&state));
+    tree.set_reduced_motion(true);
+    let start = Instant::now();
+    let frame = tree.layout_at(viewport, start);
+    let row = format!("composer_route:{}", routes[0].route_id);
+    let glyph = frame
+        .regions
+        .iter()
+        .find(|region| region.id == format!("model_capability:{row}:Herramientas"))
+        .expect("capability glyph")
+        .rect;
+    let point = Point::new(glyph.x + glyph.width / 2.0, glyph.y + glyph.height / 2.0);
+    tree.handle_event_at(UiEvent::PointerMove(point), start);
+    let hint = text_of(&tree.layout_at(viewport, start + Duration::from_secs(2)));
+    let hint = hint.split_once("Conectar proveedor\n").expect("hint").1;
+    assert_eq!(hint.trim(), "Herramientas", "{hint}");
+    let mut actions = tree.handle_event(UiEvent::PointerDown(point));
+    actions.extend(tree.handle_event(UiEvent::PointerUp(point)));
+    assert!(
+        actions.iter().any(|action| matches!(action, openide_ui::UiAction::Clicked { id } if id == &row)),
+        "{actions:?}"
+    );
+
     // Everything from the provider: one source, no catalog mention.
     let api = card(0);
-    for shown in ["Herramientas", "Visión", "PDF", "400K", "64K", "Entrada $3 · Salida $15"] {
+    // Capabilities are a row of icons; their names are not spelled in the card.
+    for hidden in ["Herramientas", "Visión", "PDF"] {
+        assert!(!api.lines().any(|line| line == hidden), "{hidden}: {api}");
+    }
+    for shown in ["Admite", "400K", "64K", "Entrada $3 · Salida $15"] {
         assert!(api.contains(shown), "{shown}: {api}");
     }
     assert!(api.lines().any(|line| line == "Fuente: API del proveedor"), "{api}");
