@@ -938,6 +938,17 @@ impl TranscriptProjection {
                         PermissionResolution::Cancelled => ActivityStatus::Cancelled,
                     },
                 );
+                // A question is not a permission: its answer is the result
+                // the tool row shows, and skipping it is not a failure.
+                if self.tool_rows.get(tool_call_id).is_some_and(|index| {
+                    matches!(&self.items[*index], TranscriptItem::Tool { name, .. }
+                        if openide_harness::is_user_interaction_tool(name))
+                }) {
+                    if *resolution == PermissionResolution::Denied {
+                        self.set_tool_activity(tool_call_id, ActivityStatus::Running);
+                    }
+                    return true;
+                }
                 let (message, is_error) = match resolution {
                     PermissionResolution::Allowed => ("Permiso concedido", false),
                     PermissionResolution::Denied => ("Permiso denegado", true),

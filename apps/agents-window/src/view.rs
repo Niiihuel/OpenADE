@@ -287,6 +287,9 @@ pub enum SessionRecoveryView {
     StartAutomation,
     Resume,
     Permission,
+    /// The agent asked the user something and the turn stopped before the
+    /// answer.
+    Question,
     VerifyTool,
     ReviewBatch,
     InvalidJournal(String),
@@ -304,6 +307,7 @@ impl SessionRecoveryView {
             Self::StartAutomation => "Iniciar ejecución registrada",
             Self::Resume => "Reanudar turno",
             Self::Permission => "Resolver permiso y reanudar",
+            Self::Question => "Responder y reanudar",
             Self::VerifyTool => "Verificar herramienta",
             Self::ReviewBatch => "Revisar llamadas pendientes",
             Self::InvalidJournal(_) => "Journal no verificable",
@@ -663,6 +667,8 @@ pub struct ViewState {
     pub terminal_input: String,
     pub terminal_error: Option<String>,
     pub pending_permissions: Vec<PermissionView>,
+    /// What the user has chosen so far in each open question, by request id.
+    pub question_drafts: std::collections::HashMap<String, crate::question_ui::QuestionDraft>,
     pub composer_pending: Option<crate::composer_pending::PendingComposerSelection>,
     pub pending_subagent_permissions: Vec<SubagentPermissionView>,
     pub active_subagents: Vec<SubagentRunView>,
@@ -3758,6 +3764,7 @@ pub(crate) mod tests {
             session_plans: BTreeMap::new(),
             session_recovery: BTreeMap::new(),
             pending_permissions: Vec::new(),
+            question_drafts: Default::default(),
             composer_pending: None,
             pending_subagent_permissions: Vec::new(),
             active_subagents: Vec::new(),
@@ -8789,6 +8796,7 @@ pub(crate) mod tests {
             SessionRecoveryView::StartAutomation,
             SessionRecoveryView::Resume,
             SessionRecoveryView::Permission,
+            SessionRecoveryView::Question,
             SessionRecoveryView::VerifyTool,
             SessionRecoveryView::ReviewBatch,
         ] {

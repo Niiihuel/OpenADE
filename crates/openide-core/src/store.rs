@@ -73,6 +73,8 @@ pub enum StoreError {
     InvalidPermissionRequestId,
     #[error("invalid session approval grant")]
     InvalidSessionApprovalGrant,
+    #[error("user answer exceeds the 64 KiB size limit")]
+    InvalidUserAnswer,
     #[error("permission decision conflicts with an existing decision for request {0}")]
     ConflictingPermissionDecision(String),
     #[error("permission journal contains a duplicate request id: {0}")]
@@ -751,7 +753,14 @@ pub struct RecordedPermissionDecision {
     /// approval choice. Older journals omit this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revoked_at_ms: Option<u64>,
+    /// What the user answered when the request was a question rather than a
+    /// permission. User-authored content; older journals omit this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<String>,
 }
+
+/// Bound of one recorded answer, well above what the question card produces.
+pub const MAX_USER_ANSWER_BYTES: usize = 64 * 1024;
 
 /// Durable session-scoped approval for one exact call shape and effective
 /// policy. Raw tool arguments and paths are intentionally excluded.
@@ -2857,6 +2866,38 @@ impl SessionStore {
         decision: PermissionDecision,
         grant: Option<SessionApprovalGrantRecord>,
     ) -> Result<RecordedPermissionDecision, StoreError> {
+        self.record_decision(session_id, request_id, decision, grant, None)
+    }
+
+    /// Durably record what the user answered to a question the agent asked,
+    /// before the runner is told the request is resolved. The same request
+    /// and answer are idempotent; a different answer on retry is a conflict.
+    pub fn record_user_answer(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        answer: &str,
+    ) -> Result<RecordedPermissionDecision, StoreError> {
+        if answer.len() > MAX_USER_ANSWER_BYTES {
+            return Err(StoreError::InvalidUserAnswer);
+        }
+        self.record_decision(
+            session_id,
+            request_id,
+            PermissionDecision::Allow,
+            None,
+            Some(answer.to_owned()),
+        )
+    }
+
+    fn record_decision(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        decision: PermissionDecision,
+        grant: Option<SessionApprovalGrantRecord>,
+        answer: Option<String>,
+    ) -> Result<RecordedPermissionDecision, StoreError> {
         validate_session_id(session_id)?;
         validate_permission_request_id(request_id)?;
         if let Some(grant) = &grant {
@@ -2877,7 +2918,10 @@ impl SessionStore {
             .iter()
             .find(|entry| entry.request_id == request_id)
         {
-            return if existing.decision == decision && existing.grant == grant {
+            return if existing.decision == decision
+                && existing.grant == grant
+                && existing.answer == answer
+            {
                 Ok(existing.clone())
             } else {
                 Err(StoreError::ConflictingPermissionDecision(
@@ -2892,6 +2936,7 @@ impl SessionStore {
             recorded_at_ms: current_time_ms(),
             grant,
             revoked_at_ms: None,
+            answer,
         };
         journal.entries.push(record.clone());
         self.write_permission_journal_atomically(session_id, &journal)?;
@@ -5573,12 +5618,36 @@ mod tests {
             store.record_permission_decision(&session.id, "request-1", PermissionDecision::Deny),
             Err(StoreError::ConflictingPermissionDecision(_))
         ));
+        // A question's answer is recorded with the same idempotence.
+        let answered = store
+            .record_user_answer(&session.id, "question-1", "{\"answers\":[]}")
+            .unwrap();
+        assert_eq!(answered.decision, PermissionDecision::Allow);
+        assert_eq!(answered.answer.as_deref(), Some("{\"answers\":[]}"));
+        assert_eq!(
+            store
+                .record_user_answer(&session.id, "question-1", "{\"answers\":[]}")
+                .unwrap(),
+            answered
+        );
+        assert!(matches!(
+            store.record_user_answer(&session.id, "question-1", "other"),
+            Err(StoreError::ConflictingPermissionDecision(_))
+        ));
+        assert!(matches!(
+            store.record_user_answer(
+                &session.id,
+                "question-2",
+                &"x".repeat(MAX_USER_ANSWER_BYTES + 1)
+            ),
+            Err(StoreError::InvalidUserAnswer)
+        ));
         let second = store
             .record_permission_decision(&session.id, "request-2", PermissionDecision::Deny)
             .unwrap();
         assert_eq!(
             store.load_permission_decisions(&session.id).unwrap(),
-            vec![first.clone(), second.clone()]
+            vec![first.clone(), answered.clone(), second.clone()]
         );
         assert!(store.load(&session.id).unwrap().unwrap().events.is_empty());
         drop(store);
@@ -5586,7 +5655,7 @@ mod tests {
         let reopened = SessionStore::open(dir.path()).unwrap();
         assert_eq!(
             reopened.load_permission_decisions(&session.id).unwrap(),
-            vec![first, second]
+            vec![first, answered, second]
         );
         assert!(matches!(
             reopened.record_permission_decision(&session.id, " ", PermissionDecision::Allow),
@@ -5831,6 +5900,7 @@ mod tests {
                 recorded_at_ms: 2,
                 grant: Some(valid),
                 revoked_at_ms: None,
+                answer: None,
             }],
         };
         fs::write(&path, serde_json::to_vec(&malformed).unwrap()).unwrap();
@@ -5848,6 +5918,7 @@ mod tests {
                 recorded_at_ms: 2,
                 grant: None,
                 revoked_at_ms: Some(3),
+                answer: None,
             }],
         };
         fs::write(&path, serde_json::to_vec(&malformed_revocation).unwrap()).unwrap();

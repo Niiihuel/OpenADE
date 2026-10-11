@@ -714,6 +714,9 @@ fn pending_call_card(item: &TranscriptItem, state: &ViewState) -> Option<Element
     if name == "update_plan" {
         return Some(pending_plan_card(owner, &scope, &arguments));
     }
+    if name == crate::question_ui::TOOL {
+        return Some(crate::question_ui::skeleton(&scope, &arguments));
+    }
     None
 }
 
@@ -1154,6 +1157,18 @@ pub(crate) fn tool_line_with_output(
     else {
         unreachable!()
     };
+    if name == crate::question_ui::TOOL {
+        match (activity, output) {
+            // The open question is the card below; it needs no second row.
+            _ if approval_card_shown(state, name, arguments, *activity) => {
+                return Element::spacer();
+            }
+            (ActivityStatus::Completed, Some(output)) if !*is_error => {
+                return crate::question_ui::answered(arguments, output);
+            }
+            _ => {}
+        }
+    }
     let disclosure = format!("tool:{id}");
     let expanded = state.conversation_details.is_expanded(&disclosure, false);
     let presentation =
@@ -2544,6 +2559,9 @@ fn timeline(state: &ViewState, width: f32) -> Element {
 }
 
 fn permission_card(permission: &PermissionView, state: &ViewState, compact: bool) -> Element {
+    if permission.tool_name == crate::question_ui::TOOL {
+        return crate::question_ui::card(permission, state, compact);
+    }
     crate::approval_ui::inline_root(permission, state, compact)
 }
 
@@ -2620,6 +2638,9 @@ fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView) -> Ele
         SessionRecoveryView::Resume => "El turno quedó interrumpido y puede reanudarse.",
         SessionRecoveryView::Permission => {
             "Hay un permiso pendiente. Reanudar pedirá la decisión antes de ejecutar."
+        }
+        SessionRecoveryView::Question => {
+            "El agente espera tu respuesta. Reanudar muestra la pregunta para que la contestes."
         }
         SessionRecoveryView::VerifyTool => {
             "La herramienta pudo haber producido cambios. Verifica su efecto antes de continuar."
@@ -4179,6 +4200,7 @@ mod tests {
             terminal_input: String::new(),
             terminal_error: None,
             pending_permissions: vec![],
+            question_drafts: Default::default(),
             composer_pending: None,
             pending_subagent_permissions: vec![],
             active_subagents: vec![],

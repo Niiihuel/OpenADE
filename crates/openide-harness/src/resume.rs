@@ -6,6 +6,7 @@ use crate::hooks::{CommandHooks, HookDecision, HookInvocation, HookPhase, HookRu
 use crate::native_context::{native_system_prompt_with_plan, NativeRuntimeIdentity};
 use crate::permission::{effective_session_approval_policy_digest, SessionApprovalGrant};
 use crate::plan_tool::{self, UPDATE_PLAN_TOOL};
+use crate::user_interaction;
 use crate::project_instructions::{activation_hook_id, ProjectInstructionLedger};
 use crate::tool_scheduler::trusted_plan_read;
 use crate::{
@@ -298,6 +299,7 @@ pub struct ResumeEngine {
     catalog: ToolCatalog,
     permission_policy: PermissionPolicy,
     budget_policy: Option<TokenBudgetPolicy>,
+    user_interaction: bool,
     limits: RunLimits,
     system_instructions: String,
     native_runtime_identity: Option<NativeRuntimeIdentity>,
@@ -339,7 +341,15 @@ impl ResumeEngine {
             session_approvals: None,
             event_observer: None,
             manual_command_actor: None,
+            user_interaction: false,
         }
+    }
+
+    /// Recover turns that were offered the built-in tools that wait for the
+    /// user. A turn admitted before they existed keeps its own catalog.
+    pub fn with_user_interaction(mut self, enabled: bool) -> Self {
+        self.user_interaction = enabled;
+        self
     }
 
     /// Drain confirmed human process controls under the retained recovery lease.
@@ -1097,7 +1107,7 @@ impl ResumeEngine {
             .as_ref()
             .ok_or(ResumeError::StaleResolution)?;
         let catalog = if start_request && step == 1 && replay.active_tool_catalog_digest.is_none() {
-            let catalog = self.catalog_for_mode(turn.mode)?;
+            let catalog = self.catalog_generations(turn.mode)?.swap_remove(0);
             self.append(
                 lease,
                 replay.last_sequence,
@@ -1557,10 +1567,12 @@ impl ResumeEngine {
                 AgentEventKind::PermissionResolved {
                     tool_call_id,
                     resolution,
-                    ..
-                } if tool_call_id == &call.id => Some(*resolution),
+                    request_id,
+                } if tool_call_id == &call.id => Some((*resolution, request_id.clone())),
                 _ => None,
             });
+        let resolved_request = prior_resolution.as_ref().map(|(_, id)| id.clone());
+        let prior_resolution = prior_resolution.map(|(resolution, _)| resolution);
         let base_mode = self.permission_policy.mode_for_call(call);
         let project_preflight = if validation_error.is_none()
             && base_mode != PermissionMode::Deny
@@ -1616,6 +1628,8 @@ impl ResumeEngine {
                 .as_ref()
                 .is_some_and(|turn| turn.mode == TurnMode::Build)
             && self.is_builtin_plan_catalog(&catalog);
+        let builtin_interaction =
+            self.user_interaction && user_interaction::is_builtin(&catalog, call);
         let project_activation_marker = project_preflight
             .as_ref()
             .and_then(|output| activation_hook_id(&output.content));
@@ -1625,6 +1639,35 @@ impl ResumeEngine {
             project_preflight
         } else if builtin_plan {
             None
+        } else if builtin_interaction {
+            // Never decided by policy: the user's answer is the result.
+            match (user_interaction::invalid(call), prior_resolution) {
+                (Some(invalid), _) => Some(invalid),
+                (None, Some(resolution)) => {
+                    let answer = match (resolution, resolved_request.as_deref()) {
+                        (PermissionResolution::Allowed, Some(request_id)) => self
+                            .sessions
+                            .load_permission_decisions(lease.session_id())?
+                            .into_iter()
+                            .find(|decision| decision.request_id == request_id)
+                            .and_then(|decision| decision.answer),
+                        _ => None,
+                    };
+                    Some(user_interaction::outcome(call, resolution, answer))
+                }
+                (None, None) => {
+                    self.append(
+                        lease,
+                        replay.last_sequence,
+                        events,
+                        AgentEventKind::PermissionRequested {
+                            request_id: Uuid::new_v4().to_string(),
+                            tool_call: call.clone(),
+                        },
+                    )?;
+                    return Ok(None);
+                }
+            }
         } else if mode == PermissionMode::Deny {
             Some(ToolOutput::error(format!(
                 "Permission denied for {}",
@@ -2064,6 +2107,20 @@ impl ResumeEngine {
         )?)
     }
 
+    /// The catalogs a turn in `mode` may have frozen, newest first: the
+    /// executor's tools with each generation of the built-ins that wait for
+    /// the user, then without any.
+    fn catalog_generations(&self, mode: TurnMode) -> Result<Vec<ToolCatalog>, ResumeError> {
+        let base = self.catalog_for_mode(mode)?;
+        let mut catalogs = if self.user_interaction {
+            user_interaction::catalogs_with_user_interaction(&base)
+        } else {
+            Vec::new()
+        };
+        catalogs.push(base);
+        Ok(catalogs)
+    }
+
     fn verified_catalog(&self, replay: &NativeReplay) -> Result<ToolCatalog, ResumeError> {
         let turn = replay
             .active_turn
@@ -2078,12 +2135,14 @@ impl ResumeEngine {
         {
             return Ok(self.catalog.clone());
         }
-        let catalog = self.catalog_for_mode(turn.mode)?;
-        match replay.active_tool_catalog_digest.as_deref() {
-            Some(saved) if saved == catalog.digest_hex() => Ok(catalog),
-            Some(_) => Err(ResumeError::CatalogMismatch),
-            None => Err(ResumeError::CatalogUnverified),
-        }
+        let saved = replay
+            .active_tool_catalog_digest
+            .as_deref()
+            .ok_or(ResumeError::CatalogUnverified)?;
+        self.catalog_generations(turn.mode)?
+            .into_iter()
+            .find(|catalog| catalog.digest_hex() == saved)
+            .ok_or(ResumeError::CatalogMismatch)
     }
 
     fn session_approval_digest(
@@ -3040,6 +3099,127 @@ mod tests {
         let events = fixture.events();
         assert_eq!(events.iter().filter(|event| matches!(&event.kind, AgentEventKind::PermissionRequested { request_id, .. } if request_id == "permission-1")).count(), 1);
         assert_eq!(events.iter().filter(|event| matches!(&event.kind, AgentEventKind::PermissionResolved { request_id, .. } if request_id == "permission-1")).count(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_question_asked_before_a_restart_takes_the_recorded_answer_as_its_result() {
+        let ask = ToolCall {
+            id: "call-ask".into(),
+            name: crate::ASK_USER_TOOL.into(),
+            arguments: json!({"questions": [{
+                "header": "Storage",
+                "question": "Where should it be kept?",
+                "options": [{"label": "SQLite"}, {"label": "Files"}],
+                "multi_select": false
+            }]}),
+        };
+        let fixture = Fixture::new(vec![
+            ModelOutput {
+                content: String::new(),
+                tool_calls: vec![ask.clone()],
+            },
+            done(),
+        ]);
+        fixture.admit();
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        // Deny by default, as the host's policy is for names it does not
+        // list: the question is not a permission and is asked regardless.
+        let engine = fixture.engine(PermissionMode::Deny).with_user_interaction(true);
+        let paused = engine
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        let ResumeDisposition::NeedsPermission { request_id, tool_call } = paused.disposition
+        else {
+            panic!("the turn waits for the user: {:?}", paused.disposition);
+        };
+        assert_eq!(tool_call, ask);
+        let committed = fixture
+            .events()
+            .into_iter()
+            .find_map(|event| match event.kind {
+                AgentEventKind::ToolCatalogCommitted { digest } => Some(digest),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            committed,
+            ToolCatalog::new([
+                definition(),
+                plan_tool::definition(),
+                crate::ask_user_tool_definition()
+            ])
+            .unwrap()
+            .digest_hex()
+        );
+
+        // The app restarts with the question open; the answer is recorded
+        // first and then the same request is resolved.
+        let reopened = Arc::new(SessionStore::open(fixture._dir.path()).unwrap());
+        let mut resumed = fixture.engine(PermissionMode::Deny).with_user_interaction(true);
+        resumed.sessions = reopened.clone();
+        let again = resumed
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            again.disposition,
+            ResumeDisposition::NeedsPermission {
+                request_id: request_id.clone(),
+                tool_call: ask.clone()
+            }
+        );
+        let answer = r#"{"answered_by":"user","answers":[{"header":"Storage","selected":["Files"]}]}"#;
+        reopened
+            .record_user_answer(&fixture.session_id, &request_id, answer)
+            .unwrap();
+        resumed
+            .resolve_permission(&lease, &request_id, PermissionChoice::Allow)
+            .unwrap();
+        let completed = resumed
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(completed.disposition, ResumeDisposition::Complete);
+        assert!(fixture.tools.calls.lock().unwrap().is_empty());
+        let events = reopened.load(&fixture.session_id).unwrap().unwrap().events;
+        assert!(events.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::ToolFinished { tool_call_id, output, is_error: false }
+                if tool_call_id == "call-ask" && output == answer
+        )));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.kind, AgentEventKind::PermissionRequested { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_turn_frozen_before_the_questions_existed_keeps_its_catalog() {
+        let fixture = Fixture::new(vec![done()]);
+        fixture.tool_ready();
+        let lease = fixture
+            .sessions
+            .try_acquire_native_lease(&fixture.session_id)
+            .unwrap();
+        let engine = fixture.engine(PermissionMode::Allow).with_user_interaction(true);
+        let replay = engine.inspect(&lease).unwrap();
+        assert_eq!(
+            engine.verified_catalog(&replay).unwrap().digest_hex(),
+            ToolCatalog::new([definition()]).unwrap().digest_hex()
+        );
+        let completed = engine
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(completed.disposition, ResumeDisposition::Complete);
+        assert_eq!(fixture.tools.calls.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

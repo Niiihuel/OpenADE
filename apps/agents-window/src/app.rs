@@ -168,6 +168,8 @@ mod composer_pending_app;
 mod activity_navigation_app;
 #[path = "approvals_app.rs"]
 mod approvals_app;
+#[path = "question_app.rs"]
+mod question_app;
 #[path = "chat_diff_app.rs"]
 mod chat_diff_app;
 #[path = "message_edit_app.rs"]
@@ -1337,6 +1339,7 @@ pub struct AgentsWindow {
     settings_terminal_path_focus_pending: bool,
     rename_focus_pending: bool,
     group_focus_pending: bool,
+    question_focus_pending: Option<String>,
     search_worker: Option<SearchWorker>,
     search_generation: u64,
     search_pending_at: Option<Instant>,
@@ -2639,11 +2642,25 @@ fn replay_stored_native(data_root: &Path, stored: &StoredSession) -> Result<Nati
     .map_err(|error| format!("No se pudo reconstruir la sesión nativa: {error}"))
 }
 
+/// The status line while a request waits for the user.
+fn waiting_status(tool_name: &str) -> String {
+    if openide_harness::is_user_interaction_tool(tool_name) {
+        "Esperando tu respuesta".to_owned()
+    } else {
+        format!("Esperando permiso para {tool_name}")
+    }
+}
+
 fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
     match recovery {
         ReplayRecovery::Idle => "Sesión cargada",
         ReplayRecovery::ToolOutcomeUncertain { .. } => {
             "Herramienta interrumpida: pudo haberse ejecutado; requiere resolución antes de continuar"
+        }
+        ReplayRecovery::PermissionPending { tool_call, .. }
+            if openide_harness::is_user_interaction_tool(&tool_call.name) =>
+        {
+            "El agente espera tu respuesta en un turno interrumpido"
         }
         ReplayRecovery::PermissionPending { .. } => {
             "Permiso pendiente en turno interrumpido; requiere recuperación antes de continuar"
@@ -2682,6 +2699,11 @@ fn native_session_views(
         Ok(replay) => {
             let recovery = match &replay.recovery {
                 ReplayRecovery::Idle => None,
+                ReplayRecovery::PermissionPending { tool_call, .. }
+                    if openide_harness::is_user_interaction_tool(&tool_call.name) =>
+                {
+                    Some(SessionRecoveryView::Question)
+                }
                 ReplayRecovery::PermissionPending { .. } => Some(SessionRecoveryView::Permission),
                 ReplayRecovery::ToolOutcomeUncertain { .. } => {
                     Some(SessionRecoveryView::VerifyTool)
@@ -6114,6 +6136,7 @@ impl AgentsWindow {
             terminal_input: String::new(),
             terminal_error: None,
             pending_permissions: Vec::new(),
+            question_drafts: Default::default(),
             composer_pending: None,
             pending_subagent_permissions: Vec::new(),
             active_subagents: Vec::new(),
@@ -6369,6 +6392,7 @@ impl AgentsWindow {
             settings_terminal_path_focus_pending: false,
             rename_focus_pending: false,
             group_focus_pending: false,
+            question_focus_pending: None,
             search_worker: SearchWorker::spawn(root.join("sessions")).ok(),
             search_generation: 0,
             search_pending_at: None,
@@ -12065,6 +12089,7 @@ impl AgentsWindow {
                 .with_command_hooks(command_hooks)
                 .with_permission_policy(policy)
                 .with_session_approvals(store.clone(), self.agent_tool_settings.command_isolation())
+                .with_user_interaction(store.clone())
                 .with_plan_snapshot(plan_snapshot)
                 .with_system_instructions(instructions)
                 .with_native_runtime_identity(&turn_settings.provider_id, endpoint)
@@ -12442,13 +12467,18 @@ impl AgentsWindow {
                         arguments: serde_json::to_string_pretty(&tool_call.arguments)
                             .unwrap_or_default(),
                     });
+                    let waiting = if openide_harness::is_user_interaction_tool(&tool_call.name) {
+                        "Esperando tu respuesta".to_owned()
+                    } else {
+                        format!("Permiso pendiente: {}", tool_call.name)
+                    };
                     self.notify_session(
                         crate::notifications::Event::Approval,
-                        &format!("Permiso pendiente: {}", tool_call.name),
+                        &waiting,
                         &event.session_id,
                     );
                 }
-                self.view.status = format!("Esperando permiso para {}", tool_call.name);
+                self.view.status = waiting_status(&tool_call.name);
             }
             AgentEventKind::PermissionResolved { request_id, .. } => {
                 self.view
@@ -13612,7 +13642,7 @@ impl AgentsWindow {
                                 .unwrap_or_default(),
                         });
                     }
-                    self.view.status = format!("Esperando permiso para {}", tool_call.name);
+                    self.view.status = waiting_status(&tool_call.name);
                 }
                 ResumeUpdate::NeedsVerification {
                     tool_call,
@@ -15401,6 +15431,9 @@ impl AgentsWindow {
             return;
         }
         if self.apply_approval_action(&action, ctx) {
+            return;
+        }
+        if self.apply_question_action(&action, ctx) {
             return;
         }
         if self.apply_project_actions_action(&action, ctx) {
@@ -19253,6 +19286,7 @@ impl eframe::App for AgentsWindow {
             && !self.view.show_settings
         {
             early_changed |= self.handle_file_tree_keys(&ctx);
+            early_changed |= self.handle_question_keys(&ctx);
         }
         let (keymap_changed, settings_search_focus_target) =
             self.handle_keymap_shortcuts(&ctx, workflow_modal_open, text_menu_open);
@@ -19362,6 +19396,7 @@ impl eframe::App for AgentsWindow {
         self.focus_composer_model_search_if_pending();
         self.focus_settings_terminal_path_if_pending();
         self.focus_group_if_pending();
+        self.apply_question_focus();
         self.focus_file_draft_if_pending();
         self.focus_rename_if_pending();
         let composer_selector_focused = self
