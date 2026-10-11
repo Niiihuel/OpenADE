@@ -16,7 +16,7 @@ use crate::child_process::command_no_window;
 
 #[path = "marketplace_catalog.rs"]
 mod catalog;
-pub use catalog::{is_starter_source, starter_details};
+pub use catalog::{is_starter_source, starter_category, starter_details};
 
 #[path = "marketplace_remote.rs"]
 mod remote;
@@ -579,6 +579,36 @@ impl MarketplaceStore {
         self.save_registry(&registry)
     }
 
+    /// The instructions of a skill whose SKILL.md is already on this machine:
+    /// an installed copy, or an entry of a local or cloned source. `None` for
+    /// a catalog or skills.sh entry that has not been downloaded; reading it
+    /// never touches the network. Call from a worker.
+    pub fn readme(&self, item_id: &str) -> io::Result<Option<String>> {
+        let registry = self.load_registry()?;
+        let directory = match registry
+            .installed
+            .iter()
+            .find(|entry| entry.item_id == item_id && self.applies(entry))
+        {
+            Some(entry) => Some(self.destination(&entry.name, entry.scope)),
+            None => registry
+                .sources
+                .iter()
+                .filter_map(|source| self.scan_source(source).ok())
+                .flatten()
+                .find(|skill| skill.item.id == item_id)
+                .map(|skill| skill.directory),
+        };
+        let Some(path) = directory.map(|directory| directory.join("SKILL.md")) else {
+            return Ok(None);
+        };
+        let metadata = fs::symlink_metadata(&path)?;
+        if !metadata.is_file() || metadata.len() > MAX_SKILL_FILE_BYTES {
+            return Ok(None);
+        }
+        Ok(Some(readme_body(&fs::read_to_string(path)?).to_owned()))
+    }
+
     fn applies(&self, entry: &Installation) -> bool {
         applies_to(&self.workspace_key(), entry)
     }
@@ -728,6 +758,16 @@ fn scan_skill_folders(root: &Path, source: &SourceRecord) -> io::Result<Vec<Disc
     }
     result.sort_by(|left, right| left.item.name.cmp(&right.item.name));
     Ok(result)
+}
+
+/// What follows the front matter, which the page already shows as fields.
+fn readme_body(content: &str) -> &str {
+    let Some(rest) = content.strip_prefix("---") else {
+        return content.trim();
+    };
+    rest.find("\n---").map_or("", |end| {
+        rest[end + 4..].trim_start_matches(|character| character != '\n').trim()
+    })
 }
 
 fn parse_frontmatter(content: &str) -> Option<(String, String, Option<String>)> {
@@ -1010,6 +1050,24 @@ mod tests {
                 .installed_scope,
             None
         );
+    }
+
+    #[test]
+    fn readme_is_the_body_of_a_local_skill_and_absent_for_one_not_downloaded() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = MarketplaceStore::new(temp.path().join("data"), temp.path().to_path_buf());
+        let source_id = store.add_local_source(&sample_source(temp.path())).unwrap();
+        let item_id = format!("{source_id}:git-review");
+        assert_eq!(
+            store.readme(&item_id).unwrap().as_deref(),
+            Some("## Steps\nRead the diff.")
+        );
+        store.install(&item_id, InstallScope::User).unwrap();
+        store.remove_source(&source_id).unwrap();
+        assert!(store.readme(&item_id).unwrap().unwrap().starts_with("## Steps"));
+        assert_eq!(store.readme("starter-anthropic:frontend-design").unwrap(), None);
+        assert_eq!(readme_body("---\nname: x\n"), "");
+        assert_eq!(readme_body("# Plain"), "# Plain");
     }
 
     #[test]

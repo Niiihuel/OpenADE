@@ -524,10 +524,10 @@ impl AgentsWindow {
         let marketplace_observation = if marketplace_fixture { json!({
                 "page": format!("{:?}", self.view.main_page),
                 "query": self.view.marketplace.query,
-                "active_query": self.view.marketplace.active_query(),
-                "tab": format!("{:?}", self.view.marketplace.tab),
+                "active_query": self.view.marketplace.query,
+                "filter": self.view.marketplace.filter.key(),
                 "category": self.view.marketplace.category,
-                "catalog_page": self.view.marketplace.page,
+                "visible": self.view.marketplace.visible,
                 "explore": {
                     "query": self.view.marketplace.explore.query,
                     "busy": self.view.marketplace.explore.busy,
@@ -549,7 +549,7 @@ impl AgentsWindow {
                 "provenance": self.view.marketplace.provenance.iter().take(64).map(|(id, value)| json!({
                     "id": id, "repository": value.repository, "revision": value.revision, "directory": value.directory,
                 })).collect::<Vec<_>>(),
-                "installed_only": self.view.marketplace.installed_only,
+                "installed_only": self.view.marketplace.filter == crate::marketplace_view::MarketplaceFilter::Installed,
                 "scope": format!("{:?}", self.view.marketplace.install_scope),
                 "busy": self.view.marketplace.busy,
                 "status": self.view.marketplace.status,

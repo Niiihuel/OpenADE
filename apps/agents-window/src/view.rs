@@ -58,7 +58,7 @@ pub(crate) mod document_markdown_ui;
 mod git_panel;
 pub(crate) use git_panel::{reveal_key as git_reveal_key, GitConfirmView, GitPanelView};
 #[path = "ide_activity_ui.rs"]
-mod ide_activity_ui;
+pub(crate) mod ide_activity_ui;
 #[path = "ide_search_ui.rs"]
 mod ide_search_ui;
 #[path = "ide_ui.rs"]

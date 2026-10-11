@@ -37,6 +37,8 @@ pub struct StarterDetails {
     pub download_bytes: u64,
     pub compatibility: String,
     pub category: String,
+    /// Each file an install writes, with its size in bytes.
+    pub files: Vec<(String, u64)>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -131,7 +133,17 @@ pub fn starter_details(id: &str) -> Option<StarterDetails> {
         download_bytes: entry.files.iter().map(|file| file.bytes).sum(),
         compatibility: entry.compatibility.clone(),
         category: entry.category.clone(),
+        files: entry
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.bytes))
+            .collect(),
     })
+}
+
+/// The category of a curated entry, without building its details.
+pub fn starter_category(id: &str) -> Option<&'static str> {
+    entry(id).map(|entry| entry.category.as_str())
 }
 
 impl StarterEntry {

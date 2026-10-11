@@ -108,8 +108,6 @@ pub(crate) struct IdeWorkspaceState {
     #[serde(skip)]
     pub extensions_open: bool,
     #[serde(skip)]
-    pub extensions_item: Option<String>,
-    #[serde(skip)]
     pub extensions_workspace: Option<String>,
     /// The center tab underneath the catalog; navigation reveals a new target.
     #[serde(skip)]
@@ -156,7 +154,6 @@ impl Default for IdeWorkspaceState {
             bottom_panel: IdeBottomPanel::Terminal,
             bottom_open: false,
             extensions_open: false,
-            extensions_item: None,
             extensions_workspace: None,
             extensions_editor_tab: None,
             git_actions_open: false,
@@ -343,7 +340,6 @@ mod tests {
         state.bottom_panel = IdeBottomPanel::Problems;
         state.bottom_open = true;
         state.extensions_open = true;
-        state.extensions_item = Some("local:review".into());
         state.extensions_workspace = Some("/project".into());
         state.sessions_open = true;
         state.menu_open = Some("file".into());
@@ -367,7 +363,6 @@ mod tests {
         assert_eq!(loaded.bottom_panel, IdeBottomPanel::Problems);
         assert!(loaded.bottom_open);
         assert!(!loaded.extensions_open);
-        assert!(loaded.extensions_item.is_none());
         assert!(loaded.extensions_workspace.is_none());
         assert!(!loaded.sessions_open);
         assert!(loaded.menu_open.is_none());

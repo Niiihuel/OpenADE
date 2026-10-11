@@ -23,7 +23,6 @@ impl AgentsWindow {
             return false;
         }
         self.view.ide.extensions_workspace = Some(self.view.workspace.clone());
-        self.view.ide.extensions_item = None;
         self.reset_marketplace_workspace();
         self.marketplace_operation(MarketplaceOperation::Load);
         true
@@ -191,7 +190,7 @@ impl AgentsWindow {
                 .active_tab(&self.dock_scope())
                 .map(|tab| tab.id.get());
             self.view.ide.extensions_open = true;
-            self.view.ide.extensions_item = None;
+            self.view.marketplace.selected_item_id = None;
             self.view.ide.compact_panel = None;
             return true;
         }
@@ -201,7 +200,8 @@ impl AgentsWindow {
         }
         if let Some(item_id) = id.strip_prefix("ide_extension:") {
             if self.view.marketplace.find_item(item_id).is_some() {
-                self.view.ide.extensions_item = Some(item_id.to_owned());
+                self.view.marketplace.selected_item_id = Some(item_id.to_owned());
+                self.view.marketplace.menu_item = None;
                 self.view.ide.extensions_editor_tab = self
                     .dock
                     .active_tab(&self.dock_scope())
@@ -290,6 +290,41 @@ mod tests {
         app.apply_ide_activity_action(&click("ide_activity:files"), &ctx);
         assert!(!app.view.ide.explorer_open);
         assert!(app.view.ide.compact_panel.is_none());
+    }
+
+    #[test]
+    fn a_sidebar_row_opens_its_detail_and_the_home_button_returns_to_the_landing() {
+        let (_root, mut app) = fixture();
+        let ctx = egui::Context::default();
+        app.view
+            .marketplace
+            .snapshot
+            .items
+            .push(crate::marketplace::MarketplaceItem {
+                id: "source:review".into(),
+                name: "review".into(),
+                description: "Review changes".into(),
+                license: None,
+                source_name: "Local".into(),
+                source_kind: SourceKind::Local,
+                installed_scope: None,
+                enabled: false,
+                source_available: true,
+            });
+        app.apply_ide_activity_action(&click("ide_extension:missing"), &ctx);
+        assert!(app.view.marketplace.selected_item_id.is_none());
+        assert!(!app.view.ide.extensions_open);
+        app.view.marketplace.menu_item = Some("row:source:review".into());
+        app.apply_ide_activity_action(&click("ide_extension:source:review"), &ctx);
+        assert_eq!(
+            app.view.marketplace.selected_item_id.as_deref(),
+            Some("source:review")
+        );
+        assert!(app.view.ide.extensions_open);
+        assert!(app.view.marketplace.menu_item.is_none());
+        app.apply_ide_activity_action(&click("ide_extensions_catalog"), &ctx);
+        assert!(app.view.marketplace.selected_item_id.is_none());
+        assert!(app.view.ide.extensions_open, "the landing page, not the editor");
     }
 
     #[test]

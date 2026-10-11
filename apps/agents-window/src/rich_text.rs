@@ -164,6 +164,18 @@ pub(crate) fn render_user_message(source: &str, scope: &str) -> Element {
     scope_web_links(markdown(source).plain_with_autolinks(21.0).render().element, scope)
 }
 
+/// A document read from disk, such as a skill's instructions: the same
+/// inks and link route as a message, cut at the renderer's own limits.
+pub(crate) fn render_document_at_width(source: &str, width: f32) -> MarkdownPreview {
+    markdown(source)
+        .labels(MarkdownLabels {
+            truncated_note: "Documento extenso: se muestra el comienzo.",
+            ..LABELS
+        })
+        .width(width)
+        .render()
+}
+
 /// Render with the actual reading-column width in logical pixels. HTTP(S)
 /// links retain their URI; the host opens them only after an explicit action.
 /// Completed messages reuse a bounded presentation tree until their displayed
