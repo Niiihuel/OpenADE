@@ -60,10 +60,10 @@ pub(crate) const LIBRARY: &str = r#"function (operation, first, second) {
       };
       let rect = box();
       if (wants.stable) {
-        // Two animation frames, or a short while when frames are not being produced.
+        // One animation frame later, or a short while when none is produced.
         await new Promise(done => {
-          requestAnimationFrame(() => requestAnimationFrame(done));
-          setTimeout(done, 150);
+          requestAnimationFrame(done);
+          setTimeout(done, 100);
         });
         const later = box();
         if (later.some((value, index) => Math.abs(value - rect[index]) > 0.5)) return { state: 'moving' };

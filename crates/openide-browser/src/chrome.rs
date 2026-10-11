@@ -68,6 +68,8 @@ const SWITCHES: &[&str] = &[
     // History navigation always loads a document, so its events are uniform.
     "--disable-back-forward-cache",
     "--disable-features=Translate,MediaRouter,OptimizationHints,AcceptCHFrame,DialMediaRouteProvider",
+    // Without it a viewport capture waits three frames instead of one.
+    "--enable-features=CDPScreenshotNewSurface",
 ];
 
 /// What the browser inherits. Provider keys, startup hooks and broker tokens

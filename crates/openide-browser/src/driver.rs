@@ -418,16 +418,21 @@ impl Driver {
     /// driver does the same.
     pub fn close(self) {}
 
-    /// The process id of the browser this driver started.
-    #[cfg(unix)]
+    /// The process id of the browser, when this driver started it.
     pub fn process_id(&self) -> Option<u32> {
-        self.chrome.as_ref().map(crate::chrome::Chrome::process_id)
+        #[cfg(unix)]
+        return self.chrome.as_ref().map(crate::chrome::Chrome::process_id);
+        #[cfg(not(unix))]
+        None
     }
 
-    /// The private directory holding the browser's profile and temporary files.
-    #[cfg(unix)]
+    /// The private directory holding the profile and temporary files of the
+    /// browser this driver started.
     pub fn directory(&self) -> Option<&std::path::Path> {
-        self.chrome.as_ref().map(crate::chrome::Chrome::directory)
+        #[cfg(unix)]
+        return self.chrome.as_ref().map(crate::chrome::Chrome::directory);
+        #[cfg(not(unix))]
+        None
     }
 
     pub fn resize(&mut self, width: u32, height: u32) -> Outcome<()> {
@@ -928,17 +933,18 @@ impl Driver {
         if expression.trim().is_empty() || expression.len() > MAX_EVALUATE_BYTES || expression.contains('\0') {
             return Err(invalid("Expresión vacía o demasiado extensa"));
         }
-        self.run(TIMEOUT, |driver| {
+        let abandoned = format!("El script no terminó en {} s.", TIMEOUT.as_secs());
+        let mut ran_in = None;
+        let result = self.run(TIMEOUT, |driver| {
             // A stale target is answered before the script can run.
             let resolved = target.map(|target| driver.resolve(target)).transpose()?;
             let (session, frame) = match &resolved {
                 Some(resolved) => (resolved.session.clone(), resolved.frame.clone()),
                 None => (driver.session.clone(), driver.main_frame.clone()),
             };
+            ran_in = Some(session.clone());
             let unfinished = |error: DriverError| match error.kind {
-                ErrorKind::Failed if error.message == timed_out() => {
-                    tool(format!("El script no terminó en {} s.", TIMEOUT.as_secs()))
-                }
+                ErrorKind::Failed if error.message == timed_out() => tool(abandoned.clone()),
                 ErrorKind::Failed => tool(error.message),
                 _ => error,
             };
@@ -960,7 +966,13 @@ impl Driver {
             if !driver.touched.contains(&session) {
                 driver.touched.push(session.clone());
             }
-            let mut reply: Value = driver.call(&session, "Runtime.evaluate", params).map_err(unfinished)?;
+            let mut reply: Outcome<Value> = driver.call(&session, "Runtime.evaluate", params.clone());
+            // The page's world was replaced a moment ago: its current one is the default.
+            if resolved.is_none() && reply.as_ref().is_err_and(|error| error.message.contains("Cannot find context")) {
+                params.as_object_mut().map(|params| params.remove("contextId"));
+                reply = driver.call(&session, "Runtime.evaluate", params);
+            }
+            let mut reply = reply.map_err(unfinished)?;
             if let Some(details) = reply.get("exceptionDetails") {
                 return Err(tool(thrown(details)));
             }
@@ -986,7 +998,24 @@ impl Driver {
                 .map_err(unfinished)?;
             let text = value["value"]["text"].as_str().unwrap_or_default();
             Ok(bounded_result(text, value["value"]["cut"] == true))
-        })
+        });
+        if let (Err(error), Some(session)) = (&result, &ran_in) {
+            if error.message == abandoned {
+                self.release_page(session);
+            }
+        }
+        result
+    }
+
+    /// After a script ran out of time. One that waits on a promise leaves the
+    /// page free and is simply abandoned. One that never yields would hold
+    /// the page for every request after it: that one is stopped.
+    fn release_page(&self, session: &str) {
+        let probe = self.client.call::<Value>(session, "Runtime.evaluate", json!({"expression": "0"}), Duration::from_millis(500));
+        if matches!(probe, Err(CdpError::Timeout)) {
+            // Handled by Chrome while the script runs; it ends that script only.
+            let _ = self.client.post(session, "Runtime.terminateExecution", json!({}));
+        }
     }
 
     // ---- Observation ----

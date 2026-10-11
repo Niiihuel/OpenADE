@@ -98,6 +98,28 @@ Warp y ZCode se clonaron como referencias técnicas y están excluidos del
 paquete de OpenIDE. Consulta [docs/references.md](docs/references.md) para las
 revisiones y el alcance de uso.
 
+## Driver del navegador
+
+El crate propio `openide-browser` no incorpora código de terceros. Su diseño
+sigue a [agent-browser](https://github.com/vercel-labs/agent-browser),
+Copyright 2025 Vercel Inc., bajo Apache-2.0: un cliente CDP propio, la captura
+a partir del árbol de accesibilidad con referencias atadas al documento y el
+flujo de cuadros con acuses. Se consultó su código como referencia y no se
+copió ni se tradujo ninguna parte.
+
+El texto de la captura accesible reproduce el formato de
+`ariaSnapshot({ mode: 'ai' })` de
+[Playwright 1.63.0](https://github.com/microsoft/playwright), Copyright (c)
+Microsoft Corporation, bajo Apache-2.0, porque es el que describen las
+herramientas del agente. `crates/openide-browser/src/snapshot.rs` reimplementa
+en Rust, a partir de la lectura de su código, las reglas de ese formato: el
+orden de los estados en cada línea, cuándo una cadena necesita comillas, y la
+simplificación de contenedores y nombres redundantes. Las reglas de
+`select_options`, del relleno de campos y de a qué control corresponde un
+elemento, en `src/scripts.rs`, siguen las de Playwright del mismo modo. No se
+incluye código de Playwright; [browser-driver.md](docs/browser-driver.md)
+enumera las diferencias de comportamiento.
+
 ## Editor de código y Unicode
 
 El editor propio usa las siguientes dependencias Cargo independientes:

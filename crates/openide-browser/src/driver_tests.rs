@@ -380,3 +380,12 @@ fn a_browser_that_goes_away_is_reported_as_closed_from_then_on() {
     // Reading what was already observed still works, and dropping it is quiet.
     assert_eq!(driver.console_messages(ConsoleLevel::Debug).entries.len(), 0);
 }
+
+#[test]
+fn a_driver_moves_to_a_worker_thread_and_its_stream_is_shared_with_the_view() {
+    fn sendable<T: Send>() {}
+    fn shareable<T: Send + Sync + Clone>() {}
+    sendable::<Driver>();
+    shareable::<crate::FrameStream>();
+    shareable::<Client>();
+}

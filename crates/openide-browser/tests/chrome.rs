@@ -505,6 +505,17 @@ fn refs_actions_waits_and_evaluate() {
     assert!(started.elapsed() < Duration::from_secs(20));
     assert!(driver.info().unwrap().title.contains("Herramientas"), "the page is still served after an abandoned script");
     assert_eq!(evaluate(&mut driver, "1 + 1"), "2");
+    assert_eq!(evaluate(&mut driver, "document.querySelector(\"#out\").textContent.length > 0"), "true", "the abandoned promise stopped nothing else");
+    // A script that never yields would hold the page for good: it is stopped, and only it.
+    evaluate(&mut driver, "() => { window.ticks = 0; setInterval(() => window.ticks++, 20); }");
+    started = Instant::now();
+    tool_error(driver.evaluate("(() => { for (;;) {} })()", None), "El script no terminó en 10 s");
+    assert!(started.elapsed() < Duration::from_secs(13), "{:?}", started.elapsed());
+    assert_eq!(evaluate(&mut driver, "1 + 1"), "2", "the page answers again");
+    driver.wait_seconds(0.3).unwrap();
+    assert_eq!(evaluate(&mut driver, "window.ticks > 3"), "true", "the page's own timers go on");
+    driver.click(&Target::Selector("#a")).unwrap();
+    assert!(snapshot(&mut driver).contains("A pulsado"));
 }
 
 #[test]
