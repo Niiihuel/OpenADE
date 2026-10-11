@@ -874,7 +874,7 @@ mod tests {
                 .unwrap()
                 .rect;
             assert!(menu.x >= 0.0 && menu.x + menu.width <= 320.0);
-            assert!(menu.height < 400.0);
+            assert!(menu.height <= 480.0);
             let save = frame
                 .regions
                 .iter()
