@@ -30,6 +30,9 @@ pub(crate) struct GitPanelView {
     /// The rows under the pointer and under the keyboard focus, as
     /// [`reveal_key`] names them: those show their actions.
     pub revealed: [Option<String>; 2],
+    /// The dock tab under the pointer or the focus: there the mark of
+    /// unsaved changes gives its place to the close button.
+    pub tab_revealed: Option<u64>,
     pub confirm: Option<GitConfirmView>,
 }
 
@@ -203,23 +206,6 @@ fn group_header(context: &ListContext, group: ChangeGroup) -> Element {
         .size(Some(context.width), Some(ROW_HEIGHT))
 }
 
-/// The letter of a file's state and the color that state has.
-fn status_mark(group: ChangeGroup, status: &str) -> (&'static str, Color) {
-    if group == ChangeGroup::Untracked {
-        return ("U", theme::DIFF_ADDED);
-    }
-    match status {
-        "Nuevo" => ("A", theme::DIFF_ADDED),
-        "Eliminado" => ("D", theme::DIFF_REMOVED),
-        "Renombrado" => ("R", theme::LINK),
-        "Copiado" => ("C", theme::LINK),
-        "Conflicto" => ("!", theme::DESTRUCTIVE),
-        "Binario" => ("B", theme::FOREGROUND_SUBTLE),
-        "Tipo cambiado" => ("T", theme::WARNING),
-        _ => ("M", theme::WARNING),
-    }
-}
-
 /// One changed file. At rest the end of the row holds its line counts and
 /// its status letter; under the pointer or the focus the counts give their
 /// place to the row's actions, and nothing else moves.
@@ -296,7 +282,7 @@ fn file_row(context: &ListContext, group: ChangeGroup, index: usize) -> Element 
         .parent()
         .and_then(|parent| parent.to_str())
         .filter(|parent| !parent.is_empty());
-    let (code, color) = status_mark(group, status);
+    let (code, color) = crate::git_decorations::status_mark(group, status);
     let letter = || {
         Element::truncated_text(code)
             .font_family(FontFamily::Monospace)

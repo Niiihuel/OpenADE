@@ -342,6 +342,34 @@ mod tests {
     }
 
     #[test]
+    fn the_file_tree_is_decorated_without_the_source_control_panel_and_follows_a_refresh() {
+        let (_temp, mut app) = fixture();
+        assert_eq!(app.view.side_tab, SideTab::Files);
+        let letter = |app: &AgentsWindow, path: &str| {
+            crate::git_decorations::for_state(&app.view)
+                .and_then(|decorations| decorations.file(path))
+                .map(|mark| mark.letter)
+        };
+        assert_eq!(letter(&app, "tracked.txt"), Some("M"));
+        let first = crate::git_decorations::for_state(&app.view).unwrap();
+        // The same snapshot is not indexed again by another frame.
+        assert!(Arc::ptr_eq(&first, &crate::git_decorations::for_state(&app.view).unwrap()));
+        // What the tree's watcher, a finished tool, a save and the window's
+        // focus all do: mark the environment stale.
+        fs::write(Path::new(&app.view.workspace).join("new.txt"), "new\n").unwrap();
+        let context = egui::Context::default();
+        // The first pass adopts the workspace; a stale mark is for later ones.
+        app.update_environment(&context);
+        app.environment_dirty = true;
+        app.environment_last_refresh = Instant::now() - Duration::from_secs(1);
+        app.update_environment(&context);
+        settle(&mut app);
+        assert_eq!(letter(&app, "new.txt"), Some("U"));
+        assert_eq!(letter(&app, "tracked.txt"), Some("M"));
+        assert!(!Arc::ptr_eq(&first, &crate::git_decorations::for_state(&app.view).unwrap()));
+    }
+
+    #[test]
     fn stage_and_unstage_actions_refresh_the_same_repository_after_worker_completion() {
         let (_temp, mut app) = fixture();
         assert!(app.handle_git_action("review_stage:0:0", &egui::Context::default()));

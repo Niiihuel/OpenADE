@@ -58,19 +58,58 @@ fn resource_icon(tab: &DockTabView) -> Icon {
     }
 }
 
-fn tab(tab: &DockTabView, width: f32) -> TabItem {
-    let item = TabItem::new(
+/// The tab a file tab's surface or its close button belongs to.
+pub(crate) fn tab_of(id: &str) -> Option<u64> {
+    id.strip_prefix("dock_tab:")
+        .or_else(|| id.strip_prefix("dock_close:"))?
+        .parse()
+        .ok()
+}
+
+fn tab(
+    state: &ViewState,
+    decorations: Option<&crate::git_decorations::GitDecorations>,
+    tab: &DockTabView,
+    width: f32,
+) -> TabItem {
+    // shortcut: the host marks an unsaved document in the title it gives the
+    // tab lists; a flag on `DockTabView` would say it without the suffix.
+    let (title, unsaved) = match tab.title.strip_suffix(" •") {
+        Some(title) => (title, true),
+        None => (tab.title.as_str(), false),
+    };
+    let path = tab.full_path.as_deref().unwrap_or(title);
+    let mark = decorations
+        .filter(|_| tab.kind == SideTab::FilePreview)
+        .and_then(|decorations| decorations.file_at(&state.workspace, path));
+    let mut item = TabItem::new(
         format!("dock_tab:{}", tab.id),
         format!("dock_tab_extent:{}", tab.id),
         resource_icon(tab),
-        &tab.title,
+        title,
         width,
     )
-    .tooltip(tab.full_path.as_deref().unwrap_or(&tab.title))
+    .tooltip(match mark {
+        Some(mark) => format!("{path}\n{}", mark.label),
+        None => path.to_owned(),
+    })
     .tooltip_placement(TooltipPlacement::Below)
     .active(tab.active);
+    if let Some(mark) = mark {
+        item = item.title_ink(mark.color);
+    }
     if !tab.closable {
         return item;
+    }
+    if unsaved && state.git_panel.tab_revealed != Some(tab.id) {
+        // Unsaved changes hold the close button's place until the pointer
+        // or the focus is on the tab.
+        return item.close(
+            Element::spacer()
+                .background(theme::FOREGROUND)
+                .radius(UNSAVED_MARK / 2.0)
+                .size(Some(UNSAVED_MARK), Some(UNSAVED_MARK)),
+        );
     }
     item.close(
         UiIconButton::new(
@@ -81,11 +120,14 @@ fn tab(tab: &DockTabView, width: f32) -> TabItem {
         .variant(ButtonVariant::Ghost)
         .sizing(crate::ui_sizing::TAB_CLOSE)
         .tooltip_with(
-            TooltipSpec::new(format!("Cerrar {}", tab.title)).placement(TooltipPlacement::Below),
+            TooltipSpec::new(format!("Cerrar {title}")).placement(TooltipPlacement::Below),
         )
         .render(),
     )
 }
+
+/// Diameter of the mark of unsaved changes in a tab's close slot.
+const UNSAVED_MARK: f32 = 8.0;
 
 /// A file tab in the IDE's editor group opens the file menu on right click.
 fn editor_tab(state: &ViewState, tab_view: &DockTabView, surface: Element) -> Element {
@@ -242,6 +284,7 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
             .size(None, Some(RIGHT_HEADER_HEIGHT))
             .flex(1.0)
     } else {
+        let decorations = crate::git_decorations::for_state(state);
         let items = visible_tabs
             .iter()
             .map(|item| {
@@ -252,7 +295,7 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
                 } else {
                     dock_tab_ui::TAB_MAX_WIDTH
                 };
-                tab(item, dock_tab_ui::tab_width(&item.title, available, max))
+                tab(state, decorations.as_deref(), item, dock_tab_ui::tab_width(item.title.trim_end_matches(" •"), available, max))
             })
             .collect();
         TabStrip::new("right_dock_tabs", items, theme::tab_strip_palette())
@@ -305,6 +348,130 @@ mod tests {
         })
         .collect();
         state
+    }
+
+    /// A modified file, an untracked one and a clean one with unsaved edits.
+    fn decorated_tabs(ide: bool) -> ViewState {
+        let mut state = super::super::tests::empty_state();
+        state.workspace = "/workspace/openADE".into();
+        if ide {
+            state.ide.mode = crate::ide_workspace::WindowMode::Ide;
+        }
+        state.dock_tabs = ["src/commands.rs", "notes.md", "src/main.rs •"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, title)| DockTabView {
+                full_path: Some(format!("/workspace/openADE/{}", title.trim_end_matches(" •"))),
+                id: index as u64 + 1,
+                title: title.rsplit('/').next().unwrap().into(),
+                kind: SideTab::FilePreview,
+                active: index == 0,
+                closable: true,
+            })
+            .collect();
+        state.git_review = Some(Ok(std::sync::Arc::new(crate::git_decorations::tests::review(
+            &[],
+            &[("src/commands.rs", "Modificado")],
+            &["notes.md"],
+        ))));
+        state
+    }
+
+    #[test]
+    fn a_file_tab_takes_its_status_ink_and_unsaved_changes_hold_the_close_slot_until_pointed() {
+        assert_eq!((tab_of("dock_tab:3"), tab_of("dock_close:3")), (Some(3), Some(3)));
+        assert_eq!(tab_of("dock_tab_extent:3"), None);
+        for ide in [false, true] {
+            let frame = |change: &dyn Fn(&mut ViewState)| {
+                let mut state = decorated_tabs(ide);
+                change(&mut state);
+                let mut tree = UiTree::new(header(&state, 900.0));
+                tree.set_reduced_motion(true);
+                tree.layout(Size::new(900.0, RIGHT_HEADER_HEIGHT))
+            };
+            let ink = |frame: &openide_ui::Frame, title: &str| {
+                frame.commands.iter().find_map(|command| match command {
+                    DrawCommand::Text { text, color, .. } if text == title => Some(*color),
+                    _ => None,
+                })
+            };
+            let region = |frame: &openide_ui::Frame, id: &str| {
+                frame.regions.iter().find(|hit| hit.id == id).map(|hit| hit.rect)
+            };
+            let marks = |frame: &openide_ui::Frame| -> Vec<openide_ui::Rect> {
+                frame
+                    .commands
+                    .iter()
+                    .filter_map(|command| match command {
+                        DrawCommand::FillRect { rect, color, .. }
+                            if *color == theme::FOREGROUND && rect.width == UNSAVED_MARK =>
+                        {
+                            Some(*rect)
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            };
+            let rest = frame(&|_| {});
+            assert_eq!(ink(&rest, "commands.rs"), Some(theme::WARNING), "ide={ide}");
+            assert_eq!(ink(&rest, "notes.md"), Some(theme::DIFF_ADDED), "ide={ide}");
+            // Unsaved is the document's state, not the repository's: the
+            // title keeps the tab's ink and loses the bullet it had.
+            assert_eq!(ink(&rest, "main.rs"), Some(theme::FOREGROUND_SUBTLE), "ide={ide}");
+            assert_eq!(ink(&rest, "main.rs •"), None);
+            assert!(region(&rest, "dock_close:1").is_some() && region(&rest, "dock_close:2").is_some());
+            assert_eq!(region(&rest, "dock_close:3"), None);
+            let [dot] = marks(&rest)[..] else { panic!("one mark: {:?}", marks(&rest)) };
+            let pointed = frame(&|state| state.git_panel.tab_revealed = Some(3));
+            assert_eq!(marks(&pointed), Vec::new());
+            let close = region(&pointed, "dock_close:3").unwrap();
+            // The button appears where the mark was, and nothing else moves.
+            assert_eq!(
+                (dot.x + dot.width / 2.0, dot.y + dot.height / 2.0),
+                (close.x + close.width / 2.0, close.y + close.height / 2.0)
+            );
+            for id in ["dock_tab:1", "dock_tab:2", "dock_tab:3", "dock_close:1"] {
+                assert_eq!(region(&rest, id), region(&pointed, id), "{id}");
+            }
+            // Without a repository the titles keep the tab's own ink.
+            let plain = frame(&|state| state.git_review = None);
+            assert_eq!(ink(&plain, "commands.rs"), Some(theme::FOREGROUND));
+            assert_eq!(ink(&plain, "notes.md"), Some(theme::FOREGROUND_SUBTLE));
+            assert_eq!(marks(&plain).len(), 1);
+        }
+    }
+
+    #[test]
+    #[ignore = "exports decorated file tabs as PNG under docs/ui-separation/shots/git-decorations"]
+    fn export_git_decorations_tabs_visual_review() {
+        for (window, ide) in [("agents", false), ("ide", true)] {
+            for (name, hovered) in [("idle", None), ("hover", Some(3))] {
+                let mut state = decorated_tabs(ide);
+                state.git_panel.tab_revealed = hovered;
+                let size = Size::new(640.0, 72.0);
+                let root = Element::column(vec![
+                    header(&state, size.width),
+                    Element::spacer().flex(1.0),
+                ])
+                .background(theme::BACKGROUND);
+                let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+                tree.layout(size);
+                // The second frame knows the strip fits and drops its edge fade.
+                let mut frame = tree.layout(size);
+                if hovered.is_some() {
+                    let tab = frame.regions.iter().find(|hit| hit.id == "dock_tab:3").unwrap().rect;
+                    tree.handle_event(UiEvent::PointerMove(Point::new(tab.x + 12.0, tab.y + 12.0)));
+                    frame = tree.layout(size);
+                }
+                crate::view::ide_visual_tests::export_shot(
+                    &frame,
+                    size,
+                    "git-decorations",
+                    &format!("tabs-{window}-{name}"),
+                );
+                context.end_pass().textures_delta.clear();
+            }
+        }
     }
 
     #[test]
