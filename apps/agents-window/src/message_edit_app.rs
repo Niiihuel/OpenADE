@@ -25,11 +25,23 @@ pub(super) struct MessageEditHost {
     /// Typed prompts of one session, by digest of the composed prompt.
     typed: Option<(String, HashMap<String, String>)>,
     undo: Option<RewindUndo>,
+    /// A confirmed edit waiting for the running turn to stop.
+    pending_stop: Option<PendingStop>,
+}
+
+/// The edit confirmed while a turn ran. Nothing is rewound, and no file is
+/// touched, until that turn has ended and the journal is settled.
+struct PendingStop {
+    session_id: String,
+    sequence: u64,
+    revert: bool,
+    /// The provisional lists the choice was made on.
+    shown: (Vec<String>, Vec<(String, crate::session_changes::RevertSkip)>),
 }
 
 impl Default for MessageEditHost {
     fn default() -> Self {
-        Self { allowed: true, typed: None, undo: None }
+        Self { allowed: true, typed: None, undo: None, pending_stop: None }
     }
 }
 
@@ -130,6 +142,17 @@ impl AgentsWindow {
             .map(|_| "Esperá a que termine el agente para editar un mensaje anterior.")
     }
 
+    /// Why this message cannot be opened for editing. The selected session's
+    /// own running turn does not prevent it: sending the edit stops that
+    /// turn first. Anything else at work does.
+    fn message_edit_open_blocked(&self) -> Option<&'static str> {
+        if !self.view.pending_permissions.is_empty() {
+            return Some("Respondé el permiso pendiente antes de editar un mensaje anterior.");
+        }
+        self.agent_busy_reason(false)
+            .map(|_| "Esperá a que termine el agente para editar un mensaje anterior.")
+    }
+
     /// Whether `start_run` would stop before sending, for reasons it can
     /// only report after the rewind has already happened.
     fn message_edit_send_blocked(&self) -> Option<&'static str> {
@@ -167,7 +190,12 @@ impl AgentsWindow {
         }
         match id {
             "message_edit_cancel" => self.cancel_message_edit(),
-            "message_edit_confirm_cancel" => self.view.message_edit.confirm = None,
+            // Also cancels an edit waiting for its turn to stop: the turn
+            // stays stopped and nothing else changes.
+            "message_edit_confirm_cancel" => {
+                self.view.message_edit.confirm = None;
+                self.message_edit.pending_stop = None;
+            }
             "message_edit_keep_files" => self.confirm_message_edit(false),
             "message_edit_revert" => self.confirm_message_edit(true),
             "message_rewind_undo" => self.undo_message_rewind(),
@@ -192,7 +220,7 @@ impl AgentsWindow {
         else {
             return;
         };
-        if let Some(reason) = self.message_edit_blocked() {
+        if let Some(reason) = self.message_edit_open_blocked() {
             self.view.status = reason.to_owned();
             return;
         }
@@ -220,6 +248,7 @@ impl AgentsWindow {
             return;
         }
         self.view.message_edit.confirm = None;
+        self.message_edit.pending_stop = None;
         self.close_composer_floating_controls();
         self.view.composer_error = None;
         self.restore_draft();
@@ -233,20 +262,113 @@ impl AgentsWindow {
         if self.view.prompt.trim().is_empty() && self.view.composer_attachments.is_empty() {
             return;
         }
+        let mut confirm = self.rewind_confirm(editing.sequence);
+        // With a turn running the lists are provisional: that turn may still
+        // change files before it stops.
+        confirm.stops_turn = self.view.running;
+        self.view.message_edit.confirm = Some(confirm);
+    }
+
+    /// The confirmation for a rewind to `sequence`, with the preflight as
+    /// the disk and the journal are right now.
+    fn rewind_confirm(&self, sequence: u64) -> RewindConfirm {
         let later_messages = self
             .view
             .message_edit
             .turns
             .iter()
-            .filter(|turn| turn.sequence > editing.sequence)
+            .filter(|turn| turn.sequence > sequence)
             .count();
-        let sequence = editing.sequence;
         let mut confirm = RewindConfirm { later_messages, ..Default::default() };
         match self.revert_preflight(sequence) {
             Ok(preflight) => show_preflight(&mut confirm, &preflight),
             Err(error) => confirm.unavailable = Some(error),
         }
+        confirm
+    }
+
+    /// Confirmed while a turn ran: ask that turn to stop and wait for it in
+    /// `poll_message_edit_stop`. Nothing is rewound or written here.
+    fn stop_then_confirm_message_edit(&mut self, revert: bool) {
+        let (Some(editing), Some(session_id)) = (
+            self.view.message_edit.editing.clone(),
+            self.view.selected_session.clone(),
+        ) else {
+            return;
+        };
+        // Refuse before stopping anything when the edit could not be sent.
+        let blocked = self
+            .message_edit_open_blocked()
+            .or_else(|| self.message_edit_send_blocked());
+        let Some(confirm) = self.view.message_edit.confirm.as_mut() else {
+            return;
+        };
+        if let Some(reason) = blocked {
+            confirm.error = Some(reason.to_owned());
+            return;
+        }
+        confirm.error = None;
+        confirm.stopping = true;
+        self.message_edit.pending_stop = Some(PendingStop {
+            session_id,
+            sequence: editing.sequence,
+            revert,
+            shown: (confirm.restorable.clone(), confirm.skipped.clone()),
+        });
+        self.cancel_selected_run();
+        // The turn may have ended while the dialog was open.
+        self.poll_message_edit_stop();
+    }
+
+    /// Carry on with an edit confirmed while a turn ran, once that turn has
+    /// ended. Called every frame; it waits on the run's own events and has
+    /// no timeout. True when it changed the view.
+    pub(super) fn poll_message_edit_stop(&mut self) -> bool {
+        let Some(pending) = self.message_edit.pending_stop.as_ref() else {
+            return false;
+        };
+        let current = self.view.selected_session.as_deref() == Some(pending.session_id.as_str())
+            && self.view.message_edit.editing.as_ref().is_some_and(|editing| editing.sequence == pending.sequence)
+            && self.view.message_edit.confirm.as_ref().is_some_and(|confirm| confirm.stopping);
+        if !current {
+            self.message_edit.pending_stop = None;
+            return true;
+        }
+        if self.view.running || self.active_run.is_some() {
+            return false;
+        }
+        let pending = self.message_edit.pending_stop.take().expect("checked above");
+        // The run ended. The journal must be settled too: a turn left
+        // unfinished needs its recovery, which is the user's to resolve.
+        let unsettled = match self.store.as_ref().map(|store| store.active_native_turn_id(&pending.session_id)) {
+            Some(Ok(None)) => self
+                .message_edit_blocked()
+                .or_else(|| self.message_edit_send_blocked())
+                .map(str::to_owned),
+            Some(Ok(Some(_))) => Some("El turno no terminó de detenerse y necesita recuperación.".to_owned()),
+            Some(Err(error)) => Some(format!("No se pudo comprobar que el turno se detuvo: {error}.")),
+            None => Some("El historial no está disponible.".to_owned()),
+        };
+        if let Some(reason) = unsettled {
+            // Abandoned: the typed text stays in the edit composer.
+            self.view.message_edit.confirm = None;
+            self.show_composer_error(format!(
+                "{reason} El mensaje editado no se envió y la conversación no cambió."
+            ));
+            return true;
+        }
+        // What the stopped turn changed is part of what a revert restores:
+        // the lists are made again, and a revert chosen on other lists is
+        // asked again before any file is touched.
+        let mut confirm = self.rewind_confirm(pending.sequence);
+        let changed = (&confirm.restorable, &confirm.skipped) != (&pending.shown.0, &pending.shown.1);
+        confirm.recomputed = changed;
+        let ask_again = pending.revert && (changed || confirm.restorable.is_empty());
         self.view.message_edit.confirm = Some(confirm);
+        if !ask_again {
+            self.confirm_message_edit(pending.revert);
+        }
+        true
     }
 
     /// What "Revertir" would do with the files right now. Reads only.
@@ -346,6 +468,11 @@ impl AgentsWindow {
     }
 
     fn confirm_message_edit(&mut self, revert: bool) {
+        match &self.view.message_edit.confirm {
+            Some(confirm) if confirm.stopping => return,
+            Some(confirm) if confirm.stops_turn => return self.stop_then_confirm_message_edit(revert),
+            _ => {}
+        }
         let (Some(editing), Some(session_id)) = (
             self.view.message_edit.editing.clone(),
             self.view.selected_session.clone(),

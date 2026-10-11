@@ -11,7 +11,7 @@ use crate::{
     transcript::TranscriptItem,
     view::ViewState,
 };
-use openide_ui::{DrawCommand, Frame, HitKind, Key, Point, Rect, Size, UiAction, UiEvent, UiTree};
+use openide_ui::{DrawCommand, Element, Frame, HitKind, Key, Point, Rect, Size, UiAction, UiEvent, UiTree};
 use std::path::Path;
 
 const VIEWPORT: Size = Size::new(900.0, 700.0);
@@ -231,7 +231,9 @@ fn only_messages_that_can_be_rewound_to_offer_an_edit() {
     unknown.message_edit.turns.clear();
     assert!(offers(&unknown).is_empty(), "an external CLI publishes no turns");
 
-    assert!(offers(&state_with(&state, |state| state.running = true)).is_empty());
+    // A running turn does not close the offer: sending the edit stops it.
+    assert_eq!(offers(&state_with(&state, |state| state.running = true)), ["message_edit:0"]);
+    assert!(offers(&state_with(&state, |state| state.background_run_selected = true)).is_empty());
     assert!(offers(&state_with(&state, |state| state.selected_backend = "codex".into())).is_empty());
 }
 
@@ -503,6 +505,150 @@ fn export_revert_visual_review() {
         });
         let (context, mut tree) = native_tree(root(&state, viewport));
         export(&tree.layout(viewport), directory, "s3-revert-notice", viewport);
+        context.end_pass().textures_delta.clear();
+    }
+}
+
+const POLISH_SHOTS: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/ui-separation/shots/composer-polish"
+);
+
+/// One running turn of `two_turns`, editable, as the host publishes it.
+fn running_turn() -> ViewState {
+    let mut state = editable(two_turns("Primer pedido: revisá el proyecto."));
+    state.transcript.truncate(25);
+    state.message_edit.turns.truncate(1);
+    state.running = true;
+    state
+}
+
+#[test]
+fn running_turn_message_opens_for_editing_and_its_composer_sends() {
+    let state = running_turn();
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    let bubble = frame.regions.iter().find(|region| region.id == "message_edit:0").expect("it is offered").rect;
+    let stop = frame.regions.iter().rev().find(|region| region.id == "turn_stop").unwrap().rect;
+    // The stop is a circle inside the bubble and keeps its own click.
+    assert_eq!((stop.width, stop.height), (24.0, 24.0));
+    assert_eq!(frame.hit_test(Point::new(stop.x + 12.0, stop.y + 12.0)), Some("turn_stop"));
+    assert_eq!(frame.hit_test(Point::new(bubble.x + 20.0, bubble.y + bubble.height / 2.0)), Some("message_edit:0"));
+
+    // Open: the composer over the message sends, and the stop stays in reach.
+    let state = editing(running_turn(), 0, false);
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    assert!(frame.commands.iter().any(|command| matches!(command, DrawCommand::Icon { icon: openide_ui::Icon::ArrowUp, .. })));
+    assert!(frame.regions.iter().any(|region| region.id == "run_toggle" && region.kind == HitKind::Button));
+    // The stop that comes with the editor is above the veil.
+    let stop = frame.regions.iter().rev().find(|region| region.id == "turn_stop" && region.kind == HitKind::Button).unwrap().rect;
+    assert_eq!(frame.hit_test(Point::new(stop.x + 12.0, stop.y + 12.0)), Some("turn_stop"));
+    assert!(text_top(&frame, "El turno sigue en curso").is_some());
+}
+
+#[test]
+fn confirmation_while_a_turn_runs_says_it_stops_it_and_then_waits() {
+    let mut confirm = mixed_preflight();
+    confirm.stops_turn = true;
+    let mut state = editing(running_turn(), 0, false);
+    state.message_edit.confirm = Some(confirm.clone());
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    assert!(text_top(&frame, "Se detendrá el turno en curso.").is_some());
+    assert!(text_top(&frame, "se recalcula al detener").is_some());
+    assert!(text_top(&frame, "modulo_1.rs").is_none(), "a provisional list is not shown as final");
+    for id in ["message_edit_confirm_cancel", "message_edit_keep_files", "message_edit_revert"] {
+        assert!(buttons(&frame).contains(&id), "{id}");
+    }
+
+    confirm.stopping = true;
+    state.message_edit.confirm = Some(confirm);
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    assert!(text_top(&frame, "Deteniendo el turno…").is_some());
+    let left = buttons(&frame);
+    assert!(left.contains(&"message_edit_confirm_cancel"));
+    assert!(!left.iter().any(|id| matches!(*id, "message_edit_keep_files" | "message_edit_revert" | "message_edit_stopping")));
+
+    state.message_edit.confirm = Some(RewindConfirm { recomputed: true, ..mixed_preflight() });
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    assert!(text_top(&frame, "La lista de archivos cambió al detener el turno").is_some());
+    assert!(text_top(&frame, "modulo_1.rs").is_some());
+}
+
+#[test]
+#[ignore = "writes PNG/SVG previews under docs/ui-separation/shots/composer-polish"]
+fn export_composer_polish_visual_review() {
+    let directory = Path::new(POLISH_SHOTS);
+    std::fs::create_dir_all(directory).unwrap();
+    let shot = |state: &ViewState, name: &str, viewport: Size, prepare: &dyn Fn(&mut UiTree)| {
+        let (context, mut tree) = native_tree(root(state, viewport));
+        tree.layout(viewport);
+        prepare(&mut tree);
+        export(&tree.layout(viewport), directory, name, viewport);
+        context.end_pass().textures_delta.clear();
+    };
+    let none = |_: &mut UiTree| {};
+
+    // The fade under the pinned message, and its hand-off.
+    let state = two_turns("Primer pedido: revisá el proyecto.");
+    let (context, mut tree) = native_tree(root(&state, VIEWPORT));
+    export(&scroll(&mut tree, 306.0), directory, "p1-pinned-fade", VIEWPORT);
+    export(&scroll_second_message_to(&mut tree, 70.0), directory, "p1-hand-off-arriving", VIEWPORT);
+    export(&scroll_second_message_to(&mut tree, 40.0), directory, "p1-hand-off", VIEWPORT);
+    context.end_pass().textures_delta.clear();
+
+    for viewport in [Size::new(900.0, 700.0), Size::new(360.0, 700.0)] {
+        // Editing while the turn runs, and its confirmation.
+        shot(&running_turn(), "p2-running-bubble", viewport, &|tree| tree.scroll_to_end("transcript"));
+        let mut state = editing(running_turn(), 0, false);
+        shot(&state, "p2-edit-while-running", viewport, &none);
+        let mut confirm = mixed_preflight();
+        confirm.later_messages = 0;
+        confirm.stops_turn = true;
+        state.message_edit.confirm = Some(confirm.clone());
+        shot(&state, "p2-confirm-stops-turn", viewport, &none);
+        confirm.stopping = true;
+        state.message_edit.confirm = Some(confirm);
+        shot(&state, "p2-stopping", viewport, &none);
+        state.message_edit.confirm = Some(RewindConfirm { recomputed: true, later_messages: 0, ..mixed_preflight() });
+        shot(&state, "p2-confirm-recomputed", viewport, &none);
+
+        // The composer's buttons in each state.
+        let mut state = two_turns("Primer pedido: revisá el proyecto.");
+        state.prompt.clear();
+        shot(&state, "p3-composer-idle", viewport, &none);
+        state.prompt = "Revisá también las pruebas".into();
+        shot(&state, "p3-composer-text", viewport, &none);
+        state.composer_listening = true;
+        shot(&state, "p3-composer-recording", viewport, &none);
+        state.composer_listening = false;
+        state.running = true;
+        shot(&state, "p3-composer-running", viewport, &none);
+
+        let mut home = fixture(false);
+        home.prompt.clear();
+        let (context, mut tree) = native_tree(
+            Element::panel(crate::home::build_home(&home, viewport.width)).background(crate::theme::BACKGROUND),
+        );
+        export(&tree.layout(viewport), directory, "p3-home", viewport);
+        context.end_pass().textures_delta.clear();
+    }
+
+    // The composer as the IDE's agent column has it.
+    let mut state = two_turns("Primer pedido: revisá el proyecto.");
+    state.prompt = "Revisá también las pruebas".into();
+    let viewport = Size::new(300.0, 160.0);
+    for (name, running) in [("p3-ide-compact", false), ("p3-ide-compact-running", true)] {
+        state.running = running;
+        let mut props = crate::composer_ui::ComposerProps::from_state(&state, 284.0, false, None, "Enviar un mensaje", None);
+        props.embedded_in_ide = true;
+        let (context, mut tree) = native_tree(
+            Element::panel(crate::composer_ui::build_composer(&props)).padding(8.0).background(crate::theme::BACKGROUND),
+        );
+        export(&tree.layout(viewport), directory, name, viewport);
         context.end_pass().textures_delta.clear();
     }
 }

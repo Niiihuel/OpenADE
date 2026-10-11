@@ -39,6 +39,10 @@ fn seed_turn(store: &SessionStore, session: &str, prompt: &str) {
 }
 
 fn fixture(prompts: &[&str]) -> Fixture {
+    fixture_at(prompts, "http://127.0.0.1:9")
+}
+
+fn fixture_at(prompts: &[&str], endpoint: &str) -> Fixture {
     let root = tempfile::tempdir().unwrap();
     let workspace = root.path().join("project");
     std::fs::create_dir(&workspace).unwrap();
@@ -47,7 +51,7 @@ fn fixture(prompts: &[&str]) -> Fixture {
     app.view.selected_backend = "native".into();
     app.view.native_provider_id = "custom".into();
     app.view.model = "test-model".into();
-    app.view.endpoint = "http://127.0.0.1:9".into();
+    app.view.endpoint = endpoint.into();
     app.view.composer_effort = "default".into();
     assert!(app.persist_native_settings(), "{}", app.view.status);
     let store = app.store.as_ref().unwrap().clone();
@@ -463,5 +467,276 @@ fn a_failed_write_or_a_failed_rewind_leaves_files_and_journal_as_they_were() {
     drop(lease);
     click(&mut fixture.app, "message_edit_revert");
     assert_eq!(disk(&fixture, "a.txt").as_deref(), Some("original a\n"));
+    settle(&mut fixture.app);
+}
+
+/// A model endpoint that accepts and never answers: a turn sent to it runs
+/// until it is cancelled. Local only; the listener lives with the test.
+fn silent_endpoint() -> (std::net::TcpListener, String) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    (listener, endpoint)
+}
+
+/// "Primero" answered, then "Segundo" really running against `endpoint`,
+/// with its message published as editable.
+fn live_turn(endpoint: &str) -> Fixture {
+    let mut fixture = fixture_at(&["Primero"], endpoint);
+    fixture.app.view.prompt = "Segundo".into();
+    fixture.app.start_run();
+    assert!(fixture.app.view.running && fixture.app.active_run.is_some(), "{}", fixture.app.view.status);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while fixture.app.view.message_edit.turns.len() < 2 {
+        fixture.app.poll_run();
+        assert!(fixture.app.view.running, "the turn ended by itself: {}", fixture.app.view.status);
+        assert!(
+            Instant::now() < deadline,
+            "the turn was never admitted: {:?}",
+            events(&fixture).iter().map(|event| format!("{:.40?}", event.kind)).collect::<Vec<_>>()
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    fixture
+}
+
+/// Run the app's two polls, as a frame does, until `done`.
+fn frames_until(fixture: &mut Fixture, done: impl Fn(&AgentsWindow) -> bool, each: impl Fn(&Fixture)) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !done(&fixture.app) {
+        each(fixture);
+        fixture.app.poll_run();
+        fixture.app.poll_message_edit_stop();
+        assert!(Instant::now() < deadline, "it never settled: {}", fixture.app.view.status);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_running_turn_message_opens_for_editing_and_the_turn_keeps_running() {
+    let (_listener, endpoint) = silent_endpoint();
+    let mut fixture = live_turn(&endpoint);
+    let before = admitted_prompts(&events(&fixture)).len();
+    click(&mut fixture.app, "message_edit:1");
+    let app = &mut fixture.app;
+    assert_eq!(app.view.message_edit.editing.as_ref().unwrap().user_row, 1, "{}", app.view.status);
+    assert_eq!(app.view.prompt, "Segundo");
+    app.view.prompt = "Segundo, editado".into();
+    // Sending from the edit composer asks; it does not stop anything either.
+    click(app, "run_toggle");
+    let confirm = app.view.message_edit.confirm.clone().unwrap();
+    assert!(confirm.stops_turn && !confirm.stopping);
+    assert_eq!(confirm.later_messages, 0);
+    click(app, "message_edit_confirm_cancel");
+    for _ in 0..20 {
+        app.poll_run();
+        app.poll_message_edit_stop();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(app.view.running && app.active_run.is_some(), "{}", app.view.status);
+    assert_ne!(app.view.status, "Cancelando...");
+    assert_eq!(app.view.prompt, "Segundo, editado");
+    // An earlier message opens too, once this edit is left.
+    click(app, "message_edit_cancel");
+    assert_eq!(app.view.prompt, "", "the bottom draft was sent as the running turn");
+    click(app, "message_edit:0");
+    assert_eq!(app.view.prompt, "Primero");
+    assert!(app.view.running);
+    click(app, "message_edit_cancel");
+    assert_eq!(admitted_prompts(&events(&fixture)).len(), before);
+    // The message's own stop still stops the turn.
+    click(&mut fixture.app, "turn_stop");
+    assert_eq!(fixture.app.view.status, "Cancelando...");
+    settle(&mut fixture.app);
+}
+
+#[test]
+fn sending_an_edit_while_its_turn_runs_stops_the_turn_and_rewinds_only_once_idle() {
+    let (_listener, endpoint) = silent_endpoint();
+    let mut fixture = live_turn(&endpoint);
+    click(&mut fixture.app, "message_edit:1");
+    fixture.app.view.prompt = "Segundo, editado".into();
+    fixture.app.start_run();
+    click(&mut fixture.app, "message_edit_keep_files");
+    // The stop was asked for; nothing else happened yet.
+    let app = &fixture.app;
+    assert_eq!(app.view.status, "Cancelando...");
+    assert!(app.view.message_edit.confirm.as_ref().unwrap().stopping);
+    assert!(app.view.running && app.view.message_edit.undo.is_none());
+    assert_eq!(admitted_prompts(&events(&fixture)), vec!["Primero", "Segundo"]);
+    // A second click while it waits is not a second confirmation.
+    click(&mut fixture.app, "message_edit_keep_files");
+
+    frames_until(
+        &mut fixture,
+        |app| app.view.message_edit.editing.is_none(),
+        |fixture| {
+            // While the stopped turn has not ended, the journal keeps it.
+            if fixture.app.view.message_edit.confirm.is_some() {
+                assert_eq!(admitted_prompts(&events(fixture)), vec!["Primero", "Segundo"]);
+            }
+        },
+    );
+    assert!(fixture.app.view.message_edit.confirm.is_none(), "{}", fixture.app.view.status);
+    assert_eq!(admitted_prompts(&events(&fixture)), vec!["Primero", "Segundo, editado"]);
+    assert_eq!(fixture.app.view.message_edit.undo.as_ref().unwrap().removed_messages, 1);
+    // What was removed is the stopped turn, whole: it had ended.
+    let tail = std::fs::read_dir(&fixture.sessions)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.to_string_lossy().contains(".rewind-"))
+        .unwrap();
+    let removed = std::fs::read_to_string(tail).unwrap();
+    assert!(removed.contains("Segundo") && removed.contains("turn_cancelled"), "{removed}");
+    settle(&mut fixture.app);
+}
+
+#[test]
+fn cancelling_an_edit_that_waits_for_the_stop_leaves_the_turn_stopped_and_the_conversation() {
+    let (_listener, endpoint) = silent_endpoint();
+    let mut fixture = live_turn(&endpoint);
+    click(&mut fixture.app, "message_edit:1");
+    fixture.app.view.prompt = "Segundo, editado".into();
+    fixture.app.start_run();
+    click(&mut fixture.app, "message_edit_revert");
+    assert!(fixture.app.view.message_edit.confirm.as_ref().unwrap().stopping);
+    click(&mut fixture.app, "message_edit_confirm_cancel");
+    assert!(fixture.app.view.message_edit.confirm.is_none());
+    frames_until(&mut fixture, |app| !app.view.running && app.active_run.is_none(), |_| {});
+    for _ in 0..5 {
+        fixture.app.poll_message_edit_stop();
+    }
+    let app = &fixture.app;
+    assert!(app.view.message_edit.editing.is_some() && app.view.message_edit.undo.is_none());
+    assert_eq!(app.view.prompt, "Segundo, editado");
+    assert_eq!(admitted_prompts(&events(&fixture)), vec!["Primero", "Segundo"]);
+}
+
+/// A turn admitted and started, with no end: what a live turn has journaled.
+fn seed_open_turn(fixture: &Fixture, prompt: &str) {
+    let store = fixture.app.store.as_ref().unwrap();
+    let admitted = store
+        .admit_native_turn(&fixture.session, &uuid::Uuid::new_v4().to_string(), prompt, "test-model", TurnMode::Build)
+        .unwrap();
+    store
+        .append_native_event(&AgentEvent::new(
+            &fixture.session,
+            admitted.sequence + 1,
+            AgentEventKind::TurnStarted { prompt: prompt.into() },
+        ))
+        .unwrap();
+}
+
+/// Show the session as the host has it while that open turn runs.
+fn reopen_running(fixture: &mut Fixture) {
+    let session = fixture.session.clone();
+    fixture.app.new_session();
+    fixture.app.open_session(&session);
+    fixture.app.view.running = true;
+}
+
+/// The run ends; with `cancelled` it journaled its end first.
+fn end_run(fixture: &mut Fixture, cancelled: bool) {
+    if cancelled {
+        let sequence = events(fixture).last().unwrap().sequence + 1;
+        let store = fixture.app.store.as_ref().unwrap();
+        store
+            .append_native_event(&AgentEvent::new(&fixture.session, sequence, AgentEventKind::TurnCancelled))
+            .unwrap();
+    }
+    fixture.app.view.running = false;
+    fixture.app.poll_message_edit_stop();
+}
+
+#[test]
+fn a_stop_that_leaves_the_turn_unfinished_abandons_the_edit_and_keeps_its_text() {
+    let mut fixture = fixture(&["Primero"]);
+    seed_open_turn(&fixture, "Segundo");
+    reopen_running(&mut fixture);
+    click(&mut fixture.app, "message_edit:1");
+    assert!(fixture.app.view.message_edit.editing.is_some(), "{}", fixture.app.view.status);
+    fixture.app.view.prompt = "Segundo, editado".into();
+    fixture.app.start_run();
+    click(&mut fixture.app, "message_edit_keep_files");
+    assert!(fixture.app.view.message_edit.confirm.as_ref().unwrap().stopping);
+    let before = events(&fixture);
+    // The process died without journaling the end of its turn.
+    end_run(&mut fixture, false);
+    let app = &fixture.app;
+    assert!(app.view.message_edit.confirm.is_none());
+    let error = app.view.composer_error.clone().expect("the edit says why it was abandoned");
+    assert!(error.contains("necesita recuperación") && error.contains("no se envió"), "{error}");
+    assert!(app.view.message_edit.editing.is_some());
+    assert_eq!(app.view.prompt, "Segundo, editado");
+    assert!(app.view.message_edit.undo.is_none());
+    assert_eq!(events(&fixture), before);
+    // Nothing is left waiting.
+    assert!(!fixture.app.poll_message_edit_stop());
+}
+
+/// `revert_fixture`'s turns, then "Tercero" running. The first message is
+/// open for editing and its confirmation is asked while that turn runs.
+fn revert_while_running() -> Fixture {
+    let mut fixture = revert_fixture();
+    click(&mut fixture.app, "message_edit_confirm_cancel");
+    click(&mut fixture.app, "message_edit_cancel");
+    seed_open_turn(&fixture, "Tercero");
+    reopen_running(&mut fixture);
+    click(&mut fixture.app, "message_edit:0");
+    fixture.app.view.prompt = "Primero, editado".into();
+    fixture.app.start_run();
+    let confirm = fixture.app.view.message_edit.confirm.clone().unwrap();
+    assert!(confirm.stops_turn);
+    assert_eq!(confirm.restorable, ["a.txt", "b.txt", "new.txt"]);
+    fixture
+}
+
+#[test]
+fn files_are_checked_again_after_the_stop_and_keeping_them_needs_no_second_answer() {
+    let mut fixture = revert_while_running();
+    click(&mut fixture.app, "message_edit_keep_files");
+    // The disk changes before the turn stops: only a revert would care.
+    put(&fixture, "b.txt", "edited by hand\n");
+    assert_eq!(admitted_prompts(&events(&fixture)).len(), 3);
+    end_run(&mut fixture, true);
+    assert!(fixture.app.view.message_edit.editing.is_none(), "{:?}", fixture.app.view.message_edit.confirm);
+    assert_eq!(admitted_prompts(&events(&fixture)), vec!["Primero, editado"]);
+    assert_eq!(disk(&fixture, "a.txt").as_deref(), Some("agent a\n"));
+    assert_eq!(disk(&fixture, "b.txt").as_deref(), Some("edited by hand\n"));
+    assert_eq!(fixture.app.view.message_edit.undo.as_ref().unwrap().restored_files, 0);
+    settle(&mut fixture.app);
+}
+
+#[test]
+fn a_revert_chosen_on_lists_that_changed_is_asked_again_before_any_file_is_touched() {
+    // Unchanged lists: the choice stands and the revert happens.
+    let mut fixture = revert_while_running();
+    click(&mut fixture.app, "message_edit_revert");
+    assert_eq!(disk(&fixture, "a.txt").as_deref(), Some("agent a\n"), "nothing is written before the stop");
+    end_run(&mut fixture, true);
+    assert!(fixture.app.view.message_edit.editing.is_none(), "{:?}", fixture.app.view.message_edit.confirm);
+    assert_eq!(disk(&fixture, "a.txt").as_deref(), Some("original a\n"));
+    assert_eq!(disk(&fixture, "new.txt"), None);
+    settle(&mut fixture.app);
+
+    // A file changed before the stop: the final list is shown first.
+    let mut fixture = revert_while_running();
+    click(&mut fixture.app, "message_edit_revert");
+    put(&fixture, "b.txt", "edited by hand\n");
+    end_run(&mut fixture, true);
+    let before = events(&fixture);
+    let confirm = fixture.app.view.message_edit.confirm.clone().expect("it asks again");
+    assert!(confirm.recomputed && !confirm.stopping && !confirm.stops_turn);
+    assert_eq!(confirm.restorable, ["a.txt", "new.txt"]);
+    assert_eq!(confirm.skipped.len(), 1);
+    assert!(fixture.app.view.message_edit.editing.is_some());
+    assert_eq!(disk(&fixture, "a.txt").as_deref(), Some("agent a\n"));
+    assert_eq!(disk(&fixture, "new.txt").as_deref(), Some("agent new\n"));
+    assert_eq!(admitted_prompts(&before).len(), 3);
+    // Answered on the final list, it goes through the idle path.
+    click(&mut fixture.app, "message_edit_revert");
+    assert!(fixture.app.view.message_edit.editing.is_none(), "{:?}", fixture.app.view.message_edit.confirm);
+    assert_eq!(disk(&fixture, "a.txt").as_deref(), Some("original a\n"));
+    assert_eq!(disk(&fixture, "b.txt").as_deref(), Some("edited by hand\n"));
+    assert_eq!(admitted_prompts(&events(&fixture)), vec!["Primero, editado"]);
     settle(&mut fixture.app);
 }

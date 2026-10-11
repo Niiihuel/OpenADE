@@ -13,7 +13,7 @@ use std::{
 
 use openide_ui::{
     AlertDialog, Button, ButtonVariant, Card, Color, Component, ControlSize, Element, FontFamily,
-    PopoverPlacement, RadiusRole, Text, TextRole,
+    PopoverPlacement, RadiusRole, Spinner, Text, TextRole,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -69,6 +69,13 @@ pub struct RewindConfirm {
     pub opaque: OpaqueEffects,
     /// Why the preflight itself could not be made.
     pub unavailable: Option<String>,
+    /// A turn was running when this opened: confirming stops it first, and
+    /// the lists above are only what the preflight finds so far.
+    pub stops_turn: bool,
+    /// Confirmed: waiting for that turn to stop before anything changes.
+    pub stopping: bool,
+    /// Made again after the turn stopped, and not what the choice was made on.
+    pub recomputed: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -108,12 +115,13 @@ pub(crate) fn carries_attachments(composed: &str, images: usize) -> bool {
     images > 0 || APPENDED_BLOCKS[..2].iter().any(|block| composed.contains(block))
 }
 
-/// The turn a click on this row may edit. Nothing is offered while the
-/// session works, waits for a permission, or another edit is open.
+/// The turn a click on this row may edit. A running turn of the session
+/// does not prevent it: sending the edit stops that turn first. Nothing is
+/// offered while an automation runs it, a permission waits, or another edit
+/// is open.
 pub(crate) fn offered(state: &ViewState, turn: &EditableTurn) -> bool {
     turn.text.is_some()
         && state.selected_backend == "native"
-        && !state.running
         && !state.background_run_selected
         && state.pending_permissions.is_empty()
         && state.message_edit.editing.is_none()
@@ -142,14 +150,28 @@ pub(crate) fn editor(state: &ViewState, bubble: Element, width: f32) -> Element 
         // The confirmation is the modal surface now.
         return bubble;
     }
-    let mut rows = vec![build_composer(&ComposerProps::from_state(
-        state,
-        width,
-        false,
-        None,
-        "Editá el mensaje…",
-        None,
-    ))];
+    let mut props = ComposerProps::from_state(state, width, false, None, "Editá el mensaje…", None);
+    // This composer sends the edit, also while a turn runs. Everything
+    // behind it is veiled, so the stop of that turn comes with it.
+    props.running = false;
+    let mut rows = vec![build_composer(&props)];
+    if state.running {
+        rows.push(
+            Element::row(vec![
+                Text::new(
+                    "El turno sigue en curso. Enviar el mensaje editado lo detiene.",
+                    theme::component_palette(),
+                )
+                .role(TextRole::Small)
+                .muted()
+                .render()
+                .centered_y()
+                .flex(1.0),
+                crate::composer_ui::stop_button("turn_stop", ControlSize::Dense, "Detener ejecución"),
+            ])
+            .gap(8.0),
+        );
+    }
     if editing.drops_attachments {
         rows.push(
             Text::new(
@@ -279,8 +301,46 @@ pub(crate) fn confirm_dialog(base: Element, state: &ViewState, width: f32) -> El
         count => format!("Se quitarán de la conversación la respuesta a este mensaje y los {count} mensajes posteriores con sus respuestas."),
     };
     let small = |text: String| Text::new(text, theme::component_palette()).role(TextRole::Small).render();
+    if confirm.stopping {
+        return AlertDialog::new(
+            base,
+            true,
+            "Deteniendo el turno…",
+            "El mensaje editado se envía en cuanto el turno se detenga. Si cancelás ahora, el turno queda detenido y la conversación no cambia.",
+            "message_edit_stopping",
+            "message_edit_confirm_cancel",
+            theme::component_palette(),
+        )
+        .width((width - 24.0).min(480.0))
+        .confirm_label("Esperando…")
+        .confirm_enabled(false)
+        .body(
+            Element::row(vec![
+                Spinner::new("message_edit_stopping_spinner", theme::FOREGROUND).size(14.0).render().centered_y(),
+                small("Deteniendo el turno…".to_owned()).centered_y(),
+            ])
+            .gap(8.0),
+        )
+        .render();
+    }
     let mut body = Vec::new();
-    if !confirm.restorable.is_empty() {
+    if confirm.recomputed {
+        body.push(small("La lista de archivos cambió al detener el turno. Esta es la definitiva.".to_owned()));
+    }
+    if confirm.stops_turn {
+        // The running turn may still change files: no list is shown as final.
+        body.push(small(match &confirm.unavailable {
+            Some(reason) => format!("No se pudo comprobar qué archivos restaurar: {reason} Se recalcula al detener el turno."),
+            None => format!(
+                "Por ahora «Revertir» restauraría {} y omitiría {}; se recalcula al detener el turno. Si la lista cambia, se vuelve a preguntar antes de tocar archivos.",
+                match confirm.restorable.len() {
+                    1 => "1 archivo".to_owned(),
+                    count => format!("{count} archivos"),
+                },
+                confirm.skipped.len(),
+            ),
+        }));
+    } else if !confirm.restorable.is_empty() {
         body.push(small(format!(
             "Se {}:",
             counted(confirm.restorable.len(), "restaura 1 archivo", "restauran", "archivos")
@@ -295,7 +355,7 @@ pub(crate) fn confirm_dialog(base: Element, state: &ViewState, width: f32) -> El
             },
         ));
     }
-    if !confirm.skipped.is_empty() {
+    if !confirm.skipped.is_empty() && !confirm.stops_turn {
         body.push(small(format!("Se {}:", counted(confirm.skipped.len(), "omite 1", "omiten", ""))));
         let mut reasons: Vec<_> = confirm.skipped.iter().map(|(_, reason)| *reason).collect();
         reasons.sort();
@@ -324,14 +384,17 @@ pub(crate) fn confirm_dialog(base: Element, state: &ViewState, width: f32) -> El
         base,
         true,
         "¿Enviar desde un mensaje anterior?",
-        format!("{removed} «No revertir» deja los archivos como están. Podés deshacer el rebobinado después."),
+        format!(
+            "{}{removed} «No revertir» deja los archivos como están. Podés deshacer el rebobinado después.",
+            if confirm.stops_turn { "Se detendrá el turno en curso.\n" } else { "" }
+        ),
         "message_edit_revert",
         "message_edit_confirm_cancel",
         theme::component_palette(),
     )
     .width((width - 24.0).min(480.0))
     .confirm_label("Revertir")
-    .confirm_enabled(!confirm.restorable.is_empty())
+    .confirm_enabled(confirm.stops_turn || !confirm.restorable.is_empty())
     .alternative("message_edit_keep_files", "No revertir")
     .body(Element::column(body).gap(6.0))
     .render()

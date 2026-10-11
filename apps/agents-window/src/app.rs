@@ -7900,12 +7900,18 @@ impl AgentsWindow {
     }
 
     fn branch_change_blocked_reason(&self) -> Option<&'static str> {
+        self.agent_busy_reason(true)
+    }
+
+    /// Why the agent or Git is busy. Without `own_turn` the selected
+    /// session's running turn is left out: what would still be busy once
+    /// that turn has been stopped.
+    fn agent_busy_reason(&self, own_turn: bool) -> Option<&'static str> {
         if self.view.environment.workflow.busy.is_some() || self.git_action_request.is_some() {
             return Some("Espera a que termine la operación de Git.");
         }
-        (self.view.running
+        ((own_turn && (self.view.running || self.active_run.is_some()))
             || self.view.background_run_selected
-            || self.active_run.is_some()
             || self.active_compact.is_some()
             || self.active_resume.is_some()
             || self.active_child_recovery.is_some()
@@ -12044,6 +12050,7 @@ impl AgentsWindow {
             };
             request.sequence_start = admission.sequence;
             self.last_sequence = admission.sequence;
+            self.projection.note_admission(admission.sequence);
             let tools: Arc<dyn ToolExecutor> = match openide_harness::NativeGoalToolExecutor::new(
                 tools,
                 store.clone(),
@@ -14082,6 +14089,12 @@ impl AgentsWindow {
 
     fn restore_pending_prompt(&mut self) {
         let attachments = std::mem::take(&mut self.pending_attachments);
+        if self.view.message_edit.editing.is_some() {
+            // The composer holds an edit, never to be mixed with the stopped
+            // turn's prompt. That prompt stays in the transcript.
+            self.pending_prompt = None;
+            return;
+        }
         if let Some(prompt) = self.pending_prompt.take() {
             if !self.run_has_output {
                 if self.view.prompt.is_empty() {
@@ -16085,7 +16098,9 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id == "run_toggle" => {
-                if !self.cancel_selected_run() {
+                // The composer over an edited message sends the edit, even
+                // while a turn runs; `turn_stop` is what stops that turn.
+                if self.view.message_edit.editing.is_some() || !self.cancel_selected_run() {
                     self.start_run();
                 }
             }
@@ -19131,6 +19146,7 @@ impl eframe::App for AgentsWindow {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let composer_was_running = self.view.running || self.view.background_run_selected;
         let mut early_changed = self.poll_run();
+        early_changed |= self.poll_message_edit_stop();
         let ctx = ui.ctx().clone();
         render::normalize_keyboard_input(&ctx);
         self.expire_text_paste_request();

@@ -421,6 +421,13 @@ impl TranscriptProjection {
         &self.items
     }
 
+    /// A live turn is admitted by the host, so its admission never arrives
+    /// as an event here: without this its message would only become a turn,
+    /// and editable, when the session is read again.
+    pub fn note_admission(&mut self, sequence: u64) {
+        self.pending_admission_sequence = Some(sequence);
+    }
+
     /// The native turns of this transcript, oldest first.
     pub fn user_turns(&self) -> &[UserTurn] {
         &self.user_turns
