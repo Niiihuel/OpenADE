@@ -405,6 +405,38 @@ fn services_control(
     ))
 }
 
+/// The account's tightest limit and its width; the same popover as the
+/// sidebar's "Cuenta y uso" row opens from it.
+fn usage_control(state: &ViewState, surface: Color) -> Option<(StatusBarItem, f32)> {
+    let usage = crate::provider_usage_ui::glance(state)?;
+    let id = "ide_usage";
+    let width = label_width(&usage.value) + 16.0;
+    let palette = cell_palette(surface);
+    let palette = ComponentPalette {
+        muted: usage.ink.unwrap_or(palette.muted),
+        ..palette
+    };
+    let item = StatusBarItem::new(id, width, palette)
+        .icon(usage.icon)
+        .label(&usage.value)
+        .dispatch_as("usage_toggle")
+        .tooltip_with(hint(usage.title).description(usage.detail));
+    if !state.provider_usage_open {
+        return Some((item, width));
+    }
+    let popover = Popover::new(
+        item.render(),
+        crate::provider_usage_ui::popup(state),
+        true,
+        "usage_dismiss",
+        theme::menu_palette(),
+    )
+    .placement(PopoverPlacement::TopEnd)
+    .width(crate::provider_usage_ui::POPUP_WIDTH)
+    .render();
+    Some((StatusBarItem::new(id, width, palette).hosted(popover), width))
+}
+
 fn services_popover(
     state: &ViewState,
     status: &DocumentStatus,
@@ -659,8 +691,12 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
     } else {
         Vec::new()
     };
+    // The agents sidebar already carries it beside the dock's own footer.
+    let usage = workspace
+        .then(|| usage_control(state, surface))
+        .flatten();
     let Some(status) = status else {
-        return bar(leading, Vec::new());
+        return bar(leading, usage.into_iter().map(|(item, _)| item).collect());
     };
     let prefix = status.scope.prefix();
     let diagnostic_hint = format!(
@@ -719,7 +755,7 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
         document_control(state, &status, kind, id, value, title, label_width(value), surface)
     };
     // Shown in this order; the priorities say which give way first.
-    let trailing = vec![
+    let mut trailing = vec![
         passive(
             "ide_editor_save_status",
             status.save,
@@ -764,6 +800,17 @@ fn status_cells(state: &ViewState, width: f32, workspace: bool) -> StatusBar {
         )
         .priority(5),
     ];
+    // The first to give way: it stands only where every document cell does,
+    // so it never brings the overflow in or pushes one of them out.
+    if let Some((item, usage_width)) = usage {
+        let cells: f32 = [status.save, cursor, &status.indent, "UTF-8", status.ending, status.language]
+            .iter()
+            .map(|value| label_width(value) + StatusBar::GAP)
+            .sum();
+        if cells + usage_width + StatusBar::GAP <= budget {
+            trailing.push(item.priority(0));
+        }
+    }
     bar(leading, trailing)
         .trailing_budget(budget)
         .overflow(document_control(
@@ -820,6 +867,210 @@ mod tests {
 
     fn root(state: &ViewState, width: f32) -> Element {
         Element::column(vec![Element::spacer().flex(1.0), footer(state, width)])
+    }
+
+    /// Codex connected, with these (label, used percent) windows measured now.
+    fn with_usage(mut state: ViewState, windows: &[(&str, f64)]) -> ViewState {
+        use crate::provider_usage::{ProviderUsageSnapshot, ProviderUsageStatus, UsageUnit, UsageWindow};
+        let now = crate::provider_usage::now_ms();
+        state.native_provider_id = "codex".into();
+        state.provider_connections.insert(
+            "codex".into(),
+            crate::provider_connections::ConnectionSummary {
+                configured: true,
+                ..Default::default()
+            },
+        );
+        state.provider_usage.insert(
+            "codex".into(),
+            ProviderUsageSnapshot {
+                provider_id: "codex".into(),
+                provider_name: "Codex".into(),
+                account: None,
+                status: ProviderUsageStatus::Ready,
+                plan_label: Some("ChatGPT Pro".into()),
+                windows: windows
+                    .iter()
+                    .map(|(label, used)| UsageWindow {
+                        label: (*label).into(),
+                        used: *used,
+                        limit: Some(100.0),
+                        remaining: Some(100.0 - used),
+                        unit: UsageUnit::Percent,
+                        reset_at_ms: Some(now + 259_260_000),
+                        reset_label: None,
+                    })
+                    .collect(),
+                balances: Vec::new(),
+                fetched_at_ms: Some(now - 72_000_000),
+                local: true,
+                account_url: None,
+                message: None,
+            },
+        );
+        state
+    }
+
+    fn texts(frame: &openide_ui::Frame) -> String {
+        frame
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                openide_ui::DrawCommand::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    const DOCUMENT_CELLS: [&str; 4] = [
+        "ide_editor_cursor",
+        "ide_editor_indent",
+        "ide_editor_ending",
+        "ide_editor_language",
+    ];
+
+    #[test]
+    fn usage_cell_shows_the_tightest_window_and_is_the_first_to_give_way() {
+        let has = |frame: &openide_ui::Frame, id: &str| frame.regions.iter().any(|r| r.id == id);
+        let layout = |state: &ViewState, width: f32| {
+            let (ctx, mut tree) = crate::view::ide_visual_tests::native_tree(root(state, width));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 640.0));
+            ctx.end_pass().textures_delta.clear();
+            frame
+        };
+        // Nothing measured, nothing drawn: neither a cell nor a percentage.
+        let empty = layout(&editor_state(), 1440.0);
+        assert!(!has(&empty, "ide_usage") && !texts(&empty).contains('%'));
+        let mut external = with_usage(editor_state(), &[]);
+        assert!(!has(&layout(&external, 1440.0), "ide_usage"));
+        // The dock's own footer never carries it.
+        external = with_usage(editor_state(), &[("Semanal", 58.0)]);
+        let dock = crate::view::ide_visual_tests::native_tree(document_footer(&external, 900.0))
+            .1
+            .layout(Size::new(900.0, 40.0));
+        assert!(!has(&dock, "ide_usage"));
+
+        let ink = |frame: &openide_ui::Frame, value: &str| {
+            frame.commands.iter().find_map(|command| match command {
+                openide_ui::DrawCommand::Text { text, color, .. } if text == value => Some(*color),
+                _ => None,
+            })
+        };
+        let state = with_usage(editor_state(), &[("5 horas", 30.0), ("Semanal", 58.0)]);
+        let frame = layout(&state, 1440.0);
+        let cell = frame
+            .regions
+            .iter()
+            .find(|r| r.id == "ide_usage" && r.kind == HitKind::Button)
+            .unwrap()
+            .rect;
+        assert_eq!((cell.height, cell.y), (STATUS_HEIGHT, 640.0 - STATUS_HEIGHT));
+        assert_eq!(ink(&frame, "58%"), Some(theme::FOREGROUND_SUBTLE));
+        assert!(!texts(&frame).contains("30%"));
+        for (used, color) in [(85.0, theme::WARNING), (100.0, theme::DESTRUCTIVE)] {
+            let state = with_usage(editor_state(), &[("Semanal", used)]);
+            assert_eq!(ink(&layout(&state, 1440.0), &format!("{used:.0}%")), Some(color));
+        }
+        // Without a document it still stands, alone at the trailing edge.
+        let mut idle = with_usage(editor_state(), &[("Semanal", 58.0)]);
+        idle.dock_tabs[0].active = false;
+        assert!(has(&layout(&idle, 1440.0), "ide_usage"));
+
+        // Narrowing the bar: it leaves before any document cell or the
+        // overflow changes, and the bar without it is the bar there was.
+        let mut alone = 0;
+        for width in (240..=1440).step_by(4) {
+            let (with, without) = (layout(&state, width as f32), layout(&editor_state(), width as f32));
+            for id in DOCUMENT_CELLS.into_iter().chain(["ide_editor_status_more"]) {
+                assert_eq!(has(&with, id), has(&without, id), "{id} at {width}");
+            }
+            let whole = DOCUMENT_CELLS.iter().all(|id| has(&with, id)) && !has(&with, "ide_editor_status_more");
+            assert!(whole || !has(&with, "ide_usage"), "usage outlived a document cell at {width}");
+            alone += usize::from(whole && !has(&with, "ide_usage"));
+        }
+        assert!(alone > 0, "some width must drop only the usage cell");
+    }
+
+    #[test]
+    fn usage_cell_names_its_window_and_toggles_the_account_popover() {
+        let mut state = with_usage(editor_state(), &[("Semanal", 58.0)]);
+        let usage = crate::provider_usage_ui::glance(&state).unwrap();
+        assert_eq!(usage.title, "Codex · 58% usado · Semanal");
+        assert_eq!(usage.detail, "Se renueva en 3 d 0 h · Medido por Codex · hace 20 h");
+        let size = Size::new(900.0, 640.0);
+        let (ctx, mut tree) = crate::view::ide_visual_tests::native_tree(root(&state, size.width));
+        tree.set_reduced_motion(true);
+        let frame = tree.layout(size);
+        let surface = |frame: &openide_ui::Frame| {
+            frame
+                .regions
+                .iter()
+                .find(|r| r.id == "popover_surface:usage_dismiss")
+                .map(|r| r.rect)
+        };
+        assert!(surface(&frame).is_none());
+        let click = |tree: &mut openide_ui::UiTree, frame: &openide_ui::Frame| {
+            let rect = frame.regions.iter().find(|r| r.id == "ide_usage").unwrap().rect;
+            let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+            tree.handle_event(UiEvent::PointerDown(point));
+            tree.handle_event(UiEvent::PointerUp(point))
+        };
+        let toggle = vec![UiAction::Clicked { id: "usage_toggle".into() }];
+        assert_eq!(click(&mut tree, &frame), toggle);
+        // The host flips the flag the sidebar row shares.
+        state.provider_usage_open = true;
+        tree.set_root(root(&state, size.width));
+        let open = tree.layout(size);
+        let panel = surface(&open).expect("the account popover");
+        assert!(panel.x >= 0.0 && panel.x + panel.width <= size.width);
+        assert!(panel.y >= 0.0 && panel.y + panel.height <= size.height - STATUS_HEIGHT + 0.1);
+        let painted = texts(&open);
+        assert!(painted.contains("Cuenta y uso") && painted.contains("58% usado"), "{painted}");
+        assert!(tree.focus("usage_details"));
+        // Open, the cell closes it the way the sidebar row does.
+        assert_eq!(click(&mut tree, &open), vec![UiAction::Clicked { id: "usage_dismiss".into() }]);
+        ctx.end_pass().textures_delta.clear();
+    }
+
+    #[test]
+    #[ignore = "export the IDE footer with its usage cell at wide and narrow widths"]
+    fn export_ide_footer_usage_visual_review() {
+        let output = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/provider-usage-visual-qa");
+        std::fs::create_dir_all(&output).unwrap();
+        let mut state = with_usage(editor_state(), &[("5 horas", 30.0), ("Semanal", 58.0)]);
+        let warning = with_usage(editor_state(), &[("Semanal", 85.0)]);
+        state.provider_usage_open = true;
+        for (name, state, width, height) in [
+            ("1440", &warning, 1440.0, 48.0),
+            ("460", &warning, 460.0, 48.0),
+            ("360", &warning, 360.0, 48.0),
+            ("popover-700", &state, 700.0, 360.0),
+        ] {
+            let root = root(state, width).background(theme::WINDOW);
+            let (ctx, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, height));
+            let path = output.join(format!("usage-bars-ide-footer-{name}.svg"));
+            crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, height)
+                .unwrap();
+            let svg = std::fs::read(&path).unwrap();
+            let parsed = resvg::usvg::Tree::from_data(
+                &svg,
+                &crate::settings_ui::visual_qa::native_svg_options(),
+            )
+            .unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+            resvg::render(
+                &parsed,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            ctx.end_pass().textures_delta.clear();
+        }
     }
 
     #[test]

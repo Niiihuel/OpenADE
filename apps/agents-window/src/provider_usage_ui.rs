@@ -22,7 +22,7 @@ use crate::{
     view::ViewState,
 };
 
-const POPUP_WIDTH: f32 = 320.0;
+pub(crate) const POPUP_WIDTH: f32 = 320.0;
 const POPUP_BODY_MAX_HEIGHT: f32 = 320.0;
 
 fn plan_badge(value: &str) -> Element {
@@ -148,6 +148,43 @@ pub(crate) fn tightest(snapshot: &ProviderUsageSnapshot) -> Option<(&UsageWindow
         .iter()
         .filter_map(|window| Some((window, window.used_percent()?)))
         .max_by(|a, b| a.1.total_cmp(&b.1))
+}
+
+/// The IDE footer's reading of one account.
+pub(crate) struct UsageGlance {
+    pub icon: Icon,
+    pub value: String,
+    /// Only from 80 %; below it the cell keeps the ink of its row.
+    pub ink: Option<Color>,
+    pub title: String,
+    pub detail: String,
+}
+
+/// The tightest measured window of the active provider, or of the first
+/// connected one that has any. A reading that failed to refresh is not shown.
+pub(crate) fn glance(state: &ViewState) -> Option<UsageGlance> {
+    let now = now_ms();
+    let mut accounts: Vec<_> = provider_connections::PROVIDERS
+        .iter()
+        .filter(|(id, _, _)| connected(state, id))
+        .collect();
+    accounts.sort_by_key(|(id, _, _)| *id != state.native_provider_id);
+    accounts.into_iter().find_map(|(id, name, _)| {
+        let snapshot = snapshot(state, id, name);
+        let (window, percent) = tightest(&snapshot).filter(|_| !stale(&snapshot, now))?;
+        let value = amount(percent, UsageUnit::Percent);
+        Some(UsageGlance {
+            icon: icon_for_provider(id),
+            ink: Some(usage_color(percent)).filter(|ink| *ink != theme::FOREGROUND),
+            title: format!("{name} · {value} usado · {}", window.label),
+            detail: reset_label(window, now)
+                .into_iter()
+                .chain([updated(&snapshot, now)])
+                .collect::<Vec<_>>()
+                .join(" · "),
+            value,
+        })
+    })
 }
 
 fn headline(snapshot: &ProviderUsageSnapshot) -> (String, String, Color) {
@@ -765,7 +802,7 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
     )
 }
 
-fn popup(state: &ViewState) -> Element {
+pub(crate) fn popup(state: &ViewState) -> Element {
     let now = now_ms();
     let mut cards = Vec::new();
     let mut accounts: Vec<_> = provider_connections::PROVIDERS
