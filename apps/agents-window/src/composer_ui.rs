@@ -27,7 +27,7 @@ use crate::{
 };
 
 pub(crate) use crate::environment_selectors_ui::{
-    branch_selector, branch_selector_inline, project_selector, project_selector_inline,
+    branch_selector, project_selector,
 };
 
 const COMPACT_CONTEXT_WIDTH: f32 = 490.0;

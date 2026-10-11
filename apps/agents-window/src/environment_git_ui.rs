@@ -567,7 +567,8 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                     "environment_git_compare_dismiss",
                     theme::menu_palette(),
                 )
-                .inline(true)
+                .context_menu_style()
+                .placement(PopoverPlacement::BottomStart)
                 .width(width - 16.0)
                 .render(),
             );

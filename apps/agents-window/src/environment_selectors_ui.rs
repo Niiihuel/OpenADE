@@ -15,11 +15,7 @@ pub(crate) fn project_selector(
     placement: PopoverPlacement,
     return_focus: &str,
 ) -> Element {
-    project_selector_presentation(props, trigger, placement, return_focus, false)
-}
-
-pub(crate) fn project_selector_inline(props: &ComposerProps<'_>, trigger: Element) -> Element {
-    project_selector_presentation(props, trigger, PopoverPlacement::BottomStart, "", true)
+    project_selector_presentation(props, trigger, placement, return_focus)
 }
 
 fn project_selector_presentation(
@@ -27,18 +23,13 @@ fn project_selector_presentation(
     trigger: Element,
     placement: PopoverPlacement,
     return_focus: &str,
-    inline: bool,
 ) -> Element {
     let switching = props.branch_picker.is_some_and(|picker| picker.switching());
     if !props.project_menu_open || props.running || switching {
         return trigger;
     }
     let sizing = SelectorSizing::CATALOG;
-    let menu_width = if inline {
-        props.width.max(120.0)
-    } else {
-        sizing.fit_width(props.width - 16.0)
-    };
+    let menu_width = sizing.fit_width(props.width - 16.0);
     let inner_width = menu_width - 12.0;
     // Reserve the scroll rail for custom rows even in a short menu, so the
     // path and selection check keep a stable alignment as search changes.
@@ -107,7 +98,6 @@ fn project_selector_presentation(
             .width(inner_width)
             .render(),
     )
-    .inline(inline)
     .context_menu_style()
     .sizing(sizing)
     .width(menu_width)
@@ -126,11 +116,7 @@ pub(crate) fn branch_selector(
     placement: PopoverPlacement,
     return_focus: &str,
 ) -> Element {
-    branch_selector_presentation(props, trigger, placement, return_focus, false)
-}
-
-pub(crate) fn branch_selector_inline(props: &ComposerProps<'_>, trigger: Element) -> Element {
-    branch_selector_presentation(props, trigger, PopoverPlacement::BottomStart, "", true)
+    branch_selector_presentation(props, trigger, placement, return_focus)
 }
 
 fn branch_selector_presentation(
@@ -138,17 +124,12 @@ fn branch_selector_presentation(
     trigger: Element,
     placement: PopoverPlacement,
     return_focus: &str,
-    inline: bool,
 ) -> Element {
     let Some(picker) = props.branch_picker.filter(|_| props.branch_menu_open) else {
         return trigger;
     };
     let sizing = SelectorSizing::CATALOG;
-    let menu_width = if inline {
-        props.width.max(120.0)
-    } else {
-        sizing.fit_width(props.width - 16.0)
-    };
+    let menu_width = sizing.fit_width(props.width - 16.0);
     let inner_width = menu_width - 12.0;
     let message = |text: &str| {
         DropdownMenuEntry::custom(
@@ -302,7 +283,6 @@ fn branch_selector_presentation(
         theme::menu_palette(),
     )
     .header(header)
-    .inline(inline)
     .context_menu_style()
     .sizing(sizing)
     .width(menu_width)

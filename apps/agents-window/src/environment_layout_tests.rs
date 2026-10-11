@@ -117,7 +117,13 @@ fn narrow_environment_uses_bounded_vertical_space_and_leaves_composer_visible() 
 }
 
 #[test]
-fn environment_selectors_stay_inside_their_column_and_keep_scrolling() {
+fn environment_selectors_float_over_the_card_without_resizing_it() {
+    let closed = {
+        let state = state(true);
+        let mut tree = UiTree::new(crate::view::build_window_view(&state, 900.0, 480.0));
+        tree.set_reduced_motion(true);
+        rect(&tree.layout(Size::new(900.0, 480.0)), "chat_environment")
+    };
     for menu in [
         EnvironmentMenu::Local,
         EnvironmentMenu::Branch,
@@ -136,30 +142,16 @@ fn environment_selectors_stay_inside_their_column_and_keep_scrolling() {
         let panel = rect(&frame, "chat_environment");
         let transcript = rect(&frame, "transcript");
         assert!(transcript.x + transcript.width <= panel.x);
-        assert!(!frame
+        // An open menu is a surface over the card: the card keeps its box.
+        assert_eq!(panel, closed, "{menu:?} resized the card");
+        let surface = frame
             .regions
             .iter()
-            .any(|region| region.id.starts_with("popover_surface:")));
-        for region in frame.regions.iter().filter(|region| {
-            region.kind == HitKind::Button
-                && region.id != "environment_open"
-                && (region.id.starts_with("environment_")
-                    || region.id.starts_with("composer_project_select:"))
-        }) {
-            assert!(region.rect.x >= panel.x, "{} leaves column", region.id);
-            assert!(
-                region.rect.x + region.rect.width <= panel.x + panel.width,
-                "{} leaves column",
-                region.id
-            );
-        }
-        if menu == EnvironmentMenu::Local {
-            tree.handle_event(UiEvent::Scroll {
-                position: Point::new(panel.x + 20.0, panel.y + 100.0),
-                delta_y: -500.0,
-            });
-            assert!(tree.scroll_offset("chat_environment") > 0.0);
-        }
+            .find(|region| region.id.starts_with("popover_surface:"))
+            .unwrap_or_else(|| panic!("{menu:?} opened no floating menu"))
+            .rect;
+        assert!(surface.x >= 0.0 && surface.x + surface.width <= 900.0, "{menu:?}: {surface:?}");
+        assert!(surface.y >= 0.0 && surface.y + surface.height <= 480.0, "{menu:?}: {surface:?}");
     }
 }
 

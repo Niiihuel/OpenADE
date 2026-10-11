@@ -3,7 +3,7 @@
 
 use std::{collections::HashSet, path::Path};
 
-use openide_ui::{
+use openide_ui::{PopoverPlacement, 
     ButtonVariant, Component, ComponentPalette, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element, HeaderSizing, Icon, IconButton, ListRow, PanelHeader,
     ScrollArea, SectionHeader, SectionSizing, Separator, SpinnerVariant, Text, TextRole, Tooltip,
@@ -11,7 +11,7 @@ use openide_ui::{
 };
 
 use crate::{
-    composer_ui::{branch_selector_inline, project_selector_inline, ComposerProps},
+    composer_ui::{branch_selector, project_selector, ComposerProps},
     theme,
     transcript::{ActivityStatus, TranscriptItem},
     view::{SideTab, ViewState},
@@ -116,7 +116,6 @@ pub(crate) fn layout(
     };
     let preferred_height = if state.environment.workflow.panel
         != crate::environment_git_ui::EnvironmentGitPanel::Overview
-        || state.environment.menu != EnvironmentMenu::None
     {
         620.0
     } else if state.environment.details_expanded {
@@ -675,7 +674,8 @@ fn local_menu(state: &ViewState, width: f32, locked: bool) -> Element {
         "environment_local_dismiss",
         theme::menu_palette(),
     )
-    .inline(true)
+    .context_menu_style()
+    .placement(PopoverPlacement::BottomStart)
     .width(width)
     .render()
 }
@@ -817,7 +817,7 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             )
         },
     );
-    let project = project_selector_inline(
+    let project = project_selector(
         &props,
         selector_trigger(
             "environment_project_toggle",
@@ -831,8 +831,10 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
             group_width,
             !locked,
         ),
+        PopoverPlacement::BottomStart,
+        "environment_project_toggle",
     );
-    let branch = branch_selector_inline(
+    let branch = branch_selector(
         &props,
         compact_row(
             "environment_branch_toggle",
@@ -844,6 +846,8 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
         )
         .trailing_icon(Icon::ChevronDown)
         .render(),
+        PopoverPlacement::BottomStart,
+        "environment_branch_toggle",
     );
     let action_width = (group_width - 6.0) / 2.0;
     // Rows sit directly on the card; thin rules separate the sections.
