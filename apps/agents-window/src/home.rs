@@ -233,7 +233,7 @@ mod tests {
             native_goal: None,
             width: MAX_CONTENT_WIDTH,
             home: true,
-            expanded: false,
+            transcript_at: 0,
         }
     }
 
@@ -287,10 +287,6 @@ mod tests {
         let send = rect(&empty, "run_toggle");
         assert!(prompt.y + prompt.height < send.y);
         assert!((28.0..36.0).contains(&prompt.height));
-        assert!(!empty
-            .regions
-            .iter()
-            .any(|region| region.id == "composer_expand_toggle"));
         assert!(tree.focus("prompt"));
         let draft = "Revisá mi proyecto\nMejorá el composer\nConservá los controles";
         assert_eq!(
@@ -304,20 +300,12 @@ mod tests {
         tree.set_root(build_home_with(&props, viewport.width));
         let written = tree.layout(viewport);
         let editor = rect(&written, "prompt");
-        // A non-empty home draft exposes the compact expand action beside
-        // the editor; both layouts retain the full remaining card width.
-        assert!(editor.width >= prompt.width - 32.0 - 0.1);
-        assert!(editor.width <= prompt.width);
+        assert_eq!(editor.width, prompt.width);
         assert!(editor.height > prompt.height);
         assert!(rect(&written, "run_toggle").y >= editor.y + editor.height);
         assert_eq!(tree.focused_id(), Some("prompt"));
         assert_eq!(tree.input_value("prompt"), Some(draft));
         assert_eq!(tree.input_cursor("prompt"), Some(draft.chars().count()));
-        props.expanded = true;
-        tree.set_root(build_home_with(&props, viewport.width));
-        let expanded = tree.layout(viewport);
-        assert!(rect(&expanded, "prompt").height > editor.height);
-        assert_eq!(tree.input_value("prompt"), Some(draft));
         tree.handle_event(UiEvent::Key {
             key: Key::A,
             shift: false,
@@ -329,7 +317,6 @@ mod tests {
             ctrl: false,
         });
         props.prompt = "";
-        props.expanded = false;
         tree.set_root(build_home_with(&props, viewport.width));
         let cleared = tree.layout(viewport);
         assert_eq!(rect(&cleared, "prompt"), prompt);
@@ -342,10 +329,9 @@ mod tests {
         let draft = "Una instrucción larga que debe conservarse\n".repeat(20);
         for width in [360.0, 720.0, 1000.0] {
             for height in [180.0, 240.0, 360.0] {
-                for expanded in [false, true] {
+                {
                     let mut props = inputs();
                     props.prompt = &draft;
-                    props.expanded = expanded;
                     let mut tree = UiTree::new(build_home_with_height(&props, width, Some(height)));
                     tree.set_reduced_motion(true);
                     let frame = tree.layout(Size::new(width, height));
@@ -355,7 +341,7 @@ mod tests {
                             .iter()
                             .find(|r| r.id == id)
                             .unwrap_or_else(|| {
-                                panic!("missing {id} at {width}×{height}, expanded={expanded}")
+                                panic!("missing {id} at {width}×{height}")
                             })
                             .rect;
                         assert!(rect.height >= 24.0, "{id}: {rect:?}");
@@ -372,7 +358,6 @@ mod tests {
     #[test]
     fn short_home_with_extra_feedback_keeps_submit_reachable_by_scrolling() {
         let mut props = inputs();
-        props.expanded = true;
         props.error = Some("No se pudo completar la solicitud. Revisá la conexión y volvé a intentarlo cuando el servicio esté disponible.");
         let viewport = Size::new(360.0, 180.0);
         let mut tree = UiTree::new(build_home_with_height(

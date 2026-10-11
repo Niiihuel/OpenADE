@@ -336,88 +336,25 @@ fn default_effort_remains_valid_for_a_model_without_reasoning_controls() {
 }
 
 #[test]
-fn composer_expansion_preserves_draft_cursor_and_model_without_starting_a_turn() {
+fn a_dictated_phrase_is_written_at_the_caret_and_replaced_by_its_next_version() {
     let root = tempfile::tempdir().unwrap();
     let mut app = AgentsWindow::with_data_root(root.path().join("data"));
-    let ctx = egui::Context::default();
-    let draft = "Revisá este borrador\nsin perder el cursor.";
-    app.view.workspace = root.path().display().to_string();
-    app.tree.set_root(crate::home::build_home(&app.view, 900.0));
-    app.tree.layout(Size::new(900.0, 700.0));
-    assert!(app.tree.focus("prompt"));
-    for action in app.tree.handle_event(UiEvent::Text(draft.into())) {
-        app.apply_action(action, &ctx);
-    }
-    app.tree.set_root(crate::home::build_home(&app.view, 900.0));
-    app.tree.layout(Size::new(900.0, 700.0));
-    assert_eq!(app.view.prompt, draft);
-    app.tree.set_input_cursor("prompt", 7);
-    let selected_model = app.view.composer_model.clone();
-    let selected_effort = app.view.composer_effort.clone();
-    let dirty_at = app.draft_dirty_at;
-    let sessions = app.store.as_ref().unwrap().list().unwrap();
-    for expanded in [true, false] {
-        app.view.composer_model_menu_open = true;
-        app.apply_action(click("composer_expand_toggle"), &ctx);
-        assert_eq!(app.view.composer_expanded, expanded);
-        assert!(!app.view.composer_model_menu_open);
-        assert_eq!(app.view.prompt, draft);
-        assert_eq!(app.tree.input_value("prompt"), Some(draft));
-        assert_eq!(app.tree.input_cursor("prompt"), Some(7));
-        assert_eq!(app.tree.focused_id(), Some("prompt"));
-        assert_eq!(app.view.composer_model, selected_model);
-        assert_eq!(app.view.composer_effort, selected_effort);
-        assert_eq!(app.draft_dirty_at, dirty_at);
-        assert!(app.active_run.is_none());
-        assert!(app.pending_prompt.is_none());
-        assert!(!app.view.running);
-        assert_eq!(app.store.as_ref().unwrap().list().unwrap(), sessions);
-    }
-
-    app.apply_action(click("composer_expand_toggle"), &ctx);
-    assert!(app.view.composer_expanded);
-    app.tree.handle_event(UiEvent::Key {
-        key: openide_ui::Key::A,
-        shift: false,
-        ctrl: true,
-    });
-    for action in app.tree.handle_event(UiEvent::Key {
-        key: openide_ui::Key::Backspace,
-        shift: false,
-        ctrl: false,
-    }) {
-        app.apply_action(action, &ctx);
-    }
-    assert!(app.view.prompt.is_empty());
-    assert!(!app.view.composer_expanded);
-    app.apply_action(click("composer_expand_toggle"), &ctx);
-    assert!(!app.view.composer_expanded);
-}
-
-#[test]
-fn composer_expansion_is_temporary_and_ignored_outside_the_native_home() {
-    let root = tempfile::tempdir().unwrap();
-    let mut app = AgentsWindow::with_data_root(root.path().join("data"));
-    let ctx = egui::Context::default();
-    app.view.workspace = root.path().display().to_string();
-    app.view.prompt = "Un borrador para revisar".into();
-    app.view.composer_expanded = true;
-    app.apply_action(click("new_session"), &ctx);
-    assert!(!app.view.composer_expanded);
-
-    app.view.selected_session = Some("synthetic-selected-session".into());
-    app.apply_action(click("composer_expand_toggle"), &ctx);
-    assert!(!app.view.composer_expanded);
-    app.view.selected_session = None;
-    app.view.selected_backend = "codex".into();
-    app.apply_action(click("composer_expand_toggle"), &ctx);
-    assert!(!app.view.composer_expanded);
-    app.view.selected_backend = "native".into();
-    app.view.show_settings = true;
-    app.apply_action(click("composer_expand_toggle"), &ctx);
-    assert!(!app.view.composer_expanded);
-    assert!(app.active_run.is_none());
-    assert!(!app.view.running);
+    app.tree.set_input_value("prompt", "antes después");
+    app.tree.set_input_cursor("prompt", 6);
+    app.write_dictation_interim("hola ".into());
+    assert_eq!(app.view.prompt, "antes hola después");
+    assert_eq!(app.view.composer_transcript_at, 6);
+    app.write_dictation_interim("hola mundo ".into());
+    assert_eq!(app.tree.input_value("prompt"), Some("antes hola mundo después"));
+    assert_eq!(app.tree.input_cursor("prompt"), Some(17));
+    app.write_dictation_interim(String::new());
+    assert_eq!(app.view.prompt, "antes después");
+    assert_eq!(app.tree.input_cursor("prompt"), Some(6));
+    // Typing over the phrase makes it the user's: it is no longer taken back.
+    app.write_dictation_interim("uno".into());
+    app.tree.set_input_value("prompt", "antes unX después");
+    app.write_dictation_interim(String::new());
+    assert_eq!(app.tree.input_value("prompt"), Some("antes unX después"));
 }
 
 #[test]

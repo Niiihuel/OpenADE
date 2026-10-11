@@ -110,7 +110,8 @@ pub(crate) struct ComposerProps<'a> {
     /// Width of the entire composer, excluding the parent dock's gutters.
     pub width: f32,
     pub home: bool,
-    pub expanded: bool,
+    /// Where `transcript` starts in `prompt`, in characters.
+    pub transcript_at: usize,
 }
 
 impl<'a> ComposerProps<'a> {
@@ -247,7 +248,7 @@ impl<'a> ComposerProps<'a> {
             native_goal: Some(&state.native_goal),
             width,
             home,
-            expanded: state.composer_expanded,
+            transcript_at: state.composer_transcript_at,
         }
     }
 }
@@ -1941,33 +1942,6 @@ fn trailing_actions(props: &ComposerProps<'_>) -> Element {
     Element::row(row).gap(4.0).size(None, Some(CONTROL_HEIGHT))
 }
 
-/// The phrase being dictated, above the editor until it is written there.
-fn transcript_row(props: &ComposerProps<'_>) -> Option<Element> {
-    if props.transcript.is_empty() {
-        return None;
-    }
-    // The newest words matter most: keep the tail that fits the one line.
-    let room = (((props.width - 32.0) / 7.0) as usize).max(8);
-    let length = props.transcript.chars().count();
-    let shown = if length > room {
-        let tail: String = props.transcript.chars().skip(length + 1 - room).collect();
-        format!("…{tail}")
-    } else {
-        props.transcript.to_owned()
-    };
-    Some(
-        Element::row(vec![
-            Element::spacer().size(Some(6.0), None),
-            Element::truncated_text(shown)
-                .foreground(MUTED_INK)
-                .font_family(FontFamily::Sans)
-                .font_size(13.0)
-                .flex(1.0),
-        ])
-        .size(None, Some(20.0)),
-    )
-}
-
 fn attachment_rows(props: &ComposerProps<'_>) -> Vec<Element> {
     let viewport_width = (props.width - 16.0).max(80.0);
     // Keep the scrollbar beside the cards, clear of their remove buttons.
@@ -2118,27 +2092,6 @@ fn composer_metadata(props: &ComposerProps<'_>) -> Element {
     })
 }
 
-fn expand_control(props: &ComposerProps<'_>) -> Element {
-    IconButton::new(
-        "composer_expand_toggle",
-        if props.expanded {
-            Icon::Collapse
-        } else {
-            Icon::Expand
-        },
-        theme::action_palette(PILL_SURFACE, theme::MENU_MUTED),
-    )
-    .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Compact)
-    .tooltip(if props.expanded {
-        "Reducir editor"
-    } else {
-        "Ampliar editor"
-    })
-    .render()
-    .size(Some(28.0), Some(28.0))
-}
-
 /// Builds one responsive composer. Visual labels come from the actual backend
 /// and its supported options; unsupported controls are omitted.
 pub(crate) fn build_composer(props: &ComposerProps<'_>) -> Element {
@@ -2165,18 +2118,20 @@ pub(crate) fn build_composer_with_height(
     ]).gap(8.0).size(Some(props.width), None);
     }
     let compact = props.width < COMPACT_CONTEXT_WIDTH;
-    let mut attachments = attachment_rows(props);
-    attachments.extend(transcript_row(props));
-    let (link_highlights, link_preview) =
+    let attachments = attachment_rows(props);
+    let (mut link_highlights, link_preview) =
         crate::rich_text::composer_links(props.prompt, (props.width - 16.0).max(0.0));
-    let requested_minimum = if props.expanded {
-        280.0
-    } else {
-        CONTROL_HEIGHT
-    };
-    let requested_maximum = if props.expanded {
-        320.0
-    } else if compact {
+    // The phrase being dictated is in the draft already, marked as not final.
+    let said = props.transcript.chars().count();
+    if said > 0 {
+        link_highlights.push(openide_ui::TextHighlight {
+            range: props.transcript_at..props.transcript_at + said,
+            color: MUTED_INK,
+            italic: true,
+        });
+    }
+    let requested_minimum = CONTROL_HEIGHT;
+    let requested_maximum = if compact {
         128.0
     } else if props.home {
         160.0
@@ -2229,9 +2184,6 @@ pub(crate) fn build_composer_with_height(
     .card_radius(CARD_RADIUS);
     if let Some(preview) = link_preview {
         composer = composer.link_preview(preview);
-    }
-    if props.home && (!props.prompt.is_empty() || props.expanded) {
-        composer = composer.editor_action(expand_control(props));
     }
     let composer = composer
         .header_strip(
@@ -2485,7 +2437,7 @@ pub(crate) mod tests {
             native_goal: None,
             width,
             home: false,
-            expanded: false,
+            transcript_at: 0,
         }
     }
 
@@ -2539,7 +2491,7 @@ pub(crate) mod tests {
                                 eframe::egui::FontId::new(
                                     size,
                                     match family {
-                                        FontFamily::Sans => eframe::egui::FontFamily::Proportional,
+                                        FontFamily::Sans | FontFamily::SansItalic => eframe::egui::FontFamily::Proportional,
                                         FontFamily::Monospace => {
                                             eframe::egui::FontFamily::Monospace
                                         }
@@ -4444,7 +4396,7 @@ pub(crate) mod tests {
                             eframe::egui::FontId::new(
                                 size,
                                 match family {
-                                    FontFamily::Sans => eframe::egui::FontFamily::Proportional,
+                                    FontFamily::Sans | FontFamily::SansItalic => eframe::egui::FontFamily::Proportional,
                                     FontFamily::Monospace => eframe::egui::FontFamily::Monospace,
                                 },
                             ),

@@ -154,22 +154,6 @@ impl AgentsWindow {
             return true;
         }
         match id.as_str() {
-            "composer_expand_toggle" => {
-                if self.view.selected_backend == "native"
-                    && self.view.selected_session.is_none()
-                    && self.view.main_page == MainPage::Workspace
-                    && !self.view.show_settings
-                    && !self.view.show_command_center
-                    && !self.view.prompt.is_empty()
-                {
-                    let cursor = self.tree.input_cursor("prompt");
-                    self.close_composer_floating_controls();
-                    self.view.composer_expanded = !self.view.composer_expanded;
-                    self.composer_cursor_pending = cursor;
-                    self.prompt_focus_pending = true;
-                    self.focus_prompt_if_pending();
-                }
-            }
             "composer:permissions" => {
                 if self.composer_choices_editable() {
                     let open = !self.view.composer_permissions_open;

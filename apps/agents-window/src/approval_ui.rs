@@ -635,7 +635,7 @@ mod tests {
                     for family in [FontFamily::Monospace, FontFamily::Sans] {
                         let font = match family {
                             FontFamily::Monospace => egui::FontId::monospace(14.0),
-                            FontFamily::Sans => egui::FontId::proportional(14.0),
+                            FontFamily::Sans | FontFamily::SansItalic => egui::FontId::proportional(14.0),
                         };
                         let metrics = context.fonts_mut(|fonts| FontMetrics {
                             char_width: fonts.glyph_width(
@@ -646,7 +646,7 @@ mod tests {
                         });
                         match family {
                             FontFamily::Monospace => tree.set_metrics(metrics),
-                            FontFamily::Sans => tree.set_sans_metrics(metrics),
+                            FontFamily::Sans | FontFamily::SansItalic => tree.set_sans_metrics(metrics),
                         }
                     }
                     let measure = context.clone();
@@ -659,7 +659,7 @@ mod tests {
                                         size,
                                         match family {
                                             FontFamily::Monospace => egui::FontFamily::Monospace,
-                                            FontFamily::Sans => egui::FontFamily::Proportional,
+                                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                                         },
                                     ),
                                     egui::Color32::WHITE,

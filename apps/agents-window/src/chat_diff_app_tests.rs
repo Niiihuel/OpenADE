@@ -687,7 +687,7 @@ fn inline_file_cards_preserve_basename_native_font_budget_and_full_path_tooltip(
                         egui::FontId::new(
                             size,
                             match family {
-                                openide_ui::FontFamily::Sans => egui::FontFamily::Proportional,
+                                openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => egui::FontFamily::Proportional,
                                 openide_ui::FontFamily::Monospace => egui::FontFamily::Monospace,
                             },
                         ),
@@ -813,7 +813,7 @@ fn export_inline_chat_editor_diff_visual_review() {
                             egui::FontId::new(
                                 size,
                                 match family {
-                                    openide_ui::FontFamily::Sans => egui::FontFamily::Proportional,
+                                    openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => egui::FontFamily::Proportional,
                                     openide_ui::FontFamily::Monospace => {
                                         egui::FontFamily::Monospace
                                     }

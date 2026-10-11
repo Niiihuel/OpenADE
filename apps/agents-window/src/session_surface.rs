@@ -4057,7 +4057,7 @@ mod tests {
             composer_add_menu_open: false,
             composer_dictation: openide_ui::DictationState::Idle,
             composer_transcript: String::new(),
-            composer_expanded: false,
+            composer_transcript_at: 0,
             composer_goal: None,
             composer_goal_editor_open: false,
             composer_goal_draft: String::new(),
@@ -5239,7 +5239,7 @@ mod tests {
                                     eframe::egui::FontId::new(
                                         size,
                                         match family {
-                                            FontFamily::Sans => {
+                                            FontFamily::Sans | FontFamily::SansItalic => {
                                                 eframe::egui::FontFamily::Proportional
                                             }
                                             FontFamily::Monospace => {
@@ -5764,7 +5764,7 @@ mod tests {
 
     #[test]
     fn window_height_limits_editor_growth_and_retains_a_readable_transcript() {
-        for expanded in [false, true] {
+        {
             for (width, height, environment_open) in [
                 (960.0, 320.0, false),
                 (960.0, 540.0, false),
@@ -5775,7 +5775,6 @@ mod tests {
                 state.sidebar_collapsed = true;
                 state.show_side_pane = false;
                 state.environment.open = environment_open;
-                state.composer_expanded = expanded;
                 state.prompt = "Instrucción larga que debe conservarse completa.\n".repeat(40);
                 state.transcript = vec![TranscriptItem::Assistant {
                     content: format!(
@@ -5804,12 +5803,9 @@ mod tests {
                 // extra pixel beyond the target budget, leaving 99px of chat.
                 assert!(
                     transcript.height >= 98.9,
-                    "{width}x{height}, expanded={expanded}, environment={environment_open}: {transcript:?}"
+                    "{width}x{height}, environment={environment_open}: {transcript:?}"
                 );
-                // The compact header can now leave room for the expanded
-                // editor's 280px minimum. Its existing maximum still applies,
-                // independently of the readable transcript budget above.
-                let editor_limit = if expanded { 320.0 } else { 180.0 };
+                let editor_limit = 180.0;
                 assert!(
                     editor.height >= 36.0 && editor.height <= editor_limit,
                     "{editor:?}"

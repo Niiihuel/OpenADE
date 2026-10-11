@@ -789,19 +789,18 @@ fn maximized_terminal_keeps_home_draft_editor_and_submit_inside_the_top_workspac
     // with_data_root already created the retained prompt editor. Programmatic
     // draft changes use the same explicit synchronization as the host.
     app.tree.set_input_value("prompt", app.view.prompt.clone());
-    for expanded in [false, true] {
-        app.view.composer_expanded = expanded;
+    {
         present_workspace(&mut app);
         let split_y = app.viewport_height
             - 4.0
             - crate::view::terminal_panel_height(&app.view, app.viewport_height);
         for id in ["prompt", "run_toggle"] {
             let rect = region_rect(&app, id);
-            assert!(rect.height >= 24.0, "{id} is clipped, expanded={expanded}: {rect:?}");
+            assert!(rect.height >= 24.0, "{id} is clipped: {rect:?}");
             assert!(rect.y >= 4.0);
             assert!(
                 rect.y + rect.height <= split_y + 0.1,
-                "{id} escaped below the top workspace, expanded={expanded}: {rect:?}"
+                "{id} escaped below the top workspace: {rect:?}"
             );
         }
         assert_eq!(app.tree.input_value("prompt"), Some(app.view.prompt.as_str()));
@@ -834,7 +833,6 @@ fn stacked_environment_and_maximized_terminal_preserve_home_and_session_composer
             present_terminal_screen(&mut app);
             app.view.terminal_maximized = true;
             app.view.prompt = "Conservar este borrador\nY mantener accesible el envío".into();
-            app.view.composer_expanded = true;
             app.tree.set_input_value("prompt", app.view.prompt.clone());
             let layout = crate::view::dock_layout(&app.view, app.viewport_width);
             assert_eq!(app.view.side_tab, SideTab::Files);
@@ -902,7 +900,6 @@ fn environment_motion_moves_the_bottom_separator_continuously_without_hiding_com
             present_terminal_screen(&mut app);
             app.view.terminal_maximized = true;
             app.view.prompt = "Mantener el borrador\nY el envío durante la transición".into();
-            app.view.composer_expanded = true;
             app.tree.set_input_value("prompt", app.view.prompt.clone());
             let closed_height = crate::view::terminal_panel_height(&app.view, height);
 

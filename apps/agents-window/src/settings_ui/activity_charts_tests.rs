@@ -83,7 +83,7 @@ fn native_tree(state: &ViewState, width: f32) -> (egui::Context, UiTree) {
                     egui::FontId::new(
                         size,
                         match family {
-                            FontFamily::Sans => egui::FontFamily::Proportional,
+                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                             FontFamily::Monospace => egui::FontFamily::Monospace,
                         },
                     ),

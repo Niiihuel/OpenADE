@@ -972,7 +972,7 @@ fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
     tree.set_text_height_measurer(move |size, family| {
         let family = match family {
             FontFamily::Monospace => egui::FontFamily::Monospace,
-            FontFamily::Sans => egui::FontFamily::Proportional,
+            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
         };
         height_context.fonts_mut(|fonts| fonts.row_height(&egui::FontId::new(size, family)))
     });
@@ -980,7 +980,7 @@ fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
     tree.set_text_measurer(move |value, size, family| {
         let family = match family {
             FontFamily::Monospace => egui::FontFamily::Monospace,
-            FontFamily::Sans => egui::FontFamily::Proportional,
+            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
         };
         context.fonts_mut(|fonts| {
             fonts
@@ -6058,7 +6058,7 @@ impl AgentsWindow {
             composer_add_menu_open: false,
             composer_dictation: openide_ui::DictationState::Idle,
             composer_transcript: String::new(),
-            composer_expanded: false,
+            composer_transcript_at: 0,
             composer_goal: None,
             composer_goal_editor_open: false,
             composer_goal_draft: String::new(),
@@ -11122,7 +11122,6 @@ impl AgentsWindow {
         self.view.message_edit.confirm = None;
         self.view.message_edit.turns.clear();
         self.message_edit.allowed = true;
-        self.view.composer_expanded = false;
         self.view.composer_branches.open = false;
         self.view.main_page = MainPage::Workspace;
         self.view.background_run_selected = false;
@@ -11517,7 +11516,34 @@ impl AgentsWindow {
         }
         self.dictation_key = None;
         self.view.composer_dictation = openide_ui::DictationState::Idle;
-        self.view.composer_transcript.clear();
+        self.write_dictation_interim(String::new());
+    }
+
+    /// Writes the phrase being dictated at the caret, in place of its last
+    /// version. It is part of the draft, as if typed, and painted as not final.
+    fn write_dictation_interim(&mut self, text: String) {
+        let prompt: Vec<char> = self.tree.input_value("prompt").unwrap_or_default().chars().collect();
+        let start = self.view.composer_transcript_at;
+        let end = start + self.view.composer_transcript.chars().count();
+        // An edit over the phrase makes it the user's text: leave it there.
+        let written = end > start
+            && prompt.get(start..end).is_some_and(|said| said.iter().copied().eq(self.view.composer_transcript.chars()));
+        let (start, end) = if written {
+            (start, end)
+        } else {
+            let caret = self.tree.input_cursor("prompt").unwrap_or(prompt.len()).min(prompt.len());
+            (caret, caret)
+        };
+        self.view.composer_transcript_at = start;
+        let caret = start + text.chars().count();
+        if written || !text.is_empty() {
+            let value: String = prompt[..start].iter().copied().chain(text.chars()).chain(prompt[end..].iter().copied()).collect();
+            self.view.prompt = value.clone();
+            self.tree.set_input_value("prompt", value);
+            self.tree.set_input_cursor("prompt", caret);
+            self.draft_dirty_at = Some(Instant::now());
+        }
+        self.view.composer_transcript = text;
     }
 
     fn toggle_dictation(&mut self, ctx: &egui::Context) {
@@ -11577,9 +11603,9 @@ impl AgentsWindow {
                     self.view.composer_dictation = openide_ui::DictationState::Listening;
                     self.view.status = "Escuchando… Pulsa el micrófono para terminar".to_owned();
                 }
-                VoiceEvent::Interim(text) => self.view.composer_transcript = text,
+                VoiceEvent::Interim(text) => self.write_dictation_interim(text),
                 VoiceEvent::Final(text) => {
-                    self.view.composer_transcript.clear();
+                    self.write_dictation_interim(String::new());
                     if !text.is_empty() && self.tree.focus("prompt") {
                         for action in self.tree.handle_event(UiEvent::Text(format!("{text} "))) {
                             self.apply_action(action, ctx);
@@ -19181,9 +19207,6 @@ impl AgentsWindow {
                     self.request_command_search();
                 }
                 "prompt" => {
-                    if value.is_empty() {
-                        self.view.composer_expanded = false;
-                    }
                     self.view.prompt = value;
                     self.draft_dirty_at = Some(Instant::now());
                 }

@@ -120,7 +120,7 @@ fn text_bounds<'a>(context: &egui::Context, command: &'a DrawCommand) -> Option<
         return None;
     };
     let family = match font_family {
-        openide_ui::FontFamily::Sans => egui::FontFamily::Proportional,
+        openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => egui::FontFamily::Proportional,
         openide_ui::FontFamily::Monospace => egui::FontFamily::Monospace,
     };
     let (width, height) = context.fonts_mut(|fonts| {

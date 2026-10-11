@@ -1033,18 +1033,12 @@ fn streaming_http_composer_growth_and_resize_preserve_tail_or_manual_reading() {
                 assert!(!app.tree.is_scroll_at_end("transcript", 24.0));
                 assert!(!visible(&grown, "VISIBLE_RETAINED_TAIL"));
             }
-            // Expansion uses the same editor height budget. Conversation
-            // routing currently offers the toggle only on Home, so exercise
-            // the retained layout state directly without changing that route.
-            app.view.composer_expanded = true;
-            let expanded = native_frame_at(&mut app, viewport, after_reveal);
-            assert!(transcript_rect(&expanded).height < transcript_rect(&grown).height - 50.0);
             let resized = native_frame_at(
                 &mut app,
                 Size::new(viewport.width, viewport.height - 80.0),
                 after_reveal,
             );
-            assert!(transcript_rect(&resized).height < transcript_rect(&expanded).height - 50.0);
+            assert!(transcript_rect(&resized).height < transcript_rect(&grown).height - 50.0);
             if follow {
                 assert!(app.tree.is_scroll_at_end("transcript", 0.1));
                 assert!(visible(&resized, "VISIBLE_RETAINED_TAIL"));

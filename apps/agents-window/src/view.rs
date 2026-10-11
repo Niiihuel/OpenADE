@@ -423,7 +423,8 @@ pub struct ViewState {
     /// The phrase being dictated, until it is written into the prompt.
     pub composer_transcript: String,
     /// Temporary editor presentation; the draft itself remains unchanged.
-    pub composer_expanded: bool,
+    /// Where the phrase being dictated starts in the prompt, in characters.
+    pub composer_transcript_at: usize,
     /// Persistent objective for the selected project and session draft.
     pub composer_goal: Option<String>,
     pub composer_goal_editor_open: bool,
@@ -3848,7 +3849,7 @@ pub(crate) mod tests {
             composer_add_menu_open: false,
             composer_dictation: openide_ui::DictationState::Idle,
             composer_transcript: String::new(),
-            composer_expanded: false,
+            composer_transcript_at: 0,
             composer_goal: None,
             composer_goal_editor_open: false,
             composer_goal_draft: String::new(),

@@ -54,7 +54,7 @@ fn native_tree(root: Element, motion: bool) -> (egui::Context, UiTree) {
             fonts.row_height(&egui::FontId::new(
                 size,
                 match family {
-                    FontFamily::Sans => egui::FontFamily::Proportional,
+                    FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                     FontFamily::Monospace => egui::FontFamily::Monospace,
                 },
             ))
@@ -68,7 +68,7 @@ fn native_tree(root: Element, motion: bool) -> (egui::Context, UiTree) {
                     egui::FontId::new(
                         size,
                         match family {
-                            FontFamily::Sans => egui::FontFamily::Proportional,
+                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                             FontFamily::Monospace => egui::FontFamily::Monospace,
                         },
                     ),

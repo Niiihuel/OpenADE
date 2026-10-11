@@ -98,7 +98,7 @@ fn counting_measurer(
                     egui::FontId::new(
                         size,
                         match family {
-                            FontFamily::Sans => egui::FontFamily::Proportional,
+                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                             FontFamily::Monospace => egui::FontFamily::Monospace,
                         },
                     ),

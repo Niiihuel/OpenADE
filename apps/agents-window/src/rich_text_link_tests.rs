@@ -223,7 +223,7 @@ fn export_chat_links_visual_review() {
                         eframe::egui::FontId::new(
                             size,
                             match family {
-                                FontFamily::Sans => eframe::egui::FontFamily::Proportional,
+                                FontFamily::Sans | FontFamily::SansItalic => eframe::egui::FontFamily::Proportional,
                                 FontFamily::Monospace => eframe::egui::FontFamily::Monospace,
                             },
                         ),

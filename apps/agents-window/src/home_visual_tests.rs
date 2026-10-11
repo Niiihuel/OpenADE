@@ -90,7 +90,7 @@ fn native_tree(state: &ComposerProps<'_>, viewport: Size) -> (egui::Context, UiT
                     egui::FontId::new(
                         size,
                         match family {
-                            FontFamily::Sans => egui::FontFamily::Proportional,
+                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                             FontFamily::Monospace => egui::FontFamily::Monospace,
                         },
                     ),
@@ -169,8 +169,7 @@ fn assert_layout(frame: &Frame, viewport: Size, state: &ComposerProps<'_>) {
     assert!(model.x + model.width <= send.x);
     assert_eq!(plus.y, send.y);
     assert!(editor.y + editor.height <= plus.y);
-    let action_visible = !state.prompt.is_empty() || state.expanded;
-    assert!(editor.width >= card.width - if action_visible { 50.0 } else { 18.0 });
+    assert!(editor.width >= card.width - 18.0);
     assert!(contains(card, permission));
     assert!(plus.x + plus.width <= permission.x);
     assert!(permission.x + permission.width <= model.x);
@@ -199,12 +198,6 @@ fn assert_layout(frame: &Frame, viewport: Size, state: &ComposerProps<'_>) {
         assert!(model.x + model.width <= microphone.x);
         assert!(microphone.x + microphone.width <= send.x);
     }
-    if !state.prompt.is_empty() || state.expanded {
-        let expand = rect(frame, "composer_expand_toggle");
-        assert!(contains(card, expand));
-        assert!(editor.x + editor.width <= expand.x);
-        assert!(expand.y + expand.height <= plus.y);
-    }
     if state.prompt.is_empty() {
         assert!(
             frame.commands.iter().any(|command| matches!(command,
@@ -221,26 +214,12 @@ fn home_native_layout_keeps_editor_selectors_and_expanded_action_in_bounds() {
     let routes = routes();
     let environment = crate::environment_ui::EnvironmentUiState::default();
     for viewport in VIEWPORTS {
-        let mut multiline_height = 0.0;
-        for (prompt, expanded) in [
-            ("", false),
-            (MULTILINE, false),
-            (MULTILINE, true),
-            ("", true),
-        ] {
+        for prompt in ["", MULTILINE] {
             let mut state = fixture(prompt, viewport.width, &routes);
             state.environment = Some(&environment);
-            state.expanded = expanded;
             let (context, mut tree) = native_tree(&state, viewport);
             let frame = tree.layout(viewport);
             assert_layout(&frame, viewport, &state);
-            if !prompt.is_empty() && !expanded {
-                multiline_height = rect(&frame, "prompt").height;
-            }
-            if expanded {
-                assert!(rect(&frame, "prompt").height >= 280.0);
-                assert!(rect(&frame, "prompt").height > multiline_height);
-            }
             context.end_pass().textures_delta.clear();
         }
     }
@@ -430,14 +409,9 @@ fn export_home_layout_visual_review() {
     let routes = routes();
     let environment = crate::environment_ui::EnvironmentUiState::default();
     for viewport in VIEWPORTS {
-        for (name, prompt, expanded) in [
-            ("home-empty", "", false),
-            ("home-multiline", MULTILINE, false),
-            ("home-expanded", MULTILINE, true),
-        ] {
+        for (name, prompt) in [("home-empty", ""), ("home-multiline", MULTILINE)] {
             let mut state = fixture(prompt, viewport.width, &routes);
             state.environment = Some(&environment);
-            state.expanded = expanded;
             let (context, mut tree) = native_tree(&state, viewport);
             let frame = tree.layout(viewport);
             assert_layout(&frame, viewport, &state);

@@ -124,6 +124,7 @@ pub(crate) fn composer_links(source: &str, width: f32) -> (Vec<TextHighlight>, O
         .map(|(range, _)| TextHighlight {
             range: range.clone(),
             color: theme::LINK,
+            italic: false,
         })
         .collect();
     if links.is_empty() || !width.is_finite() || width < 48.0 {

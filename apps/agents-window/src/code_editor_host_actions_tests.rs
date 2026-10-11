@@ -837,7 +837,7 @@ fn export_actual_dock_editor_and_dirty_reload_alert() {
     for family in [FontFamily::Monospace, FontFamily::Sans] {
         let font = match family {
             FontFamily::Monospace => egui::FontId::monospace(14.0),
-            FontFamily::Sans => egui::FontId::proportional(14.0),
+            FontFamily::Sans | FontFamily::SansItalic => egui::FontId::proportional(14.0),
         };
         let metrics = context.fonts_mut(|fonts| FontMetrics {
             char_width: fonts
@@ -846,7 +846,7 @@ fn export_actual_dock_editor_and_dirty_reload_alert() {
         });
         match family {
             FontFamily::Monospace => app.tree.set_metrics(metrics),
-            FontFamily::Sans => app.tree.set_sans_metrics(metrics),
+            FontFamily::Sans | FontFamily::SansItalic => app.tree.set_sans_metrics(metrics),
         }
     }
     install_text_measurer(&mut app.tree, &context);

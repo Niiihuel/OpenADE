@@ -248,7 +248,7 @@ fn export_model_card_visual_review() {
                         .layout_no_wrap(
                             text.into(),
                             eframe::egui::FontId::new(size, match family {
-                                FontFamily::Sans => eframe::egui::FontFamily::Proportional,
+                                FontFamily::Sans | FontFamily::SansItalic => eframe::egui::FontFamily::Proportional,
                                 FontFamily::Monospace => eframe::egui::FontFamily::Monospace,
                             }),
                             eframe::egui::Color32::WHITE,

@@ -851,7 +851,7 @@ mod tests {
                                     size,
                                     match family {
                                         FontFamily::Monospace => egui::FontFamily::Monospace,
-                                        FontFamily::Sans => egui::FontFamily::Proportional,
+                                        FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                                     },
                                 ),
                                 egui::Color32::WHITE,
@@ -1072,7 +1072,7 @@ mod tests {
                                     size,
                                     match family {
                                         FontFamily::Monospace => egui::FontFamily::Monospace,
-                                        FontFamily::Sans => egui::FontFamily::Proportional,
+                                        FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
                                     },
                                 ),
                                 egui::Color32::WHITE,
