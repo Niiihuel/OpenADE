@@ -217,6 +217,8 @@ impl AgentsWindow {
     fn hide_debug_panel(&mut self) {
         self.view.debug_open = false;
         self.view.debug.configuration_menu = false;
+        // Its answers are scoped to the open panel: left open, it could not close.
+        self.view.debug.confirm_clear_breakpoints = false;
         if self.view.ide.activity == IdeActivity::Debug {
             self.view.ide.explorer_open = false;
             if self.view.ide.compact_panel == Some(IdePanel::Explorer) {

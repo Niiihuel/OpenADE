@@ -1266,6 +1266,11 @@ fn sidebar_breakpoint_actions_change_what_the_adapter_and_the_gutter_get() {
     );
     assert!(!app.view.debug.confirm_clear_breakpoints);
     assert_eq!(lines(&app), [1]);
+    // Hiding the panel takes its question with it.
+    click(&mut app, &ctx, crate::debug_ui::action(&scope, "clear_breakpoints"));
+    click(&mut app, &ctx, crate::debug_ui::action(&scope, "hide"));
+    assert!(!app.view.debug.confirm_clear_breakpoints);
+    click(&mut app, &ctx, "ide_debug_toggle".into());
     click(&mut app, &ctx, crate::debug_ui::action(&scope, "clear_breakpoints"));
     click(&mut app, &ctx, confirm);
     app.poll_debugger(&ctx);

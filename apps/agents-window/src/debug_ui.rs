@@ -348,7 +348,13 @@ fn start_row(state: &DebugView, width: f32) -> Element {
     .enabled(state.controls.start && !state.scope.is_empty())
     .tooltip_with(
         TooltipSpec::new("Iniciar depuración")
-            .description(state.adapter.as_deref().map_or_else(String::new, bounded))
+            // The host withholds a start only while a file is unsaved or the
+            // configuration is being read.
+            .description(if state.controls.start {
+                state.adapter.as_deref().map_or_else(String::new, bounded)
+            } else {
+                "Guardá los archivos abiertos antes de iniciar".to_owned()
+            })
             .shortcut("F5")
             .placement(TooltipPlacement::Below),
     )
@@ -624,7 +630,8 @@ fn rows(state: &DebugView) -> Vec<Row> {
         }
         rows.push(Row::Section("stack"));
         if state.sections.stack {
-            if state.threads.len() > 1 && stopped {
+            // Frames belong to the selected thread and follow its row.
+            if state.threads.len() > 1 && stopped && state.threads.iter().any(|t| t.selected) {
                 for (index, thread) in state.threads.iter().enumerate() {
                     rows.push(Row::Thread(index));
                     if thread.selected {
@@ -1605,6 +1612,19 @@ mod tests {
         assert!(main < frame && frame < worker);
         assert!(copy(&tree).contains("Python · programa de prueba · main"));
         clicks(&mut tree, row_action(&state.scope, "thread", 2));
+        // Frames are never hidden for want of a selected thread.
+        let mut unselected = state.clone();
+        unselected.threads = unselected
+            .threads
+            .iter()
+            .cloned()
+            .map(|thread| DebugThreadView {
+                selected: false,
+                ..thread
+            })
+            .collect::<Vec<_>>()
+            .into();
+        assert!(button(&self::tree(&unselected), &row_action(&state.scope, "frame", 17)).is_some());
         // One thread needs no row of its own.
         state.threads = state.threads[..1].to_vec().into();
         assert!(button(&self::tree(&state), &row_action(&state.scope, "thread", 1)).is_none());
