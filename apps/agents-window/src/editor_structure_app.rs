@@ -12,12 +12,14 @@ const MAX_MARKERS_PER_FILE: usize = 256;
 const MAX_STRUCTURE_ITEMS: usize = 65_536;
 const INLINE_STRUCTURE_ITEMS: usize = 2_048;
 
-struct FileBreakpoints {
+pub(in crate::app) struct FileBreakpoints {
     workspace: String,
-    path: String,
+    pub(in crate::app) path: String,
     identity: (u64, u64),
     dirty: bool,
-    rows: BTreeSet<usize>,
+    pub(in crate::app) rows: BTreeSet<usize>,
+    /// Rows kept in the editor and withheld from the adapter.
+    pub(in crate::app) disabled: BTreeSet<usize>,
 }
 
 /// Fold and sticky-scope controls for one analysed revision.
@@ -238,6 +240,7 @@ impl AgentsWindow {
                 identity,
                 dirty,
                 rows: BTreeSet::new(),
+                disabled: BTreeSet::new(),
             });
         entry.dirty = dirty;
         if entry.identity != identity {
@@ -247,6 +250,7 @@ impl AgentsWindow {
         if !entry.rows.remove(&row) && entry.rows.len() < MAX_MARKERS_PER_FILE {
             entry.rows.insert(row);
         }
+        entry.disabled.retain(|row| entry.rows.contains(row));
         if !entry.rows.is_empty() {
             host.breakpoints.push_back(entry);
             while host.breakpoints.len() > MAX_MARKED_FILES {
@@ -277,6 +281,33 @@ impl AgentsWindow {
         }
     }
 
+    /// Changes this workspace's marks from the debug sidebar. A file left
+    /// without marks leaves the store, and the adapter is told on the next poll.
+    pub(in crate::app) fn edit_debug_breakpoints(
+        &mut self,
+        mut edit: impl FnMut(&mut FileBreakpoints),
+    ) {
+        let workspace = &self.view.workspace;
+        let host = &mut self.editor_services.structure;
+        host.breakpoints.retain_mut(|entry| {
+            if entry.workspace == *workspace {
+                edit(entry);
+                entry.disabled.retain(|row| entry.rows.contains(row));
+            }
+            !entry.rows.is_empty()
+        });
+        host.breakpoint_generation = host.breakpoint_generation.wrapping_add(1);
+        self.sync_editor_structure();
+    }
+
+    pub(in crate::app) fn debug_breakpoint_enabled(&self, path: &str, row: usize) -> bool {
+        !self.editor_services.structure.breakpoints.iter().any(|entry| {
+            entry.workspace == self.view.workspace
+                && entry.path == path
+                && entry.disabled.contains(&row)
+        })
+    }
+
     pub(in crate::app) fn debug_breakpoint_generation(&self) -> u64 {
         self.editor_services.structure.breakpoint_generation
     }
@@ -291,7 +322,7 @@ impl AgentsWindow {
                 path: PathBuf::from(&entry.workspace).join(&entry.path),
                 lines: entry
                     .rows
-                    .iter()
+                    .difference(&entry.disabled)
                     .filter_map(|row| u32::try_from(row.saturating_add(1)).ok())
                     .collect(),
             })
@@ -315,6 +346,8 @@ impl AgentsWindow {
                         path: entry.path.clone(),
                         line: u32::try_from(row.saturating_add(1)).ok()?,
                         dirty: entry.dirty,
+                        enabled: !entry.disabled.contains(row),
+                        ..Default::default()
                     })
                 })
             })
@@ -490,6 +523,7 @@ mod sidebar_breakpoint_tests {
                 identity: (1, 0),
                 dirty: false,
                 rows: [1].into_iter().collect(),
+                disabled: BTreeSet::new(),
             });
         app.editor_services
             .structure
@@ -500,6 +534,7 @@ mod sidebar_breakpoint_tests {
                 identity: (2, 0),
                 dirty: true,
                 rows: [2].into_iter().collect(),
+                disabled: BTreeSet::new(),
             });
         app.editor_services
             .structure
@@ -510,6 +545,7 @@ mod sidebar_breakpoint_tests {
                 identity: (3, 0),
                 dirty: false,
                 rows: [0].into_iter().collect(),
+                disabled: BTreeSet::new(),
             });
         let rows = app.debug_sidebar_breakpoints();
         assert_eq!(rows.len(), 2);

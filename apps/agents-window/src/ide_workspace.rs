@@ -105,6 +105,8 @@ pub(crate) struct IdeWorkspaceState {
     pub activity: IdeActivity,
     pub bottom_panel: IdeBottomPanel,
     pub bottom_open: bool,
+    /// Which sections of the debug sidebar are open.
+    pub debug_sections: crate::debug_ui::DebugSections,
     #[serde(skip)]
     pub extensions_open: bool,
     #[serde(skip)]
@@ -153,6 +155,7 @@ impl Default for IdeWorkspaceState {
             activity: IdeActivity::Files,
             bottom_panel: IdeBottomPanel::Terminal,
             bottom_open: false,
+            debug_sections: Default::default(),
             extensions_open: false,
             extensions_workspace: None,
             extensions_editor_tab: None,

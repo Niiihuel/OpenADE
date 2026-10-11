@@ -227,12 +227,32 @@ pub const FILES_EMPTY: NoticeSizing = NoticeSizing {
     description_height: None,
 };
 
-/// The debug sidebar before a program is configured.
-pub const DEBUG_SETUP: NoticeSizing = NoticeSizing {
-    title_role: TextRole::Label,
-    copy_gap: 10.0,
-    padding: 8.0,
-    ..FILES_EMPTY
+/// A section of the debug sidebar: a disclosure and its title with a count,
+/// as tall as the rows it heads. Every row's copy starts under the title.
+pub const DEBUG_SECTION: SectionSizing = SectionSizing {
+    height: 22.0,
+    padding: 3.0,
+    gap: 7.0,
+    title_size: 11.0,
+    title_muted: false,
+    detail_size: 10.0,
+    align_top: false,
+};
+
+/// A frame, a thread or a breakpoint: one 22 px line.
+pub const DEBUG_ROW: RowSizing = RowSizing {
+    height: Some(22.0),
+    padding: 3.0,
+    gap: 7.0,
+    leading_width: 16.0,
+    ..RowSizing::DENSE
+};
+
+/// The session's state over its name, under the debug controls.
+pub const DEBUG_SESSION: RowSizing = RowSizing {
+    two_line_height: Some(34.0),
+    leading_height: Some(14.0),
+    ..DEBUG_ROW
 };
 
 /// The bar over a terminal whose process ended: one cut line and an action.

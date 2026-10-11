@@ -3459,6 +3459,7 @@ fn workspace_modals(state: &ViewState, base: Element, viewport_width: f32) -> El
     let base = crate::code_editor_ui::confirmation(state, base, viewport_width);
     let base = crate::files_panel_ui::delete_dialog(state, base, viewport_width);
     let base = git_panel::discard_dialog(state, base, viewport_width);
+    let base = crate::debug_ui::clear_breakpoints_dialog(&state.debug, base, viewport_width);
     ide_ui::new_file_modal(state, base, viewport_width)
 }
 

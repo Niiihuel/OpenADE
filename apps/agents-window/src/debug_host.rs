@@ -17,6 +17,11 @@ struct VariableNode {
     view: DebugVariableView,
     reference: i64,
     children: Vec<String>,
+    /// Frame, scope and names down to this variable: what a value is compared
+    /// by across stops, where adapter references do not survive.
+    path: String,
+    /// The adapter had more children than the page that was asked for.
+    more: bool,
 }
 
 #[derive(Default)]
@@ -42,6 +47,9 @@ pub(super) struct DebugHost {
     breakpoint_requests: BTreeMap<PathBuf, u64>,
     output_dirty: bool,
     close_after_stop: bool,
+    restart_after_stop: bool,
+    /// Values of the previous stop by `VariableNode::path`.
+    previous_values: BTreeMap<String, String>,
     nodes: BTreeMap<String, VariableNode>,
     roots: Vec<String>,
     output: VecDeque<DebugOutputView>,
@@ -200,7 +208,7 @@ impl AgentsWindow {
         self.view.debug_open = true;
         self.view.show_dock_add_menu = false;
         self.view.show_dock_overview = false;
-        self.view.debug.breakpoints = self.debug_sidebar_breakpoints().into();
+        self.view.debug.breakpoints = self.debug_breakpoint_views().into();
         if self.debugger.configurations.is_empty() {
             self.load_debug_config(false);
         }
@@ -209,6 +217,8 @@ impl AgentsWindow {
     fn hide_debug_panel(&mut self) {
         self.view.debug_open = false;
         self.view.debug.configuration_menu = false;
+        // Its answers are scoped to the open panel: left open, it could not close.
+        self.view.debug.confirm_clear_breakpoints = false;
         if self.view.ide.activity == IdeActivity::Debug {
             self.view.ide.explorer_open = false;
             if self.view.ide.compact_panel == Some(IdePanel::Explorer) {
@@ -248,6 +258,7 @@ impl AgentsWindow {
             step_over: stopped,
             step_into: stopped,
             step_out: stopped,
+            restart: active && !matches!(state, DebugStatus::Stopping),
             stop: active && !matches!(state, DebugStatus::Stopping),
         };
     }
@@ -261,6 +272,14 @@ impl AgentsWindow {
         }
     }
     fn clear_debug_inspection(&mut self) {
+        if !self.debugger.nodes.is_empty() {
+            self.debugger.previous_values = self
+                .debugger
+                .nodes
+                .values()
+                .map(|node| (node.path.clone(), node.view.value.clone()))
+                .collect();
+        }
         self.debugger.inspection = self.debugger.inspection.wrapping_add(1);
         self.debugger.frame = None;
         self.debugger.frames.clear();
@@ -285,13 +304,13 @@ impl AgentsWindow {
         self.debugger.stack_request = self.debug_send(DebugCommand::StackTrace {
             thread_id: thread,
             start_frame: 0,
-            levels: 100,
+            levels: PAGE as u32,
         });
     }
     fn select_debug_frame(&mut self, frame: i64) {
-        let Some(selected) = self.debugger.frames.iter().find(|f| f.id == frame).cloned() else {
+        if !self.debugger.frames.iter().any(|f| f.id == frame) {
             return;
-        };
+        }
         self.debugger.inspection = self.debugger.inspection.wrapping_add(1);
         self.debugger.frame = Some(frame);
         self.debugger.nodes.clear();
@@ -318,11 +337,18 @@ impl AgentsWindow {
             .collect::<Vec<_>>()
             .into();
         self.debugger.scope_request = self.debug_send(DebugCommand::Scopes { frame_id: frame });
+        self.reveal_debug_frame(frame);
+    }
+    /// Opens the frame's source at its line. Inspection is left as it is.
+    fn reveal_debug_frame(&mut self, frame: i64) {
         // A running IDE debug session survives switching to Agents, but its
         // asynchronous stops must not replace the file or selection in chat.
         if !self.ide_workspace_active() {
             return;
         }
+        let Some(selected) = self.debugger.frames.iter().find(|f| f.id == frame).cloned() else {
+            return;
+        };
         if let Some(path) = selected
             .source
             .and_then(|source| source.path)
@@ -386,6 +412,15 @@ impl AgentsWindow {
                     for child in &node.children {
                         visit(child, nodes, rows, depth + 1);
                     }
+                    if node.more {
+                        rows.push(DebugVariableView {
+                            key: format!("{key}/more"),
+                            name: format!("Se muestran los primeros {PAGE}"),
+                            depth: node.view.depth + 1,
+                            note: true,
+                            ..Default::default()
+                        });
+                    }
                 }
             }
         }
@@ -409,7 +444,7 @@ impl AgentsWindow {
         if let Some(request) = self.debug_send(DebugCommand::Variables {
             variables_reference: reference,
             start: 0,
-            count: 100,
+            count: PAGE as u32,
         }) {
             self.debugger.variable_requests.insert(request, key.into());
         } else if let Some(node) = self.debugger.nodes.get_mut(key) {
@@ -443,6 +478,8 @@ impl AgentsWindow {
         self.view.debug.output = Arc::from([]);
         self.view.debug.threads = Arc::from([]);
         self.view.debug.message = None;
+        self.view.debug.stop_reason = None;
+        self.debugger.previous_values.clear();
         self.debugger.sources = self
             .debug_source_breakpoints()
             .into_iter()
@@ -501,8 +538,18 @@ impl AgentsWindow {
                 self.view.debug.status = DebugStatus::Stopped;
                 self.debugger.stop_id = stop_id;
                 self.debugger.control_request = None;
-                self.view.debug.message =
-                    Some(description.unwrap_or_else(|| format!("Pausa: {reason}")));
+                self.view.debug.message = None;
+                self.view.debug.stop_reason = Some(description.unwrap_or_else(|| {
+                    match reason.as_str() {
+                        "breakpoint" => "punto de interrupción",
+                        "step" => "paso",
+                        "pause" => "pausa manual",
+                        "exception" => "excepción",
+                        "entry" => "entrada del programa",
+                        other => other,
+                    }
+                    .to_owned()
+                }));
                 self.clear_debug_inspection();
                 self.debugger.thread = thread_id;
                 self.debug_send(DebugCommand::Threads);
@@ -514,6 +561,7 @@ impl AgentsWindow {
                 self.debugger.control_request = None;
                 self.view.debug.status = DebugStatus::Running;
                 self.view.debug.message = None;
+                self.view.debug.stop_reason = None;
                 self.clear_debug_inspection();
             }
             DebugEvent::Threads { threads, .. } => {
@@ -556,7 +604,7 @@ impl AgentsWindow {
                 && Some(thread_id) == self.debugger.thread =>
             {
                 self.debugger.stack_request = None;
-                self.debugger.frames = frames.into_iter().take(100).collect();
+                self.debugger.frames = frames.into_iter().take(PAGE).collect();
                 if let Some(frame) = self.debugger.frames.first().map(|f| f.id) {
                     self.select_debug_frame(frame);
                 }
@@ -572,6 +620,12 @@ impl AgentsWindow {
                 && Some(frame_id) == self.debugger.frame =>
             {
                 self.debugger.scope_request = None;
+                let frame = self
+                    .debugger
+                    .frames
+                    .iter()
+                    .find(|frame| frame.id == frame_id)
+                    .map_or_else(String::new, |frame| frame.name.clone());
                 for (index, scope) in scopes.into_iter().take(32).enumerate() {
                     let key = format!("scope:{index}");
                     self.debugger.roots.push(key.clone());
@@ -580,6 +634,8 @@ impl AgentsWindow {
                         VariableNode {
                             reference: scope.variables_reference,
                             children: vec![],
+                            path: format!("{frame}\u{1f}{}", scope.name),
+                            more: false,
                             view: DebugVariableView {
                                 key: key.clone(),
                                 name: short(&scope.name, 4096),
@@ -587,9 +643,7 @@ impl AgentsWindow {
                                 type_name: None,
                                 depth: 0,
                                 has_children: scope.variables_reference > 0,
-                                expanded: false,
-                                loading: false,
-                                error: None,
+                                ..Default::default()
                             },
                         },
                     );
@@ -619,17 +673,29 @@ impl AgentsWindow {
                     return;
                 };
                 node.view.loading = false;
+                // A full page is taken as "there may be more": the host asks
+                // for one page and says so instead of hiding the rest.
+                node.more = variables.len() >= PAGE;
+                let parent = node.path.clone();
                 let depth = node.view.depth + 1;
                 let remaining = 1024usize.saturating_sub(self.debugger.nodes.len());
                 let mut children = Vec::new();
-                for (index, var) in variables.into_iter().take(100.min(remaining)).enumerate() {
+                for (index, var) in variables.into_iter().take(PAGE.min(remaining)).enumerate() {
                     let child = format!("{key}/{index}");
                     children.push(child.clone());
+                    let path = format!("{parent}\u{1f}{}", var.name);
+                    let changed = self
+                        .debugger
+                        .previous_values
+                        .get(&path)
+                        .is_some_and(|previous| *previous != short(&var.value, 4096));
                     self.debugger.nodes.insert(
                         child.clone(),
                         VariableNode {
                             reference: var.variables_reference,
                             children: vec![],
+                            path,
+                            more: false,
                             view: DebugVariableView {
                                 key: child,
                                 name: short(&var.name, 4096),
@@ -637,9 +703,8 @@ impl AgentsWindow {
                                 type_name: var.type_name.map(|s| short(&s, 1024)),
                                 depth,
                                 has_children: var.variables_reference > 0 && depth < 8,
-                                expanded: false,
-                                loading: false,
-                                error: None,
+                                changed,
+                                ..Default::default()
                             },
                         },
                     );
@@ -762,6 +827,7 @@ impl AgentsWindow {
                 self.debugger.session = None;
                 self.debugger.verified.clear();
                 self.clear_debug_inspection();
+                self.view.debug.stop_reason = None;
                 self.view.debug.status = if failed {
                     DebugStatus::Failed
                 } else {
@@ -770,6 +836,10 @@ impl AgentsWindow {
                 if self.view.debug.message.is_none() {
                     self.view.debug.message = Some(short(&reason, 4096));
                 }
+                // Restart is a stop followed by a start of the same program.
+                if std::mem::take(&mut self.debugger.restart_after_stop) && !failed {
+                    self.start_debugger();
+                }
             }
             _ => {}
         }
@@ -777,13 +847,14 @@ impl AgentsWindow {
     pub(super) fn poll_debugger(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = self.debugger.workspace != self.view.workspace;
         self.reset_debug_workspace();
+        self.view.debug.sections = self.view.ide.debug_sections;
         if self.debug_sidebar_visible() && !self.view.debug_open {
             // Restore persisted activity content without launching a process.
             self.view.debug_open = true;
             if self.debugger.configurations.is_empty() {
                 self.load_debug_config(false);
             }
-            self.view.debug.breakpoints = self.debug_sidebar_breakpoints().into();
+            self.view.debug.breakpoints = self.debug_breakpoint_views().into();
             changed = true;
         }
         let ready = match self.debugger.config_job.as_ref().map(|rx| rx.try_recv()) {
@@ -803,15 +874,12 @@ impl AgentsWindow {
                 self.debugger.configurations = match ready.result {
                     Ok(configs) if configs.is_empty() => {
                         self.view.debug.status = DebugStatus::Unconfigured;
-                        self.view.debug.message =
-                            Some("Configura un programa para comenzar".into());
+                        self.view.debug.message = None;
                         configs
                     }
                     Ok(configs) => {
                         self.view.debug.status = DebugStatus::Idle;
-                        self.view.debug.message = Some(
-                            "Iniciar ejecutará la configuración seleccionada del proyecto".into(),
-                        );
+                        self.view.debug.message = None;
                         configs
                     }
                     Err(error) => {
@@ -841,7 +909,6 @@ impl AgentsWindow {
         let generation = self.debug_breakpoint_generation();
         if generation != self.debugger.breakpoint_generation {
             self.debugger.breakpoint_generation = generation;
-            self.view.debug.breakpoints = self.debug_sidebar_breakpoints().into();
             let sources: BTreeMap<_, _> = self
                 .debug_source_breakpoints()
                 .into_iter()
@@ -880,6 +947,12 @@ impl AgentsWindow {
             self.handle_debug_event(event);
             changed = true;
         }
+        if changed {
+            self.view.debug.breakpoints = self.debug_breakpoint_views().into();
+            if self.view.debug.breakpoints.is_empty() {
+                self.view.debug.confirm_clear_breakpoints = false;
+            }
+        }
         if self.debugger.output_dirty {
             self.view.debug.output = self
                 .debugger
@@ -903,6 +976,27 @@ impl AgentsWindow {
             ctx.request_repaint_after(Duration::from_millis(24));
         }
         changed
+    }
+    /// The sidebar's marks with what the running adapter answered for each.
+    fn debug_breakpoint_views(&self) -> Vec<DebugBreakpointView> {
+        let mut marks = self.debug_sidebar_breakpoints();
+        for mark in marks.iter_mut().filter(|mark| mark.enabled && !mark.dirty) {
+            let absolute = PathBuf::from(&self.view.workspace).join(&mark.path);
+            if let Some(answer) = self.debugger.verified.get(&absolute).and_then(|answers| {
+                answers
+                    .iter()
+                    .find(|answer| answer.requested_line == Some(mark.line))
+            }) {
+                mark.verified = Some(answer.verified);
+                mark.message = answer.message.clone().or_else(|| {
+                    answer
+                        .line
+                        .filter(|line| answer.verified && *line != mark.line)
+                        .map(|line| format!("El adaptador detendrá en la línea {line}"))
+                });
+            }
+        }
+        marks
     }
     fn project_debug_editor(&mut self) -> bool {
         let Some((_, path, _, snapshot)) = self.active_editor() else {
@@ -934,6 +1028,11 @@ impl AgentsWindow {
                     (
                         CodeBreakpointState::Disabled,
                         Some("Guarda el archivo antes de depurar esta línea".into()),
+                    )
+                } else if !self.debug_breakpoint_enabled(&path, *row) {
+                    (
+                        CodeBreakpointState::Disabled,
+                        Some("Punto de interrupción desactivado".into()),
                     )
                 } else if let Some(mark) = verified {
                     (
@@ -1045,6 +1144,7 @@ impl AgentsWindow {
             "step_over" => controls.step_over,
             "step_into" => controls.step_into,
             "step_out" => controls.step_out,
+            "restart" => controls.restart,
             "stop" => controls.stop,
             _ => false,
         };
@@ -1086,8 +1186,44 @@ impl AgentsWindow {
         match kind {
             "debug_control" => {
                 if let Some(op) = value.as_str() {
+                    if op == "console" {
+                        self.open_ide_bottom(IdeBottomPanel::DebugConsole, ctx);
+                    }
                     self.debug_operation(op);
                     self.reveal_debug_console_after_start(op, ctx);
+                }
+            }
+            "debug_breakpoint_toggle" | "debug_breakpoint_remove" => {
+                if let Ok((path, line)) = serde_json::from_value::<(String, u32)>(value) {
+                    let row = line.saturating_sub(1) as usize;
+                    let remove = kind == "debug_breakpoint_remove";
+                    self.edit_debug_breakpoints(|entry| {
+                        if entry.path != path || !entry.rows.contains(&row) {
+                            return;
+                        }
+                        if remove {
+                            entry.rows.remove(&row);
+                            entry.disabled.remove(&row);
+                        } else if !entry.disabled.remove(&row) {
+                            entry.disabled.insert(row);
+                        }
+                    });
+                }
+            }
+            "debug_reveal" if self.view.debug.status == DebugStatus::Stopped => {
+                if let Some(frame) = value.as_i64() {
+                    self.reveal_debug_frame(frame);
+                }
+            }
+            "debug_copy" => {
+                if let Ok((key, what)) = serde_json::from_value::<(String, String)>(value) {
+                    if let Some(node) = self.debugger.nodes.get(&key) {
+                        ctx.copy_text(if what == "name" {
+                            node.view.name.clone()
+                        } else {
+                            node.view.value.clone()
+                        });
+                    }
                 }
             }
             "debug_configuration" if self.debugger.session.is_none() => {
@@ -1132,13 +1268,17 @@ impl AgentsWindow {
                     }
                 }
             }
-            "debug_section" => match value.as_str() {
-                Some("stack") => self.view.debug.sections.stack ^= true,
-                Some("variables") => self.view.debug.sections.variables ^= true,
-                Some("output") => self.view.debug.sections.output ^= true,
-                Some("breakpoints") => self.view.debug.sections.breakpoints ^= true,
-                _ => {}
-            },
+            "debug_section" => {
+                let sections = &mut self.view.ide.debug_sections;
+                match value.as_str() {
+                    Some("stack") => sections.stack ^= true,
+                    Some("variables") => sections.variables ^= true,
+                    Some("breakpoints") => sections.breakpoints ^= true,
+                    _ => {}
+                }
+                self.view.debug.sections = *sections;
+                self.persist_ide_workspace();
+            }
             _ => {}
         }
         self.refresh_debug_controls();
@@ -1156,13 +1296,34 @@ impl AgentsWindow {
                 self.view.debug.configuration_menu ^= true
             }
             "dismiss_configurations" => self.view.debug.configuration_menu = false,
+            "console" => {}
+            "toggle_breakpoints" => {
+                let disable = self.view.debug.breakpoints.iter().any(|mark| mark.enabled);
+                self.edit_debug_breakpoints(|entry| {
+                    entry.disabled = if disable {
+                        entry.rows.clone()
+                    } else {
+                        Default::default()
+                    };
+                });
+            }
+            "clear_breakpoints" => {
+                self.view.debug.confirm_clear_breakpoints = !self.view.debug.breakpoints.is_empty()
+            }
+            "clear_breakpoints_cancel" => self.view.debug.confirm_clear_breakpoints = false,
+            "clear_breakpoints_confirm" if self.view.debug.confirm_clear_breakpoints => {
+                self.view.debug.confirm_clear_breakpoints = false;
+                self.edit_debug_breakpoints(|entry| entry.rows.clear());
+            }
             "start" => self.start_debugger(),
-            "stop" if controls.stop => {
+            "stop" | "restart" if controls.stop => {
                 if self.debug_send(DebugCommand::Stop).is_some() {
+                    self.debugger.restart_after_stop = op == "restart";
                     self.view.debug.status = DebugStatus::Stopping;
                     self.clear_debug_inspection();
                 }
             }
+            "stop" | "restart" => {}
             _ => {
                 let Some(thread_id) = self.debugger.thread else {
                     return;
@@ -1184,12 +1345,7 @@ impl AgentsWindow {
         }
     }
     pub(super) fn handle_debug_key(&mut self, event: &UiEvent, ctx: &egui::Context) -> bool {
-        let UiEvent::Key {
-            key,
-            ctrl: false,
-            shift,
-        } = event
-        else {
+        let UiEvent::Key { key, ctrl, shift } = event else {
             return false;
         };
         if !self.ide_workspace_active()
@@ -1199,6 +1355,8 @@ impl AgentsWindow {
             return false;
         }
         let op = match (key, shift) {
+            (openide_ui::Key::F5, true) if *ctrl => "restart",
+            _ if *ctrl => return false,
             (openide_ui::Key::F5, false) => {
                 if self.view.debug.status == DebugStatus::Stopped {
                     "resume"

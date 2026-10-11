@@ -51,16 +51,15 @@ fn node(key: &str, reference: i64) -> VariableNode {
     VariableNode {
         reference,
         children: Vec::new(),
+        path: key.into(),
+        more: false,
         view: DebugVariableView {
             key: key.into(),
             name: key.into(),
-            value: String::new(),
-            type_name: None,
-            depth: 0,
             has_children: true,
             expanded: true,
             loading: true,
-            error: None,
+            ..Default::default()
         },
     }
 }
@@ -714,10 +713,7 @@ fn ide_missing_configuration_is_onboarding_but_invalid_configuration_remains_an_
     };
     refresh(&mut app);
     assert_eq!(app.view.debug.status, DebugStatus::Unconfigured);
-    assert_eq!(
-        app.view.debug.message.as_deref(),
-        Some("Configura un programa para comenzar")
-    );
+    assert_eq!(app.view.debug.message, None, "the panel's empty state says it");
     assert!(!PathBuf::from(&app.view.workspace).join(".openide").exists());
     assert!(app.debugger.session.is_none());
     debug_config::ensure_template(std::path::Path::new(&app.view.workspace)).unwrap();
@@ -849,6 +845,10 @@ fn debugger_stale_inspection_failure_does_not_replace_current_stop_message() {
     let (_root, mut app) = fixture();
     stopped(&mut app, 5);
     app.debugger.stack_request = Some(50);
+    assert_eq!(
+        app.view.debug.stop_reason.as_deref(),
+        Some("punto de interrupción")
+    );
     let current = app.view.debug.message.clone();
     app.handle_debug_event(DebugEvent::RequestFailed {
         request_id: Some(49),
@@ -1048,4 +1048,318 @@ fn debugger_configuration_never_follows_a_workspace_directory_symlink() {
         debug_config::read(&workspace).is_err(),
         "configuration ownership must match the workspace"
     );
+}
+
+fn click(app: &mut AgentsWindow, ctx: &egui::Context, id: String) {
+    assert!(app.apply_debug_action(&UiAction::Clicked { id }, ctx));
+}
+
+fn variable(name: &str, value: &str) -> Variable {
+    Variable {
+        name: name.into(),
+        value: value.into(),
+        type_name: None,
+        variables_reference: 0,
+        evaluate_name: None,
+        named_variables: None,
+        indexed_variables: None,
+    }
+}
+
+/// One stop in `frame-6` whose only scope answers with `variables`.
+fn inspect(app: &mut AgentsWindow, stop: u64, variables: Vec<Variable>) {
+    stopped(app, stop);
+    app.debugger.frames = vec![frame(6, None)];
+    app.debugger.frame = Some(6);
+    app.debugger.scope_request = Some(1);
+    app.handle_debug_event(DebugEvent::Scopes {
+        request_id: 1,
+        stop_id: stop,
+        frame_id: 6,
+        scopes: vec![Scope {
+            name: "Locals".into(),
+            variables_reference: 80,
+            expensive: true,
+            named_variables: None,
+            indexed_variables: None,
+        }],
+    });
+    app.debugger.variable_requests.insert(2, "scope:0".into());
+    app.debugger.nodes.get_mut("scope:0").unwrap().view.expanded = true;
+    app.handle_debug_event(DebugEvent::Variables {
+        request_id: 2,
+        stop_id: stop,
+        variables_reference: 80,
+        variables,
+    });
+}
+
+#[test]
+fn a_value_that_differs_from_the_previous_stop_is_marked_and_a_full_page_says_so() {
+    let (_root, mut app) = fixture();
+    inspect(
+        &mut app,
+        1,
+        vec![variable("counter", "1"), variable("name", "a")],
+    );
+    assert!(app.view.debug.variables.iter().all(|row| !row.changed));
+    app.handle_debug_event(DebugEvent::Continued {
+        thread_id: Some(7),
+        all_threads_continued: true,
+    });
+    assert_eq!(app.view.debug.stop_reason, None);
+    inspect(
+        &mut app,
+        2,
+        vec![variable("counter", "2"), variable("name", "a")],
+    );
+    let changed: Vec<_> = app
+        .view
+        .debug
+        .variables
+        .iter()
+        .map(|row| (row.name.as_str(), row.changed))
+        .collect();
+    assert_eq!(
+        changed,
+        [("Locals", false), ("counter", true), ("name", false)]
+    );
+
+    app.handle_debug_event(DebugEvent::Continued {
+        thread_id: Some(7),
+        all_threads_continued: true,
+    });
+    let page = crate::debug_ui::PAGE;
+    inspect(
+        &mut app,
+        3,
+        (0..page + 5).map(|index| variable(&format!("v{index}"), "0")).collect(),
+    );
+    let rows = &app.view.debug.variables;
+    assert_eq!(rows.len(), page + 2, "the scope, one page and its note");
+    assert!(rows[page + 1].note && rows[page + 1].name.contains("100"));
+}
+
+#[test]
+fn the_paused_line_reveals_its_source_and_copy_reads_the_host_value() {
+    let (_root, mut app) = fixture();
+    let ctx = egui::Context::default();
+    let path = PathBuf::from(&app.view.workspace).join("main.rs");
+    std::fs::write(&path, "fn main() {\n    let value = 1;\n}\n").unwrap();
+    inspect(&mut app, 1, vec![variable("counter", "41")]);
+    app.debugger.frames = vec![frame(6, Some(path))];
+    let scope = app.view.debug.scope.clone();
+    click(&mut app, &ctx, crate::debug_ui::row_action(&scope, "reveal", 6));
+    assert_eq!(
+        app.editor_services
+            .pending_navigation
+            .as_ref()
+            .map(|(path, position)| (path.clone(), position.line)),
+        Some((PathBuf::from("main.rs"), 1))
+    );
+    assert_eq!(
+        app.view.debug.variables.len(),
+        2,
+        "revealing keeps the inspection"
+    );
+    assert_eq!(app.view.debug.scope, scope);
+
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        for (what, key) in [("value", "scope:0/0"), ("name", "scope:0/0"), ("value", "gone")] {
+            click(
+                &mut app,
+                ui.ctx(),
+                crate::debug_ui::row_action(&scope, "copy", (key, what)),
+            );
+        }
+    });
+    output.textures_delta.clear();
+    let copied: Vec<_> = output
+        .platform_output
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(copied, ["41", "counter"]);
+}
+
+#[test]
+fn sidebar_breakpoint_actions_change_what_the_adapter_and_the_gutter_get() {
+    let (_root, mut app) = fixture();
+    let ctx = egui::Context::default();
+    open_fixture_document(&mut app);
+    let add = |app: &mut AgentsWindow| {
+        app.apply_action(
+            UiAction::Clicked {
+                id: "editor_breakpoint".into(),
+            },
+            &ctx,
+        );
+        app.poll_debugger(&ctx);
+    };
+    add(&mut app);
+    let scope = app.view.debug.scope.clone();
+    let mark = ("main.rs", 1);
+    let lines = |app: &AgentsWindow| -> Vec<u32> {
+        app.debug_source_breakpoints()
+            .into_iter()
+            .flat_map(|source| source.lines)
+            .collect()
+    };
+    assert_eq!(lines(&app), [1]);
+    assert!(app.view.debug.breakpoints[0].enabled);
+
+    // Disabled: still a mark in the editor, no longer a line for the adapter.
+    click(
+        &mut app,
+        &ctx,
+        crate::debug_ui::row_action(&scope, "breakpoint_toggle", mark),
+    );
+    app.poll_debugger(&ctx);
+    assert!(lines(&app).is_empty());
+    assert_eq!(&*app.view.editor_workbench.breakpoint_rows, &[0]);
+    assert!(!app.view.debug.breakpoints[0].enabled);
+    assert_eq!(
+        app.view.editor_workbench.debug_breakpoints[0].state,
+        CodeBreakpointState::Disabled
+    );
+
+    // The header switches every mark at once, on again when none is enabled.
+    click(
+        &mut app,
+        &ctx,
+        crate::debug_ui::action(&scope, "toggle_breakpoints"),
+    );
+    app.poll_debugger(&ctx);
+    assert_eq!(lines(&app), [1]);
+    click(
+        &mut app,
+        &ctx,
+        crate::debug_ui::action(&scope, "toggle_breakpoints"),
+    );
+    app.poll_debugger(&ctx);
+    assert!(lines(&app).is_empty());
+
+    click(
+        &mut app,
+        &ctx,
+        crate::debug_ui::row_action(&scope, "breakpoint_remove", mark),
+    );
+    app.poll_debugger(&ctx);
+    assert!(app.view.debug.breakpoints.is_empty());
+    assert!(app.view.editor_workbench.breakpoint_rows.is_empty());
+
+    // Removing all asks first; cancelling keeps every mark.
+    add(&mut app);
+    let confirm = crate::debug_ui::action(&scope, "clear_breakpoints_confirm");
+    click(&mut app, &ctx, confirm.clone());
+    assert_eq!(app.view.debug.breakpoints.len(), 1, "not asked, not removed");
+    click(&mut app, &ctx, crate::debug_ui::action(&scope, "clear_breakpoints"));
+    assert!(app.view.debug.confirm_clear_breakpoints);
+    click(
+        &mut app,
+        &ctx,
+        crate::debug_ui::action(&scope, "clear_breakpoints_cancel"),
+    );
+    assert!(!app.view.debug.confirm_clear_breakpoints);
+    assert_eq!(lines(&app), [1]);
+    // Hiding the panel takes its question with it.
+    click(&mut app, &ctx, crate::debug_ui::action(&scope, "clear_breakpoints"));
+    click(&mut app, &ctx, crate::debug_ui::action(&scope, "hide"));
+    assert!(!app.view.debug.confirm_clear_breakpoints);
+    click(&mut app, &ctx, "ide_debug_toggle".into());
+    click(&mut app, &ctx, crate::debug_ui::action(&scope, "clear_breakpoints"));
+    click(&mut app, &ctx, confirm);
+    app.poll_debugger(&ctx);
+    assert!(!app.view.debug.confirm_clear_breakpoints);
+    assert!(app.view.debug.breakpoints.is_empty());
+    assert!(lines(&app).is_empty());
+}
+
+#[test]
+fn the_adapters_answer_reaches_the_sidebar_mark() {
+    let (_root, mut app) = fixture();
+    let ctx = egui::Context::default();
+    open_fixture_document(&mut app);
+    app.apply_action(
+        UiAction::Clicked {
+            id: "editor_breakpoint".into(),
+        },
+        &ctx,
+    );
+    app.poll_debugger(&ctx);
+    assert_eq!(app.view.debug.breakpoints[0].verified, None);
+    app.debugger.verified.insert(
+        PathBuf::from(&app.view.workspace).join("main.rs"),
+        vec![Breakpoint {
+            verified: false,
+            message: Some("No code here".into()),
+            requested_line: Some(1),
+            ..Default::default()
+        }],
+    );
+    let marks = app.debug_breakpoint_views();
+    assert_eq!(marks[0].verified, Some(false));
+    assert_eq!(marks[0].message.as_deref(), Some("No code here"));
+}
+
+#[test]
+fn open_sections_are_saved_with_the_ide_layout() {
+    let (root, mut app) = fixture();
+    let ctx = egui::Context::default();
+    let scope = app.view.debug.scope.clone();
+    click(
+        &mut app,
+        &ctx,
+        crate::debug_ui::row_action(&scope, "section", "variables"),
+    );
+    assert!(!app.view.debug.sections.variables);
+    assert!(app.view.debug.sections.stack && app.view.debug.sections.breakpoints);
+    let saved = crate::ide_workspace::IdeWorkspaceState::load(&root.path().join("state"));
+    assert!(!saved.debug_sections.variables && saved.debug_sections.stack);
+    // A reset of the debugger's view, as on a workspace switch, keeps them.
+    app.view.debug = DebugView::default();
+    app.poll_debugger(&ctx);
+    assert!(!app.view.debug.sections.variables);
+}
+
+#[test]
+fn restart_is_a_stop_that_starts_the_same_configuration_again() {
+    let (_root, mut app) = fixture();
+    let ctx = egui::Context::default();
+    let scope = app.view.debug.scope.clone();
+    // Without a session there is nothing to restart.
+    click(&mut app, &ctx, crate::debug_ui::action(&scope, "restart"));
+    assert!(!app.debugger.restart_after_stop && app.debugger.session.is_none());
+    assert!(!app.view.debug.controls.restart);
+
+    // The worker's own disconnect is what starts the next session. A missing
+    // executable exercises it without launching a process.
+    app.debugger.configurations = vec![serde_json::from_value(serde_json::json!({
+        "name": "Never launched", "adapter": {"command": "never-created-adapter"},
+        "request": "launch", "arguments": {}
+    }))
+    .unwrap()];
+    app.view.debug.status = DebugStatus::Stopping;
+    app.debugger.restart_after_stop = true;
+    app.handle_debug_event(DebugEvent::Disconnected {
+        reason: "Adapter disconnected".into(),
+    });
+    assert!(!app.debugger.restart_after_stop);
+    assert!(app.debugger.session.is_some());
+    assert_eq!(app.view.debug.status, DebugStatus::Starting);
+    assert_eq!(app.view.debug.message, None);
+    app.refresh_debug_controls();
+    assert!(app.view.debug.controls.restart && app.view.debug.controls.stop);
+
+    // A session that never started is a failure, not something to loop on.
+    app.debugger.restart_after_stop = true;
+    app.handle_debug_event(DebugEvent::Disconnected {
+        reason: "Cannot start debug adapter: missing".into(),
+    });
+    assert_eq!(app.view.debug.status, DebugStatus::Failed);
+    assert!(app.debugger.session.is_none() && !app.debugger.restart_after_stop);
 }

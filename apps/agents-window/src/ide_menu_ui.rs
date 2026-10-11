@@ -220,6 +220,7 @@ fn entries(state: &ViewState, menu: &str) -> Vec<DropdownMenuEntry> {
                 ("step_over", "Paso por encima", controls.step_over),
                 ("step_into", "Paso a paso", controls.step_into),
                 ("step_out", "Salir de la función", controls.step_out),
+                ("restart", "Reiniciar depuración", controls.restart),
                 ("stop", "Detener depuración", controls.stop),
             ] {
                 let action_id = crate::debug_ui::action(&state.debug.scope, operation);
@@ -400,7 +401,7 @@ mod tests {
             let (_, operation) = serde_json::from_str::<(String, String)>(data).unwrap();
             operations.insert(operation, item.state == ControlState::Enabled);
         }
-        assert_eq!(operations.len(), 7);
+        assert_eq!(operations.len(), 8);
         for (operation, enabled) in operations {
             assert_eq!(
                 enabled,
