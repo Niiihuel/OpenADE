@@ -253,6 +253,51 @@ pub fn cancel_paused_turn(
     Ok(event)
 }
 
+/// What the host tells the model when a conversation continues on another
+/// model after a pause. Shown to the person as a notice, never as a message
+/// of theirs.
+pub const MODEL_SWITCH_CONTINUATION: &str = "The previous turn was interrupted by a provider limit and this conversation now continues on a different model. Continue the interrupted work from where it stopped, using the conversation so far as the source of truth. Every tool call above that has a result has already run: do not repeat it. Do the step that was still pending; if the work was already finished, give the final answer. Reply in the language the user has been using.";
+
+/// Close a turn paused at a model boundary so the conversation continues on
+/// another route in the turn `next_turn_id`. Refused for any other recovery
+/// state. Whether the next turn re-admits this turn's prompt or opens with
+/// `MODEL_SWITCH_CONTINUATION` is recorded in the event: a turn paused before
+/// its first response has nothing to continue from but its own prompt.
+pub fn supersede_paused_turn(
+    sessions: &SessionStore,
+    checkpoints: &CheckpointFileStore,
+    lease: &NativeSessionLease,
+    provider_id: &str,
+    model_id: &str,
+    next_turn_id: &str,
+) -> Result<AgentEvent, ResumeError> {
+    let (_, _, replay) = load_manual_replay(sessions, checkpoints, lease)?;
+    let Some(pause) = replay.pause.as_ref().filter(|_| {
+        matches!(
+            replay.recovery,
+            ReplayRecovery::ReadyForModel { .. } | ReplayRecovery::ModelInFlight { .. }
+        )
+    }) else {
+        return Err(ResumeError::StaleResolution);
+    };
+    let sequence = replay
+        .last_sequence
+        .checked_add(1)
+        .ok_or(ResumeError::SequenceExhausted)?;
+    let event = AgentEvent::new(
+        lease.session_id(),
+        sequence,
+        AgentEventKind::TurnSuperseded {
+            provider_id: provider_id.to_owned(),
+            model_id: model_id.to_owned(),
+            next_turn_id: next_turn_id.to_owned(),
+            host_prompt: pause.step > 1,
+        },
+    );
+    sessions.append_native_event(&event)?;
+    Ok(event)
+}
+
 /// Record a human decision to abandon the remaining tool calls of a failed
 /// or cancelled turn. This route needs no model, provider credentials, tool
 /// executor, or current settings. The session lease must already be held.

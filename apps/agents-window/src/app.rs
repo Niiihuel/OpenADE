@@ -142,6 +142,8 @@ mod native_settings_choice_app_tests;
 #[path = "native_streaming_app_tests.rs"]
 mod native_streaming_app_tests;
 #[cfg(test)]
+#[path = "model_switch_app.rs"]
+mod model_switch_app;
 #[path = "pause_app_tests.rs"]
 mod pause_app_tests;
 #[cfg(test)]
@@ -1250,6 +1252,12 @@ pub struct AgentsWindow {
     active_child_recovery: Option<SubagentRecoveryHandle>,
     /// Paused sessions still to continue, leaves first. One runs at a time.
     pause_resume_queue: std::collections::VecDeque<String>,
+    /// Steps left of a model switch in progress.
+    switch_queue: crate::model_switch::SwitchQueue,
+    /// The turn `start_run` starts for the host instead of the composer's.
+    host_turn: Option<crate::model_switch::HostTurn>,
+    /// `select_composer_route` is being called by the switch itself.
+    model_switch_applying: bool,
     pending_child_recovery_permission: Option<SubagentPermissionView>,
     active_mcp_oauth: Option<McpOAuthController>,
     active_mcp_inspection: Option<crate::mcp_inspection::McpInspectionController>,
@@ -3654,9 +3662,8 @@ impl AgentsWindow {
                 self.view.pause.detail_open = (!open).then(|| session_id.to_owned());
             }
             "pause_model" => {
-                // Switching the model of an open turn is refused by resume
-                // (its route must match): open the picker and say so.
-                self.view.pause.model_note = Some(session_id.to_owned());
+                // Picking a route there asks to continue this turn on it.
+                self.open_session(session_id);
                 self.view.composer_model_menu_open = true;
             }
             _ => {}
@@ -6176,6 +6183,7 @@ impl AgentsWindow {
             file_delete: None,
             file_clipboard: None,
             transcript: Vec::new(),
+            model_switch: Default::default(),
             pause: crate::pause::PauseView {
                 auto_enabled: settings_preferences.auto_resume_on_limit,
                 ..Default::default()
@@ -6443,6 +6451,9 @@ impl AgentsWindow {
             active_resume: None,
             active_child_recovery: None,
             pause_resume_queue: Default::default(),
+            switch_queue: Default::default(),
+            host_turn: None,
+            model_switch_applying: false,
             pending_child_recovery_permission: None,
             active_mcp_oauth: None,
             active_mcp_inspection: None,
@@ -7587,7 +7598,21 @@ impl AgentsWindow {
                     let mut recoveries = BTreeMap::new();
                     let mut plans = BTreeMap::new();
                     let mut pauses = BTreeMap::new();
+                    let mut switches = BTreeMap::new();
                     for record in &listing.sessions {
+                        // A root whose switch stopped half way; a subagent's
+                        // is completed by resuming it.
+                        if let Some(mut switch) = crate::model_switch::unfinished_switch(&record.events)
+                            .filter(|_| record.session.subagent.is_none())
+                        {
+                            switch.error = self
+                                .view
+                                .model_switch
+                                .unfinished
+                                .get(&record.session.id)
+                                .and_then(|known| known.error.clone());
+                            switches.insert(record.session.id.clone(), switch);
+                        }
                         let (recovery, plan, pause) =
                             native_session_views(&self.data_root, record);
                         if let Some(recovery) = recovery {
@@ -7613,6 +7638,11 @@ impl AgentsWindow {
                     }
                     self.view.session_recovery = recoveries;
                     self.view.pause.sessions = pauses;
+                    // While the switch is being carried out the card would
+                    // only offer what is already happening.
+                    if self.switch_queue.is_empty() && self.host_turn.is_none() {
+                        self.view.model_switch.unfinished = switches;
+                    }
                     if self.view.pause.counting() {
                         self.view.pause.clock_ms = crate::pause::wall_clock_ms();
                     }
@@ -8414,6 +8444,7 @@ impl AgentsWindow {
     /// paused sessions being continued.
     fn follow_pause_clock(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = self.drive_pause_queue();
+        changed |= self.drive_switch_queue();
         if self.view.pause.counting() {
             let now_ms = crate::pause::wall_clock_ms();
             ctx.request_repaint_after(Duration::from_millis(1000 - now_ms % 1000));
@@ -11071,6 +11102,17 @@ impl AgentsWindow {
             }
             return false;
         }
+        // A paused turn does not change model in place: it is closed and
+        // continued on the route, after the person confirms.
+        if !self.model_switch_applying
+            && self
+                .view
+                .selected_session
+                .as_ref()
+                .is_some_and(|id| self.view.pause.sessions.contains_key(id))
+        {
+            return self.open_model_switch(&route);
+        }
         if self.composer_selection_busy() || self.view.composer_pending.is_some() {
             let desired_effort = self
                 .view
@@ -11940,8 +11982,16 @@ impl AgentsWindow {
         if self.prepare_composer_mode_command() {
             return;
         }
-        let visible_prompt = self.view.prompt.trim().to_owned();
-        let attachments = self.view.composer_attachments.clone();
+        // The host's own turn (a continuation on another model) uses none of
+        // what is in the composer and leaves the person's draft alone.
+        let host_turn = self.host_turn.take();
+        let (visible_prompt, attachments) = match &host_turn {
+            Some(turn) => (turn.prompt.clone(), Vec::new()),
+            None => (
+                self.view.prompt.trim().to_owned(),
+                self.view.composer_attachments.clone(),
+            ),
+        };
         if visible_prompt.is_empty() && attachments.is_empty() {
             return;
         }
@@ -11999,9 +12049,12 @@ impl AgentsWindow {
         } else {
             composer_prompt_with_attachments(&visible_prompt, &attachments)
         };
-        let native_images = native_attachments
-            .map(|payload| payload.images)
-            .unwrap_or_default();
+        let native_images = match &host_turn {
+            Some(turn) => turn.images.clone(),
+            None => native_attachments
+                .map(|payload| payload.images)
+                .unwrap_or_default(),
+        };
         let submitted_draft_key = self.draft_key();
         let submitted_dock_collapsed = self.dock.is_collapsed(&self.dock_scope());
         let active_goal = self.view.composer_goal.clone();
@@ -12148,7 +12201,7 @@ impl AgentsWindow {
             },
         };
         self.bind_session_start_context(&id);
-        if prompt != visible_prompt {
+        if prompt != visible_prompt && host_turn.is_none() {
             self.record_typed_prompt(&id, &prompt, &visible_prompt);
         }
         if submitted_draft_key.1.is_none() {
@@ -12424,7 +12477,9 @@ impl AgentsWindow {
                 }
             };
             let instructions = full_instructions;
-            let turn_id = Uuid::new_v4().to_string();
+            let turn_id = host_turn
+                .as_ref()
+                .map_or_else(|| Uuid::new_v4().to_string(), |turn| turn.turn_id.clone());
             let session_id = request
                 .session_id
                 .as_deref()
@@ -12531,16 +12586,18 @@ impl AgentsWindow {
         self.dock.set_collapsed(&scope, submitted_dock_collapsed);
         self.ensure_dock_tabs();
         self.visit_navigation();
-        self.pending_prompt = Some(visible_prompt);
-        self.pending_attachments = attachments;
         self.run_has_output = false;
-        self.view.prompt.clear();
-        self.view.composer_attachments.clear();
+        if host_turn.is_none() {
+            self.pending_prompt = Some(visible_prompt);
+            self.pending_attachments = attachments;
+            self.view.prompt.clear();
+            self.view.composer_attachments.clear();
+            self.clear_draft_key(&submitted_draft_key);
+            self.draft_dirty_at = None;
+            self.tree.set_input_value("prompt", "");
+        }
         self.view.composer_add_menu_open = false;
         self.view.composer_project_menu_open = false;
-        self.clear_draft_key(&submitted_draft_key);
-        self.draft_dirty_at = None;
-        self.tree.set_input_value("prompt", "");
         self.tree.scroll_to_end("transcript");
         self.view.running = true;
         self.view.status = format!("Ejecutando {backend}...");
@@ -13657,7 +13714,18 @@ impl AgentsWindow {
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
         let wire_api = connection.wire_api;
-        if admitted_model != model_id {
+        // A subagent moved to another model answers to that one from then on.
+        let expected_model = stored
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.kind {
+                AgentEventKind::TurnSuperseded { model_id, .. } => Some(model_id.clone()),
+                _ => None,
+            })
+            .unwrap_or(admitted_model);
+        let moving = self.model_switch_applying || !self.switch_queue.is_empty();
+        if expected_model != model_id && !moving {
             return Err("Selecciona el modelo original del subagente".into());
         }
         if !self.provider_ready_for_turn(&provider, &connection) {
@@ -16487,6 +16555,9 @@ impl AgentsWindow {
                 }) {
                     self.open_session(session_id);
                 }
+            }
+            UiAction::Clicked { id } if id.starts_with("model_switch_") => {
+                self.apply_model_switch_action(&id);
             }
             UiAction::Clicked { id } if id.starts_with("pause_") => {
                 self.apply_pause_action(&id, &ctx);

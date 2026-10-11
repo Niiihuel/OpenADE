@@ -1831,6 +1831,27 @@ impl SessionStore {
         Ok(session)
     }
 
+    /// Give a subagent session the identity of the route it continues on.
+    /// The caller holds the child's lease, so no worker is running it, and
+    /// has verified that its turn is closed at a model boundary.
+    pub fn rebind_native_child(
+        &self,
+        child_lease: &NativeSessionLease,
+        request_digest: &str,
+    ) -> Result<Session, StoreError> {
+        let valid = request_digest.len() == 64
+            && request_digest.bytes().all(|byte| byte.is_ascii_hexdigit());
+        let session = self.native_session_for_lease(child_lease)?;
+        if !valid || session.subagent.is_none() {
+            return Err(StoreError::ConflictingSubagentIdentity);
+        }
+        self.update_metadata(&session.id, |session| {
+            if let Some(link) = session.subagent.as_mut() {
+                link.request_digest = request_digest.to_owned();
+            }
+        })
+    }
+
     pub fn create(
         &self,
         workspace: impl Into<PathBuf>,

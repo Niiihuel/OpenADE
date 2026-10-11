@@ -2496,6 +2496,8 @@ fn timeline(state: &ViewState, width: f32) -> Element {
                     })
                     .count();
                 rows.push(state.pause.card(session_id, pause, working, width < COMPACT_BREAKPOINT));
+            } else if let Some(card) = state.model_switch.unfinished_card(session_id) {
+                rows.push(card);
             } else if !child_card_already_visible {
                 rows.push(native_recovery_card(session_id, recovery));
             }
@@ -4034,6 +4036,7 @@ mod tests {
         ViewState {
             tour: Default::default(),
             pause: Default::default(),
+            model_switch: Default::default(),
             keymap_profile: crate::keymap::KeymapProfile::default(),
             vim_mode: false,
             settings_keymap_menu_open: false,

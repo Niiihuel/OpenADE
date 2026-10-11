@@ -197,8 +197,6 @@ pub(crate) struct PauseView {
     pub sessions: BTreeMap<String, PausedTurn>,
     /// The session whose provider text is unfolded.
     pub detail_open: Option<String>,
-    /// The paused session whose "Cambiar de modelo" note is showing.
-    pub model_note: Option<String>,
     /// Settings: continue by itself when the limit renews.
     pub auto_enabled: bool,
     /// Sessions whose automatic continuation the user cancelled with Esc.
@@ -323,12 +321,6 @@ impl PauseView {
             lines.push(tree);
         } else if sharing > 1 {
             lines.push(format!("{sharing} agentes en pausa por este límite."));
-        }
-        if self.model_note.as_deref() == Some(session_id) {
-            lines.push(
-                "Para usar otro modelo, cancelá este turno o dejá que continúe: un turno en curso no cambia de modelo."
-                    .into(),
-            );
         }
         let subtle = |id: String, label: &str| {
             Button::new(id, label, theme::action_palette(theme::HOVER, theme::FOREGROUND))

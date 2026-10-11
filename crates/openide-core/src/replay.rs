@@ -2306,6 +2306,83 @@ mod tests {
     }
 
     #[test]
+    fn a_superseded_turn_closes_like_a_cancellation_and_names_what_continues_it() {
+        let superseded = |host_prompt| AgentEventKind::TurnSuperseded {
+            provider_id: "other".into(),
+            model_id: "other-model".into(),
+            next_turn_id: "turn-2".into(),
+            host_prompt,
+        };
+        let paused = |step| AgentEventKind::TurnPaused {
+            class: crate::TurnPauseClass::LimitReached,
+            limit_key: "key".into(),
+            resets_at_ms: None,
+            step,
+            detail: "HTTP 429".into(),
+        };
+        let replay = |events: &[AgentEvent]| replay_native("session-1", events, None, &compatibility());
+        let started = vec![
+            event(1, admitted()),
+            event(2, AgentEventKind::TurnStarted { prompt: "Build this".into() }),
+        ];
+        // Only a paused turn can move: an open one must be cancelled or resumed.
+        let mut open = started.clone();
+        open.push(event(3, superseded(false)));
+        assert!(replay(&open).is_err());
+
+        // Paused before any response: the prompt leaves the model history,
+        // exactly as a cancellation does, and waits to be admitted again.
+        let mut first = started.clone();
+        first.push(event(3, paused(1)));
+        first.push(event(4, superseded(false)));
+        let state = replay(&first).unwrap();
+        assert_eq!(state.recovery, ReplayRecovery::Idle);
+        assert!(state.can_start_new_turn && state.pause.is_none() && state.history.is_empty());
+        let pending = state.superseded.unwrap();
+        assert_eq!(
+            (pending.model_id.as_str(), pending.next_turn_id.as_str(), pending.host_prompt, pending.prompt_event_sequence, pending.event_sequence),
+            ("other-model", "turn-2", false, Some(1), 4)
+        );
+        let mut cancelled = first[..3].to_vec();
+        cancelled.push(event(4, AgentEventKind::TurnCancelled));
+        let as_cancelled = replay(&cancelled).unwrap();
+        assert_eq!((&state.history, &state.recovery), (&as_cancelled.history, &as_cancelled.recovery));
+        assert!(as_cancelled.superseded.is_none());
+
+        // Paused after committed work: every pair stays in the history.
+        let mut worked = started.clone();
+        worked.push(event(3, AgentEventKind::ModelRequestStarted { step: 1, model: "gpt-example".into() }));
+        worked.push(event(4, response(1, AgentMessage::assistant("", vec![call("a")]))));
+        worked.push(event(5, AgentEventKind::ToolStarted { tool_call: call("a") }));
+        worked.push(event(6, AgentEventKind::ToolFinished { tool_call_id: "a".into(), output: "ok".into(), is_error: false }));
+        worked.push(event(7, paused(2)));
+        worked.push(event(8, superseded(true)));
+        let state = replay(&worked).unwrap();
+        assert_eq!(state.history.len(), 3, "prompt, call and result");
+        assert!(state.superseded.is_some());
+        // The admission that continues it settles the switch.
+        worked.push(event(9, AgentEventKind::TurnAdmitted {
+            turn_id: "turn-2".into(),
+            prompt: "continue".into(),
+            model: "other-model".into(),
+            mode: TurnMode::Build,
+        }));
+        assert!(replay(&worked).unwrap().superseded.is_none());
+        // A second terminal event on the closed turn is refused.
+        let mut twice = first.clone();
+        twice.push(event(5, AgentEventKind::TurnCancelled));
+        assert!(replay(&twice).is_err());
+        // Old journals have no such event and new ones round-trip it.
+        let line = serde_json::to_string(&first[3]).unwrap();
+        assert!(line.contains("\"turn_superseded\""));
+        assert_eq!(serde_json::from_str::<AgentEvent>(&line).unwrap(), first[3]);
+        let notice = AgentEvent::new("session-1", 5, AgentEventKind::HostNotice { code: "x".into(), detail: "y".into() });
+        let mut noted = first.clone();
+        noted.push(notice);
+        assert!(replay(&noted).unwrap().superseded.is_some(), "a notice changes nothing");
+    }
+
+    #[test]
     fn multiple_steps_preserve_complete_pairs_and_opaque_response_items() {
         let mut assistant = AgentMessage::assistant("", vec![call("a"), call("b")]);
         assistant.provider_output_items =

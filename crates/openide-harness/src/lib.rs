@@ -158,7 +158,7 @@ pub use responses::{
     HostedWebSearchContextSize, HostedWebSearchLocation, HostedWebSearchMode, HostedWebSource,
     ResponseUsage, ResponsesBackend, ResponsesResult,
 };
-pub use resume::{cancel_paused_turn, 
+pub use resume::{cancel_paused_turn, supersede_paused_turn, MODEL_SWITCH_CONTINUATION, 
     discard_aborted_tool_batch, record_verified_tool_outcome, ResumeDisposition, ResumeEngine,
     ResumeError, ResumeEventObserver, ResumeStep,
 };
