@@ -5,6 +5,8 @@ mod backend;
 mod checkpoint_coordinator;
 mod command;
 mod command_elevation;
+mod command_line;
+pub use command_line::{definition_before_command_revision, split_command_arguments};
 mod compact;
 mod context;
 mod error;

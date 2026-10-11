@@ -15,6 +15,7 @@ const MAX_ARGUMENT_JSON_BYTES: usize = 64 * 1024;
 const MAX_RESULT_JSON_BYTES: usize = 128 * 1024;
 const TOOL_POLL_OUTPUT_BYTES: usize = 8 * 1024;
 const MAX_POLL_WAIT_MS: u64 = 30_000;
+const WAIT_FIELD: &str = "timeout_ms";
 
 pub(crate) fn is_persistent_tool(name: &str) -> bool {
     matches!(
@@ -28,6 +29,7 @@ pub(crate) fn definitions(manager: &PersistentCommandManager) -> Vec<ToolDefinit
         manager.isolation(),
         manager.pty_tools_enabled(),
         manager.pty_resize_tools_enabled(),
+        manager.start_wait_tools_enabled(),
     )
 }
 
@@ -37,6 +39,7 @@ pub(crate) fn definitions_for_profile(
     isolation: crate::CommandIsolation,
     pty_enabled: bool,
     resize_enabled: bool,
+    wait_fields: bool,
 ) -> Vec<ToolDefinition> {
     let mut definitions = vec![
         legacy_start_command_definition(),
@@ -118,8 +121,29 @@ pub(crate) fn definitions_for_profile(
             }),
         });
     }
+    if wait_fields {
+        // Added last and only as a property and a description suffix:
+        // removing them restores, byte for byte, the catalog an interrupted
+        // turn or reserved child recorded.
+        definitions[0]
+            .description
+            .push_str(crate::command_line::COMMAND_RULE);
+        for definition in &mut definitions {
+            let description = match definition.name.as_str() {
+                "start_command" => "How long to wait for initial output before returning, in milliseconds. This is not a lifetime: the command keeps running after the call returns. Default 0 returns the session immediately; read later output with poll_command.",
+                "poll_command" => "Alias of wait_ms, accepted because run_command names it this way. Send only one of them.",
+                _ => continue,
+            };
+            definition.parameters["properties"][WAIT_FIELD] = json!({
+                "type":"integer","minimum":0,"maximum":MAX_POLL_WAIT_MS,"description":description
+            });
+        }
+    }
     definitions
 }
+
+#[cfg(test)]
+use crate::command_line::definition_before_command_revision;
 
 pub(crate) fn legacy_start_command_definition() -> ToolDefinition {
     ToolDefinition {
@@ -150,20 +174,29 @@ pub(crate) async fn execute(
             "persistent command manager belongs to another workspace".into(),
         ));
     }
-    let arguments = arguments(
-        &call.arguments,
-        match call.name.as_str() {
-            "start_command" if manager.pty_tools_enabled() => {
-                &["command", "args", "pty", "columns", "rows"]
-            }
-            "start_command" => &["command", "args"],
-            "poll_command" => &["session_id", "wait_ms"],
-            "write_stdin" => &["session_id", "input", "close_after"],
-            "terminate_command" => &["session_id"],
-            "resize_command" => &["session_id", "columns", "rows"],
-            _ => unreachable!("only known persistent tools are routed here"),
-        },
-    )?;
+    let mut allowed: Vec<&str> = match call.name.as_str() {
+        "start_command" if manager.pty_tools_enabled() => {
+            vec!["command", "args", "pty", "columns", "rows"]
+        }
+        "start_command" => vec!["command", "args"],
+        "poll_command" => vec!["session_id", "wait_ms"],
+        "write_stdin" => vec!["session_id", "input", "close_after"],
+        "terminate_command" => vec!["session_id"],
+        "resize_command" => vec!["session_id", "columns", "rows"],
+        _ => unreachable!("only known persistent tools are routed here"),
+    };
+    if manager.start_wait_tools_enabled()
+        && matches!(call.name.as_str(), "start_command" | "poll_command")
+    {
+        allowed.push(WAIT_FIELD);
+    }
+    // Run what the approval was computed on: plain words split, no shell.
+    let split = match call.name.as_str() {
+        "start_command" => crate::command_line::executed_call(call)?,
+        _ => None,
+    };
+    let call = split.as_ref().unwrap_or(call);
+    let arguments = arguments(&call.arguments, &allowed)?;
     match call.name.as_str() {
         "start_command" => {
             let program = required_string(arguments, "command")?;
@@ -185,6 +218,7 @@ pub(crate) async fn execute(
                 Some(Value::Bool(true)) => true,
                 Some(_) => return Err(AgentError::Tool("pty must be boolean".into())),
             };
+            let wait_ms = wait_argument(arguments, WAIT_FIELD)?.unwrap_or(0);
             let started = if pty {
                 let columns = terminal_dimension(arguments, "columns", Some(80), 20, 500)?;
                 let rows = terminal_dimension(arguments, "rows", Some(24), 5, 200)?;
@@ -195,22 +229,52 @@ pub(crate) async fn execute(
                 }
                 manager.start(program, &args, &context.cancel)?
             };
-            Ok(ToolOutput::success(if pty {
+            // Say what ran when the line was split, in every result shape.
+            let executed = |mut output: ToolOutput| {
+                if split.is_some() {
+                    if let Ok(Value::Object(mut content)) = serde_json::from_str(&output.content) {
+                        content.insert(
+                            "executed".into(),
+                            crate::command_line::executed_words(call).into(),
+                        );
+                        output.content = Value::Object(content).to_string();
+                    }
+                }
+                output
+            };
+            if wait_ms > 0 {
+                // The command already runs: a failed or cancelled wait must
+                // still hand its session to the model, so fall through.
+                if let Ok(snapshot) = manager
+                    .poll_with_output_limit(
+                        &started.id,
+                        Duration::from_millis(wait_ms),
+                        TOOL_POLL_OUTPUT_BYTES.min(manager.poll_output_limit()),
+                        &context.cancel,
+                    )
+                    .await
+                {
+                    return snapshot_output(snapshot).map(executed);
+                }
+            }
+            Ok(executed(ToolOutput::success(if pty {
                 json!({"session_id":started.id,"pty":true}).to_string()
             } else {
                 json!({"session_id":started.id}).to_string()
-            }))
+            })))
         }
         "poll_command" => {
             let id = session_id(arguments)?;
-            let wait_ms = match arguments.get("wait_ms") {
-                None => 1000,
-                Some(value) => value
-                    .as_u64()
-                    .filter(|value| *value <= MAX_POLL_WAIT_MS)
-                    .ok_or_else(|| {
-                        AgentError::Tool("wait_ms must be between 0 and 30000".into())
-                    })?,
+            let wait_ms = match (
+                wait_argument(arguments, "wait_ms")?,
+                wait_argument(arguments, WAIT_FIELD)?,
+            ) {
+                (Some(_), Some(_)) => {
+                    return Err(AgentError::Tool(
+                        "send wait_ms or timeout_ms, not both".into(),
+                    ))
+                }
+                (wait, alias) => wait.or(alias).unwrap_or(1000),
             };
             let snapshot = manager
                 .poll_with_output_limit(
@@ -272,10 +336,16 @@ fn arguments<'a>(value: &'a Value, allowed: &[&str]) -> Result<&'a Map<String, V
     let object = value
         .as_object()
         .ok_or_else(|| AgentError::Tool("tool arguments must be an object".into()))?;
-    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
-        return Err(AgentError::Tool(
-            "persistent command arguments contain an unknown field".into(),
-        ));
+    if let Some(unknown) = object
+        .keys()
+        .find(|key| !allowed.contains(&key.as_str()))
+    {
+        // Name the field so the model can correct the call instead of guessing.
+        let unknown: String = unknown.chars().take(64).collect();
+        return Err(AgentError::Tool(format!(
+            "persistent command arguments contain an unknown field: {unknown}; allowed fields: {}",
+            allowed.join(", ")
+        )));
     }
     Ok(object)
 }
@@ -288,6 +358,18 @@ fn required_string<'a>(
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| AgentError::Tool(format!("missing string argument: {key}")))
+}
+
+fn wait_argument(arguments: &Map<String, Value>, name: &str) -> Result<Option<u64>, AgentError> {
+    arguments
+        .get(name)
+        .map(|value| {
+            value
+                .as_u64()
+                .filter(|value| *value <= MAX_POLL_WAIT_MS)
+                .ok_or_else(|| AgentError::Tool(format!("{name} must be between 0 and 30000")))
+        })
+        .transpose()
 }
 
 fn terminal_dimension(
@@ -515,7 +597,8 @@ mod tests {
             CommandIsolation::HostUnrestricted,
             PersistentCommandLimits::default(),
         )
-        .unwrap();
+        .unwrap()
+        .with_tools_before_command_revision();
         let legacy = LocalTools::new()
             .with_tool_permission(LocalTool::RunCommand, true)
             .with_persistent_commands(Arc::new(manager));
@@ -553,7 +636,7 @@ mod tests {
         if cfg!(windows) {
             assert_ne!(legacy_start, enabled_start);
         } else {
-            assert_eq!(legacy_start, enabled_start);
+            assert_eq!(legacy_start, definition_before_command_revision(enabled_start));
         }
         crate::ToolCatalog::from_executor(&enabled).unwrap();
     }
@@ -595,6 +678,122 @@ mod tests {
             tools.execute(&start, &context).await,
             Err(AgentError::Cancelled)
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_ms_waits_for_initial_output_and_is_never_a_lifetime() {
+        let workspace = tempfile::tempdir().unwrap();
+        let manager = Arc::new(
+            PersistentCommandManager::new(
+                workspace.path().to_path_buf(),
+                CommandIsolation::HostUnrestricted,
+                PersistentCommandLimits::default(),
+            )
+            .unwrap(),
+        );
+        let tools = LocalTools::new()
+            .with_tool_permission(LocalTool::RunCommand, true)
+            .with_persistent_commands(Arc::clone(&manager));
+        let context = ToolContext {
+            workspace: workspace.path().to_path_buf(),
+            cancel: CancellationToken::new(),
+        };
+        for name in ["start_command", "poll_command"] {
+            let definition = tools
+                .definitions()
+                .into_iter()
+                .find(|definition| definition.name == name)
+                .unwrap();
+            assert_eq!(
+                definition.parameters["properties"]["timeout_ms"]["maximum"],
+                30000
+            );
+            assert!(definition_before_command_revision(definition).parameters["properties"]
+                .get("timeout_ms")
+                .is_none());
+        }
+        let started = tools
+            .execute(
+                &call(
+                    "start_command",
+                    json!({"command":"/bin/sh","args":["-c","echo READY; sleep 30"],"timeout_ms":5000}),
+                ),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert!(!started.is_error, "{}", started.content);
+        let value: Value = serde_json::from_str(&started.content).unwrap();
+        assert_eq!(value["events"][0]["text"], "READY\n");
+        assert_eq!(value["finished"], false);
+        let id = value["session_id"].as_str().unwrap().to_owned();
+        // The wait elapsed without output: the command is still running.
+        let polled = tools
+            .execute(
+                &call("poll_command", json!({"session_id":id,"timeout_ms":50})),
+                &context,
+            )
+            .await
+            .unwrap();
+        let value: Value = serde_json::from_str(&polled.content).unwrap();
+        assert_eq!(value["finished"], false);
+        for arguments in [
+            json!({"session_id":id,"timeout_ms":50,"wait_ms":50}),
+            json!({"session_id":id,"timeout_ms":30001}),
+        ] {
+            assert!(tools
+                .execute(&call("poll_command", arguments), &context)
+                .await
+                .is_err());
+        }
+        let unknown = tools
+            .execute(
+                &call("start_command", json!({"command":"/bin/sh","elevated":true})),
+                &context,
+            )
+            .await;
+        assert!(
+            matches!(&unknown, Err(AgentError::Tool(message)) if message.contains("unknown field: elevated") && message.contains("timeout_ms")),
+            "{unknown:?}"
+        );
+        // A plain line is split, runs, and the result says what ran.
+        let split = tools
+            .execute(
+                &call("start_command", json!({"command":"sh -c true","timeout_ms":5000})),
+                &context,
+            )
+            .await
+            .unwrap();
+        let value: Value = serde_json::from_str(&split.content).unwrap();
+        assert_eq!(value["executed"], json!(["sh", "-c", "true"]));
+        assert_eq!(value["exit"]["code"], 0);
+        for (arguments, expected) in [
+            (json!({"command":"sh -c 'sleep 30'"}), "pass arguments in `args`"),
+            (
+                json!({"command":"openide-no-such-program"}),
+                "executable not found on PATH: openide-no-such-program",
+            ),
+        ] {
+            let error = tools
+                .execute(&call("start_command", arguments), &context)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{error}");
+        }
+        for name in ["run_command", "start_command"] {
+            let definition = tools
+                .definitions()
+                .into_iter()
+                .find(|definition| definition.name == name)
+                .unwrap();
+            assert!(definition.description.contains("every argument goes in `args`"));
+            assert!(!definition_before_command_revision(definition)
+                .description
+                .contains("`args`"));
+        }
+        manager.stop_all();
     }
 
     #[tokio::test]

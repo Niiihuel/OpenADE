@@ -54,6 +54,7 @@ impl NativeCommandSessions {
                 limits: PersistentCommandLimits::default(),
                 pty: cfg!(windows) && isolation == CommandIsolation::HostUnrestricted,
                 resize: cfg!(windows) && isolation == CommandIsolation::HostUnrestricted,
+                ..NativeCommandProfileOptions::default()
             })
             .map(Some)
             .map_err(|error| error.to_string())

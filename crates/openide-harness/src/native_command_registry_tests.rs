@@ -147,10 +147,34 @@ fn profile_catalog_is_pure_identical_to_manager_and_identity_survives_epoch_chan
     let identity = profile.identity_digest();
     let definitions = profile.definitions();
     assert_eq!(definitions.len(), 4);
+    assert!(definitions[0].parameters["properties"]["timeout_ms"].is_object());
+    // A child reserved before `timeout_ms` and the uncapped default keeps the
+    // digest the previous release computed for the default profile.
+    let reserved = profile.before_command_revision().unwrap();
     assert_eq!(
-        definitions[0],
+        reserved.identity_digest(),
+        "a17447e631148e550563a327d7afd61f78b3e36c404ac950f4bc88e559079f35"
+    );
+    assert_ne!(reserved.identity_digest(), identity);
+    assert!(reserved.before_command_revision().is_none());
+    assert_eq!(
+        reserved.definitions()[0],
         persistent_command_tools::legacy_start_command_definition()
     );
+    assert!(reserved.definitions()[1].parameters["properties"]
+        .get("timeout_ms")
+        .is_none());
+    let reserved_manager = reserved
+        .manager(&fixture.second_owner, &fixture.workspace)
+        .unwrap();
+    assert!(!reserved_manager.start_wait_tools_enabled());
+    // The same owner cannot be silently upgraded to the current profile.
+    assert!(profile
+        .manager(&fixture.second_owner, &fixture.workspace)
+        .is_err());
+    fixture.registry.revoke_session(&fixture.second_owner).unwrap();
+    let profile = fixture.profile();
+    assert_eq!(identity, profile.identity_digest());
     assert!(fixture.registry.manager(&fixture.owner).unwrap().is_none());
     assert!(fixture
         .registry

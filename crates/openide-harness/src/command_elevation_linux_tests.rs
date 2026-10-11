@@ -299,6 +299,7 @@ fn elevated_catalog_is_validated_before_permission_or_process_execution() {
         crate::CommandIsolation::HostUnrestricted,
         false,
         false,
+        true,
     );
     assert!(crate::ToolCatalog::new(definitions)
         .unwrap()

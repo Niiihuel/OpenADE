@@ -62,7 +62,10 @@ const HOST_BOOTSTRAP_ENV_KEYS: &[&str] = &[
 #[derive(Clone, Copy, Debug)]
 pub struct PersistentCommandLimits {
     pub max_sessions: usize,
-    pub max_lifetime: Duration,
+    /// `None` leaves a started command running until it is stopped, revoked
+    /// or the host drops its registry. A cap stays expressible for hosts and
+    /// for reservations made while the default was ten minutes.
+    pub max_lifetime: Option<Duration>,
     pub max_buffered_output_bytes: usize,
     pub max_poll_output_bytes: usize,
     pub max_stdin_bytes: usize,
@@ -72,7 +75,7 @@ impl Default for PersistentCommandLimits {
     fn default() -> Self {
         Self {
             max_sessions: 8,
-            max_lifetime: Duration::from_secs(10 * 60),
+            max_lifetime: None,
             max_buffered_output_bytes: 512 * 1024,
             max_poll_output_bytes: 64 * 1024,
             max_stdin_bytes: 8 * 1024,
@@ -81,10 +84,14 @@ impl Default for PersistentCommandLimits {
 }
 
 impl PersistentCommandLimits {
+    /// The cap every command had before started commands became uncapped.
+    pub const LEGACY_MAX_LIFETIME: Duration = Duration::from_secs(10 * 60);
+
     pub(crate) fn validate(self) -> Result<Self, AgentError> {
         if !(1..=16).contains(&self.max_sessions)
-            || !(Duration::from_millis(100)..=Duration::from_secs(60 * 60))
-                .contains(&self.max_lifetime)
+            || !self.max_lifetime.is_none_or(|lifetime| {
+                (Duration::from_millis(100)..=Duration::from_secs(60 * 60)).contains(&lifetime)
+            })
             || !(4 * 1024..=1024 * 1024).contains(&self.max_buffered_output_bytes)
             || !(1024..=64 * 1024).contains(&self.max_poll_output_bytes)
             || self.max_poll_output_bytes > self.max_buffered_output_bytes
@@ -419,6 +426,7 @@ pub struct PersistentCommandManager {
     revoked: CancellationToken,
     pty_tools_enabled: bool,
     pty_resize_tools_enabled: bool,
+    start_wait_tools: bool,
     runtime: OnceLock<Result<CommandRuntime, String>>,
     native_output_store: Option<Arc<NativeCommandOutputStore>>,
 }
@@ -467,6 +475,7 @@ impl PersistentCommandManager {
             revoked: CancellationToken::new(),
             pty_tools_enabled: false,
             pty_resize_tools_enabled: false,
+            start_wait_tools: true,
             runtime: OnceLock::new(),
             native_output_store: None,
         })
@@ -610,6 +619,17 @@ impl PersistentCommandManager {
 
     /// Exact pre-PTY definition for selecting the recorded catalog during a
     /// resumed turn. The host must also reject `pty` arguments for that turn.
+    /// Advertise and accept the tools exactly as they were before `timeout_ms`
+    /// existed; used for children reserved under that catalog.
+    pub fn with_tools_before_command_revision(mut self) -> Self {
+        self.start_wait_tools = false;
+        self
+    }
+
+    pub fn start_wait_tools_enabled(&self) -> bool {
+        self.start_wait_tools
+    }
+
     pub fn legacy_start_command_definition() -> crate::ToolDefinition {
         crate::tools::legacy_start_command_definition()
     }
@@ -953,8 +973,11 @@ impl PersistentCommandManager {
             let tree = ProcessTreeGuard::new().map_err(|error| {
                 AgentError::Tool(format!("cannot create persistent command job: {error}"))
             })?;
+            if let Some(error) = crate::command_line::missing_working_directory(&self.workspace) {
+                return Err(error);
+            }
             let mut child = command.spawn().map_err(|error| {
-                AgentError::Tool(format!("cannot start persistent command: {error}"))
+                crate::command_line::spawn_error("cannot start persistent command", program, &error)
             })?;
             #[cfg(windows)]
             if let Err(error) = tree.assign_and_resume(&child) {
@@ -1947,13 +1970,20 @@ fn read_pipe_blocking<R: std::io::Read>(
     }
 }
 
+async fn lifetime_elapsed(lifetime: Option<Duration>) {
+    match lifetime {
+        Some(lifetime) => sleep(lifetime).await,
+        None => std::future::pending().await,
+    }
+}
+
 struct Monitor {
     child: Child,
     tree: Arc<Mutex<Option<SessionTree>>>,
     stdin: Arc<AsyncMutex<Option<Box<dyn AsyncWrite + Send + Unpin>>>>,
     output: Arc<OutputBuffer>,
     stop: CancellationToken,
-    lifetime: Duration,
+    lifetime: Option<Duration>,
     stdout_reader: tokio::task::JoinHandle<std::io::Result<()>>,
     stderr_reader: tokio::task::JoinHandle<std::io::Result<()>>,
 }
@@ -1977,7 +2007,7 @@ impl Monitor {
                 Ok(status) => PersistentCommandExit::Exited { code: status.code() },
                 Err(error) => PersistentCommandExit::WaitFailed(error.to_string()),
             },
-            _ = sleep(lifetime) => PersistentCommandExit::TimedOut,
+            _ = lifetime_elapsed(lifetime) => PersistentCommandExit::TimedOut,
         };
         // The job/group is closed on every outcome, including normal parent exit,
         // so descendants cannot hold the pipes or continue without their parent.
@@ -2021,7 +2051,7 @@ struct PtyMonitor {
     stdin: Arc<AsyncMutex<Option<Box<dyn AsyncWrite + Send + Unpin>>>>,
     output: Arc<OutputBuffer>,
     stop: CancellationToken,
-    lifetime: Duration,
+    lifetime: Option<Duration>,
     terminal_reader: std::thread::JoinHandle<std::io::Result<()>>,
 }
 
@@ -2082,7 +2112,7 @@ impl PtyMonitor {
                 Ok(Err(error)) => PersistentCommandExit::WaitFailed(error.to_string()),
                 Err(error) => PersistentCommandExit::WaitFailed(error.to_string()),
             },
-            _ = sleep(lifetime) => PersistentCommandExit::TimedOut,
+            _ = lifetime_elapsed(lifetime) => PersistentCommandExit::TimedOut,
         };
         // Every path closes the job before exposing a terminal snapshot.
         cleanup.close_job();
@@ -2681,7 +2711,7 @@ fn main() {
             PersistentCommandLimits {
                 max_buffered_output_bytes: 4 * 1024,
                 max_poll_output_bytes: 4 * 1024,
-                max_lifetime: Duration::from_secs(20),
+                max_lifetime: Some(Duration::from_secs(20)),
                 ..PersistentCommandLimits::default()
             },
         )
@@ -2716,7 +2746,7 @@ fn main() {
             workspace.path().to_path_buf(),
             CommandIsolation::HostUnrestricted,
             PersistentCommandLimits {
-                max_lifetime: Duration::from_millis(250),
+                max_lifetime: Some(Duration::from_millis(250)),
                 ..PersistentCommandLimits::default()
             },
         )
@@ -3068,7 +3098,7 @@ fn main() {
             workspace,
             CommandIsolation::WorkspaceWriteOffline,
             PersistentCommandLimits {
-                max_lifetime: Duration::from_millis(500),
+                max_lifetime: Some(Duration::from_millis(500)),
                 ..PersistentCommandLimits::default()
             },
         )
@@ -3251,7 +3281,7 @@ fn main() {
         let (_probe_dir, binary) = compile_probe();
         let workspace = tempfile::tempdir().unwrap();
         let limits = PersistentCommandLimits {
-            max_lifetime: Duration::from_millis(250),
+            max_lifetime: Some(Duration::from_millis(250)),
             ..PersistentCommandLimits::default()
         };
         let manager = PersistentCommandManager::new(

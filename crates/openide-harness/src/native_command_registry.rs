@@ -24,6 +24,10 @@ pub struct NativeCommandProfileOptions {
     pub pty: bool,
     /// Host opt-in. Effective only when PTY is also enabled.
     pub resize: bool,
+    /// Hosts leave this false; `NativeCommandProfile::before_command_revision` sets
+    /// it: the tool schema and identity a child was reserved with before
+    /// `timeout_ms` existed.
+    pub before_command_revision: bool,
 }
 
 impl Default for NativeCommandProfileOptions {
@@ -33,6 +37,7 @@ impl Default for NativeCommandProfileOptions {
             limits: PersistentCommandLimits::default(),
             pty: false,
             resize: false,
+            before_command_revision: false,
         }
     }
 }
@@ -66,6 +71,7 @@ impl NativeCommandProfileOptions {
         self.isolation == other.isolation
             && self.pty == other.pty
             && self.resize == other.resize
+            && self.before_command_revision == other.before_command_revision
             && self.limits.max_sessions == other.limits.max_sessions
             && self.limits.max_lifetime == other.limits.max_lifetime
             && self.limits.max_buffered_output_bytes == other.limits.max_buffered_output_bytes
@@ -323,6 +329,9 @@ impl NativeCommandRegistry {
         if options.resize {
             manager = manager.with_pty_resize_tools();
         }
+        if options.before_command_revision {
+            manager = manager.with_tools_before_command_revision();
+        }
         let manager = Arc::new(manager);
         state.managers.insert(
             owner.into(),
@@ -394,14 +403,38 @@ impl NativeCommandProfile {
             self.options.isolation,
             self.options.pty_enabled(),
             self.options.resize_enabled(),
+            !self.options.before_command_revision,
         )
+    }
+
+    /// The profile a child was reserved with before `timeout_ms` was accepted
+    /// and the lifetime cap became opt-in: the former schema, the former
+    /// ten-minute cap and therefore the former identity digest. An existing
+    /// reservation keeps exactly what it was granted; it is never upgraded.
+    pub fn before_command_revision(&self) -> Option<Self> {
+        if self.options.before_command_revision {
+            return None;
+        }
+        let mut legacy = self.clone();
+        legacy.options.before_command_revision = true;
+        legacy
+            .options
+            .limits
+            .max_lifetime
+            .get_or_insert(PersistentCommandLimits::LEGACY_MAX_LIFETIME);
+        Some(legacy)
     }
 
     /// Stable runtime identity. Authorization epochs/generations are purposely
     /// absent: reopening verifies configuration, it never resurrects processes.
     pub fn identity_digest(&self) -> String {
         let mut hash = Sha256::new();
-        hash.update(b"OpenIDE.NativeCommandProfile.v1\0");
+        // v1 is frozen: it identifies reservations made before `timeout_ms`.
+        hash.update(if self.options.before_command_revision {
+            b"OpenIDE.NativeCommandProfile.v1\0"
+        } else {
+            b"OpenIDE.NativeCommandProfile.v2\0"
+        });
         hash.update([match self.options.isolation {
             CommandIsolation::HostUnrestricted => 0,
             CommandIsolation::WorkspaceWriteOffline => 1,
@@ -409,7 +442,10 @@ impl NativeCommandProfile {
         hash.update([u8::from(self.options.pty), u8::from(self.options.resize)]);
         for value in [
             self.options.limits.max_sessions as u128,
-            self.options.limits.max_lifetime.as_nanos(),
+            self.options
+                .limits
+                .max_lifetime
+                .map_or(u128::MAX, |lifetime| lifetime.as_nanos()),
             self.options.limits.max_buffered_output_bytes as u128,
             self.options.limits.max_poll_output_bytes as u128,
             self.options.limits.max_stdin_bytes as u128,

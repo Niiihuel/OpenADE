@@ -133,6 +133,8 @@ pub fn claude_tool(name: &str, arguments: &Value) -> (String, Value) {
     };
     let mut input = arguments.clone();
     if name == "run_command" {
+        let split = crate::split_command_arguments(arguments);
+        let arguments = split.as_ref().unwrap_or(arguments);
         let words = arguments["command"].as_str().into_iter().chain(
             arguments["args"]
                 .as_array()

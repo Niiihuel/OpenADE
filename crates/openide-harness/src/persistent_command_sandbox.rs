@@ -91,7 +91,13 @@ pub(super) fn start(
     registration: super::NativeOutputRegistration,
 ) -> Result<PersistentCommandStarted, AgentError> {
     let super::NativeOutputRegistration { id, capture } = registration;
-    let timeout_ms = u64::try_from(manager.limits.max_lifetime.as_millis())
+    // The Windows sandbox runner takes a mandatory deadline, so an uncapped
+    // profile keeps the validator's one-hour ceiling here.
+    let lifetime = manager
+        .limits
+        .max_lifetime
+        .unwrap_or(Duration::from_secs(60 * 60));
+    let timeout_ms = u64::try_from(lifetime.as_millis())
         .map_err(|_| AgentError::Tool("sandbox lifetime exceeds supported range".into()))?;
     let mut sandbox = spawn_workspace_write_offline_persistent(
         program,
@@ -174,7 +180,6 @@ pub(super) fn start(
         resize_lock: AsyncMutex::new(()),
         sandbox_stdin: Some(Arc::clone(&input)),
     });
-    let lifetime = manager.limits.max_lifetime;
     runtime.spawn_blocking(move || {
         SandboxMonitor {
             process,

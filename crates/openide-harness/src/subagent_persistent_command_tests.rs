@@ -916,6 +916,62 @@ fn plan_worker_processes_confirmed_host_fixture_controls_without_expanding_model
 }
 
 #[test]
+fn child_reserved_before_timeout_ms_keeps_its_identity_schema_and_lifetime_cap() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = Arc::new(SessionStore::open(root.path().join("sessions")).unwrap());
+    let parent = sessions.create(root.path(), "native").unwrap();
+    let lease = sessions.try_acquire_native_lease(&parent.id).unwrap();
+    let coordinator =
+        Arc::new(SubagentCoordinator::new(sessions.clone(), Default::default()).unwrap());
+    let worker = SubagentWorker::new(
+        coordinator,
+        sessions.clone(),
+        Arc::new(SurfaceModel(AtomicUsize::new(0))),
+        base(),
+        "local",
+        "https://legacy.child/v1",
+    );
+    let registry = Arc::new(NativeCommandRegistry::new(sessions.clone()));
+    let profile = registry.profile(Default::default()).unwrap();
+    // What the previous release reserved: no command rule in descriptions,
+    // no `timeout_ms`, ten-minute cap.
+    let mut previous = worker
+        .clone()
+        .with_persistent_commands(profile.before_command_revision().unwrap());
+    previous.before_command_revision = true;
+    let reserved = previous
+        .prepare_child(&lease, "old-persistent", "old", TurnMode::Build)
+        .unwrap();
+    let current = worker.clone().with_persistent_commands(profile.clone());
+    let fresh = current
+        .prepare_child(&lease, "new-persistent", "new", TurnMode::Build)
+        .unwrap();
+    assert_ne!(
+        reserved.session.subagent.as_ref().unwrap().request_digest,
+        fresh.session.subagent.as_ref().unwrap().request_digest
+    );
+    current
+        .validate_initial_child(&reserved.session.id, "old-persistent", "old", TurnMode::Build)
+        .unwrap();
+    let (selected, _) = current
+        .worker_for_existing_child(&reserved.session.id, "old", TurnMode::Build, false)
+        .unwrap();
+    assert!(selected.before_command_revision);
+    assert!(selected
+        .catalog_for_mode(TurnMode::Build, 1)
+        .unwrap()
+        .definitions()
+        .iter()
+        .all(|definition| !definition.description.contains("goes in `args`")));
+    let selected = selected.persistent_commands.unwrap();
+    assert!(selected.before_command_revision().is_none());
+    assert!(selected.definitions()[0].parameters["properties"]
+        .get("timeout_ms")
+        .is_none());
+    assert!(registry.managers().unwrap().is_empty());
+}
+
+#[test]
 fn legacy_ready_recovery_and_plan_keep_original_catalog_while_revoked_profiles_fail_before_claim() {
     let root = tempfile::tempdir().unwrap();
     let sessions = Arc::new(SessionStore::open(root.path().join("sessions")).unwrap());
@@ -966,7 +1022,7 @@ fn legacy_ready_recovery_and_plan_keep_original_catalog_while_revoked_profiles_f
             registry
                 .profile(NativeCommandProfileOptions {
                     limits: crate::PersistentCommandLimits {
-                        max_lifetime: Duration::from_secs(12),
+                        max_lifetime: Some(Duration::from_secs(12)),
                         ..Default::default()
                     },
                     ..Default::default()

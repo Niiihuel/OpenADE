@@ -332,7 +332,12 @@ impl PermissionPolicy {
         hasher.update(b"openide-session-approval-v1\0");
         hash_part(&mut hasher, session_id.as_bytes());
         hash_part(&mut hasher, call.name.as_bytes());
-        hash_canonical_arguments(&call.arguments, &mut hasher)?;
+        // The grant covers what will run: a plain line in `command` and the
+        // equivalent explicit command + args are one approval.
+        let split = matches!(call.name.as_str(), "run_command" | "start_command")
+            .then(|| crate::split_command_arguments(&call.arguments))
+            .flatten();
+        hash_canonical_arguments(split.as_ref().unwrap_or(&call.arguments), &mut hasher)?;
         hash_path(&mut hasher, &workspace);
         hash_path(&mut hasher, &cwd);
         hash_part(&mut hasher, self.digest_hex().as_bytes());
@@ -738,6 +743,48 @@ mod tests {
                 &policy.clone().with_timeout(Duration::from_secs(61)),
             )
         );
+    }
+
+    #[test]
+    fn a_plain_command_line_and_its_explicit_argv_share_one_approval_and_one_rule_decision() {
+        let root = tempfile::tempdir().unwrap();
+        let effective = "a".repeat(64);
+        let exec = crate::exec_policy::ExecPolicy::new(vec![crate::exec_policy::ExecRule::new(
+            vec![
+                crate::exec_policy::ExecPatternToken::Literal("npm".into()),
+                crate::exec_policy::ExecPatternToken::Literal("run".into()),
+            ],
+            crate::exec_policy::ExecDecision::Ask,
+            None,
+        )
+        .unwrap()])
+        .unwrap();
+        let policy = PermissionPolicy::new()
+            .with_default_mode(PermissionMode::Allow)
+            .with_exec_policy(exec);
+        for name in ["run_command", "start_command"] {
+            let call = |arguments| ToolCall {
+                id: "one".into(),
+                name: name.into(),
+                arguments,
+            };
+            let line = call(json!({"command":"npm run dev"}));
+            let explicit = call(json!({"command":"npm","args":["run","dev"]}));
+            // The rule matches the argv that runs, not the unsplit string.
+            assert_eq!(policy.mode_for_call(&line), PermissionMode::Ask);
+            assert_eq!(policy.mode_for_call(&explicit), PermissionMode::Ask);
+            let key = |call: &ToolCall| {
+                policy
+                    .issue_session_grant("session_1", root.path(), root.path(), &effective, call)
+                    .unwrap()
+                    .key_digest
+            };
+            assert_eq!(key(&line), key(&explicit));
+            assert_ne!(key(&line), key(&call(json!({"command":"npm","args":["run","build"]}))));
+            // Shell syntax is never split, so it is never the explicit call.
+            let quoted = call(json!({"command":"npm run 'dev'"}));
+            assert_eq!(policy.mode_for_call(&quoted), PermissionMode::Allow);
+        }
     }
 
     #[test]

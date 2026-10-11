@@ -696,6 +696,9 @@ struct HistoricalToolCatalog {
     inner: Arc<dyn ToolExecutor>,
     subagents: HistoricalSubagentCatalog,
     legacy_start_command: bool,
+    /// Before the command rule in descriptions and `timeout_ms` in
+    /// `start_command` and `poll_command`.
+    before_command_revision: bool,
     without_persistent_commands: bool,
     without_resize_command: bool,
     without_goals: bool,
@@ -711,6 +714,8 @@ impl ToolExecutor for HistoricalToolCatalog {
             .map(|definition| {
                 if self.legacy_start_command && definition.name == "start_command" {
                     PersistentCommandManager::legacy_start_command_definition()
+                } else if self.before_command_revision {
+                    openide_harness::definition_before_command_revision(definition)
                 } else {
                     definition
                 }
@@ -765,6 +770,17 @@ impl HistoricalToolCatalog {
                 "PTY fields were not advertised for this turn".into(),
             ));
         }
+        if (self.before_command_revision || (self.legacy_start_command && call.name == "start_command"))
+            && is_persistent_command_tool(&call.name)
+            && call
+                .arguments
+                .as_object()
+                .is_some_and(|arguments| arguments.contains_key("timeout_ms"))
+        {
+            return Err(AgentError::InvalidRequest(
+                "timeout_ms was not advertised for this turn".into(),
+            ));
+        }
         Ok(())
     }
 
@@ -808,7 +824,9 @@ fn select_saved_catalog(
                 if without_persistent_commands && legacy_start_command {
                     continue;
                 }
-                for without_resize_command in [false, true] {
+                for (without_resize_command, before_command_revision) in
+                    [(false, false), (false, true), (true, false), (true, true)]
+                {
                     for subagents in [
                         HistoricalSubagentCatalog::WithoutSendInput,
                         HistoricalSubagentCatalog::WithoutSubagents,
@@ -818,6 +836,7 @@ fn select_saved_catalog(
                             && !without_persistent_commands
                             && !legacy_start_command
                             && !without_resize_command
+                            && !before_command_revision
                             && matches!(subagents, HistoricalSubagentCatalog::Current)
                         {
                             continue;
@@ -826,6 +845,7 @@ fn select_saved_catalog(
                             inner: current.clone(),
                             subagents,
                             legacy_start_command,
+                            before_command_revision,
                             without_persistent_commands,
                             without_resize_command,
                             without_goals,
@@ -2217,6 +2237,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resume_of_a_turn_recorded_before_timeout_ms_keeps_its_schema() {
+        let workspace = tempfile::tempdir().unwrap();
+        let tools = |manager: PersistentCommandManager| {
+            LocalTools::new()
+                .with_write_access(true)
+                .with_command_isolation(openide_harness::CommandIsolation::HostUnrestricted)
+                .with_persistent_commands(Arc::new(manager))
+        };
+        let manager = || {
+            PersistentCommandManager::new(
+                workspace.path().to_path_buf(),
+                openide_harness::CommandIsolation::HostUnrestricted,
+                openide_harness::PersistentCommandLimits::default(),
+            )
+            .unwrap()
+        };
+        // The catalog an interrupted turn committed before the fields existed.
+        let old: Vec<_> = tools(manager().with_tools_before_command_revision())
+            .definitions()
+            .into_iter()
+            .map(openide_harness::definition_before_command_revision)
+            .collect();
+        assert!(old
+            .iter()
+            .all(|tool| !tool.description.contains("goes in `args`")));
+        let saved_digest = ToolCatalog::new(old.clone()).unwrap().digest_hex();
+        let current: Arc<dyn ToolExecutor> = Arc::new(tools(manager()));
+        assert_ne!(
+            ToolCatalog::from_executor(current.as_ref())
+                .unwrap()
+                .digest_hex(),
+            saved_digest
+        );
+        let (selected, catalog) = select_saved_catalog(current, Some(&saved_digest)).unwrap();
+        assert_eq!(catalog.digest_hex(), saved_digest);
+        assert_eq!(selected.definitions(), old);
+        for name in ["start_command", "poll_command"] {
+            let result = selected
+                .execute(
+                    &ToolCall {
+                        id: "old-turn-wait".into(),
+                        name: name.into(),
+                        arguments: serde_json::json!({
+                            "command":"definitely-not-a-program",
+                            "session_id":"00000000-0000-4000-8000-000000000000",
+                            "timeout_ms":1000
+                        }),
+                    },
+                    &ToolContext {
+                        workspace: workspace.path().to_path_buf(),
+                        cancel: CancellationToken::new(),
+                    },
+                )
+                .await;
+            assert!(
+                matches!(&result, Err(AgentError::InvalidRequest(message)) if message.contains("timeout_ms")),
+                "{name}: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn resume_selects_legacy_persistent_command_schema_and_blocks_pty_fields() {
         let workspace = tempfile::tempdir().unwrap();
         let legacy_manager = Arc::new(
@@ -2225,15 +2307,21 @@ mod tests {
                 openide_harness::CommandIsolation::HostUnrestricted,
                 openide_harness::PersistentCommandLimits::default(),
             )
-            .unwrap(),
+            .unwrap()
+            .with_tools_before_command_revision(),
         );
         let legacy_tools = LocalTools::new()
             .with_write_access(true)
             .with_command_isolation(openide_harness::CommandIsolation::HostUnrestricted)
             .with_persistent_commands(legacy_manager);
-        let saved_digest = ToolCatalog::from_executor(&legacy_tools)
-            .unwrap()
-            .digest_hex();
+        let saved_digest = ToolCatalog::new(
+            legacy_tools
+                .definitions()
+                .into_iter()
+                .map(openide_harness::definition_before_command_revision),
+        )
+        .unwrap()
+        .digest_hex();
         let pty_manager = Arc::new(
             PersistentCommandManager::new(
                 workspace.path().to_path_buf(),
