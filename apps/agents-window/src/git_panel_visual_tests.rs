@@ -337,8 +337,8 @@ fn pending_git_work_keeps_navigation_and_disables_both_staging_directions() {
 #[test]
 #[ignore = "native compact Git sidebar review; synthetic repository snapshots only"]
 fn export_git_sidebar_visual_review() {
-    let output = Path::new("/tmp/openade-git-sidebar-review");
-    std::fs::create_dir_all(output).unwrap();
+    let output = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/ui-separation/shots/git-panel");
+    std::fs::create_dir_all(&output).unwrap();
     let render = |root: Element, size: Size, name: &str, hover: Option<&str>| {
         let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
         let now = Instant::now();
@@ -378,7 +378,7 @@ fn export_git_sidebar_visual_review() {
         context.end_pass().textures_delta.clear();
     };
     let state = fixture();
-    for width in [240.0, 320.0, 420.0] {
+    for width in [280.0, 420.0] {
         for (name, hover) in [
             ("idle", None),
             ("file-hover", Some("review_file_open:0:2")),
@@ -387,7 +387,7 @@ fn export_git_sidebar_visual_review() {
             render(
                 sidebar(&state, width, 760.0),
                 Size::new(width, 760.0),
-                &format!("git-sidebar-{width:.0}-{name}"),
+                &format!("before-{width:.0}-{name}"),
                 hover,
             );
         }
@@ -396,7 +396,7 @@ fn export_git_sidebar_visual_review() {
     render(
         crate::view::build_window_view(&state, size.width, size.height),
         size,
-        "git-workspace-1440",
+        "before-ide-1440",
         None,
     );
     let mut pending = fixture();
@@ -404,7 +404,7 @@ fn export_git_sidebar_visual_review() {
     render(
         sidebar(&pending, 320.0, 760.0),
         Size::new(320.0, 760.0),
-        "git-sidebar-320-pending",
+        "before-320-pending",
         None,
     );
 }
