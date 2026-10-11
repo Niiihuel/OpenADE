@@ -1459,11 +1459,12 @@ fn export_converged_controls_visual_review() {
     state.show_archived = false;
     state.session_sort_menu_open = false;
     state.group_create_open = true;
-    export(
+    export_with_interaction(
         sidebar_for_height(&state, 264.0, 420.0),
         264.0,
         420.0,
         "sidebar-group-create-blank",
+        Some(ExportInteraction::Focus("group_create_draft")),
     );
     state.group_create_draft = "Interfaz nueva".into();
     export(
@@ -1471,6 +1472,15 @@ fn export_converged_controls_visual_review() {
         264.0,
         420.0,
         "sidebar-group-create-named",
+    );
+    state.group_create_draft.clear();
+    state.session_groups.groups.clear();
+    state.sessions.clear();
+    export(
+        sidebar_for_height(&state, 264.0, 420.0),
+        264.0,
+        420.0,
+        "sidebar-group-create-empty",
     );
 }
 

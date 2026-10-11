@@ -10780,6 +10780,18 @@ impl AgentsWindow {
 
     fn focus_group_if_pending(&mut self) {
         if !self.group_focus_pending || self.view.show_command_center {
+            // A group left unnamed goes away with its focus. A press on "+"
+            // takes the focus too, and its click is what closes the row.
+            if !self.group_focus_pending
+                && self.view.group_create_open
+                && self.view.group_create_draft.trim().is_empty()
+                && !matches!(
+                    self.tree.focused_id(),
+                    Some("group_create_draft" | "session_group_new")
+                )
+            {
+                self.view.group_create_open = false;
+            }
             return;
         }
         let target = if self.view.group_create_open {
@@ -10812,7 +10824,7 @@ impl AgentsWindow {
     }
 
     fn commit_group_create(&mut self) {
-        // A blank name has nothing to report: its button is disabled too.
+        // A blank name has nothing to report.
         if !self.view.group_create_open || self.view.group_create_draft.trim().is_empty() {
             return;
         }
@@ -16731,15 +16743,11 @@ impl AgentsWindow {
                     self.view.group_create_draft.clear();
                     self.group_focus_pending = self.view.group_create_open;
                     self.view.group_menu_id = None;
+                    // The row is one of a virtualized list: it has to be in view to take focus.
+                    if let Some(index) = crate::view::group_draft_row_index(&self.view) {
+                        self.tree.scroll_to_index("sessions_list", index);
+                    }
                 }
-            }
-            UiAction::Clicked { id } if id == "session_group_create_cancel" => {
-                self.view.group_create_open = false;
-                self.view.group_create_draft.clear();
-                self.group_focus_pending = false;
-            }
-            UiAction::Clicked { id } if id == "session_group_create_commit" => {
-                self.commit_group_create();
             }
             UiAction::Clicked { id } if id.starts_with("session_group_toggle:") => {
                 let group_id = id.trim_start_matches("session_group_toggle:");
@@ -25189,7 +25197,36 @@ mod tests {
             },
             &ctx,
         );
-        app.apply_action(clicked("session_group_create_commit"), &ctx);
+        // Losing the focus keeps a named row, and "+" takes it without closing a blank one.
+        let frame = |app: &mut AgentsWindow| {
+            app.tree.set_root(build_view(&app.view, 1200.0));
+            app.tree.layout(Size::new(1200.0, 720.0));
+            app.focus_group_if_pending();
+        };
+        frame(&mut app);
+        assert_eq!(app.tree.focused_id(), Some("group_create_draft"));
+        assert!(app.tree.focus("new_session_sidebar"));
+        frame(&mut app);
+        assert!(app.view.group_create_open);
+        app.view.group_create_draft.clear();
+        assert!(app.tree.focus("session_group_new"));
+        frame(&mut app);
+        assert!(app.view.group_create_open);
+        assert!(app.tree.focus("new_session_sidebar"));
+        frame(&mut app);
+        assert!(!app.view.group_create_open, "a blank row goes away with its focus");
+        app.apply_action(clicked("session_group_new"), &ctx);
+        app.apply_action(clicked("session_group_new"), &ctx);
+        assert!(!app.view.group_create_open, "a second press cancels");
+        app.apply_action(clicked("session_group_new"), &ctx);
+        app.apply_action(
+            UiAction::Submitted {
+                id: "group_create_draft".into(),
+                value: "Trabajo".into(),
+            },
+            &ctx,
+        );
+        assert!(!app.view.group_create_open);
         let group_id = app.view.session_groups.groups[0].id.clone();
         assert_eq!(app.view.session_groups.groups[0].title, "Trabajo");
         app.apply_action(

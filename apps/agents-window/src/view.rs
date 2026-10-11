@@ -1135,6 +1135,34 @@ fn group_header(
     .size(Some(row_width), crate::ui_sizing::SIDEBAR_GROUP.height)
 }
 
+/// A group heading whose name is still being typed: the mark of a group at
+/// its inset, and a field where the title goes.
+fn group_draft_row(draft: &str, width: f32) -> Element {
+    let sizing = crate::ui_sizing::SIDEBAR_GROUP;
+    // The mark keeps the place ListRow gives it: the row's padding from its
+    // leading and top edges.
+    let mark = Element::column(vec![Element::icon(Icon::Hash)
+        .foreground(theme::FOREGROUND_SUBTLE)
+        .size(Some(sizing.icon_size), sizing.leading_height)])
+    .padding(sizing.padding);
+    Element::row(vec![
+        mark,
+        openide_ui::TextField::new(
+            "group_create_draft",
+            draft,
+            "Nombre del grupo",
+            theme::component_palette(),
+        )
+        .size(ControlSize::Compact)
+        // It opens focused, so the placeholder has to outlive the focus.
+        .persistent_placeholder(true)
+        .render()
+        .flex(1.0),
+    ])
+    .gap(sizing.gap - sizing.padding)
+    .size(Some((width - 18.0).max(0.0)), Some(SIDEBAR_ROW_HEIGHT))
+}
+
 /// The More menu of a group heading.
 fn group_menu(state: &SessionRowContext, group: &SessionGroup, index: usize) -> Element {
     let menu_open = state.group_menu_id.as_deref() == Some(group.id.as_str());
@@ -1249,7 +1277,16 @@ enum SessionListRow {
         index: usize,
         count: usize,
     },
+    /// The group being named, where it will land.
+    GroupDraft(String),
     Session(SessionView),
+}
+
+/// The row of the task list that names a new group, while one is open.
+pub(crate) fn group_draft_row_index(state: &ViewState) -> Option<usize> {
+    session_list_rows(state)
+        .iter()
+        .position(|row| matches!(row, SessionListRow::GroupDraft(_)))
 }
 
 fn session_list_rows(state: &ViewState) -> Vec<SessionListRow> {
@@ -1310,6 +1347,9 @@ fn session_list_rows(state: &ViewState) -> Vec<SessionListRow> {
                 Some(id) => grouped.entry(id).or_default().push(*session),
                 None => ungrouped.push(*session),
             }
+        }
+        if state.group_create_open {
+            rows.push(SessionListRow::GroupDraft(state.group_create_draft.clone()));
         }
         for (index, group) in state.session_groups.groups.iter().enumerate() {
             let members = grouped.remove(group.id.as_str()).unwrap_or_default();
@@ -1417,6 +1457,7 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
                 index,
                 count,
             } => group_header(&context, group, *index, *count, item_width),
+            SessionListRow::GroupDraft(draft) => group_draft_row(draft, item_width),
             SessionListRow::Session(session) => {
                 session_row_with_context(&context, session, item_width)
             }
@@ -1762,53 +1803,6 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
                 archive_control,
             ])
             .gap(2.0)
-            .size(None, Some(28.0)),
-        );
-    }
-    if state.group_create_open
-        && state.session_organization == SessionOrganization::Group
-        && !state.show_archived
-    {
-        toolbar.push(
-            Element::row(vec![
-                field(
-                    "group_create_draft",
-                    &state.group_create_draft,
-                    "Nombre del grupo",
-                )
-                .font_size(12.0)
-                .min_size(0.0, 0.0)
-                .flex(1.0)
-                .size(None, Some(28.0)),
-                {
-                    let mut commit = UiIconButton::new(
-                        "session_group_create_commit",
-                        Icon::Check,
-                        theme::sidebar_palette(),
-                    )
-                    .variant(ButtonVariant::Subtle)
-                    .size(ControlSize::Compact)
-                    .active(true);
-                    if state.group_create_draft.trim().is_empty() {
-                        commit = commit.disabled();
-                    }
-                    commit
-                        .tooltip_with(
-                            TooltipSpec::new("Crear grupo").placement(TooltipPlacement::Below),
-                        )
-                        .render()
-                },
-                UiIconButton::new(
-                    "session_group_create_cancel",
-                    Icon::Close,
-                    theme::action_palette(theme::SIDEBAR, theme::FOREGROUND_SUBTLE),
-                )
-                .variant(ButtonVariant::Subtle)
-                .size(ControlSize::Compact)
-                .tooltip_with(TooltipSpec::new("Cancelar grupo").placement(TooltipPlacement::Below))
-                .render(),
-            ])
-            .gap(3.0)
             .size(None, Some(28.0)),
         );
     }
@@ -7938,24 +7932,39 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn group_create_commit_is_disabled_while_the_name_is_blank() {
+    fn group_create_names_the_group_in_a_heading_row_at_the_top_of_the_list() {
         let mut state = empty_state();
         state.session_organization = SessionOrganization::Group;
         state.group_create_open = true;
-        let offered = |state: &ViewState| {
-            UiTree::new(sidebar(state, 264.0))
-                .layout(Size::new(264.0, 640.0))
-                .regions
-                .iter()
-                .any(|region| {
-                    region.id == "session_group_create_commit"
-                        && region.kind == openide_ui::HitKind::Button
-                })
-        };
-        state.group_create_draft = "  ".into();
-        assert!(!offered(&state));
-        state.group_create_draft = "Trabajo".into();
-        assert!(offered(&state));
+        // The empty list still shows it, above its placeholder.
+        assert!(matches!(
+            session_list_rows(&state)[..],
+            [SessionListRow::Section(_), SessionListRow::GroupDraft(_), SessionListRow::Empty(_)]
+        ));
+        state.session_groups.create("Trabajo").unwrap();
+        assert_eq!(group_draft_row_index(&state), Some(1));
+        let frame = UiTree::new(sidebar(&state, 264.0)).layout(Size::new(264.0, 640.0));
+        let rect = |id: &str| frame.regions.iter().find(|region| region.id == id).unwrap().rect;
+        let field = rect("group_create_draft");
+        let header = rect(&format!("session_group_toggle:{}", state.session_groups.groups[0].id));
+        assert_eq!(field.height, SIDEBAR_ROW_HEIGHT);
+        assert_eq!(header.y, field.y + SIDEBAR_ROW_HEIGHT + SESSION_ROW_GAP);
+        assert_eq!(field.x + field.width, header.x + header.width);
+        // The mark of the row being named sits exactly above a real heading's.
+        let marks: Vec<_> = frame
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Icon { rect, icon: Icon::Hash, .. } if rect.y >= field.y => Some(*rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks.len(), 2, "{marks:?}");
+        assert_eq!(
+            (marks[1].x, marks[1].y, marks[1].width, marks[1].height),
+            (marks[0].x, marks[0].y + header.y - field.y, marks[0].width, marks[0].height)
+        );
+        assert!(!frame.regions.iter().any(|region| region.id.starts_with("session_group_create")));
     }
 
     #[test]
