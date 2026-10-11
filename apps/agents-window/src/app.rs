@@ -6042,6 +6042,7 @@ impl AgentsWindow {
             bottom_presentation_height: None,
             side_tab: SideTab::Context,
             activity_page: 0,
+            activity: Default::default(),
             review_page: 0,
             dock_tabs: Vec::new(),
             dock_recently_closed: Vec::new(),
@@ -18139,6 +18140,12 @@ impl AgentsWindow {
                 let scope = self.dock_scope();
                 self.dock.open(&scope, DockTabKind::Activity);
                 self.sync_dock_view();
+            }
+            UiAction::Clicked { id } if id.starts_with("dock_activity:") => {
+                crate::view::dock_activity::apply_action(
+                    &mut self.view,
+                    id.trim_start_matches("dock_activity:"),
+                );
             }
             UiAction::Clicked { id } if id.starts_with("tool:") => {
                 let tool_id = id.trim_start_matches("tool:");

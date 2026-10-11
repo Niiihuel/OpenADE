@@ -468,6 +468,10 @@ fn meta(name: &str) -> Meta<'_> {
 pub(crate) fn operation(name: &str) -> &str {
     meta(name).operation
 }
+/// What a tool does, from its name alone.
+pub(crate) fn kind(name: &str) -> ToolKind {
+    meta(name).kind
+}
 #[cfg(test)]
 pub(crate) fn icon(name: &str) -> Icon {
     meta(name).icon

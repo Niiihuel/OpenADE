@@ -239,6 +239,11 @@ impl ItemTimes {
         let (start, end) = self.0.get(id)?;
         Some((*end)?.saturating_sub(*start))
     }
+
+    #[cfg(test)]
+    pub(crate) fn record(&mut self, id: &str, start: u64, end: Option<u64>) {
+        self.0.insert(id.into(), (start, end));
+    }
 }
 
 /// A duration for a transcript line: "un momento" under a second, then

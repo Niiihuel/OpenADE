@@ -428,12 +428,10 @@ pub const PROBLEM_ROW: RowSizing = RowSizing {
     ..RowSizing::COMPACT
 };
 
-/// A tool call in the dock's Activity list: one line of 24 in a row of 38.
+/// A row of the dock's Activity log: a title over its target, and a turn
+/// heading, at one pitch of 40 so the list stays virtual.
 pub const DOCK_TOOL: RowSizing = RowSizing {
-    height: Some(38.0),
-    padding: 7.0,
-    leading_height: Some(24.0),
-    title_height: Some(24.0),
+    height: Some(40.0),
     ..RowSizing::COMPACT
 };
 

@@ -10,7 +10,7 @@ mod dock_document_status_tests;
 #[path = "dock_problems_tests.rs"]
 mod dock_problems_tests;
 
-fn export(root: Element, width: f32, height: f32, name: &str) {
+pub(super) fn export(root: Element, width: f32, height: f32, name: &str) {
     export_with_pointer(root, width, height, name, None);
 }
 
@@ -30,14 +30,14 @@ fn export_with_pointer(
     );
 }
 
-enum ExportInteraction {
+pub(super) enum ExportInteraction {
     Pointer(openide_ui::Point),
     Hover(&'static str),
     Focus(&'static str),
     Scroll(&'static str, f32),
 }
 
-fn export_with_interaction(
+pub(super) fn export_with_interaction(
     root: Element,
     width: f32,
     height: f32,
@@ -458,7 +458,7 @@ fn workspace_sidebars_finish_all_corners_with_their_existing_radius() {
     }
 }
 
-fn scrolling_dock_fixture(kind: SideTab) -> ViewState {
+pub(super) fn scrolling_dock_fixture(kind: SideTab) -> ViewState {
     let mut state = rounded_workspace_fixture();
     state.side_tab = kind;
     state.dock_tabs[0].kind = kind;

@@ -11,3 +11,4 @@ pub(crate) const STEP_OUT: Icon =
 pub(crate) const REPLACE: Icon = Icon::Custom(include_str!("../assets/openide/replace.svg"));
 pub(crate) const REPLACE_ALL: Icon =
     Icon::Custom(include_str!("../assets/openide/replace-all.svg"));
+pub(crate) const LOCK: Icon = Icon::Custom(include_str!("../assets/bootstrap/lock.svg"));

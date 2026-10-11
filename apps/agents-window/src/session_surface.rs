@@ -1549,7 +1549,7 @@ pub(crate) fn tool_detail_body(
 
 /// Group only known exploration operations. Edits, commands and opaque MCP
 /// calls keep their own visible records; tool names never imply safety.
-fn exploration_call(item: &TranscriptItem) -> Option<&str> {
+pub(crate) fn exploration_call(item: &TranscriptItem) -> Option<&str> {
     let (call, name) = match item {
         TranscriptItem::Tool { id, name, .. } => (id.as_str(), name.as_str()),
         TranscriptItem::ToolPreview {
@@ -1581,7 +1581,7 @@ fn exploration_call(item: &TranscriptItem) -> Option<&str> {
 /// Find one visually consecutive run. Only invisible request bookkeeping and
 /// the preceding call's own output/media may sit between exploration rows.
 /// Any prose, reasoning, notice, user turn or different tool ends the group.
-fn exploration_run(items: &[TranscriptItem], start: usize) -> (usize, usize) {
+pub(crate) fn exploration_run(items: &[TranscriptItem], start: usize) -> (usize, usize) {
     let mut index = start;
     let mut count = 0;
     let mut previous_call = None;
@@ -1607,7 +1607,7 @@ fn exploration_run(items: &[TranscriptItem], start: usize) -> (usize, usize) {
     (index, count)
 }
 
-fn exploration_needs_attention(item: &TranscriptItem) -> bool {
+pub(crate) fn exploration_needs_attention(item: &TranscriptItem) -> bool {
     match item {
         TranscriptItem::Tool {
             activity,
@@ -1649,7 +1649,7 @@ fn file_name(path: &str) -> &str {
 
 /// What a group explored, as Cursor words it: the file's name when there is
 /// one file, otherwise a count, then searches, listings and pages.
-fn exploration_summary(items: &[TranscriptItem]) -> String {
+pub(crate) fn exploration_summary(items: &[TranscriptItem]) -> String {
     let mut counts = [0usize; 4];
     let mut file = None;
     for item in items {
@@ -1705,6 +1705,39 @@ fn exploration_in_flight(item: &TranscriptItem) -> bool {
     )
 }
 
+/// The verb and the target one exploration call reads as on a flat line:
+/// its verb under way or done, or its whole title when it needs attention.
+pub(crate) fn exploration_words<'a>(
+    name: &str,
+    arguments: &serde_json::Value,
+    presentation: &'a tool_presentation::ToolPresentation,
+    attention: bool,
+    running: bool,
+) -> (&'a str, std::borrow::Cow<'a, str>) {
+    let (under_way, done, slot) = exploration_step(name);
+    let verb = if attention {
+        presentation.title.as_str()
+    } else if running {
+        under_way
+    } else {
+        done
+    };
+    // A file search is known by its pattern; the folder only narrows it.
+    let glob = (name == "find_files")
+        .then(|| arguments.get("pattern")?.as_str())
+        .flatten()
+        .map(|pattern| match arguments.get("path").and_then(|path| path.as_str()) {
+            Some(path) if !path.is_empty() => format!("{pattern} en {path}"),
+            _ => pattern.to_owned(),
+        });
+    let target = match glob {
+        Some(glob) => glob.into(),
+        None if slot == 0 => file_name(&presentation.target).into(),
+        None => presentation.target.as_str().into(),
+    };
+    (verb, target)
+}
+
 /// One call as flat text: its verb and its target, and under them the reason
 /// when it did not simply complete. `live` words it as the step under way.
 fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Vec<Element> {
@@ -1742,28 +1775,13 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
         _ => return Vec::new(),
     };
     let presentation = tool_presentation::present(name, arguments, activity, is_error, output);
-    let (running, done, slot) = exploration_step(name);
-    let attention = exploration_needs_attention(item);
-    let verb = if attention {
-        presentation.title.as_str()
-    } else if live || activity == ActivityStatus::Running {
-        running
-    } else {
-        done
-    };
-    // A file search is known by its pattern; the folder only narrows it.
-    let glob = (name == "find_files")
-        .then(|| arguments.get("pattern")?.as_str())
-        .flatten()
-        .map(|pattern| match arguments.get("path").and_then(|path| path.as_str()) {
-            Some(path) if !path.is_empty() => format!("{pattern} en {path}"),
-            _ => pattern.to_owned(),
-        });
-    let target = match &glob {
-        Some(glob) => glob,
-        None if slot == 0 => file_name(&presentation.target),
-        None => &presentation.target,
-    };
+    let (verb, target) = exploration_words(
+        name,
+        arguments,
+        &presentation,
+        exploration_needs_attention(item),
+        live || activity == ActivityStatus::Running,
+    );
     if live {
         let step = if target.is_empty() {
             verb.to_owned()
@@ -1792,7 +1810,7 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
             )
             .flex(0.0),
             stream_text(
-                target,
+                target.as_ref(),
                 if failed {
                     theme::DESTRUCTIVE
                 } else {
@@ -3783,6 +3801,7 @@ mod tests {
             environment_presentation_progress: None,
             side_tab: SideTab::Context,
             activity_page: 0,
+            activity: Default::default(),
             review_page: 0,
             dock_tabs: vec![],
             dock_recently_closed: vec![],

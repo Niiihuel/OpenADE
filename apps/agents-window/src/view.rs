@@ -45,7 +45,7 @@ use crate::{
 
 mod command_center;
 #[path = "dock_activity.rs"]
-mod dock_activity;
+pub(crate) mod dock_activity;
 #[path = "dock_chrome.rs"]
 pub(crate) mod dock_chrome;
 mod dock_overview;
@@ -597,6 +597,7 @@ pub struct ViewState {
     pub side_tab: SideTab,
     /// Pages are independent so switching tabs preserves the user's place.
     pub activity_page: usize,
+    pub(crate) activity: dock_activity::ActivityUi,
     pub review_page: usize,
     pub dock_tabs: Vec<DockTabView>,
     pub dock_recently_closed: Vec<DockRecentlyClosedView>,
@@ -2237,7 +2238,7 @@ pub(super) fn sidebar_reopen_control(background: Color) -> Element {
 
 #[cfg(test)]
 fn activity_content(state: &ViewState) -> Element {
-    dock_activity::content(state, state.right_dock_width.unwrap_or(400.0))
+    dock_activity::content(state, state.right_dock_width.unwrap_or(400.0), 700.0)
 }
 
 #[cfg(test)]
@@ -2943,7 +2944,11 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
         match state.side_tab {
             SideTab::Context => dock_empty_content(width),
             SideTab::Files => file_tree_content(state, width),
-            SideTab::Activity => dock_activity::content(state, width),
+            SideTab::Activity => dock_activity::content(
+                state,
+                width,
+                (height - RIGHT_HEADER_HEIGHT - status_height).max(0.0),
+            ),
             SideTab::CodeReview => code_review_content(state, width),
             SideTab::SessionChanges => crate::session_changes_ui::build(state, width),
             SideTab::Browser => crate::browser_ui::build(state, width),
@@ -2998,6 +3003,7 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
             || matches!(
                 state.side_tab,
                 SideTab::Files
+                    | SideTab::Activity
                     | SideTab::Browser
                     | SideTab::Terminal
                     | SideTab::CodeReview
@@ -3007,8 +3013,8 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
             || (state.side_tab == SideTab::FilePreview
                 && (state.code_editor.is_some() || state.document_preview.is_some())))
     {
-        // Files owns its virtual list; Terminal displays a bounded PTY screen
-        // and keeps its command line visible below the screen.
+        // Files and Activity own their virtual lists; Terminal displays a
+        // bounded PTY screen and keeps its command line visible below it.
         body.flex(1.0)
     } else {
         // Each surface keeps its own scroll offset. In particular, opening
@@ -3019,13 +3025,12 @@ fn side_pane_primary_sized(state: &ViewState, width: f32, height: f32) -> Elemen
         } else {
             match state.side_tab {
                 SideTab::Context => "side_pane_context",
-                SideTab::Activity => "side_pane_activity",
                 SideTab::CodeReview => "side_pane_review",
                 SideTab::SessionChanges => "side_pane_session_changes",
                 SideTab::Browser => "side_pane_browser",
                 SideTab::FilePreview => "side_pane_preview",
                 SideTab::CodeSnapshot => "side_pane_code_snapshot",
-                SideTab::Files | SideTab::Terminal => unreachable!(),
+                SideTab::Files | SideTab::Activity | SideTab::Terminal => unreachable!(),
             }
         };
         ScrollArea::new(scroll_id, body)
@@ -3942,6 +3947,7 @@ pub(crate) mod tests {
             environment_presentation_progress: None,
             side_tab: SideTab::Context,
             activity_page: 0,
+            activity: Default::default(),
             review_page: 0,
             dock_tabs: vec![
                 DockTabView {
@@ -4882,7 +4888,7 @@ pub(crate) mod tests {
             });
             tree.layout(viewport);
         }
-        assert!(tree.scroll_offset("side_pane_activity") > 0.0);
+        assert!(tree.scroll_offset("dock_activity_tools") > 0.0);
 
         state.show_dock_overview = true;
         tree.set_root(side_pane(&state, viewport.width));
