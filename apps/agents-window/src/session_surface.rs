@@ -272,20 +272,7 @@ fn user_message(
     if running {
         body = Element::row(vec![
             body.flex(1.0),
-            Tooltip::new(
-                UiIconButton::new(
-                    "turn_stop",
-                    Icon::Stop,
-                    theme::action_palette(theme::HOVER, theme::FOREGROUND),
-                )
-                .variant(ButtonVariant::Subtle)
-                .size(ControlSize::Compact)
-                .render(),
-                "turn_stop",
-                "Detener ejecución",
-                theme::component_palette(),
-            )
-            .render(),
+            crate::composer_ui::stop_button("turn_stop", ControlSize::Dense, "Detener ejecución"),
         ])
         .gap(8.0);
     }

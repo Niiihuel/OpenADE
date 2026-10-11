@@ -478,20 +478,13 @@ fn add_context_control(props: &ComposerProps<'_>) -> Element {
             } else {
                 Icon::Add
             },
-            theme::action_palette(
-                if props.home {
-                    PILL_SURFACE
-                } else {
-                    Color::rgb(64, 64, 64)
-                },
-                Color::rgb(246, 246, 246),
-            ),
+            theme::action_palette(Color::TRANSPARENT, MUTED_INK),
         )
-        .variant(ButtonVariant::Subtle)
+        .variant(ButtonVariant::Ghost)
+        .hover_ink(Color::rgb(246, 246, 246))
         .size(ControlSize::Compact)
         .enabled(!props.running)
-        .render()
-        .size(Some(CONTROL_HEIGHT), Some(CONTROL_HEIGHT)),
+        .render(),
         "composer_add_context",
         "Añadir al mensaje",
         theme::component_palette(),
@@ -1833,47 +1826,49 @@ fn connect_provider_action(width: f32) -> Element {
     .render()
 }
 
+/// The one shape of send and stop, wherever a composer or a message shows
+/// them: a light circle with a dark glyph. Disabled, it is a muted circle.
+fn round_action(id: &str, icon: Icon, size: ControlSize, enabled: bool) -> Element {
+    let mut palette = theme::action_palette(Color::WHITE, PILL_SURFACE);
+    palette.hover = Color::rgb(224, 224, 224);
+    palette.selected = Color::rgb(204, 204, 204);
+    if !enabled {
+        palette.surface = theme::SELECTED;
+        palette.muted = MUTED_INK;
+    }
+    IconButton::new(id, icon, palette)
+        .variant(ButtonVariant::Subtle)
+        .size(size)
+        .round()
+        .enabled(enabled)
+        .render()
+        .center_content()
+}
+
+/// The stop of a running turn, with its hint.
+pub(crate) fn stop_button(id: &str, size: ControlSize, hint: &str) -> Element {
+    Tooltip::new(
+        round_action(id, Icon::StopFill, size, true),
+        id,
+        hint,
+        theme::component_palette(),
+    )
+    .render()
+}
+
 fn send_control(props: &ComposerProps<'_>) -> Element {
     let model_available =
         props.selected_backend != "native" || selected_native_model_available(props);
-    let surface = if props.running || !model_available {
-        theme::SELECTED
-    } else if props.home {
-        Color::WHITE
-    } else {
-        SEND_BLUE
-    };
-    let ink = if props.home && !props.running && model_available {
-        PILL_SURFACE
-    } else {
-        Color::WHITE
-    };
-    let mut palette = theme::action_palette(surface, ink);
-    palette.hover = if props.running || !model_available {
-        theme::hover_for(surface)
-    } else if props.home {
-        Color::rgb(224, 224, 224)
-    } else {
-        Color::rgb(52, 128, 255)
-    };
-    palette.selected = surface;
-    palette.muted = ink;
-    let trigger = IconButton::new(
+    let trigger = round_action(
         "run_toggle",
         if props.running {
-            Icon::Stop
+            Icon::StopFill
         } else {
             Icon::ArrowUp
         },
-        palette,
-    )
-    .variant(ButtonVariant::Subtle)
-    .size(ControlSize::Compact)
-    .enabled(props.running || (!props.attachment_loading && model_available))
-    .render()
-    .size(Some(CONTROL_HEIGHT), Some(CONTROL_HEIGHT))
-    .center_content()
-    .radius(6.0);
+        ControlSize::Compact,
+        props.running || (!props.attachment_loading && model_available),
+    );
     let tooltip = Tooltip::new(
         trigger,
         "run_toggle",
@@ -1897,6 +1892,7 @@ fn send_control(props: &ComposerProps<'_>) -> Element {
 
 fn microphone_control(props: &ComposerProps<'_>) -> Element {
     Tooltip::new(
+        // A plain glyph at rest; while it listens the accent fills it.
         IconButton::new(
             "composer_microphone",
             Icon::Microphone,
@@ -1904,26 +1900,24 @@ fn microphone_control(props: &ComposerProps<'_>) -> Element {
                 if props.listening {
                     SEND_BLUE
                 } else {
-                    PILL_SURFACE
+                    Color::TRANSPARENT
                 },
-                Color::rgb(240, 240, 240),
+                if props.listening {
+                    Color::WHITE
+                } else {
+                    MUTED_INK
+                },
             ),
         )
-        .variant(ButtonVariant::Subtle)
+        .variant(if props.listening {
+            ButtonVariant::Subtle
+        } else {
+            ButtonVariant::Ghost
+        })
+        .hover_ink(Color::rgb(246, 246, 246))
         .size(ControlSize::Compact)
-        .render()
-        .border(
-            if props.listening {
-                SEND_BLUE
-            } else if props.home {
-                Color::TRANSPARENT
-            } else {
-                Color::rgb(68, 68, 68)
-            },
-            1.0,
-        )
-        .size(Some(CONTROL_HEIGHT), Some(CONTROL_HEIGHT))
-        .radius(6.0),
+        .round()
+        .render(),
         "composer_microphone",
         if props.listening {
             "Detener dictado"
@@ -2761,7 +2755,13 @@ pub(crate) mod tests {
             DrawCommand::FillRect { color, radius, .. }
                 if *color == PILL_SURFACE && *radius == CARD_RADIUS
         )));
+        // Send is the light circle everywhere; nothing is filled with the accent.
         assert!(frame.commands.iter().any(|command| matches!(
+            command,
+            DrawCommand::FillRect { rect, color, radius }
+                if *color == Color::WHITE && *radius == CONTROL_HEIGHT / 2.0 && *rect == send
+        )));
+        assert!(!frame.commands.iter().any(|command| matches!(
             command,
             DrawCommand::FillRect { color, .. } if *color == SEND_BLUE
         )));
@@ -3384,14 +3384,20 @@ pub(crate) mod tests {
                     .iter()
                     .find_map(|command| match command {
                         DrawCommand::Icon {
-                            icon: Icon::Stop,
+                            icon: Icon::StopFill,
                             rect,
                             tint,
                         } => Some((rect, tint)),
                         _ => None,
                     })
                     .unwrap();
-                assert_eq!(*tint, Color::WHITE);
+                // A dark square on the same light circle that sends.
+                assert_eq!(*tint, PILL_SURFACE);
+                assert!(frame.commands.iter().any(|command| matches!(
+                    command,
+                    DrawCommand::FillRect { rect: fill, color, radius }
+                        if *color == Color::WHITE && *radius == CONTROL_HEIGHT / 2.0 && *fill == rect
+                )));
                 assert!((icon.x + icon.width / 2.0 - rect.x - rect.width / 2.0).abs() < 0.1);
                 assert!((icon.y + icon.height / 2.0 - rect.y - rect.height / 2.0).abs() < 0.1);
             }
@@ -3509,13 +3515,19 @@ pub(crate) mod tests {
             assert_eq!(control.height, CONTROL_HEIGHT);
             assert_eq!(control.y, plus.y);
         }
-        assert!(frame.commands.iter().any(|command| matches!(
-            command,
-            DrawCommand::FillRect { rect, color, radius }
-                if *color == Color::rgb(64, 64, 64)
-                    && *radius == 4.0
-                    && rect.width == rect.height
-        )));
+        // Add and the microphone are plain glyphs: the one filled control
+        // at rest is the send circle.
+        let filled: Vec<_> = frame
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::FillRect { rect, color, .. } if color.a > 0 && [plus, mic, send].contains(rect) => {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(filled, [send]);
     }
 
     #[test]
@@ -4867,7 +4879,8 @@ pub(crate) mod tests {
                 assert!(!tree.focus("run_toggle"));
                 assert!(
                     !frame.commands.iter().any(|command| matches!(command,
-                        DrawCommand::FillRect { color, .. } if *color == SEND_BLUE
+                        DrawCommand::FillRect { color, radius, .. }
+                            if *color == Color::WHITE && *radius == CONTROL_HEIGHT / 2.0
                     )),
                     "a disabled idle send action must not look active"
                 );
@@ -4925,7 +4938,7 @@ pub(crate) mod tests {
                 assert!(active.commands.iter().any(|command| matches!(
                     command,
                     DrawCommand::Icon {
-                        icon: Icon::Stop,
+                        icon: Icon::StopFill,
                         ..
                     }
                 )));

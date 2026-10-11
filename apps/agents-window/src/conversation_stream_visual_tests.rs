@@ -1581,7 +1581,7 @@ fn visible_response_has_no_redundant_progress_row_and_keeps_stop_available() {
                     composer.commands.iter().any(|command| matches!(
                         command,
                         DrawCommand::Icon {
-                            icon: Icon::Stop,
+                            icon: Icon::StopFill,
                             ..
                         }
                     )),
