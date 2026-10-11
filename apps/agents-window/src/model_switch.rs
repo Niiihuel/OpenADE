@@ -68,6 +68,8 @@ pub(crate) struct SwitchView {
     pub unfinished: BTreeMap<String, UnfinishedSwitch>,
     /// Model a fallback proposal names, by paused session.
     pub proposals: BTreeMap<String, (String, String)>,
+    /// Settings: ask before summarising for a newly chosen model.
+    pub ask_before_summary: bool,
 }
 
 pub(crate) type SwitchQueue = VecDeque<SwitchStep>;

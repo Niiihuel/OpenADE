@@ -405,6 +405,12 @@ pub enum AgentEventKind {
 
 /// A response stayed cut at the output limit after every continuation.
 pub const NOTICE_OUTPUT_LIMIT: &str = "output_limit";
+/// The conversation did not fit the model and was summarised first.
+pub const NOTICE_CONTEXT_SUMMARIZED: &str = "context_summarized";
+/// No summary was possible: old tool outputs were cut from the request.
+pub const NOTICE_CONTEXT_TRIMMED: &str = "context_trimmed";
+/// The provider stated its context limit; `detail` is that number of tokens.
+pub const NOTICE_CONTEXT_LIMIT: &str = "context_limit";
 
 /// Why a turn is paused at a model boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

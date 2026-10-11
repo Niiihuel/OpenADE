@@ -457,3 +457,69 @@ fn a_paused_subagent_switches_alone_from_its_own_view() {
     assert_eq!(app.switch_queue, [SwitchStep::ResumeChild(child.clone())]);
     assert_eq!(journal(&app, &parent), parent_before, "the parent keeps its own turn and model");
 }
+
+#[test]
+fn a_route_without_a_declared_window_is_budgeted_from_what_is_known() {
+    let root = tempfile::tempdir().unwrap();
+    let app = switch_app(root.path(), "http://127.0.0.1:9/v1");
+    let window = |app: &AgentsWindow, provider: &str, model: &str| {
+        let adapter = native_provider::adapter_for_model_at(&app.data_root, provider, model)
+            .unwrap()
+            .unwrap();
+        app.native_budget_with_window(&adapter, provider, model)
+            .map(|(budget, source)| (budget.context_window_tokens, budget.output_reserve_tokens, source))
+    };
+    // Nothing known: 128k, with a fifth of it reserved for the answer.
+    assert_eq!(
+        window(&app, "custom", "nobody/knows-this-model"),
+        Some((ASSUMED_CONTEXT_WINDOW, ASSUMED_CONTEXT_WINDOW / 5, ContextWindowSource::Assumed))
+    );
+    // The bundled catalog knows better than the default.
+    let listed = crate::model_metadata::native_route("codex", "gpt-6-luna", None, &[])
+        .context_tokens
+        .expect("the bundled catalog lists this subscription model");
+    let (catalog_window, _, source) = window(&app, "codex", "gpt-6-luna").unwrap();
+    assert_eq!((catalog_window, source), (listed, ContextWindowSource::Catalog));
+    assert_ne!(listed, ASSUMED_CONTEXT_WINDOW);
+    // What the provider stated when it refused a request beats both, and
+    // the same turn path that had no budget now compacts against it.
+    native_provider::save_learned_context_limit(&app.data_root, "custom", "nobody/knows-this-model", 32_000).unwrap();
+    native_provider::save_learned_context_limit(&app.data_root, "codex", "gpt-6-luna", 200_000).unwrap();
+    assert_eq!(
+        window(&app, "custom", "nobody/knows-this-model"),
+        Some((32_000, 6_400, ContextWindowSource::Learned))
+    );
+    assert_eq!(window(&app, "codex", "gpt-6-luna").map(|known| (known.0, known.2)), Some((200_000, ContextWindowSource::Learned)));
+    assert!(app.token_budget_for_native_model("codex", "gpt-6-luna").is_some());
+    // It survives a restart.
+    let reopened = AgentsWindow::with_data_root(root.path().join("data"));
+    assert_eq!(
+        native_provider::learned_context_limit(&reopened.data_root, "custom", "nobody/knows-this-model"),
+        Some(32_000)
+    );
+    // A history past the model's threshold is announced before the switch.
+    let big = vec![AgentMessage::user("x".repeat(120_000))];
+    assert!(app.history_needs_summary(&big, "custom", "nobody/knows-this-model"));
+    assert!(!app.history_needs_summary(&[AgentMessage::user("hola")], "custom", "nobody/knows-this-model"));
+}
+
+#[test]
+fn the_provider_stated_limit_is_remembered_when_its_notice_arrives() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = switch_app(root.path(), "http://127.0.0.1:9/v1");
+    let session = app.store.as_ref().unwrap().create(root.path(), "native").unwrap();
+    app.open_session(&session.id);
+    let notice = |code: &str, detail: &str| AgentEventKind::HostNotice { code: code.into(), detail: detail.into() };
+    let mut projection = TranscriptProjection::default();
+    for (code, detail, expected) in [
+        (openide_core::NOTICE_CONTEXT_SUMMARIZED, "Luna", "La conversación no entraba en Luna: se resumió antes de continuar"),
+        (openide_core::NOTICE_CONTEXT_TRIMMED, "Luna", "La conversación no entraba en Luna: se recortaron salidas de herramientas antiguas"),
+    ] {
+        projection.apply_kind(&notice(code, detail));
+        assert!(matches!(projection.items().last(),
+            Some(TranscriptItem::Notice { message, is_error: false }) if message == expected));
+    }
+    assert_eq!(native_provider::learned_context_limit(&app.data_root, "custom", MODEL), None);
+    app.process_event(AgentEvent::new(&session.id, 1, notice(openide_core::NOTICE_CONTEXT_LIMIT, "64000")));
+    assert_eq!(native_provider::learned_context_limit(&app.data_root, "custom", MODEL), Some(64_000));
+}

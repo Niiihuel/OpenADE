@@ -416,6 +416,11 @@ pub struct SubagentWorker {
     permission_policy: PermissionPolicy,
     limits: RunLimits,
     token_budget: Option<TokenBudgetPolicy>,
+    /// The budget a child's identity is derived from, when it is not the one
+    /// it runs with. The running budget may follow what a provider teaches
+    /// the host (a learned window, a smaller reserve) without turning every
+    /// child reserved earlier into a conflicting identity.
+    identity_budget: Option<Option<TokenBudgetPolicy>>,
     auto_compaction: Option<(Arc<CheckpointFileStore>, CheckpointCompatibility)>,
     command_hooks: Arc<CommandHooks>,
     session_approval_isolation: Option<CommandIsolation>,
@@ -448,6 +453,7 @@ impl SubagentWorker {
             permission_policy: PermissionPolicy::new(),
             limits: RunLimits::default(),
             token_budget: None,
+            identity_budget: None,
             auto_compaction: None,
             command_hooks: Arc::new(CommandHooks::default()),
             session_approval_isolation: None,
@@ -476,6 +482,12 @@ impl SubagentWorker {
 
     pub fn with_token_budget_policy(mut self, policy: TokenBudgetPolicy) -> Self {
         self.token_budget = Some(policy);
+        self
+    }
+
+    /// See `identity_budget`. Without this the running budget identifies.
+    pub fn with_identity_budget(mut self, budget: Option<TokenBudgetPolicy>) -> Self {
+        self.identity_budget = Some(budget);
         self
     }
 
@@ -615,7 +627,7 @@ impl SubagentWorker {
         ] {
             identity.update((value as u64).to_be_bytes());
         }
-        if let Some(budget) = self.token_budget {
+        if let Some(budget) = self.identity_budget.unwrap_or(self.token_budget) {
             identity.update([1]);
             identity.update(budget.context_window_tokens.to_be_bytes());
             identity.update(budget.output_reserve_tokens.to_be_bytes());

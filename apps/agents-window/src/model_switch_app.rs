@@ -33,6 +33,20 @@ impl AgentsWindow {
                 route.model_name
             ));
         }
+        // Said before, not only after: the switch may summarise.
+        let history = self
+            .store
+            .as_ref()
+            .and_then(|store| store.load(&session_id).ok().flatten())
+            .and_then(|stored| replay_stored_native(&self.data_root, &stored).ok())
+            .map(|replay| replay.history)
+            .unwrap_or_default();
+        if self.history_needs_summary(&history, &route.provider_id, &route.model_id) {
+            notices.push(format!(
+                "La conversación no entra en {}: se resume antes de continuar.",
+                route.model_name
+            ));
+        }
         let blocker = self.model_switch_blocker(&session_id, route, pause.parent.is_some());
         self.view.model_switch.confirm = Some(SwitchConfirm {
             session_id,

@@ -255,6 +255,7 @@ impl ManualGateFixture {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
+            child_identity_budget: None,
             system_instructions: String::new(),
             pre_context_instructions: None,
             limits: RunLimits::default(),

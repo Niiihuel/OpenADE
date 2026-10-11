@@ -295,6 +295,7 @@ impl Fixture {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: None,
+            child_identity_budget: None,
             system_instructions: INSTRUCTIONS.into(),
             pre_context_instructions: None,
             limits: RunLimits::default(),

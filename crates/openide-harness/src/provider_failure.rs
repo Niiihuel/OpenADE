@@ -196,6 +196,60 @@ impl ProviderFailure {
     }
 }
 
+impl ProviderFailure {
+    /// The context limit, in tokens, that the provider's own text states.
+    pub fn stated_context_limit(&self) -> Option<u64> {
+        stated_context_limit(&self.message)
+    }
+}
+
+/// Providers word it differently: "maximum context length is 128000 tokens"
+/// (OpenAI and compatibles), "250000 tokens > 200000 maximum" (Anthropic),
+/// "context window of 32768". The number bound to the limit wording wins;
+/// anything else is not a guess worth persisting.
+pub fn stated_context_limit(text: &str) -> Option<u64> {
+    let text = text.to_ascii_lowercase().replace(',', "");
+    let number_at = |from: usize, backwards: bool| -> Option<u64> {
+        let slice = if backwards { &text[..from] } else { &text[from..] };
+        let digits: String = if backwards {
+            let tail: String = slice
+                .chars()
+                .rev()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(char::is_ascii_digit)
+                .collect();
+            tail.chars().rev().collect()
+        } else {
+            slice
+                .chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(char::is_ascii_digit)
+                .collect()
+        };
+        digits.parse().ok().filter(|limit| (1_000..=100_000_000).contains(limit))
+    };
+    for marker in ["maximum context length is", "context window of", "context length of", "context limit of", "limit of"] {
+        if let Some(at) = text.find(marker) {
+            // Only the words right after the marker: a later number is the request's size.
+            let end = (at + marker.len() + 24).min(text.len());
+            if let Some(limit) = stated_number(&text[at + marker.len()..end]) {
+                return Some(limit);
+            }
+        }
+    }
+    // "N tokens > M maximum": the limit is the number before "maximum".
+    text.find(" maximum").and_then(|at| number_at(at, true))
+}
+
+fn stated_number(text: &str) -> Option<u64> {
+    let digits: String = text
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.parse().ok().filter(|limit| (1_000..=100_000_000).contains(limit))
+}
+
 /// Provider `code` and `type` values, lowercased. Z.ai sends its business
 /// codes as strings in `error.code`.
 fn class_for_token(token: &str) -> Option<FailureClass> {
@@ -365,6 +419,26 @@ fn parse_rfc3339_ms(value: &str) -> Option<u64> {
         - 719_468;
     let seconds = days * 86_400 + hour * 3600 + minute * 60 + second - offset_minutes * 60;
     u64::try_from(seconds).ok()?.checked_mul(1000)
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::stated_context_limit;
+
+    #[test]
+    fn the_stated_limit_is_read_and_a_request_size_is_never_mistaken_for_it() {
+        for (text, expected) in [
+            ("HTTP 400: This model's maximum context length is 128000 tokens. However, your messages resulted in 201,334 tokens.", Some(128_000)),
+            ("HTTP 400: prompt is too long: 250000 tokens > 200000 maximum", Some(200_000)),
+            ("input exceeds the context window of 32,768 tokens", Some(32_768)),
+            ("HTTP 413: request too large", None),
+            ("context_length_exceeded", None),
+            ("your messages resulted in 201334 tokens", None),
+            ("maximum context length is 12 tokens", None),
+        ] {
+            assert_eq!(stated_context_limit(text), expected, "{text}");
+        }
+    }
 }
 
 #[cfg(test)]

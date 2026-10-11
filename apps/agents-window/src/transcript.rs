@@ -3606,6 +3606,15 @@ pub(crate) fn host_notice_text(code: &str, detail: &str) -> String {
         openide_core::NOTICE_OUTPUT_LIMIT => format!(
             "{detail} llegó a su límite de salida varias veces seguidas: la respuesta quedó incompleta"
         ),
+        openide_core::NOTICE_CONTEXT_SUMMARIZED => format!(
+            "La conversación no entraba en {detail}: se resumió antes de continuar"
+        ),
+        openide_core::NOTICE_CONTEXT_TRIMMED => format!(
+            "La conversación no entraba en {detail}: se recortaron salidas de herramientas antiguas"
+        ),
+        openide_core::NOTICE_CONTEXT_LIMIT => format!(
+            "El proveedor informó su límite de contexto: {detail} tokens. Se usa desde ahora para este modelo"
+        ),
         _ => detail.to_owned(),
     }
 }

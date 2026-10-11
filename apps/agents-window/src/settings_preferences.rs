@@ -120,6 +120,9 @@ pub(crate) struct SettingsPreferences {
     pub vim_mode: bool,
     /// Continue a turn paused on a provider limit when the limit renews.
     pub auto_resume_on_limit: bool,
+    /// Ask before summarising a conversation that does not fit a newly
+    /// chosen model, instead of doing it and saying so.
+    pub ask_before_summary_on_switch: bool,
     pub terminal_shell: TerminalShell,
     pub reopen_last_workspace: bool,
     pub last_workspace: Option<PathBuf>,
@@ -148,6 +151,7 @@ impl Default for SettingsPreferences {
             keymap_profile: KeymapProfile::default(),
             vim_mode: false,
             auto_resume_on_limit: true,
+            ask_before_summary_on_switch: false,
             terminal_shell: TerminalShell::System,
             reopen_last_workspace: false,
             last_workspace: None,
@@ -209,6 +213,12 @@ impl SettingsPreferences {
             .and_then(serde_json::Value::as_bool)
         {
             preferences.auto_resume_on_limit = enabled;
+        }
+        if let Some(enabled) = value
+            .get("ask_before_summary_on_switch")
+            .and_then(serde_json::Value::as_bool)
+        {
+            preferences.ask_before_summary_on_switch = enabled;
         }
         if let Some(reopen) = value
             .get("reopen_last_workspace")
@@ -331,6 +341,7 @@ impl SettingsPreferences {
             "keymap_profile": self.keymap_profile.id(),
             "vim_mode": self.vim_mode,
             "auto_resume_on_limit": self.auto_resume_on_limit,
+            "ask_before_summary_on_switch": self.ask_before_summary_on_switch,
             "terminal_shell": self.terminal_shell,
             "reopen_last_workspace": self.reopen_last_workspace,
             "last_workspace": workspace_text,

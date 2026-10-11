@@ -71,7 +71,7 @@ pub use compact::{
     CompactSummary, MAX_COMPACT_INPUT_BYTES, MAX_COMPACT_MESSAGES,
 };
 pub use context::{
-    ContextPolicy, TokenBudgetAssessment, TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState,
+    estimate_input_tokens, ContextPolicy, TokenBudgetAssessment, TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState,
 };
 pub use error::AgentError;
 pub use history_adapter::{
@@ -79,7 +79,7 @@ pub use history_adapter::{
     ToolIdRule, INTERRUPTED_TOOL_RESULT,
 };
 pub use limit_gate::{limit_gate_block, limit_gate_check, limit_gate_clear, LimitBlock};
-pub use provider_failure::{FailureClass, ProviderFailure};
+pub use provider_failure::{stated_context_limit, FailureClass, ProviderFailure};
 pub use exec_policy::{
     ExecDecision, ExecEvaluation, ExecPatternToken, ExecPolicy, ExecPolicyError, ExecRule,
     MAX_EXEC_JUSTIFICATION_BYTES, MAX_EXEC_PATTERN_TOKENS, MAX_EXEC_RULES, MAX_EXEC_TOKEN_BYTES,

@@ -369,6 +369,31 @@ fn export_pause_switch_visual_review() {
                 "switch-unfinished",
                 build_session_surface(&unfinished_switch(), width, false, false),
             ),
+            (
+                "notice-summarized-and-trimmed",
+                build_session_surface(
+                    &continued(&[
+                        &crate::transcript::host_notice_text(
+                            openide_core::NOTICE_CONTEXT_SUMMARIZED,
+                            "Claude Sonnet 5",
+                        ),
+                        &crate::transcript::host_notice_text(
+                            openide_core::NOTICE_CONTEXT_TRIMMED,
+                            "Claude Sonnet 5",
+                        ),
+                        &crate::transcript::host_notice_text(openide_core::NOTICE_CONTEXT_LIMIT, "128000"),
+                    ]),
+                    width,
+                    false,
+                    false,
+                ),
+            ),
+            ("settings-provider-limits", {
+                let mut state = limit();
+                state.model_switch.ask_before_summary = true;
+                Element::column(vec![crate::settings_ui::provider_limits_group(&state, width < 600.0)])
+                    .padding(16.0)
+            }),
         ] {
             let (context, mut tree) = super::file_activity_visual_tests::native_tree(element);
             tree.set_reduced_motion(true);

@@ -38,10 +38,11 @@ mod active_checkpoint_acceptance {
     fn budget() -> TokenBudgetPolicy {
         TokenBudgetPolicy {
             input_limit_tokens: None,
-            context_window_tokens: 60_000,
+            // Sized for the estimator's 13 tokens per 40 bytes.
+            context_window_tokens: 20_000,
             output_reserve_tokens: 1_024,
             tool_schema_reserve_tokens: 256,
-            auto_compact_token_limit: Some(28_000),
+            auto_compact_token_limit: Some(11_000),
         }
     }
 
@@ -100,10 +101,15 @@ mod active_checkpoint_acceptance {
                 // store. Intercept the next append before it reaches disk so
                 // the abrupt process exit leaves that exact marker as the tail.
                 let record = self.sessions.load(&event.session_id)?.unwrap();
-                assert!(matches!(
-                    record.events.last().unwrap().kind,
-                    AgentEventKind::CheckpointCommitted { .. }
-                ));
+                // Only the notice that the conversation was summarised may
+                // follow the marker before the next request.
+                let tail = record
+                    .events
+                    .iter()
+                    .rev()
+                    .find(|event| !matches!(event.kind, AgentEventKind::HostNotice { .. }))
+                    .unwrap();
+                assert!(matches!(tail.kind, AgentEventKind::CheckpointCommitted { .. }));
                 std::process::exit(PROCESS_CUT_EXIT);
             }
             self.sessions.append_native_event(event)?;
@@ -547,9 +553,15 @@ mod active_checkpoint_acceptance {
                 .any(|message| message.tool_call_id.as_deref() == Some(CALL_ID)
                     && message.content == receipt_output()));
             if point == "checkpoint_committed" {
+                // The marker, then the notice that tells the person about it.
                 assert!(matches!(
-                    before.last().unwrap().kind,
+                    before[before.len() - 2].kind,
                     AgentEventKind::CheckpointCommitted { .. }
+                ));
+                assert!(matches!(
+                    &before.last().unwrap().kind,
+                    AgentEventKind::HostNotice { code, .. }
+                        if code == openide_core::NOTICE_CONTEXT_SUMMARIZED
                 ));
                 assert_eq!(
                     interrupted.recovery,

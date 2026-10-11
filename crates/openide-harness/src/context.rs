@@ -54,6 +54,10 @@ pub struct TokenBudgetState {
     pending_estimate: Option<u64>,
     calibrated_estimate: Option<u64>,
     observed_input_tokens: Option<u64>,
+    /// Reported tokens per thousand estimated ones, from the last request
+    /// that reported usage. It outlives a reset and a model switch, so the
+    /// first request on a new route is not budgeted blind.
+    ratio_permille: Option<u32>,
 }
 
 impl TokenBudgetState {
@@ -71,11 +75,31 @@ impl TokenBudgetState {
         })?;
         self.calibrated_estimate = Some(estimate);
         self.observed_input_tokens = Some(input_tokens);
+        if estimate > 0 {
+            self.ratio_permille = Some(clamp_ratio(input_tokens.saturating_mul(1000) / estimate));
+        }
         Ok(())
     }
 
+    /// Start a turn from the ratio a previous one measured.
+    pub fn calibrated(ratio_permille: u32) -> Self {
+        Self {
+            ratio_permille: Some(clamp_ratio(u64::from(ratio_permille))),
+            ..Self::default()
+        }
+    }
+
+    pub fn ratio_permille(&self) -> Option<u32> {
+        self.ratio_permille
+    }
+
+    /// Forget the last request (after a compaction), not what was learned
+    /// about how this conversation tokenises.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        *self = Self {
+            ratio_permille: self.ratio_permille,
+            ..Self::default()
+        };
     }
 }
 
@@ -96,11 +120,6 @@ impl TokenBudgetPolicy {
         let (messages, tools) = (adapted.messages.as_slice(), adapted.tools.as_slice());
         if let Some(exact_input_tokens) = model.count_input_tokens(messages, tools, cancel).await? {
             self.assess_request_with_exact_input_tokens(state, exact_input_tokens)
-        } else if messages.iter().any(|message| !message.images.is_empty()) {
-            Err(AgentError::Limit(format!(
-                        "image input token count is unknown for model {}; the request cannot pass the verified context budget",
-                        model.model_id()
-                )))
         } else {
             self.assess_request(state, messages, tools)
         }
@@ -128,17 +147,15 @@ impl TokenBudgetPolicy {
         messages: &[AgentMessage],
         tools: &[ToolDefinition],
     ) -> Result<TokenBudgetAssessment, AgentError> {
-        if messages.iter().any(|message| !message.images.is_empty()) {
-            return Err(AgentError::Limit(
-                "image input token count is unknown; use provider preflight before applying a context budget".into(),
-            ));
-        }
         let estimated_input_tokens = estimate_input_tokens(messages, tools);
         let projected_input_tokens =
             match (state.calibrated_estimate, state.observed_input_tokens) {
                 (Some(previous_estimate), Some(observed)) => observed
                     .saturating_add(estimated_input_tokens.saturating_sub(previous_estimate)),
-                _ => estimated_input_tokens,
+                _ => match state.ratio_permille {
+                    Some(ratio) => estimated_input_tokens.saturating_mul(u64::from(ratio)) / 1000,
+                    None => estimated_input_tokens,
+                },
             };
         self.assess_projected_tokens(state, estimated_input_tokens, projected_input_tokens)
     }
@@ -216,11 +233,17 @@ impl TokenBudgetPolicy {
     }
 }
 
+/// A measured ratio is trusted within sane bounds only: one odd request
+/// must not let a later one through or block everything.
+fn clamp_ratio(permille: u64) -> u32 {
+    permille.clamp(500, 3000) as u32
+}
+
 fn percent_of(tokens: u64, percent: u64) -> u64 {
     ((tokens as u128 * percent as u128) / 100) as u64
 }
 
-fn estimate_input_tokens(messages: &[AgentMessage], tools: &[ToolDefinition]) -> u64 {
+pub fn estimate_input_tokens(messages: &[AgentMessage], tools: &[ToolDefinition]) -> u64 {
     let mut count = 0u64;
     for message in messages {
         count = count
@@ -229,6 +252,7 @@ fn estimate_input_tokens(messages: &[AgentMessage], tools: &[ToolDefinition]) ->
         if let Some(call_id) = &message.tool_call_id {
             count = count.saturating_add(byte_count(call_id));
         }
+        count = count.saturating_add(IMAGE_TOKENS.saturating_mul(message.images.len() as u64));
         for call in &message.tool_calls {
             count = count
                 .saturating_add(32)
@@ -250,8 +274,16 @@ fn estimate_input_tokens(messages: &[AgentMessage], tools: &[ToolDefinition]) ->
     count
 }
 
+/// What an image is charged when the route cannot count it: above what the
+/// providers bill for their largest tile set, so a route without a counting
+/// endpoint (a subscription one) can still be budgeted with images.
+const IMAGE_TOKENS: u64 = 2_000;
+
+/// About four bytes a token, plus thirty percent for the text that is not
+/// prose. One token a byte made every uncalibrated request look four times
+/// its size and compacted conversations that fitted.
 fn byte_count(value: &str) -> u64 {
-    u64::try_from(value.len()).unwrap_or(u64::MAX)
+    (u64::try_from(value.len()).unwrap_or(u64::MAX).saturating_mul(13)).div_ceil(40)
 }
 
 /// Bounds the messages sent to a model using an approximate character count.
@@ -336,6 +368,37 @@ impl ContextPolicy {
         }
         Ok(())
     }
+}
+
+/// Replace the largest tool outputs of `messages` by a stub, biggest first,
+/// until `fits` says the request does. The system prompt, every user
+/// message, the calls themselves and the `keep_recent` newest results stay
+/// as they are, so no call loses its result and the latest work stays whole.
+/// Returns how many results were stubbed.
+pub(crate) fn stub_largest_tool_results(
+    messages: &mut [AgentMessage],
+    keep_recent: usize,
+    mut fits: impl FnMut(&[AgentMessage]) -> bool,
+) -> usize {
+    let mut candidates = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| {
+            message.role == MessageRole::Tool && message.content.len() > CLEARED_TOOL_RESULT.len()
+        })
+        .map(|(index, message)| (index, message.content.len()))
+        .collect::<Vec<_>>();
+    candidates.truncate(candidates.len().saturating_sub(keep_recent));
+    candidates.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    let mut stubbed = 0;
+    for (index, _) in candidates {
+        if fits(messages) {
+            break;
+        }
+        messages[index].content = CLEARED_TOOL_RESULT.to_owned();
+        stubbed += 1;
+    }
+    stubbed
 }
 
 fn oldest_historical_turn(messages: &[AgentMessage], prompt_index: usize) -> Option<Range<usize>> {
@@ -502,7 +565,7 @@ mod tests {
                 .unwrap()
         };
 
-        let below = assess(717, &mut state);
+        let below = assess(2_206, &mut state);
         assert_eq!(below.projected_input_tokens, 749);
         assert_eq!(below.projected_total_tokens, 899);
         assert_eq!(below.auto_compact_threshold_tokens, 900);
@@ -510,15 +573,15 @@ mod tests {
         assert_eq!(below.decision, TokenBudgetDecision::Continue);
 
         assert_eq!(
-            assess(718, &mut state).decision,
+            assess(2_207, &mut state).decision,
             TokenBudgetDecision::Compact
         );
         assert_eq!(
-            assess(768, &mut state).decision,
+            assess(2_363, &mut state).decision,
             TokenBudgetDecision::Compact
         );
         assert_eq!(
-            assess(769, &mut state).decision,
+            assess(2_364, &mut state).decision,
             TokenBudgetDecision::Reject
         );
     }
@@ -535,7 +598,7 @@ mod tests {
         assert_eq!(within.decision, TokenBudgetDecision::Continue);
 
         let at_auto = policy
-            .assess_request(&mut state, &[AgentMessage::user("x".repeat(235_552))], &[])
+            .assess_request(&mut state, &[AgentMessage::user("x".repeat(724_775))], &[])
             .unwrap();
         assert_eq!(at_auto.projected_total_tokens, 244_800);
         assert_eq!(at_auto.decision, TokenBudgetDecision::Compact);
@@ -570,7 +633,8 @@ mod tests {
         let assessment = token_policy(1_000, 100, 0)
             .assess_request(&mut TokenBudgetState::default(), &[message], &[tool])
             .unwrap();
-        assert_eq!(assessment.estimated_input_tokens, 36 + 64 + 4 + 6 + 17);
+        // 13 tokens for every 40 bytes, rounded up per field, plus framing.
+        assert_eq!(assessment.estimated_input_tokens, (32 + 2) + (64 + 2 + 2 + 6));
         assert_eq!(
             assessment.projected_input_tokens,
             assessment.estimated_input_tokens
@@ -578,15 +642,49 @@ mod tests {
         assert_eq!(assessment.decision, TokenBudgetDecision::Continue);
     }
 
+    #[test]
+    fn the_largest_old_tool_outputs_are_stubbed_first_and_every_pair_stays_whole() {
+        let call = |id: &str| ToolCall { id: id.into(), name: "read".into(), arguments: json!({}) };
+        let mut messages = vec![
+            AgentMessage::system("system"),
+            AgentMessage::user("pinned task"),
+            AgentMessage::assistant("", vec![call("a"), call("b")]),
+            AgentMessage::tool("a", "s".repeat(100)),
+            AgentMessage::tool("b", "L".repeat(9_000)),
+            AgentMessage::assistant("", vec![call("c")]),
+            AgentMessage::tool("c", "M".repeat(4_000)),
+            AgentMessage::assistant("", vec![call("d")]),
+            AgentMessage::tool("d", "R".repeat(8_000)),
+        ];
+        let before = messages.clone();
+        let size = |messages: &[AgentMessage]| messages.iter().map(|m| m.content.len()).sum::<usize>();
+        // Room for everything but the biggest old output: only it goes.
+        let stubbed = stub_largest_tool_results(&mut messages, 1, |messages| size(messages) < 13_000);
+        assert_eq!(stubbed, 1);
+        assert_eq!(messages[4].content, CLEARED_TOOL_RESULT);
+        assert_eq!(messages[3], before[3]);
+        assert_eq!(messages[6], before[6]);
+        // Never fitting stubs every old output and still keeps the newest.
+        let stubbed = stub_largest_tool_results(&mut messages, 1, |_| false);
+        assert_eq!(stubbed, 2);
+        assert_eq!(messages[8], before[8], "the latest result is intact");
+        assert_eq!(&messages[..3], &before[..3], "system, task and calls are intact");
+        for (after, original) in messages.iter().zip(&before) {
+            assert_eq!((after.role, &after.tool_call_id, &after.tool_calls), (original.role, &original.tool_call_id, &original.tool_calls));
+        }
+    }
+
     #[tokio::test]
-    async fn image_budget_requires_exact_count_before_admission() {
+    async fn image_budget_prefers_an_exact_count_and_charges_a_fixed_amount_without_one() {
         let policy = token_policy(1_000, 100, 0);
         let message = image_message();
         let mut state = TokenBudgetState::default();
-        assert!(matches!(
-            policy.assess_request(&mut state, std::slice::from_ref(&message), &[]),
-            Err(AgentError::Limit(detail)) if detail.contains("unknown")
-        ));
+        // Without a count an image is charged a fixed, generous amount.
+        let uncounted = policy
+            .assess_request(&mut state, std::slice::from_ref(&message), &[])
+            .unwrap();
+        assert_eq!(uncounted.estimated_input_tokens, 32 + 3 + 2_000);
+        assert_eq!(uncounted.decision, TokenBudgetDecision::Reject);
 
         let model = CountingModel {
             count: Some(851),
@@ -612,18 +710,12 @@ mod tests {
             count: None,
             calls: AtomicUsize::new(0),
         };
-        assert!(matches!(
-            policy
-                .assess_model_request(
-                    &mut state,
-                    &unknown_model,
-                    &[message],
-                    &[],
-                    CancellationToken::new(),
-                )
-                .await,
-            Err(AgentError::Limit(detail)) if detail.contains("unknown") && detail.contains("counting-model")
-        ));
+        let fallback = policy
+            .assess_model_request(&mut state, &unknown_model, &[message], &[], CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(fallback.estimated_input_tokens, 32 + 3 + 2_000);
+        assert_eq!(unknown_model.calls.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
@@ -642,7 +734,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(assessment.estimated_input_tokens, 36);
+        assert_eq!(assessment.estimated_input_tokens, 34);
         assert_eq!(model.calls.load(Ordering::Relaxed), 1);
     }
 
@@ -657,19 +749,19 @@ mod tests {
             .estimated_input_tokens;
         assert_eq!(
             estimated,
-            32 + assistant.provider_output_items[0].to_string().len() as u64
+            32 + (assistant.provider_output_items[0].to_string().len() as u64 * 13).div_ceil(40)
         );
     }
 
     #[test]
-    fn provider_usage_calibrates_growth_and_reset_restores_fallback() {
+    fn provider_usage_calibrates_growth_and_its_ratio_outlives_a_reset_and_a_switch() {
         let policy = token_policy(1_000, 100, 0);
         let mut state = TokenBudgetState::default();
         assert!(state.observe_provider_input_tokens(30).is_err());
         let baseline = policy
             .assess_request(&mut state, &[AgentMessage::user("x".repeat(100))], &[])
             .unwrap();
-        assert_eq!(baseline.estimated_input_tokens, 132);
+        assert_eq!(baseline.estimated_input_tokens, 65);
         state.observe_provider_input_tokens(30).unwrap();
 
         let same = policy
@@ -679,17 +771,29 @@ mod tests {
         let grown = policy
             .assess_request(&mut state, &[AgentMessage::user("x".repeat(120))], &[])
             .unwrap();
-        assert_eq!(grown.projected_input_tokens, 50);
+        assert_eq!(grown.projected_input_tokens, 36);
         let shorter = policy
             .assess_request(&mut state, &[AgentMessage::user("x".repeat(80))], &[])
             .unwrap();
         assert_eq!(shorter.projected_input_tokens, 30);
 
+        // A reset forgets the request, not the measured ratio (30 for 65,
+        // held at the lower bound of one half).
         state.reset();
-        let uncalibrated = policy
+        assert_eq!(state.ratio_permille(), Some(500));
+        let recalibrated = policy
             .assess_request(&mut state, &[AgentMessage::user("x".repeat(80))], &[])
             .unwrap();
-        assert_eq!(uncalibrated.projected_input_tokens, 112);
+        assert_eq!((recalibrated.estimated_input_tokens, recalibrated.projected_input_tokens), (58, 29));
+        // The ratio carries to a new turn or route; without one the estimate stands.
+        let carried = policy
+            .assess_request(&mut TokenBudgetState::calibrated(2_000), &[AgentMessage::user("x".repeat(80))], &[])
+            .unwrap();
+        assert_eq!(carried.projected_input_tokens, 116);
+        let blind = policy
+            .assess_request(&mut TokenBudgetState::default(), &[AgentMessage::user("x".repeat(80))], &[])
+            .unwrap();
+        assert_eq!(blind.projected_input_tokens, 58);
     }
 
     #[test]

@@ -40,6 +40,9 @@ pub(crate) struct ResumeWorkerRequest {
     pub command_isolation: CommandIsolation,
     pub command_hooks: Arc<CommandHooks>,
     pub budget_policy: Option<TokenBudgetPolicy>,
+    /// What a child of this turn is identified by, when it is not the
+    /// budget it runs with. None: the running budget identifies.
+    pub child_identity_budget: Option<Option<TokenBudgetPolicy>>,
     pub system_instructions: String,
     /// Only for an admission that has not committed context yet. The native
     /// lease holder selects the authoritative ledger over legacy composer text.
@@ -403,6 +406,9 @@ async fn run_recovery_with_command_actor(
     }
     if let Some(bridge) = &request.event_bridge {
         child_worker = child_worker.with_event_bridge(bridge.clone());
+    }
+    if let Some(identity) = request.child_identity_budget {
+        child_worker = child_worker.with_identity_budget(identity);
     }
     if let Some(budget) = request.budget_policy {
         child_worker = child_worker.with_token_budget_policy(budget);
@@ -1332,6 +1338,7 @@ mod tests {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: None,
+            child_identity_budget: None,
             system_instructions: String::new(),
             pre_context_instructions: None,
             limits: RunLimits::default(),
@@ -1473,6 +1480,7 @@ mod tests {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
+            child_identity_budget: None,
             system_instructions: String::new(),
             pre_context_instructions: None,
             limits: RunLimits::default(),
@@ -1585,6 +1593,7 @@ mod tests {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
+            child_identity_budget: None,
             system_instructions: String::new(),
             pre_context_instructions: None,
             limits: RunLimits::default(),
@@ -1705,6 +1714,7 @@ mod tests {
                 command_isolation: CommandIsolation::HostUnrestricted,
                 command_hooks: hooks,
                 budget_policy: Some(budget()),
+                child_identity_budget: None,
                 system_instructions: String::new(),
                 pre_context_instructions: None,
                 limits: RunLimits::default(),
@@ -1948,6 +1958,7 @@ mod tests {
                 command_isolation: CommandIsolation::HostUnrestricted,
                 command_hooks: Arc::new(CommandHooks::default()),
                 budget_policy: Some(budget()),
+                child_identity_budget: None,
                 system_instructions: String::new(),
                 pre_context_instructions: None,
                 limits: RunLimits::default(),
@@ -2103,6 +2114,7 @@ mod tests {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
+            child_identity_budget: None,
             system_instructions: String::new(),
             pre_context_instructions: None,
             limits: RunLimits::default(),
@@ -2225,6 +2237,7 @@ mod tests {
                 command_isolation: CommandIsolation::HostUnrestricted,
                 command_hooks: Arc::new(CommandHooks::default()),
                 budget_policy: Some(budget()),
+                child_identity_budget: None,
                 system_instructions: String::new(),
                 pre_context_instructions: None,
                 limits: RunLimits::default(),
@@ -2685,6 +2698,7 @@ mod tests {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: Some(budget()),
+            child_identity_budget: None,
             system_instructions: "Changed project instructions".into(),
             pre_context_instructions: None,
             limits: RunLimits::default(),
@@ -2890,6 +2904,7 @@ mod tests {
                 command_isolation: CommandIsolation::HostUnrestricted,
                 command_hooks: Arc::new(CommandHooks::default()),
                 budget_policy: Some(budget()),
+                child_identity_budget: None,
                 system_instructions: "unselected fallback".into(),
                 pre_context_instructions: Some((
                     "Exact project instructions".into(),

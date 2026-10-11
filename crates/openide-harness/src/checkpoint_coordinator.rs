@@ -73,6 +73,12 @@ impl CheckpointCoordinator {
         }
     }
 
+    /// See `CompactService::with_foreign_summarizer`.
+    pub fn with_foreign_summarizer(mut self) -> Self {
+        self.compactor = self.compactor.with_foreign_summarizer();
+        self
+    }
+
     pub fn with_compact_limits(mut self, limits: CompactLimits) -> Self {
         self.compactor = self.compactor.with_limits(limits);
         self
