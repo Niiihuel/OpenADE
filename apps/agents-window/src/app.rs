@@ -10309,6 +10309,37 @@ impl AgentsWindow {
         for category in observations.categories {
             projected.set_category(category);
         }
+        if projected.capacity().is_none() {
+            // The engine has no budget for this route. The meter may still
+            // fill against a window a named source states; nothing executes
+            // against it.
+            use crate::model_metadata::MetadataField;
+            let details = crate::model_metadata::native_route(
+                &provider,
+                &model,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            );
+            projected.window = details.context_tokens;
+            projected.input_limit = details.max_input_tokens;
+            let field = if details.context_tokens.is_some() {
+                MetadataField::Context
+            } else {
+                MetadataField::Input
+            };
+            if let Some(source) = details.field_sources.get(&field) {
+                projected.window_source = source.label();
+                if let (Some(tokens), Some(section)) =
+                    (projected.capacity(), projected.sections.first_mut())
+                {
+                    section.rows.push(NativeContextRow::new(
+                        "Ventana del indicador",
+                        format!("{tokens} · {}", source.label()),
+                        "Sólo llena el indicador de contexto. El presupuesto del motor no la usa.",
+                    ));
+                }
+            }
+        }
         if let Err(error) = &current_route {
             projected.error = Some(error.clone());
         }
@@ -12316,6 +12347,14 @@ impl AgentsWindow {
             _ => None,
         };
         self.last_sequence = self.last_sequence.max(event.sequence);
+        if native_run {
+            // shortcut: an event queued before a journal reread counts twice
+            // until the next response commit rereads it; the figure is
+            // already marked as an estimate.
+            self.view
+                .native_context
+                .note_event(&event.session_id, &event.kind);
+        }
         if matches!(
             event.kind,
             AgentEventKind::ToolFinished { .. }

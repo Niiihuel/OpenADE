@@ -2421,7 +2421,7 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
         SettingsPage::Hooks => hooks_page(state, compact),
         SettingsPage::Usage => vec![
             settings_parts::settings_group("Conversación activa", vec![
-                settings_parts::value_row("Contexto de la conversación", "Último porcentaje de contexto restante para la ruta nativa seleccionada.", state.composer_context_percent.map(|percent| format!("{percent}% restante")).unwrap_or_else(|| "Sin medición".to_owned()), compact),
+                settings_parts::value_row("Contexto de la conversación", "Parte de la ventana del modelo que ocupa la conversación nativa seleccionada. Con ~ es una estimación.", crate::composer_context_ui::occupancy_text(&state.native_context).unwrap_or_else(|| "Sin medición".to_owned()), compact),
             ]),
         ],
         _ => unreachable!("existing Settings page has its own renderer"),

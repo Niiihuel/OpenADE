@@ -49,9 +49,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
         ),
     };
     let context_value = if native_route {
-        state
-            .composer_context_percent
-            .map(|percent| format!("{percent}% restante estimado"))
+        crate::composer_context_ui::occupancy_text(&state.native_context)
     } else {
         None
     }
@@ -73,8 +71,8 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
                 compact,
             ),
             settings_parts::value_row(
-                "Contexto restante estimado",
-                "Se calcula con el uso de la última respuesta y el límite verificado del modelo exacto. Después de compactar, espera una nueva respuesta para actualizarse.",
+                "Contexto usado",
+                "Uso de la última respuesta sobre la ventana del modelo. Con ~ es una estimación hasta la próxima respuesta medida.",
                 context_value,
                 compact,
             ),
@@ -245,7 +243,8 @@ mod tests {
             unread: false,
         }];
         state.native_goal.session_id = state.selected_session.clone();
-        state.composer_context_percent = Some(47);
+        state.native_context.window = Some(100);
+        state.native_context.appended_bytes = 188;
         state
     }
 
@@ -281,7 +280,7 @@ mod tests {
             let mut native = tree(&state, width);
             assert!(rendered_texts(&mut native, width)
                 .iter()
-                .any(|text| text == "47% restante estimado"));
+                .any(|text| text == "~47% usado"));
             for id in ["settings_native_compact", "settings_native_goal_open"] {
                 assert!(native.focus(id));
                 assert!(pointer_action(&mut native, width, id).iter().any(|action| matches!(action, UiAction::Clicked { id: action_id } if action_id == id)));
@@ -304,7 +303,7 @@ mod tests {
                 let mut unavailable_tree = tree(&unavailable, width);
                 let texts = rendered_texts(&mut unavailable_tree, width);
                 if scenario <= 2 {
-                    assert!(!texts.iter().any(|text| text == "47% restante estimado"));
+                    assert!(!texts.iter().any(|text| text == "~47% usado"));
                     assert!(texts.iter().any(|text| text == "Sin medición"));
                 }
                 for id in ["settings_native_compact", "settings_native_goal_open"] {

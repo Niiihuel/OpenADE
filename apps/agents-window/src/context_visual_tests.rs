@@ -37,6 +37,8 @@ const SOURCES: [&str; 7] = [
     "Conversación",
 ];
 const DRAFT: &str = "Revisá el uso de contexto sin modificar los archivos.";
+const UNKNOWN_WINDOW: &str =
+    "Ventana no publicada: context-review-model";
 const DETAIL_MARKER: &str = "DIAGNOSTIC_FINGERPRINT_NOT_SUMMARY";
 
 fn usage(input: u64, output: u64) -> ModelTokenUsage {
@@ -313,7 +315,10 @@ fn context_popup_real_composer_preserves_exact_usage_and_short_window_bounds() {
     for name in CASES {
         for size in [Size::new(360.0, 320.0), Size::new(900.0, 420.0)] {
             let mut state = fixture(name);
-            let expected = state.native_context.used_fraction();
+            let expected = state
+                .native_context
+                .occupancy()
+                .map(|occupancy| occupancy.fraction());
             let (ctx, mut tree) = native_tree(root(&state, size), size);
             let before = tree.layout(size);
             let editor = region(&before, "prompt");
@@ -383,7 +388,7 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
             }
             assert!(text
                 .iter()
-                .any(|text| text == "30% · ~30.0K / 100.0K tokens"));
+                .any(|text| text == "30% · 30K / 100K tokens"));
             assert!(text.iter().any(|text| text == "Copiar diagnóstico"));
             assert!(
                 !text.iter().any(|text| text == "Detalles"),
@@ -396,7 +401,7 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
                 // The 8192-byte system copy holds the project's 4096 and the
                 // skills' 2048: 2048, 4096 and 2048 bytes at four a token, and
                 // the rest of the 30 000 measured is conversation.
-                for (figure, times) in [("~512", 2), ("~1.0K", 1), ("~28.0K", 1)] {
+                for (figure, times) in [("~512", 2), ("~1K", 1), ("~28K", 1)] {
                     let shown = text.iter().filter(|text| *text == figure).count();
                     assert_eq!(shown, times, "{figure}: {text:?}");
                 }
@@ -496,12 +501,16 @@ fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
             let text = visible_text(&frame, size);
             let has = |value: &str| text.iter().any(|text| text == value);
             match name {
-                "near-full-95" => assert!(has("95% · ~95.0K / 100.0K tokens")),
+                "near-full-95" => assert!(has("95% · 95K / 100K tokens")),
                 "unknown-window" => {
-                    assert!(has("30.0K tokens") && has("Límite del modelo sin verificar"));
+                    assert!(has("30K tokens · ventana desconocida")
+                            && has(UNKNOWN_WINDOW));
                     assert!(!text.iter().any(|text| text.contains('%')));
                 }
-                "unknown" => assert!(has("Capacidad: 100.0K tokens") && !has("~26.4K")),
+                // Nothing measured yet: the sized instructions alone, as an estimate.
+                "unknown" => assert!(
+                    has("~2% · ~2K / 100K tokens") && has("Estimado: aún no hay una respuesta medida.")
+                ),
                 _ => {}
             }
             assert!(
@@ -525,8 +534,8 @@ fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
 #[test]
 fn context_shows_one_status_line_only_when_the_measurement_needs_it() {
     const STATUSES: [&str; 5] = [
-        "Límite del modelo sin verificar",
-        "Aún no hay una respuesta medida",
+        UNKNOWN_WINDOW,
+        "Estimado: aún no hay una respuesta medida.",
         "Queda poco espacio. Puedes compactar para continuar.",
         "El resumen está guardado. El uso se medirá en la próxima respuesta.",
         "Consulta no disponible: No se puede verificar el journal de esta conversación",
@@ -535,7 +544,7 @@ fn context_shows_one_status_line_only_when_the_measurement_needs_it() {
         ("measured-30", None),
         ("tiny", None),
         ("unknown", Some(STATUSES[1])),
-        ("unknown-window", Some("Límite del modelo sin verificar")),
+        ("unknown-window", Some(UNKNOWN_WINDOW)),
         ("near-full-95", Some(STATUSES[2])),
         ("compacted", Some(STATUSES[3])),
         ("error", Some(STATUSES[4])),
@@ -692,10 +701,57 @@ fn export_context_visual_review() {
                 let frame = tree.layout(size);
                 assert_popup_bounds(&frame, size);
                 assert!(frame.commands.iter().any(|command| matches!(command,
-                    DrawCommand::ProgressRing { fraction, .. } if *fraction == state.native_context.used_fraction())));
+                    DrawCommand::ProgressRing { fraction, .. } if *fraction == state.native_context.occupancy().map(|occupancy| occupancy.fraction()))));
                 export(&frame, &directory, name, size);
                 ctx.end_pass().textures_delta.clear();
             }
+        }
+    }
+}
+
+/// The ring and its popover in every state the meter has: empty, a provider
+/// count, an estimate, the warning, full, and a model with no known window.
+#[test]
+#[ignore = "export the context ring states under docs/ui-separation/shots/model-metadata"]
+fn export_context_ring_states_visual_review() {
+    let directory =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/ui-separation/shots/model-metadata");
+    std::fs::create_dir_all(&directory).unwrap();
+    for (name, measured, appended, label) in [
+        ("ring-0", Some((0, 0)), 0, Some("0%")),
+        ("ring-exact-42", Some((40_000, 2_000)), 0, Some("42%")),
+        ("ring-estimated-42", Some((30_000, 2_000)), 40_000, Some("~42%")),
+        ("ring-warning-85", Some((80_000, 5_000)), 0, Some("85%")),
+        ("ring-full-100", Some((95_000, 5_000)), 0, Some("100%")),
+        ("ring-unknown-window", None, 0, None),
+    ] {
+        for width in [360.0, 900.0] {
+            let size = Size::new(width, 420.0);
+            let mut state = fixture(if measured.is_some() { "measured-30" } else { "unknown-window" });
+            if let Some((input, output)) = measured {
+                state.native_context.last_usage = Some(usage(input, output));
+            }
+            state.native_context.appended_bytes = appended;
+            state.native_context.window_source = "Codex CLI";
+            state.composer_context_open = true;
+            let (ctx, mut tree) = native_tree(root(&state, size), size);
+            let frame = tree.layout(size);
+            let occupancy = state.native_context.occupancy();
+            assert_eq!(occupancy.map(|occupancy| occupancy.label()).as_deref(), label, "{name}");
+            assert!(frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::ProgressRing { fraction, .. }
+                    if *fraction == occupancy.map(|occupancy| occupancy.fraction()))));
+            let text = visible_text(&frame, size);
+            // The header says what the ring says; the label has room from 490 px.
+            if let Some(label) = label {
+                assert!(text.iter().any(|text| text.starts_with(&format!("{label} · "))), "{text:?}");
+                assert_eq!(text.iter().any(|text| text == label), width >= 490.0, "{name}: {text:?}");
+            } else {
+                assert!(text.iter().all(|text| !text.contains('%')), "{text:?}");
+            }
+            export(&frame, &directory, name, size);
+            std::fs::remove_file(directory.join(format!("context-{name}-{width:.0}x420.svg"))).unwrap();
+            ctx.end_pass().textures_delta.clear();
         }
     }
 }

@@ -941,13 +941,15 @@ fn model_provider_heading(route: &ModelRouteOption) -> String {
     }
 }
 
-/// One model in the catalog: its name over its identifier, with the route's
-/// standing at the end of the second line.
+/// One model in the catalog: its name over its identifier, with what is
+/// known of it at the end of the second line: capability glyphs and the
+/// context size, or why the model cannot be chosen.
 struct ModelPickerRow<'a> {
     action_id: &'a str,
     title: &'a str,
     detail: &'a str,
     status: &'a str,
+    glyphs: Vec<Icon>,
     icon: Icon,
     width: f32,
     selected: bool,
@@ -962,6 +964,7 @@ impl ModelPickerRow<'_> {
         let row_padding = (sizing.detail_row_height - body_height) / 2.0;
         let text_width =
             (self.width - row_padding * 2.0 - sizing.icon_size * 2.0 - sizing.gap * 2.0).max(0.0);
+        const GLYPH: f32 = 12.0;
         let status_width = if self.status.is_empty() {
             0.0
         } else {
@@ -975,6 +978,13 @@ impl ModelPickerRow<'_> {
                 .flex(1.0)
                 .size(None, Some(body_height / 2.0)),
         ];
+        for glyph in self.glyphs {
+            detail.push(
+                Element::icon(glyph)
+                    .foreground(palette.muted)
+                    .size(Some(GLYPH), Some(body_height / 2.0)),
+            );
+        }
         if status_width > 0.0 {
             detail.push(
                 Element::truncated_text(self.status)
@@ -1048,22 +1058,6 @@ fn model_provider_section(
     .collapsed(collapsed)
     .width(width)
     .into()
-}
-
-fn model_route_status(route: &ModelRouteOption) -> &'static str {
-    match route.source {
-        RouteSource::CliLiveCatalog => "",
-        RouteSource::CliCatalog => "Respaldo CLI",
-        _ => match route.execution {
-            ExecutionSupport::Unsupported => "No compatible",
-            ExecutionSupport::Verified => "Revisado",
-            ExecutionSupport::ProviderAdvertisedUnverified => "Declarado",
-            ExecutionSupport::ProviderListedUnverified | ExecutionSupport::UnverifiedUserChoice => {
-                "Sin verificar"
-            }
-            ExecutionSupport::DelegatedCli => "CLI",
-        },
-    }
 }
 
 fn model_route_details(route: &ModelRouteOption) -> (&'static str, &'static str) {
@@ -1149,71 +1143,117 @@ fn model_menu_view_key(props: &ComposerProps<'_>) -> String {
     key
 }
 
-const MODEL_DATA_UNAVAILABLE: &str = "Dato no disponible";
-
-fn model_token_limit(tokens: Option<u64>) -> String {
-    tokens.map_or_else(
-        || MODEL_DATA_UNAVAILABLE.into(),
-        |tokens| {
-            let digits = tokens.to_string();
-            let mut grouped = String::new();
-            for (index, digit) in digits.chars().enumerate() {
-                if index > 0 && (digits.len() - index) % 3 == 0 {
-                    grouped.push('\u{202f}');
-                }
-                grouped.push(digit);
-            }
-            format!("{grouped} tokens")
-        },
-    )
+fn model_token_price(price: f64) -> String {
+    let value = if price > 0.0 && price < 0.000_001 {
+        price.to_string()
+    } else {
+        format!("{price:.6}")
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_owned()
+    };
+    format!("${value}")
 }
 
-fn model_token_price(price: Option<f64>) -> String {
-    price
-        .filter(|price| price.is_finite() && *price >= 0.0)
-        .map_or_else(
-            || MODEL_DATA_UNAVAILABLE.into(),
-            |price| {
-                let value = if price > 0.0 && price < 0.000_001 {
-                    price.to_string()
-                } else {
-                    format!("{price:.6}")
-                        .trim_end_matches('0')
-                        .trim_end_matches('.')
-                        .to_owned()
-                };
-                format!("US${value}")
-            },
-        )
-}
-
-fn model_modalities(values: &[String]) -> Vec<TooltipItem> {
-    if values.is_empty() {
-        return vec![TooltipItem::new(MODEL_DATA_UNAVAILABLE)];
+/// "2026-09-04" as "4 sep 2026" and "2026-06" as "jun 2026"; anything else as given.
+fn model_short_date(iso: &str) -> String {
+    const MONTHS: [&str; 12] = [
+        "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic",
+    ];
+    let mut parts = iso.split('-').map(|part| part.parse::<usize>().ok());
+    let (Some(Some(year)), Some(Some(month @ 1..=12))) = (parts.next(), parts.next()) else {
+        return iso.to_owned();
+    };
+    match parts.next() {
+        Some(Some(day)) => format!("{day} {} {year}", MONTHS[month - 1]),
+        _ => format!("{} {year}", MONTHS[month - 1]),
     }
-    values
-        .iter()
-        .map(|value| match value.as_str() {
-            "text" => TooltipItem::new("Texto").icon(Icon::Text),
-            "image" => TooltipItem::new("Imagen").icon(Icon::Image),
-            "audio" => TooltipItem::new("Audio").icon(Icon::Audio),
-            "video" => TooltipItem::new("Video").icon(Icon::Video),
-            "file" => TooltipItem::new("Archivos").icon(Icon::File),
-            "document" => TooltipItem::new("Docs").icon(Icon::File),
-            "pdf" => TooltipItem::new("PDF").icon(Icon::File),
-            value => TooltipItem::new(value),
-        })
+}
+
+/// One line saying where the card's facts come from. The source of most
+/// fields is named alone; any other source names the fields it supplied, so a
+/// catalog figure is never read as the provider's own.
+fn model_source_line(metadata: &crate::model_metadata::ModelMetadataView) -> Option<String> {
+    use crate::model_metadata::MetadataSource;
+    let mut groups: Vec<(MetadataSource, Vec<&str>)> = Vec::new();
+    for source in [
+        MetadataSource::ProviderApi,
+        MetadataSource::ProviderAccount,
+        MetadataSource::Reviewed,
+        MetadataSource::Catalog,
+        MetadataSource::CodexCli,
+    ] {
+        let fields: Vec<_> = metadata
+            .field_sources
+            .iter()
+            .filter(|(_, from)| **from == source)
+            .map(|(field, _)| field.label())
+            .collect();
+        if !fields.is_empty() {
+            groups.push((source, fields));
+        }
+    }
+    // Stable: among equals the earlier, more authoritative source leads.
+    groups.sort_by_key(|(_, fields)| std::cmp::Reverse(fields.len()));
+    let name = |source: MetadataSource| match source {
+        MetadataSource::Catalog => format!(
+            "{} ({})",
+            source.label(),
+            model_short_date(crate::model_metadata::catalog_date())
+        ),
+        _ => source.label().to_owned(),
+    };
+    let mut parts = groups.iter().enumerate().map(|(index, (source, fields))| {
+        if index == 0 {
+            name(*source)
+        } else {
+            format!("{}: {}", name(*source), fields.join(", "))
+        }
+    });
+    let mut line = format!("Fuente: {}", parts.next()?);
+    for part in parts {
+        line.push_str(" · ");
+        line.push_str(&part);
+    }
+    if metadata.refresh_failed {
+        line.push_str(" · copia local; falló la actualización");
+    }
+    Some(line)
+}
+
+/// What the list row says at its trailing edge: the context size and the
+/// capabilities known to be present.
+fn model_row_info(
+    route: &ModelRouteOption,
+    props: &ComposerProps<'_>,
+) -> (String, Vec<Icon>) {
+    let metadata = props
+        .model_metadata
+        .and_then(|models| models.get(&route.route_id));
+    let glyphs = metadata.map_or_else(Vec::new, |metadata| {
+        [
+            (metadata.tool_call, Icon::Bolt),
+            (metadata.image_input, Icon::Image),
+            (metadata.reasoning, Icon::Brain),
+        ]
+        .into_iter()
+        .filter_map(|(known, icon)| (known == Some(true)).then_some(icon))
         .collect()
+    });
+    let window = metadata.and_then(|metadata| metadata.context_tokens.or(metadata.max_input_tokens));
+    let text = if route.execution == ExecutionSupport::Unsupported {
+        "No compatible".into()
+    } else if let Some(window) = window {
+        crate::composer_context_ui::tokens(window)
+    } else if route.source == RouteSource::CliCatalog {
+        "Respaldo CLI".into()
+    } else {
+        String::new()
+    };
+    (text, glyphs)
 }
 
-fn model_capability_label(value: Option<bool>) -> &'static str {
-    match value {
-        Some(true) => "Sí",
-        Some(false) => "No",
-        None => MODEL_DATA_UNAVAILABLE,
-    }
-}
-
+/// The model's info card. Only known facts appear; an unknown one is left out.
 fn model_route_tooltip(
     anchor: Element,
     tooltip_id: String,
@@ -1238,109 +1278,97 @@ fn model_route_tooltip(
         ));
     if let Some(description) = &metadata.description {
         let description = description.split_whitespace().collect::<Vec<_>>().join(" ");
-        let mut preview: String = description.chars().take(180).collect();
-        if description.chars().count() > 180 {
+        let mut preview: String = description.chars().take(120).collect();
+        if description.chars().count() > 120 {
             preview.push('…');
         }
         tooltip = tooltip.description(preview);
-    } else {
-        tooltip = tooltip.description(format!("Descripción: {MODEL_DATA_UNAVAILABLE}"));
     }
+    let (mut can, mut cannot) = (Vec::new(), Vec::new());
+    for (known, label, icon) in [
+        (metadata.tool_call, "Herramientas", Icon::Bolt),
+        (metadata.image_input, "Visión", Icon::Image),
+        (metadata.reasoning, "Razonamiento", Icon::Brain),
+        (metadata.structured_output, "Salida estructurada", Icon::Code),
+    ] {
+        match known {
+            Some(true) => can.push(TooltipItem::new(label).icon(icon)),
+            Some(false) => cannot.push(TooltipItem::new(label)),
+            None => {}
+        }
+    }
+    for (kind, label, icon) in [
+        ("pdf", "PDF", Icon::File),
+        ("audio", "Audio", Icon::Audio),
+        ("video", "Video", Icon::Video),
+    ] {
+        if metadata.input_modalities.iter().any(|input| input == kind) {
+            can.push(TooltipItem::new(label).icon(icon));
+        }
+    }
+    let fact = |value: Option<String>| value.map(TooltipItem::new);
+    let limit = |value: Option<u64>| fact(value.map(crate::composer_context_ui::tokens));
     tooltip = tooltip
         .separator()
-        .icon_row("Entrada", model_modalities(&metadata.input_modalities))
-        .icon_row("Salida", model_modalities(&metadata.output_modalities));
-    let tools = model_capability_label(metadata.tool_call);
-    let tools = metadata.tools_source.map_or_else(
-        || tools.to_owned(),
-        |source| format!("{tools} · {}", source.label()),
-    );
-    let mut capabilities = vec![
-        format!("Herramientas: {tools}"),
-        format!(
-            "Entrada de imágenes: {}",
-            model_capability_label(metadata.image_input)
-        ),
-        format!(
-            "Razonamiento: {}",
-            model_capability_label(metadata.reasoning)
-        ),
-        format!(
-            "Salida estructurada: {}",
-            model_capability_label(metadata.structured_output)
-        ),
-    ];
-    let efforts = route
-        .effort_options
-        .iter()
-        .filter(|(id, _)| id != "default")
-        .map(|(_, label)| label.as_str())
-        .collect::<Vec<_>>();
-    if !efforts.is_empty() {
-        capabilities.push(format!("Esfuerzos: {}", efforts.join(", ")));
-    }
-    tooltip = tooltip.description(capabilities.join("\n"));
-    let mut limits = format!(
-        "Contexto: {}\nEntrada máxima: {}\nSalida máxima: {}",
-        model_token_limit(metadata.context_tokens),
-        model_token_limit(metadata.max_input_tokens),
-        model_token_limit(metadata.max_output_tokens)
-    );
-    if let Some(source) = metadata.limits_source {
-        limits.push_str(&format!("\nLímites: {}", source.label()));
-    }
-    tooltip = tooltip.separator().description(limits);
-    if let Some(cost) = &metadata.cost {
-        let mut prices = format!(
-            "Tarifa de referencia · USD / 1M tokens\nEntrada: {}\nSalida: {}",
-            model_token_price(cost.input),
-            model_token_price(cost.output)
+        .icon_row("Admite", can)
+        .icon_row("No admite", cannot)
+        .icon_row("Contexto", limit(metadata.context_tokens))
+        .icon_row("Salida máx.", limit(metadata.max_output_tokens))
+        .icon_row(
+            "Entrada máx.",
+            limit(
+                metadata
+                    .max_input_tokens
+                    .filter(|input| Some(*input) != metadata.context_tokens),
+            ),
+        )
+        .icon_row(
+            "Conocimiento",
+            fact(metadata.knowledge.as_deref().map(model_short_date)),
+        )
+        .icon_row(
+            "Lanzamiento",
+            fact(metadata.release_date.as_deref().map(model_short_date)),
+        )
+        .icon_row(
+            "Esfuerzos",
+            route
+                .effort_options
+                .iter()
+                .filter(|(id, _)| id != "default")
+                .map(|(_, label)| TooltipItem::new(label)),
         );
-        if cost.cache_read.is_some() {
-            prices.push_str(&format!(
-                "\nLectura de caché: {}",
-                model_token_price(cost.cache_read)
-            ));
-        }
-        if cost.cache_write.is_some() {
-            prices.push_str(&format!(
-                "\nEscritura de caché: {}",
-                model_token_price(cost.cache_write)
-            ));
+    let price = |value: Option<f64>| value.filter(|price| price.is_finite() && *price >= 0.0);
+    if metadata.included_in_plan {
+        tooltip = tooltip.separator().description("Incluido en tu plan");
+    } else if let Some((input, output)) = metadata
+        .cost
+        .as_ref()
+        .and_then(|cost| price(cost.input).zip(price(cost.output)))
+    {
+        let mut prices = format!(
+            "Precio de referencia · USD / 1M tokens\nEntrada {} · Salida {}",
+            model_token_price(input),
+            model_token_price(output)
+        );
+        if let Some(read) = metadata.cost.as_ref().and_then(|cost| price(cost.cache_read)) {
+            prices.push_str(&format!(" · Caché lectura {}", model_token_price(read)));
         }
         tooltip = tooltip.separator().description(prices);
-    } else {
-        tooltip = tooltip.separator().description(format!(
-            "Tarifa de referencia · USD / 1M tokens\nEntrada: {MODEL_DATA_UNAVAILABLE}\nSalida: {MODEL_DATA_UNAVAILABLE}"
-        ));
     }
-    let mut sources = Vec::new();
-    for source in [
-        metadata.source,
-        metadata.tools_source,
-        metadata.limits_source,
-        metadata.prices_source,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if !sources.contains(&source.label()) {
-            sources.push(source.label());
-        }
-    }
-    if !sources.is_empty() {
-        let mut source = format!("Fuente: {}", sources.join(" · "));
-        if metadata.refresh_failed {
-            source.push_str(" · copia local; falló la actualización");
-        }
-        tooltip = tooltip.separator().footer(source);
-    }
+    tooltip = tooltip.separator();
+    tooltip = tooltip.footer(model_source_line(metadata).unwrap_or_else(|| {
+        "Ni el proveedor ni el catálogo describen este modelo.".into()
+    }));
+    // A sentence only where it explains why the model cannot be used.
     let (contract, credential) = model_route_details(route);
-    if route.backend != "codex" {
+    if route.execution == ExecutionSupport::Unsupported {
         tooltip = tooltip.footer(contract);
     }
+    if route.credential == CredentialAvailability::MissingCredential {
+        tooltip = tooltip.footer(credential);
+    }
     tooltip
-        .footer(credential)
         .render()
         .size(None, Some(SelectorSizing::CATALOG.detail_row_height))
 }
@@ -1461,6 +1489,7 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                             title,
                             detail: id,
                             status: "",
+                            glyphs: Vec::new(),
                             icon: icon_for_provider(provider_id),
                             width: inner_width,
                             selected: id == props.selected_model,
@@ -1537,12 +1566,14 @@ fn model_effort_entries(props: &ComposerProps<'_>, width: f32) -> Vec<DropdownMe
                     } else {
                         format!("{action_id}:description")
                     };
+                    let (status, glyphs) = model_row_info(route, props);
                     entries.push(DropdownMenuEntry::custom(model_route_tooltip(
                         ModelPickerRow {
                             action_id: &action_id,
                             title: &route.model_name,
                             detail: &route.model_id,
-                            status: model_route_status(route),
+                            status: &status,
+                            glyphs,
                             icon: icon_for_provider(&route.provider_id),
                             width: inner_width,
                             selected: route.backend == props.selected_backend
@@ -2273,6 +2304,10 @@ mod layout_visual_tests;
 #[cfg(test)]
 #[path = "composer_menu_visual_tests.rs"]
 mod menu_visual_tests;
+
+#[cfg(test)]
+#[path = "model_card_visual_tests.rs"]
+mod model_card_visual_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -3118,7 +3153,7 @@ pub(crate) mod tests {
                 frame.commands.iter().any(|command| matches!(command,
                     DrawCommand::Text { text, .. } if text.contains(needle)))
             };
-            assert!(painted("Aún no hay una respuesta medida"));
+            assert!(painted("Ventana no publicada: models/exact:v2"));
             assert!(!painted("0%"), "unknown is not a measured zero");
             assert!(!painted("SKILL-"), "provenance rows are only copied");
             let area = frame
@@ -3209,7 +3244,7 @@ pub(crate) mod tests {
             let frame = tree.layout(viewport);
             for label in [
                 "Uso de contexto",
-                "15% · ~300 / 2.0K tokens",
+                "15% · 300 / 2K tokens",
                 "Skills",
                 "~100",
             ] {
@@ -4041,12 +4076,15 @@ pub(crate) mod tests {
                 route.selectable()
             );
         }
-        for label in ["Revisado", "Sin verificar", "No compatible"] {
-            assert!(
+        // Only the standing that changes what the user can do is on the row:
+        // a reviewed and an unverified model are chosen and run the same way.
+        for (label, shown) in [("Revisado", false), ("Sin verificar", false), ("No compatible", true)] {
+            assert_eq!(
                 frame.commands.iter().any(|command| matches!(command,
                     DrawCommand::Text { text, .. } if text == label
                 )),
-                "missing route state {label}"
+                shown,
+                "route state {label}"
             );
         }
         // A disabled model still exposes its explanation to pointer hover.
