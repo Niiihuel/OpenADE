@@ -299,6 +299,7 @@ impl AgentsWindow {
                 | "dock_open:browser"
                 | "dock_open:debugger"
                 | "toggle_settings_header"
+                | "tour_start:ide"
                 | "terminal_toggle"
                 | "terminal_new"
                 | "terminal_split"

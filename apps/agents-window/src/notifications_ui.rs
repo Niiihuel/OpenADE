@@ -121,6 +121,7 @@ fn list(center: &NotificationCenter) -> Element {
 /// Settings change and the newest notification.
 pub(crate) fn toast_layer(state: &crate::view::ViewState, base: Element) -> Element {
     let mut cards = Vec::new();
+    cards.extend(crate::tour_ui::invitation(state));
     if let Some(message) = &state.settings_notice {
         cards.push(
             openide_ui::Toast::new(message.clone(), theme::menu_palette())

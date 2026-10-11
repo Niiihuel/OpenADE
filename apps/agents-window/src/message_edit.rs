@@ -115,16 +115,29 @@ pub(crate) fn carries_attachments(composed: &str, images: usize) -> bool {
     images > 0 || APPENDED_BLOCKS[..2].iter().any(|block| composed.contains(block))
 }
 
-/// The turn a click on this row may edit. A running turn of the session
-/// does not prevent it: sending the edit stops that turn first. Nothing is
-/// offered while an automation runs it, a permission waits, or another edit
-/// is open.
+/// Why a click on this turn's message cannot open it for editing, or
+/// `None` when it can. A running turn of the session does not prevent it:
+/// sending the edit stops that turn first. Nothing is offered while an
+/// automation runs it, a permission waits, or another edit is open.
+pub(crate) fn blocked_reason(state: &ViewState, turn: &EditableTurn) -> Option<&'static str> {
+    if turn.text.is_none() {
+        Some("Este mensaje lleva contexto agregado que no se puede separar de lo que escribiste.")
+    } else if state.selected_backend != "native" {
+        Some("Sólo las tareas nativas permiten editar un mensaje.")
+    } else if state.background_run_selected {
+        Some("Una automatización está ejecutando esta tarea.")
+    } else if !state.pending_permissions.is_empty() {
+        Some("Respondé el permiso pendiente antes de editar un mensaje anterior.")
+    } else if state.message_edit.editing.is_some() {
+        Some("Ya hay un mensaje en edición.")
+    } else {
+        None
+    }
+}
+
+/// The turn a click on this row may edit.
 pub(crate) fn offered(state: &ViewState, turn: &EditableTurn) -> bool {
-    turn.text.is_some()
-        && state.selected_backend == "native"
-        && !state.background_run_selected
-        && state.pending_permissions.is_empty()
-        && state.message_edit.editing.is_none()
+    blocked_reason(state, turn).is_none()
 }
 
 pub(crate) fn action_id(user_row: usize) -> String {
@@ -295,11 +308,6 @@ pub(crate) fn confirm_dialog(base: Element, state: &ViewState, width: f32) -> El
     let Some(confirm) = &state.message_edit.confirm else {
         return base;
     };
-    let removed = match confirm.later_messages {
-        0 => "Se quitará de la conversación la respuesta a este mensaje.".to_owned(),
-        1 => "Se quitarán de la conversación la respuesta a este mensaje y el mensaje posterior con su respuesta.".to_owned(),
-        count => format!("Se quitarán de la conversación la respuesta a este mensaje y los {count} mensajes posteriores con sus respuestas."),
-    };
     let small = |text: String| Text::new(text, theme::component_palette()).role(TextRole::Small).render();
     if confirm.stopping {
         return AlertDialog::new(
@@ -323,81 +331,77 @@ pub(crate) fn confirm_dialog(base: Element, state: &ViewState, width: f32) -> El
         )
         .render();
     }
-    let mut body = Vec::new();
-    if confirm.recomputed {
-        body.push(small("La lista de archivos cambió al detener el turno. Esta es la definitiva.".to_owned()));
-    }
-    if confirm.stops_turn {
-        // The running turn may still change files: no list is shown as final.
-        body.push(small(match &confirm.unavailable {
-            Some(reason) => format!("No se pudo comprobar qué archivos restaurar: {reason} Se recalcula al detener el turno."),
-            None => format!(
-                "Por ahora «Revertir» restauraría {} y omitiría {}; se recalcula al detener el turno. Si la lista cambia, se vuelve a preguntar antes de tocar archivos.",
-                match confirm.restorable.len() {
-                    1 => "1 archivo".to_owned(),
-                    count => format!("{count} archivos"),
-                },
-                confirm.skipped.len(),
-            ),
-        }));
-    } else if !confirm.restorable.is_empty() {
-        body.push(small(format!(
-            "Se {}:",
-            counted(confirm.restorable.len(), "restaura 1 archivo", "restauran", "archivos")
-        )));
-        body.push(path_list(confirm.restorable.iter().map(String::as_str)));
+    // One sentence and, at most, one caveat: the choice is the two buttons.
+    let description = if confirm.stops_turn {
+        "Se detiene el turno en curso y se quitan los mensajes posteriores."
     } else {
-        body.push(small(
-            match (&confirm.unavailable, confirm.skipped.is_empty()) {
-                (Some(reason), _) => format!("No se pudo comprobar qué archivos restaurar: {reason}"),
-                (None, true) => "Estos turnos no dejaron cambios de archivos registrados: no hay nada que revertir.".to_owned(),
-                (None, false) => "Ningún archivo se puede restaurar con seguridad.".to_owned(),
-            },
-        ));
-    }
-    if !confirm.skipped.is_empty() && !confirm.stops_turn {
-        body.push(small(format!("Se {}:", counted(confirm.skipped.len(), "omite 1", "omiten", ""))));
-        let mut reasons: Vec<_> = confirm.skipped.iter().map(|(_, reason)| *reason).collect();
+        "Se quitan los mensajes posteriores a este."
+    };
+    let files = |count: usize| match count {
+        1 => "1 archivo".to_owned(),
+        count => format!("{count} archivos"),
+    };
+    let caveat = if let Some(error) = &confirm.error {
+        Some((error.clone(), theme::DESTRUCTIVE))
+    } else if confirm.recomputed {
+        Some(("La lista de archivos cambió al detener el turno.".to_owned(), theme::WARNING))
+    } else if let Some(warning) = opaque_warning(confirm.opaque) {
+        Some((warning, theme::WARNING))
+    } else if !confirm.skipped.is_empty() && !confirm.stops_turn {
+        let mut reasons: Vec<_> = confirm.skipped.iter().map(|(_, reason)| reason.label()).collect();
         reasons.sort();
         reasons.dedup();
-        for reason in reasons {
-            let paths = confirm.skipped.iter().filter(|(_, other)| *other == reason).map(|(path, _)| path.as_str());
-            body.push(
-                Text::new(format!("{}: {}", reason.label(), listed(paths, 3)), theme::component_palette())
-                    .role(TextRole::Small)
-                    .muted()
-                    .render(),
-            );
-        }
-    }
-    if let Some(warning) = opaque_warning(confirm.opaque) {
-        body.push(Element::text(warning).font_size(12.0).font_family(FontFamily::Sans).foreground(theme::WARNING));
-    }
-    if let Some(error) = &confirm.error {
-        body.push(
-            Element::text(error)
-                .font_size(12.0)
-                .foreground(theme::DESTRUCTIVE),
-        );
-    }
-    AlertDialog::new(
+        Some((
+            format!("{} no se restauran: {}.", files(confirm.skipped.len()), reasons.join("; ")),
+            theme::SETTINGS_FOREGROUND_SUBTLE,
+        ))
+    } else {
+        None
+    };
+    // Without anything to restore there is one way forward: send.
+    let can_revert = confirm.stops_turn || !confirm.restorable.is_empty();
+    let palette = theme::component_palette();
+    let outline = |id: &str, label: &str| {
+        Button::new(id, label, palette).variant(ButtonVariant::Outline).size(ControlSize::Regular).render()
+    };
+    let footer = if can_revert {
+        let hint = if confirm.stops_turn {
+            "Restaura los archivos que cambió el agente desde este mensaje; se calcula al detener el turno".to_owned()
+        } else {
+            format!("Restaura {} a como estaban antes de este mensaje", files(confirm.restorable.len()))
+        };
+        vec![
+            outline("message_edit_keep_files", "No revertir"),
+            theme::primary("message_edit_revert", "Revertir").size(ControlSize::Regular).tooltip(hint).render(),
+        ]
+    } else {
+        vec![
+            outline("message_edit_confirm_cancel", "Cancelar"),
+            theme::primary("message_edit_keep_files", "Enviar").size(ControlSize::Regular).render(),
+        ]
+    };
+    let dialog_width = openide_ui::Modal::fit_width(width, 440.0).max(240.0);
+    let mut dialog = openide_ui::Modal::new(
         base,
         true,
         "¿Enviar desde un mensaje anterior?",
-        format!(
-            "{}{removed} «No revertir» deja los archivos como están. Podés deshacer el rebobinado después.",
-            if confirm.stops_turn { "Se detendrá el turno en curso.\n" } else { "" }
-        ),
-        "message_edit_revert",
+        description,
         "message_edit_confirm_cancel",
-        theme::component_palette(),
+        palette,
     )
-    .width((width - 24.0).min(480.0))
-    .confirm_label("Revertir")
-    .confirm_enabled(confirm.stops_turn || !confirm.restorable.is_empty())
-    .alternative("message_edit_keep_files", "No revertir")
-    .body(Element::column(body).gap(6.0))
-    .render()
+    .width(dialog_width)
+    .footer(
+        openide_ui::ButtonGroup::new(footer)
+            .align_end()
+            .sizing(crate::ui_sizing::MODAL_FOOTER)
+            .render(),
+    );
+    if let Some((text, ink)) = caveat {
+        dialog = dialog.body(
+            Element::text(text).font_size(12.0).font_family(FontFamily::Sans).foreground(ink),
+        );
+    }
+    dialog.render()
 }
 
 /// "1 archivo" or "restauran 3 archivos": `one` whole, or `many count noun`.
@@ -416,24 +420,6 @@ fn listed<'a>(names: impl Iterator<Item = &'a str>, limit: usize) -> String {
         text.push_str(&format!(" y {} más", names.len() - limit));
     }
     text
-}
-
-fn path_list<'a>(paths: impl Iterator<Item = &'a str>) -> Element {
-    let paths: Vec<_> = paths.collect();
-    let mut rows: Vec<_> = paths
-        .iter()
-        .take(6)
-        .map(|path| Element::text(*path).font_size(12.0).font_family(FontFamily::Monospace))
-        .collect();
-    if paths.len() > 6 {
-        rows.push(
-            Text::new(format!("y {} más", paths.len() - 6), theme::component_palette())
-                .role(TextRole::Small)
-                .muted()
-                .render(),
-        );
-    }
-    Element::column(rows).gap(2.0)
 }
 
 /// Effects of the removed turns that no choice in the dialog takes back.

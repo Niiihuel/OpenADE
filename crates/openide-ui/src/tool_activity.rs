@@ -25,7 +25,7 @@ pub struct ToolActivity {
     command: bool,
     terminal: bool,
     status: Option<String>,
-    header_action: Option<Element>,
+    header_action: Option<(String, Element)>,
     tooltip: Option<String>,
     note: Option<String>,
     ink: Option<Color>,
@@ -91,8 +91,10 @@ impl ToolActivity {
     }
     /// A sibling of the terminal disclosure, so opening its inspector never
     /// also toggles output or leaves two overlapping hover surfaces.
-    pub fn header_action(mut self, action: Element) -> Self {
-        self.header_action = Some(action);
+    /// `id` is the action's own id: the header's hover spans the action too,
+    /// and the action paints its hover over it.
+    pub fn header_action(mut self, id: impl Into<String>, action: Element) -> Self {
+        self.header_action = Some((id.into(), action));
         self
     }
     pub fn tooltip(mut self, tooltip: impl Into<String>) -> Self {
@@ -170,16 +172,25 @@ impl ToolActivity {
         } else {
             header
         };
-        let header = if let Some(action) = self.header_action {
-            // The action's 24 px hover keeps 2 px from the card's top,
-            // bottom and trailing edge alike.
+        let header = if let Some((action_id, action)) = self.header_action {
+            // One hover across the whole header, under the pointer on either
+            // part; the action's own 24 px hover sits on top of it, 2 px from
+            // the card's top, bottom and trailing edge.
             let inset = || Element::spacer().size(Some(2.0), None);
             Element::row(vec![
-                header.flex(1.0),
+                header
+                    .hover_background(Color::TRANSPARENT)
+                    .pressed_background(Color::TRANSPARENT)
+                    .flex(1.0),
                 inset(),
                 centered(action).size(Some(24.0), None),
                 inset(),
             ])
+            .hover_background(self.palette.hover)
+            .pressed_background(self.palette.selected)
+            .hover_surface(format!("{}:header", self.id), [self.id.clone(), action_id])
+            .transition_ms(crate::tokens().motion.hover_ms)
+            .radius(crate::RadiusRole::Control.px())
             .size(None, Some(HEADER_HEIGHT))
         } else {
             header
@@ -315,6 +326,7 @@ mod tests {
                 .running(true)
                 .icon(Icon::Terminal)
                 .header_action(
+                    "inspect",
                     crate::IconButton::new("inspect", Icon::More, ComponentPalette::neutral_dark())
                         .size(crate::ControlSize::Dense)
                         .render(),

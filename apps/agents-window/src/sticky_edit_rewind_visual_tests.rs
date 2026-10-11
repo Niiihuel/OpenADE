@@ -290,10 +290,10 @@ fn confirmation_offers_cancel_and_keep_files_and_shows_a_refusal() {
     for id in ["message_edit_confirm_cancel", "message_edit_keep_files"] {
         assert!(frame.regions.iter().any(|region| region.id == id && region.kind == HitKind::Button), "{id}");
     }
-    // Nothing to restore: "Revertir" is shown, disabled, and says why.
-    assert!(!frame.regions.iter().any(|region| region.id == "message_edit_revert" && region.kind == HitKind::Button));
-    assert!(text_top(&frame, "Revertir").is_some());
-    assert!(text_top(&frame, "no hay nada que revertir").is_some());
+    // Nothing to restore: the only way forward is to send, so "Revertir" is not offered.
+    assert!(!frame.regions.iter().any(|region| region.id == "message_edit_revert"));
+    assert!(text_top(&frame, "Revertir").is_none());
+    assert!(text_top(&frame, "Enviar").is_some());
     assert!(!frame.regions.iter().any(|region| region.id == "prompt"));
     assert!(text_top(&frame, "Hay un permiso pendiente").is_some());
     assert_eq!(
@@ -415,21 +415,25 @@ fn buttons(frame: &Frame) -> Vec<&str> {
 }
 
 #[test]
-fn confirmation_lists_what_revert_restores_and_skips_and_fits_a_narrow_window() {
+fn confirmation_is_one_sentence_one_caveat_and_two_buttons_at_any_width() {
     for viewport in [VIEWPORT, Size::new(360.0, 700.0)] {
         let state = confirming(mixed_preflight());
         let (_context, mut tree) = native_tree(root(&state, viewport));
         let frame = tree.layout(viewport);
-        for id in ["message_edit_confirm_cancel", "message_edit_keep_files", "message_edit_revert"] {
+        for id in ["message_edit_keep_files", "message_edit_revert"] {
             let button = frame.regions.iter().find(|region| region.id == id && region.kind == HitKind::Button);
             let rect = button.unwrap_or_else(|| panic!("{id} at {}", viewport.width)).rect;
             assert!(rect.x >= 0.0 && rect.x + rect.width <= viewport.width, "{id}");
             assert!(rect.y + rect.height <= viewport.height, "{id}");
         }
-        for copy in ["Se restauran 8 archivos", "modulo_6.rs", "y 2 más", "Se omiten 5", "captura incompleta"] {
-            assert!(text_top(&frame, copy).is_some(), "{copy} at {}", viewport.width);
+        // Leaving is the close control and Escape, not a third button in the row.
+        assert!(frame.regions.iter().any(|region| region.id == "message_edit_confirm_cancel"));
+        assert!(text_top(&frame, "Se quitan los mensajes posteriores a este.").is_some());
+        // One caveat only: what cannot be undone outranks the skipped files.
+        assert!(text_top(&frame, "Estos turnos también ejecutaron 2 comandos").is_some());
+        for absent in ["modulo_1.rs", "no se restauran", "captura incompleta"] {
+            assert!(text_top(&frame, absent).is_none(), "{absent} at {}", viewport.width);
         }
-        assert!(text_top(&frame, "modulo_7.rs").is_none());
     }
 }
 
@@ -447,8 +451,16 @@ fn effects_that_cannot_be_undone_are_said_even_when_only_keeping_files_is_offere
     let buttons = buttons(&frame);
     assert!(buttons.contains(&"message_edit_keep_files") && !buttons.contains(&"message_edit_revert"));
     assert!(text_top(&frame, warning).is_some());
-    assert!(text_top(&frame, "Ningún archivo se puede restaurar con seguridad").is_some());
-    assert!(text_top(&frame, "modificado después por ti u otra herramienta").is_some());
+    assert!(text_top(&frame, "Enviar").is_some());
+
+    // Without such effects the caveat names why files are left alone.
+    let state = confirming(RewindConfirm {
+        later_messages: 1,
+        skipped: vec![("src/main.rs".into(), RevertSkip::ModifiedLater)],
+        ..Default::default()
+    });
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    assert!(text_top(&tree.layout(VIEWPORT), "modificado después por ti u otra herramienta").is_some());
 
     let (_context, mut tree) = native_tree(root(&confirming(mixed_preflight()), VIEWPORT));
     assert!(text_top(&tree.layout(VIEWPORT), warning).is_some());
@@ -555,10 +567,9 @@ fn confirmation_while_a_turn_runs_says_it_stops_it_and_then_waits() {
     state.message_edit.confirm = Some(confirm.clone());
     let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
     let frame = tree.layout(VIEWPORT);
-    assert!(text_top(&frame, "Se detendrá el turno en curso.").is_some());
-    assert!(text_top(&frame, "se recalcula al detener").is_some());
+    assert!(text_top(&frame, "Se detiene el turno en curso").is_some());
     assert!(text_top(&frame, "modulo_1.rs").is_none(), "a provisional list is not shown as final");
-    for id in ["message_edit_confirm_cancel", "message_edit_keep_files", "message_edit_revert"] {
+    for id in ["message_edit_keep_files", "message_edit_revert"] {
         assert!(buttons(&frame).contains(&id), "{id}");
     }
 
@@ -575,7 +586,6 @@ fn confirmation_while_a_turn_runs_says_it_stops_it_and_then_waits() {
     let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
     let frame = tree.layout(VIEWPORT);
     assert!(text_top(&frame, "La lista de archivos cambió al detener el turno").is_some());
-    assert!(text_top(&frame, "modulo_1.rs").is_some());
 }
 
 #[test]

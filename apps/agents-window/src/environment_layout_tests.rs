@@ -1,5 +1,5 @@
 use super::*;
-use openide_ui::{Frame, HitKind, Point, Rect, Size, UiEvent, UiTree};
+use openide_ui::{Frame, Rect, Size, UiTree};
 
 fn state(session: bool) -> ViewState {
     let mut state = crate::view::tests::empty_state();

@@ -17,6 +17,7 @@ use openide_ui::{
 
 use crate::{
     composer_ui::{build_composer_with_height, build_native_context_control, ComposerProps},
+    message_actions::{Turn, UserEdit},
     rich_text, theme,
     tool_presentation::{self, ToolKind},
     transcript::{
@@ -87,6 +88,10 @@ mod chat_dock_visual_tests;
 #[cfg(test)]
 #[path = "sticky_edit_rewind_visual_tests.rs"]
 mod sticky_edit_rewind_visual_tests;
+
+#[cfg(test)]
+#[path = "message_actions_visual_tests.rs"]
+mod message_actions_visual_tests;
 
 pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     let preview = image.raster.as_ref().map_or_else(
@@ -268,33 +273,22 @@ fn user_message(
     for image in images {
         contents.push(user_image(image));
     }
-    let mut body = Element::column(contents).gap(8.0);
+    let mut parts = vec![Element::column(contents).gap(8.0).flex(1.0)];
+    parts.extend(crate::message_actions::user_actions(state, item_index, edit));
     if running {
-        body = Element::row(vec![
-            body.flex(1.0),
-            crate::composer_ui::stop_button("turn_stop", ControlSize::Dense, "Detener ejecución"),
-        ])
-        .gap(8.0);
+        parts.push(crate::composer_ui::stop_button("turn_stop", ControlSize::Dense, "Detener ejecución"));
     }
-    let card = Card::new(body, theme::card_palette()).border(false).render();
+    let card = Card::new(Element::row(parts).gap(8.0), theme::card_palette()).border(false).render();
     match edit {
-        UserEdit::None => card,
+        UserEdit::None | UserEdit::Blocked(_) => card,
         UserEdit::Offered(user_row) => crate::message_edit::clickable_bubble(card, user_row),
         UserEdit::Open => crate::message_edit::editor(state, card, width),
     }
+    // Its actions show while the pointer is over the bubble, pinned or not.
+    .hover_region()
     .sticky_top_inset(USER_PIN_INSET)
     .sticky_top_max_height(USER_PIN_HEIGHT)
     .sticky_top_fade(USER_PIN_FADE)
-}
-
-/// What a click on a user message does.
-#[derive(Clone, Copy)]
-enum UserEdit {
-    None,
-    /// It opens for editing, as this `User` row.
-    Offered(usize),
-    /// It is the message being edited.
-    Open,
 }
 
 fn message(
@@ -1308,6 +1302,7 @@ fn terminal_activity(
     .expanded(expanded)
     .running(*activity == ActivityStatus::Running && !failed)
     .header_action(
+        format!("tool:{id}"),
         UiIconButton::new(format!("tool:{id}"), Icon::More, theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .tooltip("Inspeccionar actividad")
@@ -1912,41 +1907,42 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
     // A call that ran opens its file or page, or else its recorded activity.
     let action = matches!(item, TranscriptItem::Tool { .. })
         .then(|| exploration_action(owner, id, name, arguments));
-    let line = stream_line(
-        vec![
-            stream_text(
-                verb,
-                if failed {
-                    theme::DESTRUCTIVE
-                } else {
-                    theme::FOREGROUND
-                },
-            )
-            .flex(0.0),
-            stream_text(
-                target.as_ref(),
-                if failed {
-                    theme::DESTRUCTIVE
-                } else {
-                    theme::FOREGROUND_SUBTLE
-                },
-            ),
+    // The words are plain text; what the call opens is a link, underlined
+    // under the pointer, instead of a band across the transcript.
+    let ink = |normal| if failed { theme::DESTRUCTIVE } else { normal };
+    // The link names the file; its whole path is a hint on the link itself,
+    // so it opens over the name and not over the middle of the row.
+    let shortened = target.len() < presentation.target.len();
+    let link = |action: &String, label: &str, color| {
+        let link = openide_ui::Link::new(action, label, theme::component_palette())
+            .color(color)
+            .font_size(13.0)
+            .render()
+            .size(None, Some(STREAM_LINE_HEIGHT))
+            .shrink_to_fit();
+        if shortened {
+            Tooltip::new(link, action, &presentation.target, theme::component_palette())
+                .render()
+                .shrink_to_fit()
+        } else {
+            link
+        }
+    };
+    let parts = match &action {
+        // Nothing to name: the verb itself opens the recorded activity.
+        Some(action) if target.is_empty() => vec![link(action, verb, ink(theme::FOREGROUND))],
+        Some(action) => vec![
+            stream_text(verb, ink(theme::FOREGROUND)).flex(0.0),
+            link(action, target.as_ref(), ink(theme::FOREGROUND_SUBTLE)),
         ],
-        action.clone(),
-        None,
-    );
+        None => vec![
+            stream_text(verb, ink(theme::FOREGROUND)).flex(0.0),
+            stream_text(target.as_ref(), ink(theme::FOREGROUND_SUBTLE)),
+        ],
+    };
+    let line = stream_line(parts, None, None);
     let line = flashed(state, id, line);
-    // The line names the file; its whole path stays one hover away.
-    let mut lines = vec![match action {
-        Some(action) if target.len() < presentation.target.len() => Tooltip::new(
-            line,
-            action,
-            &presentation.target,
-            theme::component_palette(),
-        )
-        .render(),
-        _ => line,
-    }];
+    let mut lines = vec![line];
     if let Some(note) = presentation
         .note
         .filter(|_| !approval_card_shown(state, name, arguments, activity))
@@ -2097,6 +2093,38 @@ fn timeline(state: &ViewState, width: f32) -> Element {
     // A live exploration group at the end says the turn is waiting in its
     // own ticker, so the trailing waiting line stays out.
     let mut live_group_tail = false;
+    // The last turn has ended when nothing runs, streams or waits for an
+    // answer; only then does it show its actions.
+    let last_turn_live = host_running
+        || model_running
+        || !state.pending_permissions.is_empty()
+        || state.transcript.iter().rev().any(
+            |item| matches!(item, TranscriptItem::Assistant { streaming: true, .. }),
+        );
+    // The turn being collected: where its rows start in `rows`, its first
+    // transcript row, and its user row with the message it can rewind to.
+    let mut open_turn: Option<(usize, usize, usize, Option<&crate::message_edit::EditableTurn>)> = None;
+    // One hover region per turn: the pointer anywhere over a turn shows the
+    // actions under it. The user's bubble stays a child of the page, where
+    // it can pin.
+    let close_turn = |rows: &mut Vec<Element>, turn: Option<(usize, usize, usize, Option<_>)>, end: usize| {
+        let Some((from, start, user_row, editable)) = turn else { return };
+        if rows.len() == from {
+            return;
+        }
+        let last = end == state.transcript.len();
+        let mut group: Vec<Element> = rows.drain(from..).collect();
+        if !(last && last_turn_live) {
+            group.push(crate::message_actions::turn_actions(state, &Turn {
+                start,
+                items: &state.transcript[start..end],
+                user_row,
+                editable,
+                last,
+            }));
+        }
+        rows.push(Element::column(group).gap(TRANSCRIPT_GAP).hover_region());
+    };
     let recorded_plan_calls: std::collections::HashSet<&str> = state
         .transcript
         .iter()
@@ -2220,6 +2248,8 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             continue;
         }
         if let TranscriptItem::User { content, images } = item {
+            let previous = open_turn.take();
+            close_turn(&mut rows, previous, index);
             turn_number += 1;
             if turn_number > 1 {
                 rows.push(Element::spacer().size(None, Some(8.0)));
@@ -2228,19 +2258,24 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             let turn = editable.next_if(|turn| turn.user_row == user_row);
             let edit = match (turn, &state.message_edit.editing) {
                 (_, Some(editing)) if editing.user_row == user_row => UserEdit::Open,
-                (Some(turn), _) if crate::message_edit::offered(state, turn) => {
-                    UserEdit::Offered(user_row)
-                }
+                (Some(turn), _) => match crate::message_edit::blocked_reason(state, turn) {
+                    None => UserEdit::Offered(user_row),
+                    Some(reason) => UserEdit::Blocked(reason),
+                },
                 _ => UserEdit::None,
             };
-            user_row += 1;
             rows.push(user_message(content, images, index, state, running, edit, reading_width));
+            // A steered message continues the turn its opening message can rewind.
+            let rewinds = turn.or(previous.and_then(|(.., editable)| editable));
+            open_turn = Some((rows.len(), index + 1, user_row, rewinds));
+            user_row += 1;
             index += 1;
             continue;
         }
         rows.push(message(item, index, reading_width, state));
         index += 1;
     }
+    close_turn(&mut rows, open_turn.take(), state.transcript.len());
     // Recovery and permissions remain current controls. Plan snapshots belong
     // to the transcript at their recorded position, never to this trailing area.
     if !state.running {
@@ -3765,6 +3800,7 @@ mod tests {
 
     pub(super) fn state() -> ViewState {
         ViewState {
+            tour: Default::default(),
             keymap_profile: crate::keymap::KeymapProfile::default(),
             vim_mode: false,
             settings_keymap_menu_open: false,
@@ -3784,6 +3820,7 @@ mod tests {
             composer_attachment_loading: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
+            message_actions: Default::default(),
             composer_add_menu_open: false,
             composer_dictation: openide_ui::DictationState::Idle,
             composer_transcript: String::new(),

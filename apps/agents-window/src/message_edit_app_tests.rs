@@ -192,6 +192,47 @@ fn sending_from_an_earlier_message_asks_rewinds_sends_and_can_be_undone() {
 }
 
 #[test]
+fn retrying_a_turn_is_its_edit_with_the_same_text_and_the_same_question() {
+    let mut fixture = fixture(&["Primero", "Segundo"]);
+    let before = events(&fixture);
+    // A restored session shows when each turn really ended.
+    for row in 0..2 {
+        let id = crate::transcript::turn_time_id(row);
+        assert!(fixture.app.view.item_times.ended_ms(&id).is_some(), "{id}");
+    }
+    click(&mut fixture.app, "turn_retry:0");
+    let app = &mut fixture.app;
+    assert_eq!(app.view.message_edit.editing.as_ref().unwrap().user_row, 0);
+    assert_eq!(app.view.prompt, "Primero");
+    assert_eq!(app.view.message_edit.confirm.as_ref().unwrap().later_messages, 1);
+    assert_eq!(events(&fixture), before, "asking changes nothing");
+
+    // Declining leaves the edit open, and leaving it restores the draft.
+    let app = &mut fixture.app;
+    click(app, "message_edit_confirm_cancel");
+    click(app, "message_edit_cancel");
+    assert!(app.view.message_edit.editing.is_none());
+    assert_eq!(app.view.prompt, DRAFT);
+    // It never starts over an edit, nor for a message that would lose attachments.
+    click(app, "message_edit:1");
+    click(app, "turn_retry:0");
+    assert_eq!(app.view.message_edit.editing.as_ref().unwrap().user_row, 1);
+    assert!(app.view.message_edit.confirm.is_none());
+    click(app, "message_edit_cancel");
+    app.view.message_edit.turns[0].drops_attachments = true;
+    click(app, "turn_retry:0");
+    click(app, "turn_retry:9");
+    assert!(app.view.message_edit.editing.is_none() && app.view.message_edit.confirm.is_none());
+    assert_eq!(events(&fixture), before);
+
+    // Copying marks its button and takes nothing else with it.
+    let app = &mut fixture.app;
+    click(app, "turn_copy:1");
+    assert!(app.view.message_actions.copied.as_ref().unwrap().shows("turn_copy:1", Instant::now()));
+    assert!(!app.expire_message_copy(&egui::Context::default()), "the check stays for its time");
+}
+
+#[test]
 fn messages_whose_typed_text_is_not_certain_offer_no_edit() {
     let composed = "Revisá esto\n\nAdjuntos de este proyecto (rutas relativas): [{\"path\":\"a.rs\",\"type\":\"file\"}]\nAbre los archivos y explora las carpetas pertinentes; úsalos como contexto para esta tarea.";
     let mut fixture = fixture(&["Simple", composed]);
