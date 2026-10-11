@@ -1015,9 +1015,9 @@ mod tests {
             let hint_text = hint_text.split_whitespace().collect::<Vec<_>>().join(" ");
             assert!(
                 hint_text.contains(if visible {
-                    "Ocultar terminal Ctrl `"
+                    "Ocultar terminal Ctrl + `"
                 } else {
-                    "Mostrar terminal Ctrl `"
+                    "Mostrar terminal Ctrl + `"
                 }),
                 "missing readable terminal action hint: {hint_text}"
             );

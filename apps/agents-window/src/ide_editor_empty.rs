@@ -11,6 +11,32 @@ use crate::{keymap::{KeymapProfile, ShortcutAction}, theme};
 /// channel scaled by `strength`. Callers cache the result: painting never
 /// rasterizes, and never reads a disk or a network.
 pub(crate) fn brand_raster(side: u32, strength: f32, alt: &str) -> Option<RasterImage> {
+    raster(side, alt, |data| {
+        if strength < 1.0 {
+            for channel in data {
+                *channel = (f32::from(*channel) * strength).round() as u8;
+            }
+        }
+    })
+}
+
+/// The brand pressed into the surface, as Code OSS's letterpress: one ink,
+/// black, whose depth follows each facet, so it only ever darkens the
+/// background and never reads as a picture placed on it.
+fn letterpress(data: &mut [u8]) {
+    for pixel in data.chunks_exact_mut(4) {
+        let alpha = f32::from(pixel[3]);
+        if alpha == 0.0 {
+            continue;
+        }
+        // Premultiplied channels: their sum over three alphas is the luminance.
+        let light = (f32::from(pixel[0]) + f32::from(pixel[1]) + f32::from(pixel[2])) / (3.0 * alpha);
+        pixel[..3].fill(0);
+        pixel[3] = (alpha * (0.16 + 0.30 * (1.0 - light.min(1.0)))).round() as u8;
+    }
+}
+
+fn raster(side: u32, alt: &str, shade: impl FnOnce(&mut [u8])) -> Option<RasterImage> {
     let tree = resvg::usvg::Tree::from_str(
         include_str!("../assets/brand/openide-editor.svg"),
         &Default::default(),
@@ -25,11 +51,7 @@ pub(crate) fn brand_raster(side: u32, strength: f32, alt: &str) -> Option<Raster
         ),
         &mut pixmap.as_mut(),
     );
-    if strength < 1.0 {
-        for channel in pixmap.data_mut() {
-            *channel = (f32::from(*channel) * strength).round() as u8;
-        }
-    }
+    shade(pixmap.data_mut());
     let bytes = pixmap.encode_png().ok()?;
     RasterImage::new(
         format!("{:x}", Sha256::digest(&bytes)),
@@ -42,10 +64,9 @@ pub(crate) fn brand_raster(side: u32, strength: f32, alt: &str) -> Option<Raster
 
 fn watermark() -> Option<RasterImage> {
     static IMAGE: OnceLock<Option<RasterImage>> = OnceLock::new();
-    // 2x the largest size shown. Subdued facets keep the logo's shape without
-    // competing with the editor or turning the empty group into a welcome card.
+    // 2x the largest size shown.
     IMAGE
-        .get_or_init(|| brand_raster(512, 0.18, "OpenIDE · editor vacío"))
+        .get_or_init(|| raster(512, "OpenIDE · editor vacío", letterpress))
         .clone()
 }
 
@@ -123,6 +144,29 @@ mod tests {
             tree.handle_event(UiEvent::PointerDown(point));
             assert_eq!(tree.handle_event(UiEvent::PointerUp(point)), [UiAction::Clicked { id: "open_command_center".into() }]);
         }
+    }
+
+    #[test]
+    #[ignore = "exports the empty editor as PNG under docs/ui-separation/shots/empty-editor"]
+    fn empty_editor_shot() {
+        let (width, height) = (900.0, 700.0);
+        let root = Element::column(vec![build(KeymapProfile::VsCode, width, height)])
+            .background(theme::BACKGROUND)
+            .size(Some(width), Some(height));
+        let frame = UiTree::new(root).layout(Size::new(width, height));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/ui-separation/shots/empty-editor");
+        std::fs::create_dir_all(&dir).unwrap();
+        let svg = dir.join("empty-editor.svg");
+        crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &svg, width, height).unwrap();
+        let parsed = resvg::usvg::Tree::from_str(
+            &std::fs::read_to_string(&svg).unwrap(),
+            &crate::settings_ui::visual_qa::native_svg_options(),
+        )
+        .unwrap();
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32 * 2, height as u32 * 2).unwrap();
+        resvg::render(&parsed, resvg::tiny_skia::Transform::from_scale(2.0, 2.0), &mut pixmap.as_mut());
+        pixmap.save_png(dir.join("empty-editor.png")).unwrap();
+        std::fs::remove_file(svg).unwrap();
     }
 
     #[test]

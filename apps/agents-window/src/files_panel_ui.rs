@@ -597,7 +597,8 @@ mod tests {
                     Some((position.y, text.clone()))
                 }
                 DrawCommand::FillRect { rect, .. }
-                    if rect.height == 1.0 && surface.contains(center(*rect)) =>
+                    // A separator spans the menu; a keycap's bottom edge does not.
+                    if rect.height == 1.0 && rect.width > surface.width / 2.0 && surface.contains(center(*rect)) =>
                 {
                     Some((rect.y, "—".into()))
                 }
@@ -618,7 +619,7 @@ mod tests {
     }
 
     /// The keycaps a menu can show beside its labels.
-    const CAPS: [&str; 9] = ["Ctrl", "Alt", "Shift", "N", "X", "C", "V", "F2", "Supr"];
+    const CAPS: [&str; 10] = ["Ctrl", "Alt", "Shift", "N", "X", "C", "V", "F2", "Supr", "+"];
 
     /// Right-clicks `point` and returns every label of the menu that opens.
     fn menu_at(tree: &mut UiTree, size: Size, point: Point) -> Vec<String> {
@@ -686,6 +687,9 @@ mod tests {
                 };
                 let mut tree = UiTree::new(root);
                 tree.set_reduced_motion(true);
+                // About what the interface font measures: the fallback's wider
+                // glyphs would wrap a label beside a four-key combination.
+                tree.set_text_measurer(|text, size, _| text.chars().count() as f32 * size * 0.5);
                 let frame = tree.layout(size);
                 (tree, frame)
             };
@@ -811,7 +815,7 @@ mod tests {
     #[test]
     fn row_menus_name_the_keys_and_the_root_menu_names_none() {
         let size = Size::new(400.0, 400.0);
-        let keys = "Ctrl N Ctrl Alt N Ctrl X Ctrl C Ctrl V Ctrl Alt C Ctrl Alt Shift C F2 Supr";
+        let keys = "Ctrl + N Ctrl + Alt + N Ctrl + X Ctrl + C Ctrl + V Ctrl + Alt + C Ctrl + Alt + Shift + C F2 Supr";
         for (target, expected) in [("file_row:2", keys), ("files_workspace", "")] {
             let mut tree = UiTree::new(build(&state(), size.width));
             tree.set_reduced_motion(true);
