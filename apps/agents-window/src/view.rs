@@ -491,6 +491,8 @@ pub struct ViewState {
     pub pending_archive_session_id: Option<String>,
     pub pending_delete_session_id: Option<String>,
     pub transcript: Vec<TranscriptItem>,
+    /// Durations of the transcript's reasoning rows and tool calls.
+    pub item_times: crate::transcript::ItemTimes,
     pub running: bool,
     pub background_run_selected: bool,
     pub status: String,
@@ -3841,6 +3843,7 @@ pub(crate) mod tests {
             pending_archive_session_id: None,
             pending_delete_session_id: None,
             transcript: Vec::new(),
+            item_times: Default::default(),
             running: false,
             background_run_selected: false,
             status: "Listo".into(),

@@ -5930,6 +5930,7 @@ impl AgentsWindow {
             files_status: String::new(),
             file_root_can_load_more: false,
             transcript: Vec::new(),
+            item_times: Default::default(),
             running: false,
             background_run_selected: false,
             status,
@@ -12380,6 +12381,7 @@ impl AgentsWindow {
             self.view.conversation_details.migrate(&previous, &current);
         }
         self.projection.sync_into(&mut self.view.transcript);
+        self.projection.sync_times_into(&mut self.view.item_times);
     }
 
     /// Animation changes only the rendered prefix. Persisted/live transcript

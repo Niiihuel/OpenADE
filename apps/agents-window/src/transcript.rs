@@ -225,10 +225,41 @@ pub enum TranscriptItem {
     },
 }
 
+/// Start and end event times of reasoning rows (keyed by row id) and tool
+/// calls (keyed by call id). They come from `AgentEvent::timestamp_ms`, never
+/// the wall clock, so a restored session shows the durations it recorded.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ItemTimes(HashMap<String, (u64, Option<u64>)>);
+
+impl ItemTimes {
+    /// Milliseconds between an item's start and end events. `None` while it
+    /// has no end, or for an id never timed. A clock that went backwards
+    /// counts as zero.
+    pub(crate) fn duration_ms(&self, id: &str) -> Option<u64> {
+        let (start, end) = self.0.get(id)?;
+        Some((*end)?.saturating_sub(*start))
+    }
+}
+
+/// A duration for a transcript line: "un momento" under a second, then
+/// "12 s" and "1 min 4 s".
+pub(crate) fn duration_label(ms: u64) -> String {
+    match ms / 1000 {
+        0 => "un momento".into(),
+        seconds @ 1..=59 => format!("{seconds} s"),
+        seconds if seconds % 60 == 0 => format!("{} min", seconds / 60),
+        seconds => format!("{} min {} s", seconds / 60, seconds % 60),
+    }
+}
+
 /// Replaying the same ordered events produces the same rows as applying them live.
 #[derive(Debug, Default)]
 pub struct TranscriptProjection {
     items: TranscriptRows,
+    times: ItemTimes,
+    times_dirty: Vec<String>,
+    times_published: bool,
+    previous_event_ms: Option<u64>,
     plan_events: HashSet<(String, u64)>,
     next_local_plan_id: u64,
     tool_rows: HashMap<String, usize>,
@@ -381,6 +412,60 @@ impl TranscriptProjection {
         self.items.sync_into(target);
     }
 
+    /// Publish the times changed since the last call, as `sync_into` does rows.
+    pub fn sync_times_into(&mut self, target: &mut ItemTimes) {
+        if self.times_published {
+            for id in self.times_dirty.drain(..) {
+                if let Some(times) = self.times.0.get(&id) {
+                    target.0.insert(id, *times);
+                }
+            }
+        } else {
+            target.clone_from(&self.times);
+            self.times_dirty.clear();
+            self.times_published = true;
+        }
+    }
+
+    /// A tool call runs from ToolStarted to ToolFinished. A reasoning row runs
+    /// from the event before its first delta, when the model went quiet to
+    /// think, to its last delta.
+    fn record_times(&mut self, event: &AgentEvent, changed: bool) {
+        let now = event.timestamp_ms;
+        let id = match &event.kind {
+            AgentEventKind::ToolStarted { tool_call } => {
+                self.times.0.insert(tool_call.id.clone(), (now, None));
+                Some(&tool_call.id)
+            }
+            AgentEventKind::ToolFinished { tool_call_id, .. } => {
+                self.times.0.get_mut(tool_call_id).map(|times| {
+                    times.1 = Some(now);
+                    tool_call_id
+                })
+            }
+            AgentEventKind::ModelStreamUpdate {
+                update: ModelStreamEvent::ReasoningDelta { .. },
+                ..
+            } if changed => match self.items.last() {
+                Some(TranscriptItem::Reasoning { id, .. }) => {
+                    if let Some(times) = self.times.0.get_mut(id) {
+                        times.1 = Some(now);
+                    } else {
+                        let start = self.previous_event_ms.unwrap_or(now);
+                        self.times.0.insert(id.clone(), (start, Some(now)));
+                    }
+                    Some(id)
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(id) = id.filter(|id| self.times_dirty.last() != Some(*id)) {
+            self.times_dirty.push(id.clone());
+        }
+        self.previous_event_ms = Some(now);
+    }
+
     pub fn has_live_tool_output(&self, call_id: &str) -> bool {
         self.tool_output_rows.contains_key(call_id)
     }
@@ -430,6 +515,7 @@ impl TranscriptProjection {
             }
         }
         let changed = self.apply_kind(&event.kind);
+        self.record_times(event, changed);
         if let AgentEventKind::ModelRequestStarted { step, .. } = &event.kind {
             self.active_stream_scope =
                 Some((event.session_id.clone(), event.sequence, event.sequence));
@@ -1954,6 +2040,110 @@ mod tests {
 
     fn event(sequence: u64, kind: AgentEventKind) -> AgentEvent {
         AgentEvent::new("session", sequence, kind)
+    }
+
+    fn timed(sequence: u64, timestamp_ms: u64, kind: AgentEventKind) -> AgentEvent {
+        AgentEvent {
+            timestamp_ms,
+            ..event(sequence, kind)
+        }
+    }
+
+    fn timed_turn(times: [u64; 5]) -> Vec<AgentEvent> {
+        let call = ToolCall {
+            id: "call".into(),
+            name: "read_file".into(),
+            arguments: json!({"path":"a.rs"}),
+        };
+        let reasoning = |content: &str| AgentEventKind::ModelStreamUpdate {
+            step: 1,
+            update: ModelStreamEvent::ReasoningDelta {
+                item_id: "r".into(),
+                content: content.into(),
+            },
+        };
+        vec![
+            timed(
+                1,
+                times[0],
+                AgentEventKind::ModelRequestStarted {
+                    step: 1,
+                    model: "model".into(),
+                },
+            ),
+            timed(2, times[1], reasoning("a")),
+            timed(3, times[2], reasoning("b")),
+            timed(4, times[3], AgentEventKind::ToolStarted { tool_call: call }),
+            timed(
+                5,
+                times[4],
+                AgentEventKind::ToolFinished {
+                    tool_call_id: "call".into(),
+                    output: "ok".into(),
+                    is_error: false,
+                },
+            ),
+        ]
+    }
+
+    fn reasoning_id(projection: &TranscriptProjection) -> String {
+        projection
+            .items()
+            .iter()
+            .find_map(|item| match item {
+                TranscriptItem::Reasoning { id, .. } => Some(id.clone()),
+                _ => None,
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn durations_come_from_event_times_live_and_replayed() {
+        // Long past: a wall clock read at replay would give a huge duration.
+        let events = timed_turn([1_000, 3_000, 4_500, 5_000, 17_250]);
+        let mut live = TranscriptProjection::new();
+        let mut published = ItemTimes::default();
+        for event in &events {
+            live.apply_event(event);
+            live.sync_times_into(&mut published);
+        }
+        let mut replayed = TranscriptProjection::from_events(&events);
+        let mut restored = ItemTimes::default();
+        replayed.sync_times_into(&mut restored);
+        assert_eq!(published, restored);
+        // Reasoning counts from the event before its first delta.
+        assert_eq!(restored.duration_ms(&reasoning_id(&replayed)), Some(3_500));
+        assert_eq!(restored.duration_ms("call"), Some(12_250));
+        assert_eq!(restored.duration_ms("unknown"), None);
+    }
+
+    #[test]
+    fn a_call_without_its_end_has_no_duration_and_a_backwards_clock_is_zero() {
+        let mut events = timed_turn([9_000, 8_000, 7_000, 6_000, 5_000]);
+        let mut backwards = TranscriptProjection::from_events(&events);
+        let mut times = ItemTimes::default();
+        backwards.sync_times_into(&mut times);
+        assert_eq!(times.duration_ms(&reasoning_id(&backwards)), Some(0));
+        assert_eq!(times.duration_ms("call"), Some(0));
+
+        events.pop();
+        let mut unfinished = TranscriptProjection::from_live_events(&events);
+        unfinished.sync_times_into(&mut times);
+        assert_eq!(times.duration_ms("call"), None);
+    }
+
+    #[test]
+    fn duration_labels() {
+        for (ms, label) in [
+            (0, "un momento"),
+            (999, "un momento"),
+            (1_000, "1 s"),
+            (12_400, "12 s"),
+            (64_000, "1 min 4 s"),
+            (120_000, "2 min"),
+        ] {
+            assert_eq!(duration_label(ms), label);
+        }
     }
 
     fn image_fixture() -> UserImage {

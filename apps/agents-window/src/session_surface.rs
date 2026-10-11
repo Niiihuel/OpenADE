@@ -3562,6 +3562,7 @@ mod tests {
             pending_archive_session_id: None,
             pending_delete_session_id: None,
             transcript: vec![],
+            item_times: Default::default(),
             running: false,
             background_run_selected: false,
             status: "Listo".into(),
