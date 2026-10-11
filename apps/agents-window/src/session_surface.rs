@@ -104,6 +104,10 @@ mod message_actions_visual_tests;
 #[path = "chat_links_visual_tests.rs"]
 mod chat_links_visual_tests;
 
+#[cfg(test)]
+#[path = "chat_diagram_visual_tests.rs"]
+mod chat_diagram_visual_tests;
+
 pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     let preview = image.raster.as_ref().map_or_else(
         || {

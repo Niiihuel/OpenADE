@@ -6,6 +6,7 @@
 //! and use paint-only highlighting.
 
 use std::{
+    cell::RefCell,
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
 };
@@ -22,6 +23,29 @@ use crate::theme;
 mod link_tests;
 
 const LINK_ACTION_PREFIX: &str = "chat_link_open:";
+pub(crate) const DIAGRAM_ACTION_PREFIX: &str = "chat_diagram_source:";
+
+thread_local! {
+    // The diagrams the reader asked to see as source, by the id in their
+    // action. View state of this window only: nothing is persisted.
+    static DIAGRAM_SOURCES: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Switch one diagram between its drawing and its source. False when
+/// `action` is not a diagram's.
+pub(crate) fn toggle_diagram_source(action: &str) -> bool {
+    let Some(id) = action
+        .strip_prefix(DIAGRAM_ACTION_PREFIX)
+        .and_then(|id| u64::from_str_radix(id, 16).ok())
+    else {
+        return false;
+    };
+    DIAGRAM_SOURCES.with_borrow_mut(|shown| match shown.iter().position(|shown| *shown == id) {
+        Some(index) => drop(shown.remove(index)),
+        None => shown.push(id),
+    });
+    true
+}
 
 const COLORS: MarkdownColors = MarkdownColors {
     text: theme::FOREGROUND,
@@ -39,13 +63,25 @@ const COLORS: MarkdownColors = MarkdownColors {
 const LABELS: MarkdownLabels = MarkdownLabels {
     code_fallback: "CÓDIGO",
     truncated_note: "Respuesta extensa: vista limitada a los primeros bloques.",
+    diagram: "DIAGRAMA",
+    show_source: "Ver código",
+    show_diagram: "Ver diagrama",
 };
 
-fn markdown(source: &str) -> Markdown<'_> {
-    Markdown::new(source, theme::panel_card_palette())
-        .colors(COLORS)
-        .labels(LABELS)
-        .link_action_prefix(LINK_ACTION_PREFIX)
+/// Every Markdown surface of the app renders through here, with the same
+/// inks, strings, link route and diagram switch.
+fn rendered(source: &str, configure: impl FnOnce(Markdown<'_>) -> Markdown<'_>) -> MarkdownPreview {
+    DIAGRAM_SOURCES.with_borrow(|shown| {
+        configure(
+            Markdown::new(source, theme::panel_card_palette())
+                .colors(COLORS)
+                .labels(LABELS)
+                .link_action_prefix(LINK_ACTION_PREFIX)
+                .diagram_action_prefix(DIAGRAM_ACTION_PREFIX)
+                .diagram_sources(shown),
+        )
+        .render()
+    })
 }
 
 fn source_hash(source: &str) -> u64 {
@@ -175,19 +211,20 @@ pub(crate) fn composer_links(source: &str, width: f32) -> (Vec<TextHighlight>, O
 /// destinations receive link styling; file paths and code remain unchanged.
 pub(crate) fn render_user_message(source: &str, scope: &str) -> Element {
     // 21 against the 22 of a response is the user card's own leading.
-    scope_web_links(markdown(source).plain_with_autolinks(21.0).render().element, scope)
+    scope_web_links(rendered(source, |markdown| markdown.plain_with_autolinks(21.0)).element, scope)
 }
 
 /// A document read from disk, such as a skill's instructions: the same
 /// inks and link route as a message, cut at the renderer's own limits.
 pub(crate) fn render_document_at_width(source: &str, width: f32) -> MarkdownPreview {
-    markdown(source)
-        .labels(MarkdownLabels {
-            truncated_note: "Documento extenso: se muestra el comienzo.",
-            ..LABELS
-        })
-        .width(width)
-        .render()
+    rendered(source, |markdown| {
+        markdown
+            .labels(MarkdownLabels {
+                truncated_note: "Documento extenso: se muestra el comienzo.",
+                ..LABELS
+            })
+            .width(width)
+    })
 }
 
 /// Render with the actual reading-column width in logical pixels. HTTP(S)
@@ -206,11 +243,11 @@ pub fn render_streaming_markdown_at_width(source: &str, width: f32) -> Element {
 }
 
 pub fn render_markdown_preview_at_width(source: &str, width: f32) -> MarkdownPreview {
-    markdown(source).width(width).render()
+    rendered(source, |markdown| markdown.width(width))
 }
 
 pub fn render_streaming_markdown_preview_at_width(source: &str, width: f32) -> MarkdownPreview {
-    markdown(source).width(width).streaming(true).render()
+    rendered(source, |markdown| markdown.width(width).streaming(true))
 }
 
 #[cfg(test)]

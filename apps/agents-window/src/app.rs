@@ -16415,6 +16415,7 @@ impl AgentsWindow {
                     self.open_chat_link(&url, target, ctx);
                 }
             }
+            UiAction::Clicked { id } if crate::rich_text::toggle_diagram_source(&id) => {}
             UiAction::Clicked { id } if id.starts_with(crate::chat_links::MENU_ACTION_PREFIX) => {
                 self.apply_chat_link_menu_action(&id, ctx);
             }
