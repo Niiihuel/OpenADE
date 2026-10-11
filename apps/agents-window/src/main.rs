@@ -12,6 +12,8 @@ mod app;
 mod approval_ui;
 mod notifications;
 mod notifications_ui;
+mod tour;
+mod tour_ui;
 mod automation_view;
 mod automations;
 mod browser_runtime;

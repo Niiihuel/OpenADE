@@ -491,7 +491,7 @@ fn export(frame: &Frame, size: Size, name: &str) {
     export_to("/tmp/openade-ide-workspace-review", frame, size, name);
 }
 
-fn export_to(directory: &str, frame: &Frame, size: Size, name: &str) {
+pub(super) fn export_to(directory: &str, frame: &Frame, size: Size, name: &str) {
     let directory = std::path::PathBuf::from(directory);
     std::fs::create_dir_all(&directory).unwrap();
     let path = directory.join(format!("{name}-{:.0}x{:.0}.svg", size.width, size.height));

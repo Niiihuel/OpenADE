@@ -75,6 +75,9 @@ mod agent_chrome_visual_tests;
 #[cfg(test)]
 #[path = "tab_bar_visual_tests.rs"]
 mod tab_bar_visual_tests;
+#[cfg(test)]
+#[path = "tour_visual_tests.rs"]
+mod tour_visual_tests;
 pub(crate) use command_center::{build_command_center, command_result_action, command_result_row};
 use crate::sidebar_chrome::{NAV_ROW_HEIGHT as SIDEBAR_ROW_HEIGHT, TOOL_SIZE as SIDEBAR_TOOL_SIZE};
 
@@ -390,6 +393,7 @@ pub struct ExternalApprovalView {
 }
 
 pub struct ViewState {
+    pub(crate) tour: crate::tour::TourView,
     /// Editing an earlier message, its confirmation and the rewind's undo.
     pub(crate) message_edit: crate::message_edit::MessageEditView,
     pub(crate) ide: crate::ide_workspace::IdeWorkspaceState,
@@ -3437,6 +3441,20 @@ pub(crate) fn window_mode_control(state: &ViewState) -> Element {
 
 fn workspace_modals(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let base = crate::notifications_ui::toast_layer(state, base);
+    let base = crate::tour_ui::layer(state, base, viewport_width);
+    dialogs(state, base, viewport_width)
+}
+
+/// A dialog is open over the window. Each dialog returns its base untouched
+/// while closed, so one that wraps a placeholder is open.
+pub(crate) fn dialog_open(state: &ViewState, viewport_width: f32) -> bool {
+    !matches!(
+        dialogs(state, Element::spacer(), viewport_width).kind,
+        openide_ui::ElementKind::Spacer
+    )
+}
+
+fn dialogs(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let base = confirmation_dialog(state, base, viewport_width);
     let base = crate::github_account_ui::sign_in_alert(state, base, viewport_width);
     let base = settings_ui::provider_connect_modal(state, base, viewport_width);
@@ -3749,6 +3767,7 @@ pub(crate) mod tests {
 
     pub(crate) fn empty_state() -> ViewState {
         ViewState {
+            tour: Default::default(),
             ide: crate::ide_workspace::IdeWorkspaceState::default(),
             ide_search: crate::ide_search::IdeSearchState::default(),
             document_preview: None,

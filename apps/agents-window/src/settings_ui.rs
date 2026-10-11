@@ -544,6 +544,7 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
             ],
         ),
             crate::notifications_ui::settings_group(&state.notifications, compact),
+        crate::tour_ui::settings_group(compact),
     ]
 }
 

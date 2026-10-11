@@ -168,6 +168,8 @@ mod composer_pending_app;
 mod activity_navigation_app;
 #[path = "approvals_app.rs"]
 mod approvals_app;
+#[path = "tour_app.rs"]
+mod tour_app;
 #[path = "chat_diff_app.rs"]
 mod chat_diff_app;
 #[path = "message_edit_app.rs"]
@@ -6152,6 +6154,7 @@ impl AgentsWindow {
             github_account_refreshing: !matches!(settings_preferences.github_account, crate::settings_preferences::GithubAccountPreference::Disconnected),
             github_account_notice: None,
             github_account_menu_open: false,
+            tour: Default::default(),
             github_sign_in: None,
             github_contributions: GithubContributionsStatus::Idle,
         };
@@ -15334,6 +15337,9 @@ impl AgentsWindow {
         if matches!(&action, UiAction::Clicked { id } if self.message_edit_action(id)) {
             return;
         }
+        if self.apply_tour_action(&action) {
+            return;
+        }
         if matches!(&action, UiAction::Clicked { id } if id == "editor_menu")
             && !self.view.ide.is_active()
         {
@@ -19230,7 +19236,9 @@ impl eframe::App for AgentsWindow {
                 && self.view.catalog_expanded_model.is_some())
             || (self.view.show_settings
                 && self.view.settings_page == SettingsPage::Mcp
-                && self.view.mcp_editor_open);
+                && self.view.mcp_editor_open)
+            // The window behind a tour's bubble takes no input of its own.
+            || self.tour_showing();
         // A focused tree row takes its keys before the workbench keymap does.
         if !workflow_modal_open
             && !text_menu_open
@@ -19331,6 +19339,7 @@ impl eframe::App for AgentsWindow {
         if !window_focused || !self.view.show_command_center {
             early_changed |= self.command_tree.dismiss_context_menu();
         }
+        early_changed |= self.sync_tour();
         let (mut frame, prepared_layout) =
             self.prepare_workspace_frame(Size::new(area.width(), area.height()), early_changed);
         let focus_was_pending = (
@@ -19590,6 +19599,7 @@ impl eframe::App for AgentsWindow {
             tree_input_changed || !prepared_layout,
             || crate::view::build_window_view(&self.view, area.width(), area.height()),
         );
+        frame = self.settle_tour(frame, Size::new(area.width(), area.height()), &ctx);
         self.record_transcript_layout_session();
         if self.focus_ide_activity_if_pending() {
             ctx.request_repaint();
