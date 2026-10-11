@@ -1,0 +1,67 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - navigation "Principal" [ref=e3]:
+      - list [ref=e4]:
+        - listitem [ref=e5]:
+          - link "Inicio" [ref=e6] [cursor=pointer]:
+            - /url: /
+        - listitem [ref=e7]:
+          - link "Documentos" [ref=e8] [cursor=pointer]:
+            - /url: /docs
+          - list [ref=e9]:
+            - listitem [ref=e10]:
+              - link [ref=e11] [cursor=pointer]:
+                - /url: /docs/a
+                - text: Guía
+                - emphasis [ref=e12]: rápida
+            - listitem [ref=e13]:
+              - link "Referencia" [ref=e14] [cursor=pointer]:
+                - /url: /docs/b
+        - listitem [ref=e15]:
+          - link "Acerca" [ref=e16] [cursor=pointer]:
+            - /url: /about
+  - main [ref=e17]:
+    - heading "Listas anidadas" [level=1] [ref=e18]
+    - heading "Pendientes" [level=2] [ref=e19]
+    - list [ref=e20]:
+      - listitem [ref=e21]: Primero
+      - listitem [ref=e22]:
+        - text: Segundo
+        - strong [ref=e23]: importante
+        - text: con
+        - code [ref=e24]: código
+        - list [ref=e25]:
+          - listitem [ref=e26]: Sub uno
+          - listitem [ref=e27]: Sub dos
+      - listitem [ref=e28]:
+        - checkbox "Hecho" [ref=e29]
+        - text: Tercero
+    - heading "Definiciones" [level=3] [ref=e30]
+    - generic [ref=e31]:
+      - term [ref=e32]: CDP
+      - definition [ref=e33]: Protocolo de DevTools
+      - term [ref=e34]: ARIA
+      - definition [ref=e35]: Accesibilidad
+    - tree "Archivos" [ref=e36]:
+      - treeitem "src" [expanded] [ref=e37]:
+        - text: src
+        - group [ref=e38]:
+          - treeitem "main.rs" [selected] [ref=e39]
+          - treeitem "lib.rs" [ref=e40]
+      - treeitem "docs" [ref=e41]
+    - group [ref=e42]:
+      - button "Más detalles" [ref=e43]
+    - group [ref=e44]:
+      - button "Abierto" [expanded] [ref=e45]
+      - paragraph [ref=e46]: Contenido visible
+    - blockquote [ref=e47]: Una cita en dos líneas
+    - separator [ref=e48]
+    - paragraph [ref=e49]:
+      - text: Texto con
+      - link "enlace externo" [ref=e50] [cursor=pointer]:
+        - /url: https://example.test/x#y
+      - text: "y"
+      - img "Logo" [ref=e51]
+      - text: imagen.
+  - contentinfo [ref=e52]:
+    - paragraph [ref=e53]: Pie © 2026

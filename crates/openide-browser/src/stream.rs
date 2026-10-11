@@ -203,41 +203,9 @@ impl FrameStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cdp::{EventSink, ScreencastFrame};
-    use crate::transport::{Incoming, MessageSink, MessageSource, Transport};
+    use crate::testing::client;
     use serde_json::Value;
-    use std::sync::mpsc::{self, Receiver};
-
-    struct Sink(mpsc::Sender<Value>);
-    impl MessageSink for Sink {
-        fn send(&mut self, message: &[u8]) -> std::io::Result<()> {
-            let _ = self.0.send(serde_json::from_slice(message).unwrap());
-            Ok(())
-        }
-    }
-    struct Source(Receiver<Incoming>);
-    impl MessageSource for Source {
-        fn receive(&mut self) -> std::io::Result<Option<Incoming>> {
-            Ok(self.0.recv().ok())
-        }
-    }
-    struct Ignore;
-    impl EventSink for Ignore {
-        fn event(&mut self, _: &Client, _: &str, _: &str, _: Value) {}
-        fn screencast_frame(&mut self, _: &Client, _: &str, _: ScreencastFrame<'_>) {}
-        fn closed(&mut self) {}
-    }
-
-    /// A client whose written messages can be read back; the sender keeps its source open.
-    fn client() -> (Client, Receiver<Value>, mpsc::Sender<Incoming>) {
-        let (written, read) = mpsc::channel();
-        let (incoming, source) = mpsc::channel();
-        let transport = Transport {
-            sink: Box::new(Sink(written)),
-            source: Box::new(Source(source)),
-        };
-        (Client::connect(transport, Box::new(Ignore)).unwrap(), read, incoming)
-    }
+    use std::sync::mpsc::Receiver;
 
     fn png(width: u32, height: u32) -> Vec<u8> {
         let mut data = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();

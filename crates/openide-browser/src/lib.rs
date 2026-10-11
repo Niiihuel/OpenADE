@@ -18,6 +18,8 @@ mod observer;
 mod scripts;
 mod snapshot;
 mod stream;
+#[cfg(test)]
+mod testing;
 pub mod transport;
 
 pub use actions::MouseButton;

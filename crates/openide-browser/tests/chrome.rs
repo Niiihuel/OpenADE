@@ -650,6 +650,39 @@ fn console_network_dialogs_and_screenshots_stay_within_their_bounds() {
 
 // ---- Snapshot shapes and options ----
 
+/// The fixture pages whose snapshot is kept under `tests/recorded`, with the
+/// protocol replies it was built from.
+const RECORDED_PAGES: [&str; 6] = ["tools", "form", "lists", "table", "frames", "custom"];
+
+/// Chrome's snapshot of each fixture is the text the unit suite reproduces
+/// from its recording. `OPENIDE_BROWSER_RECORD=1` rewrites the recordings
+/// instead, for a new Chrome or a changed fixture.
+#[test]
+#[ignore = "needs Chrome"]
+fn fixture_snapshots_are_what_their_recordings_reproduce() {
+    let server = Server::fixtures();
+    let record = std::env::var_os("OPENIDE_BROWSER_RECORD").is_some();
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded");
+    for page in RECORDED_PAGES {
+        // A browser of its own, so the refs are the ones a first page gets.
+        let mut driver = launch(900, 700, 1.0);
+        driver.navigate(&format!("{}/{page}.html", server.origin)).unwrap();
+        // Frames and late scripts settle.
+        driver.wait_seconds(0.5).unwrap();
+        // The port of the fixture server differs on every run.
+        let portable = |text: String| text.replace(&server.origin, "http://fixture");
+        let text = portable(snapshot(&mut driver)) + "\n";
+        let expected = directory.join(format!("{page}.yaml"));
+        if record {
+            let inputs = portable(driver.snapshot_recording().unwrap());
+            std::fs::write(directory.join(format!("{page}.json")), inputs + "\n").unwrap();
+            std::fs::write(&expected, &text).unwrap();
+        } else {
+            assert_eq!(text, std::fs::read_to_string(&expected).unwrap(), "{page}");
+        }
+    }
+}
+
 #[test]
 #[ignore = "needs Chrome"]
 fn snapshots_cover_frames_custom_controls_and_can_be_narrowed() {

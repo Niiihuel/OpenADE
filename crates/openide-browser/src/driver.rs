@@ -16,6 +16,7 @@ use crate::{DriverError, ErrorKind, LaunchOptions};
 use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -596,19 +597,21 @@ impl Driver {
         // Per session: what the DOM knows about each of its documents, and their loaders.
         let mut sessions: HashMap<String, (HashMap<String, snapshot::DomIndex>, HashMap<String, String>)> = HashMap::new();
         while let Some((session, frame)) = queue.pop_front() {
-            if !sessions.contains_key(&session) {
-                let dom = self
-                    .call::<DomSnapshot>(
-                        &session,
-                        "DOMSnapshot.captureSnapshot",
-                        json!({"computedStyles": snapshot::COMPUTED_STYLES}),
-                    )
-                    .map(DomSnapshot::into_frames);
-                // Without the DOM the tree is still readable: every element
-                // gets a ref and frames are not descended into.
-                sessions.insert(session.clone(), (dom.unwrap_or_default(), self.loaders(&session)?));
-            }
-            let (doms, loaders) = sessions.get_mut(&session).expect("inserted above");
+            let (doms, loaders) = match sessions.entry(session.clone()) {
+                Entry::Occupied(known) => known.into_mut(),
+                Entry::Vacant(unknown) => {
+                    let dom = self
+                        .call::<DomSnapshot>(
+                            &session,
+                            "DOMSnapshot.captureSnapshot",
+                            json!({"computedStyles": snapshot::COMPUTED_STYLES}),
+                        )
+                        .map(DomSnapshot::into_frames);
+                    // Without the DOM the tree is still readable: every
+                    // element gets a ref and frames are not descended into.
+                    unknown.insert((dom.unwrap_or_default(), self.loaders(&session)?))
+                }
+            };
             let dom = doms.remove(&frame).unwrap_or_default();
             let loader = loaders.get(&frame).cloned().unwrap_or_default();
             let tree = self.call::<AxTree>(&session, "Accessibility.getFullAXTree", json!({"frameId": frame}));
@@ -620,7 +623,7 @@ impl Driver {
             };
             let document = self.refs.document(&DocumentKey {
                 session: session.clone(),
-                frame,
+                frame: frame.clone(),
                 loader,
             });
             let mut children = HashMap::new();
@@ -644,6 +647,8 @@ impl Driver {
             frames.push(SnapshotFrame {
                 ax,
                 dom,
+                session,
+                frame,
                 document,
                 children,
             });
@@ -651,8 +656,38 @@ impl Driver {
         Ok(frames)
     }
 
+    /// The protocol replies a snapshot of the current page is built from, as
+    /// JSON. This is how the recordings the unit tests replay are made.
+    #[doc(hidden)]
+    pub fn snapshot_recording(&mut self) -> Outcome<String> {
+        self.run(TIMEOUT, |driver| {
+            let frames = driver.collect_frames()?;
+            driver.refs.settle(false);
+            let mut recorded = snapshot::Recorded::default();
+            let mut doms: HashMap<String, usize> = HashMap::new();
+            for frame in &frames {
+                let dom = match doms.get(&frame.session) {
+                    Some(dom) => *dom,
+                    None => {
+                        let reply = driver.call::<DomSnapshot>(
+                            &frame.session,
+                            "DOMSnapshot.captureSnapshot",
+                            json!({"computedStyles": snapshot::COMPUTED_STYLES}),
+                        )?;
+                        let dom = recorded.push_dom(reply);
+                        doms.insert(frame.session.clone(), dom);
+                        dom
+                    }
+                };
+                let tree: AxTree = driver.call(&frame.session, "Accessibility.getFullAXTree", json!({"frameId": frame.frame}))?;
+                recorded.push_frame(frame, dom, tree.nodes);
+            }
+            serde_json::to_string(&recorded).map_err(|error| failed(error.to_string()))
+        })
+    }
+
     /// The loader of every frame a session renders, by frame id.
-    pub(crate) fn loaders(&mut self, session: &str) -> Outcome<HashMap<String, String>> {
+    pub(crate) fn loaders(&self, session: &str) -> Outcome<HashMap<String, String>> {
         fn walk(tree: &Value, depth: usize, loaders: &mut HashMap<String, String>) {
             let frame = &tree["frame"];
             if let (Some(id), Some(loader)) = (frame["id"].as_str(), frame["loaderId"].as_str()) {
@@ -916,8 +951,9 @@ impl Driver {
                 source = format!("({source})");
             }
             let mut params = json!({"expression": source, "objectGroup": GROUP, "returnByValue": false});
-            if let Some(context) = driver.shared.state().contexts.get(&(session.clone(), frame.clone())) {
-                params["contextId"] = Value::from(*context);
+            let context = driver.shared.state().contexts.get(&(session.clone(), frame.clone())).copied();
+            if let Some(context) = context {
+                params["contextId"] = Value::from(context);
             } else if resolved.is_some() {
                 return Err(tool("El marco del elemento todavía no tiene un contexto de script."));
             }
@@ -957,18 +993,18 @@ impl Driver {
 
     /// Console messages, uncaught errors and dialogs since the last
     /// navigation, at `least` severity or above.
-    pub fn console_messages(&mut self, least: ConsoleLevel) -> Report<ConsoleEntry> {
+    pub fn console_messages(&self, least: ConsoleLevel) -> Report<ConsoleEntry> {
         self.shared.state().console.report(|entry| entry.level <= least)
     }
 
     /// Requests since the last navigation.
-    pub fn network_requests(&mut self) -> Report<NetworkEntry> {
+    pub fn network_requests(&self) -> Report<NetworkEntry> {
         self.shared.state().network.report(|_| true)
     }
 
     /// Decides how the next JavaScript dialog is answered. Used once, and
     /// forgotten if the page navigates first. Without it dialogs are dismissed.
-    pub fn handle_dialog(&mut self, accept: bool, prompt_text: Option<&str>) -> Outcome<()> {
+    pub fn handle_dialog(&self, accept: bool, prompt_text: Option<&str>) -> Outcome<()> {
         if prompt_text.is_some_and(|text| text.len() > 4096 || text.contains('\0')) {
             return Err(invalid("Texto de diálogo demasiado extenso"));
         }
@@ -1035,10 +1071,15 @@ impl Driver {
                 }
             };
             let encoded = reply["data"].as_str().unwrap_or_default();
-            if encoded.len() > MAX_SCREENSHOT_BYTES.div_ceil(3) * 4 {
+            // Refused by its encoded length when far above the limit, without decoding it.
+            if encoded.len() / 4 * 3 > MAX_SCREENSHOT_BYTES + 2 {
                 return Err(too_large(Some(encoded.len() / 4 * 3)));
             }
-            png(encoded)
+            let image = png(encoded)?;
+            if image.data.len() > MAX_SCREENSHOT_BYTES {
+                return Err(too_large(Some(image.data.len())));
+            }
+            Ok(image)
         })
         .map_err(reading)
     }
@@ -1124,14 +1165,14 @@ impl Driver {
             let (session, frame) = (driver.session.clone(), driver.main_frame.clone());
             let world = driver.world(&session, &frame)?;
             let arguments = json!([{"value": "selection"}, {"value": {"cut": true, "maximum": MAX_SELECTION_BYTES}}]);
-            let mut params = json!({
+            let params = json!({
                 "functionDeclaration": LIBRARY,
                 "arguments": arguments,
                 "executionContextId": world,
                 "returnByValue": false,
                 "objectGroup": CUT_GROUP,
             });
-            let mut reply: Value = driver.call(&session, "Runtime.callFunctionOn", params.take())?;
+            let mut reply: Value = driver.call(&session, "Runtime.callFunctionOn", params)?;
             if let Some(details) = reply.get("exceptionDetails") {
                 return Err(failed(thrown(details)));
             }
@@ -1235,7 +1276,7 @@ impl Driver {
             let session = driver.session.clone();
             let reply: Value = driver.call(&session, "Page.captureScreenshot", json!({"format": "png", "optimizeForSpeed": true}))?;
             let encoded = reply["data"].as_str().unwrap_or_default();
-            if encoded.len() > MAX_FRAME_BYTES.div_ceil(3) * 4 {
+            if encoded.len() / 4 * 3 > MAX_FRAME_BYTES + 2 {
                 return Err(failed("El cuadro supera el límite de 16 MiB."));
             }
             let image = png(encoded)?;

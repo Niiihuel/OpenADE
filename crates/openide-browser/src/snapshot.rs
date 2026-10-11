@@ -10,7 +10,7 @@
 //!
 //! Everything here is pure: recorded protocol replies go in, text comes out.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -21,38 +21,42 @@ const MAX_TREE_DEPTH: usize = 400;
 /// A name longer than this is left out of the line, as Playwright does.
 const MAX_NAME_CHARS: usize = 900;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct AxTree {
     pub nodes: Vec<AxNode>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AxNode {
     pub node_id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ignored: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignored_reasons: Vec<AxProperty>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<AxValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<AxValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<AxValue>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub properties: Vec<AxProperty>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub child_ids: Vec<String>,
-    #[serde(rename = "backendDOMNodeId")]
+    #[serde(rename = "backendDOMNodeId", skip_serializing_if = "Option::is_none")]
     pub backend: Option<i64>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct AxValue {
     #[serde(default)]
     pub value: Value,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct AxProperty {
     pub name: String,
     #[serde(default)]
@@ -86,7 +90,7 @@ impl AxNode {
 
 /// The reply of `DOMSnapshot.captureSnapshot`: parallel arrays indexed by
 /// node, with every string replaced by its index in `strings`.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct DomSnapshot {
     #[serde(default)]
     documents: Vec<DomDocument>,
@@ -94,7 +98,7 @@ pub(crate) struct DomSnapshot {
     strings: Vec<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DomDocument {
     #[serde(default)]
@@ -105,9 +109,11 @@ struct DomDocument {
     layout: DomLayout,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DomNodes {
+    #[serde(default)]
+    parent_index: Vec<i64>,
     #[serde(default)]
     node_type: Vec<i64>,
     #[serde(default)]
@@ -127,7 +133,7 @@ struct DomNodes {
 }
 
 /// A sparse column: `value[n]` belongs to node `index[n]`.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct Rare {
     #[serde(default)]
     index: Vec<i64>,
@@ -135,7 +141,7 @@ struct Rare {
     value: Vec<i64>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DomLayout {
     #[serde(default)]
@@ -164,6 +170,8 @@ pub(crate) struct DomNode {
     pub no_pointer_events: bool,
     /// A click listener is attached to the node itself.
     pub clickable: bool,
+    /// Its one child node is text: a span around a few words.
+    pub only_text: bool,
     /// A list or disclosure marker, which Playwright does not report.
     pub marker: bool,
     pub href: Option<String>,
@@ -211,6 +219,16 @@ impl DomSnapshot {
                 .collect();
             let count = entries.len();
             let at = |index: &i64| usize::try_from(*index).ok().filter(|at| *at < count);
+            let mut children = vec![(0u32, 0u32); count];
+            for (child, parent) in nodes.parent_index.iter().enumerate() {
+                if let Some(parent) = at(parent) {
+                    children[parent].0 += 1;
+                    children[parent].1 += u32::from(nodes.node_type.get(child) == Some(&3));
+                }
+            }
+            for (entry, counts) in entries.iter_mut().zip(children) {
+                entry.only_text = counts == (1, 1);
+            }
             for at in nodes.is_clickable.index.iter().filter_map(at) {
                 entries[at].clickable = true;
             }
@@ -259,10 +277,67 @@ impl DomSnapshot {
 pub(crate) struct Frame {
     pub ax: Vec<AxNode>,
     pub dom: DomIndex,
+    /// The protocol session and frame id the document was read from.
+    pub session: String,
+    pub frame: String,
     /// Its slot in the `RefTable`.
     pub document: usize,
     /// Backend node id of an `<iframe>` to the index of the frame inside it.
     pub children: HashMap<i64, usize>,
+}
+
+/// The protocol replies one snapshot was built from, kept so that the text
+/// can be reproduced without a browser.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub(crate) struct Recorded {
+    /// One `DOMSnapshot.captureSnapshot` reply per session.
+    doms: Vec<DomSnapshot>,
+    frames: Vec<RecordedFrame>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct RecordedFrame {
+    frame: String,
+    /// Which of `doms` covers this frame.
+    dom: usize,
+    ax: Vec<AxNode>,
+    children: HashMap<i64, usize>,
+}
+
+impl Recorded {
+    pub(crate) fn push_dom(&mut self, dom: DomSnapshot) -> usize {
+        self.doms.push(dom);
+        self.doms.len() - 1
+    }
+
+    pub(crate) fn push_frame(&mut self, frame: &Frame, dom: usize, ax: Vec<AxNode>) {
+        self.frames.push(RecordedFrame {
+            frame: frame.frame.clone(),
+            dom,
+            ax,
+            children: frame.children.clone(),
+        });
+    }
+
+    /// The frames as `render` takes them, each a document of its own.
+    #[cfg(test)]
+    pub(crate) fn into_frames(self, refs: &mut RefTable) -> Vec<Frame> {
+        let mut doms: Vec<HashMap<String, DomIndex>> = self.doms.into_iter().map(DomSnapshot::into_frames).collect();
+        self.frames
+            .into_iter()
+            .map(|recorded| Frame {
+                dom: doms.get_mut(recorded.dom).and_then(|dom| dom.remove(&recorded.frame)).unwrap_or_default(),
+                document: refs.document(&DocumentKey {
+                    frame: recorded.frame.clone(),
+                    ..DocumentKey::default()
+                }),
+                ax: recorded.ax,
+                session: String::new(),
+                frame: recorded.frame,
+                children: recorded.children,
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -629,7 +704,7 @@ impl FrameBuilder<'_, '_> {
         }
         // A span around a few words is its words, unless it is what takes the click.
         let wraps_text = role == "generic"
-            && dom.is_some_and(|dom| dom.inline)
+            && dom.is_some_and(|dom| dom.inline && dom.only_text)
             && !node.interactive
             && node.children.iter().all(|child| matches!(child, Item::Text(_)));
         if wraps_text {
@@ -823,8 +898,8 @@ impl RefTable {
         at
     }
 
-    fn assign(&mut self, document: usize, backend: i64, role: &str, name: &str) -> String {
-        let refs = &mut self.documents[document];
+    fn assign(&mut self, document: usize, backend: i64, role: &str, name: &str) -> Option<String> {
+        let refs = self.documents.get_mut(document)?;
         refs.seen.insert(backend);
         let reusable = refs.by_node.get(&backend).filter(|assigned| assigned.role == role && assigned.name == name);
         let number = match reusable {
@@ -845,7 +920,7 @@ impl RefTable {
                 refs.next
             }
         };
-        format!("{}e{number}", refs.prefix)
+        Some(format!("{}e{number}", refs.prefix))
     }
 
     /// Ends a snapshot. A whole-page one replaces the set of live refs, so
@@ -979,8 +1054,11 @@ impl Writer<'_> {
             }
         }
         let pointer = node.target && node.pointer_cursor;
-        if let (true, Some(backend)) = (node.target, node.backend) {
-            let reference = self.refs.assign(node.document, backend, &node.role, &node.identity);
+        let reference = match (node.target, node.backend) {
+            (true, Some(backend)) => self.refs.assign(node.document, backend, &node.role, &node.identity),
+            _ => None,
+        };
+        if let Some(reference) = reference {
             let _ = write!(key, " [ref={reference}]");
             if pointer && !inside_pointer {
                 key.push_str(" [cursor=pointer]");

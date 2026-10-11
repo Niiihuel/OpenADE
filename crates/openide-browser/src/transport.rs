@@ -77,6 +77,8 @@ impl<W: Write + Send> MessageSink for NulSink<W> {
 
 pub(crate) struct NulSource<R> {
     reader: R,
+    /// Where each read lands before the bytes join the message.
+    scratch: Box<[u8]>,
     buffer: Vec<u8>,
     /// Start of the message being assembled.
     start: usize,
@@ -90,6 +92,7 @@ impl<R> NulSource<R> {
     pub(crate) fn new(reader: R, limit: usize) -> Self {
         Self {
             reader,
+            scratch: vec![0; READ_CHUNK].into_boxed_slice(),
             buffer: Vec::new(),
             start: 0,
             scanned: 0,
@@ -135,16 +138,14 @@ impl<R: Read + Send> MessageSource for NulSource<R> {
                 self.buffer.truncate(OVERSIZED_PREFIX);
             }
             self.scanned = self.buffer.len();
-            let filled = self.buffer.len();
-            self.buffer.resize(filled + READ_CHUNK, 0);
             let count = loop {
-                match self.reader.read(&mut self.buffer[filled..]) {
+                match self.reader.read(&mut self.scratch) {
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                    other => break other,
+                    other => break other?,
                 }
             };
-            self.buffer.truncate(filled + *count.as_ref().unwrap_or(&0));
-            if count? == 0 {
+            self.buffer.extend_from_slice(&self.scratch[..count]);
+            if count == 0 {
                 return if self.buffer.is_empty() {
                     Ok(None)
                 } else {

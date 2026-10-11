@@ -1,0 +1,31 @@
+- generic [active] [ref=e1]:
+  - heading "Controles propios" [level=1] [ref=e2]
+  - generic [ref=e3] [cursor=pointer]: Tarjeta uno
+  - generic [ref=e4] [cursor=pointer]:
+    - heading "Tarjeta dos" [level=3] [ref=e5]
+    - paragraph [ref=e6]: Con descripción
+    - text: Ver más
+  - generic: Tarjeta inerte
+  - generic [ref=e7]: Texto con clic sin cursor
+  - button "Rol botón" [ref=e8]
+  - tablist "Secciones" [ref=e9]:
+    - tab "General" [selected] [ref=e10] [cursor=pointer]
+    - tab "Avanzado" [ref=e11] [cursor=pointer]
+  - tabpanel "General" [ref=e12]:
+    - paragraph [ref=e13]: Panel general
+  - checkbox "Tres estados" [checked=mixed] [ref=e14]
+  - switch "Modo oscuro" [checked] [ref=e15]
+  - slider "Brillo": "30"
+  - progressbar "Carga"
+  - generic [ref=e16]:
+    - checkbox "Avisos" [ref=e17]
+    - text: Avisos
+  - generic [ref=e18]: Entrada oculta
+  - generic [ref=e19]:
+    - checkbox "Opacidad cero" [ref=e20]
+    - text: Opacidad cero
+  - generic "Editor" [ref=e21]: Texto editable
+  - button "Muy anidado" [ref=e22]
+  - img "Icono" [ref=e23]
+  - img [ref=e24] [cursor=pointer]
+  - paragraph [ref=e25]: Sin cambios
