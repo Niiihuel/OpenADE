@@ -572,6 +572,9 @@ pub struct ViewState {
     pub settings_terminal_shell_draft: String,
     pub settings_terminal_shell_menu_open: bool,
     pub(crate) settings_choice_menu_open: Option<String>,
+    pub(crate) chat_link_opening: crate::chat_links::ChatLinkOpening,
+    /// The link whose context menu is open.
+    pub(crate) chat_link_menu: Option<crate::chat_links::ChatLinkMenu>,
     pub settings_terminal_shell_editing: bool,
     pub(crate) mcp_servers: Vec<crate::mcp_settings::McpServerSettings>,
     /// The saved ID being edited; `None` means the form creates a new server.
@@ -3485,6 +3488,14 @@ fn dialogs(state: &ViewState, base: Element, viewport_width: f32) -> Element {
 
 pub fn build_window_view(state: &ViewState, width: f32, height: f32) -> Element {
     let base = build_view_sized(state, width, height);
+    let base = match &state.chat_link_menu {
+        Some(menu) => menu.attach(
+            base,
+            state.chat_link_opening,
+            state.main_page == MainPage::Workspace && !state.show_settings,
+        ),
+        None => base,
+    };
     let Some(gallery) = &state.composer_image_viewer else {
         return base;
     };
@@ -3943,6 +3954,8 @@ pub(crate) mod tests {
             settings_terminal_shell_draft: String::new(),
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
+            chat_link_opening: Default::default(),
+            chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),
             mcp_selected_id: None,

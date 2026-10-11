@@ -2403,12 +2403,28 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
             content.extend(exec_rules_page(state, compact));
             content
         }
-        SettingsPage::Browser => capability_page(
-            "Navegador integrado",
-            "El agente nativo controla la pestaña Navegador que tengas abierta en el panel de la tarea.",
-            "Sin una pestaña de navegador abierta e iniciada en el proyecto de la tarea, las herramientas de navegador no se ofrecen al agente. No hay más ajustes que configurar aquí.",
-            Some(("settings_page:agent", "Ver permisos del agente", Icon::ArrowRight)),
-        ),
+        SettingsPage::Browser => {
+            let mut content = capability_page(
+                "Navegador integrado",
+                "El agente nativo controla la pestaña Navegador que tengas abierta en el panel de la tarea.",
+                "Sin una pestaña de navegador abierta e iniciada en el proyecto de la tarea, las herramientas de navegador no se ofrecen al agente.",
+                Some(("settings_page:agent", "Ver permisos del agente", Icon::ArrowRight)),
+            );
+            content.push(settings_parts::settings_group("Enlaces", vec![
+                settings_parts::settings_row(
+                    "Abrir enlaces del chat en",
+                    "Automático abre en el navegador integrado las direcciones de este equipo, como localhost, y el resto en el del sistema. Ctrl+clic usa el otro; el clic derecho ofrece ambos.",
+                    settings_choice_selector(
+                        state,
+                        "chat_links",
+                        state.chat_link_opening.label(),
+                        state.chat_link_opening.options(),
+                    ),
+                    compact,
+                ),
+            ]));
+            content
+        }
         SettingsPage::ComputerUse => capability_page(
             "Control del equipo no disponible",
             "La captura de pantalla y las entradas al escritorio todavía no están disponibles para el agente nativo.",

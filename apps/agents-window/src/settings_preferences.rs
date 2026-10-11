@@ -130,6 +130,8 @@ pub(crate) struct SettingsPreferences {
     pub github_account: GithubAccountPreference,
     /// Guided tours already offered, by tour ID.
     pub tours: std::collections::BTreeMap<String, TourRecord>,
+    /// Where a click on a link of the conversation opens.
+    pub chat_links: crate::chat_links::ChatLinkOpening,
 }
 
 impl Default for SettingsPreferences {
@@ -150,6 +152,7 @@ impl Default for SettingsPreferences {
             hosted_web_search_mode: None,
             github_account: GithubAccountPreference::Automatic,
             tours: Default::default(),
+            chat_links: Default::default(),
         }
     }
 }
@@ -239,6 +242,12 @@ impl SettingsPreferences {
                 .take(16)
                 .collect();
         }
+        if let Some(opening) = value
+            .get("chat_links")
+            .and_then(|opening| serde_json::from_value(opening.clone()).ok())
+        {
+            preferences.chat_links = opening;
+        }
         preferences
     }
 
@@ -319,6 +328,7 @@ impl SettingsPreferences {
             "hosted_web_search_mode": self.hosted_web_search_mode,
             "github_account": self.github_account,
             "tours": self.tours,
+            "chat_links": self.chat_links,
         }))
         .map_err(|error| format!("No se pudieron serializar las preferencias: {error}"))?;
         let temp = root.join(format!(

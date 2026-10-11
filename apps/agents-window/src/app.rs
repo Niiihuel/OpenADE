@@ -8,6 +8,8 @@ use marketplace_app::{MarketplaceOperation, MarketplaceResponse, MarketplaceRemo
 mod browser_host_tests;
 #[path = "browser_input_app.rs"]
 mod browser_input_app;
+#[path = "chat_links_app.rs"]
+mod chat_links_app;
 #[cfg(test)]
 #[path = "conversation_marker_app_tests.rs"]
 mod conversation_marker_app_tests;
@@ -6042,6 +6044,8 @@ impl AgentsWindow {
             },
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
+            chat_link_opening: settings_preferences.chat_links,
+            chat_link_menu: None,
             settings_terminal_shell_editing: false,
             show_settings: false,
             main_page: MainPage::Workspace,
@@ -15513,7 +15517,23 @@ impl AgentsWindow {
         match action {
             UiAction::Clicked { id } if id.starts_with("chat_link_open:") => {
                 if let Some(url) = crate::rich_text::web_link_url_from_action(&id) {
-                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                    // Ctrl+click opens in the place a plain click does not.
+                    let other = ctx.input(|input| input.modifiers.command);
+                    let target = self.view.chat_link_opening.target(&url, other);
+                    self.open_chat_link(&url, target, ctx);
+                }
+            }
+            UiAction::Clicked { id } if id.starts_with(crate::chat_links::MENU_ACTION_PREFIX) => {
+                self.apply_chat_link_menu_action(&id, ctx);
+            }
+            UiAction::Clicked { id } if id.starts_with(crate::chat_links::SETTING_ACTION_PREFIX) => {
+                self.view.settings_choice_menu_open = None;
+                if let Some(opening) = crate::chat_links::ChatLinkOpening::from_action_id(&id) {
+                    let mut next = self.settings_preferences.clone();
+                    next.chat_links = opening;
+                    if self.commit_settings_preferences(next, "Destino de los enlaces guardado") {
+                        self.view.chat_link_opening = opening;
+                    }
                 }
             }
             UiAction::CopyRequested { text } => ctx.copy_text(text),
@@ -17961,6 +17981,7 @@ impl AgentsWindow {
                         (SettingsPage::Data, "organization" | "sort")
                             | (SettingsPage::Agent, "isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search")
                             | (SettingsPage::ExternalAgents, "external_permission")
+                            | (SettingsPage::Browser, "chat_links")
                     );
                 if valid {
                     self.view.settings_terminal_shell_menu_open = false;
@@ -18975,6 +18996,7 @@ impl AgentsWindow {
                 (SettingsPage::Data, Some("organization" | "sort"))
                     | (SettingsPage::Agent, Some("isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search"))
                     | (SettingsPage::ExternalAgents, Some("external_permission"))
+                    | (SettingsPage::Browser, Some("chat_links"))
             )
         {
             self.view.settings_choice_menu_open = None;
@@ -19514,6 +19536,10 @@ impl eframe::App for AgentsWindow {
                 let Some(event) = self.route_text_paste(event, false) else {
                     continue;
                 };
+                if self.handle_chat_link_menu_event(&event, &ctx) {
+                    needs_relayout = true;
+                    continue;
+                }
                 if !workflow_modal_open && self.handle_ide_menu_event(&event) {
                     needs_relayout = true;
                     continue;

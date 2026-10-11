@@ -254,3 +254,157 @@ fn export_chat_links_visual_review() {
         output.textures_delta.clear();
     }
 }
+
+/// Every span of a rendered tree, through the hints wrapped around its
+/// paragraphs.
+fn spans(element: &Element, out: &mut Vec<openide_ui::TextSpan>) {
+    match &element.kind {
+        ElementKind::Column(children) | ElementKind::Row(children) => {
+            children.iter().for_each(|child| spans(child, out))
+        }
+        ElementKind::Panel(child) => spans(child, out),
+        ElementKind::Tooltip { anchor, .. } => spans(anchor, out),
+        ElementKind::FormattedText(found) => out.extend(found.iter().cloned()),
+        _ => {}
+    }
+}
+
+/// The links of a settled response: their words and where they open.
+fn links(source: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    spans(&scope_web_links(render_markdown_at_width(source, 640.0), "t"), &mut found);
+    found
+        .into_iter()
+        .filter_map(|span| Some((span.text, web_link_url_from_action(span.action.as_deref()?)?)))
+        .collect()
+}
+
+#[test]
+fn detection_table_of_a_settled_response() {
+    let long = format!("https://example.test/{}", "a".repeat(1_900));
+    let too_long = format!("https://example.test/{}", "a".repeat(2_100));
+    let cases: Vec<(&str, Vec<(&str, &str)>)> = vec![
+        // Markdown links: the words stay, the destination is the address.
+        ("[guía](https://example.test/docs)", vec![("guía", "https://example.test/docs")]),
+        ("[wiki](https://es.wikipedia.org/wiki/Rust_(lenguaje))", vec![("wiki", "https://es.wikipedia.org/wiki/Rust_(lenguaje)")]),
+        // An autolink keeps its angle brackets as text around the link.
+        ("<https://example.test/a>", vec![("https://example.test/a", "https://example.test/a")]),
+        // Bare addresses, and the punctuation of the sentence around them.
+        ("Puedes abrirlo en http://localhost:5173.", vec![("http://localhost:5173", "http://localhost:5173/")]),
+        ("Mira https://example.test/a, https://example.test/b; y https://example.test/c!", vec![
+            ("https://example.test/a", "https://example.test/a"),
+            ("https://example.test/b", "https://example.test/b"),
+            ("https://example.test/c", "https://example.test/c"),
+        ]),
+        ("(ver https://example.test/a)", vec![("https://example.test/a", "https://example.test/a")]),
+        ("[ver https://example.test/a]:", vec![("https://example.test/a", "https://example.test/a")]),
+        ("https://es.wikipedia.org/wiki/Rust_(lenguaje).", vec![("https://es.wikipedia.org/wiki/Rust_(lenguaje)", "https://es.wikipedia.org/wiki/Rust_(lenguaje)")]),
+        ("http://127.0.0.1:8080/x?y=1#z y http://[::1]:3000/", vec![
+            ("http://127.0.0.1:8080/x?y=1#z", "http://127.0.0.1:8080/x?y=1#z"),
+            ("http://[::1]:3000/", "http://[::1]:3000/"),
+        ]),
+        // Unicode: the path is percent-encoded and the host goes to punycode.
+        ("https://example.test/año", vec![("https://example.test/año", "https://example.test/a%C3%B1o")]),
+        ("https://ñandú.test/", vec![("https://ñandú.test/", "https://xn--and-6ma2c.test/")]),
+        ("HTTPS://GitHub.com/a", vec![("HTTPS://GitHub.com/a", "https://github.com/a")]),
+        (long.as_str(), vec![(long.as_str(), long.as_str())]),
+        // Never a link: code, other schemes, credentials, an address glued
+        // to a word, one past the size limit, and a host with no scheme
+        // (the parser has no rule for it; see the module notes).
+        ("`https://example.test/a`", vec![]),
+        ("```\nhttps://example.test/a\n```", vec![]),
+        ("    https://example.test/indentado", vec![("https://example.test/indentado", "https://example.test/indentado")]),
+        ("[x](javascript:alert(1)) [y](file:///etc/passwd) [z](vscode://a) ftp://example.test mailto:a@b.test", vec![]),
+        ("https://user:clave@example.test/", vec![]),
+        ("xhttps://example.test/a", vec![]),
+        (too_long.as_str(), vec![]),
+        ("localhost:5173, 127.0.0.1:8080 y www.example.test", vec![]),
+        ("src/main.rs:42 y C:\\repo\\a.rs", vec![]),
+    ];
+    for (source, expected) in cases {
+        let expected: Vec<_> = expected
+            .into_iter()
+            .map(|(text, url)| (text.to_owned(), url.to_owned()))
+            .collect();
+        let shown = &source[..source.len().min(80)];
+        assert_eq!(links(source), expected, "{shown}");
+    }
+    // A user's message is literal text; the same addresses are its links.
+    let mut found = Vec::new();
+    spans(&render_user_message("mirá [esto](https://example.test/a) y `https://example.test/b`", "u"), &mut found);
+    let user: Vec<_> = found.iter().filter(|span| span.action.is_some()).map(|span| span.text.as_str()).collect();
+    assert_eq!(user, ["https://example.test/a", "https://example.test/b"]);
+}
+
+#[test]
+fn an_address_that_streams_in_never_goes_back_to_plain_text() {
+    let full = "Puedes abrirlo en http://localhost:5173/app. Listo";
+    let start = full.find("http").unwrap();
+    let end = full.find(". Listo").unwrap();
+    let (mut was_link, mut was_open) = (false, false);
+    let mut previous_width = 0.0;
+    for (cut, _) in full.char_indices().skip(1).chain([(full.len(), ' ')]) {
+        let mut found = Vec::new();
+        spans(&render_streaming_markdown_at_width(&full[..cut], 640.0), &mut found);
+        let address: Vec<_> = found.iter().filter(|span| span.color == theme::LINK).collect();
+        let is_link = !address.is_empty();
+        let is_open = address.iter().any(|span| span.action.is_some());
+        assert!(!was_link || is_link, "back to plain text at {:?}", &full[..cut]);
+        assert!(!was_open || is_open, "lost its action at {:?}", &full[..cut]);
+        // Link ink from the moment the scheme is whole; before that the
+        // letters are prose like any other.
+        assert_eq!(is_link, cut >= start + "http://l".len(), "{:?}", &full[..cut]);
+        // It opens only once something after it says where it ends.
+        assert_eq!(is_open, cut > end + 1, "{:?}", &full[..cut]);
+        if is_link {
+            assert_eq!(address.len(), 1);
+            assert!(full[start..].starts_with(&address[0].text), "{:?}", address[0].text);
+            assert_eq!(address[0].icon.is_some(), is_open, "the glyph arrives with the action");
+        }
+        let width = UiTree::new(render_streaming_markdown_at_width(&full[..cut], 640.0))
+            .layout(Size::new(640.0, 200.0))
+            .text_layouts()
+            .iter()
+            .flat_map(|block| block.runs.iter().map(|run| run.rect.x + run.rect.width))
+            .fold(0.0, f32::max);
+        assert!(width >= previous_width, "the line shrank at {:?}", &full[..cut]);
+        (was_link, was_open, previous_width) = (is_link, is_open, width);
+    }
+    assert!(was_open);
+}
+
+#[test]
+fn links_wrap_inside_a_narrow_column_and_hint_their_destination() {
+    let source = format!(
+        "Abrí [la guía de instalación completa](https://example.test/docs/instalar) o \
+         https://example.test/{}?paso=2 y http://localhost:5173.",
+        "ruta-muy-larga/".repeat(12)
+    );
+    for width in [360.0_f32, 900.0] {
+        let column = width - 32.0;
+        let mut tree = UiTree::new(
+            scope_web_links(render_markdown_at_width(&source, column), "wrap").size(Some(column), None),
+        );
+        let start = std::time::Instant::now();
+        let frame = tree.layout_at(Size::new(column, 900.0), start);
+        let link_regions: Vec<_> = frame.regions.iter().filter(|region| region.id.starts_with("chat_link_open:")).collect();
+        assert!(link_regions.len() >= 3);
+        for region in &link_regions {
+            assert!(region.rect.x >= 0.0 && region.rect.x + region.rect.width <= column + 0.5, "{width}: {:?}", region.rect);
+        }
+        for run in frame.text_layouts().iter().flat_map(|block| block.runs.clone()) {
+            assert!(run.rect.x + run.rect.width <= column + 0.5, "{width}: {:?}", run.text);
+        }
+        // The hint is the address itself, not the words of the link.
+        let named = link_regions.iter().find(|region| region.id.ends_with("/docs/instalar")).unwrap();
+        let over = openide_ui::Point::new(named.rect.x + named.rect.width / 2.0, named.rect.y + named.rect.height / 2.0);
+        tree.handle_event_at(UiEvent::PointerMove(over), start);
+        let hovered = tree.layout_at(Size::new(column, 900.0), start + std::time::Duration::from_secs(1));
+        let painted: Vec<_> = hovered.commands.iter().filter_map(|command| match command {
+            DrawCommand::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        }).collect();
+        assert!(painted.contains(&"https://example.test/docs/instalar"), "{width}: {painted:?}");
+        assert!(!painted.iter().any(|text| text.contains("localhost:5173/")), "one hint at a time");
+    }
+}
