@@ -10,6 +10,8 @@ pub use command_line::{definition_before_command_revision, split_command_argumen
 mod compact;
 mod context;
 mod error;
+mod limit_gate;
+mod provider_failure;
 mod exec_policy;
 mod goal_tools;
 mod hooks;
@@ -52,6 +54,7 @@ mod tools;
 
 pub use anthropic::{AnthropicMessagesBackend, DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS};
 pub use backend::{
+    set_model_retry_sleep_divisor,
     ModelBackend, ModelCompletion, ModelOutput, ModelRequestCapabilities, ModelTokenUsage,
     OpenAiCompatibleBackend,
 };
@@ -70,6 +73,8 @@ pub use context::{
     ContextPolicy, TokenBudgetAssessment, TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState,
 };
 pub use error::AgentError;
+pub use limit_gate::{limit_gate_block, limit_gate_check, limit_gate_clear, LimitBlock};
+pub use provider_failure::{FailureClass, ProviderFailure};
 pub use exec_policy::{
     ExecDecision, ExecEvaluation, ExecPatternToken, ExecPolicy, ExecPolicyError, ExecRule,
     MAX_EXEC_JUSTIFICATION_BYTES, MAX_EXEC_PATTERN_TOKENS, MAX_EXEC_RULES, MAX_EXEC_TOKEN_BYTES,
@@ -148,7 +153,7 @@ pub use responses::{
     HostedWebSearchContextSize, HostedWebSearchLocation, HostedWebSearchMode, HostedWebSource,
     ResponseUsage, ResponsesBackend, ResponsesResult,
 };
-pub use resume::{
+pub use resume::{cancel_paused_turn, 
     discard_aborted_tool_batch, record_verified_tool_outcome, ResumeDisposition, ResumeEngine,
     ResumeError, ResumeEventObserver, ResumeStep,
 };

@@ -101,6 +101,9 @@ pub enum ResumeDisposition {
     },
     /// A terminal turn is never sent back to the model.
     AbortedTurn,
+    /// The turn stopped at a model boundary and `TurnPaused` was appended:
+    /// a provider limit, or a subagent it waits for is paused.
+    Paused,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -222,6 +225,32 @@ pub fn record_verified_tool_outcome(
         appended_events: vec![event],
         disposition,
     })
+}
+
+/// Cancel a turn that is paused at a model boundary. Nothing is in flight
+/// there and no tool is open, so the terminal event is the whole effect.
+/// Refused for any other recovery state. The session lease must be held.
+pub fn cancel_paused_turn(
+    sessions: &SessionStore,
+    checkpoints: &CheckpointFileStore,
+    lease: &NativeSessionLease,
+) -> Result<AgentEvent, ResumeError> {
+    let (_, _, replay) = load_manual_replay(sessions, checkpoints, lease)?;
+    if replay.pause.is_none()
+        || !matches!(
+            replay.recovery,
+            ReplayRecovery::ReadyForModel { .. } | ReplayRecovery::ModelInFlight { .. }
+        )
+    {
+        return Err(ResumeError::StaleResolution);
+    }
+    let sequence = replay
+        .last_sequence
+        .checked_add(1)
+        .ok_or(ResumeError::SequenceExhausted)?;
+    let event = AgentEvent::new(lease.session_id(), sequence, AgentEventKind::TurnCancelled);
+    sessions.append_native_event(&event)?;
+    Ok(event)
 }
 
 /// Record a human decision to abandon the remaining tool calls of a failed
@@ -571,6 +600,7 @@ impl ResumeEngine {
         self.process_manual_commands(lease, &cancel).await?;
         let mut events = Vec::new();
         let mut executor_error = None;
+        let mut paused = false;
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled.into());
         }
@@ -584,7 +614,7 @@ impl ResumeEngine {
                     | ReplayRecovery::AbortedToolBatch { .. }
             )
         {
-            return self.finish_step(lease, events, None);
+            return self.finish_step(lease, events, None, false);
         }
         match &replay.recovery {
             ReplayRecovery::Idle => {}
@@ -618,14 +648,16 @@ impl ResumeEngine {
                 )?;
             }
             ReplayRecovery::ReadyForModel { next_step } => {
-                self.run_model(lease, &replay, *next_step, true, cancel, &mut events)
+                paused = self
+                    .run_model_or_pause(lease, &replay, *next_step, true, cancel, &mut events)
                     .await?;
             }
             ReplayRecovery::ModelInFlight { step, model } => {
                 if model != self.model.model_id() {
                     return Err(ResumeError::ModelMismatch);
                 }
-                self.run_model(lease, &replay, *step, false, cancel, &mut events)
+                paused = self
+                    .run_model_or_pause(lease, &replay, *step, false, cancel, &mut events)
                     .await?;
             }
             ReplayRecovery::ResponseCommitted { step } => {
@@ -703,7 +735,50 @@ impl ResumeEngine {
                     .await?;
             }
         }
-        self.finish_step(lease, events, executor_error)
+        self.finish_step(lease, events, executor_error, paused)
+    }
+
+    /// The model step of a resumed turn, with the same pause rules as a live
+    /// one. Returns whether `TurnPaused` was appended instead of a response.
+    async fn run_model_or_pause(
+        &self,
+        lease: &NativeSessionLease,
+        replay: &NativeReplay,
+        step: usize,
+        start_request: bool,
+        cancel: CancellationToken,
+        events: &mut Vec<AgentEvent>,
+    ) -> Result<bool, ResumeError> {
+        // Resuming a turn that paused for its child is the decision to ask
+        // the model again; anything else waits for the paused child.
+        let continuing_past_child = !start_request
+            || replay.pause.as_ref().is_some_and(|pause| {
+                pause.class == openide_core::TurnPauseClass::WaitingOnChild && pause.step == step
+            });
+        if let Some(pause) = crate::limit_gate::pause_before_request(
+            self.model.as_ref(),
+            &replay.history,
+            step,
+            continuing_past_child,
+        ) {
+            self.append(lease, replay.last_sequence, events, pause)?;
+            return Ok(true);
+        }
+        match self
+            .run_model(lease, replay, step, start_request, cancel, events)
+            .await
+        {
+            Err(ResumeError::Agent(AgentError::Provider(failure))) => {
+                let Some(pause) =
+                    crate::limit_gate::pause_for_failure(self.model.as_ref(), &failure, step)
+                else {
+                    return Err(AgentError::Provider(failure).into());
+                };
+                self.append(lease, replay.last_sequence, events, pause)?;
+                Ok(true)
+            }
+            result => result.map(|()| false),
+        }
     }
 
     /// Continue until terminal or a human decision is required. Model and
@@ -817,7 +892,7 @@ impl ResumeEngine {
                 resolution,
             },
         )?;
-        self.finish_step(lease, events, None)
+        self.finish_step(lease, events, None, false)
     }
 
     /// Caller assertion: the external effect and result were independently
@@ -1035,9 +1110,11 @@ impl ResumeEngine {
         lease: &NativeSessionLease,
         appended_events: Vec<AgentEvent>,
         executor_error: Option<String>,
+        paused: bool,
     ) -> Result<ResumeStep, ResumeError> {
         let replay = self.inspect(lease)?;
         let disposition = match &replay.recovery {
+            _ if paused => ResumeDisposition::Paused,
             ReplayRecovery::Idle => ResumeDisposition::Complete,
             ReplayRecovery::PermissionPending {
                 request_id,
@@ -2937,6 +3014,225 @@ mod tests {
         );
         assert!(!fixture._dir.path().join("should-not-run.txt").exists());
         assert!(fixture.tools.calls.lock().unwrap().is_empty());
+    }
+
+    /// A model that follows a script of responses and classified failures.
+    struct PausingModel {
+        script: Mutex<std::collections::VecDeque<Result<ModelOutput, crate::ProviderFailure>>>,
+        calls: AtomicUsize,
+        key: Option<String>,
+    }
+
+    impl PausingModel {
+        fn new(
+            key: Option<&str>,
+            script: Vec<Result<ModelOutput, crate::ProviderFailure>>,
+        ) -> Arc<Self> {
+            Arc::new(Self {
+                script: Mutex::new(script.into()),
+                calls: AtomicUsize::new(0),
+                key: key.map(str::to_owned),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl ModelBackend for PausingModel {
+        fn model_id(&self) -> &str {
+            "gpt-example"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        fn limit_key(&self) -> Option<String> {
+            self.key.clone()
+        }
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.script
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("the script covers every request")
+                .map_err(AgentError::Provider)
+        }
+    }
+
+    fn failure(class: crate::FailureClass, resets_at_ms: Option<u64>) -> crate::ProviderFailure {
+        let mut failure = crate::ProviderFailure::new(class, "HTTP 429: fixture");
+        failure.resets_at_ms = resets_at_ms;
+        failure
+    }
+
+    fn pausing_engine(fixture: &Fixture, model: &Arc<PausingModel>) -> ResumeEngine {
+        ResumeEngine::new(
+            fixture.sessions.clone(),
+            fixture.checkpoints.clone(),
+            compatibility(),
+            model.clone(),
+            fixture.tools.clone(),
+            ToolCatalog::new([definition()]).unwrap(),
+            PermissionPolicy::new().with_default_mode(PermissionMode::Allow),
+            budget(),
+        )
+        .with_native_runtime_identity("openai", "https://test.example/v1")
+    }
+
+    fn count(fixture: &Fixture, predicate: fn(&AgentEventKind) -> bool) -> usize {
+        fixture
+            .sessions
+            .load(&fixture.session_id)
+            .unwrap()
+            .unwrap()
+            .events
+            .iter()
+            .filter(|event| predicate(&event.kind))
+            .count()
+    }
+
+    #[tokio::test]
+    async fn pause_then_resume_repeats_no_request_and_no_tool() {
+        let fixture = Fixture::new(vec![]);
+        fixture.started();
+        let model = PausingModel::new(
+            None,
+            vec![
+                Err(failure(crate::FailureClass::LimitReached, Some(4_000_000_000_000))),
+                Ok(ModelOutput { content: String::new(), tool_calls: vec![call("call-1")] }),
+                Err(failure(crate::FailureClass::OutOfCredits, None)),
+                Ok(done()),
+            ],
+        );
+        let lease = fixture.sessions.try_acquire_native_lease(&fixture.session_id).unwrap();
+        let engine = pausing_engine(&fixture, &model);
+        let first = engine.run_until_pause(&lease, CancellationToken::new()).await.unwrap();
+        assert_eq!(first.disposition, ResumeDisposition::Paused);
+        assert!(matches!(first.replay.recovery, ReplayRecovery::ModelInFlight { step: 1, .. }));
+        let pause = first.replay.pause.clone().unwrap();
+        assert_eq!(
+            (pause.class, pause.resets_at_ms, pause.step),
+            (openide_core::TurnPauseClass::LimitReached, Some(4_000_000_000_000), 1)
+        );
+        assert!(fixture.tools.calls.lock().unwrap().is_empty());
+
+        // A restart: a new store and a new engine read the same pause.
+        drop((engine, lease));
+        let reopened = Arc::new(SessionStore::open(fixture._dir.path()).unwrap());
+        let lease = reopened.try_acquire_native_lease(&fixture.session_id).unwrap();
+        let engine = pausing_engine(&fixture, &model);
+        assert_eq!(engine.inspect(&lease).unwrap().pause, Some(pause));
+
+        // Resume reuses the request of step 1, runs the tool once and pauses
+        // again at the next boundary, where the tool already has its result.
+        let second = engine.run_until_pause(&lease, CancellationToken::new()).await.unwrap();
+        assert_eq!(second.disposition, ResumeDisposition::Paused);
+        assert!(matches!(second.replay.recovery, ReplayRecovery::ModelInFlight { step: 2, .. }));
+        let pause = second.replay.pause.clone().unwrap();
+        assert_eq!(
+            (pause.class, pause.step, pause.pauses_in_turn),
+            (openide_core::TurnPauseClass::OutOfCredits, 2, 2)
+        );
+        assert_eq!(fixture.tools.calls.lock().unwrap().len(), 1);
+        assert_eq!(count(&fixture, |kind| matches!(kind, AgentEventKind::ToolFinished { .. })), 1);
+
+        let third = engine.run_until_pause(&lease, CancellationToken::new()).await.unwrap();
+        assert_eq!(third.disposition, ResumeDisposition::Complete);
+        assert!(third.replay.pause.is_none());
+        assert_eq!(model.calls.load(Ordering::SeqCst), 4);
+        assert_eq!(fixture.tools.calls.lock().unwrap().len(), 1, "the tool never ran twice");
+        assert_eq!(count(&fixture, |kind| matches!(kind, AgentEventKind::ModelRequestStarted { .. })), 2);
+        assert_eq!(count(&fixture, |kind| matches!(kind, AgentEventKind::ToolStarted { .. })), 1);
+        assert_eq!(count(&fixture, |kind| matches!(kind, AgentEventKind::TurnPaused { .. })), 2);
+        assert_eq!(count(&fixture, |kind| matches!(kind, AgentEventKind::TurnFailed { .. })), 0);
+        assert_eq!(count(&fixture, |kind| matches!(kind, AgentEventKind::TurnCompleted { .. })), 1);
+    }
+
+    #[tokio::test]
+    async fn one_refusal_pauses_every_agent_sharing_the_limit_without_sending() {
+        let key = "resume-test-shared-limit";
+        let first = Fixture::new(vec![]);
+        first.started();
+        let hit = PausingModel::new(
+            Some(key),
+            vec![Err(failure(crate::FailureClass::LimitReached, Some(4_000_000_000_000)))],
+        );
+        let lease = first.sessions.try_acquire_native_lease(&first.session_id).unwrap();
+        let step = pausing_engine(&first, &hit)
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(step.disposition, ResumeDisposition::Paused);
+
+        // Two more nodes of the tree: one in flight, one before its request.
+        let in_flight = Fixture::new(vec![]);
+        in_flight.started();
+        let ready = Fixture::new(vec![]);
+        ready.started_with_model_route(false);
+        for other in [&in_flight, &ready] {
+            let model = PausingModel::new(Some(key), vec![Ok(done())]);
+            let lease = other.sessions.try_acquire_native_lease(&other.session_id).unwrap();
+            let engine = pausing_engine(other, &model);
+            let requests = count(other, |kind| matches!(kind, AgentEventKind::ModelRequestStarted { .. }));
+            let step = engine.run_until_pause(&lease, CancellationToken::new()).await.unwrap();
+            assert_eq!(step.disposition, ResumeDisposition::Paused);
+            assert_eq!(model.calls.load(Ordering::SeqCst), 0, "nothing was sent");
+            let pause = step.replay.pause.clone().unwrap();
+            assert_eq!(
+                (pause.class, pause.limit_key.as_str(), pause.resets_at_ms),
+                (openide_core::TurnPauseClass::LimitReached, key, Some(4_000_000_000_000))
+            );
+            assert_eq!(count(other, |kind| matches!(kind, AgentEventKind::ModelRequestStarted { .. })), requests);
+            // Continuing by hand opens the gate for this limit.
+            crate::limit_gate_clear(key);
+            let step = engine.run_until_pause(&lease, CancellationToken::new()).await.unwrap();
+            assert_eq!(step.disposition, ResumeDisposition::Complete);
+            assert_eq!(model.calls.load(Ordering::SeqCst), 1);
+            assert_eq!(count(other, |kind| matches!(kind, AgentEventKind::ModelRequestStarted { .. })), 1);
+            crate::limit_gate_block(
+                key,
+                crate::LimitBlock {
+                    class: openide_core::TurnPauseClass::LimitReached,
+                    resets_at_ms: Some(4_000_000_000_000),
+                    detail: "HTTP 429: fixture".into(),
+                },
+            );
+        }
+        crate::limit_gate_clear(key);
+    }
+
+    #[tokio::test]
+    async fn fatal_failures_still_fail_and_only_a_paused_turn_can_be_cancelled_in_place() {
+        let fixture = Fixture::new(vec![]);
+        fixture.started();
+        let lease = fixture.sessions.try_acquire_native_lease(&fixture.session_id).unwrap();
+        assert!(matches!(
+            crate::cancel_paused_turn(&fixture.sessions, &fixture.checkpoints, &lease),
+            Err(ResumeError::StaleResolution)
+        ));
+        for class in [crate::FailureClass::Fatal, crate::FailureClass::ContextTooLarge] {
+            let model = PausingModel::new(None, vec![Err(failure(class, None))]);
+            let error = pausing_engine(&fixture, &model)
+                .run_until_pause(&lease, CancellationToken::new())
+                .await
+                .unwrap_err();
+            assert!(matches!(error, ResumeError::Agent(AgentError::Provider(failure)) if failure.class == class));
+        }
+        assert_eq!(count(&fixture, |kind| matches!(kind, AgentEventKind::TurnPaused { .. })), 0);
+        let model = PausingModel::new(None, vec![Err(failure(crate::FailureClass::Auth, None))]);
+        let step = pausing_engine(&fixture, &model)
+            .run_until_pause(&lease, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(step.disposition, ResumeDisposition::Paused);
+        crate::cancel_paused_turn(&fixture.sessions, &fixture.checkpoints, &lease).unwrap();
+        let replay = pausing_engine(&fixture, &model).inspect(&lease).unwrap();
+        assert!(replay.pause.is_none() && replay.can_start_new_turn);
+        assert_eq!(replay.recovery, ReplayRecovery::Idle);
     }
 
     fn done() -> ModelOutput {

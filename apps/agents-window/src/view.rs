@@ -533,6 +533,8 @@ pub struct ViewState {
     pub pending_archive_session_id: Option<String>,
     pub pending_delete_session_id: Option<String>,
     pub transcript: Vec<TranscriptItem>,
+    /// Provider retries, limit pauses and the clock their countdowns read.
+    pub(crate) pause: crate::pause::PauseView,
     /// Durations of the transcript's reasoning rows and tool calls.
     pub item_times: crate::transcript::ItemTimes,
     pub running: bool,
@@ -909,6 +911,8 @@ struct SessionRowContext {
     group_menu_id: Option<String>,
     session_plans: BTreeMap<String, SessionPlanView>,
     session_recovery: BTreeMap<String, SessionRecoveryView>,
+    /// `en pausa · 03:10` for the sessions paused on a provider limit.
+    pause_labels: BTreeMap<String, String>,
 }
 
 impl From<&ViewState> for SessionRowContext {
@@ -921,6 +925,12 @@ impl From<&ViewState> for SessionRowContext {
             group_menu_id: state.group_menu_id.clone(),
             session_plans: state.session_plans.clone(),
             session_recovery: state.session_recovery.clone(),
+            pause_labels: state
+                .pause
+                .sessions
+                .keys()
+                .filter_map(|id| Some((id.clone(), state.pause.row_label(id)?)))
+                .collect(),
         }
     }
 }
@@ -958,6 +968,17 @@ fn session_row_with_context(
     .hover_with(format!("session_menu:{}", session.id))
     .filled()
     .sizing(crate::ui_sizing::SIDEBAR_TASK);
+    if let Some(label) = state.pause_labels.get(&session.id) {
+        // As tall as the row, so the smaller text sits on the title's line.
+        row = row.meta_element(
+            Element::text(label)
+                .font_family(openide_ui::FontFamily::Sans)
+                .font_size(11.0)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .centered()
+                .size(None, crate::ui_sizing::SIDEBAR_TASK.height),
+        );
+    }
     if selected || session.unread {
         row = row.title_ink(theme::BRAND);
     }
@@ -976,7 +997,10 @@ fn session_row_parts(
     let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str());
     let menu_width = row_width.max(246.0);
     let recovery = state.session_recovery.get(&session.id);
-    let status_marker = if recovery.is_some() {
+    let status_marker = if state.pause_labels.contains_key(&session.id) {
+        // Waiting on a clock, not asking for a recovery.
+        Element::icon(Icon::Clock).foreground(theme::FOREGROUND_SUBTLE)
+    } else if recovery.is_some() {
         Element::icon(Icon::Refresh).foreground(theme::BRAND)
     } else if session.unread {
         Element::spacer()
@@ -3919,6 +3943,7 @@ pub(crate) mod tests {
             pending_archive_session_id: None,
             pending_delete_session_id: None,
             transcript: Vec::new(),
+            pause: Default::default(),
             item_times: Default::default(),
             running: false,
             background_run_selected: false,

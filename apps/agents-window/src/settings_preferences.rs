@@ -118,6 +118,8 @@ pub(crate) struct SettingsPreferences {
     pub keymap_profile: KeymapProfile,
     /// Modal editing is independent from the workbench shortcut preset.
     pub vim_mode: bool,
+    /// Continue a turn paused on a provider limit when the limit renews.
+    pub auto_resume_on_limit: bool,
     pub terminal_shell: TerminalShell,
     pub reopen_last_workspace: bool,
     pub last_workspace: Option<PathBuf>,
@@ -145,6 +147,7 @@ impl Default for SettingsPreferences {
             }),
             keymap_profile: KeymapProfile::default(),
             vim_mode: false,
+            auto_resume_on_limit: true,
             terminal_shell: TerminalShell::System,
             reopen_last_workspace: false,
             last_workspace: None,
@@ -200,6 +203,12 @@ impl SettingsPreferences {
             if !matches!(&shell, TerminalShell::Custom(path) if !valid_custom_path_syntax(path)) {
                 preferences.terminal_shell = shell;
             }
+        }
+        if let Some(enabled) = value
+            .get("auto_resume_on_limit")
+            .and_then(serde_json::Value::as_bool)
+        {
+            preferences.auto_resume_on_limit = enabled;
         }
         if let Some(reopen) = value
             .get("reopen_last_workspace")
@@ -321,6 +330,7 @@ impl SettingsPreferences {
             "reduced_motion": self.reduced_motion,
             "keymap_profile": self.keymap_profile.id(),
             "vim_mode": self.vim_mode,
+            "auto_resume_on_limit": self.auto_resume_on_limit,
             "terminal_shell": self.terminal_shell,
             "reopen_last_workspace": self.reopen_last_workspace,
             "last_workspace": workspace_text,

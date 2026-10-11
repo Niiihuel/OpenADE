@@ -11,6 +11,7 @@ mod debug_ui;
 mod app;
 mod approval_ui;
 mod notifications;
+mod pause;
 mod notifications_ui;
 mod tour;
 mod tour_ui;

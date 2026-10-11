@@ -959,3 +959,57 @@ async fn signed_history_cannot_cross_endpoints_with_the_same_model_id() {
         .request_body(&missing_identity, &[], false, false)
         .is_err());
 }
+
+#[tokio::test]
+async fn provider_failures_are_classified_and_only_overload_is_repeated() {
+    use crate::{AgentError, FailureClass};
+    let error = |status: u16, kind: &str, text: &str| {
+        let mut reply = Reply::json(json!({"type":"error","error":{"type":kind,"message":text}}));
+        reply.status = status;
+        reply
+    };
+    // 529 over HTTP, then `overloaded_error` as the stream's first event.
+    let server = Server::new(vec![
+        error(529, "overloaded_error", "Overloaded"),
+        Reply::sse(vec![event(json!({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}))]),
+        Reply::sse(text_stream("visible", true)),
+    ]);
+    let (sender, _receiver) = mpsc::unbounded_channel();
+    assert_eq!(
+        backend(&server.endpoint)
+            .stream_complete(&[AgentMessage::user("test")], &[], CancellationToken::new(), sender)
+            .await
+            .unwrap()
+            .content,
+        "visible"
+    );
+    assert_eq!(server.requests().len(), 3);
+    for (status, kind, text, class) in [
+        (400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API.", FailureClass::OutOfCredits),
+        (402, "billing_error", "billing", FailureClass::OutOfCredits),
+        (401, "authentication_error", "invalid x-api-key", FailureClass::Auth),
+        (400, "invalid_request_error", "prompt is too long: 208310 tokens > 200000 maximum", FailureClass::ContextTooLarge),
+        (413, "request_too_large", "too large", FailureClass::ContextTooLarge),
+        (400, "invalid_request_error", "tools.0: bad schema", FailureClass::Fatal),
+    ] {
+        let server = Server::new(vec![error(status, kind, text)]);
+        let failed = backend(&server.endpoint)
+            .complete(&[AgentMessage::user("test")], &[], CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(&failed, AgentError::Provider(failure) if failure.class == class), "{status} {kind}: {failed:?}");
+        assert_eq!(server.requests().len(), 1);
+    }
+    // An overload after visible text is kept as a transient failure, not sent again.
+    let mut frames = text_stream("partial", false);
+    frames.push(event(json!({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}})));
+    let server = Server::new(vec![Reply::sse(frames)]);
+    let (sender, mut receiver) = mpsc::unbounded_channel();
+    let failed = backend(&server.endpoint)
+        .stream_complete(&[AgentMessage::user("test")], &[], CancellationToken::new(), sender)
+        .await
+        .unwrap_err();
+    assert!(matches!(failed, AgentError::Provider(failure) if failure.class == FailureClass::Transient));
+    assert_eq!(receiver.try_recv().unwrap(), "partial");
+    assert_eq!(server.requests().len(), 1);
+}

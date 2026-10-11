@@ -70,6 +70,9 @@ pub(crate) fn conversation_notice_message(message: &str, is_error: bool) -> &str
 mod marker_tests;
 
 #[cfg(test)]
+#[path = "pause_visual_tests.rs"]
+mod pause_visual_tests;
+#[cfg(test)]
 #[path = "conversation_stream_visual_tests.rs"]
 mod stream_visual_tests;
 
@@ -2482,7 +2485,18 @@ fn timeline(state: &ViewState, width: f32) -> Element {
                 .recoverable_subagent
                 .as_ref()
                 .is_some_and(|child| child.child_session_id == session_id);
-            if !child_card_already_visible {
+            if let Some(pause) = state.pause.sessions.get(session_id) {
+                // Paused for a known cause: the pause card, also for a child.
+                let working = state
+                    .subagent_sessions
+                    .iter()
+                    .filter(|run| {
+                        run.parent_session_id == session_id
+                            && run.status == openide_harness::SubagentStatus::Running
+                    })
+                    .count();
+                rows.push(state.pause.card(session_id, pause, working, width < COMPACT_BREAKPOINT));
+            } else if !child_card_already_visible {
                 rows.push(native_recovery_card(session_id, recovery));
             }
         }
@@ -2583,7 +2597,11 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         Element::column(vec![
             Element::spacer().size(None, Some(TRANSCRIPT_GAP)),
             stream_line(
-                vec![stream_shimmer(format!("reply-stream:{session}"), WAITING_LABEL, false)],
+                vec![stream_shimmer(
+                    format!("reply-stream:{session}"),
+                    state.pause.retry_label().as_deref().unwrap_or(WAITING_LABEL),
+                    false,
+                )],
                 None,
                 None,
             ),
@@ -2905,11 +2923,20 @@ fn persisted_subagent_card(
     live: bool,
     show_inputs: bool,
     edit: Option<&crate::view::SubagentInputEditView>,
+    paused: Option<&crate::pause::PausedTurn>,
 ) -> Element {
-    let status = subagent_status_label(run.status);
+    // Paused on a limit is its own state, never "interrupted" or "failed".
+    // Its actions are offered once, on the root's pause card.
+    let status = match paused {
+        Some(pause) => match pause.resets_at_ms {
+            Some(at) => format!("En pausa · {}", crate::pause::clock_label(at)),
+            None => "En pausa".to_owned(),
+        },
+        None => subagent_status_label(run.status).to_owned(),
+    };
     let (target, label) = if selected == run.child_session_id {
         (&run.parent_session_id, "Abrir sesión padre")
-    } else if run.status == openide_harness::SubagentStatus::Interrupted {
+    } else if run.status == openide_harness::SubagentStatus::Interrupted && paused.is_none() {
         (&run.child_session_id, "Abrir recuperación")
     } else {
         (&run.child_session_id, "Abrir subagente")
@@ -3157,6 +3184,8 @@ fn related_subagent_rows(state: &ViewState, compact: bool) -> Vec<Element> {
         .recoverable_subagent
         .as_ref()
         .filter(|run| selected == run.child_session_id)
+        // A paused child shows the pause card instead.
+        .filter(|run| !state.pause.sessions.contains_key(&run.child_session_id))
     {
         cards.push(recoverable_subagent_card(run));
     }
@@ -3173,6 +3202,7 @@ fn related_subagent_rows(state: &ViewState, compact: bool) -> Vec<Element> {
                     state.expanded_subagent_inputs.as_deref()
                         == Some(run.child_session_id.as_str()),
                     state.subagent_input_edit.as_ref(),
+                    state.pause.sessions.get(&run.child_session_id),
                 )
             }),
     );
@@ -4003,6 +4033,7 @@ mod tests {
     pub(super) fn state() -> ViewState {
         ViewState {
             tour: Default::default(),
+            pause: Default::default(),
             keymap_profile: crate::keymap::KeymapProfile::default(),
             vim_mode: false,
             settings_keymap_menu_open: false,
@@ -5969,6 +6000,7 @@ mod tests {
                         state.expanded_subagent_inputs.as_deref()
                             == Some(run.child_session_id.as_str()),
                         state.subagent_input_edit.as_ref(),
+                        None,
                     )
                 }),
         );
@@ -6350,6 +6382,7 @@ mod tests {
                     selected,
                     false,
                     true,
+                    None,
                     None,
                 ));
                 let start = std::time::Instant::now();

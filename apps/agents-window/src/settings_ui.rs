@@ -745,6 +745,17 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 page_note("Plan y Build", "Plan usa herramientas de lectura. Build permite cambios según estos permisos; activar un permiso no ejecuta ninguna herramienta.", Icon::Chat),
             ],
         ),
+        settings_parts::settings_group(
+            "Límites del proveedor",
+            vec![settings_parts::switch_row(
+                "settings_auto_resume_toggle",
+                "Continuar automáticamente cuando se renueve el límite",
+                "Un turno en pausa por un límite de uso retoma solo a la hora que informa el proveedor, sin reenviar tu mensaje. Nunca continúa solo si falta crédito, hay que reconectar la cuenta o faltan más de 24 horas.",
+                state.pause.auto_enabled,
+                true,
+                compact,
+            )],
+        ),
         settings_parts::settings_group("Ejecución de comandos", isolation_rows),
         external_agents::review_model_group(state, compact),
         settings_parts::settings_group(

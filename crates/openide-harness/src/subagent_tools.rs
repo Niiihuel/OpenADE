@@ -574,6 +574,26 @@ impl SubagentToolExecutor {
     fn observed_child(&self, child: crate::SubagentRecord) -> Result<ToolOutput, AgentError> {
         let id = child.session.id;
         if child.status == SubagentStatus::Interrupted {
+            // A child paused on a provider limit is a normal result: the
+            // parent pauses at its next model boundary and waits again later.
+            let paused = self
+                .sessions
+                .load(&id)
+                .map_err(|error| AgentError::Runtime(error.to_string()))?
+                .and_then(|stored| match stored.events.last().map(|event| &event.kind) {
+                    Some(AgentEventKind::TurnPaused {
+                        class,
+                        resets_at_ms,
+                        ..
+                    }) => Some((*class, *resets_at_ms)),
+                    _ => None,
+                });
+            if let Some((class, resets_at_ms)) = paused {
+                return Ok(ToolOutput::success(
+                    json!({"agent_id":id,"status":"paused","reason":class,"resets_at":resets_at_ms})
+                        .to_string(),
+                ));
+            }
             return Ok(ToolOutput::success(
                 json!({"agent_id":id,"status":child.status,"needs_recovery":true}).to_string(),
             ));
@@ -954,6 +974,14 @@ mod tests {
                     .unwrap()
                     .push(tools.iter().map(|tool| tool.name.clone()).collect());
             }
+            if messages.iter().any(|message| message.content.contains("hit the provider limit")) {
+                let mut failure = crate::ProviderFailure::new(
+                    crate::FailureClass::LimitReached,
+                    "HTTP 429: usage_limit_reached",
+                );
+                failure.resets_at_ms = Some(4_000_000_000_000);
+                return Err(AgentError::Provider(failure));
+            }
             let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
             self.maximum_active.fetch_max(active, Ordering::SeqCst);
             let result = tokio::select! {
@@ -1218,6 +1246,50 @@ mod tests {
         drop(fixture.parent_lease);
         let other = SessionStore::open(fixture._root.path().join("sessions")).unwrap();
         other.try_acquire_native_lease(&fixture.parent.id).unwrap();
+    }
+
+    #[tokio::test]
+    async fn waiting_for_a_child_paused_on_a_limit_is_a_normal_result_that_can_be_read_again() {
+        let fixture = fixture(2, Duration::from_millis(10));
+        let context = context(&fixture.workspace);
+        let spawned = json_output(
+            fixture
+                .tools
+                .execute(
+                    &call("call-limit", "spawn_agent", json!({"prompt":"hit the provider limit"})),
+                    &context,
+                )
+                .await
+                .unwrap(),
+        );
+        let agent_id = spawned["agent_id"].as_str().unwrap();
+        let wait = call("wait", "wait_agent", json!({"agent_id":agent_id,"timeout_ms":3000}));
+        let mut results = Vec::new();
+        for _ in 0..2 {
+            let output = fixture.tools.execute(&wait, &context).await.unwrap();
+            assert!(!output.is_error);
+            results.push(json_output(output));
+        }
+        // A pure read: the second wait returns the same and asks no model.
+        assert_eq!(results[0], results[1]);
+        assert_eq!(
+            results[0],
+            json!({"agent_id":agent_id,"status":"paused","reason":"limit_reached","resets_at":4_000_000_000_000u64})
+        );
+        assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 1);
+        // The parent's runner reads that committed result as its cue to pause.
+        let mut assistant = AgentMessage::assistant("", vec![wait.clone()]);
+        assistant.tool_calls[0].id = "wait".into();
+        let history = [
+            assistant,
+            AgentMessage::tool("wait".to_owned(), results[0].to_string()),
+        ];
+        assert_eq!(
+            paused_child_in_last_batch(&history).map(|(_, resets_at)| resets_at),
+            Some(Some(4_000_000_000_000))
+        );
+        assert!(paused_child_in_last_batch(&history[..1]).is_none());
+        fixture.tools.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -1634,4 +1706,35 @@ mod tests {
         assert_eq!(second["status"], "completed");
         assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 2);
     }
+}
+
+/// The paused child reported by a `wait_agent` result of the last tool batch:
+/// its reason and reset time. The committed result is the durable signal.
+pub(crate) fn paused_child_in_last_batch(
+    messages: &[openide_core::AgentMessage],
+) -> Option<(String, Option<u64>)> {
+    let results = messages
+        .iter()
+        .rev()
+        .take_while(|message| message.role == openide_core::MessageRole::Tool)
+        .collect::<Vec<_>>();
+    let calls = &messages.get(messages.len().checked_sub(results.len() + 1)?)?.tool_calls;
+    results.into_iter().find_map(|result| {
+        let call = calls
+            .iter()
+            .find(|call| Some(&call.id) == result.tool_call_id.as_ref())?;
+        let output: serde_json::Value = (call.name == "wait_agent")
+            .then(|| serde_json::from_str(&result.content).ok())
+            .flatten()?;
+        (output["status"] == "paused").then(|| {
+            (
+                format!(
+                    "subagent {} is paused: {}",
+                    output["agent_id"].as_str().unwrap_or_default(),
+                    output["reason"].as_str().unwrap_or_default()
+                ),
+                output["resets_at"].as_u64(),
+            )
+        })
+    })
 }

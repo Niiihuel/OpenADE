@@ -27,7 +27,7 @@ pub use checkpoint::{
 };
 pub use event::{
     system_instructions_digest, AgentEvent, AgentEventKind, ModelStreamEvent, ModelTokenUsage,
-    OutputStream, PermissionResolution, EXEC_POLICY_IDENTITY_VERSION, HOOK_CONFIG_IDENTITY_VERSION,
+    OutputStream, PermissionResolution, TurnPauseClass, EXEC_POLICY_IDENTITY_VERSION, HOOK_CONFIG_IDENTITY_VERSION,
     MAX_SYSTEM_INSTRUCTIONS_BYTES, MCP_RUNTIME_IDENTITY_VERSION, MODEL_CONTEXT_VERSION,
     SYSTEM_INSTRUCTIONS_VERSION,
 };

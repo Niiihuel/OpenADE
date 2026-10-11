@@ -142,6 +142,9 @@ mod native_settings_choice_app_tests;
 #[path = "native_streaming_app_tests.rs"]
 mod native_streaming_app_tests;
 #[cfg(test)]
+#[path = "pause_app_tests.rs"]
+mod pause_app_tests;
+#[cfg(test)]
 #[path = "message_edit_app_tests.rs"]
 mod message_edit_app_tests;
 #[cfg(test)]
@@ -1211,6 +1214,8 @@ pub struct AgentsWindow {
     active_compact: Option<ActiveCompact>,
     active_resume: Option<ResumeWorkerHandle>,
     active_child_recovery: Option<SubagentRecoveryHandle>,
+    /// Paused sessions still to continue, leaves first. One runs at a time.
+    pause_resume_queue: std::collections::VecDeque<String>,
     pending_child_recovery_permission: Option<SubagentPermissionView>,
     active_mcp_oauth: Option<McpOAuthController>,
     active_mcp_inspection: Option<crate::mcp_inspection::McpInspectionController>,
@@ -2686,19 +2691,38 @@ fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
 fn native_session_views(
     data_root: &Path,
     stored: &StoredSession,
-) -> (Option<SessionRecoveryView>, Option<SessionPlanView>) {
+) -> (
+    Option<SessionRecoveryView>,
+    Option<SessionPlanView>,
+    Option<crate::pause::PausedTurn>,
+) {
+    let (recovery, plan, pause) = native_session_views_inner(data_root, stored);
+    // A pause is a mark on a turn that can simply be resumed, nothing else.
+    let pause = pause.filter(|_| recovery == Some(SessionRecoveryView::Resume));
+    (recovery, plan, pause)
+}
+
+fn native_session_views_inner(
+    data_root: &Path,
+    stored: &StoredSession,
+) -> (
+    Option<SessionRecoveryView>,
+    Option<SessionPlanView>,
+    Option<crate::pause::PausedTurn>,
+) {
     if stored.session.backend != "native" {
-        return (None, None);
+        return (None, None, None);
     }
     let automation = match crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
         &stored.session,
     ) {
         Ok(automation) => automation,
-        Err(error) => return (Some(SessionRecoveryView::InvalidJournal(error)), None),
+        Err(error) => return (Some(SessionRecoveryView::InvalidJournal(error)), None, None),
     };
     if stored.events.is_empty() {
         return (
             automation.map(|_| SessionRecoveryView::StartAutomation),
+            None,
             None,
         );
     }
@@ -2738,16 +2762,18 @@ fn native_session_views(
                             )
                     })
             });
+            let pause = crate::pause::PausedTurn::from_replay(&replay, &stored.session);
             let plan = replay.latest_plan.map(|snapshot| SessionPlanView {
                 snapshot,
                 can_build,
             });
-            (recovery, plan)
+            (recovery, plan, pause)
         }
         Err(error) => (
             Some(SessionRecoveryView::InvalidJournal(
                 error.chars().take(160).collect(),
             )),
+            None,
             None,
         ),
     }
@@ -3551,6 +3577,124 @@ impl AgentsWindow {
         });
     }
 
+    /// The actions of a pause card. Each names its session.
+    fn apply_pause_action(&mut self, id: &str, ctx: &egui::Context) {
+        let Some((action, session_id)) = id.split_once(':') else {
+            return;
+        };
+        let Some(pause) = self.view.pause.sessions.get(session_id).cloned() else {
+            self.view.status = "El turno ya no está en pausa".to_owned();
+            return;
+        };
+        match action {
+            "pause_continue" => {
+                // A person decided not to wait: let this limit's requests
+                // through, then continue the tree leaves first.
+                let order = crate::pause::resume_order(&self.view.pause.sessions, session_id);
+                for id in &order {
+                    if let Some(paused) = self.view.pause.sessions.get(id) {
+                        openide_harness::limit_gate_clear(&paused.limit_key);
+                    }
+                }
+                self.open_session(session_id);
+                if self.view.selected_session.as_deref() == Some(session_id) {
+                    self.pause_resume_queue = order.into();
+                }
+            }
+            "pause_cancel" => self.cancel_paused_tree(session_id),
+            "pause_account" => {
+                if let Some(url) = pause.account_url() {
+                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
+            "pause_reconnect" => {
+                // The provider's connection lives in Settings.
+                self.view.show_settings = true;
+                self.apply_action(
+                    UiAction::Clicked { id: "settings_page:providers".into() },
+                    ctx,
+                );
+            }
+            "pause_detail" => {
+                let open = self.view.pause.detail_open.as_deref() == Some(session_id);
+                self.view.pause.detail_open = (!open).then(|| session_id.to_owned());
+            }
+            "pause_model" => {
+                // Switching the model of an open turn is refused by resume
+                // (its route must match): open the picker and say so.
+                self.view.pause.model_note = Some(session_id.to_owned());
+                self.view.composer_model_menu_open = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// Cancel a paused turn and every paused descendant. Each is at a model
+    /// boundary, so the terminal event is the whole effect.
+    fn cancel_paused_tree(&mut self, session_id: &str) {
+        if self.view.running || self.active_run.is_some() || self.active_resume.is_some() {
+            self.view.status = "Espera a que termine la operación activa".to_owned();
+            return;
+        }
+        let result = (|| -> Result<Vec<String>, String> {
+            let store = self.store.clone().ok_or("El historial no está disponible")?;
+            let checkpoints = CheckpointFileStore::new(self.data_root.join("sessions"))
+                .map_err(|error| format!("No se pudo abrir checkpoints: {error}"))?;
+            let coordinator = SubagentCoordinator::new(store.clone(), SubagentLimits::default())
+                .map_err(|error| error.to_string())?;
+            let lease = store
+                .try_acquire_native_lease(session_id)
+                .map_err(|error| format!("La sesión está en uso: {error}"))?;
+            let mut affected = Vec::new();
+            let order = crate::pause::resume_order(&self.view.pause.sessions, session_id);
+            // The registry first: a direct child's cancellation reaches its
+            // own descendants.
+            for child in order.iter().filter(|id| {
+                self.view.pause.sessions.get(*id).and_then(|pause| pause.parent.as_deref())
+                    == Some(session_id)
+            }) {
+                let (_, cancelled) = coordinator
+                    .request_cancel_from_ui_with_affected(&lease, child)
+                    .map_err(|error| error.to_string())?;
+                affected.extend(cancelled);
+            }
+            // Then each journal, leaves first: the open turn gets its terminal
+            // event, so no cancelled agent is left reading as paused.
+            for id in &order {
+                if id == session_id {
+                    openide_harness::cancel_paused_turn(&store, &checkpoints, &lease)
+                } else {
+                    let child_lease = store
+                        .try_acquire_native_lease(id)
+                        .map_err(|error| format!("El subagente está en uso: {error}"))?;
+                    openide_harness::cancel_paused_turn(&store, &checkpoints, &child_lease)
+                }
+                .map_err(|error| error.to_string())?;
+            }
+            Ok(affected)
+        })();
+        match result {
+            Ok(affected) => {
+                for owner in affected {
+                    self.native_command_sessions.revoke_session(&owner);
+                }
+                if self.view.selected_session.as_deref() == Some(session_id) {
+                    if let Some(Ok(Some(stored))) =
+                        self.store.as_ref().map(|store| store.load(session_id))
+                    {
+                        self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
+                        self.projection = TranscriptProjection::from_events(&stored.events);
+                        self.publish_transcript();
+                    }
+                    self.rebuild_history();
+                }
+                self.view.status = "Turno cancelado".to_owned();
+            }
+            Err(error) => self.view.status = format!("No se pudo cancelar la pausa: {error}"),
+        }
+        self.refresh_sessions();
+    }
+
     fn cancel_subagent(&mut self, child_id: &str) {
         // A stale or forged UI action must not cancel an unrelated lineage.
         let Some(child) = self
@@ -3589,7 +3733,10 @@ impl AgentsWindow {
                 return;
             }
         }
-        if child.status == SubagentStatus::Interrupted {
+        // A child paused on a limit stopped at a clean boundary and can go.
+        if child.status == SubagentStatus::Interrupted
+            && !self.view.pause.sessions.contains_key(child_id)
+        {
             self.view.status =
                 "Revisá la recuperación del subagente interrumpido antes de cancelarlo".into();
             return;
@@ -5995,6 +6142,10 @@ impl AgentsWindow {
             file_delete: None,
             file_clipboard: None,
             transcript: Vec::new(),
+            pause: crate::pause::PauseView {
+                auto_enabled: settings_preferences.auto_resume_on_limit,
+                ..Default::default()
+            },
             item_times: Default::default(),
             running: false,
             background_run_selected: false,
@@ -6257,6 +6408,7 @@ impl AgentsWindow {
             active_compact: None,
             active_resume: None,
             active_child_recovery: None,
+            pause_resume_queue: Default::default(),
             pending_child_recovery_permission: None,
             active_mcp_oauth: None,
             active_mcp_inspection: None,
@@ -7400,8 +7552,10 @@ impl AgentsWindow {
                     });
                     let mut recoveries = BTreeMap::new();
                     let mut plans = BTreeMap::new();
+                    let mut pauses = BTreeMap::new();
                     for record in &listing.sessions {
-                        let (recovery, plan) = native_session_views(&self.data_root, record);
+                        let (recovery, plan, pause) =
+                            native_session_views(&self.data_root, record);
                         if let Some(recovery) = recovery {
                             let selected_running = self.view.running
                                 && self.view.selected_session.as_deref()
@@ -7414,6 +7568,9 @@ impl AgentsWindow {
                                 && live_children.contains(&record.session.id);
                             if !selected_running && !background_running && !child_running {
                                 recoveries.insert(record.session.id.clone(), recovery);
+                                if let Some(pause) = pause {
+                                    pauses.insert(record.session.id.clone(), pause);
+                                }
                             }
                         }
                         if let Some(plan) = plan {
@@ -7421,6 +7578,10 @@ impl AgentsWindow {
                         }
                     }
                     self.view.session_recovery = recoveries;
+                    self.view.pause.sessions = pauses;
+                    if self.view.pause.counting() {
+                        self.view.pause.clock_ms = crate::pause::wall_clock_ms();
+                    }
                     self.view.session_plans = plans;
                     if listing.diagnostics.is_empty() {
                         let previous = self.view.session_groups.clone();
@@ -8214,6 +8375,125 @@ impl AgentsWindow {
     }
 
     /// The check on a copy button leaves by itself.
+    /// Countdowns show whole seconds: repaint when the second changes. The
+    /// same tick arms the automatic continuation and drives the queue of
+    /// paused sessions being continued.
+    fn follow_pause_clock(&mut self, ctx: &egui::Context) -> bool {
+        let mut changed = self.drive_pause_queue();
+        if self.view.pause.counting() {
+            let now_ms = crate::pause::wall_clock_ms();
+            ctx.request_repaint_after(Duration::from_millis(1000 - now_ms % 1000));
+            changed |= now_ms / 1000 != self.view.pause.clock_ms / 1000;
+            self.view.pause.clock_ms = now_ms;
+            changed |= self.arm_auto_resume();
+        }
+        let line = self
+            .view
+            .pause
+            .composer_line(self.view.selected_session.as_deref());
+        changed |= std::mem::replace(&mut self.view.pause.composer, line.clone()) != line;
+        changed
+    }
+
+    fn pause_idle(&self) -> bool {
+        !self.view.running
+            && self.active_run.is_none()
+            && self.active_resume.is_none()
+            && self.active_child_recovery.is_none()
+            && self.active_compact.is_none()
+    }
+
+    /// The selected session's limit renewed: continue its paused tree. Only
+    /// the selected session, because a resume uses the composer's route.
+    fn arm_auto_resume(&mut self) -> bool {
+        if !self.pause_idle() || !self.pause_resume_queue.is_empty() {
+            return false;
+        }
+        let Some(session_id) = self.view.selected_session.clone() else {
+            return false;
+        };
+        let Some(pause) = self.view.pause.sessions.get(&session_id) else {
+            return false;
+        };
+        let crate::pause::AutoResume::At(due) = self.view.pause.plan(&session_id, pause) else {
+            return false;
+        };
+        if self.view.pause.clock_ms < due {
+            return false;
+        }
+        let paused_at_ms = pause.paused_at_ms;
+        self.view
+            .pause
+            .auto_attempted
+            .insert(session_id.clone(), paused_at_ms);
+        // The timer never opens the gate: a limit that has not renewed for
+        // the provider pauses the turn again, and re-arms are capped.
+        self.notify_session(
+            crate::notifications::Event::TurnCompleted,
+            "Límite renovado: el turno continúa",
+            &session_id,
+        );
+        self.pause_resume_queue =
+            crate::pause::resume_order(&self.view.pause.sessions, &session_id).into();
+        true
+    }
+
+    /// Continue the next queued session once nothing else is running. A
+    /// session that pauses again simply leaves the queue.
+    fn drive_pause_queue(&mut self) -> bool {
+        if self.pause_resume_queue.is_empty() || !self.pause_idle() {
+            return false;
+        }
+        let Some(session_id) = self.pause_resume_queue.pop_front() else {
+            return false;
+        };
+        let Some(pause) = self.view.pause.sessions.get(&session_id).cloned() else {
+            return true;
+        };
+        if pause.parent.is_some() {
+            // A child continues in the background, whatever is selected.
+            let loaded = self
+                .store
+                .as_ref()
+                .and_then(|store| store.load(&session_id).ok().flatten())
+                .and_then(|stored| {
+                    let replay = replay_stored_native(&self.data_root, &stored).ok()?;
+                    Some((stored, replay))
+                });
+            match loaded {
+                Some((stored, replay)) => self.start_child_resume(stored, replay),
+                None => self.view.status = "No se pudo leer el subagente en pausa".to_owned(),
+            }
+        } else if self.view.selected_session.as_deref() == Some(session_id.as_str()) {
+            self.start_resume();
+        }
+        if self.pause_idle() {
+            // Nothing started: do not let one refusal spin the rest of the queue.
+            self.pause_resume_queue.clear();
+        }
+        true
+    }
+
+    /// Esc on a paused session cancels its automatic continuation, never
+    /// the turn: the pause stays and continues only by hand.
+    fn cancel_auto_resume(&mut self) -> bool {
+        let Some(session_id) = self.view.selected_session.clone() else {
+            return false;
+        };
+        let armed = self.view.pause.sessions.get(&session_id).is_some_and(|pause| {
+            matches!(
+                self.view.pause.plan(&session_id, pause),
+                crate::pause::AutoResume::At(_)
+            )
+        });
+        if armed {
+            self.view.pause.auto_cancelled.insert(session_id);
+            self.pause_resume_queue.clear();
+            self.view.status = "Reanudación automática cancelada; el turno sigue en pausa".to_owned();
+        }
+        armed
+    }
+
     fn expire_message_copy(&mut self, ctx: &egui::Context) -> bool {
         let Some(copied) = &self.view.message_actions.copied else {
             return false;
@@ -12600,6 +12880,19 @@ impl AgentsWindow {
                 self.view.status = "Turno cancelado".to_owned();
                 self.restore_pending_prompt();
             }
+            AgentEventKind::TurnPaused { .. } => {
+                // The turn stays open with its message admitted: nothing is
+                // handed back to the composer.
+                self.notify_session(
+                    crate::notifications::Event::Approval,
+                    "Turno en pausa",
+                    &event.session_id,
+                );
+                self.view.running = false;
+                self.view.status = "Turno en pausa".to_owned();
+                self.pending_prompt = None;
+                self.pending_attachments.clear();
+            }
             _ => {}
         }
         self.show_persistence_error();
@@ -12620,6 +12913,10 @@ impl AgentsWindow {
             self.view.conversation_details.migrate(&previous, &current);
         }
         self.projection.sync_into(&mut self.view.transcript);
+        self.view.pause.retry = self.projection.model_retry();
+        if self.view.pause.counting() {
+            self.view.pause.clock_ms = crate::pause::wall_clock_ms();
+        }
         self.projection.sync_times_into(&mut self.view.item_times);
         self.sync_message_edit_turns();
     }
@@ -13800,6 +14097,7 @@ impl AgentsWindow {
             Ok(ResumeDisposition::AbortedToolBatch { .. }) => {
                 "Turno abortado con herramientas pendientes; requiere resolución".to_owned()
             }
+            Ok(ResumeDisposition::Paused) => "Turno en pausa".to_owned(),
             Ok(other) => format!("Recuperación pausada: {other:?}"),
             Err(error) => format!("No se pudo recuperar el turno: {error}"),
         };
@@ -13894,6 +14192,12 @@ impl AgentsWindow {
                 ..
             }) => {
                 self.view.status = "El permiso del subagente sigue pendiente".to_owned();
+            }
+            Ok(SubagentRecoveryState::Paused {
+                reason: SubagentRecoveryPause::ProviderPaused,
+                ..
+            }) => {
+                self.view.status = "El subagente quedó en pausa".to_owned();
             }
             Err(error) => {
                 self.view.status = format!("No se pudo recuperar el subagente: {error}");
@@ -16150,6 +16454,9 @@ impl AgentsWindow {
                     self.open_session(session_id);
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("pause_") => {
+                self.apply_pause_action(&id, &ctx);
+            }
             UiAction::Clicked { id } if id.starts_with("subagent_cancel:") => {
                 self.cancel_subagent(id.trim_start_matches("subagent_cancel:"));
             }
@@ -18000,6 +18307,14 @@ impl AgentsWindow {
                     self.command_tree.set_reduced_motion(reduced);
                 }
             }
+            UiAction::Clicked { id } if id == "settings_auto_resume_toggle" => {
+                let mut next = self.settings_preferences.clone();
+                next.auto_resume_on_limit = !next.auto_resume_on_limit;
+                let enabled = next.auto_resume_on_limit;
+                if self.commit_settings_preferences(next, "Preferencia de límites guardada") {
+                    self.view.pause.auto_enabled = enabled;
+                }
+            }
             UiAction::Clicked { id } if id == "settings_reopen_last_workspace" => {
                 let mut next = self.settings_preferences.clone();
                 next.reopen_last_workspace = !next.reopen_last_workspace;
@@ -19287,6 +19602,7 @@ impl eframe::App for AgentsWindow {
         early_changed |= self.expire_settings_notice(&ctx);
         early_changed |= self.expire_reveal_flash(&ctx);
         early_changed |= self.expire_message_copy(&ctx);
+        early_changed |= self.follow_pause_clock(&ctx);
         early_changed |= self.poll_turn_check();
         // These updates are already included in the first tree below. Only
         // mutations after that hit-test layout require rebuilding it again.
@@ -19403,6 +19719,7 @@ impl eframe::App for AgentsWindow {
                     self.view.group_rename_id = None;
                     self.view.group_rename_draft.clear();
                     self.group_focus_pending = false;
+                } else if escape && self.cancel_auto_resume() {
                 } else if back_shortcut {
                     self.go_back();
                 } else if forward_shortcut {

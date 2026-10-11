@@ -94,6 +94,20 @@ pub enum ReplayRecovery {
     },
 }
 
+/// The cause recorded by the last `TurnPaused` of the open turn.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReplayPause {
+    pub class: crate::TurnPauseClass,
+    pub limit_key: String,
+    pub resets_at_ms: Option<u64>,
+    pub step: usize,
+    pub detail: String,
+    pub event_sequence: u64,
+    pub paused_at_ms: u64,
+    /// `TurnPaused` events of this turn so far, this one included.
+    pub pauses_in_turn: u32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeReplay {
     pub session_id: String,
@@ -115,6 +129,9 @@ pub struct NativeReplay {
     pub active_plan_at_turn_start: Option<PlanSnapshot>,
     pub active_turn: Option<ReplayedTurn>,
     pub recovery: ReplayRecovery,
+    /// Set while the open turn is paused for a known cause. It marks the
+    /// same recovery state as clean; it never changes that state.
+    pub pause: Option<ReplayPause>,
     pub pending_tool_batch: Option<ReplayedToolBatch>,
     pub latest_response_id: Option<String>,
     pub latest_usage: Option<ModelTokenUsage>,
@@ -174,6 +191,8 @@ struct ReplayBuilder {
     active_prompt_event_sequence: Option<u64>,
     turn_has_committed_response: bool,
     model_flight: Option<ModelFlight>,
+    pause: Option<ReplayPause>,
+    pauses_in_turn: u32,
     pending_batch: Option<ReplayedToolBatch>,
     pending_permission: Option<PendingPermission>,
     /// Consecutive synced starts in one read-only wave. Results are committed
@@ -290,6 +309,8 @@ pub fn replay_native(
         active_prompt_event_sequence: None,
         turn_has_committed_response: false,
         model_flight: None,
+        pause: None,
+        pauses_in_turn: 0,
         pending_batch: None,
         pending_permission: None,
         started_tools: VecDeque::new(),
@@ -368,6 +389,7 @@ pub fn replay_native(
         active_plan_at_turn_start: builder.active_plan_at_turn_start,
         active_turn: builder.active_turn,
         recovery,
+        pause: builder.pause,
         pending_tool_batch: builder.pending_batch,
         latest_response_id: builder.latest_response_id,
         latest_usage: builder.latest_usage,
@@ -552,6 +574,8 @@ impl ReplayBuilder {
                 self.plan_proposed_this_turn = false;
             }
             AgentEventKind::TurnStarted { prompt } => {
+                self.pause = None;
+                self.pauses_in_turn = 0;
                 if let Some(turn) = self.active_turn.as_mut() {
                     if turn.started || turn.prompt != *prompt || turn.terminated {
                         return Err(Self::conflict(event, "turn start conflicts with admission"));
@@ -844,6 +868,7 @@ impl ReplayBuilder {
                 response_id,
                 usage,
             } => {
+                self.pause = None;
                 let flight = self.model_flight.take().ok_or_else(|| {
                     Self::conflict(event, "committed response has no model request")
                 })?;
@@ -1281,6 +1306,7 @@ impl ReplayBuilder {
                 self.active_model_route = None;
             }
             AgentEventKind::TurnCompleted { response, steps } => {
+                self.pause = None;
                 let turn = self
                     .active_turn
                     .as_ref()
@@ -1316,7 +1342,46 @@ impl ReplayBuilder {
                 self.active_model_context_version = None;
                 self.active_model_route = None;
             }
+            AgentEventKind::TurnPaused {
+                class,
+                limit_key,
+                resets_at_ms,
+                step,
+                detail,
+            } => {
+                let turn = self
+                    .active_turn
+                    .as_ref()
+                    .ok_or_else(|| Self::conflict(event, "pause has no active turn"))?;
+                // Only a model boundary can pause: the request of `step` is in
+                // flight, or it is the next one and no tool is open.
+                let at_boundary = match &self.model_flight {
+                    Some(flight) => flight.step == *step,
+                    None => *step == turn.last_step.saturating_add(1),
+                };
+                if !turn.started
+                    || turn.terminated
+                    || !at_boundary
+                    || self.pending_batch.is_some()
+                    || !self.started_tools.is_empty()
+                    || self.pending_permission.is_some()
+                {
+                    return Err(Self::conflict(event, "pause is not at a model boundary"));
+                }
+                self.pauses_in_turn = self.pauses_in_turn.saturating_add(1);
+                self.pause = Some(ReplayPause {
+                    class: *class,
+                    limit_key: limit_key.clone(),
+                    resets_at_ms: *resets_at_ms,
+                    step: *step,
+                    detail: detail.clone(),
+                    event_sequence: event.sequence,
+                    paused_at_ms: event.timestamp_ms,
+                    pauses_in_turn: self.pauses_in_turn,
+                });
+            }
             AgentEventKind::TurnFailed { .. } | AgentEventKind::TurnCancelled => {
+                self.pause = None;
                 let turn = self
                     .active_turn
                     .as_mut()
@@ -2135,6 +2200,59 @@ mod tests {
             replay_native("session-1", &events, None, &compatibility()).unwrap().recovery,
             ReplayRecovery::PermissionPending { request_id, .. } if request_id == "permission-1"
         ));
+    }
+
+    #[test]
+    fn a_pause_marks_the_open_turn_without_changing_its_recovery_state() {
+        let paused = |step, class, resets_at_ms| AgentEventKind::TurnPaused {
+            class,
+            limit_key: "key".into(),
+            resets_at_ms,
+            step,
+            detail: "HTTP 429".into(),
+        };
+        let replay = |events: &[AgentEvent]| replay_native("session-1", events, None, &compatibility());
+        let mut events = vec![
+            event(1, admitted()),
+            event(2, AgentEventKind::TurnStarted { prompt: "Build this".into() }),
+        ];
+        // Blocked before the request: still ReadyForModel, now with a cause.
+        events.push(event(3, paused(1, crate::TurnPauseClass::LimitReached, Some(9_000))));
+        let state = replay(&events).unwrap();
+        assert_eq!(state.recovery, ReplayRecovery::ReadyForModel { next_step: 1 });
+        assert_eq!(state.pause.as_ref().map(|pause| (pause.step, pause.resets_at_ms, pause.pauses_in_turn)), Some((1, Some(9_000), 1)));
+        events.push(event(4, AgentEventKind::ModelRequestStarted { step: 1, model: "gpt-example".into() }));
+        // Failed in flight: still ModelInFlight, the same request is reused.
+        events.push(event(5, paused(1, crate::TurnPauseClass::OutOfCredits, None)));
+        let state = replay(&events).unwrap();
+        assert!(matches!(state.recovery, ReplayRecovery::ModelInFlight { step: 1, .. }));
+        let pause = state.pause.unwrap();
+        assert_eq!((pause.class, pause.pauses_in_turn, pause.event_sequence), (crate::TurnPauseClass::OutOfCredits, 2, 5));
+        assert!(!state.can_start_new_turn);
+        // A pause for another step is not this boundary.
+        let mut wrong = events.clone();
+        wrong.push(event(6, paused(2, crate::TurnPauseClass::Auth, None)));
+        assert!(replay(&wrong).is_err());
+        // The committed response clears it; a pause while a tool is open is refused.
+        events.push(event(6, response(1, AgentMessage::assistant("", vec![call("a")]))));
+        assert!(replay(&events).unwrap().pause.is_none());
+        let mut open_tool = events.clone();
+        open_tool.push(event(7, AgentEventKind::ToolStarted { tool_call: call("a") }));
+        open_tool.push(event(8, paused(2, crate::TurnPauseClass::LimitReached, None)));
+        assert!(replay(&open_tool).is_err());
+        // With the batch pending, even before the tool starts, it is refused.
+        let mut pending = events.clone();
+        pending.push(event(7, paused(2, crate::TurnPauseClass::LimitReached, None)));
+        assert!(replay(&pending).is_err());
+        // A terminal event clears the marker.
+        let mut cancelled = events[..5].to_vec();
+        cancelled.push(event(6, AgentEventKind::TurnCancelled));
+        let state = replay(&cancelled).unwrap();
+        assert!(state.pause.is_none() && state.can_start_new_turn);
+        // The event survives its JSONL round trip.
+        let line = serde_json::to_string(&events[4]).unwrap();
+        assert!(line.contains("\"turn_paused\"") && line.contains("\"out_of_credits\""));
+        assert_eq!(serde_json::from_str::<AgentEvent>(&line).unwrap(), events[4]);
     }
 
     #[test]

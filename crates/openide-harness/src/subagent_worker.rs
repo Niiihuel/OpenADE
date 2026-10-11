@@ -343,6 +343,8 @@ pub enum SubagentRecoveryPause {
     AbortedToolBatch {
         next_tool_call: ToolCall,
     },
+    /// The child paused again at a model boundary; its journal says why.
+    ProviderPaused,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1442,6 +1444,7 @@ impl SubagentWorker {
                 Some(SubagentRecoveryPause::AbortedToolBatch { next_tool_call })
             }
             ResumeDisposition::Complete | ResumeDisposition::AbortedTurn => None,
+            ResumeDisposition::Paused => Some(SubagentRecoveryPause::ProviderPaused),
             ResumeDisposition::Advanced => {
                 self.coordinator.pause_child(&run_lease)?;
                 return Err(SubagentWorkerError::UnexpectedRecoveryState);
@@ -1843,7 +1846,24 @@ impl SubagentWorker {
             }
         }
         if !terminal_seen {
-            return Err(SubagentWorkerError::MissingTerminal(child_id.to_owned()));
+            // The runner paused at a model boundary: the child waits, resumable,
+            // instead of failing. Its parent learns it from `wait_agent`.
+            let paused = self.sessions.load(child_id)?.and_then(|stored| {
+                match stored.events.last().map(|event| &event.kind) {
+                    Some(AgentEventKind::TurnPaused { detail, .. }) => Some(detail.clone()),
+                    _ => None,
+                }
+            });
+            let Some(detail) = paused else {
+                return Err(SubagentWorkerError::MissingTerminal(child_id.to_owned()));
+            };
+            self.coordinator.pause_child(run_lease)?;
+            return Ok(SubagentTurnResult {
+                child_session_id: child_id.to_owned(),
+                status: SubagentStatus::Interrupted,
+                response: None,
+                error: Some(detail),
+            });
         }
         let result = self.durable_terminal(child_id)?;
         #[cfg(test)]
@@ -3194,6 +3214,119 @@ mod tests {
             coordinator.list_children(&parent_lease).unwrap()[0].status,
             SubagentStatus::Completed
         );
+    }
+
+    /// Refuses the first `failures` requests with a reached limit.
+    struct LimitedChildModel {
+        failures: usize,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl ModelBackend for LimitedChildModel {
+        fn model_id(&self) -> &str {
+            "fixture-child"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) < self.failures {
+                let mut failure = crate::ProviderFailure::new(
+                    crate::FailureClass::LimitReached,
+                    "HTTP 429: usage_limit_reached",
+                );
+                failure.resets_at_ms = Some(4_000_000_000_000);
+                return Err(AgentError::Provider(failure));
+            }
+            Ok(ModelOutput {
+                content: "child finished".into(),
+                tool_calls: Vec::new(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_child_that_hits_a_limit_pauses_resumes_once_and_can_be_cancelled() {
+        let root = tempfile::tempdir().unwrap();
+        let model = Arc::new(LimitedChildModel { failures: 1, calls: AtomicUsize::new(0) });
+        let tools = Arc::new(CountingTools(AtomicUsize::new(0)));
+        let (sessions, coordinator, worker) = reopened_worker(root.path(), model.clone(), tools);
+        let parent = sessions.create(root.path(), "native").unwrap();
+        let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+        let result = worker
+            .run(parent_lease.clone(), "spawn-limit".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        // Paused, never failed: the journal keeps the open turn and its cause.
+        assert_eq!(result.status, SubagentStatus::Interrupted);
+        let child_id = result.child_session_id;
+        assert_eq!(coordinator.list_children(&parent_lease).unwrap()[0].status, SubagentStatus::Interrupted);
+        let events = sessions.load(&child_id).unwrap().unwrap().events;
+        assert!(matches!(
+            events.last().unwrap().kind,
+            AgentEventKind::TurnPaused { class: openide_core::TurnPauseClass::LimitReached, step: 1, .. }
+        ));
+        assert!(!events.iter().any(|event| matches!(event.kind, AgentEventKind::TurnFailed { .. })));
+
+        let resumed = worker
+            .resume(parent_lease.clone(), child_id.clone(), "spawn-limit".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(matches!(
+            resumed,
+            SubagentRecoveryState::Terminal(SubagentTurnResult { status: SubagentStatus::Completed, .. })
+        ));
+        assert_eq!(model.calls.load(Ordering::SeqCst), 2);
+        let events = sessions.load(&child_id).unwrap().unwrap().events;
+        let count = |predicate: fn(&AgentEventKind) -> bool| {
+            events.iter().filter(|event| predicate(&event.kind)).count()
+        };
+        assert_eq!(count(|kind| matches!(kind, AgentEventKind::TurnAdmitted { .. })), 1);
+        assert_eq!(count(|kind| matches!(kind, AgentEventKind::ModelRequestStarted { .. })), 1);
+        assert_eq!(count(|kind| matches!(kind, AgentEventKind::TurnCompleted { .. })), 1);
+
+        // A second child stays limited: resuming pauses it again, and the
+        // paused child can be cancelled without first being recovered.
+        let limited = Arc::new(LimitedChildModel { failures: usize::MAX, calls: AtomicUsize::new(0) });
+        let worker = SubagentWorker::new(
+            coordinator.clone(),
+            sessions.clone(),
+            limited.clone(),
+            Arc::new(CountingTools(AtomicUsize::new(0))),
+            "fixture",
+            "https://fixture.example/v1",
+        );
+        let second = worker
+            .run(parent_lease.clone(), "spawn-limit-2".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(second.status, SubagentStatus::Interrupted);
+        let again = worker
+            .resume(parent_lease.clone(), second.child_session_id.clone(), "spawn-limit-2".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(matches!(
+            again,
+            SubagentRecoveryState::Paused { reason: SubagentRecoveryPause::ProviderPaused, .. }
+        ));
+        assert_eq!(limited.calls.load(Ordering::SeqCst), 2);
+        let (cancelled, affected) = coordinator
+            .request_cancel_from_ui_with_affected(&parent_lease, &second.child_session_id)
+            .unwrap();
+        assert_eq!(cancelled.status, SubagentStatus::Cancelled);
+        assert_eq!(affected, vec![second.child_session_id.clone()]);
+        // The completed child is untouched.
+        assert!(coordinator
+            .list_children(&parent_lease)
+            .unwrap()
+            .iter()
+            .any(|child| child.session.id == child_id && child.status == SubagentStatus::Completed));
     }
 
     #[tokio::test]
