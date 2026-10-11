@@ -117,6 +117,7 @@ pub(crate) fn ide_breadcrumb_row(
                         .font_family(openide_ui::FontFamily::Sans)
                         .font_size(12.0)
                         .padding(0.0)
+                        .center_content()
                         .foreground(if shown { palette.text } else { palette.muted })
                         .hover_foreground(palette.text)
                         .background(if shown { palette.surface } else { openide_ui::Color::rgba(0, 0, 0, 0) })
@@ -857,6 +858,15 @@ mod tests {
             let (ctx, mut tree) = native_header_tree(root);
             let frame = tree.layout(Size::new(520.0, 640.0));
             ctx.end_pass().textures_delta.clear();
+            // Each word is centered in its button: before, it started at its left edge.
+            for (key, label) in [("preview", "Vista previa"), ("source", "Markdown")] {
+                let button = frame.regions.iter().find(|region| region.id == format!("document_preview_view:91:{key}")).unwrap().rect;
+                let x = frame.commands.iter().find_map(|command| match command {
+                    DrawCommand::Text { text, position, .. } if text == label => Some(position.x),
+                    _ => None,
+                }).unwrap();
+                assert!(x - button.x >= 2.0, "{label} starts {} px in", x - button.x);
+            }
             // The selected segment is written in the palette's text ink.
             ["Vista previa", "Markdown"].map(|label| {
                 frame.commands.iter().any(|command| matches!(command,
