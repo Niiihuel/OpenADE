@@ -104,7 +104,7 @@ fn fixture(name: &str) -> view::ViewState {
         .map(|fraction| ((1.0 - fraction) * 100.0).round() as u8);
     let values = if name == "five-long-sources" {
         [
-            "84296 bytes de instrucciones combinadas y verificadas",
+            "384296 bytes de instrucciones combinadas y verificadas",
             "12 documentos · 96512 bytes del proyecto seleccionado",
             "24 skills seleccionadas · 188765 bytes renderizados",
             "Catálogo congelado · cantidad y tokens no registrados",
@@ -123,7 +123,13 @@ fn fixture(name: &str) -> view::ViewState {
             "240000 entrada · 60000 salida",
         ]
     };
-    for ((id, label), value) in [
+    // The sizes the first three values state; the system copy holds the others.
+    let sizes = if name == "five-long-sources" {
+        [384_296, 96_512, 188_765]
+    } else {
+        [8_192, 4_096, 2_048]
+    };
+    for (index, ((id, label), value)) in [
         "system",
         "project",
         "skills",
@@ -135,9 +141,12 @@ fn fixture(name: &str) -> view::ViewState {
     .into_iter()
         .zip(SOURCES)
         .zip(values)
+        .enumerate()
     {
-        context.breakdown.push(NativeContextCategory::new(id, label, value,
-            "Observación con unidades propias. No representa una atribución de tokens ni se suma al contexto medido."));
+        let mut category = NativeContextCategory::new(id, label, value,
+            "Observación con unidades propias. No representa una atribución de tokens ni se suma al contexto medido.");
+        category.bytes = sizes.get(index).copied();
+        context.breakdown.push(category);
     }
     context.sections.push(NativeContextSection {
         title: "Procedencia de la medición".into(),
@@ -384,9 +393,12 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
             assert_eq!(text.iter().filter(|text| *text == "–").count(), 3);
             assert!(!text.iter().any(|text| text.contains("bytes")));
             if name == "measured-30" {
-                // 8192, 4096 and 2048 bytes at four a token; the rest is conversation.
-                for figure in ["~2.0K", "~1.0K", "~512", "~26.4K"] {
-                    assert!(text.iter().any(|text| text == figure), "{figure}: {text:?}");
+                // The 8192-byte system copy holds the project's 4096 and the
+                // skills' 2048: 2048, 4096 and 2048 bytes at four a token, and
+                // the rest of the 30 000 measured is conversation.
+                for (figure, times) in [("~512", 2), ("~1.0K", 1), ("~28.0K", 1)] {
+                    let shown = text.iter().filter(|text| *text == figure).count();
+                    assert_eq!(shown, times, "{figure}: {text:?}");
                 }
                 assert!(crate::composer_context_ui::diagnostic(&state.native_context)
                     .contains("Proyecto: 3 docs · 4096 bytes — "));

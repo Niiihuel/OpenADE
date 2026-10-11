@@ -1898,7 +1898,7 @@ fn native_context_next_turn_sections(
                 .iter()
                 .map(|entry| entry.content.len())
                 .sum::<usize>();
-            categories.push(NativeContextCategory::new("project", "Proyecto", format!("{} docs · {bytes} bytes", project.entries.len()), "Documentos iniciales actuales para el próximo turno. Bytes UTF-8 de contenido, sin formatos añadidos ni tokens atribuidos. Instrucciones por directorio pueden incorporarse después durante herramientas."));
+            categories.push(NativeContextCategory::new("project", "Proyecto", format!("{} docs · {bytes} bytes", project.entries.len()), "Documentos iniciales actuales para el próximo turno. Bytes UTF-8 de contenido, sin formatos añadidos ni tokens atribuidos. Instrucciones por directorio pueden incorporarse después durante herramientas.").bytes(bytes));
             rows.push(NativeContextRow::new("Documentos del proyecto", project.entries.len().to_string(), "Lectura actual para un próximo turno. Sólo observa la jerarquía inicial del workspace; documentos adicionales por directorio pueden incorporarse durante herramientas. No es una copia guardada ni un conteo de tokens."));
             for entry in project.entries {
                 rows.push(NativeContextRow::new(
@@ -1925,7 +1925,7 @@ fn native_context_next_turn_sections(
     let mut skills_category = match NativeSkillsSettings::load(data_root, workspace) {
         Ok(settings) => match settings.activate(data_root) {
             Ok(skills) => {
-                let category = NativeContextCategory::new("skills", "Skills", format!("{} locales · {} bytes", skills.selected.len(), skills.instructions.len()), format!("Selección guardada y revalidada para el próximo turno; bytes del texto renderizado con formato. SHA-256: {}. No son tokens ni una copia congelada.", skills.sha256_hex));
+                let category = NativeContextCategory::new("skills", "Skills", format!("{} locales · {} bytes", skills.selected.len(), skills.instructions.len()), format!("Selección guardada y revalidada para el próximo turno; bytes del texto renderizado con formato. SHA-256: {}. No son tokens ni una copia congelada.", skills.sha256_hex)).bytes(skills.instructions.len());
                 rows.push(NativeContextRow::new("Skills locales seleccionadas", format!("{} skills · {} bytes renderizados", skills.selected.len(), skills.instructions.len()), format!("Selección revalidada al leer para un próximo turno; no sustituye una copia congelada. Digest de procedencia y texto renderizado: {}\nLos bytes incluyen el formato de activación y no equivalen a tokens.", skills.sha256_hex)));
                 for selection in skills.selected {
                     rows.push(NativeContextRow::new(
@@ -10411,7 +10411,7 @@ impl AgentsWindow {
                 NativeContextCategory::new("tools", "Herramientas", format!("{} definiciones", catalog.definitions().len()), format!("Catálogo original de sólo lectura y update_plan. SHA-256 {}. No es un conteo de tokens.", catalog.digest_hex())),
             ] { projected.set_category(category); }
             if stored.events.is_empty() {
-                projected.set_category(NativeContextCategory::new("system", "Sistema", format!("{} bytes registrados", frozen.instructions().len()), "Snapshot previo a la admisión; aún no fue enviado al modelo. No equivale a uso reportado."));
+                projected.set_category(NativeContextCategory::new("system", "Sistema", format!("{} bytes registrados", frozen.instructions().len()), "Snapshot previo a la admisión; aún no fue enviado al modelo. No equivale a uso reportado.").bytes(frozen.instructions().len()));
             }
             Ok(projected)
         })();

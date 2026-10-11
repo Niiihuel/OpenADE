@@ -123,16 +123,6 @@ const MIN_SEGMENT: f32 = 2.0;
 /// a fraction of rounding would count as overflow and show a scrollbar.
 const ROW_HEIGHT: f32 = 16.0;
 
-/// Approximate tokens of a category that only states its size in bytes.
-// shortcut: reads the "N bytes" the app itself formats into the value; give
-// the category a numeric field if a value ever states its size another way.
-fn estimated_tokens(value: &str) -> Option<u64> {
-    let head = &value[..value.find(" bytes")?];
-    let digits = head.bytes().rev().take_while(u8::is_ascii_digit).count();
-    let bytes = head[head.len() - digits..].parse::<u64>().ok()?;
-    Some(bytes.saturating_add(2) / 4)
-}
-
 /// One token figure per category, in order: bytes / 4 where a category states
 /// bytes, and for the conversation what is left of the measured context.
 /// `None` is a category with no figure, which is not a measured zero.
@@ -141,9 +131,28 @@ pub(crate) fn category_tokens(
     used: Option<u64>,
 ) -> Vec<Option<u64>> {
     let conversation = |category: &NativeContextCategory| category.id == "conversation";
+    let bytes = |id: &str| {
+        breakdown
+            .iter()
+            .find(|category| category.id == id)
+            .and_then(|category| category.bytes)
+            .unwrap_or(0)
+    };
+    // The system copy is the project documents and the local skills joined
+    // with the rest (`native_workspace_instructions`), so their bytes are
+    // counted once, in their own categories.
+    let contained = bytes("project").saturating_add(bytes("skills"));
     let mut tokens: Vec<_> = breakdown
         .iter()
-        .map(|category| estimated_tokens(&category.value).filter(|_| !conversation(category)))
+        .map(|category| {
+            let bytes = category.bytes.filter(|_| !conversation(category))?;
+            let own = if category.id == "system" {
+                bytes.saturating_sub(contained)
+            } else {
+                bytes
+            };
+            Some(own.saturating_add(2) / 4)
+        })
         .collect();
     if let Some((used, index)) = used.zip(breakdown.iter().position(conversation)) {
         let others = tokens.iter().flatten().fold(0u64, |sum, value| sum.saturating_add(*value));
@@ -481,38 +490,63 @@ mod tests {
         state
     }
 
-    fn categories(values: &[(&str, &str)]) -> Vec<NativeContextCategory> {
+    /// (id, the bytes its value states).
+    fn categories(values: &[(&str, Option<usize>)]) -> Vec<NativeContextCategory> {
         values
             .iter()
-            .map(|(id, value)| NativeContextCategory::new(*id, *id, *value, ""))
+            .map(|(id, bytes)| {
+                // Text that names other sizes: the figure is never read from it.
+                let category = NativeContextCategory::new(*id, *id, "999999 bytes · 7 docs", "");
+                bytes.map_or(category.clone(), |bytes| category.bytes(bytes))
+            })
             .collect()
     }
-    const USUAL: [(&str, &str); 7] = [
-        ("system", "45685 bytes"),
-        ("tools", "Cantidad desconocida"),
-        ("project", "0 docs · 0 bytes"),
-        ("skills", "4 locales · 2048 bytes"),
-        ("mcp", "2 servidores · 7 herramientas observadas"),
-        ("subagents", "Sin desglose"),
-        ("conversation", "105325 entrada · 269 salida"),
+    const USUAL: [(&str, Option<usize>); 7] = [
+        ("system", Some(45_685)),
+        ("tools", None),
+        ("project", Some(0)),
+        ("skills", Some(2_048)),
+        ("mcp", None),
+        ("subagents", None),
+        ("conversation", None),
     ];
 
     #[test]
     fn categories_estimate_tokens_from_bytes_and_the_conversation_takes_the_rest() {
         let breakdown = categories(&USUAL);
-        // 45685 / 4 rounds to 11421; counts of servers or tools are not sizes.
+        // The system copy holds the skills: (45685 - 2048) / 4 rounds to 10909.
+        // A category without a size has no figure, whatever its text says.
         assert_eq!(
             category_tokens(&breakdown, Some(30_000)),
-            [Some(11_421), None, Some(0), Some(512), None, None, Some(18_067)]
+            [Some(10_909), None, Some(0), Some(512), None, None, Some(18_579)]
         );
         // Accumulated conversation tokens are never the current occupancy.
         assert_eq!(category_tokens(&breakdown, None)[6], None);
         // The estimates can exceed a small measurement; the rest floors at zero.
         assert_eq!(category_tokens(&breakdown, Some(100))[6], Some(0));
-        assert_eq!(
-            category_tokens(&categories(&[("system", "12 bytes registrados")]), None),
-            [Some(3)]
-        );
+        assert_eq!(category_tokens(&categories(&[("system", Some(12))]), None), [Some(3)]);
+        // A size on the conversation is not its occupancy either.
+        assert_eq!(category_tokens(&categories(&[("conversation", Some(400))]), None), [None]);
+    }
+
+    #[test]
+    fn project_and_skills_inside_the_system_copy_are_counted_once() {
+        let breakdown = categories(&[
+            ("system", Some(8_192)),
+            ("project", Some(4_096)),
+            ("skills", Some(2_048)),
+            ("conversation", None),
+        ]);
+        let tokens = category_tokens(&breakdown, Some(10_000));
+        assert_eq!(tokens, [Some(512), Some(1_024), Some(512), Some(7_952)]);
+        // Together they are the copy itself, not the copy plus its parts.
+        assert_eq!(tokens[..3].iter().flatten().sum::<u64>(), 8_192 / 4);
+        // Documents that grew since the copy was frozen leave no system share
+        // rather than a negative one.
+        let grown = categories(&[("system", Some(1_000)), ("project", Some(4_096))]);
+        assert_eq!(category_tokens(&grown, None), [Some(0), Some(1_024)]);
+        // Without an observed project or skills the copy is all system.
+        assert_eq!(category_tokens(&categories(&[("system", Some(8_192))]), None), [Some(2_048)]);
     }
 
     #[test]

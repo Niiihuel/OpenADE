@@ -3187,6 +3187,7 @@ pub(crate) mod tests {
                 label: "Skills".into(),
                 value: "2 · 400 bytes".into(),
                 detail: "Diagnostic SHA-256 must be optional".into(),
+                bytes: Some(400),
             }],
             sections: vec![NativeContextSection {
                 title: "Detalles".into(),

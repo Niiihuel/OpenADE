@@ -56,6 +56,9 @@ pub(crate) struct NativeContextCategory {
     pub label: String,
     pub value: String,
     pub detail: String,
+    /// The size `value` states, where it states one; the context bar
+    /// estimates from this number and never from the text.
+    pub bytes: Option<u64>,
 }
 
 impl NativeContextCategory {
@@ -70,7 +73,13 @@ impl NativeContextCategory {
             label: label.into(),
             value: value.into(),
             detail: detail.into(),
+            bytes: None,
         }
+    }
+
+    pub(crate) fn bytes(mut self, bytes: usize) -> Self {
+        self.bytes = Some(bytes as u64);
+        self
     }
 }
 
@@ -569,7 +578,7 @@ impl NativeContextUiState {
         );
         let mut frozen_rows = Vec::new();
         if let Some((sequence, version, digest, bytes)) = instructions {
-            self.set_category(NativeContextCategory::new("system", "Sistema", format!("{bytes} bytes"), format!("Copia validada de instrucciones adicionales combinadas: evento {sequence}, versión {version}, SHA-256 {digest}. Incluye proyecto, skills y objetivo; no incluye una atribución del prompt base ni tokens por documento.")));
+            self.set_category(NativeContextCategory::new("system", "Sistema", format!("{bytes} bytes"), format!("Copia validada de instrucciones adicionales combinadas: evento {sequence}, versión {version}, SHA-256 {digest}. Incluye proyecto, skills y objetivo; no incluye una atribución del prompt base ni tokens por documento.")).bytes(bytes));
             frozen_rows.push(NativeContextRow::new("Instrucciones adicionales", format!("{bytes} bytes UTF-8"), format!("Copia exacta del evento {sequence} · versión {version}\nSHA-256: {digest}\nCombina instrucciones del proyecto, skills y objetivo. El journal no atribuye tokens a cada documento; estas preferencias actuales no sustituyen la copia guardada.")));
         } else {
             frozen_rows.push(NativeContextRow::new(
