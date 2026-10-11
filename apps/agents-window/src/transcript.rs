@@ -314,6 +314,7 @@ pub struct TranscriptProjection {
     model_usage_row: Option<usize>,
     model_stream_bytes: usize,
     model_response_id: Option<String>,
+    model_retry: Option<crate::pause::ModelRetry>,
     active_stream_scope: Option<(String, u64, u64)>,
     stdout_row: Option<usize>,
     stdout_text: String,
@@ -450,6 +451,11 @@ impl TranscriptProjection {
     /// Publish changed rows to the host's retained snapshot. Use one target per
     /// projection; replacing the projection establishes a new complete baseline.
     /// This leaves historical strings/images untouched during live deltas.
+    /// The provider request is waiting to be sent again.
+    pub fn model_retry(&self) -> Option<crate::pause::ModelRetry> {
+        self.model_retry
+    }
+
     pub fn sync_into(&mut self, target: &mut Vec<TranscriptItem>) {
         self.items.sync_into(target);
     }
@@ -574,7 +580,26 @@ impl TranscriptProjection {
                 *last_sequence = event.sequence;
             }
         }
-        let changed = self.apply_kind(&event.kind);
+        let mut changed = self.apply_kind(&event.kind);
+        // A retry wait is shown until anything else arrives for the turn.
+        let retry = match &event.kind {
+            AgentEventKind::ModelStreamUpdate {
+                update:
+                    ModelStreamEvent::Retrying {
+                        attempt,
+                        max_attempts,
+                        delay_ms,
+                        ..
+                    },
+                ..
+            } => Some(crate::pause::ModelRetry {
+                attempt: *attempt,
+                max_attempts: *max_attempts,
+                until_ms: event.timestamp_ms.saturating_add(*delay_ms),
+            }),
+            _ => None,
+        };
+        changed |= std::mem::replace(&mut self.model_retry, retry) != retry;
         match &event.kind {
             AgentEventKind::TurnAdmitted { .. } | AgentEventKind::TurnAdmittedWithImages { .. } => {
                 self.pending_admission_sequence = Some(event.sequence);
@@ -1195,6 +1220,8 @@ impl TranscriptProjection {
                 self.web_search_update(update, false)
             }
             ModelStreamEvent::Usage { usage } => self.model_usage_update(step, usage),
+            // Shown by the live waiting line, not as a row: see `apply_event`.
+            ModelStreamEvent::Retrying { .. } => false,
         }
     }
 

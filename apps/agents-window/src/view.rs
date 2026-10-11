@@ -527,6 +527,8 @@ pub struct ViewState {
     pub pending_archive_session_id: Option<String>,
     pub pending_delete_session_id: Option<String>,
     pub transcript: Vec<TranscriptItem>,
+    /// Provider retries, limit pauses and the clock their countdowns read.
+    pub(crate) pause: crate::pause::PauseView,
     /// Durations of the transcript's reasoning rows and tool calls.
     pub item_times: crate::transcript::ItemTimes,
     pub running: bool,
@@ -3898,6 +3900,7 @@ pub(crate) mod tests {
             pending_archive_session_id: None,
             pending_delete_session_id: None,
             transcript: Vec::new(),
+            pause: Default::default(),
             item_times: Default::default(),
             running: false,
             background_run_selected: false,

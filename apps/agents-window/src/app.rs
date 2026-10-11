@@ -5967,6 +5967,7 @@ impl AgentsWindow {
             file_delete: None,
             file_clipboard: None,
             transcript: Vec::new(),
+            pause: Default::default(),
             item_times: Default::default(),
             running: false,
             background_run_selected: false,
@@ -8181,6 +8182,18 @@ impl AgentsWindow {
     }
 
     /// The check on a copy button leaves by itself.
+    /// Countdowns show whole seconds: repaint when the second changes.
+    fn follow_pause_clock(&mut self, ctx: &egui::Context) -> bool {
+        if !self.view.pause.counting() {
+            return false;
+        }
+        let now_ms = crate::pause::wall_clock_ms();
+        ctx.request_repaint_after(Duration::from_millis(1000 - now_ms % 1000));
+        let changed = now_ms / 1000 != self.view.pause.clock_ms / 1000;
+        self.view.pause.clock_ms = now_ms;
+        changed
+    }
+
     fn expire_message_copy(&mut self, ctx: &egui::Context) -> bool {
         let Some(copied) = &self.view.message_actions.copied else {
             return false;
@@ -12565,6 +12578,10 @@ impl AgentsWindow {
             self.view.conversation_details.migrate(&previous, &current);
         }
         self.projection.sync_into(&mut self.view.transcript);
+        self.view.pause.retry = self.projection.model_retry();
+        if self.view.pause.counting() {
+            self.view.pause.clock_ms = crate::pause::wall_clock_ms();
+        }
         self.projection.sync_times_into(&mut self.view.item_times);
         self.sync_message_edit_turns();
     }
@@ -19207,6 +19224,7 @@ impl eframe::App for AgentsWindow {
         early_changed |= self.expire_settings_notice(&ctx);
         early_changed |= self.expire_reveal_flash(&ctx);
         early_changed |= self.expire_message_copy(&ctx);
+        early_changed |= self.follow_pause_clock(&ctx);
         early_changed |= self.poll_turn_check();
         // These updates are already included in the first tree below. Only
         // mutations after that hit-test layout require rebuilding it again.

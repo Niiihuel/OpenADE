@@ -70,6 +70,9 @@ pub(crate) fn conversation_notice_message(message: &str, is_error: bool) -> &str
 mod marker_tests;
 
 #[cfg(test)]
+#[path = "pause_visual_tests.rs"]
+mod pause_visual_tests;
+#[cfg(test)]
 #[path = "conversation_stream_visual_tests.rs"]
 mod stream_visual_tests;
 
@@ -2390,7 +2393,11 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         Element::column(vec![
             Element::spacer().size(None, Some(TRANSCRIPT_GAP)),
             stream_line(
-                vec![stream_shimmer(format!("reply-stream:{session}"), WAITING_LABEL, false)],
+                vec![stream_shimmer(
+                    format!("reply-stream:{session}"),
+                    state.pause.retry_label().as_deref().unwrap_or(WAITING_LABEL),
+                    false,
+                )],
                 None,
                 None,
             ),
@@ -3801,6 +3808,7 @@ mod tests {
     pub(super) fn state() -> ViewState {
         ViewState {
             tour: Default::default(),
+            pause: Default::default(),
             keymap_profile: crate::keymap::KeymapProfile::default(),
             vim_mode: false,
             settings_keymap_menu_open: false,

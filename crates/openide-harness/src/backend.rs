@@ -1,7 +1,9 @@
 #[cfg(test)]
 use crate::model_stream::publish_legacy;
 use crate::model_stream::ModelStreamDelivery;
+use crate::provider_failure::SHORT_RATE_LIMIT;
 use crate::ModelEventSender;
+use crate::{FailureClass, ProviderFailure};
 use crate::{AgentError, ToolDefinition};
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -30,8 +32,12 @@ const MAX_ASSEMBLED_STREAM_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_MODEL_TOOL_CALLS: usize = 64;
 pub(crate) const MAX_MODEL_HTTP_BODY_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_MODEL_HTTP_ERROR_BYTES: usize = 64 * 1024;
-const MAX_MODEL_TRANSPORT_RETRIES: usize = 2;
-const MAX_MODEL_RETRY_DELAY: Duration = Duration::from_secs(10);
+const MAX_MODEL_TRANSPORT_RETRIES: u32 = 6;
+const MAX_RATE_LIMITS_IN_A_ROW: u32 = 3;
+const MODEL_RETRY_BASE: Duration = Duration::from_millis(500);
+const MAX_MODEL_RETRY_BACKOFF: Duration = Duration::from_secs(30);
+/// Shorter waits than this pass without a visible retry line.
+const VISIBLE_RETRY_AFTER: Duration = Duration::from_secs(5);
 
 /// Closed diagnostic categories: never expose arbitrary header/body values.
 pub(crate) fn model_response_mime(headers: &reqwest::header::HeaderMap) -> &'static str {
@@ -493,57 +499,93 @@ pub(crate) enum ModelAttemptError {
 }
 
 impl ModelAttemptError {
-    fn request(error: reqwest::Error) -> Self {
-        let retryable = error.is_connect() || error.is_timeout();
-        let error = AgentError::Model(error.to_string());
-        if retryable {
-            Self::Retryable {
-                error,
-                retry_after: None,
+    /// A classified failure is repeated only when its class allows it and no
+    /// output of this attempt reached the consumer.
+    pub(crate) fn classified(error: AgentError, published: bool) -> Self {
+        match &error {
+            AgentError::Provider(failure)
+                if !published
+                    && failure.class.retryable()
+                    && failure.retry_after.is_none_or(|delay| delay <= SHORT_RATE_LIMIT) =>
+            {
+                let retry_after = failure.retry_after;
+                Self::Retryable { error, retry_after }
             }
-        } else {
-            Self::Terminal(error)
+            _ => Self::Terminal(error),
         }
     }
 
-    pub(crate) fn stream(error: reqwest::Error, published_delta: bool) -> Self {
-        let retryable = !published_delta
-            && (error.is_connect() || error.is_timeout() || error.is_body() || error.is_decode());
-        let error = AgentError::Model(error.to_string());
-        if retryable {
-            Self::Retryable {
-                error,
-                retry_after: None,
-            }
+    fn transport(message: String, published: bool) -> Self {
+        Self::classified(
+            AgentError::Provider(ProviderFailure::new(FailureClass::Transient, message)),
+            published,
+        )
+    }
+
+    fn request(error: reqwest::Error) -> Self {
+        if error.is_connect() || error.is_timeout() {
+            Self::transport(error.to_string(), false)
         } else {
-            Self::Terminal(error)
+            Self::Terminal(AgentError::Model(error.to_string()))
+        }
+    }
+
+    /// A connection lost after output was published is not repeated here, but
+    /// it stays a transient failure: the host may resume the turn.
+    pub(crate) fn stream(error: reqwest::Error, published_delta: bool) -> Self {
+        if error.is_connect() || error.is_timeout() || error.is_body() || error.is_decode() {
+            Self::transport(error.to_string(), published_delta)
+        } else {
+            Self::Terminal(AgentError::Model(error.to_string()))
         }
     }
 
     pub(crate) fn incomplete_stream(message: &'static str, published_delta: bool) -> Self {
-        let error = AgentError::Model(message.into());
-        if published_delta {
-            Self::Terminal(error)
-        } else {
-            Self::Retryable {
-                error,
-                retry_after: None,
-            }
-        }
+        Self::transport(message.into(), published_delta)
     }
+}
+
+static RETRY_SLEEP_DIVISOR: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(if cfg!(test) { 1000 } else { 1 });
+
+/// Tests shorten every retry wait by this factor instead of sleeping for the
+/// real schedule. The schedule reported to the consumer is unchanged.
+#[doc(hidden)]
+pub fn set_model_retry_sleep_divisor(divisor: u32) {
+    RETRY_SLEEP_DIVISOR.store(divisor.max(1), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 0.5 s doubling to a 30 s cap, ±20 % so a tree of agents does not retry in
+/// step.
+fn retry_backoff(retry: u32) -> Duration {
+    let base = MODEL_RETRY_BASE
+        .saturating_mul(1u32 << retry.min(16))
+        .min(MAX_MODEL_RETRY_BACKOFF);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.subsec_nanos());
+    base.mul_f64(0.8 + 0.4 * f64::from(nanos % 1000) / 1000.0)
 }
 
 /// Retry only failures that cannot have returned a completed model response to
 /// the runner. Streaming callers must mark an attempt terminal after publishing
 /// the first delta, preserving live delivery and journaled partial output.
+///
+/// Bounded: at most `MAX_MODEL_TRANSPORT_RETRIES` repeats, and the third rate
+/// limit in a row ends the loop as a reached limit. A wait is announced on
+/// `notify` once the loop has been waiting for `VISIBLE_RETRY_AFTER`, and
+/// always for a rate limit.
 pub(crate) async fn retry_model_transport<T, F, Fut>(
     cancel: &CancellationToken,
+    notify: Option<&ModelStreamDelivery>,
     mut attempt: F,
 ) -> Result<T, AgentError>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, ModelAttemptError>>,
 {
+    let mut waited = Duration::ZERO;
+    let mut rate_limits_in_a_row = 0;
     for retry in 0..=MAX_MODEL_TRANSPORT_RETRIES {
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled);
@@ -552,19 +594,37 @@ where
             Ok(value) => return Ok(value),
             Err(ModelAttemptError::Terminal(error)) => return Err(error),
             Err(ModelAttemptError::Retryable { error, retry_after }) => {
-                if retry == MAX_MODEL_TRANSPORT_RETRIES {
-                    return Err(error);
+                let rate_limited = matches!(
+                    &error,
+                    AgentError::Provider(failure) if failure.class == FailureClass::RateLimited
+                );
+                rate_limits_in_a_row = if rate_limited { rate_limits_in_a_row + 1 } else { 0 };
+                if retry == MAX_MODEL_TRANSPORT_RETRIES
+                    || rate_limits_in_a_row == MAX_RATE_LIMITS_IN_A_ROW
+                {
+                    return Err(match error {
+                        AgentError::Provider(failure) => {
+                            AgentError::Provider(failure.escalate_rate_limit())
+                        }
+                        error => error,
+                    });
                 }
-                let backoff = Duration::from_millis(150 * (1u64 << retry));
-                let delay = retry_after.unwrap_or(backoff);
-                if delay > MAX_MODEL_RETRY_DELAY {
-                    return Err(AgentError::Model(format!(
-                        "{error}; Retry-After exceeds the bounded retry window"
-                    )));
+                let delay = retry_after.unwrap_or_else(|| retry_backoff(retry));
+                waited += delay;
+                if let Some(notify) = notify.filter(|_| rate_limited || waited >= VISIBLE_RETRY_AFTER) {
+                    notify
+                        .publish(vec![ModelStreamEvent::Retrying {
+                            attempt: retry + 1,
+                            max_attempts: MAX_MODEL_TRANSPORT_RETRIES,
+                            delay_ms: delay.as_millis() as u64,
+                            rate_limited,
+                        }])
+                        .await?;
                 }
+                let divisor = RETRY_SLEEP_DIVISOR.load(std::sync::atomic::Ordering::Relaxed);
                 tokio::select! {
                     _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-                    _ = tokio::time::sleep(delay) => {}
+                    _ = tokio::time::sleep(delay / divisor) => {}
                 }
             }
         }
@@ -584,37 +644,20 @@ pub(crate) async fn send_model_request(
     if status.is_success() {
         return Ok(response);
     }
-    let retryable_status =
-        status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
-    let retry_after = if retryable_status {
-        response
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(parse_retry_after)
-    } else {
-        None
-    };
+    let headers = response.headers().clone();
     let bytes = match read_model_http_body(response, MAX_MODEL_HTTP_ERROR_BYTES, cancel).await {
         Ok(bytes) => bytes,
-        Err(AgentError::Model(detail)) if retryable_status => {
-            return Err(ModelAttemptError::Retryable {
-                error: AgentError::Model(format!("HTTP {status}: {detail}")),
-                retry_after,
-            });
-        }
+        // The status still classifies a response whose body could not be read.
+        Err(AgentError::Model(detail)) => detail.into_bytes(),
         Err(error) => return Err(ModelAttemptError::Terminal(error)),
     };
-    let detail: String = String::from_utf8_lossy(&bytes).chars().take(500).collect();
-    let error = AgentError::Model(format!("HTTP {status}: {detail}"));
-    if retryable_status {
-        Err(ModelAttemptError::Retryable { error, retry_after })
-    } else {
-        Err(ModelAttemptError::Terminal(error))
-    }
+    Err(ModelAttemptError::classified(
+        AgentError::Provider(ProviderFailure::from_http(status.as_u16(), &headers, &bytes)),
+        false,
+    ))
 }
 
-fn parse_retry_after(value: &str) -> Option<Duration> {
+pub(crate) fn parse_retry_after(value: &str) -> Option<Duration> {
     if let Ok(seconds) = value.trim().parse::<u64>() {
         return Some(Duration::from_secs(seconds));
     }
@@ -921,7 +964,7 @@ impl ModelBackend for OpenAiCompatibleBackend {
         tools: &[ToolDefinition],
         cancel: CancellationToken,
     ) -> Result<ModelOutput, AgentError> {
-        retry_model_transport(&cancel, || async {
+        retry_model_transport(&cancel, None, || async {
             let request = self
                 .request(messages, tools, false)
                 .map_err(ModelAttemptError::Terminal)?;
@@ -988,7 +1031,7 @@ impl OpenAiCompatibleBackend {
         cancel: CancellationToken,
         delivery: ModelStreamDelivery,
     ) -> Result<ModelCompletion, AgentError> {
-        retry_model_transport(&cancel, || async {
+        retry_model_transport(&cancel, Some(&delivery), || async {
             let request = self
                 .request(messages, tools, true)
                 .map_err(ModelAttemptError::Terminal)?;
@@ -1010,7 +1053,7 @@ impl OpenAiCompatibleBackend {
                 }
                 while let Some(frame) = pending.take_sse_frame() {
                     let mut events = Vec::new();
-                    assembler.ingest_events(&frame, &mut events).map_err(ModelAttemptError::Terminal)?;
+                    assembler.ingest_events(&frame, &mut events).map_err(|error| ModelAttemptError::classified(error, assembler.published_activity))?;
                     delivery.publish(events).await.map_err(ModelAttemptError::Terminal)?;
                     if assembler.done {
                         let ready = assembler.ready_events();
@@ -1157,7 +1200,7 @@ impl SseAssembler {
             let detail: String = detail.chars().take(500).collect();
             let message = format!("streaming response failed: {detail}");
             self.provider_error = Some(message.clone());
-            return Err(AgentError::Model(message));
+            return Err(AgentError::Provider(ProviderFailure::from_body(&payload, message)));
         }
         if let Some(id) = payload.get("id").and_then(Value::as_str) {
             self.response_id.get_or_insert_with(|| id.to_owned());
@@ -1618,7 +1661,8 @@ fn validate_chat_provider_status(body: &Value) -> Result<(), AgentError> {
         let code = status.as_i64().ok_or_else(|| AgentError::Model("invalid provider status code".into()))?;
         if code != 0 {
             let detail = body.pointer("/base_resp/status_msg").and_then(Value::as_str).unwrap_or("provider reported an error");
-            return Err(AgentError::Model(format!("provider error {code}: {}", detail.chars().take(500).collect::<String>())));
+            let message = format!("provider error {code}: {}", detail.chars().take(500).collect::<String>());
+            return Err(AgentError::Provider(ProviderFailure::from_body(body, message)));
         }
     }
     Ok(())
@@ -1855,7 +1899,7 @@ mod tests {
             Some(Duration::ZERO)
         );
         assert!(
-            parse_retry_after("Fri, 31 Dec 9999 23:59:59 GMT").unwrap() > MAX_MODEL_RETRY_DELAY
+            parse_retry_after("Fri, 31 Dec 9999 23:59:59 GMT").unwrap() > SHORT_RATE_LIMIT
         );
         assert_eq!(parse_retry_after("not a date"), None);
     }
@@ -2443,11 +2487,11 @@ mod tests {
                 .unwrap();
             let frame = format!("data: {}", json!({"error":error}));
             assert!(
-                matches!(assembler.ingest(frame.as_bytes(), &sender), Err(AgentError::Model(detail)) if detail.contains("streaming response failed"))
+                matches!(assembler.ingest(frame.as_bytes(), &sender), Err(AgentError::Provider(failure)) if failure.message.contains("streaming response failed"))
             );
             assert!(assembler.ingest(b"data: [DONE]", &sender).is_err());
             assert!(
-                matches!(assembler.finish(), Err(AgentError::Model(detail)) if detail.contains("streaming response failed"))
+                matches!(assembler.finish(), Err(error) if error.to_string().contains("streaming response failed"))
             );
             assert_eq!(receiver.try_recv().unwrap(), "visible prefix");
             assert!(receiver.try_recv().is_err());
@@ -2482,7 +2526,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(AgentError::Model(detail)) if detail.contains("quota exhausted after stream started"))
+            matches!(result, Err(AgentError::Provider(failure)) if failure.message.contains("quota exhausted after stream started"))
         );
         assert_eq!(receiver.try_recv().unwrap(), "Café 中");
         assert!(receiver.try_recv().is_err());
@@ -2831,7 +2875,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, AgentError::Model(_)));
+        assert!(matches!(error, AgentError::Provider(failure) if failure.class == FailureClass::Transient));
         assert_eq!(receiver.try_recv().unwrap(), "partial");
         server.await.unwrap();
     }
@@ -2897,17 +2941,18 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, AgentError::Model(_)));
+        assert!(matches!(error, AgentError::Provider(failure) if failure.class == FailureClass::Transient));
         assert_eq!(receiver.try_recv().unwrap(), "partial");
         server.await.unwrap();
     }
 
     #[tokio::test]
     async fn retry_after_is_bounded_and_cancellation_stops_waiting() {
+        // An hour of advice is a reached limit: one request, no wait.
         let (address, server) = scripted_http_server(vec![scripted_response(
             "429 Too Many Requests",
             "busy",
-            "Retry-After: 60\r\n",
+            "Retry-After: 3600\r\n",
             4,
         )])
         .await;
@@ -2916,15 +2961,18 @@ mod tests {
             .complete(&[AgentMessage::user("hi")], &[], CancellationToken::new())
             .await
             .unwrap_err();
-        assert!(
-            matches!(error, AgentError::Model(message) if message.contains("Retry-After exceeds"))
-        );
+        assert!(matches!(
+            error,
+            AgentError::Provider(failure)
+                if failure.class == FailureClass::LimitReached && failure.resets_at_ms.is_some()
+        ));
         server.await.unwrap();
 
+        // 200 s of advice is waited for (200 ms under the test divisor).
         let (address, server) = scripted_http_server(vec![scripted_response(
             "429 Too Many Requests",
             "busy",
-            "Retry-After: 2\r\n",
+            "Retry-After: 200\r\n",
             4,
         )])
         .await;
@@ -2936,7 +2984,7 @@ mod tests {
                 .complete(&[AgentMessage::user("hi")], &[], cancellation)
                 .await
         });
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
         cancel.cancel();
         assert!(matches!(task.await.unwrap(), Err(AgentError::Cancelled)));
         server.await.unwrap();
@@ -2953,7 +3001,213 @@ mod tests {
             .complete(&[AgentMessage::user("hi")], &[], CancellationToken::new())
             .await
             .unwrap_err();
-        assert!(matches!(error, AgentError::Model(message) if message.contains("HTTP 400")));
+        assert!(matches!(
+            &error,
+            AgentError::Provider(failure) if failure.class == FailureClass::Fatal
+        ));
+        assert!(error.to_string().contains("HTTP 400"));
+        server.await.unwrap();
+    }
+
+    fn json_error(status: &str, body: Value, headers: &str) -> String {
+        let body = body.to_string();
+        scripted_response(status, &body, headers, body.len())
+    }
+
+    async fn stream_collect(
+        backend: &dyn ModelBackend,
+    ) -> (Result<ModelCompletion, AgentError>, Vec<ModelStreamEvent>) {
+        let cancel = CancellationToken::new();
+        let (sender, mut receiver) = crate::model_event_channel(cancel.clone());
+        let messages = [AgentMessage::user("hi")];
+        let run = backend.stream_events(&messages, &[], cancel, sender);
+        tokio::pin!(run);
+        let mut events = Vec::new();
+        let result = loop {
+            tokio::select! {
+                result = &mut run => break result,
+                Some(event) = receiver.recv() => events.push(event),
+            }
+        };
+        while let Ok(event) = receiver.try_recv() {
+            events.push(event);
+        }
+        (result, events)
+    }
+
+    fn retries(events: &[ModelStreamEvent]) -> Vec<(u32, u64, bool)> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                ModelStreamEvent::Retrying { attempt, max_attempts, delay_ms, rate_limited } => {
+                    assert_eq!(*max_attempts, 6);
+                    Some((*attempt, *delay_ms, *rate_limited))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn failure(result: Result<ModelCompletion, AgentError>) -> ProviderFailure {
+        match result {
+            Err(AgentError::Provider(failure)) => failure,
+            other => panic!("expected a classified failure, got {other:?}"),
+        }
+    }
+
+    const CHAT_OK: &str = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n";
+
+    #[tokio::test]
+    async fn transient_failures_back_off_six_times_and_only_long_waits_are_announced() {
+        // The scripted server fails the test on an eighth request.
+        let (address, server) = scripted_http_server(
+            (0..7).map(|_| scripted_response("500 Internal Server Error", "boom", "", 4)).collect(),
+        )
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (result, events) = stream_collect(&backend).await;
+        let failure = failure(result);
+        assert_eq!((failure.class, failure.status, failure.resets_at_ms), (FailureClass::Transient, Some(500), None));
+        // 0.5 + 1 + 2 s pass silently; the 4 s wait crosses the 5 s mark.
+        let announced = retries(&events);
+        assert_eq!(announced.iter().map(|retry| retry.0).collect::<Vec<_>>(), vec![4, 5, 6]);
+        for ((_, delay_ms, rate_limited), base) in announced.iter().zip([4000u64, 8000, 16000]) {
+            assert!(!rate_limited);
+            assert!((base * 8 / 10..=base * 12 / 10).contains(delay_ms), "{delay_ms} is not {base} ±20 %");
+        }
+        server.await.unwrap();
+
+        // One blip is invisible.
+        let (address, server) = scripted_http_server(vec![
+            scripted_response("502 Bad Gateway", "boom", "", 4),
+            scripted_response("200 OK", CHAT_OK, "", CHAT_OK.len()),
+        ])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (result, events) = stream_collect(&backend).await;
+        assert_eq!(result.unwrap().output.content, "ok");
+        assert!(retries(&events).is_empty());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_short_rate_limit_is_waited_out_visibly_and_the_third_in_a_row_is_a_limit() {
+        let limited = || {
+            json_error(
+                "429 Too Many Requests",
+                json!({"error":{"message":"slow","type":"requests","code":"rate_limit_exceeded"}}),
+                "Retry-After: 7\r\n",
+            )
+        };
+        let (address, server) = scripted_http_server(vec![
+            limited(),
+            scripted_response("200 OK", CHAT_OK, "", CHAT_OK.len()),
+        ])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (result, events) = stream_collect(&backend).await;
+        assert_eq!(result.unwrap().output.content, "ok");
+        assert_eq!(retries(&events), vec![(1, 7000, true)]);
+        server.await.unwrap();
+
+        let (address, server) = scripted_http_server(vec![limited(), limited(), limited()]).await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (result, events) = stream_collect(&backend).await;
+        let failure = failure(result);
+        assert_eq!(failure.class, FailureClass::LimitReached);
+        assert_eq!(failure.code.as_deref(), Some("rate_limit_exceeded"));
+        assert!(failure.resets_at_ms.is_some());
+        assert_eq!(retries(&events).len(), 2);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn limits_credits_auth_and_context_are_never_retried() {
+        let resets_at = crate::provider_failure::now_ms() / 1000 + 7200;
+        for (status, body, class, reset) in [
+            ("429 Too Many Requests", json!({"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_at":resets_at}}), FailureClass::LimitReached, Some(resets_at * 1000)),
+            ("429 Too Many Requests", json!({"error":{"type":"usage_not_included","message":"no"}}), FailureClass::OutOfCredits, None),
+            ("429 Too Many Requests", json!({"error":{"message":"quota","type":"insufficient_quota","code":"insufficient_quota"}}), FailureClass::OutOfCredits, None),
+            ("401 Unauthorized", json!({"error":{"message":"bad key","code":"invalid_api_key"}}), FailureClass::Auth, None),
+            ("400 Bad Request", json!({"error":{"message":"too long","code":"context_length_exceeded"}}), FailureClass::ContextTooLarge, None),
+        ] {
+            let (address, server) = scripted_http_server(vec![json_error(status, body, "")]).await;
+            let backend = crate::ResponsesBackend::new(format!("http://{address}/v1"), None, "mock");
+            let (result, events) = stream_collect(&backend).await;
+            let failure = failure(result);
+            assert_eq!((failure.class, failure.resets_at_ms), (class, reset), "{status}");
+            assert!(retries(&events).is_empty());
+            server.await.unwrap();
+        }
+        // Chat-compatible families: OpenRouter and DeepSeek 402, Z.ai codes.
+        for (status, body, class) in [
+            ("402 Payment Required", json!({"error":{"code":402,"message":"Insufficient credits"}}), FailureClass::OutOfCredits),
+            ("402 Payment Required", json!({"error":{"message":"Insufficient Balance","type":"unknown_error"}}), FailureClass::OutOfCredits),
+            ("429 Too Many Requests", json!({"error":{"code":"1308","message":"Usage limit reached for 5 hour."}}), FailureClass::LimitReached),
+            ("429 Too Many Requests", json!({"error":{"code":"1113","message":"arrears"}}), FailureClass::OutOfCredits),
+            ("400 Bad Request", json!({"error":{"code":"1261","message":"prompt too long"}}), FailureClass::ContextTooLarge),
+            ("403 Forbidden", json!({"error":{"message":"no"}}), FailureClass::Auth),
+            ("404 Not Found", json!({"error":{"message":"no such model"}}), FailureClass::Fatal),
+        ] {
+            let (address, server) = scripted_http_server(vec![json_error(status, body, "")]).await;
+            let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+            let (result, events) = stream_collect(&backend).await;
+            assert_eq!(failure(result).class, class, "{status}");
+            assert!(retries(&events).is_empty());
+            server.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn errors_inside_a_200_stream_are_classified_and_retried_only_before_output() {
+        // Z.ai overload and a MiniMax rate limit, then success.
+        let zai = json_error("429 Too Many Requests", json!({"error":{"code":"1305","message":"busy"}}), "Retry-After: 0\r\n");
+        let minimax = "data: {\"base_resp\":{\"status_code\":1002,\"status_msg\":\"rate limit\"}}\n\n";
+        let (address, server) = scripted_http_server(vec![
+            zai,
+            scripted_response("200 OK", minimax, "", minimax.len()),
+            scripted_response("200 OK", CHAT_OK, "", CHAT_OK.len()),
+        ])
+        .await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (result, events) = stream_collect(&backend).await;
+        assert_eq!(result.unwrap().output.content, "ok");
+        assert_eq!(retries(&events).iter().map(|retry| retry.2).collect::<Vec<_>>(), vec![true]);
+        server.await.unwrap();
+
+        let plan = "data: {\"base_resp\":{\"status_code\":2056,\"status_msg\":\"usage limit exceeded\"}}\n\n";
+        let (address, server) = scripted_http_server(vec![scripted_response("200 OK", plan, "", plan.len())]).await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let failure_2056 = failure(stream_collect(&backend).await.0);
+        assert_eq!((failure_2056.class, failure_2056.code.as_deref()), (FailureClass::LimitReached, Some("2056")));
+        server.await.unwrap();
+
+        // OpenRouter reports an upstream failure in a chunk after text: the
+        // text was published, so the request is not repeated.
+        let after_text = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\ndata: {\"error\":{\"code\":502,\"message\":\"upstream\"},\"choices\":[{\"delta\":{},\"finish_reason\":\"error\"}]}\n\n";
+        let (address, server) = scripted_http_server(vec![scripted_response("200 OK", after_text, "", after_text.len())]).await;
+        let backend = OpenAiCompatibleBackend::new(format!("http://{address}/v1"), None, "mock");
+        let (result, events) = stream_collect(&backend).await;
+        assert_eq!(failure(result).class, FailureClass::Transient);
+        assert!(events.iter().any(|event| matches!(event, ModelStreamEvent::TextDelta { content } if content == "partial")));
+        server.await.unwrap();
+
+        // Responses: `response.failed` before any output is repeated.
+        let failed = "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"r\",\"status\":\"failed\",\"error\":{\"code\":\"server_is_overloaded\",\"message\":\"busy\"}}}\n\n";
+        let completed = "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_retry\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}]}}\n\n";
+        let (address, server) = scripted_http_server(vec![
+            scripted_response("200 OK", failed, "", failed.len()),
+            scripted_response("200 OK", completed, "", completed.len()),
+        ])
+        .await;
+        let backend = crate::ResponsesBackend::new(format!("http://{address}/v1"), None, "mock");
+        assert_eq!(stream_collect(&backend).await.0.unwrap().output.content, "ok");
+        server.await.unwrap();
+
+        let quota = "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"r\",\"status\":\"failed\",\"error\":{\"code\":\"insufficient_quota\",\"message\":\"quota\"}}}\n\n";
+        let (address, server) = scripted_http_server(vec![scripted_response("200 OK", quota, "", quota.len())]).await;
+        let backend = crate::ResponsesBackend::new(format!("http://{address}/v1"), None, "mock");
+        assert_eq!(failure(stream_collect(&backend).await.0).class, FailureClass::OutOfCredits);
         server.await.unwrap();
     }
 }

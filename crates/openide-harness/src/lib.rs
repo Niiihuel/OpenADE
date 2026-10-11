@@ -10,6 +10,7 @@ pub use command_line::{definition_before_command_revision, split_command_argumen
 mod compact;
 mod context;
 mod error;
+mod provider_failure;
 mod exec_policy;
 mod goal_tools;
 mod hooks;
@@ -51,6 +52,7 @@ mod tools;
 
 pub use anthropic::{AnthropicMessagesBackend, DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS};
 pub use backend::{
+    set_model_retry_sleep_divisor,
     ModelBackend, ModelCompletion, ModelOutput, ModelRequestCapabilities, ModelTokenUsage,
     OpenAiCompatibleBackend,
 };
@@ -69,6 +71,7 @@ pub use context::{
     ContextPolicy, TokenBudgetAssessment, TokenBudgetDecision, TokenBudgetPolicy, TokenBudgetState,
 };
 pub use error::AgentError;
+pub use provider_failure::{FailureClass, ProviderFailure};
 pub use exec_policy::{
     ExecDecision, ExecEvaluation, ExecPatternToken, ExecPolicy, ExecPolicyError, ExecRule,
     MAX_EXEC_JUSTIFICATION_BYTES, MAX_EXEC_PATTERN_TOKENS, MAX_EXEC_RULES, MAX_EXEC_TOKEN_BYTES,

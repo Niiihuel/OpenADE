@@ -92,6 +92,14 @@ pub enum ModelStreamEvent {
     Usage {
         usage: ModelTokenUsage,
     },
+    /// The provider request is being repeated after a retryable failure.
+    /// Presentation only: the wait is `delay_ms` before attempt `attempt`.
+    Retrying {
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        rate_limited: bool,
+    },
 }
 
 impl ModelStreamEvent {

@@ -368,7 +368,7 @@ impl AnthropicMessagesBackend {
     ) -> Result<ModelCompletion, AgentError> {
         let body = self.request_body(messages, tools, false, false)?;
         let endpoint_digest = self.endpoint_digest()?;
-        retry_model_transport(&cancel, || async {
+        retry_model_transport(&cancel, None, || async {
             let response = self.send(&body, false, &cancel).await?;
             let bytes = read_model_http_body(response, MAX_MODEL_HTTP_BODY_BYTES, &cancel)
                 .await
@@ -402,7 +402,7 @@ impl AnthropicMessagesBackend {
     ) -> Result<ModelCompletion, AgentError> {
         let body = self.request_body(messages, tools, true, false)?;
         let endpoint_digest = self.endpoint_digest()?;
-        retry_model_transport(&cancel, || async {
+        retry_model_transport(&cancel, Some(&delivery), || async {
             let response = self.send(&body, false, &cancel).await?;
             let status = response.status().as_u16();
             let mime = model_response_mime(response.headers());
@@ -419,7 +419,7 @@ impl AnthropicMessagesBackend {
                 if pending.extend(&chunk, MAX_RETAINED_BYTES).is_err() { return Err(ModelAttemptError::Terminal(AgentError::Limit("Anthropic SSE frame exceeds 8 MiB".into()))); }
                 while let Some(frame) = pending.take_sse_frame() {
                     let mut events = Vec::new();
-                    assembler.ingest_events(&frame, &self.model, &mut events).map_err(ModelAttemptError::Terminal)?;
+                    assembler.ingest_events(&frame, &self.model, &mut events).map_err(|error| ModelAttemptError::classified(error, assembler.observed))?;
                     delivery.publish(events).await.map_err(ModelAttemptError::Terminal)?;
                 }
                 if assembler.stopped {
@@ -475,7 +475,7 @@ impl ModelBackend for AnthropicMessagesBackend {
         cancel: CancellationToken,
     ) -> Result<Option<u64>, AgentError> {
         let body = self.request_body(messages, tools, false, true)?;
-        retry_model_transport(&cancel, || async {
+        retry_model_transport(&cancel, None, || async {
             let response = self.send(&body, true, &cancel).await?;
             let bytes = read_model_http_body(response, MAX_MODEL_HTTP_BODY_BYTES, &cancel)
                 .await
@@ -937,15 +937,18 @@ impl AnthropicStream {
         }
         match kind {
             "ping" => Ok(()),
-            "error" => Err(model_error(format!(
-                "Anthropic stream error: {}",
-                event
-                    .get("error")
-                    .map(Value::to_string)
-                    .unwrap_or_default()
-                    .chars()
-                    .take(500)
-                    .collect::<String>()
+            "error" => Err(AgentError::Provider(crate::ProviderFailure::from_body(
+                &event,
+                format!(
+                    "Anthropic stream error: {}",
+                    event
+                        .get("error")
+                        .map(Value::to_string)
+                        .unwrap_or_default()
+                        .chars()
+                        .take(500)
+                        .collect::<String>()
+                ),
             ))),
             "message_start" => {
                 if self.message.is_some() {

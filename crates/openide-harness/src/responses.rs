@@ -372,7 +372,7 @@ impl ResponsesBackend {
     ) -> Result<u64, AgentError> {
         let body = self.input_token_count_body(messages, tools)?;
         let endpoint = format!("{}/input_tokens", self.endpoint);
-        retry_model_transport(&cancel, || async {
+        retry_model_transport(&cancel, None, || async {
             let mut request = self.client.post(&endpoint).json(&body);
             if let Some(key) = &self.api_key {
                 request = request.bearer_auth(key);
@@ -465,7 +465,7 @@ impl ResponsesBackend {
                 .stream_complete_detailed(messages, tools, cancel, sender)
                 .await;
         }
-        let result = retry_model_transport(&cancel, || async {
+        let result = retry_model_transport(&cancel, None, || async {
             let response = self.send_once(messages, tools, false, &cancel).await?;
             let bytes = read_model_http_body(response, MAX_ASSEMBLED_BYTES, &cancel)
                 .await
@@ -500,7 +500,7 @@ impl ResponsesBackend {
         cancel: CancellationToken,
         delivery: ModelStreamDelivery,
     ) -> Result<ResponsesResult, AgentError> {
-        let result = retry_model_transport(&cancel, || async {
+        let result = retry_model_transport(&cancel, Some(&delivery), || async {
             let response = self.send_once(messages, tools, true, &cancel).await?;
             let status = response.status().as_u16();
             let mime = model_response_mime(response.headers());
@@ -525,7 +525,7 @@ impl ResponsesBackend {
                 }
                 while let Some(frame) = pending.take_sse_frame() {
                     let mut events = Vec::new();
-                    assembler.ingest_events(&frame, &mut events).map_err(ModelAttemptError::Terminal)?;
+                    assembler.ingest_events(&frame, &mut events).map_err(|error| ModelAttemptError::classified(error, assembler.published_activity || hosted_search_may_have_run))?;
                     delivery.publish(events).await.map_err(ModelAttemptError::Terminal)?;
                     if assembler.completed.is_some() {
                         let published_text = assembler.published_delta;
@@ -1285,8 +1285,9 @@ impl ResponseStream {
             }
             Some("response.failed" | "response.incomplete" | "response.error" | "error") => {
                 let detail = response_failure_detail(&event, "unknown failure");
-                return Err(AgentError::Model(format!(
-                    "Responses stream failed: {detail}"
+                return Err(AgentError::Provider(crate::ProviderFailure::from_body(
+                    &event,
+                    format!("Responses stream failed: {detail}"),
                 )));
             }
             _ => {}
@@ -3250,7 +3251,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, AgentError::Model(_)));
+        assert!(matches!(error, AgentError::Provider(_)));
         assert!(receiver.try_recv().is_err());
         server.await.unwrap();
     }
