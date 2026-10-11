@@ -2494,6 +2494,17 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
     Card::new(Element::column(content).gap(7.0), theme::card_palette()).render()
 }
 
+pub(crate) fn subagent_status_label(status: openide_harness::SubagentStatus) -> &'static str {
+    match status {
+        openide_harness::SubagentStatus::Ready => "Pendiente",
+        openide_harness::SubagentStatus::Running => "En ejecución",
+        openide_harness::SubagentStatus::Interrupted => "Interrumpido",
+        openide_harness::SubagentStatus::Completed => "Completado",
+        openide_harness::SubagentStatus::Failed => "Fallido",
+        openide_harness::SubagentStatus::Cancelled => "Cancelado",
+    }
+}
+
 /// Shared by the session layout and the workspace fallback so permissions
 /// remain actionable while either related session is selected.
 fn persisted_subagent_card(
@@ -2503,14 +2514,7 @@ fn persisted_subagent_card(
     show_inputs: bool,
     edit: Option<&crate::view::SubagentInputEditView>,
 ) -> Element {
-    let status = match run.status {
-        openide_harness::SubagentStatus::Ready => "Pendiente",
-        openide_harness::SubagentStatus::Running => "En ejecución",
-        openide_harness::SubagentStatus::Interrupted => "Interrumpido",
-        openide_harness::SubagentStatus::Completed => "Completado",
-        openide_harness::SubagentStatus::Failed => "Fallido",
-        openide_harness::SubagentStatus::Cancelled => "Cancelado",
-    };
+    let status = subagent_status_label(run.status);
     let (target, label) = if selected == run.child_session_id {
         (&run.parent_session_id, "Abrir sesión padre")
     } else if run.status == openide_harness::SubagentStatus::Interrupted {

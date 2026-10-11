@@ -1887,29 +1887,6 @@ fn file_tree_content(state: &ViewState, width: f32) -> Element {
     crate::files_panel_ui::build(state, width)
 }
 
-fn tool_status(
-    output: &Option<String>,
-    is_error: bool,
-    activity: crate::transcript::ActivityStatus,
-) -> &'static str {
-    if output.is_none() {
-        match activity {
-            crate::transcript::ActivityStatus::Running => "En curso",
-            crate::transcript::ActivityStatus::WaitingPermission => "Esperando permiso",
-            crate::transcript::ActivityStatus::PermissionInterrupted => {
-                "Permiso pendiente en turno interrumpido"
-            }
-            crate::transcript::ActivityStatus::Failed => "Falló sin resultado",
-            crate::transcript::ActivityStatus::Cancelled => "Cancelada",
-            _ => "Resultado incierto",
-        }
-    } else if is_error {
-        "Error"
-    } else {
-        "Completada"
-    }
-}
-
 fn transcript_item(
     item: &TranscriptItem,
     item_index: usize,

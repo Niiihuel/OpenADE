@@ -366,7 +366,7 @@ fn confirmation_without_a_new_row_invalidates_the_expansion_cache_but_idle_frame
     app.last_sequence = 2;
     app.poll_chat_diffs(&egui::Context::default());
     assert!(app.chat_diffs.pending.is_none());
-    let before = app.chat_diffs.expansion_revision;
+    let before = app.chat_diffs.expansion_revision.clone();
     let generation = app.chat_diffs.generation;
     for _ in 0..120 {
         assert!(!app.poll_chat_diffs(&egui::Context::default()));

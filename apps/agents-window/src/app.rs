@@ -18142,10 +18142,12 @@ impl AgentsWindow {
                 self.sync_dock_view();
             }
             UiAction::Clicked { id } if id.starts_with("dock_activity:") => {
-                crate::view::dock_activity::apply_action(
+                if let Some(text) = crate::view::dock_activity::apply_action(
                     &mut self.view,
                     id.trim_start_matches("dock_activity:"),
-                );
+                ) {
+                    ctx.copy_text(text);
+                }
             }
             UiAction::Clicked { id } if id.starts_with("tool:") => {
                 let tool_id = id.trim_start_matches("tool:");

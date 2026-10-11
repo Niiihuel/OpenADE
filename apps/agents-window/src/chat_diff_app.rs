@@ -11,7 +11,7 @@ pub(super) struct ChatDiffHost {
     pending: Option<SessionToolDiffRequest>,
     waiting: VecDeque<String>,
     generation: u64,
-    expansion_revision: Option<(u64, usize, u64)>,
+    expansion_revision: Option<(u64, usize, u64, Option<String>)>,
 }
 
 #[cfg(test)]
@@ -66,8 +66,9 @@ impl AgentsWindow {
             self.last_sequence,
             self.view.transcript.len(),
             self.view.conversation_details.revision(),
+            self.view.selected_tool_id.clone(),
         );
-        if self.chat_diffs.expansion_revision == Some(revision) {
+        if self.chat_diffs.expansion_revision.as_ref() == Some(&revision) {
             return false;
         }
         self.chat_diffs.expansion_revision = Some(revision);
@@ -97,10 +98,12 @@ impl AgentsWindow {
             };
             if !matches!(name.as_str(), "write_file" | "apply_patch")
                 || counts.get(id.as_str()) != Some(&1)
-                || !self
-                    .view
-                    .conversation_details
-                    .is_expanded(&format!("tool:{id}"), defaults.contains(&id.as_str()))
+                // The Activity detail of the selected edit shows its diff too.
+                || !(self.view.selected_tool_id.as_deref() == Some(id.as_str())
+                    || self
+                        .view
+                        .conversation_details
+                        .is_expanded(&format!("tool:{id}"), defaults.contains(&id.as_str())))
             {
                 continue;
             }

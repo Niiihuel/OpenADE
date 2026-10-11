@@ -61,15 +61,40 @@ impl StatusFilter {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ActivityUi {
     pub status: Option<StatusFilter>,
+    /// Whether the selected call shows its raw arguments and result.
+    pub data_open: bool,
 }
 
-/// Apply the part of a `dock_activity:` action after its prefix.
-pub(crate) fn apply_action(state: &mut ViewState, action: &str) {
+/// Apply the part of a `dock_activity:` action after its prefix. Returns
+/// text the host should put on the clipboard.
+pub(crate) fn apply_action(state: &mut ViewState, action: &str) -> Option<String> {
     let ui = &mut state.activity;
-    if let ("filter", key) = action.split_once(':').unwrap_or((action, "")) {
-        let next = StatusFilter::ALL.into_iter().find(|filter| filter.key() == key);
-        ui.status = if ui.status == next { None } else { next };
+    match action.split_once(':').unwrap_or((action, "")) {
+        ("filter", key) => {
+            let next = StatusFilter::ALL.into_iter().find(|filter| filter.key() == key);
+            ui.status = if ui.status == next { None } else { next };
+        }
+        ("data", _) => ui.data_open = !ui.data_open,
+        ("copy", _) => {
+            let selected = state.selected_tool_id.as_deref()?;
+            return state.transcript.iter().find_map(|item| match item {
+                TranscriptItem::Tool {
+                    id,
+                    name,
+                    arguments,
+                    output,
+                    ..
+                } if id == selected => Some(format!(
+                    "{name}\n\n{}\n\n{}",
+                    serde_json::to_string_pretty(arguments).unwrap_or_default(),
+                    output.as_deref().unwrap_or_default()
+                )),
+                _ => None,
+            });
+        }
+        _ => {}
     }
+    None
 }
 
 struct CallRow {
@@ -395,151 +420,8 @@ pub(super) fn content(state: &ViewState, width: f32, height: f32) -> Element {
         });
     }
     let mut items = Vec::new();
-    if let Some((
-        index,
-        TranscriptItem::Tool {
-            id,
-            name,
-            arguments,
-            output,
-            is_error,
-            activity,
-        },
-        _,
-    )) = selected
-    {
-        let mut detail = vec![
-            Element::row(vec![
-                UiText::new(
-                    if name.is_empty() { "Herramienta" } else { name },
-                    theme::component_palette(),
-                )
-                .role(TextRole::Label)
-                .render()
-                .flex(1.0),
-                theme::text_px(
-                    tool_status(output, *is_error, *activity),
-                    10.5,
-                    if *is_error {
-                        theme::DESTRUCTIVE
-                    } else {
-                        theme::FOREGROUND_SUBTLE
-                    },
-                ),
-            ])
-            .gap(8.0),
-            UiText::eyebrow("ARGUMENTOS", theme::component_palette()).render(),
-            output_block(
-                &format!("activity:{id}:arguments"),
-                &bounded_json(arguments),
-                width - 16.0,
-                theme::FOREGROUND,
-                100.0,
-            ),
-        ];
-        let media = crate::session_surface::tool_media(state, index, id);
-        if let Some(media) = media {
-            detail
-                .push(UiText::eyebrow("CONTENIDO MULTIMEDIA", theme::component_palette()).render());
-            detail.extend(crate::session_surface::tool_media_elements(
-                media,
-                true,
-                state.selected_session.as_deref().unwrap_or(""),
-            ));
-        } else if let Some(media) = output
-            .as_deref()
-            .and_then(|output| crate::tool_result_media::preview(name, output))
-        {
-            detail
-                .push(UiText::eyebrow("CONTENIDO MULTIMEDIA", theme::component_palette()).render());
-            for image in &media.images {
-                detail.push(
-                    Element::raster_image(image.clone())
-                        .size(None, Some(180.0))
-                        .radius(6.0),
-                );
-            }
-            if !media.text.is_empty() {
-                detail.push(output_block(
-                    &format!("activity:{id}:media"),
-                    &media.text,
-                    width - 16.0,
-                    theme::FOREGROUND,
-                    160.0,
-                ));
-            }
-            for notice in &media.notices {
-                detail.push(
-                    UiText::new(*notice, theme::component_palette())
-                        .role(TextRole::Small)
-                        .muted()
-                        .render(),
-                );
-            }
-        }
-        if let Some(output) = output {
-            detail.push(UiText::eyebrow("RESULTADO FINAL", theme::component_palette()).render());
-            detail.push(output_block(
-                &format!("activity:{id}:output"),
-                output,
-                width - 16.0,
-                if *is_error {
-                    theme::DESTRUCTIVE
-                } else {
-                    theme::FOREGROUND
-                },
-                200.0,
-            ));
-        }
-        if let Some((captured, truncated)) =
-            crate::session_surface::tool_partial_output(state, index, id)
-        {
-            detail.push(
-                UiText::eyebrow(
-                    if output.is_some() {
-                        "SALIDA CAPTURADA"
-                    } else if *activity == crate::transcript::ActivityStatus::Running {
-                        "SALIDA EN CURSO"
-                    } else {
-                        "SALIDA PARCIAL"
-                    },
-                    theme::component_palette(),
-                )
-                .render(),
-            );
-            if truncated {
-                detail.push(
-                    UiText::new(
-                        "Salida limitada · parte del contenido fue omitida",
-                        theme::component_palette(),
-                    )
-                    .role(TextRole::Small)
-                    .muted()
-                    .render(),
-                );
-            }
-            detail.push(output_block(
-                &format!("activity:{id}:partial"),
-                &captured,
-                width - 16.0,
-                theme::FOREGROUND,
-                160.0,
-            ));
-        } else if output.is_none() {
-            detail.push(
-                UiText::new(
-                    if *activity == crate::transcript::ActivityStatus::Running {
-                        "Esperando resultado…"
-                    } else {
-                        "Sin resultado confirmado"
-                    },
-                    theme::component_palette(),
-                )
-                .muted()
-                .render(),
-            );
-        }
-        items.push(inset_card(Element::column(detail).gap(8.0), width));
+    if let Some((index, item, _)) = selected {
+        items.push(inset_card(detail(state, index, item, width - 16.0), width));
     } else if state.native_commands.is_empty() {
         items.push(pane_empty_state(
             Icon::History,
@@ -582,6 +464,434 @@ pub(super) fn content(state: &ViewState, width: f32, height: f32) -> Element {
         .gap(8.0)
         .padding(12.0)
         .size(None, Some(height))
+}
+
+fn small(text: impl Into<String>, ink: Color) -> Element {
+    UiText::new(text, theme::component_palette())
+        .role(TextRole::Small)
+        .ink(ink)
+        .render()
+}
+
+/// The start of a result: whole lines within a byte budget, cut before
+/// anything is shaped.
+fn first_lines(text: &str, lines: usize) -> &str {
+    let mut end = text.len().min(4096);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let text = &text[..end];
+    match text.match_indices('\n').nth(lines.saturating_sub(1)) {
+        Some((at, _)) => &text[..at],
+        None => text,
+    }
+}
+
+/// What a call returned, as its first lines. A structured result is data:
+/// it stays under "Ver datos".
+fn result_preview(
+    detail: &mut Vec<Element>,
+    id: &str,
+    output: Option<&str>,
+    failed: bool,
+    width: f32,
+) {
+    let Some(output) = output.map(str::trim).filter(|output| !output.is_empty()) else {
+        return;
+    };
+    if !failed && output.starts_with(['{', '[']) {
+        detail.push(small(
+            "Resultado estructurado · completo en Ver datos",
+            theme::FOREGROUND_SUBTLE,
+        ));
+        return;
+    }
+    let preview = first_lines(output, 12);
+    detail.push(output_block(
+        &format!("activity:{id}:preview"),
+        preview,
+        width,
+        if failed {
+            theme::DESTRUCTIVE
+        } else {
+            theme::FOREGROUND
+        },
+        200.0,
+    ));
+    if preview.len() < output.len() {
+        detail.push(small(
+            "Primeras líneas · completo en Ver datos",
+            theme::FOREGROUND_SUBTLE,
+        ));
+    }
+}
+
+/// The file or page a call names, as the button that opens it.
+fn link(
+    action: String,
+    target: tool_presentation::ToolNavigationTarget,
+    shown: &str,
+    width: f32,
+) -> Element {
+    let (icon, title, whole) = match target {
+        tool_presentation::ToolNavigationTarget::File(path) => {
+            (openide_ui::file_icon(path), "Abrir archivo", path)
+        }
+        tool_presentation::ToolNavigationTarget::Url(url) => (Icon::Globe, "Abrir enlace", url),
+    };
+    ListRow::new(action, title, theme::component_palette())
+        .icon(icon)
+        // The target as the row words it, such as a path with its lines.
+        .subtitle(if shown.is_empty() { whole } else { shown })
+        .subtitle_mono(true)
+        .trailing_icon(Icon::ArrowRight)
+        .outlined()
+        .width(width)
+        .tooltip_with(TooltipSpec::new(whole))
+        .render()
+}
+
+/// A command's result and what was captured while it ran, each bounded.
+fn command_output(
+    detail: &mut Vec<Element>,
+    state: &ViewState,
+    index: usize,
+    id: &str,
+    result: Option<&str>,
+    failed: bool,
+    activity: ActivityStatus,
+    width: f32,
+) {
+    let capture = crate::session_surface::tool_partial_output(state, index, id);
+    if let Some(result) = result.filter(|result| !result.is_empty()) {
+        if capture.is_some() {
+            detail.push(UiText::eyebrow("RESULTADO FINAL", theme::component_palette()).render());
+        }
+        detail.push(output_block(
+            &format!("activity:{id}:output"),
+            result,
+            width,
+            if failed {
+                theme::DESTRUCTIVE
+            } else {
+                theme::FOREGROUND
+            },
+            200.0,
+        ));
+    }
+    if let Some((captured, truncated)) = capture {
+        detail.push(
+            UiText::eyebrow(
+                if result.is_some() {
+                    "SALIDA CAPTURADA"
+                } else if activity == ActivityStatus::Running {
+                    "SALIDA EN CURSO"
+                } else {
+                    "SALIDA PARCIAL"
+                },
+                theme::component_palette(),
+            )
+            .render(),
+        );
+        if truncated {
+            detail.push(small(
+                "Salida limitada · parte del contenido fue omitida",
+                theme::FOREGROUND_SUBTLE,
+            ));
+        }
+        detail.push(output_block(
+            &format!("activity:{id}:partial"),
+            captured,
+            width,
+            theme::FOREGROUND,
+            160.0,
+        ));
+    } else if result.is_none() {
+        detail.push(small(
+            if activity == ActivityStatus::Running {
+                "Esperando resultado…"
+            } else {
+                "Sin resultado confirmado"
+            },
+            theme::FOREGROUND_SUBTLE,
+        ));
+    }
+}
+
+/// The selected call, shown as what it is: a command with its output, an
+/// edit with its diff, a read with what it found. The raw call stays one
+/// disclosure away.
+fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) -> Element {
+    let (
+        Some(row),
+        TranscriptItem::Tool {
+            id,
+            name,
+            arguments,
+            output,
+            is_error,
+            activity,
+        },
+    ) = (call_row(state, index, None), item)
+    else {
+        return Element::spacer();
+    };
+    let output = output.as_deref();
+    let presentation = tool_presentation::present(name, arguments, *activity, *is_error, output);
+    let failed = row.status == Some(StatusFilter::Errors);
+    let note_ink = if failed {
+        theme::DESTRUCTIVE
+    } else {
+        theme::FOREGROUND_SUBTLE
+    };
+    let mut detail = vec![Element::row(vec![
+        status_icon(&row).size(Some(16.0), Some(20.0)),
+        UiText::new(&row.title, theme::component_palette())
+            .role(TextRole::Label)
+            .render()
+            .flex(1.0),
+    ])
+    .gap(8.0)];
+    let navigation = state.selected_session.as_deref().and_then(|owner| {
+        Some(link(
+            tool_presentation::navigation_action(owner, id),
+            tool_presentation::navigation_target(name, arguments)?,
+            &presentation.target,
+            width,
+        ))
+    });
+    let target = (!presentation.target.is_empty()).then(|| {
+        UiText::new(&presentation.target, theme::component_palette())
+            .role(TextRole::Small)
+            .muted()
+            .mono()
+            .render()
+    });
+    // A reason the result below already states is not said twice.
+    let mut note = presentation
+        .note
+        .clone()
+        .filter(|note| !output.is_some_and(|output| output.contains(note.as_str())));
+    let structured = output.and_then(|output| crate::tool_result_media::preview(name, output));
+    match presentation.kind {
+        ToolKind::Command => {
+            let command = ["command", "cmd"]
+                .into_iter()
+                .find_map(|key| arguments.get(key)?.as_str())
+                .filter(|command| !command.trim().is_empty());
+            detail.extend(match command {
+                Some(command) => Some(
+                    openide_ui::CodeBlock::new(
+                        format!("$ {}", tool_presentation::clip_text(command, 12_000).0),
+                        theme::code_palette(),
+                    )
+                    .width(width)
+                    .render(),
+                ),
+                None => target,
+            });
+            let parsed = output.and_then(|output| tool_presentation::terminal_result(name, output));
+            // The process's own outcome, where the tool reports one.
+            if let Some((_, status)) = &parsed {
+                note = Some(status.clone());
+            }
+            detail.extend(note.take().map(|note| small(note, note_ink)));
+            command_output(
+                &mut detail,
+                state,
+                index,
+                id,
+                parsed.as_ref().map(|(text, _)| text.as_str()).or(output),
+                failed,
+                *activity,
+                width,
+            );
+        }
+        ToolKind::Edit => {
+            detail.extend(navigation.or(target));
+            if let Some((added, removed)) = row.stat {
+                detail.push(
+                    DiffStat::new(added, removed, theme::component_palette())
+                        .inks(theme::DIFF_ADDED, theme::DIFF_REMOVED)
+                        .render(),
+                );
+            }
+            // Only confirmed writes and patches have a diff to rebuild.
+            if row.status == Some(StatusFilter::Done)
+                && matches!(name.as_str(), "write_file" | "apply_patch")
+            {
+                detail.push(crate::chat_diff_ui::body(state, id));
+            } else {
+                result_preview(&mut detail, id, output, failed, width);
+            }
+        }
+        ToolKind::Web | ToolKind::File | ToolKind::Search => {
+            detail.extend(navigation.or(target));
+            let results = output.map_or_else(Vec::new, |output| {
+                crate::search_activity_ui::captured_results(name, output, arguments)
+            });
+            match state.selected_session.as_deref() {
+                Some(owner) if name == "web_search" && !results.is_empty() => {
+                    detail.extend(results.iter().take(5).enumerate().map(|(index, result)| {
+                        crate::search_activity_ui::result_row(owner, id, index, result, false)
+                    }));
+                }
+                _ => result_preview(&mut detail, id, output, failed, width),
+            }
+        }
+        ToolKind::Mcp => {
+            // Top-level arguments as a short table; nested values stay data.
+            for (key, value) in arguments.as_object().into_iter().flatten().take(12) {
+                let value = match value {
+                    Value::String(text) => tool_presentation::clip_text(text, 200).0,
+                    other => tool_presentation::json_preview(other, 200)
+                        .0
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                };
+                detail.push(
+                    Element::row(vec![
+                        Element::truncated_text(key)
+                            .font_family(FontFamily::Monospace)
+                            .font_size(11.0)
+                            .foreground(theme::FOREGROUND_SUBTLE)
+                            .size(Some((width * 0.3).min(160.0)), None),
+                        small(value, theme::FOREGROUND).flex(1.0),
+                    ])
+                    .gap(8.0),
+                );
+            }
+            if structured.is_none() {
+                result_preview(&mut detail, id, output, failed, width);
+            }
+        }
+        ToolKind::Agent => {
+            let child = state.subagent_sessions.iter().find(|run| {
+                ["child_session_id", "agent_id", "target"]
+                    .into_iter()
+                    .any(|key| arguments.get(key).and_then(Value::as_str) == Some(&run.child_session_id))
+                    || output.is_some_and(|output| output.contains(&run.child_session_id))
+            });
+            match child {
+                Some(run) => {
+                    detail.push(UiText::new(&run.title, theme::component_palette()).render());
+                    detail.push(small(
+                        crate::session_surface::subagent_status_label(run.status),
+                        theme::FOREGROUND_SUBTLE,
+                    ));
+                    detail.push(Element::row(vec![
+                        Button::new(
+                            format!("subagent_open:{}", run.child_session_id),
+                            "Abrir subagente",
+                            theme::component_palette(),
+                        )
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Compact)
+                        .render(),
+                        Element::spacer().flex(1.0),
+                    ]));
+                }
+                None => {
+                    detail.extend(target);
+                    result_preview(&mut detail, id, output, failed, width);
+                }
+            }
+        }
+        ToolKind::Other => {
+            detail.extend(target);
+            result_preview(&mut detail, id, output, failed, width);
+        }
+    }
+    detail.extend(note.map(|note| small(note, note_ink)));
+    let media = crate::session_surface::tool_media(state, index, id);
+    if let Some(media) = media {
+        detail.push(UiText::eyebrow("CONTENIDO MULTIMEDIA", theme::component_palette()).render());
+        detail.extend(crate::session_surface::tool_media_elements(
+            media,
+            true,
+            state.selected_session.as_deref().unwrap_or(""),
+        ));
+    } else if let Some(media) = structured {
+        detail.push(UiText::eyebrow("CONTENIDO MULTIMEDIA", theme::component_palette()).render());
+        for image in &media.images {
+            detail.push(
+                Element::raster_image(image.clone())
+                    .size(None, Some(180.0))
+                    .radius(6.0),
+            );
+        }
+        if !media.text.is_empty() {
+            detail.push(output_block(
+                &format!("activity:{id}:media"),
+                &media.text,
+                width,
+                theme::FOREGROUND,
+                160.0,
+            ));
+        }
+        for notice in &media.notices {
+            detail.push(small(*notice, theme::FOREGROUND_SUBTLE));
+        }
+    }
+    detail.extend(state.transcript.iter().filter_map(|item| match item {
+        TranscriptItem::Hook(hook) if hook.tool_call_id == *id => {
+            Some(crate::session_surface::hook_activity_card(hook))
+        }
+        _ => None,
+    }));
+    // The call as it was made and answered, for whoever needs the data.
+    let mut data = Vec::new();
+    if state.activity.data_open {
+        data.push(
+            UiText::new(format!("{name} · {id}"), theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .mono()
+                .render(),
+        );
+        data.push(UiText::eyebrow("ARGUMENTOS", theme::component_palette()).render());
+        data.push(output_block(
+            &format!("activity:{id}:arguments"),
+            &bounded_json(arguments),
+            width - 40.0,
+            theme::FOREGROUND,
+            100.0,
+        ));
+        if let Some(output) = output {
+            data.push(UiText::eyebrow("RESULTADO FINAL", theme::component_palette()).render());
+            data.push(output_block(
+                &format!("activity:{id}:raw"),
+                output,
+                width - 40.0,
+                if failed {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::FOREGROUND
+                },
+                200.0,
+            ));
+        }
+        data.push(Element::row(vec![
+            Button::new("dock_activity:copy", "Copiar", theme::component_palette())
+                .variant(ButtonVariant::Subtle)
+                .size(ControlSize::Compact)
+                .render(),
+            Element::spacer().flex(1.0),
+        ]));
+    }
+    detail.push(
+        openide_ui::Collapsible::new(
+            "dock_activity:data",
+            "Ver datos",
+            Element::column(data).gap(8.0),
+            theme::component_palette(),
+        )
+        .icon(Icon::Code)
+        .expanded(state.activity.data_open)
+        .render(),
+    );
+    Element::column(detail).gap(8.0)
 }
 
 /// A borderless panel-colored group inside the inspector.
@@ -972,6 +1282,54 @@ mod tests {
                 shot(&state, width, &format!("filter-{}", filter.key()));
             }
             state.activity.status = None;
+            for (id, name) in [
+                ("cmd-1", "command"),
+                ("cmd-2", "command-failed"),
+                ("edit-1", "edit"),
+                ("read-1", "read"),
+                ("search-1", "search"),
+                ("web-1", "web"),
+                ("mcp-1", "mcp"),
+            ] {
+                state.selected_tool_id = Some(id.into());
+                shot(&state, width, &format!("detail-{name}"));
+            }
+            state.transcript.push(tool(
+                "agent-1",
+                "spawn_agent",
+                serde_json::json!({"title":"Revisar pruebas visuales"}),
+                Some("{\"child_session_id\":\"child-1\"}"),
+                ActivityStatus::Completed,
+            ));
+            state.transcript.push(TranscriptItem::Hook(crate::transcript::HookActivity {
+                tool_call_id: "agent-1".into(),
+                hook_id: "formato".into(),
+                phase: "post_tool_use".into(),
+                decision: Some("allow".into()),
+                interrupted: false,
+                reason: None,
+                stdout: None,
+                stderr: None,
+                error: None,
+            }));
+            state.subagent_sessions = vec![SubagentSessionView {
+                child_session_id: "child-1".into(),
+                parent_session_id: OWNER.into(),
+                title: "Revisar pruebas visuales".into(),
+                status: SubagentStatus::Running,
+                cancellation_requested: false,
+                open_inputs: 0,
+                inputs: vec![],
+                dispatch_error: None,
+                depth: 1,
+            }];
+            state.selected_tool_id = Some("agent-1".into());
+            shot(&state, width, "detail-agent");
+            state.selected_tool_id = Some("mcp-1".into());
+            state.activity.data_open = true;
+            shot(&state, width, "detail-data-open");
+            state.activity.data_open = false;
+            state.selected_tool_id = None;
             state.transcript.clear();
             shot(&state, width, "empty");
         }
@@ -1007,9 +1365,10 @@ mod tests {
         ] {
             assert!(text.contains(expected), "missing {expected}: {text}");
         }
-        for raw in ["run_command", "read_file", "write_file", "mcp__", "search_text"] {
+        for raw in ["run_command", "read_file", "write_file", "mcp__", "search_text", "web_fetch"] {
             assert!(!text.contains(raw), "raw name {raw}: {text}");
         }
+        assert!(!text.contains("ARGUMENTOS") && !text.contains('{'), "{text}");
         // The chip is the filter: only the failed call stays, and it clears.
         assert!(frame
             .regions
@@ -1026,6 +1385,51 @@ mod tests {
         assert_eq!(rows, ["tool:cmd-2"]);
         apply_action(&mut state, "filter:errors");
         assert_eq!(state.activity.status, None);
+    }
+
+    fn detail_text(state: &mut ViewState, id: &str) -> String {
+        state.selected_tool_id = Some(id.into());
+        let frame = UiTree::new(content(state, 620.0, 1400.0)).layout(Size::new(620.0, 1400.0));
+        let layouts = frame.text_layouts();
+        format!(
+            "{} | {}",
+            visible(&frame),
+            layouts
+                .iter()
+                .map(|layout| layout.source.as_str())
+                .collect::<Vec<_>>()
+                .join(" | ")
+        )
+    }
+
+    #[test]
+    fn the_detail_shows_each_kind_as_what_it_is_and_keeps_raw_data_behind_one_disclosure() {
+        let mut state = review_state();
+        let command = detail_text(&mut state, "cmd-1");
+        assert!(command.contains("$ cargo test -p agents-window dock_activity"), "{command}");
+        assert!(command.contains("test result: ok. 3 passed"), "{command}");
+        let failed = detail_text(&mut state, "cmd-2");
+        assert!(failed.contains("could not compile"), "{failed}");
+        let edit = detail_text(&mut state, "edit-1");
+        assert!(edit.contains("Abrir archivo") && edit.contains("+12"), "{edit}");
+        let read = detail_text(&mut state, "read-1");
+        assert!(read.contains("Abrir archivo") && read.contains("PREVIEW_BYTES"), "{read}");
+        let web = detail_text(&mut state, "web-1");
+        assert!(web.contains("Abrir enlace") && web.contains("one entry of a list"), "{web}");
+        let mcp = detail_text(&mut state, "mcp-1");
+        assert!(mcp.contains("github · create issue"), "{mcp}");
+        assert!(mcp.contains("repo") && mcp.contains("Niiihuel/openADE"), "{mcp}");
+        for text in [&command, &failed, &edit, &read, &web, &mcp] {
+            assert!(text.contains("Ver datos"));
+            assert!(!text.contains("ARGUMENTOS") && !text.contains("mcp__"), "{text}");
+        }
+        // Raw arguments, result and tool name appear once asked for, and copy.
+        assert_eq!(apply_action(&mut state, "data"), None);
+        let data = detail_text(&mut state, "mcp-1");
+        assert!(data.contains("ARGUMENTOS") && data.contains("mcp__github__create_issue"), "{data}");
+        assert!(data.contains("\"number\": 42"), "{data}");
+        let copied = apply_action(&mut state, "copy").unwrap();
+        assert!(copied.contains("mcp__github__create_issue") && copied.contains("\"labels\""));
     }
 
     #[test]
