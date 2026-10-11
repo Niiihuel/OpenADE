@@ -97,6 +97,8 @@ pub(crate) struct ComposerProps<'a> {
     pub error: Option<&'a str>,
     /// Output of the project's check when it failed after the last turn.
     pub check_failure: Option<&'a str>,
+    /// The selected session's turn is paused on a provider limit.
+    pub pause_line: Option<&'a str>,
     pub native_context: Option<&'a crate::native_context_ui::NativeContextUiState>,
     pub context_compaction: crate::composer_context_ui::ContextCompactionView<'a>,
     pub context_open: bool,
@@ -220,6 +222,7 @@ impl<'a> ComposerProps<'a> {
             pending,
             error: state.composer_error.as_deref(),
             check_failure: state.turn_check_failure.as_deref(),
+            pause_line: state.pause.composer.as_deref(),
             native_context: state
                 .native_context
                 .matches_scope(
@@ -2291,6 +2294,18 @@ pub(crate) fn build_composer_with_height(
             compact,
         ));
     }
+    if let Some(line) = props.pause_line {
+        // One quiet line: the card in the transcript carries the actions.
+        // Plain text, so it wraps on a narrow window instead of clipping.
+        notices.push(
+            openide_ui::Text::new(line, theme::component_palette())
+                .role(openide_ui::TextRole::Small)
+                .muted()
+                .render()
+                .padding(4.0)
+                .size(Some(props.width), None),
+        );
+    }
     if notices.is_empty() {
         composer
     } else {
@@ -2393,6 +2408,7 @@ pub(crate) mod tests {
     pub(crate) fn props<'a>(prompt: &'a str, width: f32) -> ComposerProps<'a> {
         ComposerProps {
             check_failure: None,
+            pause_line: None,
             keymap_profile: KeymapProfile::default(),
             embedded_in_ide: false,
             environment: None,

@@ -2294,7 +2294,15 @@ fn timeline(state: &ViewState, width: f32) -> Element {
                 .is_some_and(|child| child.child_session_id == session_id);
             if let Some(pause) = state.pause.sessions.get(session_id) {
                 // Paused for a known cause: the pause card, also for a child.
-                rows.push(state.pause.card(session_id, pause, width < COMPACT_BREAKPOINT));
+                let working = state
+                    .subagent_sessions
+                    .iter()
+                    .filter(|run| {
+                        run.parent_session_id == session_id
+                            && run.status == openide_harness::SubagentStatus::Running
+                    })
+                    .count();
+                rows.push(state.pause.card(session_id, pause, working, width < COMPACT_BREAKPOINT));
             } else if !child_card_already_visible {
                 rows.push(native_recovery_card(session_id, recovery));
             }

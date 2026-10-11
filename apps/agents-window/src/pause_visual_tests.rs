@@ -43,6 +43,8 @@ fn paused(class: openide_core::TurnPauseClass, resets_in_ms: Option<u64>) -> cra
         detail: "HTTP 429: {\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"The usage limit has been reached\"}}".into(),
         provider_id: "codex".into(),
         parent: None,
+        paused_at_ms: NOW_MS,
+        pauses_in_turn: 1,
     }
 }
 
@@ -56,8 +58,27 @@ fn paused_state(pause: crate::pause::PausedTurn) -> ViewState {
     state
         .session_recovery
         .insert(OWNER.into(), crate::view::SessionRecoveryView::Resume);
+    state.pause.auto_enabled = true;
     state.pause.sessions.insert(OWNER.into(), pause);
+    // The app keeps the composer's line; a fixture has to do the same.
+    state.pause.composer = state.pause.composer_line(Some(OWNER));
     state
+}
+
+/// The whole window with the task list, for the sidebar's row.
+fn window(mut state: ViewState, width: f32) -> Element {
+    state.sidebar_collapsed = false;
+    state.sessions = vec![crate::view::SessionView {
+        id: OWNER.into(),
+        title: "Migrar los tests de cobros".into(),
+        project: state.workspace.clone(),
+        backend: "native".into(),
+        pinned: false,
+        archived: false,
+        unread: false,
+        native_automation: None,
+    }];
+    crate::view::build_window_view(&state, width, 600.0)
 }
 
 fn limit() -> ViewState {
@@ -84,17 +105,22 @@ fn waiting_on_child() -> ViewState {
     let mut child = paused(openide_core::TurnPauseClass::LimitReached, Some(8_040_000));
     child.parent = Some(OWNER.into());
     state.pause.sessions.insert("child-1".into(), child);
-    state.subagent_sessions = vec![crate::view::SubagentSessionView {
-        child_session_id: "child-1".into(),
+    let run = |id: &str, title: &str, status| crate::view::SubagentSessionView {
+        child_session_id: id.into(),
         parent_session_id: OWNER.into(),
-        title: "Migrar los tests de facturas".into(),
-        status: openide_harness::SubagentStatus::Interrupted,
+        title: title.into(),
+        status,
         cancellation_requested: false,
         open_inputs: 0,
         inputs: vec![],
         dispatch_error: None,
         depth: 1,
-    }];
+    };
+    // One child is held by the limit; another, not affected, keeps working.
+    state.subagent_sessions = vec![
+        run("child-1", "Migrar los tests de facturas", openide_harness::SubagentStatus::Interrupted),
+        run("child-2", "Revisar los fixtures", openide_harness::SubagentStatus::Running),
+    ];
     state
 }
 
@@ -118,7 +144,8 @@ fn a_paused_turn_shows_its_cause_and_actions_instead_of_the_recovery_card() {
     for width in [360.0, 900.0] {
         let text = texts(&limit(), width);
         assert!(text.contains("Límite de uso alcanzado · ChatGPT"), "{text}");
-        assert!(text.contains("faltan 2 h 14 min"), "{text}");
+        // A narrow card wraps the line; the words are the same.
+        assert!(text.replace('\n', "").contains("faltan 2 h 14 min"), "{text}");
         // The provider's raw text stays one click away.
         assert!(!text.contains("usage_limit_reached"), "{text}");
         assert!(!text.contains("Recuperación del turno"), "{text}");
@@ -132,14 +159,34 @@ fn a_paused_turn_shows_its_cause_and_actions_instead_of_the_recovery_card() {
         assert!(text.contains("Sin crédito en OpenRouter") && text.contains("usage_limit_reached"), "{text}");
         assert!(actions(&credits(), width).contains(&format!("pause_account:{OWNER}")));
         assert!(texts(&auth(), width).contains("Reconectá Anthropic"));
+        assert!(actions(&auth(), width).contains(&format!("pause_reconnect:{OWNER}")));
 
         let text = texts(&waiting_on_child(), width);
         assert!(text.contains("Esperando a un subagente en pausa"), "{text}");
-        assert!(text.contains("2 agentes en pausa por este límite."), "{text}");
+        assert!(text.contains("2 en pausa · 1 trabajando"), "{text}");
         // The child reads as paused, and its actions live on the root card only.
-        assert!(text.contains("En pausa · ") && !text.contains("Interrumpido"), "{text}");
+        // (At phone width its status line falls below this 600 px frame.)
+        assert!(!text.contains("Interrumpido"), "{text}");
+        assert!(width < 900.0 || text.contains("En pausa · "), "{text}");
         assert!(!actions(&waiting_on_child(), width).iter().any(|id| id.ends_with(":child-1")));
     }
+    // The composer repeats the state in one line and says what Esc does;
+    // the task row carries the time.
+    let text = texts(&limit(), 900.0);
+    assert!(text.contains("continúa automáticamente a las") && text.contains("Esc cancela la reanudación automática"), "{text}");
+    let mut cancelled = limit();
+    cancelled.pause.auto_cancelled.insert(OWNER.into());
+    cancelled.pause.composer = cancelled.pause.composer_line(Some(OWNER));
+    let text = texts(&cancelled, 900.0);
+    assert!(text.contains("reanudación automática cancelada") && !text.contains("Esc cancela"), "{text}");
+    let (context, mut tree) = super::file_activity_visual_tests::native_tree(window(limit(), 900.0));
+    let frame = tree.layout(Size::new(900.0, 600.0));
+    let mut output = context.end_pass();
+    output.textures_delta.clear();
+    assert!(frame.commands.iter().any(|command| matches!(
+        command,
+        openide_ui::DrawCommand::Text { text, .. } if text.starts_with("en pausa · ")
+    )));
     // A turn that needs a person is never dressed as a pause.
     let mut uncertain = limit();
     uncertain.pause.sessions.clear();
@@ -188,6 +235,12 @@ fn export_pause_visual_review() {
             ("card-credits-detail", credits()),
             ("card-auth", auth()),
             ("card-waiting-on-child", waiting_on_child()),
+            ("composer-auto-resume-cancelled", {
+                let mut state = limit();
+                state.pause.auto_cancelled.insert(OWNER.into());
+                state.pause.composer = state.pause.composer_line(Some(OWNER));
+                state
+            }),
         ] {
             let (context, mut tree) = super::file_activity_visual_tests::native_tree(
                 build_session_surface(&state, width, false, false),
@@ -197,6 +250,12 @@ fn export_pause_visual_review() {
             let mut output = context.end_pass();
             output.textures_delta.clear();
         }
+        let (context, mut tree) =
+            super::file_activity_visual_tests::native_tree(window(limit(), width));
+        tree.set_reduced_motion(true);
+        save(&mut tree, &directory, "sidebar-row", width);
+        let mut output = context.end_pass();
+        output.textures_delta.clear();
     }
 }
 

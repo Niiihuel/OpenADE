@@ -178,6 +178,7 @@ mod tests {
     fn inputs() -> ComposerProps<'static> {
         ComposerProps {
             check_failure: None,
+            pause_line: None,
             keymap_profile: crate::keymap::KeymapProfile::default(),
             embedded_in_ide: false,
             environment: None,
