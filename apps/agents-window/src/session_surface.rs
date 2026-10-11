@@ -1913,29 +1913,30 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
     // A call that ran opens its file or page, or else its recorded activity.
     let action = matches!(item, TranscriptItem::Tool { .. })
         .then(|| exploration_action(owner, id, name, arguments));
-    let line = stream_line(
-        vec![
-            stream_text(
-                verb,
-                if failed {
-                    theme::DESTRUCTIVE
-                } else {
-                    theme::FOREGROUND
-                },
-            )
-            .flex(0.0),
-            stream_text(
-                target.as_ref(),
-                if failed {
-                    theme::DESTRUCTIVE
-                } else {
-                    theme::FOREGROUND_SUBTLE
-                },
-            ),
+    // The words are plain text; what the call opens is a link, underlined
+    // under the pointer, instead of a band across the transcript.
+    let ink = |normal| if failed { theme::DESTRUCTIVE } else { normal };
+    let link = |action: &String, label: &str, color| {
+        openide_ui::Link::new(action, label, theme::component_palette())
+            .color(color)
+            .font_size(13.0)
+            .render()
+            .size(None, Some(STREAM_LINE_HEIGHT))
+            .shrink_to_fit()
+    };
+    let parts = match &action {
+        // Nothing to name: the verb itself opens the recorded activity.
+        Some(action) if target.is_empty() => vec![link(action, verb, ink(theme::FOREGROUND))],
+        Some(action) => vec![
+            stream_text(verb, ink(theme::FOREGROUND)).flex(0.0),
+            link(action, target.as_ref(), ink(theme::FOREGROUND_SUBTLE)),
         ],
-        action.clone(),
-        None,
-    );
+        None => vec![
+            stream_text(verb, ink(theme::FOREGROUND)).flex(0.0),
+            stream_text(target.as_ref(), ink(theme::FOREGROUND_SUBTLE)),
+        ],
+    };
+    let line = stream_line(parts, None, None);
     let line = flashed(state, id, line);
     // The line names the file; its whole path stays one hover away.
     let mut lines = vec![match action {
