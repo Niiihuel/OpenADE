@@ -247,7 +247,7 @@ fn activity_bar(state: &ViewState, width: f32, height: f32) -> Element {
         (IdeActivity::Search, Icon::Search),
         (IdeActivity::Git, Icon::GitBranch),
         (IdeActivity::Debug, crate::icons::BUG),
-        (IdeActivity::Extensions, Icon::Puzzle),
+        (IdeActivity::Extensions, crate::icons::SHOP),
     ] {
         let id = format!("ide_activity:{}", activity.key());
         let shown = state.ide.activity == activity

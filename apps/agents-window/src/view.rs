@@ -1641,7 +1641,7 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
         ),
         sidebar_nav_action(
             "open_marketplace",
-            Icon::Grid,
+            crate::icons::SHOP,
             "Marketplace",
             "",
             width - 12.0,
