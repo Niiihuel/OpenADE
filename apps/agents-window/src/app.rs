@@ -19096,6 +19096,14 @@ impl eframe::App for AgentsWindow {
             || (self.view.show_settings
                 && self.view.settings_page == SettingsPage::Mcp
                 && self.view.mcp_editor_open);
+        // A focused tree row takes its keys before the workbench keymap does.
+        if !workflow_modal_open
+            && !text_menu_open
+            && !self.view.show_command_center
+            && !self.view.show_settings
+        {
+            early_changed |= self.handle_file_tree_keys(&ctx);
+        }
         let (keymap_changed, settings_search_focus_target) =
             self.handle_keymap_shortcuts(&ctx, workflow_modal_open, text_menu_open);
         early_changed |= keymap_changed;

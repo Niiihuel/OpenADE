@@ -338,6 +338,60 @@ impl AgentsWindow {
         true
     }
 
+    /// The keys of the focused tree row, taken from the native events: the
+    /// UI's own key events drop Alt, and the workbench keymap would claim
+    /// Ctrl+N first. Any other focus, a text field included, keeps its keys.
+    pub(super) fn handle_file_tree_keys(&mut self, ctx: &egui::Context) -> bool {
+        let Some(path) = self
+            .tree
+            .focused_id()
+            .and_then(|id| id.strip_prefix("file_row:")?.parse::<usize>().ok())
+            .and_then(|index| self.file_explorer.as_ref()?.rows().get(index))
+            .map(|row| row.relative.to_string_lossy().replace('\\', "/"))
+        else {
+            return false;
+        };
+        let mut operations = Vec::new();
+        ctx.input_mut(|input| {
+            let held = input.modifiers;
+            input.events.retain(|event| {
+                operations.push(match event {
+                    // The system reports Ctrl+C/X/V as these, whatever else is held.
+                    egui::Event::Copy if held.alt && held.shift => "copy_relative",
+                    egui::Event::Copy if held.alt => "copy_path",
+                    egui::Event::Copy if !held.shift => "copy",
+                    egui::Event::Cut if !held.shift && !held.alt => "cut",
+                    egui::Event::Paste(_) if !held.shift && !held.alt => "paste",
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                        ..
+                    } => match key {
+                        egui::Key::F2 if modifiers.is_none() => "rename",
+                        egui::Key::Delete if modifiers.is_none() => "delete",
+                        egui::Key::N if modifiers.command && !modifiers.shift => {
+                            if modifiers.alt {
+                                "new_folder"
+                            } else {
+                                "new_file"
+                            }
+                        }
+                        _ => return true,
+                    },
+                    _ => return true,
+                });
+                false
+            });
+        });
+        for operation in &operations {
+            let id = crate::files_panel_ui::tree_action(operation, &path);
+            self.apply_file_tree_action(&UiAction::Clicked { id }, ctx);
+        }
+        !operations.is_empty()
+    }
+
     pub(super) fn cancel_file_draft(&mut self) {
         self.view.file_draft = None;
         self.file_draft_focus_pending = false;
@@ -716,6 +770,187 @@ mod tests {
         // Leaving the project empties the clipboard of its paths.
         app.invalidate_workspace_files();
         assert_eq!(app.view.file_clipboard, None);
+    }
+
+    fn key(key: egui::Key, ctrl: bool, alt: bool, shift: bool) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: held(ctrl, alt, shift),
+        }
+    }
+    fn held(ctrl: bool, alt: bool, shift: bool) -> egui::Modifiers {
+        egui::Modifiers {
+            ctrl,
+            command: ctrl,
+            alt,
+            shift,
+            mac_cmd: false,
+        }
+    }
+
+    /// One frame's native events with `held` modifiers: whether the tree took
+    /// any, what it left for the rest of the window, and what it copied.
+    fn press(
+        app: &mut AgentsWindow,
+        events: Vec<egui::Event>,
+        held: egui::Modifiers,
+    ) -> (bool, Vec<egui::Event>, Vec<String>) {
+        let ctx = egui::Context::default();
+        let mut native = vec![egui::Event::ModifiersChanged(held)];
+        native.extend(events);
+        ctx.begin_pass(egui::RawInput {
+            events: native,
+            ..Default::default()
+        });
+        assert_eq!(ctx.input(|input| input.modifiers), held);
+        let taken = app.handle_file_tree_keys(&ctx);
+        let left = ctx.input(|input| input.events[1..].to_vec());
+        let mut output = ctx.end_pass();
+        output.textures_delta.clear();
+        let copied = output
+            .platform_output
+            .commands
+            .into_iter()
+            .filter_map(|command| match command {
+                egui::OutputCommand::CopyText(text) => Some(text),
+                _ => None,
+            })
+            .collect();
+        pump(app);
+        (taken, left, copied)
+    }
+
+    fn frame(app: &mut AgentsWindow) {
+        app.tree.set_root(build_view(&app.view, 1200.0));
+        app.tree.layout(Size::new(1200.0, 720.0));
+        app.focus_file_draft_if_pending();
+    }
+
+    fn focus_row(app: &mut AgentsWindow, name: &str) {
+        frame(app);
+        let index = names(app).iter().position(|row| *row == name).unwrap();
+        assert!(app.tree.focus(&format!("file_row:{index}")), "{name}");
+    }
+
+    #[test]
+    fn keys_act_on_the_focused_row_by_its_path() {
+        let (_root, mut app) = fixture();
+        let project = PathBuf::from(&app.view.workspace);
+        let none = egui::Modifiers::NONE;
+        app.open_files_dock();
+        act(&mut app, "toggle", "src");
+        // F2 renames in place and Supr asks before the trash.
+        focus_row(&mut app, "main.rs");
+        let (taken, left, _) = press(&mut app, vec![key(egui::Key::F2, false, false, false)], none);
+        assert!(taken && left.is_empty());
+        assert_eq!(
+            draft(&app),
+            Some(("src/main.rs", FileDraftKind::Rename, "main.rs"))
+        );
+        app.cancel_file_draft();
+        focus_row(&mut app, "deep");
+        press(&mut app, vec![key(egui::Key::Delete, false, false, false)], none);
+        assert_eq!(app.view.file_delete, Some(("src/deep".into(), true)));
+        app.view.file_delete = None;
+        // Ctrl+C / Ctrl+X / Ctrl+V arrive as the system's clipboard events.
+        focus_row(&mut app, "README.md");
+        let ctrl = held(true, false, false);
+        let (_, left, copied) = press(&mut app, vec![egui::Event::Copy], ctrl);
+        assert!(left.is_empty() && copied.is_empty(), "the tree has its own clipboard");
+        assert_eq!(
+            app.view.file_clipboard,
+            Some((vec!["README.md".into()], false))
+        );
+        focus_row(&mut app, "main.rs");
+        press(&mut app, vec![egui::Event::Paste("texto ajeno".into())], ctrl);
+        assert!(project.join("src/README.md").is_file(), "beside the focused file");
+        press(&mut app, vec![egui::Event::Cut], ctrl);
+        assert_eq!(
+            app.view.file_clipboard,
+            Some((vec!["src/main.rs".into()], true))
+        );
+        // Ctrl+Alt+C and Ctrl+Alt+Shift+C copy the paths as text.
+        let (_, _, copied) = press(&mut app, vec![egui::Event::Copy], held(true, true, false));
+        assert_eq!(copied, [format!("{}/src/main.rs", app.view.workspace)]);
+        let (_, _, copied) = press(&mut app, vec![egui::Event::Copy], held(true, true, true));
+        assert_eq!(copied, ["src/main.rs"]);
+        // Ctrl+N and Ctrl+Alt+N name a new entry beside the file or in the folder.
+        press(&mut app, vec![key(egui::Key::N, true, false, false)], ctrl);
+        assert_eq!(draft(&app), Some(("src", FileDraftKind::NewFile, "")));
+        app.cancel_file_draft();
+        focus_row(&mut app, "deep");
+        let (taken, left, _) = press(
+            &mut app,
+            vec![key(egui::Key::N, true, true, false)],
+            held(true, true, false),
+        );
+        assert!(taken && left.is_empty(), "the workbench keymap never sees it");
+        assert_eq!(draft(&app), Some(("src/deep", FileDraftKind::NewFolder, "")));
+    }
+
+    #[test]
+    fn keys_belong_to_the_tree_only_while_one_of_its_rows_has_the_focus() {
+        let (_root, mut app) = fixture();
+        let project = PathBuf::from(&app.view.workspace);
+        app.open_files_dock();
+        act(&mut app, "copy", "README.md");
+        let events = || {
+            vec![
+                key(egui::Key::F2, false, false, false),
+                key(egui::Key::Delete, false, false, false),
+                key(egui::Key::N, true, false, false),
+                egui::Event::Copy,
+                egui::Event::Cut,
+                egui::Event::Paste("texto".into()),
+            ]
+        };
+        let untouched = |app: &mut AgentsWindow| {
+            let (taken, left, copied) = press(app, events(), held(true, false, false));
+            assert!(!taken && copied.is_empty());
+            assert_eq!(left, events(), "every key stays with whoever has the focus");
+            assert_eq!(app.view.file_delete, None);
+            assert_eq!(
+                app.view.file_clipboard,
+                Some((vec!["README.md".into()], false))
+            );
+            assert_eq!(std::fs::read_dir(&project).unwrap().count(), 2);
+        };
+        // Another control, as the editor is when F2 renames a symbol.
+        frame(&mut app);
+        assert!(app.tree.focus("files_search"));
+        untouched(&mut app);
+        assert_eq!(draft(&app), None);
+        // Typing a name: the field keeps F2, Supr and the clipboard keys.
+        focus_row(&mut app, "README.md");
+        press(
+            &mut app,
+            vec![key(egui::Key::F2, false, false, false)],
+            egui::Modifiers::NONE,
+        );
+        frame(&mut app);
+        assert_eq!(app.tree.focused_id(), Some("file_tree_draft"));
+        untouched(&mut app);
+        assert_eq!(
+            draft(&app),
+            Some(("README.md", FileDraftKind::Rename, "README.md"))
+        );
+        // On a row, chords that belong to the workbench are still left alone.
+        app.cancel_file_draft();
+        focus_row(&mut app, "README.md");
+        for (event, modifiers) in [
+            (egui::Event::Cut, held(true, false, true)),
+            (egui::Event::Copy, held(true, false, true)),
+            (key(egui::Key::F2, false, false, true), held(false, false, true)),
+            (key(egui::Key::N, true, false, true), held(true, false, true)),
+        ] {
+            let (taken, left, _) = press(&mut app, vec![event.clone()], modifiers);
+            assert!(!taken, "{event:?}");
+            assert_eq!(left, [event]);
+        }
+        assert_eq!(draft(&app), None);
     }
 
     #[test]

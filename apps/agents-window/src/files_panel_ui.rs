@@ -20,6 +20,22 @@ pub(crate) fn tree_action(operation: &str, path: &str) -> String {
     format!("file_tree:{operation}:{path}")
 }
 
+/// The key of an operation while a row of the tree has the focus.
+fn shortcut(operation: &str) -> Option<&'static str> {
+    Some(match operation {
+        "new_file" => "Ctrl+N",
+        "new_folder" => "Ctrl+Alt+N",
+        "cut" => "Ctrl+X",
+        "copy" => "Ctrl+C",
+        "paste" => "Ctrl+V",
+        "copy_path" => "Ctrl+Alt+C",
+        "copy_relative" => "Ctrl+Alt+Shift+C",
+        "rename" => "F2",
+        "delete" => "Supr",
+        _ => return None,
+    })
+}
+
 /// The menu of `path`: groups of (operation, label) with a rule between them.
 /// Pegar is there but disabled while the tree's clipboard is empty.
 fn tree_menu(
@@ -34,10 +50,13 @@ fn tree_menu(
             entries.push(ContextMenuEntry::Separator);
         }
         entries.extend(group.iter().map(|(operation, label)| {
-            ContextMenuEntry::Item(
-                ContextMenuItem::new(tree_action(operation, path), *label)
-                    .enabled(*operation != "paste" || can_paste),
-            )
+            let item = ContextMenuItem::new(tree_action(operation, path), *label)
+                .enabled(*operation != "paste" || can_paste);
+            // The keys act on the focused row, so the root's menu names none.
+            ContextMenuEntry::Item(match shortcut(operation) {
+                Some(keys) if !path.is_empty() => item.shortcut(keys),
+                _ => item,
+            })
         }));
     }
     ContextMenu::new(
@@ -563,9 +582,19 @@ mod tests {
         tree.layout(size)
     }
 
+    /// The keycaps a menu can show beside its labels.
+    const CAPS: [&str; 9] = ["Ctrl", "Alt", "Shift", "N", "X", "C", "V", "F2", "Supr"];
+
     /// Right-clicks `point` and returns every label of the menu that opens.
-    /// A long menu scrolls inside limn's cap: its two ends are read and joined.
     fn menu_at(tree: &mut UiTree, size: Size, point: Point) -> Vec<String> {
+        let mut labels = menu_texts(tree, size, point);
+        labels.retain(|text| !CAPS.contains(&text.as_str()));
+        labels
+    }
+
+    /// Everything the menu opened at `point` says, labels and keycaps alike.
+    /// A long menu scrolls inside limn's cap: its two ends are read and joined.
+    fn menu_texts(tree: &mut UiTree, size: Size, point: Point) -> Vec<String> {
         tree.handle_event(UiEvent::ContextMenu { position: point });
         let mut labels = painted_menu(&tree.layout(size));
         let end = painted_menu(&scroll_menu(tree, size, -10_000.0));
@@ -611,7 +640,8 @@ mod tests {
             can_load_more: false,
         });
         state.file_clipboard = Some((vec!["Cargo.toml".into()], false));
-        let size = Size::new(320.0, 400.0);
+        // Wide enough for the menu's full width: no label wraps beside its keys.
+        let size = Size::new(400.0, 400.0);
         for compact in [false, true] {
             let build = || {
                 let root = if compact {
@@ -741,6 +771,20 @@ mod tests {
             error: error.map(str::to_owned),
         });
         state
+    }
+
+    #[test]
+    fn row_menus_name_the_keys_and_the_root_menu_names_none() {
+        let size = Size::new(400.0, 400.0);
+        let keys = "Ctrl N Ctrl Alt N Ctrl X Ctrl C Ctrl V Ctrl Alt C Ctrl Alt Shift C F2 Supr";
+        for (target, expected) in [("file_row:2", keys), ("files_workspace", "")] {
+            let mut tree = UiTree::new(build(&state(), size.width));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(size);
+            let mut caps = menu_texts(&mut tree, size, center(bounds(&frame, target)));
+            caps.retain(|text| CAPS.contains(&text.as_str()));
+            assert_eq!(caps.join(" "), expected, "{target}");
+        }
     }
 
     #[test]
