@@ -1340,6 +1340,9 @@ pub struct AgentsWindow {
     rename_focus_pending: bool,
     group_focus_pending: bool,
     question_focus_pending: Option<String>,
+    /// A mode the user accepted from the agent's proposal, for this session,
+    /// set through the composer's own selection once the turn has ended.
+    accepted_turn_mode: Option<(String, TurnMode)>,
     search_worker: Option<SearchWorker>,
     search_generation: u64,
     search_pending_at: Option<Instant>,
@@ -6393,6 +6396,7 @@ impl AgentsWindow {
             rename_focus_pending: false,
             group_focus_pending: false,
             question_focus_pending: None,
+            accepted_turn_mode: None,
             search_worker: SearchWorker::spawn(root.join("sessions")).ok(),
             search_generation: 0,
             search_pending_at: None,
@@ -19241,6 +19245,7 @@ impl eframe::App for AgentsWindow {
             early_changed = true;
         }
         early_changed |= self.poll_pending_composer_selection();
+        early_changed |= self.apply_accepted_turn_mode();
         let (back_shortcut, forward_shortcut, escape, up, down) = ctx.input(|input| {
             (
                 input.modifiers.alt && input.key_pressed(egui::Key::ArrowLeft),

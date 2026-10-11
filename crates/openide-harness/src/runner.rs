@@ -383,7 +383,8 @@ impl AgentRunner {
         self
     }
 
-    /// Offer the built-in tools that wait for the user (`ask_user`). `sessions`
+    /// Offer the built-in tools that wait for the user (`ask_user`,
+    /// `switch_mode`). `sessions`
     /// must be the store the host records the user's answers in. A runner
     /// without it, such as a subagent's, never advertises them.
     pub fn with_user_interaction(mut self, sessions: Arc<SessionStore>) -> Self {
@@ -1443,7 +1444,7 @@ impl AgentRunner {
                             && user_interaction::is_builtin(&catalog, call) =>
                     {
                         Some(
-                            self.wait_for_user(call, &cancel, &pending_permissions, sink)
+                            self.wait_for_user(call, mode, &cancel, &pending_permissions, sink)
                                 .await?,
                         )
                     }
@@ -1775,11 +1776,12 @@ impl AgentRunner {
     async fn wait_for_user(
         &self,
         call: &ToolCall,
+        mode: TurnMode,
         cancel: &CancellationToken,
         pending: &PendingPermissions,
         sink: &mut EventSink,
     ) -> Result<crate::ToolOutput, AgentError> {
-        if let Some(invalid) = user_interaction::invalid(call) {
+        if let Some(invalid) = user_interaction::invalid(call, mode) {
             return Ok(invalid);
         }
         let request_id = Uuid::new_v4().to_string();

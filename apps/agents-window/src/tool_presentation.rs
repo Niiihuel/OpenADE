@@ -374,6 +374,14 @@ fn meta(name: &str) -> Meta<'_> {
             Other,
             Icon::Plan,
         ),
+        "switch_mode" => (
+            "Propuesta de modo",
+            "Esperando tu decisión",
+            "Propuesta de modo respondida",
+            &["reason"],
+            Other,
+            Icon::Plan,
+        ),
         "ask_user" => (
             "Pregunta",
             "Esperando tu respuesta",
@@ -646,7 +654,7 @@ pub(crate) fn present(
         match activity {
             ActivityStatus::WaitingPermission if asks_user => None,
             ActivityStatus::PermissionInterrupted if asks_user => {
-                Some("El turno se interrumpió mientras esperaba tu respuesta".into())
+                Some("El turno se interrumpió mientras esperaba tu decisión".into())
             }
             ActivityStatus::WaitingPermission => {
                 Some("Esperando autorización para ejecutar".into())

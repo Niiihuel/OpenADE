@@ -169,3 +169,87 @@ fn a_question_is_not_answerable_through_the_permission_card_actions() {
     assert!(recorded(&app, &owner).is_empty());
     let _ = &mut app;
 }
+
+fn propose(app: &mut AgentsWindow, mode: &str) {
+    app.view.pending_permissions.clear();
+    app.view.pending_permissions.push(PermissionView {
+        request_id: REQUEST.into(),
+        tool_name: crate::mode_proposal_ui::TOOL.into(),
+        arguments: serde_json::to_string_pretty(&serde_json::json!({
+            "mode": mode,
+            "reason": "El cambio toca el formato del journal."
+        }))
+        .unwrap(),
+    });
+}
+
+#[test]
+fn an_accepted_mode_is_set_by_the_composers_own_selection_only_after_the_turn() {
+    let (_root, mut app, owner) = fixture();
+    app.view.selected_backend = "native".into();
+    app.view.turn_mode = TurnMode::Build;
+    let permissions = app.agent_tool_settings.clone();
+    propose(&mut app, "plan");
+    app.view.running = true;
+    press(&mut app, &crate::mode_proposal_ui::action(REQUEST, "accept"));
+    let decisions = recorded(&app, &owner);
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0].decision, PermissionDecision::Allow);
+    assert!(app.view.pending_permissions.is_empty());
+    // The turn that proposed it is still running in its own mode.
+    assert!(!app.apply_accepted_turn_mode());
+    assert_eq!(app.view.turn_mode, TurnMode::Build);
+    app.view.running = false;
+    assert!(app.apply_accepted_turn_mode());
+    assert_eq!(app.view.turn_mode, TurnMode::Plan);
+    assert!(app.view.status.starts_with("Modo Plan"));
+    assert!(!app.apply_accepted_turn_mode(), "applied once");
+    // A mode is all a proposal can change.
+    assert_eq!(app.agent_tool_settings, permissions);
+}
+
+#[test]
+fn a_rejected_or_malformed_proposal_changes_no_mode() {
+    let (_root, mut app, owner) = fixture();
+    app.view.selected_backend = "native".into();
+    app.view.turn_mode = TurnMode::Plan;
+    propose(&mut app, "build");
+    press(&mut app, &crate::mode_proposal_ui::action(REQUEST, "reject"));
+    assert_eq!(recorded(&app, &owner)[0].decision, PermissionDecision::Deny);
+    assert!(!app.apply_accepted_turn_mode());
+    assert_eq!(app.view.turn_mode, TurnMode::Plan);
+
+    // Anything that is not one of the two modes draws no decision at all.
+    propose(&mut app, "full_access");
+    let size = Size::new(900.0, 720.0);
+    let frame = UiTree::new(crate::view::build_window_view(&app.view, size.width, size.height))
+        .layout(size);
+    assert!(!frame
+        .regions
+        .iter()
+        .any(|region| region.id.starts_with("mode_proposal_")
+            || region.id.starts_with("approval_decide:")));
+    app.apply_action(
+        UiAction::Clicked {
+            id: crate::mode_proposal_ui::action(REQUEST, "accept"),
+        },
+        &egui::Context::default(),
+    );
+    assert_eq!(recorded(&app, &owner).len(), 1);
+    assert!(app.accepted_turn_mode.is_none());
+
+    // An accepted mode does not follow the user to another session.
+    propose(&mut app, "build");
+    app.view.pending_permissions[0].request_id = "second".into();
+    app.apply_action(
+        UiAction::Clicked {
+            id: crate::mode_proposal_ui::action("second", "accept"),
+        },
+        &egui::Context::default(),
+    );
+    assert!(app.accepted_turn_mode.is_some());
+    app.view.selected_session = Some("another-session".into());
+    assert!(!app.apply_accepted_turn_mode());
+    assert!(app.accepted_turn_mode.is_none());
+    assert_eq!(app.view.turn_mode, TurnMode::Plan);
+}

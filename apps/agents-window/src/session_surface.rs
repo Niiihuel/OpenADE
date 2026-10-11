@@ -717,6 +717,9 @@ fn pending_call_card(item: &TranscriptItem, state: &ViewState) -> Option<Element
     if name == crate::question_ui::TOOL {
         return Some(crate::question_ui::skeleton(&scope, &arguments));
     }
+    if name == crate::mode_proposal_ui::TOOL {
+        return Some(crate::mode_proposal_ui::skeleton(&scope, &arguments));
+    }
     None
 }
 
@@ -1157,14 +1160,18 @@ pub(crate) fn tool_line_with_output(
     else {
         unreachable!()
     };
-    if name == crate::question_ui::TOOL {
+    if openide_harness::is_user_interaction_tool(name) {
         match (activity, output) {
-            // The open question is the card below; it needs no second row.
+            // The open request is the card below; it needs no second row.
             _ if approval_card_shown(state, name, arguments, *activity) => {
                 return Element::spacer();
             }
             (ActivityStatus::Completed, Some(output)) if !*is_error => {
-                return crate::question_ui::answered(arguments, output);
+                return if name == crate::question_ui::TOOL {
+                    crate::question_ui::answered(arguments, output)
+                } else {
+                    crate::mode_proposal_ui::resolved(arguments, output)
+                };
             }
             _ => {}
         }
@@ -2561,6 +2568,9 @@ fn timeline(state: &ViewState, width: f32) -> Element {
 fn permission_card(permission: &PermissionView, state: &ViewState, compact: bool) -> Element {
     if permission.tool_name == crate::question_ui::TOOL {
         return crate::question_ui::card(permission, state, compact);
+    }
+    if permission.tool_name == crate::mode_proposal_ui::TOOL {
+        return crate::mode_proposal_ui::card(permission);
     }
     crate::approval_ui::inline_root(permission, state, compact)
 }

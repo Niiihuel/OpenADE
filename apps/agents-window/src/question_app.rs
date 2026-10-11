@@ -38,6 +38,12 @@ impl AgentsWindow {
                         .write(questions.len(), question, value);
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("mode_proposal_") => {
+                let Some((verb, request_id)) = id["mode_proposal_".len()..].split_once(':') else {
+                    return false;
+                };
+                self.decide_mode_proposal(request_id, verb == "accept");
+            }
             UiAction::Clicked { id } => {
                 let Some(rest) = id.strip_prefix("question_") else {
                     return false;
@@ -120,6 +126,61 @@ impl AgentsWindow {
             .pending_permissions
             .retain(|permission| permission.request_id != request_id);
         self.view.question_drafts.remove(request_id);
+    }
+
+    /// The user's decision on a proposed mode. Accepting only remembers the
+    /// mode for this session: it is set by `select_composer_mode`, the path
+    /// the composer's own control uses, when the turn is over. Nothing here
+    /// touches permissions.
+    fn decide_mode_proposal(&mut self, request_id: &str, accept: bool) {
+        let Some(mode) = self
+            .view
+            .pending_permissions
+            .iter()
+            .find(|permission| {
+                permission.request_id == request_id
+                    && permission.tool_name == crate::mode_proposal_ui::TOOL
+            })
+            .and_then(|permission| {
+                crate::mode_proposal_ui::proposed(
+                    &serde_json::from_str(&permission.arguments).unwrap_or(serde_json::Value::Null),
+                )
+            })
+        else {
+            return;
+        };
+        let session_id = self.view.selected_session.clone();
+        self.answer_permission(request_id, accept);
+        self.view
+            .pending_permissions
+            .retain(|permission| permission.request_id != request_id);
+        self.view.status = match (accept, mode) {
+            (true, TurnMode::Plan) => "Modo Plan desde tu próximo mensaje",
+            (true, TurnMode::Build) => "Modo Agente desde tu próximo mensaje",
+            (false, _) => "Propuesta de modo rechazada",
+        }
+        .to_owned();
+        if let (true, Some(session_id)) = (accept, session_id) {
+            self.accepted_turn_mode = Some((session_id, mode));
+        }
+    }
+
+    /// Sets an accepted mode once the composer accepts a mode change again,
+    /// which is when no turn is running. A different session drops it.
+    pub(super) fn apply_accepted_turn_mode(&mut self) -> bool {
+        let Some((session_id, mode)) = self.accepted_turn_mode.clone() else {
+            return false;
+        };
+        if self.view.selected_session.as_deref() != Some(session_id.as_str()) {
+            self.accepted_turn_mode = None;
+            return false;
+        }
+        if !self.composer_policy_editable() {
+            return false;
+        }
+        self.accepted_turn_mode = None;
+        self.select_composer_mode(mode);
+        true
     }
 
     /// With the focus on the card: a number picks that option and moves to

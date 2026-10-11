@@ -1641,7 +1641,11 @@ impl ResumeEngine {
             None
         } else if builtin_interaction {
             // Never decided by policy: the user's answer is the result.
-            match (user_interaction::invalid(call), prior_resolution) {
+            let turn_mode = replay
+                .active_turn
+                .as_ref()
+                .map_or(TurnMode::Build, |turn| turn.mode);
+            match (user_interaction::invalid(call, turn_mode), prior_resolution) {
                 (Some(invalid), _) => Some(invalid),
                 (None, Some(resolution)) => {
                     let answer = match (resolution, resolved_request.as_deref()) {
@@ -3150,7 +3154,8 @@ mod tests {
             ToolCatalog::new([
                 definition(),
                 plan_tool::definition(),
-                crate::ask_user_tool_definition()
+                crate::ask_user_tool_definition(),
+                crate::switch_mode_tool_definition()
             ])
             .unwrap()
             .digest_hex()

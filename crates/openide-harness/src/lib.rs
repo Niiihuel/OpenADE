@@ -127,7 +127,7 @@ pub use persistent_command::{
 pub use plan_tool::update_plan_tool_definition;
 pub use user_interaction::{
     ask_user_tool_definition, catalogs_with_user_interaction, is_user_interaction_tool,
-    ASK_USER_TOOL,
+    switch_mode_accepted, switch_mode_tool_definition, ASK_USER_TOOL, SWITCH_MODE_TOOL,
 };
 pub use project_instructions::{
     load_project_instructions, load_project_instructions_for_target,
