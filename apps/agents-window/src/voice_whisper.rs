@@ -22,6 +22,9 @@ const MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin";
 /// The rate whisper.cpp takes.
 const RATE: u32 = 16_000;
+/// Silence that ends a phrase, and how often a phrase in progress is previewed.
+const PAUSE: f32 = 0.6;
+const PREVIEW: f32 = 1.2;
 
 pub(super) fn run(
     models: &Path,
@@ -34,26 +37,22 @@ pub(super) fn run(
     let status = |text: &str| {
         let _ = events.send(VoiceEvent::Status(text.to_owned()));
     };
-    status("Cargando el modelo de voz…");
-    whisper_rs::install_logging_hooks();
-    let context = WhisperContext::new_with_params(
-        model
-            .to_str()
-            .ok_or("La ruta del modelo de voz no es UTF-8")?,
-        WhisperContextParameters::default(),
-    )
-    .map_err(|error| format!("No se pudo cargar el modelo de voz: {error}"))?;
-    let mut state = context
-        .create_state()
-        .map_err(|error| format!("No se pudo preparar el reconocedor de voz: {error}"))?;
-    let language = language();
-
+    // The microphone opens first: what is said while the model loads waits
+    // in the channel instead of being lost.
     let (audio_tx, audio) = mpsc::channel();
     let (stream, rate) = open_microphone(audio_tx, events.clone())?;
     stream
         .play()
         .map_err(|error| format!("No se pudo abrir el micrófono: {error}"))?;
     let _ = events.send(VoiceEvent::Listening);
+
+    let context = loaded_model(&model, &status)?;
+    let mut state = context
+        .create_state()
+        .map_err(|error| format!("No se pudo preparar el reconocedor de voz: {error}"))?;
+    // Whisper detects the language; once a phrase long enough to trust has
+    // settled it, the rest of the session keeps it.
+    let mut language = "auto".to_owned();
 
     let mut segmenter = Segmenter::new(rate);
     loop {
@@ -66,7 +65,7 @@ pub(super) fn run(
                 }
                 if let Some(samples) = segmenter.take() {
                     status("Transcribiendo…");
-                    if let Some(text) = transcribe(&mut state, &samples, &language)? {
+                    if let Some(text) = transcribe(&mut state, &samples, &mut language)? {
                         let _ = events.send(VoiceEvent::Final(text));
                     }
                 }
@@ -84,14 +83,14 @@ pub(super) fn run(
         };
         let event = match segmenter.push(&chunk) {
             Some(Cut::Interim) => {
-                transcribe(&mut state, &segmenter.speech(), &language)?.map(VoiceEvent::Interim)
+                transcribe(&mut state, &segmenter.speech(), &mut language)?.map(VoiceEvent::Interim)
             }
             Some(Cut::Final) => {
                 let samples = segmenter.take().unwrap_or_default();
                 // An empty final still clears the preview of a phrase that
                 // turned out to be noise.
                 Some(VoiceEvent::Final(
-                    transcribe(&mut state, &samples, &language)?.unwrap_or_default(),
+                    transcribe(&mut state, &samples, &mut language)?.unwrap_or_default(),
                 ))
             }
             None => None,
@@ -166,17 +165,30 @@ fn ensure_model(
     Ok(Some(path))
 }
 
-/// The language of the session's locale, or whisper's own detection.
-fn language() -> String {
-    ["LC_ALL", "LC_MESSAGES", "LANG"]
-        .iter()
-        .filter_map(|name| std::env::var(name).ok())
-        .find(|value| !value.is_empty())
-        .and_then(|value| {
-            let code = value.split(['_', '.', '@']).next()?.to_ascii_lowercase();
-            whisper_rs::get_lang_id(&code).map(|_| code)
-        })
-        .unwrap_or_else(|| "auto".to_owned())
+/// The model, loaded once per run of the application: reading 180 MB again
+/// on every press is most of what made dictation slow to start.
+fn loaded_model(
+    path: &Path,
+    status: &dyn Fn(&str),
+) -> Result<std::sync::Arc<WhisperContext>, String> {
+    static LOADED: std::sync::Mutex<Option<(PathBuf, std::sync::Arc<WhisperContext>)>> =
+        std::sync::Mutex::new(None);
+    let mut loaded = LOADED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((cached, context)) = loaded.as_ref() {
+        if cached == path {
+            return Ok(context.clone());
+        }
+    }
+    status("Cargando el modelo de voz…");
+    whisper_rs::install_logging_hooks();
+    let context = WhisperContext::new_with_params(
+        path.to_str().ok_or("La ruta del modelo de voz no es UTF-8")?,
+        WhisperContextParameters::default(),
+    )
+    .map_err(|error| format!("No se pudo cargar el modelo de voz: {error}"))?;
+    let context = std::sync::Arc::new(context);
+    *loaded = Some((path.to_owned(), context.clone()));
+    Ok(context)
 }
 
 /// The default input device, delivering mono chunks at its own rate.
@@ -238,13 +250,15 @@ fn open_microphone(
 fn transcribe(
     state: &mut WhisperState,
     samples: &[f32],
-    language: &str,
+    language: &mut String,
 ) -> Result<Option<String>, String> {
+    let spoken = samples.len();
     // whisper.cpp refuses less than a second of audio.
     let mut samples = samples.to_vec();
     samples.resize(samples.len().max(RATE as usize * 11 / 10), 0.0);
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    params.set_language(Some(language));
+    params.set_language(Some(language.as_str()));
+    params.set_translate(false);
     params.set_n_threads(
         std::thread::available_parallelism().map_or(4, |count| count.get().min(8)) as i32,
     );
@@ -263,6 +277,12 @@ fn transcribe(
     state
         .full(params, &samples)
         .map_err(|error| format!("No se pudo convertir voz a texto: {error}"))?;
+    // Two seconds are enough for the detection to be worth keeping.
+    if language == "auto" && spoken >= RATE as usize * 2 {
+        if let Some(code) = whisper_rs::get_lang_str(state.full_lang_id_from_state()) {
+            *language = code.to_owned();
+        }
+    }
     let text: String = state
         .as_iter()
         .filter_map(|segment| segment.to_str_lossy().ok().map(|text| text.into_owned()))
@@ -362,10 +382,12 @@ impl Segmenter {
             return None;
         }
         self.since_interim += chunk.len();
-        if self.quiet >= self.seconds(0.8) || self.samples.len() >= self.seconds(25.0) {
+        if self.quiet >= self.seconds(PAUSE) || self.samples.len() >= self.seconds(25.0) {
             return Some(Cut::Final);
         }
-        if self.since_interim >= self.seconds(2.0) {
+        // No preview inside a pause: the phrase is about to be cut and
+        // transcribed whole, and a preview now would only delay that.
+        if self.since_interim >= self.seconds(PREVIEW) && self.quiet == 0 {
             self.since_interim = 0;
             return Some(Cut::Interim);
         }
@@ -422,12 +444,12 @@ mod tests {
 
         assert_eq!(
             feed(&mut segmenter, 4.5, true),
-            [Cut::Interim, Cut::Interim]
+            [Cut::Interim, Cut::Interim, Cut::Interim]
         );
-        assert_eq!(feed(&mut segmenter, 0.8, false), [Cut::Final]);
+        assert_eq!(feed(&mut segmenter, PAUSE, false), [Cut::Final]);
         let speech = segmenter.take().unwrap();
-        // 4.5 s of speech and the 0.8 s pause that ended it, at 16 kHz.
-        assert_eq!(speech.len(), (RATE as f32 * 5.3) as usize);
+        // 4.5 s of speech and the pause that ended it, at 16 kHz.
+        assert_eq!(speech.len(), (RATE as f32 * (4.5 + PAUSE)) as usize);
         assert_eq!(segmenter.take(), None);
         assert_eq!(feed(&mut segmenter, 2.0, false), []);
     }
@@ -505,13 +527,13 @@ mod tests {
         for chunk in samples.chunks(RATE as usize / 10) {
             match segmenter.push(chunk) {
                 Some(Cut::Interim) => {
-                    let preview = transcribe(&mut state, &segmenter.speech(), "auto").unwrap();
+                    let preview = transcribe(&mut state, &segmenter.speech(), &mut "auto".to_owned()).unwrap();
                     println!("  … {}", preview.unwrap_or_default());
                     previews += 1;
                 }
                 Some(Cut::Final) => {
                     let phrase = segmenter.take().unwrap();
-                    let phrase = transcribe(&mut state, &phrase, "auto").unwrap();
+                    let phrase = transcribe(&mut state, &phrase, &mut "auto".to_owned()).unwrap();
                     println!("  ✓ {}", phrase.clone().unwrap_or_default());
                     text.extend(phrase.map(|phrase| phrase + " "));
                 }
@@ -519,7 +541,7 @@ mod tests {
             }
         }
         if let Some(rest) = segmenter.take() {
-            text.extend(transcribe(&mut state, &rest, "auto").unwrap());
+            text.extend(transcribe(&mut state, &rest, &mut "auto".to_owned()).unwrap());
         }
         println!(
             "{:.1} s of audio in {:.1?}: {text}",
