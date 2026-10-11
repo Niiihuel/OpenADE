@@ -266,10 +266,43 @@ El flujo comprimido no llega a la frecuencia de la pantalla. El plan acordado:
    [agent-browser](https://github.com/vercel-labs/agent-browser), que hizo esa
    misma migración. La conexión es por tubería privada, no por un puerto local.
 2. Chromium embebido (CEF) dibujando en una textura compartida de GPU, para
-   mostrar la página sin comprimir a la frecuencia de la pantalla. Depende de
-   una prueba de viabilidad: CEF documenta un máximo de 60 cuadros por segundo
-   con su reloj interno, y el camino a 120 es que el host marque cada cuadro.
-   El mismo manejador hablará con CEF, que expone el mismo protocolo.
+   mostrar la página sin comprimir a la frecuencia de la pantalla. El mismo
+   manejador hablará con CEF, que expone el mismo protocolo dentro del proceso.
+
+### Prueba de viabilidad de CEF (11 de octubre de 2026)
+
+Prototipo sin ventana, CEF 154.0.34 con `cef-rs`, wgpu 30.0.1, GPU integrada AMD
+(Mesa 26.1), sandbox activo, páginas `data:`. Resultados medidos:
+
+| Pregunta | Resultado |
+| --- | --- |
+| Cuadros por segundo a 2560 × 1600 | 120,0 con `windowless_frame_rate = 120`; también 240 y más |
+| Del evento de rueda al cuadro siguiente | mediana 5–7 ms |
+| Importar el cuadro en wgpu sin copia | sí, con `texture_from_dmabuf_fd` de wgpu-hal; colores exactos |
+| Costo por cuadro en el host | ~0,15 ms de CPU con la importación cacheada |
+| Protocolo de Chrome dentro del proceso | sí, sin puerto: `send_dev_tools_message` y un observador |
+| Memoria | ~430 MB en 9 procesos para una página simple |
+| Disco a distribuir | ~310 MB (`libcef.so` sin símbolos pesa 272 MB) |
+| Arranque | ~230 ms hasta el primer cuadro |
+
+Lo que no salió como se suponía:
+
+- El reloj interno alcanza: CEF 154 ya no limita `windowless_frame_rate` a 60.
+  Marcar los cuadros desde el host agrega unos 20 ms de demora y pierde
+  alguno; no conviene.
+- Bajo Wayland CEF ignora la escala del dispositivo en una vista sin ventana.
+  Se obtiene escala 2 con una vista en píxeles físicos más
+  `Emulation.setDeviceMetricsOverride`, o con zoom de página al 200 %.
+- Con el proceso de GPU de Chromium en la NVIDIA no llegan cuadros acelerados.
+  Chromium en la AMD con wgpu en la NVIDIA sí funciona, cacheando la importación.
+- El CEF precompilado no reproduce H.264, HEVC ni AAC; sí MP3, VP8, VP9, AV1 y Opus.
+- `libcef.so` se enlaza al iniciar el proceso (unos 53 MB aunque no se use).
+  Cargarlo recién con la primera pestaña requiere una biblioteca aparte.
+
+Sin verificar, porque exige una ventana visible: fluidez real en pantalla,
+sincronía con el compositor y la integración con eframe (teclado, IME,
+cursores, ventanas emergentes, cambio de tamaño). El prototipo y sus comandos
+están fuera del repositorio, en `../openADE-spike-cef`.
 
 ## Validación reproducible
 
