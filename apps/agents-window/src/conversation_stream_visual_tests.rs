@@ -253,32 +253,12 @@ fn toggle_group_detail(tree: &mut UiTree, state: &mut ViewState, width: f32, det
     tree.set_root(build_session_surface(state, width, false, false));
 }
 
-fn file_preview_text(frame: &openide_ui::Frame, call: &str) -> Option<String> {
-    let id = format!("file-preview:{OWNER}:{call}:0");
-    let bounds = frame
-        .regions
-        .iter()
-        .find(|region| region.id == id && region.kind == HitKind::CodeDiff)?
-        .rect;
-    // Syntax highlighting splits a source line into separately painted runs.
-    // Preserve their exact adjacency inside this call's preview instead of
-    // adding spaces as the general prose helper intentionally does.
-    Some(
-        frame
-            .commands
-            .iter()
-            .filter_map(|command| match command {
-                DrawCommand::Text { position, text, .. } if bounds.contains(*position) => {
-                    Some(text.as_str())
-                }
-                _ => None,
-            })
-            .collect(),
-    )
+fn open_file(call: &str) -> String {
+    tool_presentation::navigation_action(OWNER, call)
 }
 
 #[test]
-fn consecutive_exploration_is_one_compact_group_with_independent_file_actions_and_details() {
+fn consecutive_exploration_is_one_flat_line_that_opens_to_one_navigable_line_per_call() {
     for width in [360.0, 900.0] {
         let mut state = state();
         for index in 0..12 {
@@ -291,8 +271,8 @@ fn consecutive_exploration_is_one_compact_group_with_independent_file_actions_an
         let viewport = Size::new(width, 1800.0);
         let mut tree = surface(&state, width, true);
         let closed = tree.layout(viewport);
-        assert!(text(&closed).contains("Exploración · 12"));
-        assert!(text(&closed).contains("12/12 listas"));
+        assert!(text(&closed).contains("Exploró"));
+        assert!(text(&closed).contains("12 archivos"));
         assert_eq!(
             closed
                 .regions
@@ -301,50 +281,43 @@ fn consecutive_exploration_is_one_compact_group_with_independent_file_actions_an
                 .count(),
             1
         );
-        assert!(!closed.regions.iter().any(|r| r.id == action("tool:read-0")));
-        assert!(!text(&closed).contains("GROUP_RESULT"));
+        assert!(!closed.regions.iter().any(|r| r.id == open_file("read-0")));
+        assert!(!text(&closed).contains("Leyó"));
+        // Text only: no spinner or icon column, just the chevron.
+        let icons = UiTree::new(timeline(&state, width))
+            .layout(viewport)
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Icon { icon, .. } => Some(*icon),
+                DrawCommand::Spinner { .. } => Some(Icon::Refresh),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(icons, [Icon::ChevronRight]);
         assert!(!tree.is_animating());
 
         toggle_group_detail(&mut tree, &mut state, width, "work:read-0");
         let opened = tree.layout(viewport);
+        assert_eq!(text(&opened).matches("Leyó").count(), 12);
         for index in 0..12 {
             let call = format!("read-{index}");
+            assert!(text(&opened).contains(&format!("{call}.rs")));
             assert_eq!(
                 opened
                     .regions
                     .iter()
-                    .filter(|r| r.id == action(&format!("tool:{call}")))
+                    .filter(|r| r.id == open_file(&call) && r.kind == HitKind::Button)
                     .count(),
-                1
-            );
-            assert!(
-                opened
-                    .regions
-                    .iter()
-                    .any(|r| { r.id == crate::file_activity_ui::open_action(OWNER, &call, 0) }),
-                "file title retains direct opening for {call}"
+                1,
+                "each line opens its own file: {call}"
             );
         }
         assert!(!text(&opened).contains("GROUP_RESULT"));
-        toggle_group_detail(&mut tree, &mut state, width, "tool:read-0");
-        let detail = tree.layout(viewport);
-        assert!(
-            file_preview_text(&detail, "read-0")
-                .is_some_and(|text| text.contains("GROUP_RESULT_read-0")),
-            "{}",
-            text(&detail)
-        );
-        assert!(file_preview_text(&detail, "read-1").is_none());
         toggle_group_detail(&mut tree, &mut state, width, "work:read-0");
         let collapsed = tree.layout(viewport);
-        assert!(!collapsed
-            .regions
-            .iter()
-            .any(|r| r.id == action("tool:read-0")));
-        assert!(!text(&collapsed).contains("GROUP_RESULT"));
-        toggle_group_detail(&mut tree, &mut state, width, "work:read-0");
-        assert!(file_preview_text(&tree.layout(viewport), "read-0")
-            .is_some_and(|text| text.contains("GROUP_RESULT_read-0")));
+        assert!(!collapsed.regions.iter().any(|r| r.id == open_file("read-0")));
+        assert!(!text(&collapsed).contains("Leyó"));
     }
 }
 
@@ -378,36 +351,45 @@ fn exploration_group_identity_survives_preview_execution_completion_and_new_call
             .count(),
         1
     );
-    assert!(text(&preview).contains("preparando"));
+    // Live: the header counts what has arrived and the ticker names the
+    // step under way.
+    assert!(text(&preview).contains("Explorando"));
+    assert!(text(&preview).contains("1 archivo, 1 búsqueda"));
+    assert!(text(&preview).contains("Buscando GROUP_QUERY"));
+    assert!(!text(&preview).contains("Leyendo"));
     assert!(tree.is_animating());
-    toggle_group_detail(&mut tree, &mut state, width, "work:a");
-    tree.layout(viewport);
     state.transcript[1] = exploration_fixture("a", "read_file", ActivityStatus::Running);
+    state.transcript[2] = exploration_fixture("b", "search_files", ActivityStatus::Completed);
     tree.set_root(build_session_surface(&state, width, false, false));
     let started = tree.layout(viewport);
     assert!(started.regions.iter().any(|r| r.id == action("work:a")));
-    assert!(started.regions.iter().any(|r| r.id == action("tool:a")));
-    assert!(text(&started).contains("2 en curso"));
+    assert!(text(&started).contains("a.rs, 1 búsqueda"));
+    assert!(text(&started).contains("Leyendo a.rs"));
+    // Between steps the group stays live and waits in its own ticker; the
+    // transcript does not add a second waiting line under it.
     state.transcript[1] = exploration_fixture("a", "read_file", ActivityStatus::Completed);
-    state.transcript[2] = exploration_fixture("b", "search_files", ActivityStatus::Completed);
     state.transcript.push(exploration_fixture(
         "c",
         "list_files",
         ActivityStatus::Completed,
     ));
     tree.set_root(build_session_surface(&state, width, false, false));
+    // Still: a shimmer paints its text in several passes.
+    let waiting = surface(&state, width, true).layout(viewport);
+    assert!(text(&waiting).contains("Explorando"));
+    assert_eq!(text(&waiting).matches(WAITING_LABEL).count(), 1);
+    // The turn ends: the same group settles and nothing keeps moving.
+    state.running = false;
+    tree.set_root(build_session_surface(&state, width, false, false));
     let completed = tree.layout_at(viewport, Instant::now() + Duration::from_secs(1));
     assert!(completed.regions.iter().any(|r| r.id == action("work:a")));
-    assert!(completed.regions.iter().any(|r| r.id == action("tool:c")));
-    assert!(text(&completed).contains("3/3 listas"));
-    // The opened group's content is still fading in, so the tree is
-    // animating; what must be gone is the spinner itself.
+    assert!(text(&completed).contains("Exploró"));
+    assert!(text(&completed).contains("a.rs, 1 búsqueda, 1 listado"));
+    assert!(!text(&completed).contains(WAITING_LABEL));
+    assert!(!text(&completed).contains("Explorando"));
     assert!(
-        !completed
-            .commands
-            .iter()
-            .any(|command| matches!(command, openide_ui::DrawCommand::Spinner { .. })),
-        "completed historical work has no spinner"
+        !tree.is_animating(),
+        "completed historical work has nothing in motion"
     );
 }
 
@@ -434,13 +416,12 @@ fn exploration_membership_does_not_change_when_diagnostics_or_batch_reads_finish
             frame
                 .regions
                 .iter()
-                .filter(|region| {
-                    region.id.starts_with(&action("work:")) && !region.id.ends_with(":collapse")
-                })
+                .filter(|region| region.id.starts_with(&action("work:")))
                 .map(|region| region.id.clone())
                 .collect::<Vec<_>>()
         };
         assert_eq!(group_ids(&running), vec![action("work:a")], "{name}");
+        assert!(text(&running).contains("Explorando"), "{name}");
         toggle_group_detail(&mut tree, &mut state, viewport.width, "work:a");
         tree.layout(viewport);
         assert_eq!(tree.focused_id(), Some(action("work:a").as_str()));
@@ -454,11 +435,20 @@ fn exploration_membership_does_not_change_when_diagnostics_or_batch_reads_finish
                 finished
                     .regions
                     .iter()
-                    .any(|r| r.id == action(&format!("tool:{call}"))),
+                    .any(|r| r.id == open_file(call) || r.id == format!("tool:{call}")),
                 "open group keeps {call} visible after {name} finishes"
             );
         }
-        assert!(text(&finished).contains("4/4 listas"));
+        assert!(text(&finished).contains("Exploró"), "{name}");
+        assert!(
+            text(&finished).contains(if name.starts_with("codebase") {
+                "2 archivos, 2 búsquedas"
+            } else {
+                "3 archivos, 1 búsqueda"
+            }),
+            "{name}: {}",
+            text(&finished)
+        );
     }
 }
 
@@ -523,7 +513,7 @@ fn exploration_groups_never_cross_prose_turns_edits_or_foreign_captured_output()
 }
 
 #[test]
-fn collapsed_exploration_keeps_errors_permissions_and_uncertain_outcomes_visible() {
+fn exploration_keeps_errors_permissions_and_uncertain_outcomes_visible_open_or_collapsed() {
     for status in [
         ActivityStatus::Failed,
         ActivityStatus::WaitingPermission,
@@ -544,18 +534,6 @@ fn collapsed_exploration_keeps_errors_permissions_and_uncertain_outcomes_visible
                 *output = Some("GROUP_OUTCOME_TO_KEEP".into());
             }
             state.transcript.push(attention);
-            let frame = surface(&state, width, true).layout(Size::new(width, 1100.0));
-            assert!(frame.regions.iter().any(|r| r.id == action("work:ok")));
-            assert!(!frame.regions.iter().any(|r| r.id == action("tool:ok")));
-            assert!(frame
-                .regions
-                .iter()
-                .any(|r| r.id == action("tool:attention")));
-            assert!(frame
-                .regions
-                .iter()
-                .any(|r| r.id == crate::file_activity_ui::directory_action(OWNER, "attention")));
-            assert!(!text(&frame).contains("2/2 listas"));
             let expected = match status {
                 ActivityStatus::WaitingPermission => "autorización",
                 ActivityStatus::PermissionInterrupted => "permiso pendiente",
@@ -565,17 +543,36 @@ fn collapsed_exploration_keeps_errors_permissions_and_uncertain_outcomes_visible
                 ActivityStatus::Discarded => "Operación descartada",
                 _ => unreachable!(),
             };
-            assert!(
-                text(&frame).contains(expected),
-                "{status:?}: {}",
-                text(&frame)
-            );
+            // A call that needs attention keeps the group open by default,
+            // and stays on screen when the reader collapses the rest.
+            assert!(conversation_detail_default_open(&state, "work:ok"));
+            for collapsed in [false, true] {
+                if collapsed {
+                    state.conversation_details.toggle("work:ok", true);
+                }
+                let frame = surface(&state, width, true).layout(Size::new(width, 1100.0));
+                assert!(frame.regions.iter().any(|r| r.id == action("work:ok")));
+                assert_eq!(
+                    frame.regions.iter().any(|r| r.id == open_file("ok")),
+                    !collapsed
+                );
+                assert!(frame.regions.iter().any(|r| r.id == "tool:attention"));
+                assert!(
+                    text(&frame).contains(expected),
+                    "{status:?}: {}",
+                    text(&frame)
+                );
+                let failed_ink = frame.commands.iter().any(|command| {
+                    matches!(command, DrawCommand::Text { color, .. } if *color == theme::DESTRUCTIVE)
+                });
+                assert_eq!(failed_ink, status == ActivityStatus::Failed, "{status:?}");
+            }
         }
     }
 }
 
 #[test]
-fn exploration_preserves_explicit_child_expansion_and_call_scoped_auxiliary_output() {
+fn exploration_keeps_a_calls_auxiliary_output_inside_its_run_and_out_of_the_lines() {
     let mut state = state();
     state.transcript.extend([
         exploration_fixture("a", "read_file", ActivityStatus::Running),
@@ -588,20 +585,21 @@ fn exploration_preserves_explicit_child_expansion_and_call_scoped_auxiliary_outp
         usage("usage-group", 2, ModelStreamStatus::Committed),
         exploration_fixture("b", "read_file", ActivityStatus::Completed),
     ]);
-    state.conversation_details.set_expanded("tool:a", true);
     assert_eq!(exploration_run(&state.transcript, 1), (6, 2));
-    assert!(conversation_detail_default_open(&state, "work:a"));
+    assert!(!conversation_detail_default_open(&state, "work:a"));
     let width = 900.0;
     let viewport = Size::new(width, 1500.0);
     let mut tree = surface(&state, width, true);
-    let opened = tree.layout(viewport);
-    assert!(opened.regions.iter().any(|r| r.id == action("tool:a")));
-    assert!(text(&opened).contains("CAPTURE_FROM_A"));
-    assert!(!text(&opened).contains("GROUP_RESULT_b"));
+    let live = tree.layout(viewport);
+    assert!(text(&live).contains("Explorando"));
+    assert!(text(&live).contains("2 archivos"));
+    assert!(text(&live).contains("Leyendo a.rs"));
     toggle_group_detail(&mut tree, &mut state, width, "work:a");
-    let closed = tree.layout(viewport);
-    assert!(!closed.regions.iter().any(|r| r.id == action("tool:a")));
-    assert!(!text(&closed).contains("CAPTURE_FROM_A"));
+    let opened = tree.layout(viewport);
+    assert!(opened.regions.iter().any(|r| r.id == open_file("a")));
+    assert!(opened.regions.iter().any(|r| r.id == open_file("b")));
+    assert!(!text(&opened).contains("CAPTURE_FROM_A"));
+    assert!(!text(&opened).contains("GROUP_RESULT_b"));
 }
 
 #[test]
@@ -1340,7 +1338,7 @@ fn typed_tool_media_survives_truncated_text_without_reparsing_or_crossing_calls(
 }
 
 #[test]
-fn live_reasoning_opens_then_collapses_without_overriding_the_reader() {
+fn reasoning_is_one_muted_line_whose_text_opens_only_by_click() {
     for width in [360.0, 900.0] {
         let mut state = state();
         let reason = TranscriptItem::Reasoning {
@@ -1353,61 +1351,72 @@ fn live_reasoning_opens_then_collapses_without_overriding_the_reader() {
         state.transcript.push(reason.clone());
         let mut header = UiTree::new(model_stream_item(&reason, 1, &state, width));
         let frame = header.layout(Size::new(width, 300.0));
-        assert!(text(&frame).contains("Pensando"));
-        assert!(text(&frame).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
+        assert!(text(&frame).contains("Pensando…"));
+        assert!(!text(&frame).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
         assert!(
             header.is_animating(),
-            "the current reasoning header owns the thinking animation"
+            "the reasoning in flight owns the thinking shimmer"
         );
-        assert!(frame.commands.iter().any(|command| matches!(
-            command,
-            DrawCommand::Icon {
-                icon: Icon::Brain,
-                ..
-            }
-        )));
+        // A flat line: no brain, spinner or icon column.
         assert!(!frame.commands.iter().any(|command| matches!(
             command,
             DrawCommand::Spinner { .. }
                 | DrawCommand::Icon {
-                    icon: Icon::Code,
+                    icon: Icon::Brain | Icon::Code,
                     ..
                 }
         )));
         let viewport = Size::new(width, 900.0);
         let mut tree = surface(&state, width, true);
-        click_detail(&mut tree, &mut state, viewport, "reason-public");
-        assert!(!text(&tree.layout(viewport)).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
+        assert!(!conversation_detail_default_open(&state, "reason-public"));
         click_detail(&mut tree, &mut state, viewport, "reason-public");
         assert!(text(&tree.layout(viewport)).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
         if let TranscriptItem::Reasoning { status, .. } = &mut state.transcript[1] {
             *status = ModelStreamStatus::Committed;
         }
         tree.set_root(build_session_surface(&state, width, false, false));
-        assert!(text(&tree.layout(viewport)).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
-        assert!(state
-            .conversation_details
-            .is_expanded("reason-public", false));
-
-        // Without an explicit reader choice, switching from thought to prose
-        // closes the previous chunk even before the request is committed.
-        let mut automatic = self::state();
-        automatic.transcript.push(reason);
-        automatic.transcript.push(TranscriptItem::Assistant {
-            content: "La respuesta empieza".into(),
-            streaming: true,
-        });
-        assert!(!conversation_detail_default_open(
-            &automatic,
-            "reason-public"
-        ));
-        let mut tree = surface(&automatic, width, true);
+        let done = tree.layout(viewport);
+        // The reader's choice survives the commit; an untimed row is brief.
+        assert!(text(&done).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
+        assert!(text(&done).contains("Pensó un momento"));
+        assert!(!text(&done).contains("Pensando"));
+        click_detail(&mut tree, &mut state, viewport, "reason-public");
         assert!(!text(&tree.layout(viewport)).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
+
+        // The duration is the one the events recorded.
+        let mut projection = crate::transcript::TranscriptProjection::new();
+        for (sequence, timestamp_ms) in [(1, 10_000), (2, 13_400)] {
+            projection.apply_event(&openide_core::AgentEvent {
+                session_id: OWNER.into(),
+                sequence,
+                timestamp_ms,
+                kind: if sequence == 1 {
+                    openide_core::AgentEventKind::ModelRequestStarted {
+                        step: 1,
+                        model: "model".into(),
+                    }
+                } else {
+                    openide_core::AgentEventKind::ModelStreamUpdate {
+                        step: 1,
+                        update: openide_core::ModelStreamEvent::ReasoningDelta {
+                            item_id: "r".into(),
+                            content: PUBLIC_REASONING.into(),
+                        },
+                    }
+                },
+            });
+        }
+        let mut timed = self::state();
+        projection.sync_into(&mut timed.transcript);
+        projection.sync_times_into(&mut timed.item_times);
+        timed.transcript.push(assistant("La respuesta empieza"));
+        let mut tree = surface(&timed, width, true);
+        assert!(text(&tree.layout(viewport)).contains("Pensó 3 s"));
     }
 }
 
 #[test]
-fn thinking_has_one_active_tail_static_brain_and_reduced_motion_stops_animation() {
+fn thinking_has_one_active_line_and_reduced_motion_stops_animation() {
     for width in [360.0, 900.0] {
         let mut state = state();
         state.running = true;
@@ -1425,42 +1434,18 @@ fn thinking_has_one_active_tail_static_brain_and_reduced_motion_stops_animation(
         let viewport = Size::new(width, 900.0);
         let mut tree = UiTree::new(timeline(&state, width));
         let first = tree.layout_at(viewport, clock);
-        assert!(text(&first).contains("Pensando"));
-        assert!(text(&first).contains("RESUMEN_PUBLICO_DE_PRUEBA"));
+        // The reasoning in flight owns progress: no waiting line under it.
+        assert!(text(&first).contains("Pensando…"));
+        assert!(!text(&first).contains(WAITING_LABEL));
         assert!(tree.is_animating());
         assert!(!first.commands.iter().any(|command| matches!(
             command,
             DrawCommand::Spinner { .. }
                 | DrawCommand::Icon {
-                    icon: Icon::Code,
+                    icon: Icon::Brain | Icon::Code,
                     ..
                 }
         )));
-        let brains = |frame: &openide_ui::Frame| {
-            frame
-                .commands
-                .iter()
-                .filter_map(|command| {
-                    if let DrawCommand::Icon {
-                        icon: Icon::Brain,
-                        rect,
-                        ..
-                    } = command
-                    {
-                        Some(*rect)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(
-            brains(&first).len(),
-            1,
-            "only the live disclosure owns progress"
-        );
-        let next = tree.layout_at(viewport, clock + Duration::from_millis(350));
-        assert_eq!(brains(&first), brains(&next));
         tree.set_reduced_motion(true);
         let reduced = tree.layout_at(viewport, clock + Duration::from_millis(700));
         assert!(!tree.is_animating());
@@ -1552,16 +1537,9 @@ fn waiting_remains_visible_until_first_painted_prose_and_restarts_for_a_new_requ
             let viewport = Size::new(width, 900.0);
             let mut tree = UiTree::new(timeline(&state, width));
             let waiting = tree.layout(viewport);
-            assert!(text(&waiting).contains("Pensando"));
+            assert!(text(&waiting).contains(WAITING_LABEL));
             assert!(!text(&waiting).contains("PRIMER_TEXTO_VISIBLE"));
             assert!(tree.is_animating());
-            assert!(waiting.commands.iter().any(|command| matches!(
-                command,
-                DrawCommand::Icon {
-                    icon: Icon::Brain,
-                    ..
-                }
-            )));
 
             let index = state.transcript.len() - 1;
             let TranscriptItem::Assistant { content, .. } = &mut state.transcript[index] else {
@@ -2216,6 +2194,200 @@ fn export_conversation_stream_visual_review() {
                 &mut pixmap.as_mut(),
             );
             pixmap.save_png(path.with_extension("png")).unwrap();
+            let mut output = context.end_pass();
+            // This exporter consumes draw commands, not a GPU texture atlas.
+            output.textures_delta.clear();
+        }
+    }
+}
+
+#[test]
+#[ignore = "exports the flat streaming lines as PNG under docs/ui-separation/shots/streaming"]
+fn export_streaming_lines_visual_review() {
+    let directory = std::path::PathBuf::from(
+        std::env::var_os("OPENIDE_STREAM_VISUAL_DIR").unwrap_or_else(|| {
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../docs/ui-separation/shots/streaming"
+            )
+            .into()
+        }),
+    );
+    std::fs::create_dir_all(&directory).unwrap();
+    let call = |id: &str, name: &str, arguments: serde_json::Value, activity| TranscriptItem::Tool {
+        id: id.into(),
+        name: name.into(),
+        arguments,
+        output: (activity != ActivityStatus::Running).then(|| "ok".into()),
+        is_error: activity == ActivityStatus::Failed,
+        activity,
+    };
+    let reasoning = |status| TranscriptItem::Reasoning {
+        id: "reason".into(),
+        step: 1,
+        content: PUBLIC_REASONING.into(),
+        status,
+        truncated: false,
+    };
+    let prose = "Voy a mirar la documentación y la estructura del repo para contarte de qué trata el proyecto, sin inventar.";
+    let explored = |running: usize| {
+        [
+            ("search-a", "find_files", json!({"pattern":"**/*.{md,txt}", "path":"presupuestacion"})),
+            ("search-b", "search_text", json!({"query":"Editar hormigón|Editar molde"})),
+            ("read-a", "read_file", json!({"path":"web/package.json"})),
+            ("read-b", "read_file", json!({"path":"docs/README.md", "start_line":130, "end_line":329})),
+            ("read-c", "read_file", json!({"path":"docs/funcionalidades.md"})),
+            ("list-a", "list_files", json!({"path":"web/src/pantallas"})),
+        ]
+        .into_iter()
+        .enumerate()
+        .take(running + 1)
+        .map(|(index, (id, name, arguments))| {
+            call(
+                id,
+                name,
+                arguments,
+                if index == running {
+                    ActivityStatus::Running
+                } else {
+                    ActivityStatus::Completed
+                },
+            )
+        })
+        .collect::<Vec<_>>()
+    };
+    let build = |phase: &str| {
+        let mut state = state();
+        state.transcript = vec![user("¿De qué trata el proyecto?")];
+        state.running = true;
+        match phase {
+            "waiting" => {}
+            "reasoning-live" => {
+                state
+                    .transcript
+                    .push(model_activity(1, ActivityStatus::Running, false));
+                state
+                    .transcript
+                    .push(reasoning(ModelStreamStatus::Receiving));
+            }
+            "reasoning-done" => {
+                state
+                    .transcript
+                    .push(reasoning(ModelStreamStatus::Committed));
+                state.transcript.push(assistant(prose));
+                state.running = false;
+            }
+            "exploration-live-one-file" => {
+                state.transcript.push(assistant(prose));
+                state.transcript.extend(explored(2));
+            }
+            "exploration-live-step-a" | "exploration-live-step-mid" => {
+                state.transcript.push(assistant(prose));
+                state.transcript.extend(explored(3));
+            }
+            "exploration-live-step-b" => {
+                state.transcript.push(assistant(prose));
+                state.transcript.extend(explored(4));
+            }
+            "exploration-live-between-steps" => {
+                state.transcript.push(assistant(prose));
+                state.transcript.extend(explored(6));
+            }
+            "exploration-done" | "exploration-done-open" | "exploration-failed" | "full-turn" => {
+                state.running = false;
+                state.transcript.push(assistant(prose));
+                state.transcript.extend(explored(6));
+                if phase == "exploration-done-open" {
+                    state.conversation_details.set_expanded("work:search-a", true);
+                }
+                if phase == "exploration-failed" {
+                    let mut failed = call(
+                        "read-missing",
+                        "read_file",
+                        json!({"path":"docs/modulos.md"}),
+                        ActivityStatus::Failed,
+                    );
+                    if let TranscriptItem::Tool { output, .. } = &mut failed {
+                        *output = Some("No se pudo leer este archivo: no existe".into());
+                    }
+                    state.transcript.push(failed);
+                }
+                if phase == "full-turn" {
+                    state.transcript.insert(1, reasoning(ModelStreamStatus::Committed));
+                    state.transcript.extend([
+                        assistant("El constructor decide qué se puede editar. Ajusto la pantalla y corro las pruebas."),
+                        call(
+                            "edit",
+                            "write_file",
+                            json!({"path":"web/src/pantallas/PantallaPiezas.tsx","content":"export const editable = Boolean(constructor);\n"}),
+                            ActivityStatus::Completed,
+                        ),
+                        TranscriptItem::Tool {
+                            id: "shell".into(),
+                            name: "run_command".into(),
+                            arguments: json!({"command":"npm test -- piezas"}),
+                            output: Some("PASS src/pantallas/PantallaPiezas.test.tsx\nTests: 4 passed, 4 total".into()),
+                            is_error: false,
+                            activity: ActivityStatus::Completed,
+                        },
+                        assistant("Listo: sin constructor ya no aparece la edición."),
+                    ]);
+                }
+            }
+            _ => unreachable!(),
+        }
+        state
+    };
+    for phase in [
+        "waiting",
+        "reasoning-live",
+        "reasoning-done",
+        "exploration-live-one-file",
+        "exploration-live-step-a",
+        "exploration-live-step-mid",
+        "exploration-live-step-b",
+        "exploration-live-between-steps",
+        "exploration-done",
+        "exploration-done-open",
+        "exploration-failed",
+        "full-turn",
+    ] {
+        // The whole turn needs room for its edit and command cards.
+        let height = if phase == "full-turn" { 900.0 } else { 560.0 };
+        for width in [360.0, 900.0] {
+            let viewport = Size::new(width, height);
+            let root = build_session_surface(&build(phase), width, false, false);
+            let (context, mut tree) = super::file_activity_visual_tests::native_tree(root);
+            let frame = if phase == "exploration-live-step-mid" {
+                // The same tree sees the step change and is caught on the way.
+                tree.set_reduced_motion(false);
+                let clock = Instant::now();
+                tree.layout_at(viewport, clock);
+                let next = build("exploration-live-step-b");
+                tree.set_root(build_session_surface(&next, width, false, false));
+                tree.layout_at(viewport, clock);
+                tree.layout_at(
+                    viewport,
+                    clock + Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) / 4),
+                )
+            } else {
+                tree.set_reduced_motion(true);
+                tree.layout(viewport)
+            };
+            let path = directory.join(format!("{phase}-{width:.0}.svg"));
+            crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, height)
+                .unwrap();
+            let options = crate::settings_ui::visual_qa::native_svg_options();
+            let svg = std::fs::read_to_string(&path).unwrap();
+            let svg_tree = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+            resvg::render(
+                &svg_tree,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            std::fs::remove_file(&path).unwrap();
             let mut output = context.end_pass();
             // This exporter consumes draw commands, not a GPU texture atlas.
             output.textures_delta.clear();

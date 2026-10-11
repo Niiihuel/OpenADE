@@ -9,10 +9,10 @@ use std::collections::HashSet;
 use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, Collapsible, Component,
+    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, Component,
     ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
-    MarkerVariant, PageColumn, ScrollArea, Separator, Text, TextArea, TextRole, ToolActivity,
-    Tooltip, TooltipPlacement,
+    MarkerVariant, PageColumn, ScrollArea, Separator, Text, TextArea, TextRole, Ticker,
+    ToolActivity, Tooltip, TooltipPlacement,
 };
 
 use crate::{
@@ -20,7 +20,8 @@ use crate::{
     rich_text, theme,
     tool_presentation::{self, ToolKind},
     transcript::{
-        ActivityStatus, ModelStreamStatus, TranscriptActivity, TranscriptImage, TranscriptItem,
+        duration_label, ActivityStatus, ModelStreamStatus, TranscriptActivity, TranscriptImage,
+        TranscriptItem,
     },
     view::{
         sidebar_reopen_control, AbortedToolBatchView, NativeAutomationSessionView, PermissionView,
@@ -39,6 +40,9 @@ const HEADER_FADE_HEIGHT: f32 = 42.0;
 pub(crate) const TRANSCRIPT_BOTTOM_FADE_HEIGHT: f32 = 32.0;
 const HEADER_ACTION_SIZE: f32 = crate::sidebar_chrome::TOOL_SIZE;
 const HEADER_GAP: f32 = 4.0;
+/// Thinking, exploration and waiting are flat text lines of this height.
+const STREAM_LINE_HEIGHT: f32 = 22.0;
+const WAITING_LABEL: &str = "Pensando el siguiente paso";
 
 /// Humanize known provider failures only at presentation time. The original
 /// error stays intact in the transcript and journal for replay and diagnosis.
@@ -338,19 +342,62 @@ fn detail_action(state: &ViewState, id: &str) -> String {
     )
 }
 
-fn stream_state_label(status: ModelStreamStatus) -> &'static str {
-    match status {
-        ModelStreamStatus::Receiving => "En curso",
-        ModelStreamStatus::Committed => "Recibido",
-        ModelStreamStatus::Interrupted => "Interrumpido",
-        ModelStreamStatus::Failed => "Falló",
-        ModelStreamStatus::Cancelled => "Cancelado",
-        ModelStreamStatus::Discarded => "Descartado",
+/// One line of flat transcript text, cut with an ellipsis.
+fn stream_text(text: impl Into<String>, ink: openide_ui::Color) -> Element {
+    Element::truncated_text(text)
+        .foreground(ink)
+        .font_family(FontFamily::Sans)
+        .font_size(13.0)
+        .size(None, Some(STREAM_LINE_HEIGHT))
+        .shrink_to_fit()
+}
+
+/// As `stream_text` with a sweeping highlight, for work in flight: muted, or
+/// in the normal ink when `strong`.
+fn stream_shimmer(id: String, text: &str, strong: bool) -> Element {
+    let (ink, highlight) = if strong {
+        (theme::FOREGROUND, theme::BRAND)
+    } else {
+        (
+            theme::FOREGROUND_SUBTLE,
+            openide_ui::thinking_highlight(theme::component_palette()),
+        )
+    };
+    Element::shimmer_truncated_text(id, text, highlight)
+        .foreground(ink)
+        .font_family(FontFamily::Sans)
+        .font_size(13.0)
+        .size(None, Some(STREAM_LINE_HEIGHT))
+        .shrink_to_fit()
+}
+
+/// A flat transcript line: no card, border or icon column. `expanded` adds
+/// the disclosure chevron after the text.
+fn stream_line(mut parts: Vec<Element>, action: Option<String>, expanded: Option<bool>) -> Element {
+    if let Some(expanded) = expanded {
+        parts.push(
+            Element::icon(if expanded {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            })
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .size(Some(14.0), Some(14.0))
+            .centered_y(),
+        );
+    }
+    let row = Element::row(parts)
+        .gap(5.0)
+        .size(None, Some(STREAM_LINE_HEIGHT))
+        .clip_children();
+    match action {
+        Some(action) => Element::clickable(action, row),
+        None => row,
     }
 }
 
-/// Automatic disclosure follows the current reasoning chunk, not the whole
-/// request. Starting prose or a tool closes it unless the reader chose a state.
+/// Whether this reasoning chunk is the one being received right now. Prose
+/// or a tool after it means the model has moved on.
 fn reasoning_is_live_tail(state: &ViewState, id: &str) -> bool {
     matches!(state.transcript.iter().rev().find(|item| !matches!(item,
         TranscriptItem::ModelUsage { .. } | TranscriptItem::PlanSnapshot { .. }
@@ -381,17 +428,29 @@ pub(crate) fn model_stream_item(
             ..
         } => {
             let receiving = *status == ModelStreamStatus::Receiving;
-            let live = reasoning_is_live_tail(state, id);
-            let expanded = state.conversation_details.is_expanded(id, live);
+            let owner = state.selected_session.as_deref().unwrap_or("draft");
+            let expanded = state.conversation_details.is_expanded(id, false);
+            let label = if reasoning_is_live_tail(state, id) {
+                stream_shimmer(format!("reasoning:{owner}:{id}"), "Pensando…", false)
+            } else {
+                stream_text(
+                    format!(
+                        "Pensó {}",
+                        duration_label(state.item_times.duration_ms(id).unwrap_or(0))
+                    ),
+                    theme::FOREGROUND_SUBTLE,
+                )
+            };
+            let line = stream_line(vec![label], Some(detail_action(state, id)), Some(expanded));
+            if !expanded {
+                return line;
+            }
             let visible = &content[..state.stream_presentation.visible_bytes(item_index, content)];
-            let body = if expanded {
+            let body = {
                 let rendered = if receiving {
-                    rich_text::render_streaming_markdown_at_width(
-                        visible,
-                        (reading_width - 33.0).max(48.0),
-                    )
+                    rich_text::render_streaming_markdown_at_width(visible, reading_width.max(48.0))
                 } else {
-                    rich_text::render_markdown_at_width(content, (reading_width - 33.0).max(48.0))
+                    rich_text::render_markdown_at_width(content, reading_width.max(48.0))
                 };
                 let mut rows = vec![rich_text::scope_web_links(rendered, &format!(
                     "reasoning:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
@@ -414,21 +473,8 @@ pub(crate) fn model_stream_item(
                 .tint(theme::FOREGROUND_SUBTLE)
                 .render()
                 .max_height(160.0)
-            } else {
-                Element::spacer()
             };
-            Collapsible::new(
-                detail_action(state, id),
-                if live { "Pensando" } else { "Razonamiento" },
-                body,
-                theme::component_palette(),
-            )
-            .icon(Icon::Brain)
-            .collapse_footer(true)
-            .thinking(live)
-            .expanded(expanded)
-            .detail(stream_state_label(*status))
-            .render()
+            Element::column(vec![line, body])
         }
         TranscriptItem::ToolPreview {
             id,
@@ -753,60 +799,18 @@ fn completed_process_diagnostic(items: &[TranscriptItem], index: usize) -> bool 
         })
 }
 
-fn work_counts(items: &[TranscriptItem]) -> (usize, usize, usize, usize, usize, usize) {
-    let mut completed = 0;
-    let mut running = 0;
-    let mut failed = 0;
-    let mut uncertain = 0;
-    let mut permission = 0;
-    let mut cancelled = 0;
-    for item in items {
-        if let TranscriptItem::Tool {
-            output,
-            is_error,
-            activity,
-            ..
-        } = item
-        {
-            if *is_error || *activity == ActivityStatus::Failed {
-                failed += 1;
-            } else {
-                match activity {
-                    ActivityStatus::Completed if output.is_some() => completed += 1,
-                    ActivityStatus::Running => running += 1,
-                    ActivityStatus::WaitingPermission | ActivityStatus::PermissionInterrupted => {
-                        permission += 1
-                    }
-                    ActivityStatus::Cancelled | ActivityStatus::Discarded => cancelled += 1,
-                    _ => uncertain += 1,
-                }
-            }
-        } else if let TranscriptItem::ToolPreview { status, .. } = item {
-            match status {
-                ModelStreamStatus::Failed => failed += 1,
-                ModelStreamStatus::Interrupted => uncertain += 1,
-                ModelStreamStatus::Cancelled | ModelStreamStatus::Discarded => cancelled += 1,
-                _ => {}
-            }
-        }
-    }
-    (completed, running, failed, uncertain, permission, cancelled)
-}
-
 pub(crate) fn conversation_detail_default_open(state: &ViewState, id: &str) -> bool {
-    if reasoning_is_live_tail(state, id) {
-        return true;
-    }
     if let Some(call) = id.strip_prefix("work:") {
         return state
             .transcript
             .iter()
             .position(|item| exploration_call(item) == Some(call))
-            .map(|start| {
+            .is_some_and(|start| {
                 let (end, _) = exploration_run(&state.transcript, start);
-                exploration_open_child(&state.transcript[start..end], state)
-            })
-            .unwrap_or(false);
+                state.transcript[start..end]
+                    .iter()
+                    .any(exploration_needs_attention)
+            });
     }
     if let Some(call) = id.strip_prefix("tool:") {
         return crate::file_activity_ui::default_expanded(state, call);
@@ -1603,14 +1607,6 @@ fn exploration_run(items: &[TranscriptItem], start: usize) -> (usize, usize) {
     (index, count)
 }
 
-fn exploration_open_child(items: &[TranscriptItem], state: &ViewState) -> bool {
-    items.iter().filter_map(exploration_call).any(|call| {
-        state
-            .conversation_details
-            .is_expanded(&format!("tool:{call}"), false)
-    })
-}
-
 fn exploration_needs_attention(item: &TranscriptItem) -> bool {
     match item {
         TranscriptItem::Tool {
@@ -1634,153 +1630,262 @@ fn exploration_needs_attention(item: &TranscriptItem) -> bool {
     }
 }
 
-fn work_group(
-    items: &[TranscriptItem],
-    state: &ViewState,
-    compact: bool,
-) -> Element {
-    let Some(call) = items.first().and_then(|item| match item {
-        TranscriptItem::Tool { id, .. } => Some(id.as_str()),
+/// How one exploration call reads on a flat line: its verb while it runs,
+/// its verb once done, and which count of the group's summary it adds to.
+fn exploration_step(name: &str) -> (&'static str, &'static str, usize) {
+    match name {
+        "read_file" | "batch_read" => ("Leyendo", "Leyó", 0),
+        "get_diagnostics" => ("Comprobando", "Comprobó", 0),
+        "list_files" => ("Listando", "Listó", 2),
+        "web_fetch" => ("Abriendo", "Abrió", 3),
+        "web_search" => ("Buscando en la web", "Buscó en la web", 1),
+        _ => ("Buscando", "Buscó", 1),
+    }
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// What a group explored, as Cursor words it: the file's name when there is
+/// one file, otherwise a count, then searches, listings and pages.
+fn exploration_summary(items: &[TranscriptItem]) -> String {
+    let mut counts = [0usize; 4];
+    let mut file = None;
+    for item in items {
+        let (name, path) = match item {
+            TranscriptItem::Tool {
+                name, arguments, ..
+            } if exploration_call(item).is_some() => (
+                name,
+                ["path", "file_path"]
+                    .into_iter()
+                    .find_map(|key| arguments.get(key)?.as_str()),
+            ),
+            TranscriptItem::ToolPreview {
+                name: Some(name), ..
+            } if exploration_call(item).is_some() => (name, None),
+            _ => continue,
+        };
+        let slot = exploration_step(name).2;
+        counts[slot] += 1;
+        if slot == 0 {
+            file = path.map(file_name);
+        }
+    }
+    let mut parts = Vec::new();
+    for (count, (one, many)) in counts.into_iter().zip([
+        ("archivo", "archivos"),
+        ("búsqueda", "búsquedas"),
+        ("listado", "listados"),
+        ("página", "páginas"),
+    ]) {
+        match (count, file.filter(|_| one == "archivo")) {
+            (0, _) => {}
+            (1, Some(file)) => parts.push(file.to_owned()),
+            (1, None) => parts.push(format!("1 {one}")),
+            _ => parts.push(format!("{count} {many}")),
+        }
+    }
+    parts.join(", ")
+}
+
+/// Whether the call has not reached an outcome yet.
+fn exploration_in_flight(item: &TranscriptItem) -> bool {
+    matches!(
+        item,
+        TranscriptItem::Tool {
+            activity: ActivityStatus::Running,
+            is_error: false,
+            ..
+        } | TranscriptItem::ToolPreview {
+            status: ModelStreamStatus::Receiving | ModelStreamStatus::Committed,
+            ..
+        }
+    )
+}
+
+/// One call as flat text: its verb and its target, and under them the reason
+/// when it did not simply complete. `live` words it as the step under way.
+fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Vec<Element> {
+    let owner = state.selected_session.as_deref();
+    let preview;
+    let (id, name, arguments, activity, is_error, output) = match item {
+        TranscriptItem::Tool {
+            id,
+            name,
+            arguments,
+            output,
+            is_error,
+            activity,
+        } => (id, name, arguments, *activity, *is_error, output.as_deref()),
         TranscriptItem::ToolPreview {
-            call_id: Some(id), ..
-        } => Some(id.as_str()),
-        _ => None,
-    }) else {
+            call_id: Some(id),
+            name: Some(name),
+            arguments,
+            status,
+            ..
+        } => {
+            preview = tool_presentation::preview_arguments(arguments);
+            let activity = match status {
+                ModelStreamStatus::Receiving | ModelStreamStatus::Committed => {
+                    ActivityStatus::Running
+                }
+                ModelStreamStatus::Cancelled => ActivityStatus::Cancelled,
+                ModelStreamStatus::Discarded => ActivityStatus::Discarded,
+                ModelStreamStatus::Interrupted | ModelStreamStatus::Failed => {
+                    ActivityStatus::Interrupted
+                }
+            };
+            (id, name, &preview, activity, false, None)
+        }
+        _ => return Vec::new(),
+    };
+    let presentation = tool_presentation::present(name, arguments, activity, is_error, output);
+    let (running, done, slot) = exploration_step(name);
+    let attention = exploration_needs_attention(item);
+    let verb = if attention {
+        presentation.title.as_str()
+    } else if live || activity == ActivityStatus::Running {
+        running
+    } else {
+        done
+    };
+    // A file search is known by its pattern; the folder only narrows it.
+    let glob = (name == "find_files")
+        .then(|| arguments.get("pattern")?.as_str())
+        .flatten()
+        .map(|pattern| match arguments.get("path").and_then(|path| path.as_str()) {
+            Some(path) if !path.is_empty() => format!("{pattern} en {path}"),
+            _ => pattern.to_owned(),
+        });
+    let target = match &glob {
+        Some(glob) => glob,
+        None if slot == 0 => file_name(&presentation.target),
+        None => &presentation.target,
+    };
+    if live {
+        let step = if target.is_empty() {
+            verb.to_owned()
+        } else {
+            format!("{verb} {target}")
+        };
+        return vec![stream_text(step, theme::FOREGROUND_SUBTLE)];
+    }
+    let failed = is_error || activity == ActivityStatus::Failed;
+    // A call that ran opens its file or page, or else its recorded activity.
+    let action = matches!(item, TranscriptItem::Tool { .. }).then(|| {
+        match (tool_presentation::navigation_target(name, arguments), owner) {
+            (Some(_), Some(owner)) => tool_presentation::navigation_action(owner, id),
+            _ => format!("tool:{id}"),
+        }
+    });
+    let line = stream_line(
+        vec![
+            stream_text(
+                verb,
+                if failed {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::FOREGROUND
+                },
+            )
+            .flex(0.0),
+            stream_text(
+                target,
+                if failed {
+                    theme::DESTRUCTIVE
+                } else {
+                    theme::FOREGROUND_SUBTLE
+                },
+            ),
+        ],
+        action.clone(),
+        None,
+    );
+    // The line names the file; its whole path stays one hover away.
+    let mut lines = vec![match action {
+        Some(action) if target.len() < presentation.target.len() => Tooltip::new(
+            line,
+            action,
+            &presentation.target,
+            theme::component_palette(),
+        )
+        .render(),
+        _ => line,
+    }];
+    if let Some(note) = presentation
+        .note
+        .filter(|_| !approval_card_shown(state, name, arguments, activity))
+    {
+        // The reason wraps: an error must be readable at any width.
+        lines.push(
+            Text::new(note, theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
+    }
+    lines
+}
+
+/// Consecutive reads, searches and listings as flat text. While the turn is
+/// still on them: "Explorando <resumen>" over a ticker with the step under
+/// way. Once settled: "Exploró <resumen>", which opens to one line per call.
+/// A call that needs attention keeps its line visible either way.
+fn work_group(items: &[TranscriptItem], state: &ViewState, live_tail: bool) -> Element {
+    let Some(call) = items.first().and_then(exploration_call) else {
         return Element::spacer();
     };
+    let owner = state.selected_session.as_deref().unwrap_or("draft");
     let id = format!("work:{call}");
-    let (completed, running, failed, uncertain, permission, cancelled) = work_counts(items);
-    let preparing = items
+    let current = items
         .iter()
-        .filter(|item| {
-            matches!(
-                item,
-                TranscriptItem::ToolPreview {
-                    status: ModelStreamStatus::Receiving | ModelStreamStatus::Committed,
-                    ..
-                }
-            )
-        })
-        .count();
-    let total = items
-        .iter()
-        .filter(|item| {
-            matches!(
-                item,
-                TranscriptItem::Tool { .. } | TranscriptItem::ToolPreview { .. }
-            )
-        })
-        .count();
-    let mut parts = Vec::new();
-    if permission > 0 {
-        parts.push(format!("{permission} con permiso pendiente"));
-    }
-    if failed > 0 {
-        parts.push(format!("{failed} con error"));
-    }
-    if uncertain > 0 {
-        parts.push(format!("{uncertain} sin confirmar"));
-    }
-    if cancelled > 0 {
-        parts.push(format!("{cancelled} sin completar"));
-    }
-    if running > 0 {
-        parts.push(format!("{running} en curso"));
-    }
-    if preparing > 0 {
-        parts.push(format!("{preparing} preparando"));
-    }
-    if completed > 0 {
-        parts.push(format!("{completed}/{total} listas"));
-    }
-    let expanded = state
-        .conversation_details
-        .is_expanded(&id, exploration_open_child(items, state));
-    let render_item = |index: usize, item: &TranscriptItem| {
-        if let TranscriptItem::Tool { id, .. } = item {
-            let partial = match items.get(index + 1) {
-                Some(TranscriptItem::ToolOutput {
-                    tool_call_id,
-                    text,
-                    truncated,
-                }) if tool_call_id == id => Some((text.as_str(), *truncated)),
-                _ => None,
-            };
-            let media_index = index + if partial.is_some() { 2 } else { 1 };
-            let media = items.get(media_index).filter(|item| {
-                matches!(item,
-                    TranscriptItem::ToolMedia { tool_call_id, .. } if tool_call_id == id
-                )
-            });
-            tool_line_with_output(item, state, compact, partial, media)
-        } else {
-            // Tool previews use the same controlled per-call disclosure and
-            // provisional labels as their ungrouped representation.
-            model_stream_item(
-                item,
-                index,
-                state,
-                if compact { 360.0 } else { READING_WIDTH },
-            )
+        .rev()
+        .find(|item| exploration_call(item).is_some() && exploration_in_flight(item));
+    let live = current.is_some() || live_tail;
+    let expanded = state.conversation_details.is_expanded(
+        &id,
+        items.iter().any(exploration_needs_attention),
+    );
+    let verb = if live {
+        stream_shimmer(format!("exploration:{owner}:{call}"), "Explorando", true)
+    } else {
+        stream_text("Exploró", theme::FOREGROUND)
+    };
+    let mut rows = vec![stream_line(
+        vec![
+            verb.flex(0.0),
+            stream_text(exploration_summary(items), theme::FOREGROUND_SUBTLE),
+        ],
+        Some(detail_action(state, &id)),
+        (!live || expanded).then_some(expanded),
+    )];
+    for item in items {
+        if exploration_call(item).is_some() && (expanded || exploration_needs_attention(item)) {
+            rows.extend(exploration_lines(item, state, false));
         }
-    };
-    let content = if expanded {
-        Element::column(
-            items
-                .iter()
-                .enumerate()
-                .filter_map(|(index, item)| {
-                    exploration_call(item).map(|_| render_item(index, item))
-                })
-                .collect(),
-        )
-        .gap(4.0)
-    } else {
-        Element::spacer()
-    };
-    let summary = parts.join(" · ");
-    let detail = if compact {
-        parts.first().cloned().unwrap_or_default()
-    } else {
-        summary.clone()
-    };
-    let ink = if failed > 0 {
-        theme::DESTRUCTIVE
-    } else {
-        theme::FOREGROUND_SUBTLE
-    };
-    let header = Collapsible::new(
-        detail_action(state, &id),
-        format!("Exploración · {total}"),
-        content,
-        // The title takes the ink too, as the rows it summarizes do.
-        theme::action_palette(theme::BACKGROUND, ink),
-    )
-    .ink(ink)
-    .icon(Icon::Search)
-    .loading(running > 0 || preparing > 0)
-    .expanded(expanded)
-    .collapse_footer(true)
-    .detail(detail)
-    .render();
-    let header = Tooltip::new(
-        header,
-        detail_action(state, &id),
-        "Lecturas y búsquedas",
-        theme::component_palette(),
-    )
-    .description(summary)
-    .render();
-    // Collapsing successful exploration never hides an error, permission or
-    // uncertain outcome. Those rows retain their own result and title actions.
-    let mut rows = vec![header];
-    if !expanded {
-        rows.extend(items.iter().enumerate().filter_map(|(index, item)| {
-            (exploration_call(item).is_some() && exploration_needs_attention(item))
-                .then(|| render_item(index, item))
-        }));
     }
-    Element::column(rows).gap(4.0)
+    if live {
+        // Two lines tall whatever it shows, so the transcript below holds
+        // still while steps come and go.
+        let (key, line) = match current {
+            Some(item) => (
+                exploration_call(item).unwrap_or_default(),
+                exploration_lines(item, state, true).remove(0),
+            ),
+            None => (
+                "waiting",
+                stream_shimmer(format!("exploration-waiting:{owner}:{call}"), WAITING_LABEL, false),
+            ),
+        };
+        rows.push(
+            Ticker::new(format!("exploration-step:{owner}:{call}"), key, line)
+                .height(STREAM_LINE_HEIGHT * 2.0)
+                .render(),
+        );
+    }
+    Element::column(rows)
 }
 
 /// Shared by native and CLI conversations; the action keeps the existing
@@ -1822,6 +1927,25 @@ fn timeline(state: &ViewState, width: f32) -> Element {
     let mut rows = vec![Element::spacer().size(None, Some(22.0))];
     let mut index = 0;
     let mut turn_number = 0;
+    let latest_model = state
+        .transcript
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, item)| {
+            if let TranscriptItem::Activity(TranscriptActivity::Model { status, .. }) = item {
+                Some((index, *status))
+            } else {
+                None
+            }
+        });
+    let model_running = matches!(latest_model, Some((_, ActivityStatus::Running)));
+    // The host's flags can outlive a turn, so they only count where the
+    // transcript agrees that more is coming.
+    let host_running = state.running || state.background_run_selected;
+    // A live exploration group at the end says the turn is waiting in its
+    // own ticker, so the trailing waiting line stays out.
+    let mut live_group_tail = false;
     let recorded_plan_calls: std::collections::HashSet<&str> = state
         .transcript
         .iter()
@@ -1917,10 +2041,12 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         if exploration_call(item).is_some() {
             let (end, count) = exploration_run(&state.transcript, index);
             if count >= 2 {
+                live_group_tail =
+                    (host_running || model_running) && end == state.transcript.len();
                 rows.push(work_group(
                     &state.transcript[index..end],
                     state,
-                    width < COMPACT_BREAKPOINT,
+                    live_group_tail,
                 ));
                 index = end;
                 continue;
@@ -1972,18 +2098,6 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             .map(|permission| permission_card(permission, state, width < COMPACT_BREAKPOINT)),
     );
     rows.extend(related_subagent_rows(state, width < COMPACT_BREAKPOINT));
-    let latest_model = state
-        .transcript
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(index, item)| {
-            if let TranscriptItem::Activity(TranscriptActivity::Model { status, .. }) = item {
-                Some((index, *status))
-            } else {
-                None
-            }
-        });
     let visible_prose = |index, item: &TranscriptItem| {
         let TranscriptItem::Assistant { content, streaming } = item else {
             return false;
@@ -1995,80 +2109,87 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         };
         !content[..visible].trim().is_empty()
     };
-    let footer = match latest_model {
-        Some((index, ActivityStatus::Running)) => {
-            let trailing = &state.transcript[index + 1..];
-            let pending_ready = trailing.iter().any(|item| {
-                matches!(
-                    item,
-                    TranscriptItem::ToolPreview {
-                        status: ModelStreamStatus::Receiving,
-                        ..
-                    }
-                )
-            });
-            // Prose owns the response presentation once it becomes visible.
-            // Keep the request running in state, but don't append another row
-            // or a lone spinner while receiving text or awaiting its commit.
-            if trailing
-                .iter()
-                .enumerate()
-                .any(|(offset, item)| visible_prose(index + 1 + offset, item))
-            {
-                None
-            } else if pending_ready {
-                Some("Preparando herramientas")
-            } else {
-                Some("Pensando")
-            }
-        }
-        None => state.transcript.last().and_then(|item| {
-            (matches!(
-                item,
-                TranscriptItem::Assistant {
-                    streaming: true,
-                    ..
-                }
-            ) && !visible_prose(state.transcript.len() - 1, item))
-            .then_some("Pensando")
-        }),
-        _ => None,
+    // The turn goes on and nothing is in flight: say that it is thinking
+    // about its next step. Whatever is in flight owns its own progress.
+    let scope = match latest_model {
+        Some((index, ActivityStatus::Running)) => index + 1,
+        _ => 0,
     };
-    // The currently visible input/reasoning already owns its progress label.
-    // Reserve the trailing marker for waiting before prose; don't animate twice.
-    let live_detail = matches!(
-        state.transcript.iter().rev().find(|item| !matches!(
-            item,
-            TranscriptItem::ModelUsage { .. } | TranscriptItem::PlanSnapshot { .. }
-        )),
-        Some(
+    let tail = state.transcript[scope..]
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(offset, item)| (scope + offset, item))
+        .find(|(_, item)| {
+            !matches!(
+                item,
+                TranscriptItem::ModelUsage { .. }
+                    | TranscriptItem::PlanSnapshot { .. }
+                    | TranscriptItem::ToolOutput { .. }
+                    | TranscriptItem::ToolMedia { .. }
+                    | TranscriptItem::Activity(TranscriptActivity::Model {
+                        status: ActivityStatus::Completed,
+                        ..
+                    })
+            )
+        });
+    let in_flight = match tail {
+        Some((
+            _,
             TranscriptItem::Reasoning {
                 status: ModelStreamStatus::Receiving,
                 ..
-            } | TranscriptItem::ToolPreview {
-                status: ModelStreamStatus::Receiving,
+            }
+            | TranscriptItem::ToolPreview {
+                status: ModelStreamStatus::Receiving | ModelStreamStatus::Committed,
                 ..
-            } | TranscriptItem::WebSearch {
+            }
+            | TranscriptItem::WebSearch {
                 status: ModelStreamStatus::Receiving,
                 ..
             }
-        )
-    );
-    if let Some(label) = footer.filter(|_| !live_detail) {
-        rows.push(
-            Marker::new(
+            | TranscriptItem::Tool {
+                activity: ActivityStatus::Running | ActivityStatus::WaitingPermission,
+                ..
+            },
+        )) => true,
+        // Prose owns the response once it is visible, while it streams or
+        // waits for its commit.
+        Some((index, item @ TranscriptItem::Assistant { streaming, .. })) => {
+            (*streaming || model_running) && visible_prose(index, item)
+        }
+        _ => false,
+    };
+    // A request is open; or the last one committed and the host still runs
+    // the turn, which a new prompt or a finished tool confirms; or a reply
+    // has begun without visible prose yet. A final answer or a failure ends it.
+    let more_coming = match latest_model {
+        Some((_, ActivityStatus::Running)) => true,
+        None | Some((_, ActivityStatus::Completed)) => match tail {
+            Some((_, TranscriptItem::User { .. } | TranscriptItem::Tool { .. })) => host_running,
+            Some((
+                _,
+                TranscriptItem::Assistant {
+                    streaming: true, ..
+                },
+            )) => true,
+            _ => false,
+        },
+        _ => false,
+    };
+    if more_coming && !in_flight && !live_group_tail && state.pending_permissions.is_empty() {
+        rows.push(stream_line(
+            vec![stream_shimmer(
                 format!(
                     "reply-stream:{}",
                     state.selected_session.as_deref().unwrap_or("draft")
                 ),
-                label,
-                theme::component_palette(),
-            )
-            .loading(true)
-            .thinking(label == "Pensando")
-            .render()
-            .padding(6.0),
-        );
+                WAITING_LABEL,
+                false,
+            )],
+            None,
+            None,
+        ));
     }
     rows.extend(host_activity_markers(state));
     page.children(rows)
@@ -3447,7 +3568,7 @@ mod tests {
         }
     }
 
-    use serde_json::{json, Value};
+    use serde_json::json;
     use unicode_segmentation::UnicodeSegmentation;
 
     pub(super) fn state() -> ViewState {
@@ -5302,26 +5423,21 @@ mod tests {
             },
         ];
         state.selected_tool_id = Some("a".into());
-        state.conversation_details.toggle("tool:a", false);
-        state.conversation_details.toggle("tool:b", false);
         let mut tree = UiTree::new(build_session_surface(&state, 520.0, false, true));
         let frame = tree.layout(Size::new(520.0, 1000.0));
         let visible = visible_text(&frame);
+        // The uncertain search keeps the group open and says why.
+        assert!(visible.contains("Exploró"), "{visible}");
+        assert!(visible.contains("main.rs, 1 búsqueda"), "{visible}");
         assert!(visible.contains("Resultado incierto"), "{visible}");
-        assert!(visible.contains("Leído"), "{visible}");
-        assert!(visible.contains("main.rs"), "{visible}");
-        assert!(visible.contains("fn main() {}"), "{visible}");
-        let open_file = crate::file_activity_ui::open_action(
+        assert!(visible.contains("Leyó"), "{visible}");
+        assert!(!visible.contains("fn main() {}"), "{visible}");
+        let open_file = tool_presentation::navigation_action(
             state.selected_session.as_deref().unwrap_or("draft"),
             "a",
-            0,
         );
         assert!(frame.regions.iter().any(|region| region.id == open_file));
-        assert!(frame.regions.iter().any(|region| region.id
-            == crate::file_activity_ui::inspect_action(
-                state.selected_session.as_deref().unwrap_or("draft"),
-                "b",
-            )));
+        assert!(frame.regions.iter().any(|region| region.id == "tool:b"));
         let read = frame
             .regions
             .iter()
@@ -6069,33 +6185,28 @@ mod tests {
     }
 
     #[test]
-    fn tool_counts_separate_failed_and_pending() {
-        let tools = vec![
-            TranscriptItem::Tool {
-                id: "one".into(),
-                name: "read_file".into(),
-                arguments: Value::Null,
-                output: Some("ok".into()),
-                is_error: false,
-                activity: ActivityStatus::Completed,
-            },
-            TranscriptItem::Tool {
-                id: "two".into(),
-                name: "write_file".into(),
-                arguments: Value::Null,
-                output: Some("denied".into()),
-                is_error: true,
-                activity: ActivityStatus::Failed,
-            },
-            TranscriptItem::Tool {
-                id: "three".into(),
-                name: "search_files".into(),
-                arguments: Value::Null,
-                output: None,
-                is_error: false,
-                activity: ActivityStatus::Running,
-            },
-        ];
-        assert_eq!(work_counts(&tools), (1, 1, 1, 0, 0, 0));
+    fn exploration_summary_names_one_file_and_counts_the_rest() {
+        let call = |name: &str, path: &str| TranscriptItem::Tool {
+            id: path.into(),
+            name: name.into(),
+            arguments: json!({"path": path, "query": "q"}),
+            output: None,
+            is_error: false,
+            activity: ActivityStatus::Running,
+        };
+        let mut items = vec![call("read_file", "web/package.json")];
+        assert_eq!(exploration_summary(&items), "package.json");
+        items.push(call("search_text", "web"));
+        items.push(call("find_files", "web"));
+        assert_eq!(exploration_summary(&items), "package.json, 2 búsquedas");
+        items.push(call("read_file", "README.md"));
+        items.push(call("list_files", "src"));
+        items.push(call("web_fetch", "https://example.com"));
+        // An edit is not exploration and is never counted.
+        items.push(call("write_file", "src/a.rs"));
+        assert_eq!(
+            exploration_summary(&items),
+            "2 archivos, 2 búsquedas, 1 listado, 1 página"
+        );
     }
 }

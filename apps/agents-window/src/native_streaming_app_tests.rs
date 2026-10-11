@@ -811,6 +811,13 @@ fn reasoning_scroll_fixture() -> (tempfile::TempDir, AgentsWindow, String) {
             truncated: false,
         },
     ];
+    // Reasoning text opens only by the reader's choice.
+    app.view
+        .conversation_details
+        .sync(Some("reasoning-scroll-owner"));
+    app.view
+        .conversation_details
+        .set_expanded("reason-live", true);
     app.tree.scroll_to_end("transcript");
     native_frame(&mut app);
     let body = "reasoning-body:reasoning-scroll-owner:reason-live".to_owned();
