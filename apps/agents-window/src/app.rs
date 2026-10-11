@@ -141,9 +141,9 @@ mod native_settings_choice_app_tests;
 #[cfg(test)]
 #[path = "native_streaming_app_tests.rs"]
 mod native_streaming_app_tests;
-#[cfg(test)]
 #[path = "model_switch_app.rs"]
 mod model_switch_app;
+#[cfg(test)]
 #[path = "pause_app_tests.rs"]
 mod pause_app_tests;
 #[cfg(test)]
