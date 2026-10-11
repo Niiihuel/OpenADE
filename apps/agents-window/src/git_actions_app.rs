@@ -48,7 +48,11 @@ impl AgentsWindow {
                 return true;
             }
             "ide_git_branch_toggle" => {
-                self.move_git_form_to_ide_sidebar();
+                // The open card would show the same picker: it gives way.
+                // Closed, it must not close the picker this click toggles.
+                if self.view.environment.open {
+                    self.move_git_form_to_ide_sidebar();
+                }
                 self.apply_action(
                     UiAction::Clicked {
                         id: "environment_branch_toggle".into(),
@@ -617,6 +621,27 @@ mod tests {
         let ctx = egui::Context::default();
         assert!(!app.handle_git_action("review_file_open:0:0", &ctx));
         assert!(!app.handle_git_action("review_refresh", &ctx));
+    }
+
+    #[test]
+    fn the_branch_control_opens_the_shared_picker_as_the_sidebar_s_own() {
+        use crate::environment_ui::EnvironmentMenu;
+        let (_temp, mut app) = fixture();
+        let ctx = egui::Context::default();
+        // The card that could show the same picker gives way.
+        app.view.environment.open = true;
+        click(&mut app, "ide_git_branch_toggle");
+        assert!(app.view.composer_branches.open);
+        assert_eq!(app.view.environment.menu, EnvironmentMenu::Branch);
+        assert!(!app.view.environment.open);
+        app.apply_action(
+            UiAction::Clicked {
+                id: "ide_git_branch_toggle".into(),
+            },
+            &ctx,
+        );
+        assert!(!app.view.composer_branches.open);
+        assert_eq!(app.view.environment.menu, EnvironmentMenu::None);
     }
 
     #[test]
