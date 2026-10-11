@@ -8942,10 +8942,7 @@ impl AgentsWindow {
             self.set_settings_notice(error, true);
             return false;
         }
-        let command_access_revoked = next.command_isolation()
-            != self.agent_tool_settings.command_isolation()
-            || next.full_access() != self.agent_tool_settings.full_access()
-            || !next.permissions().run_command;
+        let command_access_revoked = next.revokes_commands_started_under(&self.agent_tool_settings);
         if command_access_revoked {
             self.native_command_sessions.revoke_all();
             self.clear_native_command_ui();

@@ -161,6 +161,16 @@ impl AgentToolSettings {
         self.full_access
     }
 
+    /// Whether moving from `previous` to these settings takes away something
+    /// a command already running relies on. Widening access never does: a
+    /// server the agent started must survive the user granting more.
+    pub fn revokes_commands_started_under(&self, previous: &Self) -> bool {
+        !self.permissions().run_command
+            || (previous.full_access() && !self.full_access())
+            || (self.command_isolation() != previous.command_isolation()
+                && self.command_isolation() != CommandIsolation::HostUnrestricted)
+    }
+
     /// The host calls this only after the user confirms the full-access dialog.
     pub fn set_full_access(&mut self, enabled: bool) {
         self.full_access = enabled;
@@ -590,4 +600,23 @@ mod tests {
             ("start_command", PermissionMode::Ask)
         );
     }
+    #[test]
+    fn running_commands_survive_wider_access_and_stop_on_narrower() {
+        let base = AgentToolSettings::default();
+        let mut full = base;
+        full.set_full_access(true);
+        // Granting everything must not stop a server the agent already started.
+        assert!(!full.revokes_commands_started_under(&base));
+        // Taking it back does.
+        let mut back = full;
+        back.set_full_access(false);
+        assert!(back.revokes_commands_started_under(&full));
+        // Tighter containment does.
+        let mut offline = base;
+        offline.set_command_isolation(CommandIsolation::WorkspaceWriteOffline);
+        assert!(offline.revokes_commands_started_under(&base));
+        // Unchanged settings that still allow commands revoke nothing.
+        assert!(!full.revokes_commands_started_under(&full));
+    }
+
 }

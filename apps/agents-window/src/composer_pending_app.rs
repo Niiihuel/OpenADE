@@ -38,9 +38,7 @@ impl AgentsWindow {
             self.set_settings_notice(error, true);
             return false;
         }
-        let revoke = next.command_isolation() != self.agent_tool_settings.command_isolation()
-            || next.full_access() != self.agent_tool_settings.full_access()
-            || !next.permissions().run_command;
+        let revoke = next.revokes_commands_started_under(&self.agent_tool_settings);
         if revoke {
             if let Some(owner) = &self.view.selected_session {
                 self.native_command_sessions.revoke_session(owner);
@@ -255,10 +253,7 @@ impl AgentsWindow {
             }
             // Only this completed conversation loses its persistent command
             // handles. Other conversations may still have immutable live turns.
-            let revoke = settings.command_isolation()
-                != self.agent_tool_settings.command_isolation()
-                || settings.full_access() != self.agent_tool_settings.full_access()
-                || !settings.permissions().run_command;
+            let revoke = settings.revokes_commands_started_under(&self.agent_tool_settings);
             if revoke {
                 if let Some(session) = &scope.session {
                     self.native_command_sessions.revoke_session(session);
