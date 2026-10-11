@@ -127,6 +127,24 @@ pub struct FileRowView {
     pub can_load_more: bool,
 }
 
+/// A name being typed in the file tree, in a row of its own.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FileDraftView {
+    /// The folder a new entry goes in, or the path being renamed; relative,
+    /// with the root as the empty path.
+    pub target: String,
+    pub kind: FileDraftKind,
+    pub value: String,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileDraftKind {
+    NewFile,
+    NewFolder,
+    Rename,
+}
+
 #[derive(Clone, Debug)]
 pub struct DockTabView {
     pub id: u64,
@@ -473,6 +491,10 @@ pub struct ViewState {
     pub file_rows: Vec<FileRowView>,
     pub files_status: String,
     pub file_root_can_load_more: bool,
+    pub file_draft: Option<FileDraftView>,
+    /// The relative path awaiting confirmation to go to the trash, and
+    /// whether it is a folder.
+    pub file_delete: Option<(String, bool)>,
     pub show_archived: bool,
     pub session_organization: SessionOrganization,
     pub session_sort: SessionSort,
@@ -3424,6 +3446,7 @@ fn workspace_modals(state: &ViewState, base: Element, viewport_width: f32) -> El
     let base = settings_ui::provider_model_details_modal(state, base, viewport_width);
     let base = crate::composer_permissions_ui::full_access_dialog(state, base, viewport_width);
     let base = crate::code_editor_ui::confirmation(state, base, viewport_width);
+    let base = crate::files_panel_ui::delete_dialog(state, base, viewport_width);
     ide_ui::new_file_modal(state, base, viewport_width)
 }
 
@@ -3817,6 +3840,8 @@ pub(crate) mod tests {
             file_rows: Vec::new(),
             files_status: String::new(),
             file_root_can_load_more: false,
+            file_draft: None,
+            file_delete: None,
             show_archived: false,
             session_organization: SessionOrganization::Project,
             session_sort: SessionSort::Updated,

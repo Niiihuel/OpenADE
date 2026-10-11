@@ -1302,6 +1302,10 @@ pub struct AgentsWindow {
     environment_last_refresh: Instant,
     dock_seeded_workspaces: HashSet<String>,
     file_explorer: Option<FileExplorer>,
+    /// The one file operation running off the UI thread, if any.
+    file_op: Option<std::sync::mpsc::Receiver<file_tree_app::FileOpDone>>,
+    file_trash: crate::file_ops::Trash,
+    file_draft_focus_pending: bool,
     file_watcher: Option<crate::file_watch::TreeWatcher>,
     file_tree_refreshed: Instant,
     /// The search path the list of installed agent CLIs was last built from.
@@ -5931,6 +5935,8 @@ impl AgentsWindow {
             file_rows: Vec::new(),
             files_status: String::new(),
             file_root_can_load_more: false,
+            file_draft: None,
+            file_delete: None,
             transcript: Vec::new(),
             item_times: Default::default(),
             running: false,
@@ -6303,6 +6309,13 @@ impl AgentsWindow {
             environment_last_refresh: Instant::now(),
             dock_seeded_workspaces: HashSet::from([seeded_workspace]),
             file_explorer: None,
+            file_op: None,
+            // A test never reaches the real trash; it names its own stand-in.
+            #[cfg(not(test))]
+            file_trash: crate::file_ops::system_trash,
+            #[cfg(test)]
+            file_trash: crate::file_ops::tests::broken_trash,
+            file_draft_focus_pending: false,
             file_watcher: None,
             file_tree_refreshed: Instant::now(),
             agent_clis_path: None,
@@ -19005,6 +19018,7 @@ impl eframe::App for AgentsWindow {
             | self.guard_debug_navigation()
             | self.refresh_ide_activity_workspace()
             | self.poll_code_editor(&ctx)
+            | self.poll_file_op(&ctx)
             | self.poll_document_preview(&ctx)
             | self.poll_markdown_preview(&ctx)
             | self.poll_editor_workbench(&ctx)
@@ -19054,6 +19068,7 @@ impl eframe::App for AgentsWindow {
         let text_menu_open = self.tree.context_menu_open() || self.command_tree.context_menu_open()
             || self.view.ide.menu_open.is_some();
         let workflow_modal_open = self.view.ide.new_file.is_some()
+            || self.view.file_delete.is_some()
             || self.view.composer_full_access_confirm.is_some()
             || self.view.automations.screen == AutomationScreen::Edit
             || self.view.pending_delete_session_id.is_some()
@@ -19089,6 +19104,8 @@ impl eframe::App for AgentsWindow {
             } else if !self.view.show_command_center {
                 if escape && self.view.catalog_provider_menu_open {
                     self.view.catalog_provider_menu_open = false;
+                } else if escape && self.view.file_draft.is_some() {
+                    self.cancel_file_draft();
                 } else if escape && self.view.group_create_open {
                     self.view.group_create_open = false;
                     self.view.group_create_draft.clear();
@@ -19174,11 +19191,13 @@ impl eframe::App for AgentsWindow {
             self.group_focus_pending,
             self.rename_focus_pending,
             self.settings_terminal_path_focus_pending,
+            self.file_draft_focus_pending,
         );
         self.focus_prompt_if_pending();
         self.focus_composer_model_search_if_pending();
         self.focus_settings_terminal_path_if_pending();
         self.focus_group_if_pending();
+        self.focus_file_draft_if_pending();
         self.focus_rename_if_pending();
         let composer_selector_focused = self
             .composer_selector_focus_pending
@@ -19200,6 +19219,7 @@ impl eframe::App for AgentsWindow {
                     self.group_focus_pending,
                     self.rename_focus_pending,
                     self.settings_terminal_path_focus_pending,
+                    self.file_draft_focus_pending,
                 );
         let modal = command_center_rect(area);
         let modal_width = modal.width();
@@ -19422,6 +19442,7 @@ impl eframe::App for AgentsWindow {
         if needs_relayout {
             self.focus_prompt_if_pending();
             self.focus_group_if_pending();
+            self.focus_file_draft_if_pending();
             self.focus_rename_if_pending();
         }
         if self.terminal_focus_pending
