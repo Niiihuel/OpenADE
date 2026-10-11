@@ -4,6 +4,7 @@
 
 use crate::driver::{failed, invalid, timed_out, tool, Driver, Outcome, Resolved, Target, MAX_INPUT_TEXT_BYTES, TIMEOUT};
 use crate::keys::{self, Key};
+use crate::ErrorKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -215,10 +216,13 @@ impl Driver {
                 None => driver.actionable(&resolved, POINTER)?,
             };
             driver.click_point(point)?;
-            if driver.checked(&resolved)? != checked {
-                return Err(failed("Clicking the checkbox did not change its state"));
+            // The click happened: what goes wrong from here is an uncertain effect, not a refusal.
+            match driver.checked(&resolved) {
+                Ok(now) if now == checked => Ok(()),
+                Ok(_) => Err(failed("Clicking the checkbox did not change its state")),
+                Err(error) if error.kind == ErrorKind::Tool => Err(failed(error.message)),
+                Err(error) => Err(error),
             }
-            Ok(())
         })
     }
 
@@ -242,14 +246,17 @@ impl Driver {
             let start = driver.actionable(&source, POINTER)?;
             driver.move_to(start)?;
             driver.pointer_event("mousePressed", start, MouseButton::Left, 1)?;
-            let object = driver.element(&source)?;
-            driver.library::<bool>(&source.session, Some(&object), None, "watch_drag", json!([]))?;
-            driver.shared.state().drag = None;
-            // Chrome hands an HTML drag over instead of running it itself,
-            // which would wait for a pointer that is not there.
-            driver.call::<Value>(&session, "Input.setInterceptDrags", json!({"enabled": true}))?;
-            let dropped = driver.drop_on(&source, &destination);
-            let _ = driver.call::<Value>(&session, "Input.setInterceptDrags", json!({"enabled": false}));
+            let dropped = (|| -> Outcome<()> {
+                let object = driver.element(&source)?;
+                driver.library::<bool>(&source.session, Some(&object), None, "watch_drag", json!([]))?;
+                driver.shared.state().drag = None;
+                // Chrome hands an HTML drag over instead of running it itself,
+                // which would wait for a pointer that is not there.
+                driver.call::<Value>(&session, "Input.setInterceptDrags", json!({"enabled": true}))?;
+                let dropped = driver.drop_on(&source, &destination);
+                let _ = driver.call::<Value>(&session, "Input.setInterceptDrags", json!({"enabled": false}));
+                dropped
+            })();
             if dropped.is_err() && driver.buttons & MouseButton::Left.bit() != 0 {
                 // Never leave the page with a button held down.
                 let _ = driver.pointer_event("mouseReleased", driver.pointer, MouseButton::Left, 1);
