@@ -91,7 +91,7 @@ browser_snapshot {"selector":"main form","max_depth":3}
 ```
 
 Un elemento conserva su referencia entre una captura completa y una reducida.
-Una captura con `selector` agrega referencias; una de la página completa
+Una captura reducida sólo agrega referencias; una de la página completa
 reemplaza el conjunto. Un selector que no coincide con un elemento visible es
 un error de herramienta. Medido con Chrome real sobre la página fixture de las
 pruebas (40 filas de texto y cinco controles), `interactive_only` deja menos de

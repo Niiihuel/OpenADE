@@ -1396,17 +1396,24 @@ fn the_view_gets_frames_while_it_is_visible_and_one_lossless_frame_once_the_page
     let moving = picture(image::ImageFormat::Jpeg, 64, 48, 10);
     let rogue = picture(image::ImageFormat::Jpeg, 32, 24, 99);
     let changed = picture(image::ImageFormat::Jpeg, 64, 48, 200);
-    let still = Arc::new(Mutex::new(picture(image::ImageFormat::Png, 64, 48, 10)));
-    let (lossless, redraw, back) = (still.clone(), rogue.clone(), moving.clone());
+    // Set once the page has changed under an agent's capture.
+    let moved = Arc::new(AtomicBool::new(false));
+    let (page, redraw, back, other) = (moved.clone(), rogue.clone(), moving.clone(), changed.clone());
     let (runtime, endpoint, _workspace) = scripted((640, 480), 2.0, move |method, params, browser| match method {
         "Page.captureScreenshot" if params["format"] == "png" && params.get("clip").is_none() => {
-            Some(Ok(encoded(&lossless.lock().unwrap())))
+            let shade = if page.load(Ordering::Acquire) { 200 } else { 10 };
+            Some(Ok(encoded(&picture(image::ImageFormat::Png, 64, 48, shade))))
         }
         // An agent's capture at CSS scale: Chrome draws the page at another
-        // scale for a moment, the stream shows it, and then the page is back.
+        // scale for a moment, the stream shows it, and then the page is
+        // back, or shows what it changed to meanwhile.
         "Page.captureScreenshot" if params["format"] == "png" => {
-            browser.frame(&redraw, 100);
-            browser.frame(&back, 101);
+            if page.load(Ordering::Acquire) {
+                browser.frame(&other, 102);
+            } else {
+                browser.frame(&redraw, 100);
+                browser.frame(&back, 101);
+            }
             Some(Ok(encoded(&picture(image::ImageFormat::Png, 64, 48, 0))))
         }
         _ => None,
@@ -1469,12 +1476,13 @@ fn the_view_gets_frames_while_it_is_visible_and_one_lossless_frame_once_the_page
 
     // What the page changed to meanwhile does: skipped as a frame of that
     // moment, it comes back as the lossless frame, whose twin is no news.
-    finish(runtime.handle.submit(capture).unwrap()).unwrap();
-    *still.lock().unwrap() = picture(image::ImageFormat::Png, 64, 48, 200);
     let captures = stills(&endpoint);
-    endpoint.frame(&changed, 102);
-    assert_eq!(frame("the lossless frame of the change"), [64, 48]);
-    assert!(stills(&endpoint) > captures);
+    moved.store(true, Ordering::Release);
+    finish(runtime.handle.submit(capture).unwrap()).unwrap();
+    assert_eq!(frame("a frame of the change"), [64, 48]);
+    until("its lossless capture", || stills(&endpoint) > captures);
+    thread::sleep(Duration::from_millis(300));
+    let _ = runtime.take_frame();
     endpoint.frame(&changed, 103);
     until("the twin to be taken", || acknowledged(&endpoint, 103));
     quiet("the frame the capture caused is not shown over it");

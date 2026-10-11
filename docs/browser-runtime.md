@@ -51,8 +51,10 @@ orden:
    `PATH` (`google-chrome-stable`, `google-chrome`, `chromium`,
    `chromium-browser`, `microsoft-edge-stable`, `microsoft-edge`; en Windows
    `chrome` y `msedge`) y después en los lugares habituales de cada sistema
-   (`/opt/google/chrome`, `/snap/bin`; `/Applications` y `~/Applications`;
-   `Program Files`, `Program Files (x86)` y `LocalAppData`).
+   (`/opt/google/chrome`, `/opt/chromium`, `/opt/microsoft/msedge` y
+   `/snap/bin`; `/Applications` y `~/Applications`; `Program Files`,
+   `Program Files (x86)` y `LocalAppData`). De esos lugares sólo se probó el
+   `PATH` de NixOS.
 3. Salvo en NixOS, donde ese binario genérico no encuentra sus bibliotecas, el
    Chromium que una versión anterior de la aplicación haya descargado en
    `<datos>/browser-runtime/deps/node_modules/playwright-core/.local-browsers/`,
