@@ -313,12 +313,13 @@ fn activity_fixture(phase: &str, width: f32) -> ViewState {
         configuration: "Workspace · Rust".into(),
         configurations: vec!["Workspace · Rust".into()].into(),
         adapter: Some("CodeLLDB".into()),
-        message: Some("Pausado en un breakpoint".into()),
+        stop_reason: Some("punto de interrupción".into()),
         controls: DebugControls {
             resume: true,
             step_over: true,
             step_into: true,
             step_out: true,
+            restart: true,
             stop: true,
             ..Default::default()
         },
@@ -355,8 +356,7 @@ fn activity_fixture(phase: &str, width: f32) -> ViewState {
                 depth: 0,
                 has_children: true,
                 expanded: true,
-                loading: false,
-                error: None,
+                ..Default::default()
             },
             DebugVariableView {
                 key: "path:1".into(),
@@ -366,8 +366,7 @@ fn activity_fixture(phase: &str, width: f32) -> ViewState {
                 depth: 1,
                 has_children: false,
                 expanded: false,
-                loading: false,
-                error: None,
+                ..Default::default()
             },
             DebugVariableView {
                 key: "files:1".into(),
@@ -377,8 +376,7 @@ fn activity_fixture(phase: &str, width: f32) -> ViewState {
                 depth: 1,
                 has_children: true,
                 expanded: false,
-                loading: false,
-                error: None,
+                ..Default::default()
             },
         ]
         .into(),
@@ -396,7 +394,8 @@ fn activity_fixture(phase: &str, width: f32) -> ViewState {
         breakpoints: vec![DebugBreakpointView {
             path: "apps/agents-window/src/workspace.rs".into(),
             line: 19,
-            dirty: false,
+            enabled: true,
+            ..Default::default()
         }]
         .into(),
         ..Default::default()
