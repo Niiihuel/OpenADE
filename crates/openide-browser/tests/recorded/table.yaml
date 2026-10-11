@@ -1,0 +1,44 @@
+- generic [active] [ref=e1]:
+  - heading "Pedidos" [level=1] [ref=e2]
+  - table [ref=e3]:
+    - caption [ref=e4]: Pedidos de octubre
+    - rowgroup [ref=e5]:
+      - row [ref=e6]:
+        - columnheader "N.º" [ref=e7]
+        - columnheader "Cliente" [ref=e8]
+        - columnheader "Total" [ref=e9]
+        - columnheader "Acciones" [ref=e10]
+    - rowgroup [ref=e11]:
+      - row [ref=e12]:
+        - rowheader "1001" [ref=e13]
+        - cell "Ada Lovelace" [ref=e14]
+        - cell "$ 120,50" [ref=e15]
+        - cell [ref=e16]:
+          - button "Ver" [ref=e17]
+          - button "Anular" [ref=e18]
+      - row [ref=e19]:
+        - rowheader "1002" [ref=e20]
+        - cell "Alan Turing" [ref=e21]
+        - cell "$ 80,00" [ref=e22]
+        - cell [ref=e23]:
+          - button "Ver" [ref=e24]
+          - button "Anular" [disabled] [ref=e25]
+      - row [ref=e26]:
+        - rowheader "1003" [ref=e27]
+        - cell "Sin datos" [ref=e28]
+        - cell [ref=e29]
+    - rowgroup [ref=e30]:
+      - row [ref=e31]:
+        - cell "Total" [ref=e32]
+        - cell "$ 200,50" [ref=e33]
+        - cell [ref=e34]
+  - grid "Celdas" [ref=e35]:
+    - row [ref=e36]:
+      - columnheader "A" [ref=e37]
+      - columnheader "B" [ref=e38]
+    - row [ref=e39]:
+      - gridcell "1" [ref=e40]
+      - gridcell "2" [selected] [ref=e41]
+  - text: Maquetado
+  - link "Enlace en tabla de maquetado" [ref=e42] [cursor=pointer]:
+    - /url: /x

@@ -1,0 +1,21 @@
+- generic [active] [ref=e1]:
+  - heading "Herramientas" [level=1] [ref=e2]
+  - button "Borrar" [ref=e3]
+  - button "Borrar" [ref=e4]
+  - button "Efímero" [ref=e5]
+  - textbox "Correo" [ref=e6]
+  - button "Menú" [ref=e7]
+  - combobox "Color" [ref=e8]:
+    - option "Rojo" [selected]
+    - option "Verde"
+  - generic [ref=e9]:
+    - checkbox "Acepto" [ref=e10]
+    - text: Acepto
+  - generic [ref=e11]: Carta
+  - generic [ref=e12]: Zona
+  - button "Tardar" [ref=e13]
+  - button "Confirmar" [ref=e14]
+  - button "Preguntar" [ref=e15]
+  - paragraph [ref=e16]: Sin cambios
+  - iframe "Marco" [ref=e17]:
+    - button "Dentro" [ref=f1e1]

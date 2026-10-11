@@ -10,6 +10,7 @@ members = [
     "crates/openide-preview",
     "crates/openide-remote",
     "crates/openide-bridge",
+    "crates/openide-browser",
     "crates/openide-connections",
 ]
 

@@ -1,0 +1,60 @@
+- main [ref=e1]:
+  - heading "Alta de cliente" [level=1] [ref=e2]
+  - form "Cliente" [ref=e3]:
+    - generic [ref=e4]:
+      - text: Nombre
+      - textbox "Nombre" [ref=e5]:
+        - /placeholder: Nombre y apellido
+    - generic [ref=e6]:
+      - text: Correo
+      - textbox "Correo" [ref=e7]: ada@example.test
+    - generic [ref=e8]:
+      - text: Clave
+      - textbox "Clave" [ref=e9]: •••••••
+    - generic [ref=e10]: Notas
+    - textbox "Notas" [ref=e11]: Primera línea Segunda línea
+    - generic [ref=e12]:
+      - text: Edad
+      - spinbutton "Edad" [ref=e13]: "36"
+    - generic [ref=e14]:
+      - text: Buscar
+      - searchbox "Buscar" [ref=e15]
+    - group "Plan" [ref=e16]:
+      - generic [ref=e17]:
+        - radio "Gratis" [checked] [ref=e18]
+        - text: Gratis
+      - generic [ref=e19]:
+        - radio "Pro" [ref=e20]
+        - text: Pro
+      - generic [ref=e21]:
+        - radio "Equipo" [disabled] [ref=e22]
+        - text: Equipo
+    - generic [ref=e23]:
+      - text: País
+      - combobox "País" [ref=e24]:
+        - option "Argentina"
+        - option "Uruguay" [selected]
+        - group "Otros":
+          - option "Chile"
+    - generic [ref=e25]:
+      - text: Idiomas
+      - listbox "Idiomas" [ref=e26]:
+        - option "Español" [selected] [ref=e27]
+        - option "Inglés" [ref=e28]
+        - option "Portugués" [selected] [ref=e29]
+    - generic [ref=e30]:
+      - checkbox "Recibir novedades" [checked] [ref=e31]
+      - text: Recibir novedades
+    - generic [ref=e32]:
+      - checkbox "Acepto los términos" [ref=e33]
+      - text: Acepto los términos
+    - generic [ref=e34]:
+      - text: Volumen
+      - slider "Volumen" [ref=e35]: "4"
+    - button "Guardar" [ref=e36]
+    - button "Borrar" [disabled] [ref=e37]
+    - button "Negrita" [pressed] [ref=e38]
+    - button "Más" [ref=e39]
+    - link "Ayuda" [ref=e40] [cursor=pointer]:
+      - /url: /ayuda?tema=alta
+    - text: Sin destino

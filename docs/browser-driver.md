@@ -1,0 +1,485 @@
+# Driver del navegador en Rust
+
+`crates/openide-browser` maneja Chrome directamente por su protocolo DevTools
+(CDP), sin Node, sin Playwright y sin un crate CDP de terceros. Reemplaza al
+proceso `browser_bridge.mjs` descrito en [Runtime del navegador](browser-runtime.md)
+y ofrece las mismas operaciones que anuncian las
+[herramientas del agente](browser-tools.md), más la entrada cruda y el flujo de
+cuadros que necesita una vista en vivo.
+
+**Estado:** el crate está completo y probado contra Chrome real, pero todavía
+no está conectado a `agents-window`. La aplicación sigue usando el bridge de
+Node; la integración es un paso posterior.
+
+## Piezas
+
+| Módulo | Qué hace |
+| --- | --- |
+| `transport` | Mueve mensajes JSON completos. `MessageSink` y `MessageSource` son el punto de reemplazo; aquí se implementa el pipe de Chrome. |
+| `cdp` | Cliente fino: envía un método con parámetros a una sesión, espera su resultado y entrega los eventos. |
+| `chrome` | Inicia un Chrome headless privado, lo mata y lo cosecha, y limpia su directorio. Sólo Unix. |
+| `observer` | Corre en el hilo lector: consola, red, diálogos, navegaciones, marcos de otros procesos y cuadros, en estado acotado. |
+| `snapshot` | Convierte el árbol de accesibilidad de Chrome en el texto que lee el modelo y administra las referencias. Es puro. |
+| `driver`, `actions` | La API pública: navegación, destinos, acciones con espera, evaluación, capturas, portapapeles, entrada cruda y flujo. |
+| `scripts` | El único JavaScript: una función auxiliar que corre **dentro de la página**, en un mundo aislado. |
+
+El llamador usa un hilo común y bloqueante, una solicitud por vez. Un hilo
+lector reparte las respuestas y procesa los eventos donde llegan: nada se
+encola, así que una página que escribe en la consola o pide recursos sin
+pausa ocupa una cantidad fija de memoria aunque nadie esté consultando. Una
+respuesta se interpreta una sola vez, en el hilo que la pidió y directamente
+al tipo que necesita; una respuesta grande no demora los eventos que vienen
+detrás.
+
+## Proceso y transporte
+
+Chrome se inicia con `--remote-debugging-pipe`: los comandos van a su
+descriptor 3 y las respuestas y eventos salen por el 4, un mensaje JSON por
+registro terminado en NUL. **No se abre ningún puerto TCP de depuración** y el
+sandbox de Chromium queda siempre activo; no existe una opción para
+desactivarlo. La ruta del ejecutable es explícita: el crate no busca
+navegadores.
+
+- **Entorno reducido.** Chrome hereda sólo `PATH`, `HOME`, `USER`, `LOGNAME`,
+  `LANG`, `LC_ALL` y `XDG_RUNTIME_DIR`. `TMPDIR`, `TMP` y `TEMP` apuntan al
+  directorio privado.
+- **Directorio privado.** `oid-XXXXXX`, modo 0700, con el perfil adentro. La
+  ruta completa no supera 48 bytes, por el mismo motivo que en el bridge:
+  Chromium crea sockets Unix debajo de su raíz temporal y `sockaddr_un` admite
+  108 bytes. Si la raíz pedida es profunda o ya no existe se usa la heredada y
+  después `/tmp`; un directorio borrado no se recrea.
+- **Cierre.** Al soltar el `Driver` se cierra el pipe, se envía `SIGKILL` al
+  grupo de procesos de Chrome (zygotes, renderers y GPU incluidos), se
+  cosecha el proceso principal y se borra el directorio.
+- **Muerte del padre.** Si el proceso anfitrión muere sin ejecutar
+  destructores, Chrome ve cerrarse su pipe de comandos y termina solo
+  (verificado con `SIGKILL` al padre). El directorio queda huérfano y lo
+  recoge el siguiente arranque: cada directorio lleva un archivo
+  `driver.lock` con `flock`; uno con más de 60 s y sin candado pertenece a un
+  proceso muerto y se elimina. Los directorios `oid-` del bridge de Node, que
+  no tienen ese archivo, no se tocan.
+- **Un contexto, una página.** Un contexto de navegador aislado, sin
+  descargas, con una única página. Cualquier otra ventana que la página abra
+  se cierra.
+
+No se usa `PR_SET_PDEATHSIG`: esa señal depende del hilo que creó el proceso y
+mataría al navegador si ese hilo terminara antes que el driver.
+
+### Banderas de arranque
+
+Son las de Playwright que importan para una página única y silenciosa
+(sin primer arranque, sin extensiones ni sus páginas de fondo, sin
+sincronización ni actualizaciones, sin limitar temporizadores de páginas no
+visibles, sin caché de atrás/adelante), más
+`--force-device-scale-factor=<escala>`. La escala se fuerza en el arranque
+porque la emulada no cambia el tamaño de los cuadros del flujo.
+`CDPScreenshotNewSurface` se habilita porque sin ella una captura del viewport
+tarda tres cuadros en lugar de uno (49 ms contra 17 ms medidos).
+
+Una página headless que nunca se presentó puede quedar sin producir cuadros:
+nada se anima y un flujo iniciado en ese momento no entrega nada hasta que
+llega alguna entrada. Por eso el arranque captura un píxel. Con Chrome 150,
+6 de 60 arranques en paralelo quedaban detenidos sin esa captura y ninguno
+con ella.
+
+### Otros transportes
+
+El transporte es un par de objetos pequeños:
+
+```rust
+pub trait MessageSink: Send { fn send(&mut self, message: &[u8]) -> io::Result<()>; }
+pub trait MessageSource: Send { fn receive(&mut self) -> io::Result<Option<Incoming>>; }
+```
+
+`Driver::connect(transport, ancho, alto, escala)` maneja cualquier extremo
+que intercambie mensajes DevTools.
+
+- **Chromium embebido (CEF).** Habla el mismo protocolo en el mismo proceso:
+  el `MessageSink` llama a `SendDevToolsMessage` y el `MessageSource` entrega
+  lo que reciba el observador de mensajes DevTools, por ejemplo a través de un
+  canal. Queda por resolver en esa integración que `connect` crea su propio
+  contexto y su propia página con `Target.createBrowserContext` y
+  `Target.createTarget`; un navegador embebido que ya tiene su página
+  necesitará adjuntarse a ella. La escala la fija quien embebe: el driver
+  sólo la usa para devolver capturas a escala CSS.
+- **Windows.** No hay implementación y **el crate no se compiló para Windows**
+  (el entorno sólo tiene la biblioteca estándar de Linux); la separación por
+  `cfg(unix)` se revisó leyendo el código. `Driver::launch` devuelve allí un
+  error legible y `connect` está disponible. Un transporte de pipe para
+  Windows necesita: dos pipes anónimos con los extremos del hijo marcados
+  heredables; pasar a Chrome `--remote-debugging-pipe` junto con
+  `--remote-debugging-io-pipes=<lectura>,<escritura>` con los valores de esos
+  handles (en Windows Chrome no puede recibir los descriptores 3 y 4 de otro
+  modo desde `std::process::Command`); el mismo encuadre terminado en NUL; un
+  Job Object con `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` para que el árbol de
+  procesos muera con el driver, como hace `mcp_process_tree.rs`; y el borrado
+  del perfil. No existe allí el límite de ruta de los sockets Unix. El barrido
+  de directorios huérfanos necesita un candado equivalente a `flock`
+  (`LockFileEx`).
+
+## API
+
+```rust
+let mut driver = Driver::launch(&LaunchOptions {
+    executable, width: 900, height: 700, scale: 2.0, temp_root: None,
+})?;
+driver.navigate("http://localhost:3000/")?;
+let tree = driver.snapshot(&SnapshotOptions::default())?;   // texto con [ref=eN]
+driver.click(&Target::Ref("e7"))?;
+driver.fill(&Target::Role { role: "textbox", name: "Correo" }, "ada@example.test")?;
+let png = driver.screenshot(Capture::Viewport)?;
+```
+
+| Grupo | Métodos |
+| --- | --- |
+| Ciclo de vida | `launch`, `connect`, `resize`, `close`, `process_id`, `directory` |
+| Navegación | `navigate`, `back`, `forward`, `reload`, `info` (URL, título, historial, viewport) |
+| Lectura | `snapshot`, `console_messages`, `network_requests`, `screenshot`, `evaluate` |
+| Acciones | `click`, `click_at`, `fill`, `type_text`, `press`, `scroll`, `hover`, `select_options`, `set_checked`, `drag` |
+| Esperas | `wait_for_text`, `wait_for_text_gone`, `wait_seconds` |
+| Diálogos | `handle_dialog` |
+| Portapapeles | `copy_selection`, `prepare_cut`, `confirm_cut` |
+| Entrada cruda | `pointer_move`, `pointer_down`, `pointer_up`, `wheel`, `key_down`, `key_up`, `insert_text` |
+| Flujo | `start_stream`, `stop_stream`, `capture_frame` |
+
+Todo error es un `DriverError` con una clase, que dice más que el texto:
+
+| `ErrorKind` | Significado |
+| --- | --- |
+| `Invalid` | La solicitud no es aceptable. Nada llegó a la página. |
+| `Tool` | La respuesta de la propia herramienta: referencia caducada, destino ambiguo, script que lanza, espera agotada. Es el `output.error` del bridge; no hay efecto incierto. |
+| `Failed` | La solicitud llegó a la página y falló o agotó su plazo. Si era una acción, su efecto es desconocido. |
+| `Navigation` | La página no cargó (`net::ERR_… at <url>`). El driver sigue utilizable. |
+| `Launch` | Chrome no pudo iniciarse. |
+| `Closed` | El navegador o su página ya no están. Hay que crear otro driver. |
+
+Los textos que llegan al modelo o al usuario son los del bridge, en español,
+para que la integración no cambie lo que se lee.
+
+## Captura accesible y referencias
+
+`snapshot` pide a Chrome su árbol de accesibilidad
+(`Accessibility.getFullAXTree`) y una captura del DOM
+(`DOMSnapshot.captureSnapshot`). Los roles, nombres y estados son los de
+Chrome. El DOM aporta lo que la accesibilidad no trae: qué elementos tienen
+caja y reciben eventos del puntero (sólo ésos llevan referencia), cuáles
+muestran el cursor de mano (`[cursor=pointer]`), cuáles tienen un listener de
+clic, el destino sin resolver de un enlace y el placeholder. No se marca ni se
+modifica nada en la página. El texto mantiene la forma de
+`ariaSnapshot({ mode: 'ai' })` de Playwright, que es la que describen las
+herramientas.
+
+- **Marcos.** Cada `<iframe>` visible incluye el árbol de su documento, sea
+  del mismo proceso o de otro sitio (un marco de otro proceso tiene su propia
+  sesión de protocolo). Hasta 32 documentos por captura.
+- **Referencias.** `e12` en el primer documento; `f3e12` en cualquier otro,
+  donde el prefijo numera documentos y nunca se reutiliza. Un elemento
+  conserva su referencia mientras siga en su documento con el mismo rol y
+  nombre. Una captura de la página completa reemplaza el conjunto de
+  referencias vivas; una captura acotada sólo agrega. Antes de actuar se
+  comprueba que el marco siga mostrando el documento para el que se emitió la
+  referencia y que el nodo siga conectado. Si no, la respuesta es
+  «La referencia e12 no corresponde a un elemento de la página actual. Tomá
+  una captura nueva con browser_snapshot y usá sus referencias.» y la página
+  no se toca.
+- **Opciones para un presupuesto chico.** El motor propio entrega al modelo
+  16.000 caracteres por resultado. `SnapshotOptions` permite achicar el árbol:
+  `interactive_only` (sólo lo accionable y los contenedores con nombre que lo
+  agrupan), `max_depth` y `selector` (el subárbol de un elemento). Los valores
+  por defecto devuelven el árbol completo, acotado a 64 KiB y cortado en una
+  línea entera; `truncated` avisa del corte.
+
+### Diferencias con Playwright
+
+Comparación hecha una vez contra `page.ariaSnapshot({ mode: 'ai' })` de
+Playwright 1.63.0 con el mismo Chrome 150, sobre las seis páginas de
+`crates/openide-browser/tests/fixtures`: formulario, listas anidadas, tabla,
+marcos, controles propios (divs con clic, casillas con el input oculto) y la
+página de herramientas. Sin contar la numeración de las referencias, 225 de
+las 240 líneas de Playwright son idénticas, y 183 de sus 194 líneas con
+referencia. Playwright da referencia a 194 elementos y el driver a 193: le
+faltan dos (el contenedor `aria-hidden` y su botón) y agrega una (el `<span>`
+con clic). Las diferencias, todas:
+
+| Página | Playwright | Driver | ¿Importa? |
+| --- | --- | --- | --- |
+| formulario | `textbox "Clave": secreto` | `textbox "Clave": •••••••` | Sí, a favor: Chrome enmascara el valor de un campo de contraseña y el modelo ya no lo recibe. |
+| controles | `generic [aria-hidden] [ref]` con su contenido | no aparece | Sí: lo que está a la vista pero marcado `aria-hidden` no figura en el árbol de Chrome. Un control dentro de un contenedor así sólo se alcanza por selector o por coordenadas. Es la única pérdida conocida. |
+| controles | `text: Texto con clic sin cursor` | `generic [ref]: Texto con clic sin cursor` | A favor: un `<span>` con listener de clic conserva su referencia. Playwright lo reduce a texto. |
+| controles | `slider "Brillo"` | `slider "Brillo": "30"` | No: se agrega el valor de un deslizador ARIA. |
+| formulario | `option "Chile"` | `group "Otros":` con `option "Chile"` | No: se conserva el `<optgroup>`. |
+| listas | `generic "Más detalles"` | `button "Más detalles"` y `[expanded]` | No: un `<summary>` se informa como botón con su estado. |
+| listas | `blockquote: Una citaen dos líneas` | `…: Una cita en dos líneas` | No: un `<br>` separa palabras. |
+| marcos, herramientas | `iframe [ref]` | `iframe "Marco" [ref]` | No: se conserva el título del marco. |
+
+Diferencias que no dependen de la página:
+
+- Playwright numera las referencias al recorrer el DOM y deja huecos; el
+  driver las numera en el orden del texto. El prefijo de marco numera
+  documentos en lugar de marcos.
+- Los nombres accesibles los calcula Chrome y no la implementación propia de
+  Playwright: pueden diferir en casos límite del algoritmo de nombres.
+- `[level=N]` sólo se imprime en encabezados. Playwright también lo imprime en
+  `treeitem`, `row` y `listitem` cuando llevan `aria-level` explícito.
+- El marcador `[aria-hidden]` no existe en el driver.
+
+## Destinos y acciones
+
+Un destino es exactamente una de tres formas: `Target::Ref`, `Target::Role`
+(rol y nombre exactos, tal como los imprime la captura, en el marco principal)
+o `Target::Selector` (un selector CSS que coincida con un único elemento del
+marco principal, raíces shadow abiertas incluidas). El destino se resuelve
+antes de tocar nada: cero o varias coincidencias responden «El destino
+coincide con N elementos…».
+
+Antes de una acción sobre un elemento se espera, hasta 10 s y reintentando
+con pausas de 0, 20, 100, 100 y 500 ms, a que el elemento esté conectado,
+sea visible, no se mueva entre dos cuadros, esté habilitado y sea lo que un
+clic en su centro realmente alcanza. Si el plazo se agota el error dice qué
+faltaba, por ejemplo «Timeout 10000ms exceeded. Todavía `<div id="cover">`
+recibe los eventos del puntero en su lugar.»
+
+- `click`, `click_at` y `press` esperan a que se confirme la navegación que
+  hayan iniciado, para que lo que se lea después no sea la página que se está
+  abandonando.
+- `fill` selecciona el contenido y lo reemplaza con los mismos eventos de
+  entrada que el teclado; los tipos `date`, `time`, `color`, `range` y
+  similares reciben su valor directamente.
+- `set_checked` hace clic donde lo haría el usuario: si el `<input>` real está
+  oculto o tapado, en su `<label>` o en el contenedor visible más cercano. Es
+  más de lo que hace Playwright, que en ese caso agota el plazo.
+- `drag` mueve el puntero con el botón apretado y, si la página inicia un
+  arrastre HTML, lo completa con los eventos de arrastre del protocolo.
+- `evaluate` corre en el mundo de la página. Una expresión se evalúa; una
+  función se invoca, con el elemento si se dio un destino, y se espera. El
+  valor vuelve como texto JSON de hasta 16 KiB; lo que la página lanza vuelve
+  como texto. Un script que espera una promesa que nunca se resuelve se
+  abandona a los 10 s. Uno que nunca cede el hilo se **detiene** con
+  `Runtime.terminateExecution`, y la página sigue funcionando; con el bridge
+  ese caso perdía el contexto.
+
+### Comportamientos de Playwright que no se replican
+
+- Los motores de selectores propios de Playwright (`text=`, `role=`, `>>`,
+  `:has-text()`): sólo CSS.
+- `Target::Role` y `Target::Selector` buscan sólo en el marco principal, como
+  `page.getByRole` y `page.locator`. Dentro de un marco se usa una referencia.
+- La comprobación de qué recibe el clic se hace dentro del documento del
+  elemento. No se verifica que el `<iframe>` que lo contiene esté tapado por
+  algo del documento que lo rodea.
+- `wait_for_text` no busca dentro de raíces shadow ni de marcos.
+- `select_options` no espera a que una opción deshabilitada se habilite: la
+  trata como ausente hasta agotar el plazo.
+- Desmarcar un botón de radio no da el error específico de Playwright; falla
+  porque el clic no cambia su estado.
+- No hay doble clic como acción del agente (sí como entrada cruda), ni
+  `force`, `trial`, `position` o `modifiers` por acción.
+- El teclado es la distribución estadounidense. Un carácter fuera de ella
+  (`ñ`, `é`) se escribe a sí mismo sin código de tecla; no hay teclado
+  numérico.
+- Un valor evaluado se serializa con `JSON.stringify` en la página, no con el
+  serializador de Playwright: un `Map` o un nodo DOM dan `{}`. Un valor muy
+  anidado vuelve como texto en lugar de fallar.
+
+## Observación
+
+La consola y la red se guardan desde la última navegación del marco principal:
+200 entradas cada una, texto de consola de hasta 1 KiB, URL de hasta 512
+bytes. Un informe devuelve las entradas más recientes que entran en 12 KiB y
+cuenta en `omitted` las anteriores. De una solicitud se guarda método, URL,
+estado, tipo de recurso y texto de fallo; **nunca cuerpos ni cabeceras**. Los
+recursos `data:` no se registran.
+
+Un diálogo JavaScript se descarta y queda registrado en la consola, salvo que
+`handle_dialog` haya armado una respuesta para el siguiente. La respuesta se
+usa una vez y se olvida si la página navega. El diálogo se contesta desde el
+hilo lector: mientras está abierto la página queda bloqueada, y con ella la
+solicitud que el driver esté esperando.
+
+## Vista en vivo
+
+- **Flujo.** `start_stream` inicia `Page.startScreencast` y devuelve un
+  `FrameStream` que puede vivir en otro hilo. Los cuadros son el viewport a
+  escala de dispositivo (1280×800 CSS a escala 2 son 2560×1600) y llegan como
+  los bytes JPEG o PNG que produjo Chrome, decodificados de base64 una sola
+  vez, directamente desde el mensaje. Convertirlos en píxeles es tarea de la
+  vista.
+- **Contrapresión.** Chrome espera el acuse de un cuadro antes de enviar más.
+  El acuse se envía recién cuando el consumidor toma el cuadro, así que una
+  vista lenta hace que Chrome saltee cuadros: aquí se guarda a lo sumo uno, el
+  más reciente.
+- **Visibilidad.** `stop_stream` detiene la codificación cuando la vista se
+  oculta; `start_stream` la reanuda.
+- **Cuadro sin pérdida.** `capture_frame` devuelve un PNG a escala de
+  dispositivo para cuando la página queda quieta.
+- **Entrada cruda.** Puntero, rueda, teclas y texto llegan a la página como
+  los del usuario. El driver recuerda botones y modificadores apretados: un
+  movimiento entre `pointer_down` y `pointer_up` es un arrastre.
+
+`screenshot` es otra cosa: la captura para las herramientas, PNG a un píxel de
+imagen por píxel CSS cualquiera sea la escala, de hasta 2 MiB.
+
+## Límites
+
+| Dato | Límite |
+| --- | --- |
+| Árbol accesible | 64 KiB, cortado en línea entera |
+| Resultado y script de `evaluate` | 16 KiB cada uno |
+| Consola y red | 200 entradas; texto 1 KiB; URL 512 bytes; informe 12 KiB |
+| Captura de `screenshot` | PNG de 2 MiB |
+| Cuadro del flujo o de `capture_frame` | 16 MiB |
+| Selección para el portapapeles | 16 KiB |
+| Texto de `fill`, `type_text` e `insert_text` | 16 KiB |
+| URL | 4096 bytes; sólo HTTP, HTTPS o `about:blank`, sin credenciales |
+| Viewport | 320–1600 × 240–1200 píxeles CSS |
+| Acciones, esperas y navegaciones | 10 s; arranque 20 s |
+| Mensaje del protocolo | 32 MiB; uno mayor se descarta sin acumularlo y falla sólo su solicitud |
+| Marcos de otros procesos y contextos seguidos | 64 |
+| Profundidad del árbol accesible | 400 niveles |
+
+El contenido de la página no es confiable. Todo valor que nace en ella se
+acota de nuevo en Rust, incluso el que ya acotó el script auxiliar. Un
+sustituto UTF-16 suelto en un texto de la página, que no es JSON válido para
+una cadena de Rust, se reemplaza en lugar de perder el mensaje.
+
+## Mediciones
+
+Tomadas el 11 de octubre de 2026 en esta máquina (16 hilos, 14 GB), con Google
+Chrome 150.0.7871.46 y el ejemplo `measure` compilado con el perfil `desktop`.
+En todas las corridas la carga de un minuto estaba entre 0,3 y 1,4 y no había
+procesos `rustc`. El bridge se midió con Playwright 1.63.0 sobre el mismo
+Chrome y las mismas páginas.
+
+**Memoria** (PSS de `/proc/<pid>/smaps_rollup`, una sesión en `form.html`, dos
+corridas de cada uno):
+
+| | Proceso que maneja el navegador | Árbol de Chrome |
+| --- | --- | --- |
+| Driver Rust | 1,8 MB | 294 MB y 295 MB |
+| Bridge Node | 106,9 MB y 106,6 MB | 302 MB y 292 MB |
+
+El árbol de Chrome es el mismo en ambos casos; lo que desaparece son los
+~105 MB de Node.
+
+**Latencia**, mediana de 50 repeticiones (p95 entre paréntesis). El bridge
+devuelve con cada comando el estado de la página y un PNG del viewport, y con
+las acciones también el árbol; la segunda columna compone lo mismo con el
+driver para que la comparación sea justa.
+
+| `form.html` (árbol de 2 KB) | Driver, operación sola | Driver, mismo contenido que el bridge | Bridge |
+| --- | --- | --- | --- |
+| captura accesible | 3,4 ms (4,1) | 33,4 ms (37,1) | 33,5 ms (48,0) |
+| clic | 33,4 ms (34,6) | 50,0 ms (52,5) | 66,7 ms (69,8) |
+| rellenar | 2,3 ms (3,8) | 33,3 ms (37,1) | 33,5 ms (35,7) |
+| evaluar | 0,1 ms (0,3) | 16,7 ms (18,5) | 33,2 ms (37,2) |
+| captura PNG | 16,8 ms (31,5) | 16,7 ms (18,3) | 33,7 ms (37,3) |
+
+| `big.html` (1.500 filas, árbol de 64 KiB) | Driver, operación sola | Driver, mismo contenido que el bridge | Bridge |
+| --- | --- | --- | --- |
+| captura accesible | 464 ms (473) | 483 ms (504) | 555 ms (571) |
+| clic | 33,4 ms (34,7) | 519 ms (535) | 585 ms (594) |
+| rellenar | 6,2 ms (9,0) | 499 ms (519) | 573 ms (590) |
+| evaluar | 0,1 ms (0,2) | 17,0 ms (34,3) | 32,8 ms (37,6) |
+| captura PNG | 16,8 ms (17,9) | 17,2 ms (34,6) | 33,1 ms (38,1) |
+
+En la página grande casi todo el tiempo es de Chrome: 345 ms de
+`Accessibility.getFullAXTree` para 25.600 nodos (igual con o sin interpretar
+la respuesta, y con o sin `Accessibility.enable`) y 83 ms de la captura del
+DOM; componer el texto lleva 20 ms. El bridge tarda más en esa página porque
+recorre el árbol dos veces.
+
+**Arranque**, hasta tener la página lista, con el entorno reducido que usa la
+aplicación: el driver entre 0,33 y 0,38 s y el bridge entre 0,59 y 0,61 s. El
+primer arranque después de haber corrido Chrome con otro entorno tarda unos
+3 s en ambos (2,9 s y 3,2 s medidos).
+
+**Flujo** a 1280×800 CSS, JPEG de calidad 80, con un consumidor en otro hilo
+que toma cada cuadro apenas llega:
+
+| | Escala 2 (2560×1600) | Escala 1 (1280×800) |
+| --- | --- | --- |
+| página animada | 38 cuadros/s, 492 KiB por cuadro | 60 cuadros/s, 194 KiB |
+| desplazamiento continuo (rueda cada 16 ms) | 35,6 cuadros/s | 59,8 cuadros/s |
+| siguiente cuadro tras un evento de rueda, desplazando | 26,5 a 27 ms de mediana | 14,9 ms |
+| página quieta: de la rueda al primer cuadro que la muestra | 64 ms de mediana (p95 69) | 16,7 ms (p95 34) |
+| cuadro sin pérdida | 63 KiB en 40 ms | 17 KiB en 15 ms |
+
+La calidad del JPEG no cambia estos números (se probó 80, 50 y 30): a escala 2
+el límite es el tiempo que tarda Chrome headless en rasterizar y capturar 4
+megapíxeles. Para separar lo que agrega el driver se repitió la misma medición
+con Node y Playwright, el mismo Chrome y la misma página: página quieta,
+58,6 ms a escala 2 y 17,6 ms a escala 1; desplazando, 25,7 ms y 14,0 ms. La
+referencia previa de «~16 ms de mediana a escala 2» no se reprodujo con
+ninguno de los dos caminos; coincide con lo que ambos miden a escala 1. Los
+cuadros por segundo sí coinciden con la referencia de 31 a 35.
+
+## Validación
+
+Pruebas unitarias, sin navegador, parte de la suite central (65):
+
+```sh
+nix-shell --run "cargo test -p openide-browser --lib"
+```
+
+Cubren el encuadre del pipe, el emparejamiento de solicitudes, respuestas y
+eventos, la composición del texto a partir de árboles grabados, la caducidad
+de referencias, las teclas y sus combinaciones, y cada límite.
+
+Pruebas contra Chrome real, ignoradas por defecto porque la suite central no
+debe necesitar un navegador (11 escenarios y un proceso auxiliar):
+
+```sh
+OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
+  nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored"
+```
+
+Chrome corre headless con un perfil descartable y sólo visita el servidor
+HTTP local que inicia cada prueba. Reproducen cada escenario de
+`scripts/browser-e2e.mjs` que no es propio de Node y agregan el flujo (tamaño
+de cuadro a escala 1 y 2, contrapresión, detención), la entrada cruda
+(hover, selección por arrastre, teclas), las esperas de accionabilidad, un
+marco de otro sitio, las ventanas emergentes, el script que no cede y la
+muerte del proceso padre. Los dos escenarios de Node que no se trasladan son
+la dependencia de Playwright ausente y el proxy MCP.
+
+Las grabaciones de `tests/recorded` son las respuestas del protocolo para
+cada página fixture y el texto que Chrome dio. La suite unitaria reproduce
+ese texto sin navegador y la prueba real comprueba que Chrome siga dando el
+mismo. Para regrabarlas después de cambiar una fixture o de actualizar
+Chrome:
+
+```sh
+OPENIDE_BROWSER_RECORD=1 OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
+  nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored fixture_snapshots"
+```
+
+Las mediciones se repiten con el ejemplo `measure` (`hold`, `latency`,
+`stream`) contra cualquier página servida por HTTP; su cabecera explica cada
+modo.
+
+## Lo que no se incluye
+
+Conexión con `agents-window`, proxy MCP para CLIs externos, varias pestañas,
+descargas, subida de archivos, PDF, trazas, grabación, otros motores, un
+transporte TCP o WebSocket, y CEF.
+
+Atajos conocidos:
+
+- Si `DOMSnapshot.captureSnapshot` falla (una página que supere el límite de
+  mensaje), la captura accesible se entrega igual, con referencia en todo
+  elemento, sin `[cursor=pointer]` y sin descender a los marcos.
+- El hilo lector contesta diálogos y acusa cuadros escribiendo en el pipe. Si
+  Chrome dejara de leer sus comandos esa escritura se bloquearía; Chrome los
+  lee en un hilo propio y no se observó.
+- La aceleración por GPU del Chrome headless no se configuró. Es lo que limita
+  el flujo a escala 2.
+
+## Referencias
+
+El diseño sigue a [vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser)
+(Apache-2.0), que reemplazó Node y Playwright por un proceso Rust que habla
+CDP: cliente propio, captura a partir del árbol de accesibilidad con
+referencias atadas al documento, y flujo con acuses. No se copió código suyo.
+La forma del texto de la captura reproduce la de
+[Playwright](https://github.com/microsoft/playwright) (Apache-2.0). Ver
+[Créditos de terceros](../THIRD_PARTY_NOTICES.md).

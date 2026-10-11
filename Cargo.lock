@@ -3779,6 +3779,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "openide-browser"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "openide-cli"
 version = "0.1.0"
 dependencies = [

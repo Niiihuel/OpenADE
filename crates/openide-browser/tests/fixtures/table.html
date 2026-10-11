@@ -1,0 +1,15 @@
+<!doctype html><html lang="es"><head><title>Tabla</title><style>body{font:16px sans-serif;margin:16px}td,th{border:1px solid #999;padding:4px}</style></head><body>
+  <h1>Pedidos</h1>
+  <table><caption>Pedidos de octubre</caption>
+    <thead><tr><th scope="col">N.º</th><th scope="col">Cliente</th><th scope="col">Total</th><th scope="col">Acciones</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">1001</th><td>Ada Lovelace</td><td>$ 120,50</td><td><button>Ver</button> <button>Anular</button></td></tr>
+      <tr><th scope="row">1002</th><td>Alan Turing</td><td>$ 80,00</td><td><button>Ver</button> <button disabled>Anular</button></td></tr>
+      <tr><th scope="row">1003</th><td colspan="2">Sin datos</td><td></td></tr>
+    </tbody>
+    <tfoot><tr><td colspan="2">Total</td><td>$ 200,50</td><td></td></tr></tfoot>
+  </table>
+  <div role="grid" aria-label="Celdas"><div role="row"><div role="columnheader">A</div><div role="columnheader">B</div></div>
+    <div role="row"><div role="gridcell">1</div><div role="gridcell" aria-selected="true">2</div></div></div>
+  <table role="presentation"><tr><td>Maquetado</td><td><a href="/x">Enlace en tabla de maquetado</a></td></tr></table>
+  </body></html>

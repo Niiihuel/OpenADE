@@ -1,0 +1,15 @@
+- generic [active] [ref=e1]:
+  - heading "Marcos" [level=1] [ref=e2]
+  - button "Fuera" [ref=e3]
+  - iframe "Primero" [ref=e4]:
+    - button "Dentro" [ref=f1e1]
+  - iframe "Anidado" [ref=e5]:
+    - generic [ref=f2e1]:
+      - heading "Marco intermedio" [level=2] [ref=f2e2]
+      - iframe "Interior" [ref=f2e3]:
+        - button "Dentro" [ref=f4e1]
+  - iframe "Srcdoc" [ref=e6]:
+    - generic [ref=f3e1]:
+      - paragraph [ref=f3e2]: Documento srcdoc
+      - textbox "Dentro de srcdoc" [ref=f3e3]
+  - paragraph [ref=e7]: Después de los marcos
