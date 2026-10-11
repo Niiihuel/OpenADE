@@ -31,10 +31,12 @@ pub(crate) struct BrowserUiState {
     pub navigating: bool,
     pub started: bool,
     pub error: Option<String>,
-    pub dependency_missing: bool,
+    /// The error is a page that did not load, whatever its text says.
+    pub load_failed: bool,
+    /// No browser was found on this machine to start the context with.
+    pub browser_missing: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
-    pub installing: bool,
     pub queued_inputs: usize,
     pub input_rejection: Option<String>,
     pub more_open: bool,
@@ -163,10 +165,9 @@ fn surface(browser: &BrowserUiState) -> Surface {
         || browser.url.starts_with("chrome://network-error");
     let load_error = browser.error.as_deref().is_some_and(|error| {
         !browser.started
-            || browser.dependency_missing
+            || browser.browser_missing
+            || browser.load_failed
             || error.contains("net::ERR_")
-            || error.contains("page.goto:")
-            || error.contains("browserType.launch:")
     });
     if chrome_error || load_error || (browser.error.is_some() && !browser.live) {
         Surface::Error
@@ -217,10 +218,10 @@ fn local_address(browser: &BrowserUiState) -> bool {
 
 fn error_copy(browser: &BrowserUiState) -> (String, String) {
     let error = browser.error.as_deref().unwrap_or("");
-    if browser.dependency_missing {
+    if browser.browser_missing {
         (
-            "Prepará el navegador".into(),
-            "Instalá el motor del navegador para abrir páginas en esta conversación.".into(),
+            "No se encontró un navegador".into(),
+            "Instalá Google Chrome, Chromium o Microsoft Edge, o indicá la ruta de uno en la variable OPENIDE_BROWSER_EXECUTABLE. Después volvé a intentar.".into(),
         )
     } else if error.contains("ERR_CONNECTION_REFUSED") && local_address(browser) {
         (format!("No se pudo conectar con {}", address_host(browser).unwrap_or_else(|| "localhost".into())),
@@ -241,6 +242,11 @@ fn error_copy(browser: &BrowserUiState) -> (String, String) {
         (
             "El navegador no pudo iniciarse".into(),
             "Faltan bibliotecas del sistema. Usá un Chromium instalado en este equipo.".into(),
+        )
+    } else if error.contains("no tiene un transporte") {
+        (
+            "El navegador todavía no funciona en este sistema".into(),
+            "Esta versión de OpenIDE no puede iniciar su navegador en este sistema operativo.".into(),
         )
     } else if !browser.started {
         (
@@ -319,24 +325,15 @@ fn state_surface(browser: &BrowserUiState, width: f32, mode: Surface) -> Element
                 .render(),
             );
         }
-        let (action_id, action_label) = if browser.dependency_missing {
-            (
-                "browser_install",
-                if browser.installing {
-                    "Instalando…"
-                } else {
-                    "Instalar navegador"
-                },
-            )
-        } else if browser.started {
-            ("browser_navigate", "Reintentar")
+        // A context that never started is opened again, which looks for a
+        // browser again; one that did only reopens the address.
+        let action_id = if browser.started {
+            "browser_navigate"
         } else {
-            ("browser_restart", "Reintentar")
+            "browser_restart"
         };
-        let retry = Button::new(action_id, action_label, theme::component_palette())
+        let retry = Button::new(action_id, "Reintentar", theme::component_palette())
             .variant(ButtonVariant::Secondary)
-            .enabled(!browser.installing)
-            .loading(browser.installing)
             .size(ControlSize::Compact)
             .render();
         let edit = Button::new(

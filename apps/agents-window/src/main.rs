@@ -18,6 +18,7 @@ mod tour;
 mod tour_ui;
 mod automation_view;
 mod automations;
+mod browser_mcp;
 mod browser_runtime;
 mod browser_ui;
 mod chat_diff_ui;
@@ -163,6 +164,12 @@ use app::AgentsWindow;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    // An external MCP client runs this executable as its proxy to one
+    // browser context. That process is not the application: it opens no
+    // window and reads no configuration.
+    if std::env::args_os().nth(1).is_some_and(|argument| argument == browser_mcp::FLAG) {
+        std::process::exit(browser_mcp::main());
+    }
     if let Some(code) = openide_harness::run_elevated_command_helper_from_env() {
         std::process::exit(code);
     }

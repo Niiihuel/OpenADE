@@ -1144,6 +1144,43 @@ fn looks_numeric(text: &str) -> bool {
     mantissa_ok && exponent_ok
 }
 
+/// The role and accessible name a snapshot printed for `reference`, for a
+/// host that shows a person what an action is about to touch. Only the
+/// line's own structure is read: a name or a text that merely contains
+/// `[ref=…]` is page content and never matches.
+pub fn element_of(snapshot: &str, reference: &str) -> Option<(String, String)> {
+    snapshot.lines().find_map(|line| {
+        let key = line.trim_start().strip_prefix("- ")?;
+        // A key YAML had to quote doubles its own quotes.
+        let unquoted;
+        let key = match key.strip_prefix('\'') {
+            Some(quoted) => {
+                let end = quoted.replace("''", "\0\0").find('\'').unwrap_or(quoted.len());
+                unquoted = quoted[..end].replace("''", "'");
+                unquoted.as_str()
+            }
+            None => key,
+        };
+        let (role, mut rest) = key.split_at(key.find([' ', ':']).unwrap_or(key.len()));
+        let mut name = String::new();
+        if rest.starts_with(" \"") {
+            // The name is printed as JSON, whatever it contains.
+            let mut names = serde_json::Deserializer::from_str(&rest[1..]).into_iter::<String>();
+            name = names.next()?.ok()?;
+            rest = &rest[1 + names.byte_offset()..];
+        }
+        // What follows are the snapshot's own marks: `[checked]`, `[level=2]`, `[ref=e12]`.
+        while let Some(mark) = rest.strip_prefix(" [") {
+            let (mark, after) = mark.split_once(']')?;
+            if mark.strip_prefix("ref=") == Some(reference) {
+                return Some((role.to_owned(), name));
+            }
+            rest = after;
+        }
+        None
+    })
+}
+
 fn yaml_key(key: &str) -> String {
     if needs_quotes(key) {
         format!("'{}'", key.replace('\'', "''"))

@@ -644,3 +644,35 @@ fn text_is_quoted_exactly_when_yaml_would_read_it_as_something_else() {
     assert!(lines[2].starts_with("- button \"ñññ") && lines[2].ends_with("ñ\" [ref=e3]"));
     assert_eq!(normalize("  uno\u{200b}  dos\u{ad}\n\ttres \u{a0} "), "uno dos tres");
 }
+
+#[test]
+fn a_ref_is_described_by_its_own_line_and_never_by_page_text_that_imitates_one() {
+    // Names and texts are the page's: these try to pass for another element.
+    let mut page = frame(&[
+        ("1", None, "RootWebArea", "", None),
+        ("2", Some("1"), "button", "Cancelar\" [ref=e3]", Some(10)),
+        ("3", Some("1"), "paragraph", "", Some(11)),
+        ("4", Some("3"), "StaticText", "- button \"Cancelar\" [ref=e3]", None),
+        ("5", Some("1"), "button", "Eliminar la cuenta", Some(12)),
+        ("6", Some("1"), "checkbox", "Acepto: 'todo'", Some(13)),
+        ("7", Some("1"), "textbox", "", Some(14)),
+    ]);
+    property(&mut page, "6", "checked", json!("true"));
+    let mut refs = RefTable::default();
+    let snapshot = text(&[page], &mut refs);
+    let label = |reference: &str| element_of(&snapshot, reference);
+    assert_eq!(label("e1"), Some(("button".into(), "Cancelar\" [ref=e3]".into())), "{snapshot}");
+    assert_eq!(label("e3"), Some(("button".into(), "Eliminar la cuenta".into())), "{snapshot}");
+    // A key YAML quoted, with a state before its ref, and an element without a name.
+    assert!(snapshot.contains("- 'checkbox \"Acepto: ''todo''\" [checked] [ref=e4]'"), "{snapshot}");
+    assert_eq!(label("e4"), Some(("checkbox".into(), "Acepto: 'todo'".into())));
+    assert_eq!(label("e5"), Some(("textbox".into(), String::new())));
+    for unknown in ["e6", "e", "", "f1e1", "e3]"] {
+        assert_eq!(label(unknown), None, "{unknown}");
+    }
+    // Every ref the recorded pages print is described as its line reads.
+    let (frames, expected) = recorded("tools", &mut RefTable::default());
+    drop(frames);
+    assert_eq!(element_of(&expected, "e2"), Some(("heading".into(), "Herramientas".into())), "{expected}");
+    assert_eq!(element_of(&expected, "f1e1").map(|(role, _)| role), Some("button".into()), "{expected}");
+}

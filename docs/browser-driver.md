@@ -1,15 +1,16 @@
 # Driver del navegador en Rust
 
 `crates/openide-browser` maneja Chrome directamente por su protocolo DevTools
-(CDP), sin Node, sin Playwright y sin un crate CDP de terceros. Reemplaza al
-proceso `browser_bridge.mjs` descrito en [Runtime del navegador](browser-runtime.md)
-y ofrece las mismas operaciones que anuncian las
-[herramientas del agente](browser-tools.md), más la entrada cruda y el flujo de
-cuadros que necesita una vista en vivo.
+(CDP), sin Node, sin Playwright y sin un crate CDP de terceros. Reemplazó al
+proceso Node (`browser_bridge.mjs`) que usaba la aplicación y ofrece las
+operaciones que anuncian las [herramientas del agente](browser-tools.md), más
+la entrada cruda y el flujo de cuadros que necesita una vista en vivo.
 
-**Estado:** el crate está completo y probado contra Chrome real, pero todavía
-no está conectado a `agents-window`. La aplicación sigue usando el bridge de
-Node; la integración es un paso posterior.
+**Estado:** es lo que usa `agents-window` desde el 11 de octubre de 2026. El
+actor que lo maneja, la búsqueda del navegador, la vista y el proxy MCP están
+en [Runtime del navegador](browser-runtime.md). En este documento, «el
+bridge» es aquel proceso Node, que ya no existe: las comparaciones con él se
+conservan como registro de lo medido.
 
 ## Piezas
 
@@ -44,9 +45,8 @@ navegadores.
   `LANG`, `LC_ALL` y `XDG_RUNTIME_DIR`. `TMPDIR`, `TMP` y `TEMP` apuntan al
   directorio privado.
 - **Directorio privado.** `oid-XXXXXX`, modo 0700, con el perfil adentro. La
-  ruta completa no supera 48 bytes, por el mismo motivo que en el bridge:
-  Chromium crea sockets Unix debajo de su raíz temporal y `sockaddr_un` admite
-  108 bytes. Si la raíz pedida es profunda o ya no existe se usa la heredada y
+  ruta completa no supera 48 bytes: Chromium crea sockets Unix debajo de su
+  raíz temporal y `sockaddr_un` admite 108 bytes. Si la raíz pedida es profunda o ya no existe se usa la heredada y
   después `/tmp`; un directorio borrado no se recrea.
 - **Cierre.** Al soltar el `Driver` se cierra el pipe, se envía `SIGKILL` al
   grupo de procesos de Chrome (zygotes, renderers y GPU incluidos), se
@@ -56,8 +56,9 @@ navegadores.
   (verificado con `SIGKILL` al padre). El directorio queda huérfano y lo
   recoge el siguiente arranque: cada directorio lleva un archivo
   `driver.lock` con `flock`; uno con más de 60 s y sin candado pertenece a un
-  proceso muerto y se elimina. Los directorios `oid-` del bridge de Node, que
-  no tienen ese archivo, no se tocan.
+  proceso muerto y se elimina. Los directorios `oid-` que haya dejado el
+  bridge de Node de una versión anterior, que no tienen ese archivo, no se
+  tocan.
 - **Un contexto, una página.** Un contexto de navegador aislado, sin
   descargas, con una única página. Cualquier otra ventana que la página abra
   se cierra.
@@ -140,7 +141,7 @@ let png = driver.screenshot(Capture::Viewport)?;
 | Diálogos | `handle_dialog` |
 | Portapapeles | `copy_selection`, `prepare_cut`, `confirm_cut` |
 | Entrada cruda | `pointer_move`, `pointer_down`, `pointer_up`, `wheel`, `key_down`, `key_up`, `insert_text` |
-| Flujo | `start_stream`, `stop_stream`, `capture_frame` |
+| Flujo | `start_stream`, `start_stream_within`, `stop_stream`, `capture_frame` |
 
 Todo error es un `DriverError` con una clase, que dice más que el texto:
 
@@ -153,8 +154,15 @@ Todo error es un `DriverError` con una clase, que dice más que el texto:
 | `Launch` | Chrome no pudo iniciarse. |
 | `Closed` | El navegador o su página ya no están. Hay que crear otro driver. |
 
-Los textos que llegan al modelo o al usuario son los del bridge, en español,
-para que la integración no cambie lo que se lee.
+Los textos que llegan al modelo o al usuario son los que daba el bridge, en
+español: la integración no cambió lo que se lee.
+
+`element_of(texto, referencia)` devuelve el rol y el nombre que una captura
+imprimió para una referencia. Lo usa la tarjeta de aprobación de la
+aplicación para decir qué es `e12`. Lee sólo la estructura de la línea: el
+nombre se interpreta como el JSON que es y después sólo se recorren las marcas
+entre corchetes que escribe el driver, de modo que un nombre o un texto de la
+página que contenga `[ref=e12]` nunca coincide.
 
 ## Captura accesible y referencias
 
@@ -310,11 +318,16 @@ solicitud que el driver esté esperando.
   más reciente.
 - **Visibilidad.** `stop_stream` detiene la codificación cuando la vista se
   oculta; `start_stream` la reanuda.
+- **Presupuesto de píxeles.** `start_stream_within` pasa a Chrome un ancho y
+  un alto máximos (`maxWidth`, `maxHeight`): una vista con un límite de
+  píxeles pide cuadros que puede mostrar en lugar de descartar los que no.
 - **Cuadro sin pérdida.** `capture_frame` devuelve un PNG a escala de
   dispositivo para cuando la página queda quieta.
 - **Entrada cruda.** Puntero, rueda, teclas y texto llegan a la página como
   los del usuario. El driver recuerda botones y modificadores apretados: un
-  movimiento entre `pointer_down` y `pointer_up` es un arrastre.
+  movimiento entre `pointer_down` y `pointer_up` es un arrastre. `MouseButton`
+  se serializa como lo nombra el protocolo (`left`, `middle`, `right`), para
+  que un host lo lleve en sus propios comandos.
 
 `screenshot` es otra cosa: la captura para las herramientas, PNG a un píxel de
 imagen por píxel CSS cualquiera sea la escala, de hasta 2 MiB.
@@ -415,7 +428,7 @@ cuadros por segundo sí coinciden con la referencia de 31 a 35.
 
 ## Validación
 
-Pruebas unitarias, sin navegador, parte de la suite central (65):
+Pruebas unitarias, sin navegador, parte de la suite central (67):
 
 ```sh
 nix-shell --run "cargo test -p openide-browser --lib"
@@ -423,7 +436,9 @@ nix-shell --run "cargo test -p openide-browser --lib"
 
 Cubren el encuadre del pipe, el emparejamiento de solicitudes, respuestas y
 eventos, la composición del texto a partir de árboles grabados, la caducidad
-de referencias, las teclas y sus combinaciones, y cada límite.
+de referencias, la descripción de una referencia frente a texto de la página
+que la imita, las teclas y sus combinaciones, el límite de tamaño del flujo y
+cada límite.
 
 Pruebas contra Chrome real, ignoradas por defecto porque la suite central no
 debe necesitar un navegador (11 escenarios y un proceso auxiliar):
@@ -434,13 +449,16 @@ OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
 ```
 
 Chrome corre headless con un perfil descartable y sólo visita el servidor
-HTTP local que inicia cada prueba. Reproducen cada escenario de
-`scripts/browser-e2e.mjs` que no es propio de Node y agregan el flujo (tamaño
-de cuadro a escala 1 y 2, contrapresión, detención), la entrada cruda
-(hover, selección por arrastre, teclas), las esperas de accionabilidad, un
-marco de otro sitio, las ventanas emergentes, el script que no cede y la
-muerte del proceso padre. Los dos escenarios de Node que no se trasladan son
-la dependencia de Playwright ausente y el proxy MCP.
+HTTP local que inicia cada prueba. Reproducen cada escenario de la suite Node
+anterior (`scripts/browser-e2e.mjs`, eliminada junto con el bridge) que no era
+propio de Node y agregan el flujo (tamaño de cuadro a escala 1 y 2,
+contrapresión, detención), la entrada cruda (hover, selección por arrastre,
+teclas), las esperas de accionabilidad, un marco de otro sitio, las ventanas
+emergentes, el script que no cede y la muerte del proceso padre. Lo que esa
+suite comprobaba del actor, de la vista y del proxy MCP se prueba ahora en
+`agents-window`: ver [Runtime del navegador](browser-runtime.md#validación-reproducible).
+El escenario de la dependencia de Playwright ausente dejó de existir; en su
+lugar se prueba la falta de navegador.
 
 Las grabaciones de `tests/recorded` son las respuestas del protocolo para
 cada página fixture y el texto que Chrome dio. La suite unitaria reproduce
@@ -459,9 +477,9 @@ modo.
 
 ## Lo que no se incluye
 
-Conexión con `agents-window`, proxy MCP para CLIs externos, varias pestañas,
-descargas, subida de archivos, PDF, trazas, grabación, otros motores, un
-transporte TCP o WebSocket, y CEF.
+Buscar un navegador (lo decide el host), varias pestañas, descargas, subida
+de archivos, PDF, trazas, grabación, otros motores, un transporte TCP o
+WebSocket, modificadores por evento del puntero, la forma del cursor, y CEF.
 
 Atajos conocidos:
 

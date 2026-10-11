@@ -4315,6 +4315,7 @@ mod tests {
             git_panel: Default::default(),
             session_changes: Default::default(),
             browser: Default::default(),
+            browser_refs: std::sync::Arc::from(""),
             review_detail: None,
             terminal_tabs: Vec::new(),
             terminal_menu_open: false,

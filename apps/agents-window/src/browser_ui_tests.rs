@@ -90,7 +90,7 @@ fn connection_refused_uses_one_native_error_and_never_exposes_the_chrome_error_r
         let mut state = state();
         state.browser.url = "chrome-error://chromewebdata/".into();
         state.browser.error =
-            Some("page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3000/".into());
+            Some("net::ERR_CONNECTION_REFUSED at http://localhost:3000/".into());
         let frame = UiTree::new(build(&state, width)).layout(Size::new(width, 700.0));
         assert!(!has_image(&frame));
         assert!(!frame
@@ -125,15 +125,17 @@ fn connection_refused_uses_one_native_error_and_never_exposes_the_chrome_error_r
 }
 
 #[test]
-fn initial_blank_loading_and_dependency_states_have_no_clickable_page() {
+fn initial_blank_loading_and_missing_browser_states_have_no_clickable_page() {
     let mut state = state();
     state.browser.url = "about:blank".into();
     assert_eq!(surface(&state.browser), Surface::Empty);
     for mode in [Surface::Empty, Surface::Loading, Surface::Error] {
         state.browser.navigating = mode == Surface::Loading;
-        state.browser.dependency_missing = mode == Surface::Error;
-        state.browser.error =
-            (mode == Surface::Error).then(|| "Playwright no está instalado".into());
+        // A context that found no browser never started.
+        state.browser.browser_missing = mode == Surface::Error;
+        state.browser.started = mode != Surface::Error;
+        state.browser.error = (mode == Surface::Error)
+            .then(|| "No se encontró Google Chrome, Chromium ni Microsoft Edge en este equipo.".into());
         let mut tree = UiTree::new(build(&state, 320.0));
         let frame = tree.layout(Size::new(320.0, 480.0));
         assert_eq!(surface(&state.browser), mode);
@@ -143,12 +145,57 @@ fn initial_blank_loading_and_dependency_states_have_no_clickable_page() {
             .iter()
             .any(|region| region.id == "browser_viewport"));
         if mode == Surface::Error {
-            assert!(frame
+            // The panel says what is missing and what to do about it, and
+            // offers to look again; there is nothing to install from here.
+            let (title, description) = error_copy(&state.browser);
+            assert_eq!(title, "No se encontró un navegador");
+            for part in ["Google Chrome", "Chromium", "Microsoft Edge", "OPENIDE_BROWSER_EXECUTABLE"] {
+                assert!(description.contains(part), "{description}");
+            }
+            assert!(texts(&frame).contains(&"Reintentar"));
+            let retry = frame
                 .regions
                 .iter()
-                .any(|region| region.id == "browser_install"));
+                .find(|region| region.id == "browser_restart" && region.kind == HitKind::Button)
+                .expect("a retry that opens the context again")
+                .rect;
+            let point = Point::new(retry.x + retry.width / 2.0, retry.y + retry.height / 2.0);
+            tree.handle_event(UiEvent::PointerDown(point));
+            assert_eq!(
+                tree.handle_event(UiEvent::PointerUp(point)),
+                vec![UiAction::Clicked { id: "browser_restart".into() }]
+            );
+            assert!(!frame.regions.iter().any(|region| region.id == "browser_install"));
         }
     }
+}
+
+#[test]
+fn a_system_the_browser_cannot_start_on_is_told_so_instead_of_being_asked_to_retry() {
+    let mut state = state();
+    state.browser.started = false;
+    state.browser.error = Some("El navegador no pudo iniciarse: Este sistema todavía no tiene un transporte para iniciar el navegador.".into());
+    assert_eq!(surface(&state.browser), Surface::Error);
+    let (title, description) = error_copy(&state.browser);
+    assert_eq!(title, "El navegador todavía no funciona en este sistema");
+    assert!(description.contains("sistema operativo"), "{description}");
+    // Any other failed start keeps the offer to try again.
+    state.browser.error = Some("El navegador no pudo iniciarse: salió con código 1".into());
+    assert_eq!(error_copy(&state.browser).0, "El navegador no pudo iniciarse");
+}
+
+#[test]
+fn a_page_that_did_not_load_is_an_error_whatever_its_reason_reads_like() {
+    let mut state = state();
+    state.browser.error = Some("Timeout 10000ms exceeded.".into());
+    // An input that failed keeps the page; a navigation that did not finish
+    // replaces it, as a refused connection does.
+    assert_eq!(surface(&state.browser), Surface::Page);
+    state.browser.load_failed = true;
+    assert_eq!(surface(&state.browser), Surface::Error);
+    assert_eq!(error_copy(&state.browser).0, "No se pudo abrir esta página");
+    let frame = UiTree::new(build(&state, 320.0)).layout(Size::new(320.0, 480.0));
+    assert!(frame.regions.iter().any(|region| region.id == "browser_navigate"));
 }
 
 #[test]

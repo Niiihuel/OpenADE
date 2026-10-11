@@ -304,13 +304,14 @@ mod tests {
     fn only_the_newest_pointer_move_waits_and_never_across_a_press_or_a_key() {
         let mut queue = BrowserInputQueue::default();
         let moved = |x: f64| BrowserCommand::PointerMove { x, y: x };
+        let (button, clicks) = (openide_browser::MouseButton::Left, 1);
         for command in [
             moved(1.0),
             moved(2.0),
-            BrowserCommand::PointerDown { x: 2.0, y: 2.0 },
+            BrowserCommand::PointerDown { x: 2.0, y: 2.0, button, clicks },
             moved(3.0),
             moved(4.0),
-            BrowserCommand::PointerUp { x: 4.0, y: 4.0 },
+            BrowserCommand::PointerUp { x: 4.0, y: 4.0, button, clicks },
             moved(5.0),
             BrowserCommand::Press { key: "Tab".into() },
             moved(6.0),
@@ -341,7 +342,8 @@ mod tests {
         assert!(queue.push(BrowserCommand::PointerMove { x: 1.0, y: 1.0 }).is_ok());
         assert_eq!(queue.len(), MAX_QUEUED_COMMANDS);
         // A press is input the user must be told was not sent.
-        assert!(queue.push(BrowserCommand::PointerDown { x: 1.0, y: 1.0 }).is_err());
+        let (button, clicks) = (openide_browser::MouseButton::Left, 1);
+        assert!(queue.push(BrowserCommand::PointerDown { x: 1.0, y: 1.0, button, clicks }).is_err());
     }
     #[test]
     fn full_queue_rejects_before_mutating_accepted_input() {

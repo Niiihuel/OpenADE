@@ -133,6 +133,7 @@ fn export_browser_ui_visual_review() {
             "page",
             "more",
             "error-startup",
+            "error-missing",
         ] {
             let mut state = crate::view::tests::empty_state();
             state.browser = browser_fixture();
@@ -148,13 +149,18 @@ fn export_browser_ui_visual_review() {
                 "error-local" => {
                     state.browser.url = "chrome-error://chromewebdata/".into();
                     state.browser.error = Some(
-                        "page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3000/".into(),
+                        "net::ERR_CONNECTION_REFUSED at http://localhost:3000/".into(),
                     );
                 }
                 "more" => state.browser.more_open = true,
                 "error-startup" => {
                     state.browser.started = false;
-                    state.browser.error = Some("browserType.launch: error while loading shared libraries: libglib-2.0.so.0".into());
+                    state.browser.error = Some("El navegador no pudo iniciarse: error while loading shared libraries: libglib-2.0.so.0".into());
+                }
+                "error-missing" => {
+                    state.browser.started = false;
+                    state.browser.browser_missing = true;
+                    state.browser.error = Some("No se encontró Google Chrome, Chromium ni Microsoft Edge en este equipo. Instalá uno de ellos o indicá la ruta de su ejecutable en la variable OPENIDE_BROWSER_EXECUTABLE.".into());
                 }
                 _ => {}
             }

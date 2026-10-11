@@ -382,6 +382,35 @@ fn a_browser_that_goes_away_is_reported_as_closed_from_then_on() {
 }
 
 #[test]
+fn a_stream_asks_chrome_to_fit_its_frames_only_when_given_a_limit() {
+    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = asked.clone();
+    let (mut driver, _events) = driver(move |method, params| {
+        if method == "Page.startScreencast" {
+            seen.lock().unwrap().push(params.clone());
+        }
+        None
+    });
+    driver.start_stream(FrameFormat::Jpeg { quality: 80 }, None).unwrap();
+    driver.start_stream_within(FrameFormat::Jpeg { quality: 200 }, Some((3840, 2160)), None).unwrap();
+    assert_eq!(
+        *asked.lock().unwrap(),
+        [
+            json!({"format": "jpeg", "quality": 80, "everyNthFrame": 1}),
+            json!({"format": "jpeg", "quality": 100, "everyNthFrame": 1, "maxWidth": 3840, "maxHeight": 2160}),
+        ]
+    );
+    let refused = driver.start_stream_within(FrameFormat::Png, Some((0, 2160)), None).err().map(|error| error.kind);
+    assert_eq!(refused, Some(ErrorKind::Invalid));
+    assert_eq!(asked.lock().unwrap().len(), 2, "a limit of nothing never reaches the browser");
+    // A host names a pointer button the way the protocol does.
+    use crate::MouseButton::{Left, Middle, Right};
+    assert_eq!(serde_json::to_value([Left, Middle, Right]).unwrap(), json!(["left", "middle", "right"]));
+    assert_eq!(serde_json::from_value::<crate::MouseButton>(json!("right")).unwrap(), Right);
+    assert_eq!(crate::MouseButton::default(), Left);
+}
+
+#[test]
 fn a_driver_moves_to_a_worker_thread_and_its_stream_is_shared_with_the_view() {
     fn sendable<T: Send>() {}
     fn shareable<T: Send + Sync + Clone>() {}

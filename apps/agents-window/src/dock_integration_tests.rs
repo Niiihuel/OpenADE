@@ -527,12 +527,12 @@ fn browser_pointer_and_scroll_follow_the_page_at_its_corner_during_transient_res
         let content = Point::new(200.0, page_top + 30.0);
         assert!(app.handle_browser_event(&UiEvent::PointerDown(content)));
         assert!(
-            matches!(commands.finish_next(), Some(BrowserCommand::PointerDown { x, y })
+            matches!(commands.finish_next(), Some(BrowserCommand::PointerDown { x, y, .. })
             if (x - 200.0).abs() < 0.01 && (y - 30.0).abs() < 0.01)
         );
         assert!(app.handle_browser_event(&UiEvent::PointerUp(content)));
         assert!(
-            matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { x, y })
+            matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { x, y, .. })
             if (x - 200.0).abs() < 0.01 && (y - 30.0).abs() < 0.01)
         );
         assert!(app.handle_browser_event(&UiEvent::Scroll2D {

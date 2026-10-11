@@ -697,6 +697,9 @@ pub struct ViewState {
     pub(crate) git_panel: GitPanelView,
     pub(crate) session_changes: crate::session_changes_ui::SessionChangesUiState,
     pub(crate) browser: crate::browser_ui::BrowserUiState,
+    /// The accessible tree the agent last read from this conversation's
+    /// browser: what the refs of a pending approval name.
+    pub(crate) browser_refs: std::sync::Arc<str>,
     pub review_detail: Option<ReviewDetailView>,
     pub terminal_tabs: Vec<DockTabView>,
     pub terminal_menu_open: bool,
@@ -4120,6 +4123,7 @@ pub(crate) mod tests {
             git_panel: Default::default(),
             session_changes: Default::default(),
             browser: Default::default(),
+            browser_refs: std::sync::Arc::from(""),
             review_detail: None,
             terminal_tabs: Vec::new(),
             terminal_menu_open: false,
