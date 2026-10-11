@@ -33,6 +33,16 @@ El ejecutable debe ser compatible con Playwright; su documentación recomienda
 la distribución asociada y advierte que un `executablePath` externo requiere
 validación. [BrowserType.launch](https://playwright.dev/docs/api/class-browsertype#browser-type-launch).
 
+El host pasa la escala de la ventana al iniciar el contexto: el
+`pixels_per_point` de egui, acotado a 1–3 y redondeado a dos decimales. El
+bridge lanza Chromium con `--force-device-scale-factor` y crea el contexto con
+el mismo `deviceScaleFactor`; con la emulación sola, los cuadros del screencast
+siguen saliendo a 1x. El viewport CSS sigue siendo el tamaño lógico de la
+región visible, así que las coordenadas enviadas a la página no cambian. La
+escala queda fija mientras viva el contexto: si la ventana pasa a un monitor
+con otra, la página conserva la anterior y se muestra reescalada hasta
+**Reiniciar navegador**.
+
 Abrir la pestaña no instala nada. **Instalar navegador** instala la biblioteca
 y los binarios administrados; no añade bibliotecas al sistema ni modifica el
 perfil del usuario. En NixOS hace falta un navegador empaquetado compatible, o
@@ -43,7 +53,7 @@ Playwright. [Instalación de navegadores](https://playwright.dev/docs/browsers).
 
 La superficie usa una sola barra fija: atrás, adelante, recargar, dirección y
 **Más opciones**. Enter abre la dirección; el menú reúne copiar dirección,
-actualizar captura, copiar conexión MCP y reiniciar el contexto. Cada acción
+actualizar vista, copiar conexión MCP y reiniciar el contexto. Cada acción
 secundaria explica su efecto en un tooltip. El título del sitio no se repite
 debajo de la dirección. La página ocupa el área restante; no hay una segunda
 barra de scroll nativa alrededor de Chromium. Un pie de 20 px conserva la
@@ -71,17 +81,27 @@ runtime propio y el contexto aislado por conversación.
 
 El bridge soporta dirección HTTP/HTTPS sin credenciales incrustadas, historial,
 recarga, clic, localizadores públicos, texto Unicode, teclas, scroll y resize.
+La ventana envía además el puntero: movimiento, botón presionado y botón
+soltado, en los mismos píxeles CSS. La página recibe así estados `:hover` y
+arrastres (selección de texto, deslizadores); un arrastre que sale de la página
+sigue en su borde más cercano y la suelta se entrega siempre.
 El host envía ambos ejes del trackpad y convierte Shift + rueda vertical en
 desplazamiento horizontal. Pegar y confirmar texto de un método de entrada
 requieren que el viewport visible tenga foco; durante una navegación no se
 envían al documento nuevo. PageUp y PageDown llegan a la página.
 Las URLs `file:`, `javascript:` y similares no forman parte del protocolo.
-Cada respuesta contiene la URL, título, historial, captura PNG y, cuando
-corresponde, árbol accesible. Se rechazan localizadores ambiguos.
+Cada respuesta a una herramienta contiene la URL, título, historial, captura
+PNG y, cuando corresponde, árbol accesible. Las respuestas a la entrada de la
+ventana no llevan imagen: su resultado llega por la vista en vivo. Se rechazan
+localizadores ambiguos.
 
 La entrada de la ventana tiene una cola propia limitada a 128 comandos y
 256 KiB, con hasta cuatro operaciones en vuelo. Agrupa texto Unicode y scroll
-adyacentes sin cruzar clics, teclas o navegaciones. La cantidad pendiente se
+adyacentes sin cruzar clics, teclas o navegaciones. De los movimientos del
+puntero en cola sólo sobrevive el más nuevo, con la misma regla; uno que no
+entra en una cola llena se omite sin aviso. Movimiento y rueda van de a uno en
+vuelo, responden sin estado de página y no cuentan como entradas pendientes ni
+reconstruyen la ventana. La cantidad pendiente se
 muestra en la cabecera; si se alcanza un límite se informa que la nueva entrada no
 se envió. Un rechazo anterior al envío conserva las entradas aceptadas para
 despacharlas cuando haya espacio. Las acciones del usuario omiten el árbol
@@ -101,13 +121,13 @@ Las capturas tienen un máximo de 2 MiB; el protocolo JSONL, 4 MiB por respuesta
 y 64 KiB por solicitud; el árbol accesible, 64 KiB. Hay una página por contexto,
 sin descargas ni ventanas emergentes. La cola Rust admite 16 comandos; el proxy
 MCP acepta hasta cuatro solicitudes simultáneas y sólo contacta su broker local
-autenticado. La vista usa capturas periódicas, no un WebView ni video continuo:
-no promete la latencia, selección por arrastre o reproducción multimedia de un
-navegador de escritorio completo.
+autenticado. La vista es un flujo de cuadros de Chromium, descrito en
+**Vista en vivo**; no es un WebView: no promete audio ni reproducción de video,
+formas del cursor, doble clic ni la latencia de un navegador de escritorio.
 
 Si el compositor de Chromium todavía no tiene un frame después de navegar,
 se reintenta una vez **la captura**, nunca el clic o la escritura que la causó.
-Una captura periódica exitosa no borra el error de navegación anterior. La
+La consulta periódica de estado no borra el error de navegación anterior. La
 interfaz muestra una explicación breve con detalle al pasar el puntero; una
 acción explícita posterior puede resolverla. La pérdida del proceso exige un
 contexto nuevo, para conservar la identidad de las herramientas pendientes.
@@ -116,6 +136,98 @@ nuevo contexto está listo, incluso si se cambió de pestaña mientras arrancaba
 La barra conserva esa dirección durante `about:blank` y ante una página de
 error interna; sólo una navegación confirmada puede sustituirla. No se
 reproducen clics, formularios ni escritura de la instancia anterior.
+
+## Vista en vivo
+
+Mientras la superficie está visible, el bridge mantiene un screencast de CDP
+(`Page.startScreencast`, JPEG de calidad 80) en una sesión propia. Chromium
+entrega un cuadro cada vez que su compositor tiene uno y el bridge lo emite
+por stdout como una línea de evento no solicitada, junto a las respuestas:
+
+```json
+{"event":"frame","seq":12,"format":"jpeg","scale":2,"data":"<base64>"}
+{"event":"stream_lost","error":"…"}
+```
+
+`format` es `jpeg` o `png` y `scale` son los píxeles de dispositivo por píxel
+CSS del cuadro. Las líneas siguen acotadas a 4 MiB; el base64 que entrega
+Chromium se copia a la línea sin recodificar. El host activa y detiene el flujo
+con `{"type":"stream","enabled":…}` según `set_visible`: oculto no llega
+ningún cuadro. Al volver a mostrarse, la pestaña pinta su último cuadro, pero
+la página no recibe entrada hasta el primer cuadro del flujo nuevo. La URL, el título y el historial se consultan cada 300 ms sin
+imagen (`{"type":"state"}`) mientras está visible y sin comandos.
+
+**Contrapresión.** El bridge confirma un cuadro a Chromium
+(`Page.screencastFrameAck`) recién cuando su línea terminó de drenar. Si el
+host lee despacio, Chromium deja de producir cuadros en lugar de acumularlos:
+sólo esperan los que caben en el pipe y los que tenía en vuelo. Las respuestas
+comparten stdout y quedan, como mucho, detrás de esos cuadros. En el host el
+hilo lector separa eventos de respuestas sin bloquearse; cada etapa guarda un
+solo cuadro y uno más nuevo reemplaza al que nadie tomó. Un hilo propio
+decodifica (JPEG o PNG, con el crate `image`) y el hilo de la interfaz sólo
+entrega el resultado a `limn_egui::present_surface`, que escribe en la misma
+textura mientras el tamaño no cambie. No hay un `RasterImage`, un SHA-256 ni
+una reconstrucción de la ventana por cuadro.
+
+**Nítido en reposo.** 200 ms después del último cuadro, el bridge pide una
+captura PNG a escala de dispositivo por la misma sesión y la envía como cuadro
+`png`. Una página que sigue animando nunca llega a ese plazo; una que cambia
+menos de cinco veces por segundo (un cursor de texto que parpadea) recibe uno
+después de cada cambio. Se conserva el JPEG si la página cambió durante la captura, si el PNG no entra en
+una línea o si el cuadro está reducido por el presupuesto. Un cuadro idéntico
+al anterior no se reenvía: la propia captura provoca uno.
+
+**Presupuesto.** Un cuadro tiene como máximo 3840 × 2160 píxeles (8 294 400).
+El viewport más grande, 1600 × 1200, entra completo a escala 2. Por encima
+(escala mayor que 2,08 con ese panel) el screencast recibe `maxWidth` y
+`maxHeight`, Chromium reduce el cuadro y el host lo muestra en su tamaño
+lógico, reescalado. Un JPEG que no entra en una línea se descarta y el flujo se
+reinicia con 20 puntos menos de calidad, hasta 20.
+
+**Superficie.** La página se pinta con `Element::surface` de limn: el cuadro se
+ancla a la esquina superior izquierda de la región, alineado a la grilla de
+píxeles, y cada píxel suyo ocupa un píxel físico. Un cuadro que difiere de la
+región por un píxel de redondeo se recorta o deja un borde; no se estira. Un
+punto es un píxel CSS, también mientras Chromium alcanza un cambio de tamaño.
+
+**Capturas del agente.** Las herramientas y el proxy MCP reciben la misma
+captura PNG a 1x (`scale: 'css'`) y el mismo árbol accesible, con los mismos
+límites. Con una escala distinta de 1 esa captura hace que Chromium dibuje la
+página a otra escala por un instante: el bridge no envía los cuadros de ese
+momento y, si pudieron ocultar un cambio real, pide el cuadro sin pérdida. Toda
+captura a escala CSS, del viewport, de la página completa o de un elemento, se
+toma dentro de `atCssScale` en el bridge para que eso valga también para ella.
+
+**Pérdida del flujo.** Si falla la confirmación de un cuadro, la captura sin
+pérdida o la sonda que acompaña a `state`, o si el proceso de la página
+termina, el bridge emite `stream_lost`. El host conserva la página, lo dice en el pie
+(«La vista en vivo se detuvo…») y vuelve a pedir el flujo cada 2 s.
+**Actualizar vista** lo reinicia a pedido.
+
+**Mediciones.** Con el bridge de producción el 11 de octubre de 2026, sin la
+ventana: Google Chrome 150 a escala 2 y un viewport de 1280 × 800 (cuadros de
+2560 × 1600), sin otras compilaciones en curso en el equipo:
+
+| Medida | Resultado |
+| --- | --- |
+| Cuadros por segundo, página animando | 34–38 (JPEG de unos 308 KiB en base64) |
+| De la rueda al primer cuadro, página animando | mediana 19–22 ms, p90 24–27 ms |
+| De la rueda al primer cuadro, página quieta | mediana 57–63 ms, p90 59–67 ms |
+| Respuesta a la rueda de la ventana | mediana 3 ms |
+| Ida y vuelta de un movimiento del puntero | 16,6 ms (quieta), 29 ms (animando) |
+| Respuesta a un comando durante el flujo | mediana 3–6 ms, máximo 7 ms |
+| Cuadro sin pérdida | 383 KiB en base64, 239–256 ms después del último cuadro |
+| Cuadros decodificados por segundo en el actor Rust, página animando | 37, ninguno reemplazado antes de decodificar |
+| Decodificación en el host, fuera del hilo de la interfaz | JPEG: mediana 9,2 ms, p90 9,7 ms; PNG: mediana 5,2 ms, p90 6,3 ms |
+| Entrega a la textura en el hilo de la interfaz | unos 5 µs por cuadro |
+
+Con la página quieta, Chromium solo, sin el bridge, tarda 54–65 ms de la rueda
+al cuadro a esta escala y 22 ms a escala 1: es el costo de rasterizar y
+codificar 4 megapíxeles, no del transporte. A escala 1 el mismo viewport da 60
+cuadros por segundo. Con otras compilaciones en curso en el mismo equipo se
+midieron 11–26 cuadros por segundo. La copia del cuadro a la GPU dentro del
+renderizador (16 MiB por cuadro) no se midió, y nadie verificó todavía estas
+propiedades mirando la ventana real.
 
 ## Chromium y Servo
 
@@ -147,21 +259,44 @@ La prueba no instala dependencias y sólo visita un servidor HTTP fixture local.
 Usa el bridge de producción y procesos Node reales; verifica temporal eliminado,
 ruta temporal larga, PNG, Unicode, selección con teclado, localizadores, scroll,
 historial, resize, error de navegación y recuperación, dependencia ausente y
-reintento, limpieza de perfiles y transporte del proxy MCP. También comprueba
+reintento, limpieza de perfiles y transporte del proxy MCP. Para la vista en
+vivo comprueba, a escala 1 y 2: cuadros mientras la página anima, tamaño igual
+a viewport × escala, ninguno oculta, el cuadro sin pérdida al quedar quieta y
+sin repetirse, respuestas a comandos durante el flujo, un lector detenido que
+no acumula cuadros, capturas del agente a 1x que no llegan a la vista, estado
+`:hover`, selección por arrastre y cuadros al nuevo tamaño tras un resize. Otro
+caso mide el flujo a 2560 × 1600 y lo informa como diagnóstico. También comprueba
 copia, corte en dos fases, rechazo si el campo cambia, campos de sólo lectura,
 contraseñas, `contenteditable` y límites de texto. El broker del
 último caso es una fixture local; no pretende probar el catálogo de permisos
 Rust ni los eventos de la ventana nativa.
 
-Validado el 5 de octubre de 2026 con Playwright 1.63.0 y Google Chrome
-150.0.7871.46 empaquetado por NixOS, con sandbox habilitado: cuatro casos reales
+Validado el 11 de octubre de 2026 con Playwright 1.63.0 y Google Chrome
+150.0.7871.46 empaquetado por NixOS, con sandbox habilitado: siete casos reales
 pasaron. Las pruebas Rust de entorno, limpieza, límites y conservación del
-error están en `browser_runtime_tests.rs`; las compila la suite central.
+error están en `browser_runtime_tests.rs`, junto a las del flujo: eventos que
+no entran al canal de respuestas, reemplazo del cuadro que nadie tomó,
+formato y presupuesto de píxeles al decodificar, límites del puntero y de la
+escala, y el aviso de flujo perdido; las compila la suite central.
 `browser_host_tests.rs` verifica además el foco, las entradas, el destino de
 reintento entre conversaciones, la conservación de ráfagas de entrada y el
 portapapeles entre conversaciones con un actor de prueba sin Node, navegador,
-sockets ni acceso al entorno personal. `browser_input_app.rs` contiene las
-regresiones de orden, agrupación y rechazo antes de modificar una cola llena.
+sockets ni acceso al entorno personal, y que el puntero llegue de a un
+movimiento en vuelo y que un arrastre termine donde se suelta.
+`browser_input_app.rs` contiene las regresiones de orden, agrupación y rechazo
+antes de modificar una cola llena. El mapeo 1:1 de la superficie a escala 1,
+1,5 y 2 y la reutilización de su textura se prueban en limn (`limn-egui`).
+
+Dos pruebas Rust opt-in recorren el camino real sin la GPU: el actor, su
+lector y su decodificador contra el bridge y Chromium reales con una página
+servida en localhost, y el costo por cuadro sobre los cuadros que guarda la
+prueba del bridge. Se ejecutan con el perfil optimizado:
+
+```sh
+rtk env OPENIDE_PLAYWRIGHT_MODULE_DIR=<deps> OPENIDE_BROWSER_FRAME_SAMPLES=/tmp/openide-browser-e2e-review \
+  cargo test --profile desktop -p agents-window -- --ignored --nocapture \
+  frame_cost_on_the_decoder the_actor_streams
+```
 
 `browser_ui_tests.rs` cubre la barra a 240–900 px, estados de error sin captura,
 acciones del menú y geometría estable del viewport. La revisión visual opt-in
@@ -176,8 +311,9 @@ Los PNG/SVG se escriben en `/tmp/openide-browser-ui-review`. El contenido de la
 página es una fixture visual identificada; la prueba real del bridge anterior
 es la que valida la comunicación con Chromium.
 
-La prueba `scripts/browser-desktop-e2e.py` cubre también el recorrido completo
-desde la ventana Wayland real: arranque con `TMPDIR` eliminado, navegación al
+La prueba `scripts/browser-desktop-e2e.py` cubre el recorrido completo desde la
+ventana Wayland real; su última ejecución es anterior a la vista en vivo y no
+se repitió con ella: arranque con `TMPDIR` eliminado, navegación al
 servidor HTTP local, clic de foco, ráfaga de texto Unicode, copia al portapapeles
 del sistema, corte confirmado y pegado íntegro. Pasaron sus cinco comprobaciones.
 Requiere un build con `--features editor-e2e`, Hyprland, `wtype`, `dotool`,

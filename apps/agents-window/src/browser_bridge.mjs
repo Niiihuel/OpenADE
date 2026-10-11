@@ -74,6 +74,8 @@ async function emit(value) {
 async function close() {
   if (shuttingDown) return;
   shuttingDown = true;
+  clearTimeout(stream?.timer);
+  stream = undefined;
   await preparedCut?.selection.dispose().catch(() => {});
   preparedCut = undefined;
   await context?.close().catch(() => {});
@@ -136,7 +138,7 @@ async function capture(includeAria, includeImage = true) {
     let png;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        png = await page.screenshot({ type: 'png', fullPage: false, scale: 'css', timeout: 5000 });
+        png = await atCssScale(() => page.screenshot({ type: 'png', fullPage: false, scale: 'css', timeout: 5000 }));
         break;
       } catch (error) {
         // A freshly navigated/resized Chromium surface may not yet have a
@@ -235,12 +237,16 @@ async function execute(command) {
         throw Object.assign(new Error('La instalación de Playwright no ofrece Chromium.'), { code: 'playwright_missing' });
       }
       viewport = { width: command.width, height: command.height };
+      deviceScale = launchScale(command.scale);
       try {
         browser = await playwright.chromium.launch({
           headless: true, chromiumSandbox: true, timeout: 20_000,
+          // Emulation alone leaves screencast frames at 1x: the compositor
+          // itself has to render at the window's scale.
+          args: [`--force-device-scale-factor=${deviceScale}`],
           ...(command.executable_path ? { executablePath: command.executable_path } : {}),
         });
-        context = await browser.newContext({ viewport, deviceScaleFactor: 1, acceptDownloads: false });
+        context = await browser.newContext({ viewport, deviceScaleFactor: deviceScale, acceptDownloads: false });
         context.setDefaultTimeout(TIMEOUT);
         context.setDefaultNavigationTimeout(TIMEOUT);
         page = await context.newPage();
@@ -300,7 +306,218 @@ async function execute(command) {
     case 'close': await close(); return { closed: true };
     default: throw new Error('Comando de navegador desconocido.');
   }
-  return capture(command.include_aria !== false);
+  return capture(command.include_aria !== false, command.include_image !== false);
+}
+
+// ---- Live view ------------------------------------------------------------
+// While the surface is visible, Chromium pushes a screencast frame whenever
+// its compositor has one, and they leave as unsolicited event lines. A frame
+// is acknowledged only after its line drained, so a reader that falls behind
+// makes Chromium skip frames instead of queueing them here.
+const FRAME_PIXEL_BUDGET = 3840 * 2160;
+const MAX_FRAME_BASE64 = MAX_OUTPUT - 512;
+const STILL_DELAY = 200;
+let deviceScale = 1;
+let frameQuality = 80;
+let frameSequence = 0;
+let stream;
+
+function launchScale(value) {
+  return Number.isFinite(value) && value >= 1 && value <= 3 ? Math.round(value * 100) / 100 : 1;
+}
+
+// A capture at CSS scale makes Chromium draw the page at another scale for a
+// moment, and the screencast sees it. Frames of that moment are not the page:
+// the view skips them and keeps the last true frame, until the frame it had
+// comes back or, on a page that moved meanwhile, for this long. Every such
+// capture, of the viewport, the full page or an element, is taken through
+// atCssScale.
+const RERENDER_SETTLE = 400;
+let rerendering = 0;
+let rerenders = 0;
+let rerendered = 0;
+
+async function atCssScale(take) {
+  if (deviceScale === 1) return take();
+  rerendering++;
+  rerenders++;
+  try { return await take(); } finally { rerendering--; rerendered = Date.now(); }
+}
+
+function rerenderSuspect() {
+  return rerendering > 0 || Date.now() - rerendered < RERENDER_SETTLE;
+}
+
+async function writeFrame(current, format, data) {
+  // Base64 needs no JSON escaping: the line is assembled without re-encoding.
+  const line = `{"event":"frame","seq":${++frameSequence},"format":"${format}","scale":${current.scale},"data":"${data}"}\n`;
+  if (!process.stdout.write(line)) await once(process.stdout, 'drain');
+}
+
+function armStill(current) {
+  clearTimeout(current.timer);
+  if (stream === current) current.timer = setTimeout(() => { void sendLossless(current); }, STILL_DELAY);
+}
+
+// JPEG rings around text. Once the page holds still, one lossless frame at
+// device scale replaces the last JPEG; a page that keeps animating never
+// gets here because every frame restarts the wait.
+async function sendLossless(current) {
+  if (stream !== current) return;
+  if (current.scale !== deviceScale) {
+    // Over the pixel budget a device-scale capture would be too: the JPEG
+    // stays, and one that was skipped is asked for again by restarting the
+    // stream at the next command.
+    current.restart ||= current.skipped !== undefined;
+    return;
+  }
+  if (rerendering > 0) { armStill(current); return; }
+  const changes = current.changes;
+  const captures = rerenders;
+  try {
+    const { data } = await current.session.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true });
+    if (stream !== current || changes !== current.changes) return;
+    if (captures !== rerenders) { armStill(current); return; }
+    if (data.length > MAX_FRAME_BASE64) {
+      // Too large to send: the JPEG stays, or comes back with a restart.
+      current.restart ||= current.skipped !== undefined;
+      return;
+    }
+    // This capture is the page a skipped frame showed: that frame is its twin.
+    if (current.skipped) { current.last = current.skipped; current.skipped = undefined; }
+    if (data === current.shown) return;
+    current.shown = data;
+    await writeFrame(current, 'png', data);
+  } catch (error) {
+    // The compositor had no frame to give: only a skipped one is worth asking again.
+    if (!/Unable to capture screenshot/.test(String(error?.message))) streamLost(current, error);
+    else if (current.skipped) armStill(current);
+  }
+}
+
+async function onScreencastFrame(current, frame) {
+  // A frame of a stream already stopped: its session is gone with it.
+  if (stream !== current) return;
+  try {
+    // A repeated frame is no news; the lossless capture itself causes one.
+    // After an agent capture it says the true page is back, unchanged.
+    if (frame.data === current.last) {
+      rerendered = 0;
+      current.skipped = undefined;
+    } else if (frame.data === current.skipped) {
+      rerendered = 0;
+    } else if (rerenderSuspect()) {
+      // What a skipped frame may have hidden, the lossless frame brings back.
+      current.skipped = frame.data;
+      armStill(current);
+    } else if (frame.data.length > MAX_FRAME_BASE64) {
+      // Too large for one line: the next command restarts the stream at a
+      // lower quality. At the lowest, the frame is skipped.
+      if (frameQuality > 20 && !current.restart) { frameQuality -= 20; current.restart = true; }
+    } else {
+      current.last = frame.data;
+      current.skipped = current.shown = undefined;
+      current.changes++;
+      clearTimeout(current.timer);
+      await writeFrame(current, 'jpeg', frame.data);
+      armStill(current);
+    }
+    await current.session.send('Page.screencastFrameAck', { sessionId: frame.sessionId });
+  } catch (error) {
+    streamLost(current, error);
+  }
+}
+
+async function stopStream() {
+  const current = stream;
+  stream = undefined;
+  if (!current) return;
+  clearTimeout(current.timer);
+  page.off('crash', current.crashed);
+  await current.session.send('Page.stopScreencast').catch(() => {});
+  await current.session.detach().catch(() => {});
+}
+
+async function startStream() {
+  await stopStream();
+  const exact = [Math.ceil(viewport.width * deviceScale), Math.ceil(viewport.height * deviceScale)];
+  // Over the pixel budget Chromium scales the frame down to fit.
+  const fit = Math.min(1, Math.sqrt(FRAME_PIXEL_BUDGET / (exact[0] * exact[1])));
+  const current = {
+    session: await context.newCDPSession(page),
+    scale: deviceScale * fit, changes: 0, last: undefined, skipped: undefined, shown: undefined, timer: undefined, restart: false,
+  };
+  current.crashed = () => streamLost(current, new Error('La página dejó de responder.'));
+  current.session.on('Page.screencastFrame', frame => { void onScreencastFrame(current, frame); });
+  page.once('crash', current.crashed);
+  stream = current;
+  try {
+    await current.session.send('Page.startScreencast', {
+      format: 'jpeg', quality: frameQuality, everyNthFrame: 1,
+      ...(fit < 1 ? { maxWidth: Math.floor(exact[0] * fit), maxHeight: Math.floor(exact[1] * fit) } : {}),
+    });
+  } catch (error) {
+    if (stream === current) await stopStream();
+    throw error;
+  }
+  // A page that is already still may not push its first frame for a second.
+  armStill(current);
+}
+
+// The host hears about a stream that stopped and asks for it again; the view
+// must not stay on a stale frame without saying so.
+function streamLost(current, error) {
+  if (stream !== current) return;
+  void stopStream();
+  void emit({ event: 'stream_lost', error: limited(error?.message ?? error, 1024) }).catch(() => {});
+}
+
+async function restartStream() {
+  const current = stream;
+  if (current) await startStream().catch(error => { stream = current; streamLost(current, error); });
+}
+
+// Commands of the live view and of pointer input from the window. They are
+// kept apart from execute() so the agent's catalog can grow there.
+function viewCommand(command) {
+  if (!page) return undefined;
+  switch (command.type) {
+    case 'stream': return (async () => {
+      await (command.enabled ? startStream() : stopStream());
+      return capture(false, false);
+    })();
+    case 'state': return (async () => {
+      // The poll doubles as the stream's watchdog: a dead session is replaced.
+      if (stream) await stream.session.send('Page.getNavigationHistory').catch(() => restartStream());
+      return capture(false, false);
+    })();
+    // A move answers without page state: only its frames matter. So does the
+    // window's wheel: the title lookup that follows an action waits for the
+    // renderer, and would pace the wheel at a few steps a second.
+    case 'pointer_move': return page.mouse.move(command.x, command.y).then(() => undefined);
+    case 'scroll': return command.include_image === false
+      ? page.mouse.wheel(command.dx, command.dy).then(() => undefined) : undefined;
+    case 'pointer_down': return (async () => {
+      await page.mouse.move(command.x, command.y);
+      await page.mouse.down();
+    })();
+    case 'pointer_up': return (async () => {
+      await page.mouse.move(command.x, command.y);
+      await page.mouse.up();
+      return capture(false, false);
+    })();
+    default: return undefined;
+  }
+}
+
+async function run(command) {
+  if (stream?.restart) await restartStream();
+  const own = viewCommand(command);
+  if (own) return own;
+  const snapshot = await execute(command);
+  // A resized page has other frame bounds, and owes a first frame at them.
+  if (command.type === 'resize') await restartStream();
+  return snapshot;
 }
 
 // Consume one command at a time. Pausing stdin applies backpressure instead
@@ -321,7 +538,7 @@ async function drain() {
       try {
         request = JSON.parse(line.toString('utf8'));
         if (!Number.isSafeInteger(request.id) || request.id < 1 || !request.command) throw new Error('Invalid browser request');
-        const snapshot = await execute(request.command);
+        const snapshot = await run(request.command);
         await emit({ id: request.id, ok: true, snapshot });
       } catch (error) {
         let snapshot;

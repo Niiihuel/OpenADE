@@ -455,10 +455,8 @@ fn diagonal_trackpad_scroll_routes_to_bottom_terminal_only_inside_its_screen() {
 }
 
 #[test]
-fn browser_pointer_and_scroll_follow_painted_image_during_transient_resize() {
-    use crate::browser_runtime::{
-        BrowserCommand, BrowserScope, BrowserScreenshot, BrowserSnapshot,
-    };
+fn browser_pointer_and_scroll_follow_the_page_at_its_corner_during_transient_resize() {
+    use crate::browser_runtime::{BrowserCommand, BrowserScope, BrowserSnapshot};
     use openide_ui::{Point, Rect};
 
     let (_root, mut app) = fixture();
@@ -474,33 +472,20 @@ fn browser_pointer_and_scroll_follow_painted_image_during_transient_resize() {
             url: "http://localhost:3000/geometry-fixture".into(),
             viewport_width: 800,
             viewport_height: 600,
-            screenshot: Some(Arc::new(BrowserScreenshot {
-                // Dispatch geometry uses immutable screenshot identity; this
-                // host test does not decode or claim a rendered PNG artifact.
-                base64: Arc::from("AAAA"),
-                sha256: "b".repeat(64),
-                size_bytes: 3,
-                width: 800,
-                height: 600,
-            })),
             ..Default::default()
         },
     );
     app.browsers.insert(browser.get(), runtime);
+    // Dispatch geometry needs a surface that holds a frame; this host test
+    // does not decode or claim rendered pixels.
+    app.browser_live.insert(browser.get(), true);
     app.sync_dock_view();
-    // The renderer centers and fits the old 800×600 screenshot while Chromium
-    // catches up. The first case represents an expanded bottom terminal; the
-    // second verifies that expanding the dock does not upscale the raster.
+    // The 800×600 page stays at the surface's corner, one point per CSS pixel,
+    // while Chromium catches up. The first case represents an expanded bottom
+    // terminal that clips it; the second a wider dock, whose margin beyond
+    // the page is not the page.
     let page_top = crate::browser_ui::TOOLBAR_HEIGHT + 1.0;
-    for (width, page_height, expected, scale) in [
-        (400.0, 60.0, Rect::new(160.0, page_top, 80.0, 60.0), 10.0),
-        (
-            1000.0,
-            800.0,
-            Rect::new(100.0, page_top + 100.0, 800.0, 600.0),
-            1.0,
-        ),
-    ] {
+    for (width, page_height) in [(400.0, 60.0), (1000.0, 800.0)] {
         // Reserve the same page area at any chrome density. The old fixed
         // outer heights accidentally encoded a 48 px navigation toolbar.
         let height = page_top + page_height + crate::browser_ui::STATUS_HEIGHT;
@@ -516,46 +501,39 @@ fn browser_pointer_and_scroll_follow_painted_image_during_transient_resize() {
             .unwrap()
             .rect;
         assert_eq!(viewport, Rect::new(0.0, page_top, width, page_height));
-        let painted = app.browser_viewport_rect().unwrap();
-        for (actual, expected) in [
-            (painted.x, expected.x),
-            (painted.y, expected.y),
-            (painted.width, expected.width),
-            (painted.height, expected.height),
-        ] {
-            assert!((actual - expected).abs() < 0.01, "{painted:?}");
-        }
         assert_eq!(
-            (
-                app.view.browser.viewport_width,
-                app.view.browser.viewport_height
-            ),
-            (800, 600)
+            app.browser_viewport_rect().unwrap(),
+            Rect::new(0.0, page_top, 800.0, 600.0)
         );
 
-        let band = Point::new(20.0, painted.y + painted.height * 0.5);
-        assert_eq!(app.tree.frame().hit_test(band), Some("browser_viewport"));
-        assert!(app.handle_browser_event(&UiEvent::PointerDown(band)));
-        assert!(app.handle_browser_event(&UiEvent::Scroll2D {
-            position: band,
-            delta_x: 3.0,
-            delta_y: -6.0,
-            direct: true,
-            shift: false,
-        }));
-        assert!(
-            commands.finish_next().is_none(),
-            "letterbox bands must not click or scroll the page"
-        );
+        if width > 800.0 {
+            let margin = Point::new(900.0, page_top + 700.0);
+            assert_eq!(app.tree.frame().hit_test(margin), Some("browser_viewport"));
+            assert!(app.handle_browser_event(&UiEvent::PointerDown(margin)));
+            assert!(app.handle_browser_event(&UiEvent::PointerUp(margin)));
+            assert!(app.handle_browser_event(&UiEvent::Scroll2D {
+                position: margin,
+                delta_x: 3.0,
+                delta_y: -6.0,
+                direct: true,
+                shift: false,
+            }));
+            assert!(
+                commands.finish_next().is_none(),
+                "the margin beyond the page must not click or scroll it"
+            );
+        }
 
-        let content = Point::new(
-            painted.x + painted.width * 0.25,
-            painted.y + painted.height * 0.25,
-        );
+        let content = Point::new(200.0, page_top + 30.0);
         assert!(app.handle_browser_event(&UiEvent::PointerDown(content)));
         assert!(
-            matches!(commands.finish_next(), Some(BrowserCommand::Click { x, y })
-            if (x - 200.0).abs() < 0.01 && (y - 150.0).abs() < 0.01)
+            matches!(commands.finish_next(), Some(BrowserCommand::PointerDown { x, y })
+            if (x - 200.0).abs() < 0.01 && (y - 30.0).abs() < 0.01)
+        );
+        assert!(app.handle_browser_event(&UiEvent::PointerUp(content)));
+        assert!(
+            matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { x, y })
+            if (x - 200.0).abs() < 0.01 && (y - 30.0).abs() < 0.01)
         );
         assert!(app.handle_browser_event(&UiEvent::Scroll2D {
             position: content,
@@ -566,9 +544,12 @@ fn browser_pointer_and_scroll_follow_painted_image_during_transient_resize() {
         }));
         assert!(
             matches!(commands.finish_next(), Some(BrowserCommand::Scroll { dx, dy })
-            if (dx + 3.0 * scale).abs() < 0.01 && (dy - 6.0 * scale).abs() < 0.01)
+            if (dx + 3.0).abs() < 0.01 && (dy - 6.0).abs() < 0.01)
         );
         assert!(commands.finish_next().is_none());
+        // Every request above was answered; nothing stays in flight for the
+        // next pane size.
+        app.browser_requests.clear();
     }
 }
 

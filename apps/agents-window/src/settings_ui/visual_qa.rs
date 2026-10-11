@@ -406,6 +406,17 @@ fn write_frame_svg_with_families(
                     xml_escape(image.data_base64()), xml_escape(image.alt())
                 ).unwrap();
             }
+            DrawCommand::Surface { rect, label, .. } => {
+                // Its pixels are the host's, not the frame's: an inspection
+                // can only show the box they are painted in.
+                writeln!(
+                    svg,
+                    "<rect {} fill=\"none\"><title>{}</title></rect>",
+                    rect_attributes(*rect),
+                    xml_escape(label)
+                )
+                .unwrap();
+            }
             DrawCommand::EffortSlider { .. } => {
                 return Err(io::Error::new(
                     io::ErrorKind::Unsupported,

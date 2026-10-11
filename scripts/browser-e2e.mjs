@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { performance } from 'node:perf_hooks';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const moduleDir = process.env.OPENIDE_PLAYWRIGHT_MODULE_DIR
@@ -30,6 +31,8 @@ function client(script, env, cwd) {
   let output = Buffer.alloc(0);
   let stderr = '';
   const pending = new Map();
+  // Unsolicited lines of the live view, in arrival order.
+  const events = [];
   let sequence = 0;
   child.stderr.on('data', bytes => { stderr = (stderr + bytes.toString()).slice(-4096); });
   child.stdout.on('data', bytes => {
@@ -40,6 +43,7 @@ function client(script, env, cwd) {
       if (newline < 0) break;
       const value = JSON.parse(output.subarray(0, newline).toString('utf8'));
       output = output.subarray(newline + 1);
+      if (value.event) { events.push({ ...value, at: performance.now() }); continue; }
       const waiter = pending.get(value.id);
       assert.ok(waiter, `Unexpected response ${value.id}`);
       pending.delete(value.id);
@@ -69,6 +73,8 @@ function client(script, env, cwd) {
   }
   return {
     request,
+    events,
+    stdout: child.stdout,
     command: command => request({ command }),
     async stop() {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
@@ -234,6 +240,266 @@ test('real Chromium bridge survives deleted TMPDIR and handles navigation, input
   assert.equal((await bridge.exited).code, 0);
   assert.deepEqual(await fs.readdir(temporary), [], 'browser artifacts and temporary profiles are removed');
   t.diagnostic(`Engine: ${executable || 'Playwright bundled Chromium'}; Playwright: ${moduleDir}`);
+});
+
+// Pixel size of an encoded frame, from its header.
+function frameSize(frame) {
+  const bytes = Buffer.from(frame.data, 'base64');
+  if (frame.format === 'png') return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
+  for (let at = 2; at + 9 < bytes.length; at += 2 + bytes.readUInt16BE(at + 2)) {
+    if (bytes[at + 1] >= 0xc0 && bytes[at + 1] <= 0xc3) return [bytes.readUInt16BE(at + 7), bytes.readUInt16BE(at + 5)];
+  }
+  throw new Error('JPEG frame without a size');
+}
+
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const median = values => [...values].sort((a, b) => a - b)[values.length >> 1];
+const percentile = (values, part) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * part))];
+
+function liveFixture() {
+  const rows = Array.from({ length: 80 }, (_, row) => `<div class="row"><b>Fila ${row}</b> — Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.</div>`).join('');
+  const style = `html{background:#fff}body{font:14px/1.5 sans-serif;margin:0;color:#111}.row{border:1px solid #ccc;border-radius:8px;padding:12px;margin:8px 24px}
+    #spin{position:fixed;right:20px;top:20px;width:60px;height:60px;background:linear-gradient(45deg,#f06,#48f);animation:turn 1s linear infinite}
+    @keyframes turn{to{transform:rotate(360deg)}}
+    #hover{position:absolute;left:20px;top:20px;width:200px;height:40px;background:#dde}#hover:hover{background:#365ff4}
+    #text{position:absolute;left:20px;top:100px;margin:0;font:20px/30px monospace;white-space:nowrap}
+    #rows{position:absolute;top:160px;left:0;right:0}`;
+  return http.createServer((request, response) => {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    const animated = request.url.startsWith('/animated');
+    response.end(`<!doctype html><html lang="es"><head><title>${animated ? 'Animada' : 'Quieta'}</title><style>${style}</style></head><body>
+      ${animated ? '<div id="spin"></div>' : ''}
+      <div id="hover" onmouseenter="document.title='Encima'" onmouseleave="document.title='Fuera'"></div>
+      <button id="paint" style="position:absolute;left:300px;top:20px" onclick="document.body.style.background='#fde'">Pintar</button>
+      <p id="text">Texto para arrastrar</p><div id="rows">${rows}</div></body></html>`);
+  });
+}
+
+for (const scale of [1, 2]) {
+  test(`live view at scale ${scale}: pushed frames at device pixels, lossless when still, silent when hidden, pointer input`, { timeout: 90_000 }, async t => {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'openide-browser-live-'));
+    const fixture = liveFixture();
+    fixture.listen(0, '127.0.0.1');
+    await once(fixture, 'listening');
+    const origin = `http://127.0.0.1:${fixture.address().port}`;
+    const bridge = client('apps/agents-window/src/browser_bridge.mjs', environment(temporary), temporary);
+    t.after(async () => {
+      await bridge.stop();
+      fixture.closeAllConnections();
+      await new Promise(resolve => fixture.close(resolve));
+      await fs.rm(temporary, { recursive: true, force: true });
+    });
+    const ok = async command => {
+      const response = await bridge.command(command);
+      assert.equal(response.ok, true, response.error);
+      return response.snapshot;
+    };
+    const frames = () => bridge.events.filter(event => event.event === 'frame');
+    const until = async (predicate, label, timeout = 5000) => {
+      const deadline = performance.now() + timeout;
+      for (;;) {
+        const found = predicate();
+        if (found) return found;
+        assert.ok(performance.now() < deadline, `timed out waiting for ${label}`);
+        await pause(5);
+      }
+    };
+    const framesAfter = (mark, format) => frames().filter(frame => frame.seq > mark && (!format || frame.format === format));
+    const last = () => frames().at(-1)?.seq ?? 0;
+    let viewport = [640, 480];
+    const expectSize = frame => assert.deepEqual(frameSize(frame), viewport.map(side => side * scale), `frame ${frame.seq} (${frame.format})`);
+
+    const initial = await ok({ type: 'start', module_dir: moduleDir, executable_path: executable, width: 640, height: 480, scale });
+    screenshot(initial);
+    await ok({ type: 'navigate', url: `${origin}/animated` });
+    await pause(300);
+    assert.equal(frames().length, 0, 'nothing is pushed before the surface is visible');
+
+    // Visible and animating: frames arrive on their own, at device pixels.
+    let state = await ok({ type: 'stream', enabled: true });
+    assert.equal(state.screenshot, undefined, 'the view does not poll PNG captures');
+    await until(() => frames().length >= 20, 'frames of an animating page');
+    for (const frame of frames()) {
+      assert.equal(frame.format, 'jpeg', 'an animating page never waits for a lossless frame');
+      assert.equal(frame.scale, scale);
+      expectSize(frame);
+    }
+    assert.deepEqual(frames().map(frame => frame.seq), frames().map((_, index) => index + 1), 'frames arrive in order');
+
+    // Replies are not starved by the stream.
+    const replies = [];
+    for (let index = 0; index < 10; index++) {
+      const sent = performance.now();
+      await ok({ type: 'state' });
+      replies.push(performance.now() - sent);
+    }
+    assert.ok(Math.max(...replies) < 500, `a reply waited ${Math.max(...replies)} ms behind frames`);
+
+    // The agent's capture stays a 1x PNG and never leaks its re-render into the view.
+    let mark = last();
+    const agent = await ok({ type: 'snapshot' });
+    screenshot(agent);
+    assert.match(agent.aria_snapshot, /Texto para arrastrar/);
+    await pause(200);
+    framesAfter(mark).forEach(expectSize);
+
+    // A reader that stops reading makes Chromium skip frames, not queue them:
+    // what waits is what the pipe holds, however long the reader is away.
+    const perSecond = frames().length / ((frames().at(-1).at - frames()[0].at) / 1000);
+    mark = last();
+    bridge.stdout.pause();
+    await pause(1500);
+    const resumed = performance.now();
+    bridge.stdout.resume();
+    await until(() => frames().some(frame => frame.at > resumed + 150), 'frames after the reader resumed');
+    const backlog = frames().filter(frame => frame.seq > mark && frame.at <= resumed + 40);
+    const waiting = backlog.reduce((bytes, frame) => bytes + frame.data.length, 0);
+    // The pipe's own buffers, and the frames Chromium had in flight.
+    const typical = median(frames().map(frame => frame.data.length));
+    assert.ok(waiting <= 600 * 1024 + 3 * typical, `${waiting} bytes of frames were queued behind a paused reader`);
+    assert.ok(backlog.length <= perSecond * 1.5 / 2, `${backlog.length} frames waited for a reader away 1.5 s at ${perSecond.toFixed(0)} frames/s`);
+
+    // Hidden: the screencast stops.
+    await ok({ type: 'stream', enabled: false });
+    mark = last();
+    await pause(500);
+    assert.equal(framesAfter(mark).length, 0, 'no frame is pushed while hidden');
+
+    // Still: one lossless frame at device scale follows, and it is not a loop.
+    await ok({ type: 'navigate', url: `${origin}/still` });
+    await pause(400);
+    mark = last();
+    await ok({ type: 'stream', enabled: true });
+    const lossless = await until(() => framesAfter(mark, 'png')[0], 'a lossless frame once the page is still');
+    expectSize(lossless);
+    await pause(1500);
+    assert.equal(framesAfter(lossless.seq).length, 0, 'a still page pushes nothing after its lossless frame');
+    assert.equal(framesAfter(mark, 'png').length, 1);
+    if (process.env.OPENIDE_BROWSER_E2E_ARTIFACTS) {
+      await fs.mkdir(process.env.OPENIDE_BROWSER_E2E_ARTIFACTS, { recursive: true });
+      await fs.writeFile(path.join(process.env.OPENIDE_BROWSER_E2E_ARTIFACTS, `live-${scale}x.png`), Buffer.from(lossless.data, 'base64'));
+    }
+
+    // The agent's 1x capture draws the page at another scale for a moment.
+    // The view never shows that, and it does show what the agent changed.
+    mark = last();
+    for (let index = 0; index < 3; index++) screenshot(await ok({ type: 'snapshot' }));
+    await pause(600);
+    assert.deepEqual(framesAfter(mark).map(frame => frame.format), [], 'captures of an unchanged page push nothing to the view');
+    screenshot(await ok({ type: 'click_locator', selector: '#paint' }));
+    const painted = await until(() => framesAfter(mark, 'png')[0], 'a lossless frame of what the agent changed');
+    expectSize(painted);
+    assert.notEqual(painted.data, lossless.data);
+    await pause(600);
+    assert.equal(framesAfter(painted.seq).length, 0);
+
+    // Hover: a move alone changes the page, and the view shows it.
+    mark = last();
+    assert.equal((await bridge.command({ type: 'pointer_move', x: 60, y: 40 })).snapshot, undefined, 'a move answers without page state');
+    const hovered = await until(() => framesAfter(mark, 'jpeg')[0], 'a frame of the hover state');
+    expectSize(hovered);
+    assert.equal((await ok({ type: 'state' })).title, 'Encima');
+    await until(() => framesAfter(hovered.seq, 'png')[0], 'the lossless frame of the hover state');
+    await ok({ type: 'pointer_move', x: 400, y: 400 }).catch(() => {});
+    assert.equal((await ok({ type: 'state' })).title, 'Fuera');
+
+    // Press, drag and release select text like a real pointer.
+    await bridge.command({ type: 'pointer_down', x: 21, y: 115 });
+    for (const x of [60, 120, 200]) await bridge.command({ type: 'pointer_move', x, y: 115 });
+    state = await ok({ type: 'pointer_up', x: 258, y: 115 });
+    assert.equal(state.screenshot, undefined, 'input from the window does not wait for a capture');
+    assert.equal((await ok({ type: 'copy_selection' })).clipboard.text, 'Texto para arrastrar');
+
+    // A resize keeps the CSS viewport logical and the frames at its device size.
+    mark = last();
+    state = await ok({ type: 'resize', width: 800, height: 600, include_aria: false, include_image: false });
+    assert.deepEqual([state.viewport_width, state.viewport_height, state.screenshot], [800, 600, undefined]);
+    viewport = [800, 600];
+    // Chromium may still push a frame of the surface on its way to the new
+    // size. The view ends on the page at that size, lossless.
+    const resized = await until(() => framesAfter(mark, 'png').find(frame => frameSize(frame).join() === `${800 * scale},${600 * scale}`), 'the lossless frame at the new size');
+    await pause(400);
+    assert.equal(frames().at(-1).seq, resized.seq, 'nothing follows the resized page once it is still');
+
+    assert.equal(bridge.events.filter(event => event.event !== 'frame').length, 0, 'the stream was never lost');
+    assert.equal((await bridge.command({ type: 'close' })).ok, true);
+    assert.equal((await bridge.exited).code, 0);
+    t.diagnostic(`scale ${scale}: ${perSecond.toFixed(1)} frames/s animating at ${640 * scale} × ${480 * scale}; a reader away 1.5 s found ${backlog.length} frames (${Math.round(waiting / 1024)} KiB) waiting`);
+    t.diagnostic(`scale ${scale}: ${frames().length} frames; reply during stream median ${median(replies).toFixed(1)} ms, max ${Math.max(...replies).toFixed(1)} ms; lossless ${Math.round(lossless.data.length / 1024)} KiB base64`);
+  });
+}
+
+test('live view measurements at scale 2 with a 1280 × 800 viewport', { timeout: 90_000 }, async t => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'openide-browser-bench-'));
+  const fixture = liveFixture();
+  fixture.listen(0, '127.0.0.1');
+  await once(fixture, 'listening');
+  const origin = `http://127.0.0.1:${fixture.address().port}`;
+  const bridge = client('apps/agents-window/src/browser_bridge.mjs', environment(temporary), temporary);
+  t.after(async () => {
+    await bridge.stop();
+    fixture.closeAllConnections();
+    await new Promise(resolve => fixture.close(resolve));
+    await fs.rm(temporary, { recursive: true, force: true });
+  });
+  const ok = async command => {
+    const response = await bridge.command(command);
+    assert.equal(response.ok, true, response.error);
+    return response.snapshot;
+  };
+  const frames = () => bridge.events.filter(event => event.event === 'frame');
+  await ok({ type: 'start', module_dir: moduleDir, executable_path: executable, width: 1280, height: 800, scale: 2 });
+  await ok({ type: 'navigate', url: `${origin}/animated` });
+  await ok({ type: 'stream', enabled: true });
+  await pause(500);
+  const first = frames().length;
+  const started = performance.now();
+  await pause(3000);
+  const animated = frames().slice(first);
+  const rate = animated.length / ((performance.now() - started) / 1000);
+  assert.deepEqual(frameSize(animated.at(-1)), [2560, 1600]);
+  assert.ok(rate >= 10, `only ${rate.toFixed(1)} frames/s on an animating page`);
+  const jpeg = median(animated.map(frame => frame.data.length));
+
+  // Wheel to first frame, on a page that is otherwise still.
+  await ok({ type: 'navigate', url: `${origin}/still` });
+  const latencies = [];
+  const replies = [];
+  for (let index = 0; index < 20; index++) {
+    await pause(450);
+    const before = frames().at(-1)?.seq ?? 0;
+    const sent = performance.now();
+    const reply = bridge.command({ type: 'scroll', dx: 0, dy: 120, include_aria: false, include_image: false })
+      .then(response => { replies.push(performance.now() - sent); return response; });
+    let frame;
+    while (!(frame = frames().find(candidate => candidate.seq > before)) && performance.now() - sent < 2000) await pause(1);
+    assert.ok(frame, 'a wheel step is followed by a frame');
+    latencies.push(frame.at - sent);
+    const response = await reply;
+    assert.equal(response.ok, true);
+    assert.equal(response.snapshot, undefined, 'the window\'s wheel does not wait for page state');
+  }
+  // The pointer over a still page: each move is answered in about a frame.
+  const moves = [];
+  for (let index = 0; index < 30; index++) {
+    const sent = performance.now();
+    await bridge.command({ type: 'pointer_move', x: 100 + index * 5, y: 300 });
+    moves.push(performance.now() - sent);
+  }
+  await pause(500);
+  const lossless = frames().filter(frame => frame.format === 'png').at(-1);
+  assert.deepEqual(frameSize(lossless), [2560, 1600]);
+  const settled = lossless.at - frames().filter(frame => frame.format === 'jpeg' && frame.seq < lossless.seq).at(-1).at;
+  if (process.env.OPENIDE_BROWSER_E2E_ARTIFACTS) {
+    await fs.mkdir(process.env.OPENIDE_BROWSER_E2E_ARTIFACTS, { recursive: true });
+    for (const frame of [animated.at(-1), lossless]) {
+      await fs.writeFile(path.join(process.env.OPENIDE_BROWSER_E2E_ARTIFACTS, `frame-2560x1600.${frame.format === 'png' ? 'png' : 'jpg'}`), Buffer.from(frame.data, 'base64'));
+    }
+  }
+  assert.equal((await bridge.command({ type: 'close' })).ok, true);
+  await bridge.exited;
+  t.diagnostic(`2560 × 1600 frames: ${rate.toFixed(1)} frames/s animating, JPEG ${Math.round(jpeg / 1024)} KiB base64, lossless ${Math.round(lossless.data.length / 1024)} KiB base64, ${settled.toFixed(0)} ms after the last frame`);
+  t.diagnostic(`wheel to first frame: median ${median(latencies).toFixed(1)} ms, p90 ${percentile(latencies, 0.9).toFixed(1)} ms, max ${Math.max(...latencies).toFixed(1)} ms; wheel reply median ${median(replies).toFixed(1)} ms; pointer move round trip median ${median(moves).toFixed(1)} ms`);
 });
 
 test('managed temporary directory and failed dependency retry use fresh browser resources', { timeout: 60_000 }, async t => {

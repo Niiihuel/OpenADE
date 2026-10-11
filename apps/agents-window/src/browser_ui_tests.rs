@@ -1,8 +1,5 @@
 use super::*;
-use openide_ui::{
-    DrawCommand, Frame, HitKind, Point, RasterImageFormat, Size, UiAction, UiEvent, UiTree,
-};
-use std::sync::Arc;
+use openide_ui::{DrawCommand, Frame, HitKind, Point, Size, UiAction, UiEvent, UiTree};
 
 fn state() -> ViewState {
     let mut state = crate::view::tests::empty_state();
@@ -12,16 +9,8 @@ fn state() -> ViewState {
     state.browser.title = "localhost".into();
     state.browser.can_go_back = true;
     state.browser.can_go_forward = true;
-    state.browser.image = Some(
-        RasterImage::new(
-            "a".repeat(64),
-            RasterImageFormat::Png,
-            3,
-            Arc::from("AAAA"),
-            "Fixture page",
-        )
-        .unwrap(),
-    );
+    state.browser.tab_id = Some(7);
+    state.browser.live = true;
     state
 }
 
@@ -29,7 +18,7 @@ fn has_image(frame: &Frame) -> bool {
     frame
         .commands
         .iter()
-        .any(|command| matches!(command, DrawCommand::RasterImage { .. }))
+        .any(|command| matches!(command, DrawCommand::Surface { id, .. } if *id == surface_id(7)))
 }
 
 fn texts(frame: &Frame) -> Vec<&str> {
@@ -218,7 +207,7 @@ fn viewport_uses_remaining_bounds_and_host_page_scroll_cannot_scroll_away_toolba
         .commands
         .iter()
         .find_map(|command| match command {
-            DrawCommand::RasterImage { rect, .. } => Some(*rect),
+            DrawCommand::Surface { rect, .. } => Some(*rect),
             _ => None,
         })
         .unwrap();

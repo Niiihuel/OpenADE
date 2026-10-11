@@ -1415,6 +1415,16 @@ pub struct AgentsWindow {
     browser_restart_urls: HashMap<u64, String>,
     browser_install_response: Option<Receiver<Result<(), String>>>,
     browser_installing: bool,
+    // Tabs whose live surface holds a frame of their context, and whether it
+    // came while the tab was watched: a frame from before it was hidden still
+    // shows when it comes back, but takes no input.
+    browser_live: HashMap<u64, bool>,
+    // The window's scale, which a browser context is launched with; zero
+    // until the first frame has told it.
+    browser_scale: f32,
+    // A press a tab's page received and whose release it is still owed, with
+    // the page's pixel the pointer was last on.
+    browser_pointer_down: Option<(u64, f64, f64)>,
     session_changes_worker: Option<crate::session_changes::SessionChangesWorker>,
     environment_dirty: bool,
     environment_last_refresh: Instant,
@@ -4705,13 +4715,21 @@ impl AgentsWindow {
         valid_owner.then(|| runtime.mcp_client())
     }
 
-    fn sync_browser_tab(&mut self) {
+    /// True when what the browser tab shows changed.
+    fn sync_browser_tab(&mut self) -> bool {
         let active = self.active_browser_id();
         let visible = self.resource_pane_visible()
             && !self.view.show_settings
             && self.view.main_page == MainPage::Workspace;
         for (id, runtime) in &self.browsers {
-            runtime.set_visible(visible && Some(*id) == active);
+            let shown = visible && Some(*id) == active;
+            // The stream stops with the tab. What its page looked like then
+            // is not known to be what it looks like when it is shown again.
+            if runtime.set_visible(shown) && !shown {
+                if let Some(watched) = self.browser_live.get_mut(id) {
+                    *watched = false;
+                }
+            }
         }
         if self.view.browser.tab_id != active {
             let draft = active
@@ -4743,26 +4761,29 @@ impl AgentsWindow {
             self.tree.set_input_value("browser_url", draft);
         }
         let Some(id) = active else {
-            return;
+            return false;
         };
         if let Some(runtime) = self.browsers.get(&id) {
             let snapshot = runtime.snapshot();
-            self.apply_browser_snapshot(id, snapshot);
-            return;
+            return self.apply_browser_snapshot(id, snapshot);
         }
-        if self.browser_starts.contains_key(&id) || self.view.browser.error.is_some() || !visible {
-            return;
+        if self.browser_starts.contains_key(&id)
+            || self.view.browser.error.is_some()
+            || !visible
+            || self.browser_scale == 0.0
+        {
+            return false;
         }
         if self.browsers.len() + self.browser_starts.len() >= 4 {
             self.view.browser.loading = false;
             self.view.browser.error = Some("Hay cuatro navegadores abiertos. Cerrá una pestaña de navegador para iniciar otra.".into());
-            return;
+            return false;
         }
         let scope = self.dock_scope();
         let session_id = match scope.owner {
             DockOwner::Task(session) => session,
             DockOwner::Draft => format!("draft:{id}"),
-            DockOwner::Workspace => return,
+            DockOwner::Workspace => return false,
         };
         let launch_scope = crate::browser_runtime::BrowserScope {
             workspace: PathBuf::from(scope.workspace_id),
@@ -4773,6 +4794,7 @@ impl AgentsWindow {
         let launch_options = crate::browser_runtime::BrowserLaunchOptions {
             viewport_width,
             viewport_height,
+            device_scale: self.browser_scale,
             ..Default::default()
         };
         let (sender, receiver) = mpsc::sync_channel(1);
@@ -4799,6 +4821,7 @@ impl AgentsWindow {
                 self.view.browser.error = Some(format!("No se pudo iniciar el navegador: {error}"));
             }
         }
+        false
     }
 
     fn apply_browser_snapshot(
@@ -4810,20 +4833,31 @@ impl AgentsWindow {
             return false;
         }
         let pending = self.browser_requests.get(&id);
-        let loading = snapshot.loading || pending.is_some_and(|requests| !requests.is_empty());
+        // Pointer moves and wheel input answer with frames: they are not work
+        // the footer reports.
+        let loading = snapshot.loading
+            || pending.is_some_and(|requests| requests.iter().any(|request| !request.quiet()));
         let navigating = snapshot.navigating
             || pending.is_some_and(|requests| {
                 requests
                     .iter()
                     .any(crate::browser_runtime::BrowserRequest::document_navigation)
             });
+        // A surface without a frame of this context is not a page to click.
+        let live = snapshot.started && self.browser_live.contains_key(&id);
         if self.view.browser.generation == snapshot.generation {
-            let changed =
-                self.view.browser.loading != loading || self.view.browser.navigating != navigating;
+            let changed = self.view.browser.loading != loading
+                || self.view.browser.navigating != navigating
+                || self.view.browser.live != live;
             self.view.browser.loading = loading;
             self.view.browser.navigating = navigating;
+            self.view.browser.live = live;
             return changed;
         }
+        // Replies arrive at the pace of the pointer. Only one that changed
+        // what is shown rebuilds the window.
+        let mut previous = self.view.browser.clone();
+        previous.generation = snapshot.generation;
         let url_changed = self.view.browser.url != snapshot.url;
         if url_changed
             && snapshot.error.is_none()
@@ -4834,27 +4868,7 @@ impl AgentsWindow {
             self.view.browser.url_draft = snapshot.url.clone();
             self.tree.set_input_value("browser_url", &snapshot.url);
         }
-        let image = snapshot.screenshot.as_ref().and_then(|image| {
-            if self
-                .view
-                .browser
-                .image
-                .as_ref()
-                .is_some_and(|current| current.sha256() == image.sha256)
-            {
-                return self.view.browser.image.clone();
-            }
-            openide_ui::RasterImage::new(
-                image.sha256.clone(),
-                openide_ui::RasterImageFormat::Png,
-                u32::try_from(image.size_bytes).ok()?,
-                image.base64.clone(),
-                "Vista del navegador del proyecto",
-            )
-            .map(openide_ui::RasterImage::full_resolution)
-        });
-        // None removes a failed/stale viewport instead of keeping it clickable.
-        self.view.browser.image = image;
+        self.view.browser.live = live;
         self.view.browser.generation = snapshot.generation;
         self.view.browser.url = snapshot.url;
         self.view.browser.title = snapshot.title;
@@ -4868,14 +4882,27 @@ impl AgentsWindow {
         self.view.browser.can_go_back = snapshot.can_go_back;
         self.view.browser.can_go_forward = snapshot.can_go_forward;
         self.view.browser.installing = self.browser_installing;
-        true
+        previous != self.view.browser
     }
 
     fn update_browser(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
+        self.browser_scale = crate::browser_runtime::device_scale(ctx.pixels_per_point());
+        // The button came up while the window showed something else.
+        if self.browser_pointer_down.is_some() && !ctx.input(|input| input.pointer.primary_down()) {
+            self.release_browser_pointer(None);
+        }
         self.browser_inputs
             .retain(|id, _| self.dock.contains_tab(*id));
         self.browsers.retain(|id, _| self.dock.contains_tab(*id));
+        // A closed or restarted context takes its last frame with it.
+        self.browser_live.retain(|id, _| {
+            let kept = self.browsers.contains_key(id);
+            if !kept {
+                limn_egui::forget_surface(&crate::browser_ui::surface_id(*id));
+            }
+            kept
+        });
         self.browser_starts
             .retain(|id, _| self.dock.contains_tab(*id));
         self.browser_requests
@@ -4900,6 +4927,8 @@ impl AgentsWindow {
             }
             match result {
                 Ok(runtime) => {
+                    let repaint = ctx.clone();
+                    runtime.on_frame(move || repaint.request_repaint());
                     self.browsers.insert(id, runtime);
                 }
                 Err(error) if self.view.browser.tab_id == Some(id) => {
@@ -4909,6 +4938,15 @@ impl AgentsWindow {
                 Err(_) => {}
             }
             changed = true;
+        }
+        // Frames were decoded on the runtime's own thread. Here they are only
+        // handed to the texture their surface already paints.
+        for (id, runtime) in &self.browsers {
+            if let Some(frame) = runtime.take_frame() {
+                if limn_egui::present_surface(ctx, &crate::browser_ui::surface_id(*id), frame) {
+                    self.browser_live.insert(*id, runtime.visible());
+                }
+            }
         }
         // Startup runs asynchronously. Reopen the address only after the new
         // context is ready, including if another browser tab became active.
@@ -5019,15 +5057,13 @@ impl AgentsWindow {
             }
         }
         let previous_tab = self.view.browser.tab_id;
-        let previous_generation = self.view.browser.generation;
         let previous_loading = self.view.browser.loading;
         let previous_navigating = self.view.browser.navigating;
         let previous_queued_inputs = self.view.browser.queued_inputs;
-        self.sync_browser_tab();
+        changed |= self.sync_browser_tab();
         self.update_browser_queue_count();
         changed |= previous_tab != self.view.browser.tab_id
             || previous_queued_inputs != self.view.browser.queued_inputs
-            || previous_generation != self.view.browser.generation
             || previous_loading != self.view.browser.loading
             || previous_navigating != self.view.browser.navigating;
         if self.resource_pane_visible()
@@ -5195,36 +5231,71 @@ impl AgentsWindow {
         }
     }
 
+    /// The page's box in the window: its frames start at the surface's
+    /// top-left corner and one point is one CSS pixel, whatever the pane
+    /// measures while Chromium catches up with a resize.
     fn browser_viewport_rect(&self) -> Option<openide_ui::Rect> {
-        let current = self.view.browser.image.as_ref()?;
+        let surface = crate::browser_ui::surface_id(self.view.browser.tab_id?);
         self.tree
             .frame()
             .commands
             .iter()
             .rev()
             .find_map(|command| match command {
-                openide_ui::DrawCommand::RasterImage { rect, image, .. }
-                    if image.sha256() == current.sha256() =>
-                {
-                    let width = self.view.browser.viewport_width.max(1) as f32;
-                    let height = self.view.browser.viewport_height.max(1) as f32;
-                    let scale = (rect.width / width).min(rect.height / height).min(1.0);
-                    let fitted_width = width * scale;
-                    let fitted_height = height * scale;
+                openide_ui::DrawCommand::Surface { rect, id, .. } if *id == surface => {
                     Some(openide_ui::Rect::new(
-                        rect.x + (rect.width - fitted_width) * 0.5,
-                        rect.y + (rect.height - fitted_height) * 0.5,
-                        fitted_width,
-                        fitted_height,
+                        rect.x,
+                        rect.y,
+                        self.view.browser.viewport_width as f32,
+                        self.view.browser.viewport_height as f32,
                     ))
                 }
                 _ => None,
             })
     }
 
+    /// The CSS pixel of the page under a window position. A drag that left
+    /// the page stays on its nearest edge when `clamped`.
+    fn browser_page_point(&self, position: openide_ui::Point, clamped: bool) -> Option<(f64, f64)> {
+        let rect = self.browser_viewport_rect()?;
+        if rect.width < 1.0 || rect.height < 1.0 {
+            return None;
+        }
+        let x = f64::from(position.x - rect.x);
+        let y = f64::from(position.y - rect.y);
+        let (width, height) = (f64::from(rect.width), f64::from(rect.height));
+        if clamped {
+            return Some((x.clamp(0.0, width - 1.0), y.clamp(0.0, height - 1.0)));
+        }
+        (x >= 0.0 && y >= 0.0 && x < width && y < height).then_some((x, y))
+    }
+
+    /// Ends a press a page received: at `position` while that tab's page is
+    /// still under it, and otherwise where the pointer last was on the page.
+    fn release_browser_pointer(&mut self, position: Option<openide_ui::Point>) -> bool {
+        let Some((id, x, y)) = self.browser_pointer_down.take() else {
+            return false;
+        };
+        let (x, y) = position
+            .filter(|_| self.view.browser.tab_id == Some(id))
+            .and_then(|position| self.browser_page_point(position, true))
+            .unwrap_or((x, y));
+        if self.browsers.contains_key(&id) {
+            self.enqueue_browser_input(id, crate::browser_runtime::BrowserCommand::PointerUp { x, y });
+        }
+        true
+    }
+
     fn handle_browser_event(&mut self, event: &UiEvent) -> bool {
         use crate::browser_runtime::BrowserCommand;
         use openide_ui::Key;
+        // The release is owed to the page whatever the window shows by now:
+        // a navigation, a menu, another tab.
+        if let UiEvent::PointerUp(position) = event {
+            if self.release_browser_pointer(Some(*position)) {
+                return true;
+            }
+        }
         if self.active_browser_id().is_none()
             || !self.resource_pane_visible()
             || self.view.show_settings
@@ -5232,8 +5303,9 @@ impl AgentsWindow {
             || self.view.main_page != MainPage::Workspace
             || self.tree.has_open_popover()
             || !self.tree.frame().regions.iter().any(|region| region.id == "browser_viewport")
-            || self.view.browser.image.is_none()
+            || !self.view.browser.live
             || !self.view.browser.started
+            || self.active_browser_id().and_then(|id| self.browser_live.get(&id)) != Some(&true)
         {
             return false;
         }
@@ -5253,43 +5325,22 @@ impl AgentsWindow {
                 if navigating {
                     return true;
                 }
-                let painted = self
-                    .view
-                    .browser
-                    .image
-                    .as_ref()
-                    .map(openide_ui::RasterImage::sha256);
-                if backend
-                    .as_ref()
-                    .and_then(|snapshot| snapshot.screenshot.as_ref())
-                    .map(|image| image.sha256.as_str())
-                    != painted
-                {
-                    return true;
-                }
                 // Hit regions are clipped by the containing ScrollArea. The
-                // painted raster's original bounds retain the page origin.
-                let Some(rect) = self.browser_viewport_rect() else {
-                    return false;
-                };
-                if rect.width <= 0.0 || rect.height <= 0.0 {
+                // surface's own bounds retain the page origin.
+                if self.browser_viewport_rect().is_none() {
                     return false;
                 }
-                let x = f64::from((position.x - rect.x) / rect.width)
-                    * f64::from(self.view.browser.viewport_width);
-                let y = f64::from((position.y - rect.y) / rect.height)
-                    * f64::from(self.view.browser.viewport_height);
-                if !x.is_finite()
-                    || !y.is_finite()
-                    || x < 0.0
-                    || y < 0.0
-                    || x >= f64::from(self.view.browser.viewport_width)
-                    || y >= f64::from(self.view.browser.viewport_height)
-                {
+                let Some((x, y)) = self.browser_page_point(*position, false) else {
                     return true;
-                }
+                };
                 self.tree.focus("browser_viewport");
-                return self.try_submit_browser_command(BrowserCommand::Click { x, y });
+                // The press and its release are separate, so the page sees a
+                // drag between them: a text selection, a slider.
+                if !self.try_submit_browser_command(BrowserCommand::PointerDown { x, y }) {
+                    return false;
+                }
+                self.browser_pointer_down = self.view.browser.tab_id.map(|id| (id, x, y));
+                return true;
             }
         }
         if let UiEvent::PointerUp(position) = event {
@@ -5297,20 +5348,34 @@ impl AgentsWindow {
                 return true;
             }
         }
+        if let UiEvent::PointerMove(position) = event {
+            // Hover states and drags follow the pointer. The tree still gets
+            // the move: it owns hover for everything around the page.
+            let over = self.tree.frame().hit_test(*position) == Some("browser_viewport");
+            let pressed = self
+                .browser_pointer_down
+                .is_some_and(|(id, ..)| self.view.browser.tab_id == Some(id));
+            if !navigating && (over || pressed) {
+                if let Some((x, y)) = self.browser_page_point(*position, pressed) {
+                    if pressed {
+                        self.browser_pointer_down = self.view.browser.tab_id.map(|id| (id, x, y));
+                    }
+                    self.submit_browser_command(BrowserCommand::PointerMove { x, y });
+                }
+            }
+            return false;
+        }
         if let Some((position, delta_x, delta_y)) = browser_scroll_delta(event) {
             if self.tree.frame().hit_test(position) == Some("browser_viewport") {
                 if navigating {
                     return true;
                 }
-                let Some(painted) = self.browser_viewport_rect().filter(|rect| rect.contains(position)) else { return true; };
-                let scale = Some(painted)
-                    .map(|rect| {
-                        f64::from(self.view.browser.viewport_width) / f64::from(rect.width.max(1.0))
-                    })
-                    .unwrap_or(1.0);
+                if self.browser_page_point(position, false).is_none() {
+                    return true;
+                }
                 return self.try_submit_browser_command(BrowserCommand::Scroll {
-                    dx: (-f64::from(delta_x) * scale).clamp(-100_000.0, 100_000.0),
-                    dy: (-f64::from(delta_y) * scale).clamp(-100_000.0, 100_000.0),
+                    dx: (-f64::from(delta_x)).clamp(-100_000.0, 100_000.0),
+                    dy: (-f64::from(delta_y)).clamp(-100_000.0, 100_000.0),
                 });
             }
         }
@@ -6827,6 +6892,9 @@ impl AgentsWindow {
             browser_restart_urls: HashMap::new(),
             browser_install_response: None,
             browser_installing: false,
+            browser_live: HashMap::new(),
+            browser_scale: 0.0,
+            browser_pointer_down: None,
             session_changes_worker: crate::session_changes::SessionChangesWorker::spawn().ok(),
             environment_dirty: true,
             environment_last_refresh: Instant::now(),
@@ -16073,7 +16141,12 @@ impl AgentsWindow {
                     self.view.browser.more_open = false;
                     ctx.copy_text(if self.view.browser.url_draft.is_empty() { self.view.browser.url.clone() } else { self.view.browser.url_draft.clone() });
                 },
-                "browser_snapshot" => { self.view.browser.more_open = false; self.submit_browser_command(BrowserCommand::Snapshot); },
+                "browser_snapshot" => {
+                    self.view.browser.more_open = false;
+                    if let Some(runtime) = self.active_browser_id().and_then(|id| self.browsers.get(&id)) {
+                        runtime.restart_stream();
+                    }
+                },
                 "browser_restart" => { self.view.browser.more_open = false; self.restart_browser(); },
                 "browser_install" => self.install_browser(),
                 "browser_mcp_config" => { self.view.browser.more_open = false; self.copy_browser_mcp_config(ctx); },
@@ -20538,8 +20611,12 @@ impl eframe::App for AgentsWindow {
                     needs_relayout = true;
                     continue;
                 }
+                let browser_rejection = self.view.browser.input_rejection.is_some();
                 if !workflow_modal_open && self.handle_browser_event(&event) {
-                    needs_relayout = true;
+                    // Wheel input only moves the page, and its frames arrive
+                    // on the surface without rebuilding the window. It still
+                    // dismisses what the footer said of a rejected input.
+                    needs_relayout |= browser_scroll_delta(&event).is_none() || browser_rejection;
                     continue;
                 }
                 if !workflow_modal_open && self.handle_debug_key(&event, &ctx) { needs_relayout = true; continue; }

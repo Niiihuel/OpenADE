@@ -3,7 +3,7 @@
 use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, DropdownMenu, DropdownMenuEntry,
     DropdownMenuItem, Element,
-    FontFamily, Icon, IconButton, PopoverPlacement, RasterImage, ScrollArea, Separator, Spinner,
+    FontFamily, Icon, IconButton, PopoverPlacement, ScrollArea, Separator, Spinner,
     Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
@@ -16,14 +16,15 @@ const NAVIGATION_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 #[cfg(test)]
 const NAVIGATION_INSET: f32 = (TOOLBAR_HEIGHT - NAVIGATION_SIZE) / 2.0;
 
-#[derive(Default)]
+#[derive(Clone, Default, PartialEq)]
 pub(crate) struct BrowserUiState {
     pub tab_id: Option<u64>,
     pub generation: u64,
     pub url_draft: String,
     pub url: String,
     pub title: String,
-    pub image: Option<RasterImage>,
+    /// The tab's live surface holds a frame of this page.
+    pub live: bool,
     pub viewport_width: u32,
     pub viewport_height: u32,
     pub loading: bool,
@@ -37,6 +38,11 @@ pub(crate) struct BrowserUiState {
     pub queued_inputs: usize,
     pub input_rejection: Option<String>,
     pub more_open: bool,
+}
+
+/// The live surface a browser tab's frames are presented on.
+pub(crate) fn surface_id(tab: u64) -> String {
+    format!("browser:{tab}")
 }
 
 fn menu_action(
@@ -72,7 +78,7 @@ fn more_menu(browser: &BrowserUiState, width: f32) -> Element {
             .render(),
         vec![
             menu_action("browser_copy_url", Icon::File, "Copiar dirección", "Copia la dirección visible en la barra al portapapeles.", address),
-            menu_action("browser_snapshot", Icon::Refresh, "Actualizar vista", "Obtiene una captura nueva de la página sin recargarla.", ready),
+            menu_action("browser_snapshot", Icon::Refresh, "Actualizar vista", "Vuelve a pedir la imagen en vivo de la página, sin recargarla.", ready),
             DropdownMenuEntry::Separator,
             menu_action("browser_mcp_config", Icon::Code, "Copiar conexión MCP", "Copia la configuración para conectar herramientas a esta página. La conexión existe mientras esta pestaña siga abierta.", ready),
             menu_action("browser_restart", Icon::Refresh, "Reiniciar navegador", "Abre un contexto nuevo y vuelve a la dirección actual. El estado de la página anterior se descarta.", true),
@@ -162,13 +168,13 @@ fn surface(browser: &BrowserUiState) -> Surface {
             || error.contains("page.goto:")
             || error.contains("browserType.launch:")
     });
-    if chrome_error || load_error || (browser.error.is_some() && browser.image.is_none()) {
+    if chrome_error || load_error || (browser.error.is_some() && !browser.live) {
         Surface::Error
-    } else if browser.navigating || (browser.loading && browser.image.is_none()) {
+    } else if browser.navigating || (browser.loading && !browser.live) {
         Surface::Loading
     } else if browser.url.is_empty() || browser.url == "about:blank" {
         Surface::Empty
-    } else if browser.image.is_some() {
+    } else if browser.live {
         Surface::Page
     } else if browser.started {
         Surface::Loading
@@ -434,11 +440,15 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
     let width = width.max(160.0);
     let mode = surface(browser);
     let content = if mode == Surface::Page {
-        // The host resizes Chromium to this retained region. Painting and
-        // coordinate conversion share these bounds, with no second scrollbar.
+        // The host resizes Chromium to this retained region. Its frames are
+        // presented on the surface as they arrive, one pixel per physical
+        // pixel from this corner, with no second scrollbar.
         Element::clickable(
             "browser_viewport",
-            Element::raster_image(browser.image.as_ref().unwrap().clone()),
+            Element::surface(
+                surface_id(browser.tab_id.unwrap_or_default()),
+                "Vista del navegador del proyecto",
+            ),
         )
         .focus_ring(false)
         .clip_children()
