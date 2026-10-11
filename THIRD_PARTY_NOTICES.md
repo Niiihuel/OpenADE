@@ -146,3 +146,12 @@ Hayro incluye recursos con avisos propios que también se conservan:
 
 Estos recursos llegan mediante las dependencias Cargo; `third_party/` conserva
 sus licencias y avisos, sin duplicar los archivos de fuentes ni perfiles.
+
+## Catálogo de modelos
+
+`apps/agents-window/assets/model-catalog/models-dev.json` es una copia reducida
+del catálogo público [models.dev](https://github.com/anomalyco/models.dev),
+Copyright (c) 2025 models.dev, licencia MIT. Incluye además la ventana de
+contexto que publica [Codex CLI](https://github.com/openai/codex) (Apache 2.0)
+para los modelos de un plan de ChatGPT. El detalle y la forma de regenerarla
+están en [su aviso](apps/agents-window/assets/model-catalog/NOTICE.md).
