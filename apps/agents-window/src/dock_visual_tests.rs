@@ -1442,10 +1442,11 @@ fn export_converged_controls_visual_review() {
         Some(Hover("session_group_menu:g1")),
     );
     state.session_sort_menu_open = true;
+    // Tall enough for the whole menu: a 420 px frame would scroll it.
     export(
-        sidebar_for_height(&state, 264.0, 420.0),
+        sidebar_for_height(&state, 264.0, 480.0),
         264.0,
-        420.0,
+        480.0,
         "sidebar-sort-menu-groups",
     );
     state.show_archived = true;

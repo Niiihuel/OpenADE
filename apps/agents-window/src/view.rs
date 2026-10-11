@@ -10,8 +10,8 @@ use openide_harness::{
     SubagentStatus, ToolPermissions,
 };
 use openide_ui::{
-    ActiveHover, AlertDialog, Button, ButtonSizing, ButtonVariant, Card, CardDensity, Color, Component, ControlSize, DropdownList,
-    DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownOption, Element, Empty, FontFamily,
+    ActiveHover, AlertDialog, Button, ButtonSizing, ButtonVariant, Card, CardDensity, Color, Component, ControlSize,
+    DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, Empty, FontFamily,
     Icon, IconButton as UiIconButton, Kbd, ListRow, OutputBlock, PopoverPlacement, RadiusRole, ScrollArea, Search, SegmentedControl,
     Separator, Skeleton, Tab, Text as UiText, TextRole, TextSpan, Tooltip, TooltipPlacement, TooltipSpec, TreeGuides,
     TreeRow,
@@ -1565,61 +1565,72 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
             .suppressed(state.session_sort_menu_open),
     )
     .render();
-    let sort_control = DropdownList::new(
+    let sort_item = |id: &str, title: &str, icon: Icon, selected: bool| {
+        DropdownMenuEntry::from(DropdownMenuItem::new(id, title).icon(icon).selected(selected))
+    };
+    // The archive is one flat list: organizing it would only change the hidden main list.
+    let mut sort_entries = if state.show_archived {
+        Vec::new()
+    } else {
+        vec![
+            DropdownMenuEntry::Heading("Organizar".into()),
+            sort_item(
+                "session_organize:group",
+                "Por grupo",
+                Icon::Hash,
+                state.session_organization == SessionOrganization::Group,
+            ),
+            sort_item(
+                "session_organize:project",
+                "Por proyecto",
+                Icon::Folder,
+                state.session_organization == SessionOrganization::Project,
+            ),
+            sort_item(
+                "session_organize:recent",
+                "Cronológica",
+                Icon::Clock,
+                state.session_organization == SessionOrganization::Recent,
+            ),
+            DropdownMenuEntry::Separator,
+        ]
+    };
+    sort_entries.extend([
+        DropdownMenuEntry::Heading("Ordenar".into()),
+        sort_item(
+            "session_sort:updated",
+            "Actualizadas",
+            Icon::Sort,
+            state.session_sort == SessionSort::Updated,
+        ),
+        sort_item(
+            "session_sort:created",
+            "Creadas",
+            Icon::History,
+            state.session_sort == SessionSort::Created,
+        ),
+    ]);
+    if !state.show_archived
+        && state.session_organization == SessionOrganization::Group
+        && !state.session_groups.groups.is_empty()
+    {
+        sort_entries.push(DropdownMenuEntry::Separator);
+        sort_entries.push(if all_groups_collapsed {
+            sort_item("session_expand_all", "Expandir grupos", Icon::Expand, false)
+        } else {
+            sort_item("session_expand_all", "Contraer grupos", Icon::Collapse, false)
+        });
+    }
+    let sort_control = DropdownMenu::new(
         sort_trigger,
-        {
-            // The archive is one flat list: organizing it would only change the hidden main list.
-            let mut options = if state.show_archived {
-                Vec::new()
-            } else {
-                vec![
-                    DropdownOption::new("session_organize:group", "Por grupo")
-                        .icon(Icon::Hash)
-                        .selected(state.session_organization == SessionOrganization::Group),
-                    DropdownOption::new("session_organize:project", "Por proyecto")
-                        .icon(Icon::Folder)
-                        .selected(state.session_organization == SessionOrganization::Project),
-                    DropdownOption::new("session_organize:recent", "Cronológica")
-                        .icon(Icon::Clock)
-                        .selected(state.session_organization == SessionOrganization::Recent),
-                ]
-            };
-            options.extend([
-                DropdownOption::new("session_sort:updated", "Actualizadas")
-                    .icon(Icon::Sort)
-                    .selected(state.session_sort == SessionSort::Updated),
-                DropdownOption::new("session_sort:created", "Creadas")
-                    .icon(Icon::History)
-                    .selected(state.session_sort == SessionSort::Created),
-            ]);
-            if !state.show_archived
-                && state.session_organization == SessionOrganization::Group
-                && !state.session_groups.groups.is_empty()
-            {
-                options.push(
-                    DropdownOption::new(
-                        "session_expand_all",
-                        if all_groups_collapsed {
-                            "Expandir grupos"
-                        } else {
-                            "Contraer grupos"
-                        },
-                    )
-                    .icon(if all_groups_collapsed {
-                        Icon::Expand
-                    } else {
-                        Icon::Collapse
-                    }),
-                );
-            }
-            options
-        },
+        sort_entries,
         state.session_sort_menu_open,
         "session_sort_dismiss",
         theme::menu_palette(),
     )
-    .width(180.0)
     .placement(PopoverPlacement::BottomEnd)
+    .context_menu_style()
+    .width(180.0)
     .render();
     let context_action = if state.session_organization == SessionOrganization::Group {
         UiIconButton::new(
@@ -7901,8 +7912,29 @@ pub(crate) mod tests {
         assert_eq!(count(&open, "session_organize:project"), 2, "{open:?}");
         assert_eq!(count(&open, "session_organize:recent"), 1, "{open:?}");
         assert_eq!(count(&open, "session_expand_all"), 1, "{open:?}");
+        // limn's contextual menu: headed sets, a check for the choice and no filled row.
+        let painted = |state: &ViewState, width: f32| {
+            let frame = UiTree::new(sidebar(state, width)).layout(Size::new(width, 640.0));
+            let rect = |id: &str| frame.regions.iter().find(|region| region.id == id).unwrap().rect;
+            let (menu, trigger) = (rect("popover_surface:session_sort_dismiss"), rect("session_sort_toggle"));
+            assert!(menu.x >= 0.0 && menu.x + menu.width <= width, "{width}: {menu:?}");
+            assert!(menu.y >= trigger.y + trigger.height, "{menu:?} covers {trigger:?}");
+            let row = rect("session_sort:updated");
+            assert!(!frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::FillRect { rect, color, .. }
+                    if *color == theme::menu_palette().selected && *rect == row)));
+            ["Organizar", "Ordenar"].map(|heading| {
+                frame.commands.iter().any(
+                    |command| matches!(command, DrawCommand::Text { text, .. } if text == heading),
+                )
+            })
+        };
+        for width in [176.0, 264.0] {
+            assert_eq!(painted(&state, width), [true, true]);
+        }
         state.show_archived = true;
         assert_eq!(ids(&state), ["session_sort:updated", "session_sort:created"]);
+        assert_eq!(painted(&state, 264.0), [false, true]);
     }
 
     #[test]
