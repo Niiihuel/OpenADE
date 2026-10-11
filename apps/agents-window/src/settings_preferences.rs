@@ -102,6 +102,15 @@ impl GithubAccountPreference {
     }
 }
 
+/// What became of a guided tour the last time it was offered or shown.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct TourRecord {
+    /// The tour's version then. A newer version is offered again.
+    pub version: u32,
+    /// Walked to its last step, rather than declined or closed on the way.
+    pub completed: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SettingsPreferences {
     pub reduced_motion: bool,
@@ -119,6 +128,8 @@ pub(crate) struct SettingsPreferences {
     /// external sources and its exact mode is bound to native resume identity.
     pub hosted_web_search_mode: Option<HostedWebSearchMode>,
     pub github_account: GithubAccountPreference,
+    /// Guided tours already offered, by tour ID.
+    pub tours: std::collections::BTreeMap<String, TourRecord>,
 }
 
 impl Default for SettingsPreferences {
@@ -138,6 +149,7 @@ impl Default for SettingsPreferences {
             last_settings_page: DEFAULT_SETTINGS_PAGE.to_owned(),
             hosted_web_search_mode: None,
             github_account: GithubAccountPreference::Automatic,
+            tours: Default::default(),
         }
     }
 }
@@ -215,6 +227,17 @@ impl SettingsPreferences {
                     .ok()
                     .filter(GithubAccountPreference::valid)
                     .unwrap_or(GithubAccountPreference::Disconnected);
+        }
+        if let Some(tours) = value.get("tours").and_then(serde_json::Value::as_object) {
+            // A record that does not parse is dropped: its tour is offered again.
+            preferences.tours = tours
+                .iter()
+                .filter(|(id, _)| id.len() <= 32)
+                .filter_map(|(id, record)| {
+                    Some((id.clone(), serde_json::from_value(record.clone()).ok()?))
+                })
+                .take(16)
+                .collect();
         }
         preferences
     }
@@ -295,6 +318,7 @@ impl SettingsPreferences {
             "last_settings_page": self.last_settings_page,
             "hosted_web_search_mode": self.hosted_web_search_mode,
             "github_account": self.github_account,
+            "tours": self.tours,
         }))
         .map_err(|error| format!("No se pudieron serializar las preferencias: {error}"))?;
         let temp = root.join(format!(
@@ -629,6 +653,7 @@ mod tests {
         };
         preferences.set_last_workspace(project.path()).unwrap();
         preferences.hosted_web_search_mode = Some(HostedWebSearchMode::Indexed);
+        preferences.tours.insert("agents".into(), TourRecord { version: 2, completed: true });
         preferences
             .set_last_settings_page("settings_page:providers")
             .unwrap();
@@ -647,6 +672,23 @@ mod tests {
             1,
             "atomic replacement must not leave a temporary file"
         );
+    }
+
+    #[test]
+    fn a_damaged_tour_record_is_dropped_without_touching_the_others() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join(FILE_NAME),
+            r#"{"version":1,"reduced_motion":true,"tours":{"agents":{"version":1,"completed":false},"ide":{"version":"x"}}}"#,
+        )
+        .unwrap();
+        let loaded = SettingsPreferences::load(root.path());
+        assert!(loaded.reduced_motion);
+        assert_eq!(
+            loaded.tours.get("agents"),
+            Some(&TourRecord { version: 1, completed: false })
+        );
+        assert_eq!(loaded.tours.get("ide"), None);
     }
 
     #[test]

@@ -3767,6 +3767,7 @@ mod tests {
 
     pub(super) fn state() -> ViewState {
         ViewState {
+            tour: Default::default(),
             keymap_profile: crate::keymap::KeymapProfile::default(),
             vim_mode: false,
             settings_keymap_menu_open: false,

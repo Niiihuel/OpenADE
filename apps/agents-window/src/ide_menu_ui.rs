@@ -160,6 +160,8 @@ fn entries(state: &ViewState, menu: &str) -> Vec<DropdownMenuEntry> {
         "view" => vec![
             bound("commands", "Paleta de comandos…", ShortcutAction::CommandPalette)
                 .into(),
+            // Up here: the menu scrolls, and its end is out of sight.
+            action("tour_start:ide", "Recorrido guiado").into(),
             sep(),
             bound("ide_activity:files", "Archivos", ShortcutAction::Files)
                 .selected(state.ide.activity == IdeActivity::Files && state.ide.explorer_open)

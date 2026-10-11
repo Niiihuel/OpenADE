@@ -13,7 +13,7 @@ use crate::{
 
 const DIRECTORY: &str = "/tmp/openade-agent-chrome-review";
 
-fn fixture() -> ViewState {
+pub(super) fn fixture() -> ViewState {
     let mut state = view::tests::empty_state();
     state.ide.mode = WindowMode::Agents;
     state.workspace = "/workspace/openADE".into();
