@@ -41,6 +41,8 @@ const HEADER_FADE_HEIGHT: f32 = 42.0;
 /// keeps there: three lines of 21 inside the card's padding.
 const USER_PIN_INSET: f32 = 10.0;
 const USER_PIN_HEIGHT: f32 = 84.0;
+/// The turn fades out under the pinned message instead of being cut at its edge.
+const USER_PIN_FADE: f32 = 20.0;
 pub(crate) const TRANSCRIPT_BOTTOM_FADE_HEIGHT: f32 = 32.0;
 const HEADER_ACTION_SIZE: f32 = crate::sidebar_chrome::TOOL_SIZE;
 const HEADER_GAP: f32 = 4.0;
@@ -295,6 +297,7 @@ fn user_message(
     }
     .sticky_top_inset(USER_PIN_INSET)
     .sticky_top_max_height(USER_PIN_HEIGHT)
+    .sticky_top_fade(USER_PIN_FADE)
 }
 
 /// What a click on a user message does.

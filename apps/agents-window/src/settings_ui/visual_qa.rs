@@ -604,6 +604,7 @@ fn icon_svg(icon: Icon) -> &'static str {
         Icon::Play => include_str!("../../assets/bootstrap/play.svg"),
         Icon::Pause => include_str!("../../assets/bootstrap/pause.svg"),
         Icon::Stop => include_str!("../../assets/bootstrap/stop.svg"),
+        Icon::StopFill => include_str!("../../assets/bootstrap/stop-fill.svg"),
         Icon::History => include_str!("../../assets/bootstrap/clock-history.svg"),
         Icon::Close => include_str!("../../assets/bootstrap/x-lg.svg"),
         Icon::CloseBold => include_str!("../../assets/bootstrap/x.svg"),
