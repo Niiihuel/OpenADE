@@ -1,0 +1,26 @@
+<!doctype html><html lang="es"><head><title>Formulario</title><style>
+  body{font:16px sans-serif;margin:16px}label{display:block;margin:6px 0}
+  </style></head><body><main><h1>Alta de cliente</h1>
+  <form aria-label="Cliente">
+    <label>Nombre <input name="name" placeholder="Nombre y apellido" required></label>
+    <label>Correo <input type="email" name="mail" value="ada@example.test"></label>
+    <label>Clave <input type="password" name="pass" value="secreto"></label>
+    <label for="notes">Notas</label><textarea id="notes">Primera línea
+Segunda línea</textarea>
+    <label>Edad <input type="number" name="age" min="0" max="120" value="36"></label>
+    <label>Buscar <input type="search" name="q"></label>
+    <fieldset><legend>Plan</legend>
+      <label><input type="radio" name="plan" value="free" checked> Gratis</label>
+      <label><input type="radio" name="plan" value="pro"> Pro</label>
+      <label><input type="radio" name="plan" value="team" disabled> Equipo</label>
+    </fieldset>
+    <label>País <select name="country"><option>Argentina</option><option selected>Uruguay</option><optgroup label="Otros"><option>Chile</option></optgroup></select></label>
+    <label>Idiomas <select name="langs" multiple size="3"><option selected>Español</option><option>Inglés</option><option selected>Portugués</option></select></label>
+    <label><input type="checkbox" name="news" checked> Recibir novedades</label>
+    <label><input type="checkbox" name="terms"> Acepto los términos</label>
+    <label>Volumen <input type="range" min="0" max="10" value="4"></label>
+    <button type="submit">Guardar</button> <button type="button" disabled>Borrar</button>
+    <button type="button" aria-pressed="true">Negrita</button>
+    <button type="button" aria-expanded="false" aria-haspopup="menu">Más</button>
+    <a href="/ayuda?tema=alta">Ayuda</a> <a>Sin destino</a>
+  </form></main></body></html>

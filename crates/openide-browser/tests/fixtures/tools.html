@@ -1,0 +1,22 @@
+<!doctype html><html lang="es"><head><title>Herramientas</title><style>
+  body{font:16px sans-serif;margin:16px}button,input,select{font:inherit;margin:2px}
+  #drag,#drop{display:inline-block;width:120px;height:32px;border:1px solid #333}iframe{width:200px;height:48px}
+  </style></head><body><h1>Herramientas</h1>
+  <button id="a" onclick="out.textContent='A pulsado'">Borrar</button>
+  <button id="b" onclick="out.textContent='B pulsado'">Borrar</button>
+  <button id="temp" onclick="this.remove()">Efímero</button>
+  <input aria-label="Correo">
+  <button id="menu" onmouseenter="out.textContent='Sobre el menú'">Menú</button>
+  <select aria-label="Color" onchange="out.textContent='Color '+this.value"><option value="r">Rojo</option><option value="g">Verde</option></select>
+  <label><input type="checkbox" id="terms" onchange="out.textContent='Acepto '+this.checked"> Acepto</label>
+  <div id="drag" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','carta')">Carta</div>
+  <div id="drop" ondragover="event.preventDefault()" ondrop="event.preventDefault();this.textContent='Soltada '+event.dataTransfer.getData('text/plain')">Zona</div>
+  <button id="later" onclick="setTimeout(()=>{out.textContent='Listo tarde'},300)">Tardar</button>
+  <button id="confirm" onclick="out.textContent='Confirmó '+confirm('¿Borrar todo?')">Confirmar</button>
+  <button id="prompt" onclick="out.textContent='Respondió '+prompt('¿Nombre?','x')">Preguntar</button>
+  <p id="out">Sin cambios</p><p style="display:none">Texto oculto</p>
+  <iframe src="/frame.html" title="Marco"></iframe>
+  <script>const out=document.querySelector('#out')</script><script src="/missing.js"></script>
+  <script>console.log('carga',{n:1});console.warn('aviso');console.error('falla');console.debug('depura');
+  fetch('/api/items?token=visible',{method:'POST',body:'cuerpo secreto',headers:{'X-Secret':'cabecera secreta'}});
+  setTimeout(()=>{throw new Error('sin capturar')},0)</script></body></html>

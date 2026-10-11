@@ -1,0 +1,13 @@
+<!doctype html><html lang="es"><head><title>Listas</title><style>body{font:16px sans-serif;margin:16px}</style></head><body>
+  <header><nav aria-label="Principal"><ul><li><a href="/">Inicio</a></li><li><a href="/docs">Documentos</a>
+    <ul><li><a href="/docs/a">Guía <em>rápida</em></a></li><li><a href="/docs/b">Referencia</a></li></ul></li>
+    <li><a href="/about" aria-current="page">Acerca</a></li></ul></nav></header>
+  <main><h1>Listas anidadas</h1><h2>Pendientes</h2>
+  <ol><li>Primero</li><li>Segundo <strong>importante</strong> con <code>código</code><ol><li>Sub uno</li><li>Sub dos</li></ol></li><li><input type="checkbox" aria-label="Hecho"> Tercero</li></ol>
+  <h3>Definiciones</h3><dl><dt>CDP</dt><dd>Protocolo de DevTools</dd><dt>ARIA</dt><dd>Accesibilidad</dd></dl>
+  <ul role="tree" aria-label="Archivos"><li role="treeitem" aria-expanded="true">src<ul role="group"><li role="treeitem" aria-selected="true">main.rs</li><li role="treeitem">lib.rs</li></ul></li><li role="treeitem" aria-expanded="false">docs</li></ul>
+  <details><summary>Más detalles</summary><p>Contenido plegado</p></details>
+  <details open><summary>Abierto</summary><p>Contenido visible</p></details>
+  <blockquote>Una cita<br>en dos líneas</blockquote><hr><p>Texto con <a href="https://example.test/x#y">enlace externo</a> y <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="Logo"> imagen.</p>
+  <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" width="10" height="10">
+  </main><footer><p>Pie &copy; 2026</p></footer></body></html>
