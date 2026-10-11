@@ -101,7 +101,9 @@ fn mcp_tool_media_survives_result_truncation_restart_and_interrupted_replay() {
     let AgentEventKind::ToolFinished { output, .. } = &saved[at + 1].kind else {
         panic!("media must precede ToolFinished")
     };
-    assert!(output.ends_with("[tool output truncated]"));
+    // The image went to the user in the event before; the model reads a
+    // note in its place, and nothing is cut off.
+    assert!(output.contains("[image omitted (image/png") && !output.contains("[tool output truncated]"));
     let compatibility = CheckpointCompatibility {
         provider: "test".into(),
         model: "scripted".into(),

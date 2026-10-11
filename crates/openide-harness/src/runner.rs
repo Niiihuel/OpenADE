@@ -1743,7 +1743,10 @@ impl AgentRunner {
                 {
                     sink.emit(media)?;
                 }
-                let content = truncate_chars(&result.content, self.limits.max_tool_output_chars);
+                let content = truncate_chars(
+                    &crate::tool_media::without_image_data(call, &result.content),
+                    self.limits.max_tool_output_chars,
+                );
                 sink.emit(AgentEventKind::ToolFinished {
                     tool_call_id: call.id.clone(),
                     output: content.clone(),

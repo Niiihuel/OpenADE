@@ -160,10 +160,10 @@ async fn resumed_mcp_tool_media_is_durable_before_truncation_and_observer_failur
                 panic!("media must precede ToolFinished")
             };
             assert_eq!(*is_error, outcome == "error");
-            assert_eq!(
-                output,
-                &full_output.chars().take(16_000).collect::<String>()
-            );
+            // The image went to the user in the event before; the model
+            // reads a note in its place, and nothing is cut off.
+            assert!(output.contains("Captura recibida") && output.contains("[image omitted (image/png"));
+            assert!(output.chars().count() < full_output.chars().count().min(16_000));
             let results = replay
                 .history
                 .iter()

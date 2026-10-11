@@ -192,6 +192,43 @@ pub(crate) fn extract_tool_result_media(call: &ToolCall, output: &str) -> Option
     })
 }
 
+/// The result as the model reads it: the same MCP JSON with each image block
+/// replaced by a line of text saying what was left out. No provider adapter
+/// sends tool-result images, so the base64 would only fill the result limit
+/// with noise; the images reach the user through [`extract_tool_result_media`].
+pub(crate) fn without_image_data<'a>(call: &ToolCall, output: &'a str) -> Cow<'a, str> {
+    if !call.name.starts_with("mcp__") || output.len() > MAX_RESULT_BYTES || !output.contains("\"image\"") {
+        return Cow::Borrowed(output);
+    }
+    let mut documents = serde_json::Deserializer::from_str(output).into_iter::<serde_json::Value>();
+    let Some(Ok(mut result)) = documents.next() else {
+        return Cow::Borrowed(output);
+    };
+    // The same trailing hook context `extract_tool_result_media` accepts.
+    let suffix = &output[documents.byte_offset()..];
+    if !suffix.trim().is_empty() && !suffix.starts_with("\nHook context:\n") {
+        return Cow::Borrowed(output);
+    }
+    let mut replaced = false;
+    for block in result.get_mut("content").and_then(serde_json::Value::as_array_mut).into_iter().flatten() {
+        if block.get("type").and_then(serde_json::Value::as_str) != Some("image") {
+            continue;
+        }
+        let mime = block.get("mimeType").and_then(serde_json::Value::as_str).unwrap_or("unknown type");
+        let chars = block.get("data").and_then(serde_json::Value::as_str).map_or(0, str::len);
+        *block = serde_json::json!({
+            "type": "text",
+            "text": format!("[image omitted ({mime}, {chars} base64 chars): it is shown to the user, the model does not receive it]"),
+        });
+        replaced = true;
+    }
+    if replaced {
+        Cow::Owned(format!("{result}{suffix}"))
+    } else {
+        Cow::Borrowed(output)
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn test_mcp_image_result() -> (String, Vec<u8>) {
     // A valid-sized PNG signature fixture larger than the normal 16K tool
@@ -209,6 +246,31 @@ pub(crate) fn test_mcp_image_result() -> (String, Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_model_reads_a_note_where_an_image_was_and_everything_else_as_it_came() {
+        let (output, _) = test_mcp_image_result();
+        let call = ToolCall { id: "c".into(), name: "mcp__server__shot".into(), arguments: serde_json::json!({}) };
+        let read = without_image_data(&call, &output);
+        assert!(read.len() < 400, "{} bytes", read.len());
+        assert!(read.contains("image omitted (image/png") && read.contains("shown to the user"));
+        assert!(!read.contains("\"image\""), "no image block is left for a preview to misread");
+        // What the user is shown still comes from the untouched result.
+        assert!(matches!(
+            extract_tool_result_media(&call, &output),
+            Some(AgentEventKind::ToolResultMedia { images, .. }) if images.len() == 1
+        ));
+        // Hook context appended after the JSON stays where it was.
+        let hooked = format!("{output}\nHook context:\nrevisar");
+        assert!(without_image_data(&call, &hooked).ends_with("\nHook context:\nrevisar"));
+        // Text blocks and results without images are not rewritten.
+        let text = serde_json::json!({"content":[{"type":"text","text":"una \"image\" citada"}]}).to_string();
+        assert!(matches!(without_image_data(&call, &text), Cow::Borrowed(_)));
+        // Another tool's output is never parsed, whatever it looks like.
+        let local = ToolCall { name: "read_file".into(), ..call.clone() };
+        assert!(matches!(without_image_data(&local, &output), Cow::Borrowed(_)));
+        assert!(matches!(without_image_data(&call, "{\"content\":[{\"type\":\"image\"}]} trailing"), Cow::Borrowed(_)));
+    }
     use openide_core::validate_tool_result_media;
     use serde_json::json;
 
