@@ -1236,6 +1236,8 @@ pub struct AgentsWindow {
     provider_refresh_worker: Option<crate::provider_connections::ConnectionWorker>,
     provider_refresh_last_poll: Instant,
     provider_usage_worker: Option<crate::provider_usage::UsageWorker>,
+    /// Claude Code's configuration directory; tests set their own.
+    claude_config_dir: Option<PathBuf>,
     provider_usage_last_refresh: Instant,
     provider_usage_last_identity_check: Instant,
     provider_usage_identities: provider_usage_app::UsageIdentities,
@@ -5904,6 +5906,7 @@ impl AgentsWindow {
                 &root,
                 &native_provider_definitions,
             ),
+            claude_limits: Default::default(),
             provider_usage_open: false,
             provider_usage_refreshing: false,
             provider_connect: None,
@@ -6243,6 +6246,9 @@ impl AgentsWindow {
             provider_refresh_worker: None,
             provider_refresh_last_poll: Instant::now() - Duration::from_secs(60),
             provider_usage_worker: None,
+            claude_config_dir: (!cfg!(test))
+                .then(crate::claude_limits::config_dir)
+                .flatten(),
             provider_usage_last_refresh: Instant::now() - Duration::from_secs(300),
             provider_usage_last_identity_check: Instant::now(),
             provider_usage_identities: Default::default(),
@@ -17988,10 +17994,16 @@ impl AgentsWindow {
                 self.begin_provider_usage_refresh();
                 self.visit_navigation();
             }
+            UiAction::Clicked { id }
+                if matches!(id.as_str(), "claude_limits_enable" | "claude_limits_disable") =>
+            {
+                self.set_claude_limits(id == "claude_limits_enable");
+            }
             UiAction::Clicked { id } if id.starts_with("provider_usage_account:") => {
                 let provider = id.trim_start_matches("provider_usage_account:");
-                if crate::provider_connections::supported(provider)
-                    && self.view.native_provider_definitions.contains_key(provider)
+                if provider == crate::claude_limits::PROVIDER_ID
+                    || crate::provider_connections::supported(provider)
+                        && self.view.native_provider_definitions.contains_key(provider)
                 {
                     if let Some(snapshot) = self.view.provider_usage.get(provider) {
                         if let Some(url) = &snapshot.account_url {

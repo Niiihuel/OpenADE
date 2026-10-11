@@ -3812,6 +3812,7 @@ mod tests {
             native_provider_registry_error: None,
             provider_connections: Default::default(),
             provider_usage: Default::default(),
+            claude_limits: Default::default(),
             provider_usage_open: false,
             provider_usage_refreshing: false,
             provider_connect: None,

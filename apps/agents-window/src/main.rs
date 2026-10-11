@@ -18,6 +18,7 @@ mod browser_runtime;
 mod browser_ui;
 mod chat_diff_ui;
 mod child_process;
+mod claude_limits;
 #[cfg(test)]
 mod code_editor_component_visual_tests;
 mod code_editor_files;

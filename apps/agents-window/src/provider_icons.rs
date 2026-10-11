@@ -16,6 +16,8 @@ pub(crate) fn icon_for_provider(provider_id: &str) -> Icon {
         "deepseek" => DEEPSEEK,
         "minimax" => MINIMAX,
         "anthropic" => ANTHROPIC,
+        // The Claude Code subscription, as the usage panel lists it.
+        "claude-code" => CLAUDE,
         "groq" => GROQ,
         "mistral" => MISTRAL,
         "xai" => XAI,

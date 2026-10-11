@@ -13,6 +13,7 @@ use openide_ui::{
 };
 
 use crate::{
+    claude_limits,
     provider_connections,
     provider_icons::icon_for_provider,
     provider_usage::{
@@ -56,7 +57,7 @@ fn elapsed_label(timestamp: u64, now: u64) -> String {
 }
 
 fn stale(snapshot: &ProviderUsageSnapshot, now: u64) -> bool {
-    // A local reading is as old as the last Codex turn, which is not a failure.
+    // A local reading is as old as the CLI's last turn, which is not a failure.
     snapshot.status == ProviderUsageStatus::Error
         || !snapshot.local
             && snapshot
@@ -79,6 +80,8 @@ fn updated(snapshot: &ProviderUsageSnapshot, now: u64) -> String {
         "{} · {}",
         if stale(snapshot, now) {
             "Último dato"
+        } else if snapshot.provider_id == claude_limits::PROVIDER_ID {
+            "Medido por Claude Code"
         } else if snapshot.local {
             "Medido por Codex"
         } else {
@@ -160,16 +163,32 @@ pub(crate) struct UsageGlance {
     pub detail: String,
 }
 
-/// The tightest measured window of the active provider, or of the first
+/// Every account with usage to show: the provider catalog, then Claude Code,
+/// which is only present once it has reported its limits.
+fn roster() -> impl Iterator<Item = (&'static str, &'static str)> {
+    provider_connections::PROVIDERS
+        .iter()
+        .map(|(id, name, _)| (*id, *name))
+        .chain([(claude_limits::PROVIDER_ID, claude_limits::PROVIDER_NAME)])
+}
+
+/// The account behind the selected session: a CLI's own subscription, or the
+/// native provider.
+fn active_account(state: &ViewState) -> &str {
+    match state.selected_backend.strip_prefix(crate::view::CLI_BACKEND) {
+        Some("claude") => claude_limits::PROVIDER_ID,
+        Some("codex") => "codex",
+        _ => &state.native_provider_id,
+    }
+}
+
+/// The tightest measured window of the active account, or of the first
 /// connected one that has any. A reading that failed to refresh is not shown.
 pub(crate) fn glance(state: &ViewState) -> Option<UsageGlance> {
     let now = now_ms();
-    let mut accounts: Vec<_> = provider_connections::PROVIDERS
-        .iter()
-        .filter(|(id, _, _)| connected(state, id))
-        .collect();
-    accounts.sort_by_key(|(id, _, _)| *id != state.native_provider_id);
-    accounts.into_iter().find_map(|(id, name, _)| {
+    let mut accounts: Vec<_> = roster().filter(|(id, _)| connected(state, id)).collect();
+    accounts.sort_by_key(|(id, _)| *id != active_account(state));
+    accounts.into_iter().find_map(|(id, name)| {
         let snapshot = snapshot(state, id, name);
         let (window, percent) = tightest(&snapshot).filter(|_| !stale(&snapshot, now))?;
         let value = amount(percent, UsageUnit::Percent);
@@ -288,10 +307,12 @@ fn snapshot<'a>(state: &'a ViewState, id: &str, name: &str) -> Cow<'a, ProviderU
 }
 
 fn connected(state: &ViewState, id: &str) -> bool {
-    state
-        .provider_connections
-        .get(id)
-        .is_some_and(|connection| connection.configured && !connection.needs_sign_in)
+    // Claude Code has no connection of ours; its reported limits stand for one.
+    id == claude_limits::PROVIDER_ID && state.provider_usage.contains_key(id)
+        || state
+            .provider_connections
+            .get(id)
+            .is_some_and(|connection| connection.configured && !connection.needs_sign_in)
 }
 
 fn provider_mark(id: &str) -> Element {
@@ -401,6 +422,89 @@ fn account_card(
     width: f32,
     now: u64,
 ) -> Element {
+    let empty = match snapshot.status {
+        ProviderUsageStatus::External => "El consumo se consulta en tu cuenta",
+        ProviderUsageStatus::Disconnected => "Conecta una cuenta para ver su uso",
+        ProviderUsageStatus::NeedsSignIn => "La sesión necesita renovarse",
+        ProviderUsageStatus::Loading => "Consultando los límites de tu cuenta…",
+        ProviderUsageStatus::Error => "No se pudo consultar el consumo",
+        ProviderUsageStatus::Ready => "El proveedor no devolvió una medición",
+    };
+    usage_card(state, snapshot, width, now, empty, Some(account_action(snapshot)))
+}
+
+fn limits_action(id: &str, label: &str, icon: Icon) -> Element {
+    Button::new(id, label, crate::settings_ui::control_palette())
+        .icon(icon)
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .render()
+}
+
+/// Claude Code's subscription, for whoever has its CLI: its limits once it
+/// reports them, and before that the offer to read them. Never silent.
+fn claude_card(state: &ViewState, width: f32, now: u64) -> Option<Element> {
+    state
+        .agent_clis
+        .iter()
+        .find(|cli| cli.id == "claude" && cli.resolved.is_some())?;
+    let on = state.claude_limits == claude_limits::Status::On;
+    let (empty, message, action) = match &state.claude_limits {
+        claude_limits::Status::On => (
+            "Los límites aparecen después del próximo turno con Claude Code",
+            None,
+            Some(limits_action("claude_limits_disable", "Desactivar", Icon::Close)),
+        ),
+        claude_limits::Status::Off => (
+            "Lee aquí los límites de tu suscripción",
+            Some("Al activarla, openADE configura el comando de línea de estado de Claude Code para recibir sus límites de uso."),
+            Some(limits_action("claude_limits_enable", "Activar lectura de límites", Icon::Add)),
+        ),
+        claude_limits::Status::Foreign => (
+            claude_limits::FOREIGN,
+            Some("openADE no la reemplaza. Para leer aquí tus límites, quítala antes de la configuración de Claude Code."),
+            None,
+        ),
+        claude_limits::Status::Refused(reason) => {
+            ("No se puede activar la lectura de límites", Some(reason.as_str()), None)
+        }
+    };
+    let snapshot = state
+        .provider_usage
+        .get(claude_limits::PROVIDER_ID)
+        .filter(|_| on)
+        .map(Cow::Borrowed)
+        .unwrap_or_else(|| {
+            Cow::Owned(ProviderUsageSnapshot {
+                provider_id: claude_limits::PROVIDER_ID.into(),
+                provider_name: claude_limits::PROVIDER_NAME.into(),
+                account: None,
+                status: if on {
+                    ProviderUsageStatus::Ready
+                } else {
+                    ProviderUsageStatus::Disconnected
+                },
+                plan_label: None,
+                windows: Vec::new(),
+                balances: Vec::new(),
+                fetched_at_ms: None,
+                local: true,
+                account_url: None,
+                message: message.map(str::to_owned),
+            })
+        });
+    Some(usage_card(state, &snapshot, width, now, empty, action))
+}
+
+/// `empty` is said in place of a measurement; a card without `action` has no footer.
+fn usage_card(
+    state: &ViewState,
+    snapshot: &ProviderUsageSnapshot,
+    width: f32,
+    now: u64,
+    empty: &str,
+    action: Option<Element>,
+) -> Element {
     let compact = width < 500.0;
     let status_color = if stale(snapshot, now)
         || matches!(
@@ -485,15 +589,7 @@ fn account_card(
                 .map(|window| window_row(window, now)),
         );
     } else {
-        let title = match snapshot.status {
-            ProviderUsageStatus::External => "El consumo se consulta en tu cuenta",
-            ProviderUsageStatus::Disconnected => "Conecta una cuenta para ver su uso",
-            ProviderUsageStatus::NeedsSignIn => "La sesión necesita renovarse",
-            ProviderUsageStatus::Loading => "Consultando los límites de tu cuenta…",
-            ProviderUsageStatus::Error => "No se pudo consultar el consumo",
-            ProviderUsageStatus::Ready => "El proveedor no devolvió una medición",
-        };
-        rows.push(Text::new(title, theme::component_palette()).render());
+        rows.push(Text::new(empty, theme::component_palette()).render());
     }
     if let Some(message) = &snapshot.message {
         rows.push(
@@ -537,16 +633,17 @@ fn account_card(
     }
     // Keep actions independent of copy length and account state. The body
     // absorbs the extra height of its row, so every footer shares a baseline.
-    let footer = Element::column(vec![
-        Separator::horizontal(theme::component_palette()).render(),
-        Element::row(vec![Element::spacer().flex(1.0), account_action(snapshot)]),
-    ])
-    .gap(10.0);
-    Card::new(
-        Element::column(vec![Element::column(rows).gap(10.0).flex(1.0), footer]).gap(10.0),
-        theme::card_palette(),
-    )
-    .render()
+    let mut parts = vec![Element::column(rows).gap(10.0).flex(1.0)];
+    if let Some(action) = action {
+        parts.push(
+            Element::column(vec![
+                Separator::horizontal(theme::component_palette()).render(),
+                Element::row(vec![Element::spacer().flex(1.0), action]),
+            ])
+            .gap(10.0),
+        );
+    }
+    Card::new(Element::column(parts).gap(10.0), theme::card_palette()).render()
 }
 
 fn refresh(state: &ViewState, compact: bool) -> Element {
@@ -805,9 +902,8 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
 pub(crate) fn popup(state: &ViewState) -> Element {
     let now = now_ms();
     let mut cards = Vec::new();
-    let mut accounts: Vec<_> = provider_connections::PROVIDERS
-        .iter()
-        .filter(|(id, _, _)| {
+    let mut accounts: Vec<_> = roster()
+        .filter(|(id, _)| {
             connected(state, id)
                 || state
                     .provider_connections
@@ -817,9 +913,9 @@ pub(crate) fn popup(state: &ViewState) -> Element {
         .collect();
     // The provider in the compact summary is the first account inspected.
     // Remaining accounts keep their stable catalog order.
-    accounts.sort_by_key(|(id, _, _)| *id != state.native_provider_id);
+    accounts.sort_by_key(|(id, _)| *id != active_account(state));
     let mut body_height = 0.0;
-    for (id, name, _) in accounts {
+    for (id, name) in accounts {
         if !cards.is_empty() {
             cards.push(Separator::horizontal(theme::component_palette()).render());
             body_height += 1.0;
@@ -946,19 +1042,11 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
                 .get(id)
                 .is_some_and(|connection| connection.needs_sign_in)
     };
-    let count = provider_connections::PROVIDERS
-        .iter()
-        .filter(|(id, _, _)| available(id))
-        .count();
-    let selected = provider_connections::PROVIDERS
-        .iter()
-        .find(|(id, _, _)| *id == state.native_provider_id && available(id))
-        .or_else(|| {
-            provider_connections::PROVIDERS
-                .iter()
-                .find(|(id, _, _)| available(id))
-        });
-    let (icon, summary, help, color, bar) = if let Some((id, name, _)) = selected {
+    let count = roster().filter(|(id, _)| available(id)).count();
+    let selected = roster()
+        .find(|(id, _)| *id == active_account(state) && available(id))
+        .or_else(|| roster().find(|(id, _)| available(id)));
+    let (icon, summary, help, color, bar) = if let Some((id, name)) = selected {
         let snapshot = snapshot(state, id, name);
         let (value, label, color) = headline(&snapshot);
         let out_of_date = stale(&snapshot, now_ms());
@@ -1090,13 +1178,16 @@ pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> 
     } else {
         content_width
     };
-    for accounts in provider_connections::PROVIDERS.chunks(if two_columns { 2 } else { 1 }) {
+    let mut accounts = provider_connections::PROVIDERS
+        .iter()
+        .map(|(id, name, _)| account_card(state, &snapshot(state, id, name), card_width, now))
+        .chain(claude_card(state, card_width, now))
+        .map(|card| card.size(Some(card_width), None))
+        .peekable();
+    while accounts.peek().is_some() {
         let row = accounts
-            .iter()
-            .map(|(id, name, _)| {
-                account_card(state, &snapshot(state, id, name), card_width, now)
-                    .size(Some(card_width), None)
-            })
+            .by_ref()
+            .take(if two_columns { 2 } else { 1 })
             .collect::<Vec<_>>();
         cards.push(if two_columns {
             Element::row(row).gap(12.0)
@@ -1375,6 +1466,165 @@ mod tests {
         let account = &state.provider_usage["codex"];
         assert_eq!(tightest(account).map(|(window, used)| (window.label.as_str(), used)), Some(("Semanal", 85.0)));
         assert_eq!(headline(account).2, theme::WARNING);
+    }
+
+    /// The Claude Code CLI found, its limits being read, and these
+    /// (label, used percent, hours to reset) windows reported two minutes ago.
+    fn with_claude(mut state: ViewState, windows: &[(&str, f64, u64)]) -> ViewState {
+        let now = now_ms();
+        state.agent_clis = vec![crate::view::AgentCliRowView {
+            id: "claude".into(),
+            label: "Claude Code".into(),
+            resolved: Some("/usr/bin/claude".into()),
+            manual: String::new(),
+        }];
+        state.claude_limits = claude_limits::Status::On;
+        if windows.is_empty() {
+            return state;
+        }
+        state.provider_usage.insert(
+            claude_limits::PROVIDER_ID.into(),
+            ProviderUsageSnapshot {
+                provider_id: claude_limits::PROVIDER_ID.into(),
+                provider_name: claude_limits::PROVIDER_NAME.into(),
+                account: None,
+                status: ProviderUsageStatus::Ready,
+                plan_label: Some("Claude Max".into()),
+                windows: windows
+                    .iter()
+                    .map(|(label, used, hours)| UsageWindow {
+                        label: (*label).into(),
+                        used: *used,
+                        limit: Some(100.0),
+                        remaining: Some(100.0 - used),
+                        unit: UsageUnit::Percent,
+                        reset_at_ms: Some(now + hours * 3_600_000 + 60_000),
+                        reset_label: None,
+                    })
+                    .collect(),
+                balances: Vec::new(),
+                fetched_at_ms: Some(now - 120_000),
+                local: true,
+                account_url: Some("https://claude.ai/settings/usage".into()),
+                message: Some("Límites de tu última sesión de Claude Code.".into()),
+            },
+        );
+        state
+    }
+
+    #[test]
+    fn claude_code_card_offers_the_reading_and_shows_its_limits_once_reported() {
+        let page = |state: &ViewState| {
+            let mut tree = native_tree(Element::column(usage_page(state, 860.0)).gap(16.0));
+            let frame = tree.layout(Size::new(860.0, 1_400.0));
+            (tree, frame)
+        };
+        let has = |frame: &Frame, id: &str| frame.regions.iter().any(|region| region.id == id);
+        // Without its CLI there is nothing to offer.
+        let mut state = fixture();
+        state.claude_limits = claude_limits::Status::Off;
+        assert!(!frame_text(&page(&state).1).contains("Claude Code"));
+
+        let mut state = with_claude(fixture(), &[]);
+        state.claude_limits = claude_limits::Status::Off;
+        let (mut tree, frame) = page(&state);
+        let painted = frame_text(&frame);
+        assert!(painted.contains("Activar lectura de límites"), "{painted}");
+        assert!(painted.contains("línea de estado de Claude Code"), "{painted}");
+        assert_eq!(
+            click(&mut tree, &frame, "claude_limits_enable"),
+            vec![UiAction::Clicked { id: "claude_limits_enable".into() }]
+        );
+
+        state.claude_limits = claude_limits::Status::On;
+        let (mut tree, frame) = page(&state);
+        let painted = frame_text(&frame);
+        assert!(
+            painted.contains("Los límites aparecen después del próximo turno con Claude Code"),
+            "{painted}"
+        );
+        assert!(!has(&frame, "claude_limits_enable"));
+        assert_eq!(
+            click(&mut tree, &frame, "claude_limits_disable"),
+            vec![UiAction::Clicked { id: "claude_limits_disable".into() }]
+        );
+
+        // Someone else's status line, or settings that cannot be read: said, and nothing offered.
+        for (status, said) in [
+            (claude_limits::Status::Foreign, claude_limits::FOREIGN),
+            (claude_limits::Status::Refused("Motivo de prueba.".into()), "Motivo de prueba."),
+        ] {
+            state.claude_limits = status;
+            let frame = page(&state).1;
+            let painted = frame_text(&frame);
+            assert!(painted.contains(said), "{painted}");
+            assert!(!has(&frame, "claude_limits_enable") && !has(&frame, "claude_limits_disable"));
+        }
+
+        let state = with_claude(fixture(), &[("5 horas", 30.0, 2), ("Semanal", 85.0, 72)]);
+        let frame = page(&state).1;
+        let painted = frame_text(&frame);
+        for expected in [
+            "Claude Max",
+            "85%",
+            "usado · Semanal",
+            "70% restante",
+            "15% restante",
+            "Se renueva en 2 h",
+            "Medido por Claude Code · hace 2 min",
+        ] {
+            assert!(painted.contains(expected), "{expected}: {painted}");
+        }
+        assert!(has(&frame, "claude_limits_disable"));
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::FillRect { rect, color, .. }
+                if *color == theme::WARNING && rect.height == 4.0 && rect.width > 0.0)));
+    }
+
+    #[test]
+    fn claude_code_limits_join_the_summary_and_follow_the_selected_backend() {
+        let sidebar = |state: &ViewState| {
+            frame_text(&native_tree(sidebar_card(state, 264.0)).layout(Size::new(264.0, 160.0)))
+        };
+        let mut state = with_claude(
+            codex_local(&[("Semanal", 58.0, 72)], 60_000),
+            &[("5 horas", 30.0, 2), ("Semanal", 85.0, 72)],
+        );
+        // A native session on Codex keeps reading Codex.
+        assert_eq!(glance(&state).unwrap().title, "Codex · 58% usado · Semanal");
+        let painted = sidebar(&state);
+        assert!(painted.contains("Codex · 58% semanal") && painted.contains("+1"), "{painted}");
+
+        // A Claude Code session reads its own subscription, tightest window first.
+        state.selected_backend = "cli:claude".into();
+        let usage = glance(&state).unwrap();
+        assert_eq!(usage.title, "Claude Code · 85% usado · Semanal");
+        assert_eq!(usage.ink, Some(theme::WARNING));
+        assert!(usage.detail.ends_with("Medido por Claude Code · hace 2 min"), "{}", usage.detail);
+        assert!(sidebar(&state).contains("Claude Code · 85% semanal"));
+
+        // A Codex CLI session reads Codex whatever the native provider is.
+        state.selected_backend = "cli:codex".into();
+        state.native_provider_id = "openrouter".into();
+        assert_eq!(glance(&state).unwrap().title, "Codex · 58% usado · Semanal");
+
+        // Both accounts are in the popover, the active one first.
+        state.selected_backend = "cli:claude".into();
+        state.provider_usage_open = true;
+        let frame = popup_tree(&state, 360.0).layout(Size::new(360.0, 720.0));
+        let painted = frame_text(&frame);
+        let (claude, codex) = (painted.find("Claude Max").unwrap(), painted.find("ChatGPT Pro").unwrap());
+        assert!(claude < codex, "{painted}");
+        assert!(frame.regions.iter().any(|r| r.id == "provider_usage_account:claude-code"));
+
+        // With no other account measured, Claude Code is the one shown.
+        state.selected_backend = "native".into();
+        state.provider_connections.get_mut("codex").unwrap().configured = false;
+        assert_eq!(glance(&state).unwrap().title, "Claude Code · 85% usado · Semanal");
+        assert!(sidebar(&state).contains("Claude Code · 85% semanal"));
+        // Reading turned off: its limits leave every surface.
+        state.provider_usage.remove(claude_limits::PROVIDER_ID);
+        assert!(glance(&state).is_none());
     }
 
     fn only_account(state: &mut ViewState, selected: &str) {
@@ -2265,6 +2515,34 @@ mod tests {
                 360.0,
             );
         }
+        // Claude Code's subscription: offered, waiting for a turn, and measured.
+        let claude_windows = [("5 horas", 30.0, 2), ("Semanal", 85.0, 72)];
+        for (name, status, windows) in [
+            ("off", claude_limits::Status::Off, &[][..]),
+            ("waiting", claude_limits::Status::On, &[][..]),
+            ("foreign", claude_limits::Status::Foreign, &[][..]),
+            ("both", claude_limits::Status::On, &claude_windows[..]),
+        ] {
+            let mut claude = with_claude(fixture(), windows);
+            claude.claude_limits = status;
+            let card = Element::column(vec![claude_card(&claude, 420.0, now_ms()).unwrap()])
+                .padding(20.0)
+                .background(theme::BACKGROUND);
+            export(&mut native_tree(card), &format!("claude-settings-{name}"), 460.0, 360.0);
+        }
+        let mut together = with_claude(
+            codex_local(&[("5 horas", 30.0, 2), ("Semanal", 58.0, 72)], 72_000_000),
+            &claude_windows,
+        );
+        together.selected_backend = "cli:claude".into();
+        export(&mut popup_tree(&together, 264.0), "claude-sidebar", 264.0, 80.0);
+        together.provider_usage_open = true;
+        export(&mut popup_tree(&together, 360.0), "claude-popover-with-codex", 360.0, 520.0);
+        let page = Element::column(usage_page(&together, 860.0))
+            .gap(16.0)
+            .padding(20.0)
+            .background(theme::BACKGROUND);
+        export(&mut native_tree(page), "claude-settings-page", 900.0, 1_100.0);
         state.provider_usage_open = false;
         export(
             &mut popup_tree(&state, 264.0),

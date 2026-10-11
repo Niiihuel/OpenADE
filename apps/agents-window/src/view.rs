@@ -443,6 +443,8 @@ pub struct ViewState {
         BTreeMap<String, crate::provider_connections::ConnectionSummary>,
     pub(crate) provider_connect: Option<crate::provider_connections::ConnectView>,
     pub(crate) provider_usage: BTreeMap<String, crate::provider_usage::ProviderUsageSnapshot>,
+    /// Whether Claude Code's status line hands its plan limits to this app.
+    pub(crate) claude_limits: crate::claude_limits::Status,
     pub(crate) provider_usage_open: bool,
     pub(crate) provider_usage_refreshing: bool,
     pub catalog_browse_provider: String,
@@ -3801,6 +3803,7 @@ pub(crate) mod tests {
             catalog_refreshing: false,
             provider_connections: BTreeMap::new(),
             provider_usage: BTreeMap::new(),
+            claude_limits: Default::default(),
             provider_usage_open: false,
             provider_usage_refreshing: false,
             provider_connect: None,

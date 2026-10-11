@@ -3,6 +3,7 @@
 //! remain in the host so late results cannot attach to a replacement account.
 
 use super::*;
+use crate::claude_limits;
 use crate::provider_usage::{self, ProviderUsageStatus, UsageWorker};
 
 pub(super) type UsageIdentities = BTreeMap<
@@ -54,37 +55,79 @@ impl AgentsWindow {
                 }
             }
         }
+        // Claude Code's limits follow its status line, not a connection.
+        if let Some(claude) = self.view.provider_usage.remove(claude_limits::PROVIDER_ID) {
+            initial.insert(claude_limits::PROVIDER_ID.into(), claude);
+        }
         self.view.provider_usage = initial;
         self.provider_usage_identities = identities;
         self.provider_usage_last_refresh = Instant::now() - BACKGROUND_INTERVAL;
         true
     }
 
+    /// Whether Claude Code's status line is ours, as its settings say now.
+    fn sync_claude_limits(&mut self) {
+        self.view.claude_limits = match &self.claude_config_dir {
+            Some(claude) => claude_limits::status(claude, &self.data_root),
+            None => claude_limits::Status::Off,
+        };
+        if self.view.claude_limits != claude_limits::Status::On {
+            self.view.provider_usage.remove(claude_limits::PROVIDER_ID);
+        }
+    }
+
+    /// The user's own choice in Settings; nothing else installs the script.
+    pub(super) fn set_claude_limits(&mut self, enabled: bool) {
+        let Some(claude) = self.claude_config_dir.clone() else {
+            return;
+        };
+        let result = if enabled {
+            claude_limits::enable(&claude, &self.data_root, provider_usage::now_ms())
+        } else {
+            claude_limits::disable(&claude, &self.data_root)
+        };
+        match result {
+            Ok(()) if enabled => self.set_settings_notice("Lectura de límites activada", false),
+            Ok(()) => self.set_settings_notice("Lectura de límites desactivada", false),
+            Err(error) => self.set_settings_notice(error, true),
+        }
+        self.begin_provider_usage_refresh();
+    }
+
     pub(super) fn begin_provider_usage_refresh(&mut self) {
         if self.sync_provider_usage() {
             self.refresh_composer_routes();
         }
+        self.sync_claude_limits();
         if self.provider_usage_worker.is_some() {
             return;
         }
-        let ids: Vec<String> = self
+        let mut ids: Vec<String> = self
             .view
             .provider_usage
             .iter()
-            .filter(|(_, snapshot)| {
-                !matches!(
-                    snapshot.status,
-                    ProviderUsageStatus::Disconnected | ProviderUsageStatus::NeedsSignIn
-                )
+            .filter(|(id, snapshot)| {
+                *id != claude_limits::PROVIDER_ID
+                    && !matches!(
+                        snapshot.status,
+                        ProviderUsageStatus::Disconnected | ProviderUsageStatus::NeedsSignIn
+                    )
             })
             .map(|(id, _)| id.clone())
             .collect();
+        if self.view.claude_limits == claude_limits::Status::On {
+            ids.push(claude_limits::PROVIDER_ID.into());
+        }
         self.provider_usage_last_refresh = Instant::now();
         if ids.is_empty() {
             return;
         }
         self.view.provider_usage_refreshing = true;
-        self.provider_usage_worker = Some(UsageWorker::spawn(self.data_root.clone(), ids));
+        self.provider_usage_worker = Some(UsageWorker::spawn(
+            self.data_root.clone(),
+            ids,
+            self.claude_config_dir.clone(),
+        ));
     }
 
     pub(super) fn retry_provider_usage_refresh(&mut self) {
@@ -114,7 +157,15 @@ impl AgentsWindow {
         result: Result<BTreeMap<String, provider_usage::ProviderUsageSnapshot>, String>,
     ) {
         match result {
-            Ok(snapshots) => {
+            Ok(mut snapshots) => {
+                // Absent means its windows have reset or its state is gone.
+                let claude = snapshots
+                    .remove(claude_limits::PROVIDER_ID)
+                    .filter(|_| self.view.claude_limits == claude_limits::Status::On);
+                self.view.provider_usage.remove(claude_limits::PROVIDER_ID);
+                self.view.provider_usage.extend(
+                    claude.map(|snapshot| (claude_limits::PROVIDER_ID.to_owned(), snapshot)),
+                );
                 for (id, snapshot) in snapshots {
                     if !self.provider_usage_identities.contains_key(&id)
                         || snapshot.provider_id != id
@@ -224,6 +275,64 @@ mod tests {
             std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
+    }
+
+    #[test]
+    fn claude_limits_are_read_only_after_the_user_enables_them_and_leave_when_disabled() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let ctx = egui::Context::default();
+        assert_eq!(app.claude_config_dir, None, "tests never read the real Claude home");
+        let claude = root.path().join("claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let settings = claude.join("settings.json");
+        std::fs::write(&settings, "{\n  \"model\": \"opus\"\n}\n").unwrap();
+        app.claude_config_dir = Some(claude);
+        std::fs::create_dir_all(&app.data_root).unwrap();
+        let state = app.data_root.join(claude_limits::STATE_FILE);
+        let payload = r#"{"rate_limits":{"seven_day":{"used_percentage":64}}}"#;
+        std::fs::write(&state, payload).unwrap();
+
+        // A state file alone starts nothing: the status line is not ours yet.
+        app.begin_provider_usage_refresh();
+        assert_eq!(app.view.claude_limits, claude_limits::Status::Off);
+        assert!(app.provider_usage_worker.is_none());
+
+        let click = |app: &mut AgentsWindow, id: &str| {
+            app.apply_action(UiAction::Clicked { id: id.into() }, &ctx)
+        };
+        click(&mut app, "claude_limits_enable");
+        assert_eq!(app.view.claude_limits, claude_limits::Status::On);
+        assert_eq!(app.view.settings_notice.as_deref(), Some("Lectura de límites activada"));
+        assert!(std::fs::read_to_string(&settings).unwrap().contains("\"statusLine\""));
+        std::fs::write(&state, payload).unwrap();
+        let started = Instant::now();
+        while !app.poll_provider_usage_result() {
+            assert!(started.elapsed() < Duration::from_secs(20), "usage worker did not answer");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let usage = &app.view.provider_usage[claude_limits::PROVIDER_ID];
+        assert!(usage.local);
+        assert_eq!((usage.windows[0].label.as_str(), usage.windows[0].used), ("Semanal", 64.0));
+        // A change of provider accounts keeps Claude Code's reading.
+        app.view.native_provider_definitions.clear();
+        assert!(app.sync_provider_usage());
+        assert_eq!(app.view.provider_usage.len(), 1);
+
+        click(&mut app, "claude_limits_disable");
+        assert_eq!(app.view.claude_limits, claude_limits::Status::Off);
+        assert!(app.view.provider_usage.is_empty());
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), "{\n  \"model\": \"opus\"\n}\n");
+        assert!(!state.exists());
+
+        // Someone else's status line is reported and left alone.
+        let foreign = "{\"statusLine\":{\"type\":\"command\",\"command\":\"mine\"}}";
+        std::fs::write(&settings, foreign).unwrap();
+        click(&mut app, "claude_limits_enable");
+        assert_eq!(app.view.claude_limits, claude_limits::Status::Foreign);
+        assert_eq!(app.view.settings_notice.as_deref(), Some(claude_limits::FOREIGN));
+        assert!(app.view.settings_notice_error);
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), foreign);
     }
 
     #[test]

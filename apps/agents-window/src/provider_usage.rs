@@ -38,6 +38,8 @@ const ROLLOUT_TAIL_BYTES: u64 = 4 * 1024 * 1024;
 const ROLLOUT_CHUNK_BYTES: u64 = 256 * 1024;
 const ROLLOUT_FILES: usize = 5;
 const ROLLOUT_ENTRIES: usize = 50_000;
+/// A status line payload is a few KB; the plan name sits in a small file too.
+const CLAUDE_FILE_BYTES: u64 = 256 * 1024;
 pub(crate) const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 pub(crate) const STALE_AFTER: Duration = Duration::from_secs(180);
 
@@ -103,7 +105,7 @@ pub(crate) struct ProviderUsageSnapshot {
     pub balances: Vec<UsageBalance>,
     /// Time of the latest successful measurement, retained on network errors.
     pub fetched_at_ms: Option<u64>,
-    /// Read from the Codex CLI's own session files: as old as its last turn,
+    /// Read from what a CLI recorded on this machine: as old as its last turn,
     /// so its age is shown as it is instead of as a failed refresh.
     pub local: bool,
     pub account_url: Option<String>,
@@ -308,12 +310,13 @@ impl UsageWorker {
         }
     }
 
-    pub(crate) fn spawn(root: PathBuf, provider_ids: Vec<String>) -> Self {
+    /// `claude` is Claude Code's configuration directory, for its plan name.
+    pub(crate) fn spawn(root: PathBuf, provider_ids: Vec<String>, claude: Option<PathBuf>) -> Self {
         let (sender, receiver) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let task_cancel = cancel.clone();
         thread::spawn(move || {
-            let result = collect_usage(&root, &provider_ids, &task_cancel);
+            let result = collect_usage(&root, &provider_ids, claude.as_deref(), &task_cancel);
             if !task_cancel.load(Ordering::Relaxed) {
                 let _ = sender.send(result);
             }
@@ -325,6 +328,7 @@ impl UsageWorker {
 fn collect_usage(
     root: &Path,
     provider_ids: &[String],
+    claude: Option<&Path>,
     cancel: &AtomicBool,
 ) -> Result<BTreeMap<String, ProviderUsageSnapshot>, String> {
     let registry = ProviderRegistry::load(root)?;
@@ -339,6 +343,12 @@ fn collect_usage(
     for id in provider_ids {
         if cancel.load(Ordering::Relaxed) {
             break;
+        }
+        if id == crate::claude_limits::PROVIDER_ID {
+            if let Some(state) = local_claude(root, claude, now_ms()) {
+                result.insert(id.clone(), state);
+            }
+            continue;
         }
         let Some(adapter) = registry.adapter(id) else {
             continue;
@@ -661,11 +671,15 @@ fn parse_codex(body: &Value, state: &mut ProviderUsageSnapshot) -> Result<(), &'
 }
 
 fn chatgpt_plan(plan: &str) -> String {
+    named_plan("ChatGPT", plan)
+}
+
+fn named_plan(product: &str, plan: &str) -> String {
     let mut name = plan.replace(['_', '-'], " ");
     if let Some(first) = name.get_mut(..1) {
         first.make_ascii_uppercase();
     }
-    format!("ChatGPT {name}")
+    format!("{product} {name}")
 }
 
 /// Newest first by modification time: a resumed session appends to its old file.
@@ -809,6 +823,108 @@ fn apply_local_codex(state: &mut ProviderUsageSnapshot, home: &Path, now: u64) -
     state.local = true;
     state.message = Some("Límites de tu última sesión local de Codex.".into());
     true
+}
+
+/// None when the file is missing, unreadable or larger than `limit`.
+fn read_bounded(path: &Path, limit: u64) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (bytes.len() as u64 <= limit).then_some(bytes)
+}
+
+/// Epoch seconds as Claude Code sends them; milliseconds and an ISO date are
+/// what its account API uses for the same field.
+fn claude_reset_ms(value: Option<&Value>) -> Option<u64> {
+    let ms = match nonnegative(value) {
+        // No date in seconds reaches 1e10 before the year 2286.
+        Some(epoch) if epoch > 1e10 => epoch,
+        Some(seconds) => seconds * 1000.0,
+        None => chrono::DateTime::parse_from_rfc3339(value?.as_str()?.trim())
+            .ok()?
+            .timestamp_millis() as f64,
+    };
+    (ms >= 0.0).then_some(ms as u64)
+}
+
+/// Only the subscription's name is deserialized; the tokens beside it are not.
+fn claude_plan(claude: &Path) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Credentials {
+        #[serde(rename = "claudeAiOauth")]
+        oauth: Oauth,
+    }
+    #[derive(serde::Deserialize)]
+    struct Oauth {
+        #[serde(rename = "subscriptionType")]
+        plan: String,
+    }
+    let bytes = read_bounded(&claude.join(".credentials.json"), CLAUDE_FILE_BYTES)?;
+    let plan = serde_json::from_slice::<Credentials>(&bytes).ok()?.oauth.plan;
+    let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ' ');
+    (!plan.is_empty() && plan.len() <= 32 && plan.chars().all(plain))
+        .then(|| named_plan("Claude", &plan))
+}
+
+/// What Claude Code last handed to its status line, as our script kept it
+/// under `root`. Local files only, every field untrusted. `claude` is its
+/// configuration directory, read for the plan name alone.
+pub(crate) fn local_claude(
+    root: &Path,
+    claude: Option<&Path>,
+    now: u64,
+) -> Option<ProviderUsageSnapshot> {
+    let path = root.join(crate::claude_limits::STATE_FILE);
+    let at = std::fs::metadata(&path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis() as u64;
+    let payload: Value =
+        serde_json::from_slice(&read_bounded(&path, CLAUDE_FILE_BYTES)?).ok()?;
+    let mut windows = Vec::new();
+    for (key, label) in [("five_hour", "5 horas"), ("seven_day", "Semanal")] {
+        let row = &payload["rate_limits"][key];
+        // `utilization` is the account API's name for the same percent.
+        let Some(used) =
+            number(row.get("used_percentage")).or_else(|| number(row.get("utilization")))
+        else {
+            continue;
+        };
+        let used = used.clamp(0.0, 100.0);
+        let reset_at_ms = claude_reset_ms(row.get("resets_at"))
+            .filter(|reset| *reset > 0 && *reset < now + 366 * 86_400_000);
+        // A window that has reset since the turn no longer holds this percent.
+        if reset_at_ms.is_some_and(|reset| reset <= now) {
+            continue;
+        }
+        let mut window = usage_window(label, used, UsageUnit::Percent);
+        window.limit = Some(100.0);
+        window.remaining = Some(100.0 - used);
+        window.reset_at_ms = reset_at_ms;
+        windows.push(window);
+    }
+    if windows.is_empty() {
+        return None;
+    }
+    Some(ProviderUsageSnapshot {
+        provider_id: crate::claude_limits::PROVIDER_ID.into(),
+        provider_name: crate::claude_limits::PROVIDER_NAME.into(),
+        account: None,
+        status: ProviderUsageStatus::Ready,
+        plan_label: claude.and_then(claude_plan),
+        windows,
+        balances: Vec::new(),
+        fetched_at_ms: Some(at.min(now)),
+        local: true,
+        account_url: Some("https://claude.ai/settings/usage".into()),
+        message: Some("Límites de tu última sesión de Claude Code.".into()),
+    })
 }
 
 fn parse_opencode_go(body: &Value, state: &mut ProviderUsageSnapshot) -> Result<(), &'static str> {
@@ -1193,6 +1309,116 @@ mod tests {
         assert_eq!(usage.plan_label.as_deref(), Some("Plan de ChatGPT"));
     }
 
+    fn claude(limits: Value) -> (tempfile::TempDir, Option<ProviderUsageSnapshot>) {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(crate::claude_limits::STATE_FILE);
+        std::fs::write(&path, json!({"model": {"display_name": "Opus"}, "rate_limits": limits}).to_string()).unwrap();
+        let written = UNIX_EPOCH + Duration::from_millis(NOW - 120_000);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(written).unwrap();
+        let usage = local_claude(root.path(), Some(root.path()), NOW);
+        (root, usage)
+    }
+
+    #[test]
+    fn local_claude_limits_name_both_windows_and_date_them_by_the_state_file() {
+        let seconds = NOW / 1000;
+        let (root, usage) = claude(json!({
+            "five_hour": {"used_percentage": 42.5, "resets_at": seconds + 3_600},
+            "seven_day": {"used_percentage": 81, "resets_at": seconds + 259_200},
+            "spend_limit": {"used_percentage": 3},
+        }));
+        let usage = usage.unwrap();
+        assert_eq!(usage.provider_id, "claude-code");
+        assert_eq!(usage.status, ProviderUsageStatus::Ready);
+        assert!(usage.local && usage.balances.is_empty() && usage.plan_label.is_none());
+        assert_eq!(usage.fetched_at_ms, Some(NOW - 120_000));
+        let rows: Vec<_> = usage
+            .windows
+            .iter()
+            .map(|w| (w.label.as_str(), w.used, w.remaining, w.unit, w.reset_at_ms))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("5 horas", 42.5, Some(57.5), UsageUnit::Percent, Some(NOW / 1000 * 1000 + 3_600_000)),
+                ("Semanal", 81.0, Some(19.0), UsageUnit::Percent, Some(NOW / 1000 * 1000 + 259_200_000)),
+            ]
+        );
+        assert_eq!(usage.windows[1].used_percent(), Some(81.0));
+
+        // The plan is the one field read from Claude's directory.
+        let credentials = root.path().join(".credentials.json");
+        std::fs::write(&credentials, json!({"claudeAiOauth": {"accessToken": "placeholder-token",
+            "subscriptionType": "max"}}).to_string()).unwrap();
+        let usage = local_claude(root.path(), Some(root.path()), NOW).unwrap();
+        assert_eq!(usage.plan_label.as_deref(), Some("Claude Max"));
+        assert!(!format!("{usage:?}").contains("placeholder-token"));
+        for unusable in [json!({"claudeAiOauth": {"subscriptionType": "<b>\n"}}), json!({"claudeAiOauth": {}}), json!([])] {
+            std::fs::write(&credentials, unusable.to_string()).unwrap();
+            assert!(local_claude(root.path(), Some(root.path()), NOW).unwrap().plan_label.is_none());
+        }
+        assert!(local_claude(root.path(), None, NOW).unwrap().plan_label.is_none());
+    }
+
+    #[test]
+    fn local_claude_limits_accept_each_spelling_and_distrust_every_field() {
+        let seconds = NOW / 1000;
+        let reset = Some(seconds * 1000 + 3_600_000);
+        let iso = chrono::DateTime::from_timestamp(seconds as i64 + 3_600, 0).unwrap().to_rfc3339();
+        // (payload of one window) -> (used, reset) or dropped.
+        for (index, (row, expected)) in [
+            (json!({"used_percentage": 12, "resets_at": seconds + 3_600}), Some((12.0, reset))),
+            (json!({"utilization": 37, "resets_at": iso}), Some((37.0, reset))),
+            (json!({"used_percentage": 8, "utilization": 99}), Some((8.0, None))),
+            (json!({"used_percentage": "55", "resets_at": (seconds + 3_600) * 1000}), Some((55.0, reset))),
+            (json!({"used_percentage": 250, "resets_at": "   "}), Some((100.0, None))),
+            (json!({"used_percentage": -4, "resets_at": "soon"}), Some((0.0, None))),
+            // A reset beyond a year is not a date; the percent still is.
+            (json!({"used_percentage": 5, "resets_at": seconds * 3}), Some((5.0, None))),
+            // A window that has reset since no longer holds its percent.
+            (json!({"used_percentage": 90, "resets_at": seconds - 60}), None),
+            (json!({"resets_at": seconds + 3_600}), None),
+            (json!({"used_percentage": null}), None),
+            (json!({"used_percentage": [1]}), None),
+            (json!("42"), None),
+            (Value::Null, None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (_root, usage) = claude(json!({"five_hour": row}));
+            let read = usage.map(|usage| (usage.windows[0].used, usage.windows[0].reset_at_ms));
+            assert_eq!(read, expected, "case {index}");
+        }
+        for limits in [Value::Null, json!({}), json!([1, 2]), json!("x")] {
+            assert!(claude(limits).1.is_none());
+        }
+        // Not JSON, too large, or absent: no snapshot and no panic.
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(crate::claude_limits::STATE_FILE);
+        assert!(local_claude(root.path(), None, NOW).is_none());
+        std::fs::write(&path, "{\"rate_limits\": {\"five_hour\"").unwrap();
+        assert!(local_claude(root.path(), None, NOW).is_none());
+        let padded = format!("{{\"rate_limits\":{{\"five_hour\":{{\"used_percentage\":1}}}},\"pad\":\"{}\"}}", "x".repeat(CLAUDE_FILE_BYTES as usize));
+        std::fs::write(&path, padded).unwrap();
+        assert!(local_claude(root.path(), None, NOW).is_none());
+    }
+
+    #[test]
+    fn the_worker_reads_claude_limits_only_when_asked_for_them() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(crate::claude_limits::STATE_FILE),
+            json!({"rate_limits": {"seven_day": {"used_percentage": 64}}}).to_string(),
+        )
+        .unwrap();
+        let cancel = AtomicBool::new(false);
+        let ids = ["claude-code".to_owned()];
+        let result = collect_usage(root.path(), &ids, None, &cancel).unwrap();
+        assert_eq!(result["claude-code"].windows[0].label, "Semanal");
+        assert!(collect_usage(root.path(), &[], None, &cancel).unwrap().is_empty());
+    }
+
     #[test]
     fn local_codex_limits_come_from_the_newest_file_and_only_from_its_tail() {
         let home = tempfile::tempdir().unwrap();
@@ -1230,7 +1456,7 @@ mod tests {
     fn live_chatgpt_plan_usage_is_readable_with_the_saved_sign_in() {
         let root = std::path::PathBuf::from(std::env::var("OPENIDE_LIVE_DATA_ROOT").unwrap());
         let cancel = AtomicBool::new(false);
-        let result = collect_usage(&root, &["codex".to_owned()], &cancel).unwrap();
+        let result = collect_usage(&root, &["codex".to_owned()], None, &cancel).unwrap();
         let usage = result.get("codex").expect("a codex measurement");
         println!(
             "LIVE usage: status {:?}, plan {:?}, message {:?}, account header {}",
