@@ -122,7 +122,7 @@ impl AgentsWindow {
                 } else {
                     relative.parent().map(Path::to_owned).unwrap_or_default()
                 };
-                // The editor keeps a document by its path and cannot follow a move.
+                // Open documents follow the move; one being written must settle first.
                 if cut
                     && sources
                         .iter()
@@ -132,6 +132,10 @@ impl AgentsWindow {
                 } else {
                     self.start_file_op(Op::Paste { sources, cut, into }, ctx);
                 }
+            }
+            // The trash would take the file and leave the unsaved text without one.
+            ("delete", Some(_)) if self.code_editor.has_unsaved_under(&workspace, &relative) => {
+                self.view.status = "Guarda los cambios abiertos antes de eliminar".into();
             }
             ("delete", Some(_)) => self.view.file_delete = Some((path.to_owned(), is_dir)),
             ("collapse_all", _) => {
@@ -238,7 +242,7 @@ impl AgentsWindow {
             let Op::Rename { path, .. } = &op else {
                 return None;
             };
-            // The editor keeps a document by its path and cannot follow a move.
+            // Open documents follow the move; one being written must settle first.
             self.code_editor
                 .has_unsaved_under(Path::new(&self.view.workspace), path)
                 .then(|| "Guarda los cambios abiertos antes de renombrar".to_owned())
@@ -287,11 +291,12 @@ impl AgentsWindow {
         if root != Path::new(&self.view.workspace) {
             return true;
         }
+        self.follow_file_op(&root, &op, &result);
         if let Some(explorer) = &mut self.file_explorer {
             let _ = explorer.refresh();
         }
         self.refresh_file_rows();
-        let named = !matches!(op, Op::Trash { .. } | Op::Paste { .. });
+        let named =!matches!(op, Op::Trash { .. } | Op::Paste { .. });
         if let Op::Paste { into, cut, .. } = &op {
             // What was pasted is shown, and a cut is spent once it has moved.
             if let Some(explorer) = &mut self.file_explorer {
@@ -336,6 +341,61 @@ impl AgentsWindow {
             },
         }
         true
+    }
+
+    /// Whatever is open follows the paths `op` moved and closes on the one it
+    /// sent to the trash: documents, tabs and closed entries, previews and
+    /// breakpoints. Each path is checked on disk, since an operation that
+    /// stopped may have moved only some of them.
+    fn follow_file_op(&mut self, root: &Path, op: &Op, result: &Result<Vec<PathBuf>, Failure>) {
+        let created = match result {
+            Ok(created) => created,
+            Err(failure) => &failure.created,
+        };
+        let moves: Vec<(&Path, Option<&Path>)> = match op {
+            Op::Rename { path, .. } => created
+                .first()
+                .map(|new| (path.as_path(), Some(new.as_path())))
+                .into_iter()
+                .collect(),
+            Op::Paste {
+                sources,
+                cut: true,
+                into,
+            } => sources
+                .iter()
+                // A source already in `into` stays where it is and creates nothing.
+                .filter(|source| source.parent() != Some(into.as_path()))
+                .zip(created)
+                .map(|(old, new)| (old.as_path(), Some(new.as_path())))
+                .collect(),
+            Op::Trash { path } => vec![(path.as_path(), None)],
+            _ => return,
+        };
+        let exists = |path: &Path| std::fs::symlink_metadata(root.join(path)).is_ok();
+        let mut changed = false;
+        for (old, new) in moves {
+            if exists(old)
+                || new.is_some_and(|new| !exists(new))
+                // Typed while the trash ran: the tab stays and reports the missing file.
+                || (new.is_none() && self.code_editor.has_unsaved_under(root, old))
+            {
+                continue;
+            }
+            self.code_editor.retarget(root, old, new);
+            for tab in self.dock.retarget_files(&self.view.workspace, old, new) {
+                self.tree
+                    .forget_code_view(&crate::code_editor_ui::view_id(tab.get()));
+            }
+            self.retarget_document_previews(old, new);
+            self.retarget_markdown_preview(old, new);
+            self.retarget_breakpoints(old, new);
+            changed = true;
+        }
+        if changed {
+            self.sync_dock_view();
+            self.sync_code_editor();
+        }
     }
 
     /// The keys of the focused tree row, taken from the native events: the

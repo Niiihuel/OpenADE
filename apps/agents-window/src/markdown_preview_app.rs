@@ -159,6 +159,26 @@ impl AgentsWindow {
         self.markdown_preview.focus_pending = Some(self.tree.has_keyboard_focus());
     }
 
+    /// The side preview reopens on a source that moved to `new`, and closes
+    /// with one that is gone.
+    pub(super) fn retarget_markdown_preview(&mut self, old: &Path, new: Option<&Path>) {
+        let Some(tab) = &self.view.markdown_preview else {
+            return;
+        };
+        let scope = &tab.preview.scope;
+        if scope.workspace != Path::new(&self.view.workspace) {
+            return;
+        }
+        let Some(next) = crate::file_ops::moved(&scope.path, old, new) else {
+            return;
+        };
+        let source = tab.source_tab_id;
+        match (next, self.markdown_preview.owner.clone()) {
+            (Some(path), Some(owner)) => self.replace_markdown_preview(owner, path, source),
+            _ => self.close_markdown_preview(false),
+        }
+    }
+
     fn close_markdown_preview(&mut self, focus_source: bool) {
         if let Some(worker) = &self.markdown_preview.worker {
             worker.cancel();

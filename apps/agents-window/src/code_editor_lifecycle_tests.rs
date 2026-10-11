@@ -46,16 +46,19 @@ fn pump(app: &mut AgentsWindow, done: impl Fn(&AgentsWindow) -> bool) {
     }
 }
 fn open(app: &mut AgentsWindow) {
+    open_path(app, "main.rs");
+}
+fn open_path(app: &mut AgentsWindow, path: &str) {
     let workspace = PathBuf::from(&app.view.workspace);
     app.dock
-        .open_file(&workspace, "", Path::new("main.rs"))
+        .open_file(&workspace, "", Path::new(path))
         .unwrap();
     app.sync_dock_view();
     pump(app, |app| {
         app.view
             .code_editor
             .as_ref()
-            .is_some_and(|view| !view.loading)
+            .is_some_and(|view| view.path == path && !view.loading)
     });
 }
 fn buffer(app: &AgentsWindow) -> EditorController {
@@ -596,4 +599,263 @@ fn save_as_completion_keeps_the_original_task_scope_without_stealing_new_task_fo
             .iter()
             .any(|tab| tab.title.contains("background-copy"))
     );
+}
+
+/// A project with a folder, and `paths` open as tabs, the last one active.
+fn tree_fixture(paths: &[&str]) -> (tempfile::TempDir, AgentsWindow) {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("project");
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::create_dir(project.join("docs")).unwrap();
+    for name in ["main.rs", "src/a.rs", "src/b.rs", "src/c.rs"] {
+        std::fs::write(project.join(name), "base\r\n").unwrap();
+    }
+    let mut app = app_at(root.path());
+    app.file_trash = crate::file_ops::tests::fake_trash;
+    app.refresh_file_rows();
+    tree(&mut app, "toggle", "src");
+    for path in paths {
+        open_path(&mut app, path);
+    }
+    (root, app)
+}
+/// One entry of the file tree's menu, and the operation it starts.
+fn tree(app: &mut AgentsWindow, operation: &str, path: &str) {
+    let id = crate::files_panel_ui::tree_action(operation, path);
+    file_action(app, UiAction::Clicked { id });
+}
+/// Enter in the tree's name field.
+fn name(app: &mut AgentsWindow, value: &str) {
+    file_action(
+        app,
+        UiAction::Submitted {
+            id: "file_tree_draft".into(),
+            value: value.into(),
+        },
+    );
+}
+fn file_action(app: &mut AgentsWindow, action: UiAction) {
+    let ctx = egui::Context::default();
+    assert!(app.apply_file_tree_action(&action, &ctx));
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while app.file_op.is_some() {
+        app.poll_file_op(&ctx);
+        assert!(Instant::now() < deadline, "file operation timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+fn save(app: &mut AgentsWindow) {
+    let id = code_editor_ui::view_id(app.view.code_editor.as_ref().unwrap().tab_id);
+    let snapshot = buffer(app).snapshot().unwrap();
+    app.apply_code_editor_action(
+        &UiAction::EditorSaveRequested {
+            id,
+            document_id: snapshot.document_id(),
+            revision: snapshot.revision(),
+        },
+        &egui::Context::default(),
+    );
+    pump(app, |app| !buffer(app).snapshot().unwrap().is_dirty());
+    // A save drops the tree; the next frame builds it again.
+    app.refresh_file_rows();
+}
+/// The tab strip: each title and the path under the project it stands for.
+fn tabs(app: &AgentsWindow) -> Vec<(String, String)> {
+    let project = Path::new(&app.view.workspace);
+    app.view
+        .dock_tabs
+        .iter()
+        .map(|tab| {
+            let path = Path::new(tab.full_path.as_deref().unwrap_or_default());
+            let relative = path.strip_prefix(project).unwrap_or(path);
+            (tab.title.clone(), relative.to_string_lossy().into_owned())
+        })
+        .collect()
+}
+fn documents(app: &AgentsWindow) -> Vec<String> {
+    app.code_editor_documents()
+        .into_iter()
+        .map(|document| document.path.to_string_lossy().into_owned())
+        .collect()
+}
+fn pair(title: &str, path: &str) -> (String, String) {
+    (title.into(), path.into())
+}
+
+#[test]
+fn renaming_an_open_file_keeps_its_tab_and_buffer_and_saves_to_the_new_path() {
+    let (root, mut app) = tree_fixture(&["main.rs"]);
+    let project = root.path().join("project");
+    // A saved edit leaves history to undo; the selection is where the cursor is.
+    edit(&mut app, "first\r\n");
+    save(&mut app);
+    let selection = Selection { anchor: 1, head: 3 };
+    let shared = buffer(&app).shared_buffer();
+    shared.lock().unwrap().set_selection(selection).unwrap();
+    let tab = app.view.code_editor.as_ref().unwrap().tab_id;
+    let document = buffer(&app).snapshot().unwrap().document_id();
+    tree(&mut app, "rename", "main.rs");
+    name(&mut app, "app.rs");
+    assert_eq!(tabs(&app), [pair("app.rs", "app.rs")]);
+    assert_eq!(documents(&app), ["app.rs"]);
+    let view = app.view.code_editor.as_ref().unwrap();
+    assert_eq!((view.tab_id, view.path.as_str()), (tab, "app.rs"));
+    let snapshot = buffer(&app).snapshot().unwrap();
+    assert_eq!(snapshot.document_id(), document, "the same buffer");
+    assert_eq!(snapshot.selection(), selection);
+    assert!(!snapshot.is_dirty());
+    // The file on disk is the one the document now names: no conflict.
+    inspect(&mut app);
+    let view = app.view.code_editor.as_ref().unwrap();
+    assert!(!view.conflict && !view.missing && view.error.is_none());
+    edit(&mut app, "second\r\n");
+    save(&mut app);
+    assert!(app.view.code_editor.as_ref().unwrap().error.is_none());
+    assert_eq!(
+        std::fs::read_to_string(project.join("app.rs")).unwrap(),
+        "base\r\nfirst\r\nsecond\r\n"
+    );
+    assert!(!project.join("main.rs").exists(), "the old path is not recreated");
+    // History from before the rename is still there.
+    assert!(shared.lock().unwrap().undo().unwrap());
+    assert!(shared.lock().unwrap().undo().unwrap());
+    assert_eq!(text(&app), "base\r\n");
+}
+
+#[test]
+fn renaming_a_folder_moves_every_tab_and_closed_entry_inside_it() {
+    let (_root, mut app) = tree_fixture(&["src/c.rs", "src/a.rs", "main.rs", "src/b.rs"]);
+    let scope = app.dock_scope();
+    let closed = app.dock.tabs(&scope.workspace_id)[0].id;
+    app.dock.close(&scope, closed);
+    app.sync_dock_view();
+    let ids: Vec<u64> = app.view.dock_tabs.iter().map(|tab| tab.id).collect();
+    tree(&mut app, "rename", "src");
+    name(&mut app, "lib");
+    assert_eq!(
+        tabs(&app),
+        [
+            pair("a.rs", "lib/a.rs"),
+            pair("main.rs", "main.rs"),
+            pair("b.rs", "lib/b.rs")
+        ]
+    );
+    assert_eq!(
+        app.view.dock_tabs.iter().map(|tab| tab.id).collect::<Vec<_>>(),
+        ids,
+        "the same tabs in the same order"
+    );
+    assert_eq!(app.view.code_editor.as_ref().unwrap().path, "lib/b.rs");
+    assert_eq!(documents(&app), ["lib/a.rs", "lib/b.rs", "lib/c.rs", "main.rs"]);
+    assert_eq!(
+        app.dock.recently_closed(&scope)[0].tab.kind,
+        DockTabKind::FilePreview {
+            path: "lib/c.rs".into()
+        }
+    );
+}
+
+#[test]
+fn a_cut_and_pasted_file_keeps_its_tab_and_saves_where_it_landed() {
+    let (root, mut app) = tree_fixture(&["main.rs", "src/a.rs"]);
+    let project = root.path().join("project");
+    tree(&mut app, "cut", "src/a.rs");
+    tree(&mut app, "paste", "docs");
+    assert_eq!(
+        tabs(&app),
+        [pair("main.rs", "main.rs"), pair("a.rs", "docs/a.rs")]
+    );
+    assert_eq!(app.view.code_editor.as_ref().unwrap().path, "docs/a.rs");
+    edit(&mut app, "moved");
+    save(&mut app);
+    assert_eq!(
+        std::fs::read_to_string(project.join("docs/a.rs")).unwrap(),
+        "base\r\nmoved"
+    );
+    assert!(!project.join("src/a.rs").exists());
+}
+
+#[test]
+fn a_draft_written_after_a_rename_is_recovered_at_the_new_path() {
+    let (root, mut app) = tree_fixture(&["main.rs"]);
+    // A draft kept under the old path must not come back after the rename.
+    edit(&mut app, "saved\r\n");
+    flush_draft(&mut app);
+    save(&mut app);
+    tree(&mut app, "rename", "main.rs");
+    name(&mut app, "app.rs");
+    edit(&mut app, "draft");
+    flush_draft(&mut app);
+    pump(&mut app, |app| {
+        app.code_editor.recovery_cleanup.is_empty()
+            && app.code_editor.recovery_cleanup_pending.is_empty()
+    });
+    close_instance(app, root.path());
+    let mut restarted = app_at(root.path());
+    pump(&mut restarted, |app| {
+        app.view.code_editor.as_ref().is_some_and(|v| v.recovered)
+    });
+    assert_eq!(documents(&restarted), ["app.rs"]);
+    assert_eq!(tabs(&restarted), [pair("app.rs •", "app.rs")]);
+    assert_eq!(text(&restarted), "base\r\nsaved\r\ndraft");
+    assert!(!root.path().join("project/main.rs").exists());
+}
+
+#[test]
+fn trashing_an_open_file_closes_its_tab_unless_it_has_unsaved_text() {
+    let (root, mut app) = tree_fixture(&["main.rs", "src/a.rs", "src/b.rs"]);
+    let project = root.path().join("project");
+    edit(&mut app, "unsaved");
+    for path in ["src/b.rs", "src"] {
+        tree(&mut app, "delete", path);
+        assert_eq!(app.view.file_delete, None, "{path}");
+        assert_eq!(app.view.status, "Guarda los cambios abiertos antes de eliminar");
+    }
+    assert!(project.join("src/b.rs").is_file());
+    save(&mut app);
+    tree(&mut app, "delete", "src");
+    file_action(
+        &mut app,
+        UiAction::Clicked {
+            id: "file_tree_delete_confirm".into(),
+        },
+    );
+    assert!(project.join("src.trashed/b.rs").is_file());
+    assert_eq!(tabs(&app), [pair("main.rs", "main.rs")]);
+    assert_eq!(documents(&app), ["main.rs"]);
+    assert_eq!(app.view.code_editor.as_ref().unwrap().path, "main.rs");
+    assert!(app.dock.recently_closed(&app.dock_scope()).is_empty());
+}
+
+#[test]
+#[ignore = "opt-in PNG review of the tab strip before and after a rename"]
+fn export_rename_tabs_visual_review() {
+    let directory = std::env::var_os("OPENIDE_EDITOR_VISUAL_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp/openide-editor-visual-qa"));
+    std::fs::create_dir_all(&directory).unwrap();
+    let (_root, mut app) = tree_fixture(&["src/a.rs", "main.rs", "src/b.rs"]);
+    let mut export = |app: &mut AgentsWindow, name: &str| {
+        let (width, height) = (900.0, 760.0);
+        let frame = frame(app, width);
+        let path = directory.join(format!("{name}.svg"));
+        crate::settings_ui::visual_qa::write_frame_svg(&frame, &path, width, height).unwrap();
+        let mut options = resvg::usvg::Options::default();
+        options.fontdb_mut().load_system_fonts();
+        let svg = std::fs::read_to_string(&path).unwrap();
+        let svg = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
+        resvg::render(
+            &svg,
+            resvg::tiny_skia::Transform::identity(),
+            &mut pixmap.as_mut(),
+        );
+        pixmap.save_png(path.with_extension("png")).unwrap();
+    };
+    export(&mut app, "rename-tabs-before");
+    tree(&mut app, "rename", "src");
+    name(&mut app, "lib");
+    tree(&mut app, "rename", "main.rs");
+    name(&mut app, "app.rs");
+    export(&mut app, "rename-tabs-after");
 }

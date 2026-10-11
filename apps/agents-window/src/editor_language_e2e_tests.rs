@@ -351,6 +351,95 @@ fn hover_and_diagnostic_display_budgets_are_global_and_keep_utf8_boundaries() {
     assert_eq!(bounded_text("short message", 4096), "short message");
 }
 
+/// A language server that answers the handshake and writes down, beside
+/// itself, each document notification it receives.
+#[cfg(unix)]
+const RECORDING_SERVER: &str = r#"#!/usr/bin/env python3
+import json, sys
+def send(value):
+    data = json.dumps(dict(jsonrpc="2.0", **value)).encode()
+    sys.stdout.buffer.write(f"Content-Length: {len(data)}\r\n\r\n".encode() + data)
+    sys.stdout.buffer.flush()
+def read():
+    length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        if line in (b"\r\n", b"\n"):
+            break
+        if line.lower().startswith(b"content-length:"):
+            length = int(line.split(b":", 1)[1])
+    return json.loads(sys.stdin.buffer.read(length))
+while (msg := read()) is not None:
+    method = msg.get("method", "")
+    if method == "initialize":
+        send({"id": msg["id"], "result": {"capabilities": {
+            "positionEncoding": "utf-16", "textDocumentSync": 2}}})
+    elif method.startswith("textDocument/did"):
+        document = msg["params"]["textDocument"]
+        with open(sys.argv[0] + ".log", "a") as log:
+            log.write(" ".join([method[13:], document["uri"].rsplit("/", 1)[1],
+                                document.get("text", "").replace("\n", "|")]).strip() + "\n")
+    elif "id" in msg and method:
+        send({"id": msg["id"], "result": None})
+"#;
+
+#[cfg(unix)]
+#[test]
+fn renaming_the_open_file_closes_its_old_uri_and_opens_the_new_one_with_its_text() {
+    use std::os::unix::fs::PermissionsExt;
+    let (root, mut app) = fixture();
+    let server = root.path().join("recording-server");
+    std::fs::write(&server, RECORDING_SERVER).unwrap();
+    std::fs::set_permissions(&server, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let scope = (PathBuf::from(&app.view.workspace), Language::Rust);
+    app.editor_services.language.overrides.insert(scope, server.clone());
+    app.refresh_file_rows();
+    let ctx = egui::Context::default();
+    let log = server.with_extension("log");
+    let mut received = |app: &mut AgentsWindow, count: usize| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            app.poll_file_op(&ctx);
+            app.poll_code_editor(&ctx);
+            app.poll_editor_language(&ctx);
+            let text = std::fs::read_to_string(&log).unwrap_or_default();
+            let lines: Vec<String> = text.lines().map(str::to_owned).collect();
+            if lines.len() >= count && app.file_op.is_none() {
+                return lines;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{lines:?} · {}",
+                app.view.editor_workbench.language_status
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    assert_eq!(received(&mut app, 1), ["didOpen main.rs use x;|fo"]);
+    for action in [
+        UiAction::Clicked {
+            id: crate::files_panel_ui::tree_action("rename", "main.rs"),
+        },
+        UiAction::Submitted {
+            id: "file_tree_draft".into(),
+            value: "app.rs".into(),
+        },
+    ] {
+        assert!(app.apply_file_tree_action(&action, &ctx));
+    }
+    assert_eq!(
+        received(&mut app, 3),
+        [
+            "didOpen main.rs use x;|fo",
+            "didClose main.rs",
+            "didOpen app.rs use x;|fo"
+        ]
+    );
+    assert!(app.view.editor_workbench.language_ready, "the same connection");
+}
+
 fn pump_real(
     app: &mut AgentsWindow,
     ctx: &egui::Context,

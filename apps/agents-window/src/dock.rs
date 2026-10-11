@@ -450,6 +450,63 @@ impl DockState {
         Some(removed)
     }
 
+    /// The file or folder `old` moved to `new`, or is gone when `new` is
+    /// `None`. Its file tabs and closed entries, of every owner, follow it in
+    /// place; a tab that is gone, or whose new path already has a tab of the
+    /// same owner, is closed without a closed entry. Returns the closed IDs.
+    pub fn retarget_files(
+        &mut self,
+        workspace_id: &str,
+        old: &Path,
+        new: Option<&Path>,
+    ) -> Vec<DockTabId> {
+        let Some(workspace) = self.workspaces.get_mut(workspace_id) else {
+            return Vec::new();
+        };
+        // `None`: not under `old`. `Some(None)`: under it, and gone.
+        let target = |kind: &DockTabKind| match kind {
+            DockTabKind::FilePreview { path } => crate::file_ops::moved(path, old, new)
+                .map(|path| path.map(|path| DockTabKind::FilePreview { path })),
+            _ => None,
+        };
+        workspace
+            .recently_closed
+            .retain_mut(|entry| match target(&entry.tab.kind) {
+                Some(Some(kind)) => {
+                    entry.tab.kind = kind;
+                    true
+                }
+                Some(None) => false,
+                None => true,
+            });
+        let mut closed = Vec::new();
+        let mut index = 0;
+        while index < workspace.tabs.len() {
+            let owner = &workspace.tabs[index].owner;
+            let kind = match target(&workspace.tabs[index].kind) {
+                None => {
+                    index += 1;
+                    continue;
+                }
+                Some(kind) => kind.filter(|kind| {
+                    !workspace
+                        .tabs
+                        .iter()
+                        .any(|tab| tab.owner == *owner && tab.kind == *kind)
+                }),
+            };
+            if let Some(kind) = kind {
+                workspace.tabs[index].kind = kind;
+                index += 1;
+            } else {
+                let id = workspace.tabs.remove(index).id;
+                repair_active_after_close(workspace, id, index);
+                closed.push(id);
+            }
+        }
+        closed
+    }
+
     /// Close other right-side tabs. Bottom terminals and hidden tasks survive.
     /// Passing a terminal as `keep` is rejected without changing either selection.
     pub fn close_others(&mut self, scope: &DockScope, keep: DockTabId) -> Vec<DockTab> {
@@ -808,6 +865,47 @@ mod tests {
         dock.close(&alice, first);
         assert!(dock.active_tab(&alice).is_none());
         assert!(!dock.is_collapsed(&alice));
+    }
+
+    #[test]
+    fn file_tabs_follow_a_moved_path_in_place_and_close_on_one_that_is_gone() {
+        let file = |path: &str| DockTabKind::FilePreview { path: path.into() };
+        let mut dock = DockState::default();
+        let alice = task("repo", "alice");
+        let bob = task("repo", "bob");
+        let a = dock.open(&alice, file("src/a.rs"));
+        let context = dock.open(&alice, DockTabKind::Context);
+        let b = dock.open(&alice, file("src/deep/b.rs"));
+        let other = dock.open(&alice, file("src.rs"));
+        let hidden = dock.open(&bob, file("src/a.rs"));
+        let closed = dock.open(&alice, file("src/c.rs"));
+        dock.close(&alice, closed);
+        assert!(dock.activate(&alice, a));
+        assert!(dock.retarget_files("repo", Path::new("src"), Some(Path::new("lib"))).is_empty());
+        assert!(dock.retarget_files("other", Path::new("lib"), None).is_empty());
+        let tabs: Vec<_> = dock.tabs("repo").iter().map(|tab| (tab.id, tab.kind.clone())).collect();
+        assert_eq!(
+            tabs,
+            [
+                (a, file("lib/a.rs")),
+                (context, DockTabKind::Context),
+                (b, file("lib/deep/b.rs")),
+                (other, file("src.rs")),
+                (hidden, file("lib/a.rs")),
+            ]
+        );
+        assert_eq!(dock.active_tab(&alice).map(|tab| tab.id), Some(a));
+        assert_eq!(dock.recently_closed(&alice)[0].tab.kind, file("lib/c.rs"));
+        // A tab already at the destination stays; the one that moved onto it closes.
+        assert_eq!(
+            dock.retarget_files("repo", Path::new("src.rs"), Some(Path::new("lib/a.rs"))),
+            [other]
+        );
+        // Gone: the tabs of every owner close, the active one hands over, and
+        // nothing is left to reopen.
+        assert_eq!(dock.retarget_files("repo", Path::new("lib"), None), [a, b, hidden]);
+        assert_eq!(dock.active_tab(&alice).map(|tab| tab.id), Some(context));
+        assert!(dock.recently_closed(&alice).is_empty() && dock.tabs("repo").len() == 1);
     }
 
     #[test]

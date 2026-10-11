@@ -110,6 +110,32 @@ impl AgentsWindow {
             .insert(key, (view.page, view.zoom));
     }
 
+    /// The remembered mode and position follow a file that moved to `new`,
+    /// and go with one that is gone.
+    pub(super) fn retarget_document_previews(&mut self, old: &Path, new: Option<&Path>) {
+        // The preview on screen is remembered under the path it still has.
+        self.remember_document_preview_position();
+        let workspace = PathBuf::from(&self.view.workspace);
+        let moved = |key: PreviewKey| {
+            if key.0 != workspace {
+                return Some(key);
+            }
+            match crate::file_ops::moved(&key.1, old, new) {
+                Some(path) => path.map(|path| (key.0, path)),
+                None => Some(key),
+            }
+        };
+        let host = &mut self.document_preview;
+        host.modes = std::mem::take(&mut host.modes)
+            .into_iter()
+            .filter_map(|(key, mode)| Some((moved(key)?, mode)))
+            .collect();
+        host.positions = std::mem::take(&mut host.positions)
+            .into_iter()
+            .filter_map(|(key, position)| Some((moved(key)?, position)))
+            .collect();
+    }
+
     fn submit_document_preview(&mut self) {
         let Some(view) = self.view.document_preview.as_ref() else {
             return;

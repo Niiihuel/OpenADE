@@ -73,6 +73,19 @@ pub fn run(root: &Path, op: &Op, trash: Trash) -> Result<Vec<PathBuf>, Failure> 
     })
 }
 
+/// Where `path` is once `old` has moved to `new`, or `Some(None)` once `old`
+/// is gone; `None` when `path` is neither `old` nor under it.
+pub fn moved(path: &Path, old: &Path, new: Option<&Path>) -> Option<Option<PathBuf>> {
+    let rest = path.strip_prefix(old).ok()?;
+    Some(new.map(|new| {
+        if rest.as_os_str().is_empty() {
+            new.to_path_buf()
+        } else {
+            new.join(rest)
+        }
+    }))
+}
+
 pub fn valid_name(name: &str) -> Result<(), String> {
     Err(if name.trim().is_empty() {
         "Escribe un nombre"
