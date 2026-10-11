@@ -2,7 +2,7 @@
 use crate::{keymap::KeymapProfile, theme, view::ViewState};
 use openide_ui::{
     AlertDialog, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, CodeEditor, CodeLanguage,
-    Component, ControlSize, EditorController, Element, IconButton, SegmentedControl, Tab,
+    Component, ControlSize, EditorController, Element, IconButton,
     Text, TooltipPlacement, TooltipSpec,
 };
 use std::path::Path;
@@ -11,10 +11,11 @@ const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 const TOOL_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 pub(crate) const BREADCRUMB_HEIGHT: f32 = 22.0;
 const BREADCRUMB_INSET: f32 = 6.0;
-/// The breadcrumb row of a Markdown file is as tall as the switch it ends with.
-pub(crate) const MARKDOWN_ROW_HEIGHT: f32 = 28.0;
+/// The switch fits the breadcrumb row: a Markdown file's is no taller.
+pub(crate) const MARKDOWN_ROW_HEIGHT: f32 = BREADCRUMB_HEIGHT;
+const MARKDOWN_SWITCH_HEIGHT: f32 = 18.0;
 const MARKDOWN_SWITCH: [(&str, &str, f32); 2] =
-    [("preview", "Vista previa", 84.0), ("source", "Markdown", 72.0)];
+    [("preview", "Vista previa", 78.0), ("source", "Markdown", 68.0)];
 
 #[derive(Clone, Debug)]
 pub(crate) struct CodeEditorView {
@@ -105,24 +106,32 @@ pub(crate) fn ide_breadcrumb_row(
     let mut available = (width - BREADCRUMB_INSET * 2.0).max(0.0);
     let switch = markdown.then(|| {
         // The actions are the in-place preview's own, so its host applies them.
-        SegmentedControl::new(
+        // Two quiet words, as Cursor ends this row: only the shown one is filled.
+        let palette = theme::segmented_palette();
+        Element::row(
             MARKDOWN_SWITCH
                 .into_iter()
                 .map(|(key, label, width)| {
-                    Tab::new(
-                        format!("document_preview_view:{}:{key}", view.tab_id),
-                        label,
-                        width,
-                    )
-                    .active((key == "preview") == previewing)
+                    let shown = (key == "preview") == previewing;
+                    Element::button(format!("document_preview_view:{}:{key}", view.tab_id), label)
+                        .font_family(openide_ui::FontFamily::Sans)
+                        .font_size(12.0)
+                        .padding(0.0)
+                        .foreground(if shown { palette.text } else { palette.muted })
+                        .hover_foreground(palette.text)
+                        .background(if shown { palette.surface } else { openide_ui::Color::rgba(0, 0, 0, 0) })
+                        .hover_background(palette.surface)
+                        .radius(4.0)
+                        .size(Some(width), Some(MARKDOWN_SWITCH_HEIGHT))
                 })
                 .collect(),
-            theme::segmented_palette(),
         )
-        .render()
+        .gap(2.0)
+        .size(None, Some(MARKDOWN_SWITCH_HEIGHT))
+        .centered_y()
     });
     if switch.is_some() {
-        let switch_width = MARKDOWN_SWITCH.iter().map(|item| item.2).sum::<f32>() + 6.0;
+        let switch_width = MARKDOWN_SWITCH.iter().map(|item| item.2).sum::<f32>() + 2.0;
         available = (available - switch_width - BREADCRUMB_INSET).max(0.0);
     }
     row.push(editor_breadcrumb(view, workbench, dirty, available, height).flex(1.0));
