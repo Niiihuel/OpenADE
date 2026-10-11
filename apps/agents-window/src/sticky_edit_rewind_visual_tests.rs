@@ -319,6 +319,14 @@ fn rewind_notice_belongs_to_its_session_and_waits_for_a_running_turn() {
         )
     };
     assert_eq!(undo(&state), (true, true));
+    {
+        let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+        let frame = tree.layout(VIEWPORT);
+        let button = frame.regions.iter().find(|region| region.id == "message_rewind_undo_dismiss").unwrap().rect;
+        let top = text_top(&frame, "Se rebobinó la conversación").unwrap();
+        // A 12 px line is about 16 tall: its middle sits on the buttons' middle.
+        assert!((top + 8.0 - (button.y + button.height / 2.0)).abs() <= 3.0, "the copy is centered beside its actions");
+    }
     state.running = true;
     assert_eq!(undo(&state), (true, false), "the action is passive while a turn runs");
     state.running = false;

@@ -285,7 +285,7 @@ pub(crate) fn undo_notice(state: &ViewState, width: f32) -> Option<Element> {
         );
     }
     let busy = state.running || state.background_run_selected;
-    let mut row = vec![Element::column(copy).gap(3.0).flex(1.0)];
+    let mut row = vec![Element::column(copy).gap(3.0).flex(1.0).centered_y()];
     if !undo.undone {
         row.push(
             Button::new("message_rewind_undo", "Deshacer rebobinado", theme::component_palette())
