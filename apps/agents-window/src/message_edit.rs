@@ -12,7 +12,7 @@ use std::{
 };
 
 use openide_ui::{
-    AlertDialog, Button, ButtonVariant, Card, Color, Component, ControlSize, Element,
+    AlertDialog, Button, ButtonVariant, Card, Color, Component, ControlSize, Element, FontFamily,
     PopoverPlacement, RadiusRole, Text, TextRole,
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     composer_ui::{build_composer, ComposerProps},
+    session_changes::{OpaqueEffects, RevertSkip},
     theme,
     view::ViewState,
 };
@@ -62,14 +63,27 @@ pub struct RewindConfirm {
     /// User messages after the edited one that the rewind removes.
     pub later_messages: usize,
     pub error: Option<String>,
+    /// Paths "Revertir" would restore, as the preflight found them.
+    pub restorable: Vec<String>,
+    pub skipped: Vec<(String, RevertSkip)>,
+    pub opaque: OpaqueEffects,
+    /// Why the preflight itself could not be made.
+    pub unavailable: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RewindUndoView {
     pub session_id: String,
     /// User messages the rewind removed, the edited one included.
     pub removed_messages: usize,
     pub error: Option<String>,
+    /// Files the rewind put back to how they were before the removed turns.
+    pub restored_files: usize,
+    /// After a revert: paths it left alone. After an undo: restored paths
+    /// that changed since and so kept their content.
+    pub skipped_files: Vec<String>,
+    /// The rewind was undone; the notice only reports `skipped_files`.
+    pub undone: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -198,12 +212,27 @@ pub(crate) fn undo_notice(state: &ViewState, width: f32) -> Option<Element> {
         return None;
     }
     let summary = match undo.removed_messages {
+        _ if undo.undone => "Rebobinado deshecho.".to_owned(),
         1 => "Se rebobinó la conversación: se quitó 1 mensaje con su respuesta.".to_owned(),
         count => format!("Se rebobinó la conversación: se quitaron {count} mensajes con sus respuestas."),
     };
     let mut copy = vec![Text::new(summary, theme::component_palette())
         .role(TextRole::Small)
         .render()];
+    let mut files = Vec::new();
+    if undo.restored_files > 0 && !undo.undone {
+        files.push(format!("Se {}.", counted(undo.restored_files, "restauró 1 archivo", "restauraron", "archivos")));
+    }
+    if !undo.skipped_files.is_empty() {
+        files.push(format!(
+            "{}: {}.",
+            if undo.undone { "No se volvieron a aplicar porque cambiaron después" } else { "Se omitieron" },
+            listed(undo.skipped_files.iter().map(String::as_str), 3)
+        ));
+    }
+    if !files.is_empty() {
+        copy.push(Text::new(files.join(" "), theme::component_palette()).role(TextRole::Small).muted().render());
+    }
     if let Some(error) = &undo.error {
         copy.push(
             Element::text(error)
@@ -212,21 +241,25 @@ pub(crate) fn undo_notice(state: &ViewState, width: f32) -> Option<Element> {
         );
     }
     let busy = state.running || state.background_run_selected;
+    let mut row = vec![Element::column(copy).gap(3.0).flex(1.0)];
+    if !undo.undone {
+        row.push(
+            Button::new("message_rewind_undo", "Deshacer rebobinado", theme::component_palette())
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Compact)
+                .enabled(!busy)
+                .render(),
+        );
+    }
+    row.push(
+        Button::new("message_rewind_undo_dismiss", "Descartar", theme::component_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .render(),
+    );
     Some(
         Card::new(
-            Element::row(vec![
-                Element::column(copy).gap(3.0).flex(1.0),
-                Button::new("message_rewind_undo", "Deshacer rebobinado", theme::component_palette())
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Compact)
-                    .enabled(!busy)
-                    .render(),
-                Button::new("message_rewind_undo_dismiss", "Descartar", theme::component_palette())
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Compact)
-                    .render(),
-            ])
-            .gap(8.0),
+            Element::row(row).gap(8.0),
             theme::card_palette(),
         )
         .border(false)
@@ -245,25 +278,115 @@ pub(crate) fn confirm_dialog(base: Element, state: &ViewState, width: f32) -> El
         1 => "Se quitarán de la conversación la respuesta a este mensaje y el mensaje posterior con su respuesta.".to_owned(),
         count => format!("Se quitarán de la conversación la respuesta a este mensaje y los {count} mensajes posteriores con sus respuestas."),
     };
-    let mut dialog = AlertDialog::new(
-        base,
-        true,
-        "¿Enviar desde un mensaje anterior?",
-        format!("{removed} Los cambios hechos en archivos se conservan. Podés deshacer el rebobinado después."),
-        "message_edit_keep_files",
-        "message_edit_confirm_cancel",
-        theme::component_palette(),
-    )
-    .width((width - 24.0).min(480.0))
-    .confirm_label("No revertir");
+    let small = |text: String| Text::new(text, theme::component_palette()).role(TextRole::Small).render();
+    let mut body = Vec::new();
+    if !confirm.restorable.is_empty() {
+        body.push(small(format!(
+            "Se {}:",
+            counted(confirm.restorable.len(), "restaura 1 archivo", "restauran", "archivos")
+        )));
+        body.push(path_list(confirm.restorable.iter().map(String::as_str)));
+    } else {
+        body.push(small(
+            match (&confirm.unavailable, confirm.skipped.is_empty()) {
+                (Some(reason), _) => format!("No se pudo comprobar qué archivos restaurar: {reason}"),
+                (None, true) => "Estos turnos no dejaron cambios de archivos registrados: no hay nada que revertir.".to_owned(),
+                (None, false) => "Ningún archivo se puede restaurar con seguridad.".to_owned(),
+            },
+        ));
+    }
+    if !confirm.skipped.is_empty() {
+        body.push(small(format!("Se {}:", counted(confirm.skipped.len(), "omite 1", "omiten", ""))));
+        let mut reasons: Vec<_> = confirm.skipped.iter().map(|(_, reason)| *reason).collect();
+        reasons.sort();
+        reasons.dedup();
+        for reason in reasons {
+            let paths = confirm.skipped.iter().filter(|(_, other)| *other == reason).map(|(path, _)| path.as_str());
+            body.push(
+                Text::new(format!("{}: {}", reason.label(), listed(paths, 3)), theme::component_palette())
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            );
+        }
+    }
+    if let Some(warning) = opaque_warning(confirm.opaque) {
+        body.push(Element::text(warning).font_size(12.0).font_family(FontFamily::Sans).foreground(theme::WARNING));
+    }
     if let Some(error) = &confirm.error {
-        dialog = dialog.body(
+        body.push(
             Element::text(error)
                 .font_size(12.0)
                 .foreground(theme::DESTRUCTIVE),
         );
     }
-    dialog.render()
+    AlertDialog::new(
+        base,
+        true,
+        "¿Enviar desde un mensaje anterior?",
+        format!("{removed} «No revertir» deja los archivos como están. Podés deshacer el rebobinado después."),
+        "message_edit_revert",
+        "message_edit_confirm_cancel",
+        theme::component_palette(),
+    )
+    .width((width - 24.0).min(480.0))
+    .confirm_label("Revertir")
+    .confirm_enabled(!confirm.restorable.is_empty())
+    .alternative("message_edit_keep_files", "No revertir")
+    .body(Element::column(body).gap(6.0))
+    .render()
+}
+
+/// "1 archivo" or "restauran 3 archivos": `one` whole, or `many count noun`.
+fn counted(count: usize, one: &str, many: &str, noun: &str) -> String {
+    match count {
+        1 => one.to_owned(),
+        _ => format!("{many} {count} {noun}").trim_end().to_owned(),
+    }
+}
+
+/// Up to `limit` names, then how many more.
+fn listed<'a>(names: impl Iterator<Item = &'a str>, limit: usize) -> String {
+    let names: Vec<_> = names.collect();
+    let mut text = names[..names.len().min(limit)].join(", ");
+    if names.len() > limit {
+        text.push_str(&format!(" y {} más", names.len() - limit));
+    }
+    text
+}
+
+fn path_list<'a>(paths: impl Iterator<Item = &'a str>) -> Element {
+    let paths: Vec<_> = paths.collect();
+    let mut rows: Vec<_> = paths
+        .iter()
+        .take(6)
+        .map(|path| Element::text(*path).font_size(12.0).font_family(FontFamily::Monospace))
+        .collect();
+    if paths.len() > 6 {
+        rows.push(
+            Text::new(format!("y {} más", paths.len() - 6), theme::component_palette())
+                .role(TextRole::Small)
+                .muted()
+                .render(),
+        );
+    }
+    Element::column(rows).gap(2.0)
+}
+
+/// Effects of the removed turns that no choice in the dialog takes back.
+pub(crate) fn opaque_warning(opaque: OpaqueEffects) -> Option<String> {
+    let parts: Vec<_> = [
+        (opaque.commands, "1 comando", "comandos"),
+        (opaque.mcp, "1 herramienta MCP", "herramientas MCP"),
+        (opaque.other, "1 herramienta más", "herramientas más"),
+    ]
+    .into_iter()
+    .filter(|(count, ..)| *count > 0)
+    .map(|(count, one, many)| if count == 1 { one.to_owned() } else { format!("{count} {many}") })
+    .collect();
+    let (last, rest) = parts.split_last()?;
+    let list = if rest.is_empty() { last.clone() } else { format!("{} y {last}", rest.join(", ")) };
+    Some(format!("Estos turnos también ejecutaron {list}; sus efectos no se pueden deshacer."))
 }
 
 #[derive(Default, Serialize, Deserialize)]

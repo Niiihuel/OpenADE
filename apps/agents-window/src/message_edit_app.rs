@@ -5,6 +5,7 @@ use super::*;
 use crate::message_edit::{
     self, EditableTurn, EditingMessage, RewindConfirm, RewindUndoView,
 };
+use crate::session_changes::{RevertFile, RevertPreflight};
 use openide_core::{NativeRewind, NativeRewindRefusal, StoreError};
 
 /// What an undo needs beyond the view's notice.
@@ -12,6 +13,9 @@ pub(super) struct RewindUndo {
     rewind: NativeRewind,
     /// Tool captures of the removed calls, taken out of their store.
     snapshots: Vec<(String, Vec<u8>)>,
+    /// Files "Revertir" wrote back, with the state an undo returns them to.
+    files: Vec<RevertFile>,
+    workspace: PathBuf,
 }
 
 pub(super) struct MessageEditHost {
@@ -164,7 +168,8 @@ impl AgentsWindow {
         match id {
             "message_edit_cancel" => self.cancel_message_edit(),
             "message_edit_confirm_cancel" => self.view.message_edit.confirm = None,
-            "message_edit_keep_files" => self.confirm_message_edit(),
+            "message_edit_keep_files" => self.confirm_message_edit(false),
+            "message_edit_revert" => self.confirm_message_edit(true),
             "message_rewind_undo" => self.undo_message_rewind(),
             "message_rewind_undo_dismiss" => {
                 self.message_edit.undo = None;
@@ -235,7 +240,72 @@ impl AgentsWindow {
             .iter()
             .filter(|turn| turn.sequence > editing.sequence)
             .count();
-        self.view.message_edit.confirm = Some(RewindConfirm { later_messages, error: None });
+        let sequence = editing.sequence;
+        let mut confirm = RewindConfirm { later_messages, ..Default::default() };
+        match self.revert_preflight(sequence) {
+            Ok(preflight) => show_preflight(&mut confirm, &preflight),
+            Err(error) => confirm.unavailable = Some(error),
+        }
+        self.view.message_edit.confirm = Some(confirm);
+    }
+
+    /// What "Revertir" would do with the files right now. Reads only.
+    fn revert_preflight(&self, before_sequence: u64) -> Result<RevertPreflight, String> {
+        let store = self.store.as_ref().ok_or("El historial no está disponible")?;
+        let session_id = self.view.selected_session.as_deref().ok_or("No hay conversación")?;
+        let workspace = Path::new(self.view.workspace.trim());
+        crate::session_changes::revert_preflight(
+            store.storage_root(),
+            session_id,
+            workspace,
+            before_sequence,
+            &self.code_editor.unsaved_paths(workspace),
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Restore the files the removed turns changed, then rewind. The
+    /// preflight is made again here: the disk may have changed while the
+    /// dialog was open, and only what is restorable now is written. Either
+    /// both happen or the files are put back and the journal is untouched.
+    fn revert_and_rewind(
+        &mut self,
+        session_id: &str,
+        before_sequence: u64,
+    ) -> Result<(RewindUndo, Vec<String>), String> {
+        let workspace = PathBuf::from(self.view.workspace.trim());
+        // A running command may be writing the same files.
+        if self.native_command_sessions.has_running_in_worktree(&workspace)? {
+            return Err("Esperá a que terminen los comandos del proyecto antes de revertir.".into());
+        }
+        let storage = self.store.as_ref().ok_or("El historial no está disponible")?.storage_root().to_owned();
+        let preflight = self.revert_preflight(before_sequence)?;
+        if let Some(confirm) = &mut self.view.message_edit.confirm {
+            show_preflight(confirm, &preflight);
+        }
+        if preflight.restorable.is_empty() {
+            return Err("Ya no hay archivos que se puedan restaurar.".into());
+        }
+        let put_back = |left: Vec<String>| match left.is_empty() {
+            true => "No se cambió ningún archivo ni la conversación.".to_owned(),
+            false => format!("No se pudieron devolver a su estado: {}.", left.join(", ")),
+        };
+        crate::session_changes::revert_files(&storage, &workspace, &preflight.restorable)
+            .map_err(|(error, left)| format!("No se pudo restaurar {error}. {}", put_back(left)))?;
+        let mut undo = self.rewind_selected_native(session_id, before_sequence).map_err(|error| {
+            let left = crate::session_changes::reapply_reverted_files(&storage, &workspace, &preflight.restorable);
+            format!("{error} {}", put_back(left))
+        })?;
+        undo.files = preflight.restorable;
+        undo.workspace = workspace;
+        Ok((undo, preflight.skipped.into_iter().map(|(path, _)| path).collect()))
+    }
+
+    /// Open documents and the file tree read the restored paths again.
+    fn refresh_reverted_files(&mut self, workspace: &Path, files: &[RevertFile]) {
+        let paths: Vec<_> = files.iter().map(|file| file.path.as_str()).collect();
+        self.refresh_clean_code_editor_paths(workspace, &paths);
+        self.invalidate_workspace_files();
     }
 
     /// Markers move before the journal does, in their conservative direction,
@@ -266,7 +336,7 @@ impl AgentsWindow {
         // A capture left behind only costs a diff if its call id is reused.
         let snapshots = crate::session_changes::take_tool_snapshots(&storage, session_id, &calls)
             .unwrap_or_default();
-        Ok(RewindUndo { rewind, snapshots })
+        Ok(RewindUndo { rewind, snapshots, files: Vec::new(), workspace: PathBuf::new() })
     }
 
     /// Reload through the path every session takes; nothing is patched here.
@@ -275,7 +345,7 @@ impl AgentsWindow {
         self.open_session(session_id);
     }
 
-    fn confirm_message_edit(&mut self) {
+    fn confirm_message_edit(&mut self, revert: bool) {
         let (Some(editing), Some(session_id)) = (
             self.view.message_edit.editing.clone(),
             self.view.selected_session.clone(),
@@ -287,9 +357,12 @@ impl AgentsWindow {
             .or_else(|| self.message_edit_send_blocked());
         let undo = match blocked {
             Some(reason) => Err(reason.to_owned()),
-            None => self.rewind_selected_native(&session_id, editing.sequence),
+            None if revert => self.revert_and_rewind(&session_id, editing.sequence),
+            None => self
+                .rewind_selected_native(&session_id, editing.sequence)
+                .map(|undo| (undo, Vec::new())),
         };
-        let undo = match undo {
+        let (undo, skipped_files) = match undo {
             Ok(undo) => undo,
             Err(error) => {
                 if let Some(confirm) = &mut self.view.message_edit.confirm {
@@ -314,13 +387,17 @@ impl AgentsWindow {
         // Still editing here, so the reload does not save the edited text as
         // the session's draft; it ends the edit and restores the bottom draft.
         self.reload_rewound_session(&session_id);
+        self.refresh_reverted_files(&undo.workspace.clone(), &undo.files);
         let draft = (self.view.prompt.clone(), self.view.composer_attachments.clone());
-        self.message_edit.undo = Some(undo);
         self.view.message_edit.undo = Some(RewindUndoView {
             session_id,
             removed_messages,
             error: None,
+            restored_files: undo.files.len(),
+            skipped_files,
+            undone: false,
         });
+        self.message_edit.undo = Some(undo);
         self.view.prompt = text.clone();
         self.view.composer_attachments = attachments;
         self.tree.set_input_value("prompt", text);
@@ -344,6 +421,11 @@ impl AgentsWindow {
     /// Put the removed messages back. What was sent after the rewind is
     /// itself rewound first, to its own saved tail, so nothing is discarded
     /// and the journal ends exactly where the first rewind left it.
+    ///
+    /// Files a revert restored return to what the removed turns had left,
+    /// each only while the disk still holds what the revert wrote. File
+    /// changes of the replacement turn stay on disk: a path it touched no
+    /// longer holds that content, so it is left alone and listed.
     fn undo_message_rewind(&mut self) {
         let Some(undo) = self.message_edit.undo.as_ref() else {
             self.view.message_edit.undo = None;
@@ -354,9 +436,15 @@ impl AgentsWindow {
         if self.view.selected_session.as_deref() != Some(session_id.as_str()) {
             return;
         }
-        let result = (|| -> Result<(), String> {
+        let result = (|| -> Result<Vec<String>, String> {
             if let Some(reason) = self.message_edit_blocked() {
                 return Err(reason.to_owned());
+            }
+            let undo = self.message_edit.undo.as_ref().expect("the undo was checked above");
+            if !undo.files.is_empty()
+                && self.native_command_sessions.has_running_in_worktree(&undo.workspace)?
+            {
+                return Err("Esperá a que terminen los comandos del proyecto antes de deshacer.".into());
             }
             let store = self.store.clone().ok_or("El historial no está disponible")?;
             let stored = store
@@ -375,14 +463,26 @@ impl AgentsWindow {
                 store.storage_root(),
                 &undo.snapshots,
             );
-            Ok(())
+            Ok(crate::session_changes::reapply_reverted_files(
+                store.storage_root(),
+                &undo.workspace,
+                &undo.files,
+            ))
         })();
         match result {
-            Ok(()) => {
-                self.message_edit.undo = None;
-                self.view.message_edit.undo = None;
+            Ok(left) => {
+                let undo = self.message_edit.undo.take().expect("the undo was checked above");
+                // Paths left alone stay on a notice that only reports them.
+                self.view.message_edit.undo = self
+                    .view
+                    .message_edit
+                    .undo
+                    .take()
+                    .filter(|_| !left.is_empty())
+                    .map(|notice| RewindUndoView { skipped_files: left, undone: true, error: None, ..notice });
                 self.cancel_message_edit();
                 self.reload_rewound_session(&session_id);
+                self.refresh_reverted_files(&undo.workspace, &undo.files);
                 self.view.status = "Rebobinado deshecho".to_owned();
             }
             Err(error) => {
@@ -394,4 +494,11 @@ impl AgentsWindow {
             }
         }
     }
+}
+
+fn show_preflight(confirm: &mut RewindConfirm, preflight: &RevertPreflight) {
+    confirm.restorable = preflight.restorable.iter().map(|file| file.path.clone()).collect();
+    confirm.skipped = preflight.skipped.clone();
+    confirm.opaque = preflight.opaque;
+    confirm.unavailable = None;
 }

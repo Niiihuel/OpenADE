@@ -7,6 +7,7 @@ use super::{
 };
 use crate::{
     message_edit::{EditableTurn, EditingMessage, RewindConfirm, RewindUndoView},
+    session_changes::{OpaqueEffects, RevertSkip},
     transcript::TranscriptItem,
     view::ViewState,
 };
@@ -280,12 +281,17 @@ fn confirmation_offers_cancel_and_keep_files_and_shows_a_refusal() {
     state.message_edit.confirm = Some(RewindConfirm {
         later_messages: 1,
         error: Some("Hay un permiso pendiente de respuesta.".into()),
+        ..Default::default()
     });
     let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
     let frame = tree.layout(VIEWPORT);
     for id in ["message_edit_confirm_cancel", "message_edit_keep_files"] {
         assert!(frame.regions.iter().any(|region| region.id == id && region.kind == HitKind::Button), "{id}");
     }
+    // Nothing to restore: "Revertir" is shown, disabled, and says why.
+    assert!(!frame.regions.iter().any(|region| region.id == "message_edit_revert" && region.kind == HitKind::Button));
+    assert!(text_top(&frame, "Revertir").is_some());
+    assert!(text_top(&frame, "no hay nada que revertir").is_some());
     assert!(!frame.regions.iter().any(|region| region.id == "prompt"));
     assert!(text_top(&frame, "Hay un permiso pendiente").is_some());
     assert_eq!(
@@ -300,7 +306,7 @@ fn rewind_notice_belongs_to_its_session_and_waits_for_a_running_turn() {
     state.message_edit.undo = Some(RewindUndoView {
         session_id: state.selected_session.clone().unwrap(),
         removed_messages: 2,
-        error: None,
+        ..Default::default()
     });
     let undo = |state: &ViewState| {
         let (_context, mut tree) = native_tree(root(state, VIEWPORT));
@@ -355,7 +361,7 @@ fn export_message_edit_visual_review() {
         context.end_pass().textures_delta.clear();
 
         let mut state = editing(editable(two_turns("Primer pedido: revisá el proyecto.")), 0, false);
-        state.message_edit.confirm = Some(RewindConfirm { later_messages: 1, error: None });
+        state.message_edit.confirm = Some(RewindConfirm { later_messages: 1, ..Default::default() });
         let (context, mut tree) = native_tree(root(&state, viewport));
         export(&tree.layout(viewport), directory, "s2-confirm", viewport);
         context.end_pass().textures_delta.clear();
@@ -364,10 +370,139 @@ fn export_message_edit_visual_review() {
         state.message_edit.undo = Some(RewindUndoView {
             session_id: state.selected_session.clone().unwrap(),
             removed_messages: 2,
-            error: None,
+            ..Default::default()
         });
         let (context, mut tree) = native_tree(root(&state, viewport));
         export(&tree.layout(viewport), directory, "s2-rewind-notice", viewport);
+        context.end_pass().textures_delta.clear();
+    }
+}
+
+fn confirming(confirm: RewindConfirm) -> ViewState {
+    let mut state = editing(editable(two_turns("Primer pedido: revisá el proyecto.")), 0, false);
+    state.message_edit.confirm = Some(confirm);
+    state
+}
+
+/// Restorable and skipped files with effects that cannot be taken back.
+fn mixed_preflight() -> RewindConfirm {
+    RewindConfirm {
+        later_messages: 2,
+        restorable: (1..=8).map(|index| format!("apps/agents-window/src/modulo_{index}.rs")).collect(),
+        skipped: vec![
+            ("apps/agents-window/src/session_surface.rs".into(), RevertSkip::ModifiedLater),
+            ("docs/notas.md".into(), RevertSkip::ModifiedLater),
+            ("assets/captura.png".into(), RevertSkip::IncompleteCapture),
+            ("crates/openide-core/src/store.rs".into(), RevertSkip::UnsavedInEditor),
+            ("../otro-proyecto/config.toml".into(), RevertSkip::OutsideProject),
+        ],
+        opaque: OpaqueEffects { commands: 2, mcp: 1, other: 0 },
+        ..Default::default()
+    }
+}
+
+fn buttons(frame: &Frame) -> Vec<&str> {
+    let mut ids: Vec<_> = frame
+        .regions
+        .iter()
+        .filter(|region| region.kind == HitKind::Button && region.id.starts_with("message_edit_"))
+        .map(|region| region.id.as_str())
+        .collect();
+    ids.dedup();
+    ids
+}
+
+#[test]
+fn confirmation_lists_what_revert_restores_and_skips_and_fits_a_narrow_window() {
+    for viewport in [VIEWPORT, Size::new(360.0, 700.0)] {
+        let state = confirming(mixed_preflight());
+        let (_context, mut tree) = native_tree(root(&state, viewport));
+        let frame = tree.layout(viewport);
+        for id in ["message_edit_confirm_cancel", "message_edit_keep_files", "message_edit_revert"] {
+            let button = frame.regions.iter().find(|region| region.id == id && region.kind == HitKind::Button);
+            let rect = button.unwrap_or_else(|| panic!("{id} at {}", viewport.width)).rect;
+            assert!(rect.x >= 0.0 && rect.x + rect.width <= viewport.width, "{id}");
+            assert!(rect.y + rect.height <= viewport.height, "{id}");
+        }
+        for copy in ["Se restauran 8 archivos", "modulo_6.rs", "y 2 más", "Se omiten 5", "captura incompleta"] {
+            assert!(text_top(&frame, copy).is_some(), "{copy} at {}", viewport.width);
+        }
+        assert!(text_top(&frame, "modulo_7.rs").is_none());
+    }
+}
+
+#[test]
+fn effects_that_cannot_be_undone_are_said_even_when_only_keeping_files_is_offered() {
+    let warning = "Estos turnos también ejecutaron 2 comandos";
+    let state = confirming(RewindConfirm {
+        later_messages: 1,
+        skipped: vec![("src/main.rs".into(), RevertSkip::ModifiedLater)],
+        opaque: OpaqueEffects { commands: 2, mcp: 1, other: 0 },
+        ..Default::default()
+    });
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    let buttons = buttons(&frame);
+    assert!(buttons.contains(&"message_edit_keep_files") && !buttons.contains(&"message_edit_revert"));
+    assert!(text_top(&frame, warning).is_some());
+    assert!(text_top(&frame, "Ningún archivo se puede restaurar con seguridad").is_some());
+    assert!(text_top(&frame, "modificado después por ti u otra herramienta").is_some());
+
+    let (_context, mut tree) = native_tree(root(&confirming(mixed_preflight()), VIEWPORT));
+    assert!(text_top(&tree.layout(VIEWPORT), warning).is_some());
+}
+
+#[test]
+fn rewind_notice_reports_restored_and_skipped_files_and_what_an_undo_left() {
+    let mut state = editable(two_turns("Primer pedido: revisá el proyecto."));
+    state.message_edit.undo = Some(RewindUndoView {
+        session_id: state.selected_session.clone().unwrap(),
+        removed_messages: 2,
+        restored_files: 3,
+        skipped_files: vec!["src/main.rs".into(), "docs/notas.md".into()],
+        ..Default::default()
+    });
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    assert!(text_top(&frame, "Se restauraron 3 archivos. Se omitieron: src/main.rs, docs/notas.md.").is_some());
+    assert!(frame.regions.iter().any(|region| region.id == "message_rewind_undo"));
+
+    state.message_edit.undo.as_mut().unwrap().undone = true;
+    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
+    let frame = tree.layout(VIEWPORT);
+    assert!(text_top(&frame, "Rebobinado deshecho").is_some());
+    assert!(text_top(&frame, "No se volvieron a aplicar porque cambiaron después: src/main.rs").is_some());
+    assert!(!frame.regions.iter().any(|region| region.id == "message_rewind_undo"));
+    assert!(frame.regions.iter().any(|region| region.id == "message_rewind_undo_dismiss"));
+}
+
+#[test]
+#[ignore = "writes PNG/SVG previews under docs/ui-separation/shots/sticky-edit-rewind"]
+fn export_revert_visual_review() {
+    let directory = Path::new(SHOTS);
+    std::fs::create_dir_all(directory).unwrap();
+    for viewport in [Size::new(900.0, 700.0), Size::new(360.0, 700.0)] {
+        let nothing = RewindConfirm {
+            later_messages: 1,
+            skipped: vec![("src/main.rs".into(), RevertSkip::ModifiedLater)],
+            opaque: OpaqueEffects { commands: 1, mcp: 0, other: 0 },
+            ..Default::default()
+        };
+        for (name, confirm) in [("s3-confirm-mixed", mixed_preflight()), ("s3-confirm-nothing-restorable", nothing)] {
+            let (context, mut tree) = native_tree(root(&confirming(confirm), viewport));
+            export(&tree.layout(viewport), directory, name, viewport);
+            context.end_pass().textures_delta.clear();
+        }
+        let mut state = editable(two_turns("Primer pedido: revisá el proyecto."));
+        state.message_edit.undo = Some(RewindUndoView {
+            session_id: state.selected_session.clone().unwrap(),
+            removed_messages: 2,
+            restored_files: 3,
+            skipped_files: vec!["apps/agents-window/src/session_surface.rs".into(), "docs/notas.md".into()],
+            ..Default::default()
+        });
+        let (context, mut tree) = native_tree(root(&state, viewport));
+        export(&tree.layout(viewport), directory, "s3-revert-notice", viewport);
         context.end_pass().textures_delta.clear();
     }
 }

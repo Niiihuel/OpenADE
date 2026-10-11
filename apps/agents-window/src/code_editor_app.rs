@@ -360,6 +360,40 @@ impl CodeEditorHost {
         true
     }
 
+    fn keys_under<'a>(&'a self, workspace: &Path) -> impl Iterator<Item = &'a DocumentKey> + 'a {
+        let root = workspace.canonicalize().ok();
+        self.documents
+            .keys()
+            .filter(move |(other, _)| root.is_some() && other.canonicalize().ok() == root)
+    }
+
+    /// Relative paths under `workspace` whose document holds edits that are
+    /// not on disk, or is being saved.
+    pub(in crate::app) fn unsaved_paths(&self, workspace: &Path) -> BTreeSet<String> {
+        self.keys_under(workspace)
+            .filter(|key| {
+                let document = &self.documents[*key];
+                document.saving.is_some()
+                    || document
+                        .controller
+                        .as_ref()
+                        .is_some_and(|c| c.snapshot().map_or(true, |s| s.is_dirty()))
+            })
+            .map(|(_, path)| path.to_string_lossy().replace('\\', "/"))
+            .collect()
+    }
+
+    fn refresh_clean_paths(&mut self, workspace: &Path, paths: &[&str]) {
+        let keys: Vec<_> = self
+            .keys_under(workspace)
+            .filter(|(_, path)| paths.contains(&path.to_string_lossy().replace('\\', "/").as_str()))
+            .cloned()
+            .collect();
+        for key in keys {
+            self.refresh_clean_path(&key);
+        }
+    }
+
     fn refresh_clean_path(&mut self, key: &(PathBuf, PathBuf)) {
         let Some(d) = self.documents.get_mut(key) else {
             return;
@@ -583,6 +617,11 @@ impl AgentsWindow {
     pub(super) fn refresh_clean_code_editor_path(&mut self, workspace: &Path, path: &str) {
         self.code_editor
             .refresh_clean_path(&(workspace.to_path_buf(), PathBuf::from(path)));
+        self.view.code_editor = self.code_editor.view();
+    }
+
+    pub(super) fn refresh_clean_code_editor_paths(&mut self, workspace: &Path, paths: &[&str]) {
+        self.code_editor.refresh_clean_paths(workspace, paths);
         self.view.code_editor = self.code_editor.view();
     }
 
