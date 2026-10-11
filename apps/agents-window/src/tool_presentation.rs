@@ -278,11 +278,11 @@ fn meta(name: &str) -> Meta<'_> {
             Web,
             Icon::Globe,
         ),
-        "browser_screenshot" => (
+        "browser_screenshot" | "browser_take_screenshot" => (
             "Captura del navegador",
             "Capturando página",
             "Página capturada",
-            &["selector"],
+            &["ref", "selector", "name", "role"],
             Web,
             Icon::Image,
         ),
@@ -314,7 +314,7 @@ fn meta(name: &str) -> Meta<'_> {
             "Interacción con página",
             "Pulsando",
             "Pulsado",
-            &["selector", "name", "role"],
+            &["ref", "selector", "name", "role"],
             Web,
             Icon::Globe,
         ),
@@ -322,7 +322,7 @@ fn meta(name: &str) -> Meta<'_> {
             "Entrada en página",
             "Escribiendo en página",
             "Entrada enviada",
-            &["selector", "name", "role"],
+            &["ref", "selector", "name", "role"],
             Web,
             Icon::Edit,
         ),
@@ -338,6 +338,81 @@ fn meta(name: &str) -> Meta<'_> {
             "Desplazamiento de página",
             "Desplazando página",
             "Página desplazada",
+            &[],
+            Web,
+            Icon::Globe,
+        ),
+        "browser_hover" => (
+            "Puntero sobre la página",
+            "Apuntando",
+            "Apuntado",
+            &["ref", "selector", "name", "role"],
+            Web,
+            Icon::Globe,
+        ),
+        "browser_select_option" => (
+            "Selección en página",
+            "Eligiendo opción",
+            "Opción elegida",
+            &["ref", "selector", "name", "role"],
+            Web,
+            Icon::Globe,
+        ),
+        "browser_check" => (
+            "Casilla en página",
+            "Cambiando casilla",
+            "Casilla cambiada",
+            &["ref", "selector", "name", "role"],
+            Web,
+            Icon::Globe,
+        ),
+        // Both ends are nested objects; the row names the operation alone.
+        "browser_drag" => (
+            "Arrastre en página",
+            "Arrastrando",
+            "Arrastrado",
+            &[],
+            Web,
+            Icon::Globe,
+        ),
+        // The awaited text stays in detail: `text` is never a row target here.
+        "browser_wait_for" => (
+            "Espera en página",
+            "Esperando la página",
+            "Espera terminada",
+            &[],
+            Web,
+            Icon::Clock,
+        ),
+        // Like a command, the script is what the row identifies.
+        "browser_evaluate" => (
+            "Script en página",
+            "Ejecutando script",
+            "Script ejecutado",
+            &["expression"],
+            Web,
+            Icon::Code,
+        ),
+        "browser_console_messages" => (
+            "Consola de la página",
+            "Leyendo consola",
+            "Consola leída",
+            &["level"],
+            Web,
+            Icon::Terminal,
+        ),
+        "browser_network_requests" => (
+            "Red de la página",
+            "Leyendo solicitudes",
+            "Solicitudes leídas",
+            &[],
+            Web,
+            Icon::Globe,
+        ),
+        "browser_handle_dialog" => (
+            "Diálogo de la página",
+            "Preparando respuesta",
+            "Respuesta preparada",
             &[],
             Web,
             Icon::Globe,
@@ -1050,5 +1125,60 @@ mod tests {
             present(name, &Value::Null, ActivityStatus::Completed, false, None).title,
             name
         );
+    }
+
+    #[test]
+    fn new_browser_tools_have_their_own_rows_and_identify_only_safe_arguments() {
+        let row = |tool: &str, arguments: Value, activity| {
+            let name = format!("mcp__openide_browser__{tool}");
+            let presentation = present(&name, &arguments, activity, false, None);
+            (presentation.title, presentation.target)
+        };
+        let done = ActivityStatus::Completed;
+        for (tool, arguments, title, target) in [
+            ("browser_hover", json!({"ref":"e4"}), "Apuntado", "e4"),
+            (
+                "browser_select_option",
+                json!({"role":"combobox","name":"Color","values":["g"]}),
+                "Opción elegida",
+                "Color",
+            ),
+            ("browser_check", json!({"selector":"#terms","checked":true}), "Casilla cambiada", "#terms"),
+            ("browser_drag", json!({"from":{"ref":"e2"},"to":{"ref":"e3"}}), "Arrastrado", ""),
+            // The awaited text and a prompt answer are content, not identity.
+            ("browser_wait_for", json!({"text":"private input"}), "Espera terminada", ""),
+            (
+                "browser_handle_dialog",
+                json!({"accept":true,"prompt_text":"private input"}),
+                "Respuesta preparada",
+                "",
+            ),
+            ("browser_evaluate", json!({"expression":"document.title"}), "Script ejecutado", "document.title"),
+            ("browser_console_messages", json!({"level":"error"}), "Consola leída", "error"),
+            ("browser_network_requests", json!({}), "Solicitudes leídas", ""),
+            ("browser_take_screenshot", json!({"ref":"e7"}), "Página capturada", "e7"),
+            ("browser_click", json!({"ref":"e12"}), "Pulsado", "e12"),
+            ("browser_fill", json!({"ref":"e5","text":"private input"}), "Entrada enviada", "e5"),
+        ] {
+            assert_eq!(row(tool, arguments, done), (title.into(), target.into()), "{tool}");
+        }
+        assert_eq!(
+            row("browser_evaluate", json!({"expression":"a\nb"}), ActivityStatus::Running),
+            ("Ejecutando script".into(), "a b".into())
+        );
+        assert_eq!(
+            row("browser_evaluate", json!({}), ActivityStatus::WaitingPermission).0,
+            "Permiso pendiente · Script en página"
+        );
+        // A stale ref is a failed row whose note is the bridge's own advice.
+        let failed = present(
+            "mcp__openide_browser__browser_click",
+            &json!({"ref":"e9"}),
+            ActivityStatus::Completed,
+            true,
+            Some("La referencia e9 no corresponde a un elemento de la página actual. Tomá una captura nueva con browser_snapshot y usá sus referencias."),
+        );
+        assert_eq!(failed.title, "Falló · Interacción con página");
+        assert!(failed.note.unwrap().contains("browser_snapshot"));
     }
 }

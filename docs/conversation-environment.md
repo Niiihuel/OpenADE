@@ -175,7 +175,8 @@ proxy externo también ofrece captura PNG. En el motor de OpenIDE, los argumento
 pasan por el catálogo validado y la política de permisos existente; un cliente
 MCP externo administra sus propios permisos. Cancelar una acción ya despachada
 no provoca un reintento automático. La identidad del runtime interviene en la
-validación de recuperación de herramientas pendientes.
+validación de recuperación de herramientas pendientes. El catálogo y su forma
+de uso están en [Herramientas del navegador](browser-tools.md).
 
 El botón de conexión MCP copia configuración JSON de un proxy stdio conectado
 al mismo actor. Su endpoint y capacidad son efímeros: sirven mientras la

@@ -186,15 +186,27 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
             Icon::Search,
             &["query", "q"],
         ),
-        "browser_click" => (
+        "browser_click" | "browser_hover" | "browser_select_option" | "browser_check"
+        | "browser_drag" => (
             "Interactuar con una página",
             Icon::Globe,
-            &["selector", "name", "role"],
+            &["ref", "selector", "name", "role"],
         ),
         "browser_fill" | "browser_type" => (
             "Escribir en una página",
             Icon::Edit,
-            &["selector", "name", "role"],
+            &["ref", "selector", "name", "role"],
+        ),
+        // As with a command, the user approves the script itself.
+        "browser_evaluate" => (
+            "Ejecutar JavaScript en la página",
+            Icon::Code,
+            &["expression"],
+        ),
+        "browser_handle_dialog" => (
+            "Responder un diálogo de la página",
+            Icon::Globe,
+            &[],
         ),
         _ if tool_name.starts_with("mcp__") => (
             "Usar conexión MCP",
@@ -485,6 +497,51 @@ mod tests {
             assert_eq!(summary.icon, icon);
             assert!(summary.target.contains("notes.md"));
         }
+    }
+
+    #[test]
+    fn browser_tools_ask_with_the_element_or_the_script_they_act_on() {
+        let browser = |tool: &str, arguments: Value| {
+            let result = summary(&format!("mcp__openide_browser__{tool}"), &arguments.to_string());
+            (result.title, result.target)
+        };
+        // The user approves the script itself, as with a command.
+        assert_eq!(
+            browser("browser_evaluate", json!({"expression":"() => document.cookie", "ref":"e3"})),
+            ("Ejecutar JavaScript en la página".into(), "() => document.cookie".into())
+        );
+        for tool in ["browser_click", "browser_hover", "browser_select_option", "browser_check"] {
+            assert_eq!(
+                browser(tool, json!({"ref":"e12", "values":["PRIVATE_FILE_CONTENT"]})),
+                ("Interactuar con una página".into(), "e12".into()),
+                "{tool}"
+            );
+        }
+        assert_eq!(
+            browser("browser_fill", json!({"ref":"e5", "text":"PRIVATE_FILE_CONTENT"})),
+            ("Escribir en una página".into(), "e5".into())
+        );
+        assert_eq!(
+            browser("browser_drag", json!({"from":{"ref":"e2"}, "to":{"ref":"e3"}})),
+            ("Interactuar con una página".into(), "openide_browser · browser_drag".into())
+        );
+        assert_eq!(
+            browser("browser_handle_dialog", json!({"accept":true, "prompt_text":"PRIVATE_FILE_CONTENT"})),
+            (
+                "Responder un diálogo de la página".into(),
+                "openide_browser · browser_handle_dialog".into()
+            )
+        );
+        // Tools that only read keep the generic connection summary.
+        assert_eq!(
+            browser("browser_network_requests", json!({})),
+            ("Usar conexión MCP".into(), "openide_browser · browser_network_requests".into())
+        );
+        // Another server's tool with the same suffix is not a browser script.
+        assert_eq!(
+            summary("mcp__other__browser_evaluate", r#"{"expression":"1"}"#).title,
+            "Usar conexión MCP"
+        );
     }
 
     #[test]

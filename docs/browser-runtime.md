@@ -79,6 +79,15 @@ Las URLs `file:`, `javascript:` y similares no forman parte del protocolo.
 Cada respuesta contiene la URL, título, historial, captura PNG y, cuando
 corresponde, árbol accesible. Se rechazan localizadores ambiguos.
 
+Para el agente, el árbol accesible lleva referencias de elemento (`[ref=e12]`)
+y el bridge agrega puntero, selección, casillas, arrastre, esperas, evaluación
+de JavaScript en la página, consola, red, capturas y respuesta a diálogos. El
+catálogo, el ciclo de trabajo, los límites de cada dato y lo que se dejó fuera
+están en [Herramientas del navegador](browser-tools.md). Un fallo que es la
+respuesta de la propia herramienta (una referencia caducada, un script que
+lanza un error, una espera agotada) viaja en `output.error` de una respuesta
+correcta: no se muestra como error de página ni cuenta como efecto incierto.
+
 La entrada de la ventana tiene una cola propia limitada a 128 comandos y
 256 KiB, con hasta cuatro operaciones en vuelo. Agrupa texto Unicode y scroll
 adyacentes sin cruzar clics, teclas o navegaciones. La cantidad pendiente se
@@ -155,7 +164,8 @@ Rust ni los eventos de la ventana nativa.
 
 Validado el 5 de octubre de 2026 con Playwright 1.63.0 y Google Chrome
 150.0.7871.46 empaquetado por NixOS, con sandbox habilitado: cuatro casos reales
-pasaron. Las pruebas Rust de entorno, limpieza, límites y conservación del
+pasaron. El 11 de octubre de 2026 pasaron los seis casos, con los dos de las
+herramientas del agente. Las pruebas Rust de entorno, limpieza, límites y conservación del
 error están en `browser_runtime_tests.rs`; las compila la suite central.
 `browser_host_tests.rs` verifica además el foco, las entradas, el destino de
 reintento entre conversaciones, la conservación de ráfagas de entrada y el

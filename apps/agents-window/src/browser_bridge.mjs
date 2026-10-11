@@ -106,6 +106,10 @@ function validateUrl(value) {
 }
 
 function target(command) {
+  // A ref comes from the AI-mode snapshot. `aria-ref` is the engine Playwright's
+  // own agent tools resolve it with: reached through the public page.locator(),
+  // but absent from the documented selector engines (verified on 1.63.0).
+  if (command.ref) return page.locator(`aria-ref=${command.ref}`);
   const locator = command.selector
     ? page.locator(command.selector)
     : page.getByRole(command.role, { name: command.name, exact: true });
@@ -225,7 +229,132 @@ async function confirmCut(token) {
   } finally { await prepared.selection.dispose().catch(() => {}); }
 }
 
-async function execute(command) {
+// ---- Agent tools: element refs, page observers and bounded tool output ----
+const MAX_EVALUATE = 16 * 1024;
+const MAX_REPORT = 12 * 1024;
+const MAX_EVENTS = 200;
+const LEVELS = ['error', 'warning', 'info', 'debug'];
+const consoleLog = { entries: [], dropped: 0 };
+const network = { entries: [], dropped: 0 };
+let observedPage;
+let dialogPlan;
+
+// A failure that is the tool's own answer (stale ref, script error, a wait
+// that ran out). It travels in `output.error`: the view shows no page error
+// and the host does not treat it as an action whose effect is unknown.
+class ToolFailure extends Error {}
+
+function hasTarget(spec) { return Boolean(spec && (spec.ref || spec.selector || spec.role)); }
+
+async function resolve(spec) {
+  // An unknown frame in a ref throws instead of matching nothing.
+  const count = await target(spec).count().catch(error => { if (spec.ref) return 0; throw error; });
+  if (count === 1) return;
+  throw new ToolFailure(spec.ref
+    ? `La referencia ${spec.ref} no corresponde a un elemento de la página actual. Tomá una captura nueva con browser_snapshot y usá sus referencias.`
+    : `El destino coincide con ${count} elementos y debe identificar exactamente uno. Tomá una captura nueva con browser_snapshot y usá la referencia del elemento.`);
+}
+
+function record(log, entry) {
+  log.entries.push(entry);
+  if (log.entries.length > MAX_EVENTS) { log.entries.shift(); log.dropped++; }
+}
+
+// The newest entries that fit the byte budget, oldest first. `omitted` counts
+// the older ones left out by the budget or already dropped from the buffer.
+function report(log, keep = () => true) {
+  const entries = log.entries.filter(keep);
+  let first = entries.length;
+  for (let bytes = 0; first > 0; first--) {
+    bytes += Buffer.byteLength(JSON.stringify(entries[first - 1])) + 1;
+    if (bytes > MAX_REPORT) break;
+  }
+  return { omitted: log.dropped + first, entries: entries.slice(first) };
+}
+
+// A new main-frame document starts both buffers over and disarms a dialog
+// answer that never fired, so it cannot reach an unrelated page.
+function forget() {
+  for (const log of [consoleLog, network]) { log.entries = []; log.dropped = 0; }
+  dialogPlan = undefined;
+}
+
+// Attached on the first request after start. Listeners never throw: an
+// uncaught exception here would end the process and lose the page.
+function observe() {
+  if (observedPage === page) return;
+  observedPage = page;
+  page.on('console', message => {
+    const type = message.type();
+    const level = type === 'error' || type === 'assert' ? 'error' : type === 'warning' ? 'warning' : type === 'debug' ? 'debug' : 'info';
+    // Playwright counts from zero; stack traces and editors count from one.
+    const { url, lineNumber, columnNumber } = message.location();
+    record(consoleLog, { level, type, text: limited(message.text(), 1024), ...(url ? { location: limited(`${url}:${lineNumber + 1}:${columnNumber + 1}`, 512) } : {}) });
+    // With a listener attached Playwright keeps the logged objects alive in the page; only their text is needed.
+    for (const argument of message.args()) void argument.dispose().catch(() => {});
+  });
+  page.on('pageerror', error => record(consoleLog, { level: 'error', type: 'pageerror', text: limited(error?.stack || error, 1024) }));
+  // start's listener dismisses every dialog and a second handler would race
+  // it, so this one takes its place. Dismissal stays the default; each dialog
+  // is recorded where browser_console_messages shows it.
+  page.removeAllListeners('dialog');
+  page.on('dialog', dialog => {
+    const plan = dialogPlan;
+    dialogPlan = undefined;
+    record(consoleLog, { level: 'warning', type: 'dialog', dialog: dialog.type(), action: plan?.accept ? 'accepted' : 'dismissed', text: limited(dialog.message(), 1024) });
+    void (plan?.accept ? dialog.accept(plan.prompt_text) : dialog.dismiss()).catch(() => {});
+  });
+  // Method, URL, status, type and failure only: never headers or bodies.
+  const entries = new WeakMap();
+  page.on('request', request => {
+    let navigation = false;
+    try { navigation = request.isNavigationRequest() && !request.redirectedFrom() && request.frame() === page.mainFrame(); }
+    catch { /* A request without a frame is not the page's own navigation. */ }
+    if (navigation) forget();
+    const entry = { method: limited(request.method(), 16), url: limited(request.url(), 512), resource_type: limited(request.resourceType(), 32) };
+    entries.set(request, entry);
+    record(network, entry);
+  });
+  page.on('response', response => { const entry = entries.get(response.request()); if (entry) entry.status = response.status(); });
+  page.on('requestfailed', request => { const entry = entries.get(request); if (entry) entry.failure = limited(request.failure()?.errorText, 256); });
+}
+
+// page.evaluate has no timeout of its own, and an unsettled script must not
+// hold the queue the user shares.
+async function bounded(work, message) {
+  const timer = new AbortController();
+  try {
+    return await Promise.race([work, delay(TIMEOUT, undefined, { signal: timer.signal }).then(() => { throw new ToolFailure(message); })]);
+  } finally { timer.abort(); }
+}
+
+// The source only ever runs inside the page: Playwright evaluates the string
+// there and returns a handle; a function it yields is then called, with the
+// target element when one was given.
+async function evaluate(command) {
+  const subject = await page.evaluateHandle(command.expression);
+  try {
+    return hasTarget(command)
+      ? await target(command).evaluate((element, subject) => typeof subject === 'function' ? subject(element) : subject, subject, { timeout: TIMEOUT })
+      : await subject.evaluate(subject => typeof subject === 'function' ? subject() : subject);
+  } finally { await subject.dispose().catch(() => {}); }
+}
+
+// JSON text of the value, cut at the bound. Sent as text so a deeply nested
+// page value cannot exceed the parser depth of the process reading this.
+function serialised(value) {
+  let text;
+  try { text = JSON.stringify(value); } catch { /* A BigInt inside the value. */ }
+  text ??= String(value);
+  return { text: limited(text, MAX_EVALUATE), data: { truncated: Buffer.byteLength(text) > MAX_EVALUATE } };
+}
+
+function firstLine(error) {
+  // Playwright prefixes the API that failed ("page.evaluateHandle: "); the model needs the script's own error.
+  return String(error?.message ?? error).split('\n', 1)[0].replace(/^\w+\.\w+: /, '');
+}
+
+async function perform(command) {
   switch (command.type) {
     case 'start': {
       if (browser) return capture(true);
@@ -298,9 +427,73 @@ async function execute(command) {
     case 'snapshot': return capture(true);
     case 'refresh': return capture(false);
     case 'close': await close(); return { closed: true };
+    case 'hover': await target(command).hover({ timeout: TIMEOUT }); break;
+    case 'select_option': await target(command).selectOption(command.values, { timeout: TIMEOUT }); break;
+    case 'check': await target(command).setChecked(command.checked, { timeout: TIMEOUT }); break;
+    case 'drag': await target(command.from).dragTo(target(command.to), { timeout: TIMEOUT }); break;
+    case 'wait_for': {
+      if (command.seconds != null) { await delay(command.seconds * 1000); break; }
+      const gone = command.text_gone != null;
+      // Hidden copies of the text neither satisfy "appears" nor block "disappears".
+      const visible = page.getByText(gone ? command.text_gone : command.text).filter({ visible: true }).first();
+      try { await visible.waitFor({ state: gone ? 'hidden' : 'visible', timeout: TIMEOUT }); }
+      catch { throw new ToolFailure(`El texto ${gone ? 'sigue visible' : 'no apareció'} después de ${TIMEOUT / 1000} s.`); }
+      break;
+    }
+    case 'evaluate': {
+      let value;
+      try { value = await bounded(evaluate(command), `El script no terminó en ${TIMEOUT / 1000} s.`); }
+      catch (error) { throw error instanceof ToolFailure ? error : new ToolFailure(firstLine(error)); }
+      return { ...await capture(false), output: serialised(value) };
+    }
+    case 'console_messages': {
+      const level = LEVELS.indexOf(command.level ?? 'info');
+      return { ...await capture(false, false), output: { data: { console: report(consoleLog, entry => LEVELS.indexOf(entry.level) <= level) } } };
+    }
+    case 'network_requests': return { ...await capture(false, false), output: { data: { network: report(network) } } };
+    case 'take_screenshot': {
+      const options = { type: 'png', scale: 'css', timeout: TIMEOUT };
+      // Reading never changes the page, so a capture that fails is only this tool's answer.
+      const png = await (hasTarget(command) ? target(command).screenshot(options)
+        : page.screenshot({ ...options, fullPage: command.full_page === true }))
+        .catch(error => { throw new ToolFailure(firstLine(error)); });
+      if (png.length > MAX_SCREENSHOT) {
+        throw new ToolFailure(`La captura pesa ${Math.ceil(png.length / 1024)} KiB y supera el límite de 2 MiB; capturá el viewport o un elemento.`);
+      }
+      // No viewport PNG alongside: the two together could exceed one response.
+      return { ...await capture(false, false), output: {
+        data: { screenshot: { width: png.readUInt32BE(16), height: png.readUInt32BE(20), bytes: png.length } },
+        image: { mime_type: 'image/png', base64: png.toString('base64') },
+      } };
+    }
+    case 'handle_dialog': {
+      dialogPlan = { accept: command.accept, prompt_text: command.prompt_text ?? undefined };
+      // Nothing on the page changed yet: acknowledge the plan instead of sending the whole tree again.
+      return { ...await capture(false, false), output: { data: { next_dialog: command.accept ? 'accept' : 'dismiss' } } };
+    }
     default: throw new Error('Comando de navegador desconocido.');
   }
   return capture(command.include_aria !== false);
+}
+
+// Every request enters here. Element targets are resolved before the action,
+// so a stale ref or an ambiguous target is answered without touching the page,
+// and a result that carries an ARIA tree gets the AI-mode one with element refs.
+async function execute(command) {
+  if (page) observe();
+  try {
+    if (page) for (const spec of [command, command.from, command.to]) if (hasTarget(spec)) await resolve(spec);
+    const snapshot = await perform(command);
+    if (snapshot.aria_snapshot !== undefined) {
+      // shortcut: capture() has just built the default tree, so the page is walked twice; pass mode 'ai' there and drop this once capture() may change.
+      try { snapshot.aria_snapshot = limited(await page.ariaSnapshot({ mode: 'ai', timeout: 3000 }), MAX_ARIA); }
+      catch { /* Keep the tree without refs; role and name still address elements. */ }
+    }
+    return snapshot;
+  } catch (error) {
+    if (!(error instanceof ToolFailure)) throw error;
+    return { ...await capture(false, false), output: { error: limited(error.message, 2048) } };
+  }
 }
 
 // Consume one command at a time. Pausing stdin applies backpressure instead
