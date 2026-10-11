@@ -7,7 +7,7 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    CodeDiff, CodeLanguage, Component, Element, FileActivity, FontFamily, Skeleton, Text, TextRole,
+    CodeDiff, CodeLanguage, Component, Element, FileActivity, FontFamily, Text, TextRole,
     Tooltip, TooltipPlacement,
 };
 use std::path::Path;
@@ -92,29 +92,13 @@ fn file_open_heading(owner: &str, row_id: &str, index: usize, path: &str) -> Ele
 
 fn generation_placeholder(owner: &str, call: &str) -> Element {
     // Initial loading only. Received code replaces this placeholder entirely.
-    // Skeleton's stable IDs preserve pulse phase through token-driven rebuilds;
-    // the shared painter suspends animation offscreen and for reduced motion.
-    Element::column(
-        [0.68, 0.43]
-            .into_iter()
-            .enumerate()
-            .map(|(index, fraction)| {
-                Element::row(vec![
-                    Skeleton::new(
-                        format!("file-generation:{owner}:{call}:{index}"),
-                        theme::component_palette(),
-                    )
-                    .height(6.0)
-                    .radius(3.0)
-                    .render()
-                    .flex(fraction),
-                    Element::spacer().flex(1.0 - fraction),
-                ])
-                .size(None, Some(6.0))
-            })
-            .collect(),
+    crate::tool_card_skeleton::lines(
+        &format!("file-generation:{owner}:{call}"),
+        &[0.68, 0.43],
+        6.0,
+        6.0,
+        5.0,
     )
-    .gap(5.0)
     .padding(8.0)
     .size(None, Some(33.0))
 }

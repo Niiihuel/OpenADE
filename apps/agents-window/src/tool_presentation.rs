@@ -374,6 +374,22 @@ fn meta(name: &str) -> Meta<'_> {
             Other,
             Icon::Plan,
         ),
+        "switch_mode" => (
+            "Propuesta de modo",
+            "Esperando tu decisión",
+            "Propuesta de modo respondida",
+            &["reason"],
+            Other,
+            Icon::Plan,
+        ),
+        "ask_user" => (
+            "Pregunta",
+            "Esperando tu respuesta",
+            "Respuesta recibida",
+            &[],
+            Other,
+            Icon::Chat,
+        ),
         "get_goal" => (
             "Objetivo",
             "Consultando objetivo",
@@ -565,6 +581,7 @@ pub(crate) fn present(
     output: Option<&str>,
 ) -> ToolPresentation {
     let meta = meta(name);
+    let asks_user = openide_harness::is_user_interaction_tool(name);
     let failed = is_error || activity == ActivityStatus::Failed;
     let mut title = if failed {
         format!("Falló · {}", meta.operation)
@@ -572,6 +589,11 @@ pub(crate) fn present(
         match activity {
             ActivityStatus::Running => meta.running.into(),
             ActivityStatus::Completed => meta.completed.into(),
+            // A question waits for an answer, not for a permission.
+            ActivityStatus::WaitingPermission if asks_user => meta.running.into(),
+            ActivityStatus::PermissionInterrupted if asks_user => {
+                format!("{} sin responder", meta.operation)
+            }
             ActivityStatus::WaitingPermission => format!("Permiso pendiente · {}", meta.operation),
             ActivityStatus::PermissionInterrupted => {
                 format!("Permiso pendiente · {}", meta.operation)
@@ -630,6 +652,10 @@ pub(crate) fn present(
             .or_else(|| Some("La operación no se completó".into()))
     } else {
         match activity {
+            ActivityStatus::WaitingPermission if asks_user => None,
+            ActivityStatus::PermissionInterrupted if asks_user => {
+                Some("El turno se interrumpió mientras esperaba tu decisión".into())
+            }
             ActivityStatus::WaitingPermission => {
                 Some("Esperando autorización para ejecutar".into())
             }

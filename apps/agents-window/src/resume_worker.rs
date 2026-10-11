@@ -547,7 +547,9 @@ async fn run_with_prepared(
     )
     .with_event_observer(event_forwarder.clone());
     if request.native_automation.is_none() {
-        engine = engine.with_session_approvals(request.sessions.clone(), request.command_isolation);
+        engine = engine
+            .with_session_approvals(request.sessions.clone(), request.command_isolation)
+            .with_user_interaction(true);
     }
     if let Some(actor) = command_actor {
         engine = engine.with_manual_command_actor(actor);
@@ -810,11 +812,22 @@ fn select_saved_catalog(
 ) -> Result<(Arc<dyn ToolExecutor>, ToolCatalog), String> {
     let current_catalog = ToolCatalog::from_executor(current.as_ref())
         .map_err(|error| format!("Catálogo de herramientas no válido: {error}"))?;
-    if saved_catalog_digest.is_none_or(|saved| saved == current_catalog.digest_hex()) {
+    // The engine appends the built-ins that wait for the user to whichever
+    // executor catalog is chosen here, so a saved digest that includes them
+    // selects the same executor generation as one that does not.
+    let saved = |catalog: &ToolCatalog| {
+        saved_catalog_digest.is_some_and(|saved| {
+            saved == catalog.digest_hex()
+                || openide_harness::catalogs_with_user_interaction(catalog)
+                    .iter()
+                    .any(|with| saved == with.digest_hex())
+        })
+    };
+    if saved_catalog_digest.is_none() || saved(&current_catalog) {
         return Ok((current, current_catalog));
     }
     if let Some(plan_catalog) = catalog_with_plan_tool(&current_catalog)? {
-        if saved_catalog_digest == Some(plan_catalog.digest_hex().as_str()) {
+        if saved(&plan_catalog) {
             return Ok((current, plan_catalog));
         }
     }
@@ -854,11 +867,11 @@ fn select_saved_catalog(
                             ToolCatalog::from_executor(candidate.as_ref()).map_err(|error| {
                                 format!("Catálogo de herramientas anterior no válido: {error}")
                             })?;
-                        if saved_catalog_digest == Some(catalog.digest_hex().as_str()) {
+                        if saved(&catalog) {
                             return Ok((candidate, catalog));
                         }
                         if let Some(plan_catalog) = catalog_with_plan_tool(&catalog)? {
-                            if saved_catalog_digest == Some(plan_catalog.digest_hex().as_str()) {
+                            if saved(&plan_catalog) {
                                 return Ok((candidate, plan_catalog));
                             }
                         }
@@ -2234,6 +2247,28 @@ mod tests {
         let (_, selected) = select_saved_catalog(current, Some(&digest)).unwrap();
         assert_eq!(selected.digest_hex(), digest);
         assert!(selected.get("update_plan").is_some());
+    }
+
+    #[test]
+    fn resume_selects_the_executor_generation_under_the_tools_that_wait_for_the_user() {
+        let current: Arc<dyn ToolExecutor> = Arc::new(LocalTools::new());
+        let base = ToolCatalog::from_executor(current.as_ref()).unwrap();
+        let planned = catalog_with_plan_tool(&base).unwrap().unwrap();
+        // A Plan turn froze the reads and the question tool; a Build turn
+        // froze update_plan between them. The engine appends the question
+        // tool itself, so the executor catalog under it is what is selected.
+        for under in [&base, &planned] {
+            for asked in openide_harness::catalogs_with_user_interaction(under) {
+                assert!(asked.get(openide_harness::ASK_USER_TOOL).is_some());
+                let (_, selected) =
+                    select_saved_catalog(current.clone(), Some(&asked.digest_hex())).unwrap();
+                assert_eq!(selected.digest_hex(), under.digest_hex());
+            }
+        }
+        // A turn frozen before the question tool existed still selects itself.
+        let (_, selected) =
+            select_saved_catalog(current, Some(&planned.digest_hex())).unwrap();
+        assert_eq!(selected.digest_hex(), planned.digest_hex());
     }
 
     #[tokio::test]

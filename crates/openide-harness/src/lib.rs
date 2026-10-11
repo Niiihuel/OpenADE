@@ -30,6 +30,7 @@ mod native_context;
 mod permission;
 mod persistent_command;
 mod plan_tool;
+mod user_interaction;
 #[path = "mcp_process_tree.rs"]
 mod process_tree;
 mod project_instructions;
@@ -124,6 +125,10 @@ pub use persistent_command::{
     PersistentCommandStarted, PersistentCommandStdinState, PersistentCommandStream,
 };
 pub use plan_tool::update_plan_tool_definition;
+pub use user_interaction::{
+    ask_user_tool_definition, catalogs_with_user_interaction, is_user_interaction_tool,
+    switch_mode_accepted, switch_mode_tool_definition, ASK_USER_TOOL, SWITCH_MODE_TOOL,
+};
 pub use project_instructions::{
     load_project_instructions, load_project_instructions_for_target,
     project_instruction_metadata_sequences, LoadedProjectInstructions, ProjectInstructionEntry,

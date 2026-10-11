@@ -4,6 +4,7 @@ use crate::permission::{
     effective_session_approval_policy_digest, PendingPermissions, SessionApprovalGrant,
 };
 use crate::plan_tool::{self, UPDATE_PLAN_TOOL};
+use crate::user_interaction;
 use crate::project_instructions::{activation_hook_id, ProjectInstructionLedger};
 use crate::tool_scheduler::{
     trusted_local_read, trusted_plan_read, ReadWaveAdmission, ScheduleGroup, ScheduledCall,
@@ -66,6 +67,7 @@ pub struct AgentRunner {
     event_journal: Option<Arc<dyn NativeEventJournal>>,
     auto_compaction: Option<AutoCompaction>,
     session_approvals: Option<(Arc<SessionStore>, CommandIsolation)>,
+    user_interaction: Option<Arc<SessionStore>>,
     native_steering_store: Option<Arc<SessionStore>>,
     external_controls_store: Option<Arc<SessionStore>>,
     manual_command_actor: Option<Arc<NativeManualCommandActor>>,
@@ -295,6 +297,7 @@ impl AgentRunner {
             event_journal: None,
             auto_compaction: None,
             session_approvals: None,
+            user_interaction: None,
             native_steering_store: None,
             external_controls_store: None,
             manual_command_actor: None,
@@ -377,6 +380,15 @@ impl AgentRunner {
     /// store can still use the in-memory event stream.
     pub fn with_event_journal(mut self, journal: Arc<dyn NativeEventJournal>) -> Self {
         self.event_journal = Some(journal);
+        self
+    }
+
+    /// Offer the built-in tools that wait for the user (`ask_user`,
+    /// `switch_mode`). `sessions`
+    /// must be the store the host records the user's answers in. A runner
+    /// without it, such as a subagent's, never advertises them.
+    pub fn with_user_interaction(mut self, sessions: Arc<SessionStore>) -> Self {
+        self.user_interaction = Some(sessions);
         self
     }
 
@@ -925,6 +937,19 @@ impl AgentRunner {
             }
             definitions.push(plan_tool::definition());
         }
+        // Waiting for the user has no effect on the workspace, so these are
+        // offered in Plan turns as well.
+        if self.user_interaction.is_some() && native.lease.is_some() && sink.journal.is_some() {
+            for definition in user_interaction::current() {
+                if definitions.iter().any(|known| known.name == definition.name) {
+                    return Err(AgentError::InvalidRequest(format!(
+                        "tool executor collides with built-in {}",
+                        definition.name
+                    )));
+                }
+                definitions.push(definition);
+            }
+        }
         let catalog = ToolCatalog::new(definitions)
             .map_err(|error| AgentError::InvalidRequest(format!("tool catalog: {error}")))?;
         for name in active_tools.ask_tool_names {
@@ -1414,6 +1439,15 @@ impl AgentRunner {
                         project_preflights[index].clone()
                     }
                     Ok(_) if call.name == UPDATE_PLAN_TOOL => None,
+                    Ok(_)
+                        if self.user_interaction.is_some()
+                            && user_interaction::is_builtin(&catalog, call) =>
+                    {
+                        Some(
+                            self.wait_for_user(call, mode, &cancel, &pending_permissions, sink)
+                                .await?,
+                        )
+                    }
                     Ok(_) => {
                         self.check_permission(
                             call,
@@ -1733,6 +1767,62 @@ impl AgentRunner {
                 )))
             }
         }
+    }
+
+    /// Ask the user and wait, with no timeout, for the host to resolve the
+    /// request. The answer is read from the decision journal the host wrote
+    /// before resolving, so a live turn and a recovered one take it from the
+    /// same durable place.
+    async fn wait_for_user(
+        &self,
+        call: &ToolCall,
+        mode: TurnMode,
+        cancel: &CancellationToken,
+        pending: &PendingPermissions,
+        sink: &mut EventSink,
+    ) -> Result<crate::ToolOutput, AgentError> {
+        if let Some(invalid) = user_interaction::invalid(call, mode) {
+            return Ok(invalid);
+        }
+        let request_id = Uuid::new_v4().to_string();
+        let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
+        pending.insert(request_id.clone(), reply_sender);
+        if let Err(error) = sink.emit(AgentEventKind::PermissionRequested {
+            request_id: request_id.clone(),
+            tool_call: call.clone(),
+        }) {
+            pending.remove(&request_id);
+            return Err(error);
+        }
+        let resolution = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => PermissionResolution::Cancelled,
+            reply = reply_receiver => match reply {
+                Ok(PermissionChoice::Allow | PermissionChoice::AllowSession) => {
+                    PermissionResolution::Allowed
+                }
+                Ok(PermissionChoice::Deny) | Err(_) => PermissionResolution::Denied,
+            },
+        };
+        pending.remove(&request_id);
+        let answer = match (resolution, self.user_interaction.as_ref()) {
+            (PermissionResolution::Allowed, Some(sessions)) => sessions
+                .load_permission_decisions(&sink.session_id)
+                .map_err(|error| AgentError::Runtime(format!("user answer load failed: {error}")))?
+                .into_iter()
+                .find(|decision| decision.request_id == request_id)
+                .and_then(|decision| decision.answer),
+            _ => None,
+        };
+        sink.emit(AgentEventKind::PermissionResolved {
+            request_id,
+            tool_call_id: call.id.clone(),
+            resolution,
+        })?;
+        if resolution == PermissionResolution::Cancelled {
+            return Err(AgentError::Cancelled);
+        }
+        Ok(user_interaction::outcome(call, resolution, answer))
     }
 
     async fn check_permission(
@@ -5126,6 +5216,124 @@ mod tests {
             AgentEventKind::TurnCompleted { .. }
         ));
         assert_eq!(tool.executions.load(Ordering::SeqCst), 1);
+    }
+
+    fn model_asking_the_user() -> Arc<ScriptedModel> {
+        Arc::new(ScriptedModel {
+            outputs: Mutex::new(vec![
+                ModelOutput {
+                    content: String::new(),
+                    tool_calls: vec![ToolCall {
+                        id: "call_permission".into(),
+                        name: crate::ASK_USER_TOOL.into(),
+                        arguments: json!({"questions": [{
+                            "header": "Storage",
+                            "question": "Where should it be kept?",
+                            "options": [{"label": "SQLite"}, {"label": "Files"}],
+                            "multi_select": false
+                        }]}),
+                    }],
+                },
+                ModelOutput {
+                    content: "Done".into(),
+                    tool_calls: vec![],
+                },
+            ]),
+            seen: Mutex::new(vec![]),
+        })
+    }
+
+    #[test]
+    fn asking_the_user_waits_without_policy_and_returns_the_recorded_answer() {
+        for skipped in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+            let tool = Arc::new(CountingTool {
+                executions: AtomicUsize::new(0),
+            });
+            let request = journaled_request(&store, dir.path());
+            let session_id = request.session_id.clone().unwrap();
+            let lease = store.try_acquire_native_lease(&session_id).unwrap();
+            let model = model_asking_the_user();
+            // The host denies names its policy does not list. A question is
+            // not a permission: it is asked all the same.
+            let runner = AgentRunner::new(model.clone(), tool.clone())
+                .with_permission_policy(
+                    PermissionPolicy::new().with_default_mode(PermissionMode::Deny),
+                )
+                .with_native_runtime_identity("test", "https://test.example/v1")
+                .with_event_journal(store.clone())
+                .with_user_interaction(store.clone());
+            let handle = runner.start_with_lease(request, lease);
+            let request_id = loop {
+                let event = handle
+                    .events
+                    .recv_timeout(Duration::from_secs(30))
+                    .expect("the question");
+                if let AgentEventKind::PermissionRequested { request_id, tool_call } = event.kind {
+                    assert_eq!(tool_call.name, crate::ASK_USER_TOOL);
+                    break request_id;
+                }
+            };
+            let answer = r#"{"answered_by":"user","answers":[{"header":"Storage","selected":["Files"]}]}"#;
+            if skipped {
+                assert!(handle.resolve_permission(&request_id, PermissionChoice::Deny));
+            } else {
+                store.record_user_answer(&session_id, &request_id, answer).unwrap();
+                assert!(handle.resolve_permission(&request_id, PermissionChoice::Allow));
+            }
+            let events = receive_until_terminal(&handle);
+            assert!(matches!(
+                events.last().unwrap().kind,
+                AgentEventKind::TurnCompleted { .. }
+            ));
+            let output = events
+                .iter()
+                .find_map(|event| match &event.kind {
+                    AgentEventKind::ToolFinished { tool_call_id, output, is_error: false }
+                        if tool_call_id == "call_permission" => Some(output.clone()),
+                    _ => None,
+                })
+                .unwrap();
+            if skipped {
+                assert!(output.contains("skipped"));
+            } else {
+                assert_eq!(output, answer);
+            }
+            assert_eq!(tool.executions.load(Ordering::SeqCst), 0);
+            let seen = model.seen.lock().unwrap();
+            assert!(seen[0][0].content.contains("ask_user"), "advertised to the model");
+            assert!(seen[1].iter().any(|message| message.content == output));
+        }
+    }
+
+    #[test]
+    fn a_runner_without_user_interaction_never_offers_the_question_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, dir.path());
+        let lease = store
+            .try_acquire_native_lease(request.session_id.as_deref().unwrap())
+            .unwrap();
+        let model = model_asking_the_user();
+        let runner = AgentRunner::new(
+            model.clone(),
+            Arc::new(CountingTool {
+                executions: AtomicUsize::new(0),
+            }),
+        )
+        .with_native_runtime_identity("test", "https://test.example/v1")
+        .with_event_journal(store.clone());
+        let handle = runner.start_with_lease(request, lease);
+        let events = receive_until_terminal(&handle);
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event.kind, AgentEventKind::PermissionRequested { .. })));
+        assert!(events.iter().any(|event| matches!(
+            &event.kind,
+            AgentEventKind::ToolFinished { tool_call_id, is_error: true, .. } if tool_call_id == "call_permission"
+        )));
+        assert!(!model.seen.lock().unwrap()[0][0].content.contains("ask_user"));
     }
 
     #[test]

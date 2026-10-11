@@ -29,6 +29,7 @@ pub struct ToolActivity {
     tooltip: Option<String>,
     note: Option<String>,
     ink: Option<Color>,
+    title_skeleton: bool,
 }
 
 impl ToolActivity {
@@ -54,7 +55,23 @@ impl ToolActivity {
             tooltip: None,
             note: None,
             ink: None,
+            title_skeleton: false,
         }
+    }
+
+    /// The title is not known yet: a pulsing bar holds its place in the
+    /// header, so the row keeps its shape when the text arrives.
+    pub fn title_skeleton(mut self, loading: bool) -> Self {
+        self.title_skeleton = loading;
+        self
+    }
+
+    fn title_placeholder(&self) -> Element {
+        Element::row(vec![
+            crate::Skeleton::line(format!("{}:title", self.id), self.palette, 132.0).render(),
+            Element::spacer().flex(1.0),
+        ])
+        .size(None, Some(12.0))
     }
 
     pub fn target(mut self, target: impl Into<String>) -> Self {
@@ -130,12 +147,14 @@ impl ToolActivity {
                     .size(Some(ICON_SIDE), Some(ICON_SIDE)),
             )
             .size(Some(ICON_SIDE), None),
-            centered(
-                Text::new(self.title, self.palette)
+            centered(if self.title_skeleton {
+                self.title_placeholder()
+            } else {
+                Text::new(self.title.clone(), self.palette)
                     .mono()
                     .truncate()
-                    .render(),
-            )
+                    .render()
+            })
             .flex(1.0),
         ];
         if let Some(status) = self.status.filter(|status| !status.is_empty()) {
@@ -247,19 +266,30 @@ impl Component for ToolActivity {
             ])
             .size(Some(ICON_SIDE), None)
         };
-        let title = if self.running {
+        let title = if self.title_skeleton {
+            Element::column(vec![
+                Element::spacer().flex(1.0),
+                self.title_placeholder(),
+                Element::spacer().flex(1.0),
+            ])
+            .flex(1.0)
+        } else if self.running {
             Element::shimmer_truncated_text(
                 format!("{}:label", self.id),
                 self.title,
                 crate::thinking_highlight(self.palette),
             )
+            .font_family(FontFamily::Sans)
+            .font_size(13.0)
+            .foreground(self.palette.muted)
+            .flex(1.0)
         } else {
             Element::truncated_text(self.title)
-        }
-        .font_family(FontFamily::Sans)
-        .font_size(13.0)
-        .foreground(self.palette.muted)
-        .flex(1.0);
+                .font_family(FontFamily::Sans)
+                .font_size(13.0)
+                .foreground(self.palette.muted)
+                .flex(1.0)
+        };
         let mut header = vec![icon(self.icon), title];
         if !self.target.is_empty() {
             let target = Text::new(self.target, self.palette).truncate();
