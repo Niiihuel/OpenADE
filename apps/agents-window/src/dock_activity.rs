@@ -220,6 +220,8 @@ struct CallRow {
     activity: ActivityStatus,
     stat: Option<(usize, usize)>,
     note: Option<String>,
+    /// How long the call took, once it ended.
+    duration: Option<String>,
     selected: bool,
     /// The copy in the running strip, whose spinner needs its own identity.
     pinned: bool,
@@ -294,6 +296,10 @@ fn call_row(state: &ViewState, index: usize, selected: Option<&str>) -> Option<C
         note: presentation
             .note
             .filter(|_| status == Some(StatusFilter::Errors)),
+        duration: state.item_times.duration_ms(id).map(|ms| match ms {
+            0..1000 => "<1 s".into(),
+            _ => crate::transcript::duration_label(ms),
+        }),
         selected: selected == Some(id.as_str()),
         pinned: false,
     })
@@ -342,6 +348,9 @@ fn tool_row(row: &CallRow, width: f32) -> Element {
                 .render(),
         );
     }
+    if let Some(duration) = &row.duration {
+        trailing.push(small(duration, theme::FOREGROUND_SUBTLE));
+    }
     if let Some(note) = &row.note {
         trailing.push(
             UiText::new(note, palette)
@@ -349,7 +358,7 @@ fn tool_row(row: &CallRow, width: f32) -> Element {
                 .ink(theme::DESTRUCTIVE)
                 .truncate()
                 .render()
-                .size(Some((width * 0.35).min(220.0)), None),
+                .size(Some((width * 0.25).min(220.0)), None),
         );
     }
     let mut list_row = ListRow::new(format!("tool:{}", row.id), &row.title, palette)
@@ -1040,6 +1049,7 @@ fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) ->
             .role(TextRole::Label)
             .render()
             .flex(1.0),
+        small(row.duration.as_deref().unwrap_or_default(), theme::FOREGROUND_SUBTLE).centered_y(),
         UiIconButton::new("dock_activity:close", Icon::Close, theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Dense)
@@ -1743,6 +1753,9 @@ mod tests {
             "Falló · Ejecución de comando",
             "github · create issue",
             "Abrió",
+            // Durations of the calls that were timed: 0.3 s and 64 s.
+            "<1 s",
+            "1 min 4 s",
         ] {
             assert!(text.contains(expected), "missing {expected}: {text}");
         }
