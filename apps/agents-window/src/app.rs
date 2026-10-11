@@ -31,6 +31,8 @@ mod markdown_preview_app;
 mod ide_status_app;
 #[path = "dock_file_actions_app.rs"]
 mod dock_file_actions_app;
+#[path = "file_tree_app.rs"]
+mod file_tree_app;
 #[path = "ide_bottom_app.rs"]
 mod ide_bottom_app;
 #[path = "keymap_app.rs"]
@@ -15210,6 +15212,7 @@ impl AgentsWindow {
             return;
         }
         if self.apply_dock_file_action(&action, ctx)
+            || self.apply_file_tree_action(&action, ctx)
             || self.apply_ide_status_action(&action, ctx)
             || self.apply_markdown_preview_action(&action, ctx)
             || self.apply_document_preview_action(&action, ctx)

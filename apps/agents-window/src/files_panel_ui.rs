@@ -1,15 +1,82 @@
 //! Project files inside the right dock: compact tools and a virtual tree.
 use crate::{theme, view::ViewState};
 use openide_ui::{
-    guides_for_depths, Button, ButtonSize, ButtonVariant, Color, Component, ControlSize, Element,
-    FontFamily, Icon, IconButton, Notice, ScrollArea, Text, Tooltip, TooltipPlacement, TooltipSpec,
-    TreeRow,
+    guides_for_depths, Button, ButtonSize, ButtonVariant, Color, Component, ContextMenu,
+    ContextMenuEntry, ContextMenuItem, ControlSize, Element, FontFamily, Icon, IconButton, Notice,
+    ScrollArea, Text, Tooltip, TooltipPlacement, TooltipSpec, TreeRow,
 };
 use std::sync::Arc;
 
 const ROW_HEIGHT: f32 = 24.0;
 const TOOL_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 const INSET: f32 = 8.0;
+
+/// A menu action names its target by workspace-relative path, never by row:
+/// the watcher reorders rows while a menu is open. The root is the empty path.
+pub(crate) fn tree_action(operation: &str, path: &str) -> String {
+    format!("file_tree:{operation}:{path}")
+}
+
+/// The menu of `path`: groups of (operation, label) with a rule between them.
+fn tree_menu(child: Element, path: &str, groups: &[&[(&str, &str)]]) -> Element {
+    let mut entries = Vec::new();
+    for group in groups.iter().filter(|group| !group.is_empty()) {
+        if !entries.is_empty() {
+            entries.push(ContextMenuEntry::Separator);
+        }
+        entries.extend(group.iter().map(|(operation, label)| {
+            ContextMenuEntry::Item(ContextMenuItem::new(tree_action(operation, path), *label))
+        }));
+    }
+    ContextMenu::new(
+        format!("file_tree_menu:{path}"),
+        child,
+        entries,
+        theme::menu_palette(),
+    )
+    .render()
+}
+
+const PATHS: &[(&str, &str)] = &[
+    ("copy_path", "Copiar ruta"),
+    ("copy_relative", "Copiar ruta relativa"),
+];
+const MENTION: &[(&str, &str)] = &[("mention", "Mencionar en el chat")];
+
+fn row_menu(child: Element, path: &str, entry: &crate::view::FileRowView) -> Element {
+    if entry.is_dir {
+        let toggle = if entry.expanded { "Contraer" } else { "Expandir" };
+        return tree_menu(
+            child,
+            path,
+            &[
+                &[("toggle", toggle)],
+                MENTION,
+                PATHS,
+                &[("collapse_all", "Contraer todo")],
+            ],
+        );
+    }
+    let markdown = openide_preview::kind_for_path(std::path::Path::new(path))
+        == Some(openide_preview::PreviewKind::Markdown);
+    let mut open = vec![("open", "Abrir")];
+    if markdown {
+        open.push(("preview", "Abrir vista previa al costado"));
+    }
+    tree_menu(child, path, &[&open, MENTION, PATHS])
+}
+
+/// The header and the empty part of the tree act on the workspace root.
+fn root_menu(child: Element) -> Element {
+    tree_menu(
+        child,
+        "",
+        &[
+            &PATHS[..1],
+            &[("collapse_all", "Contraer todo"), ("refresh", "Actualizar")],
+        ],
+    )
+}
 
 /// What the panel says in place of the tree, with the one way out.
 fn empty_state(status: &str, palette: openide_ui::ComponentPalette) -> Element {
@@ -205,7 +272,7 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                         .render(),
                     );
                 }
-                Tooltip::for_path(
+                let row = Tooltip::for_path(
                     row.render(),
                     &action,
                     &paths[index],
@@ -217,7 +284,8 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                     TooltipPlacement::Left
                 })
                 .render()
-                .size(Some(inner), Some(ROW_HEIGHT))
+                .size(Some(inner), Some(ROW_HEIGHT));
+                row_menu(row, &paths[index], entry)
             })
             .tint(theme::FOREGROUND_SUBTLE)
             .render()
@@ -228,7 +296,7 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
     let content = Element::column(content)
         .gap(crate::sidebar_chrome::GAP)
         .flex(1.0);
-    content.padding(inset).background(surface)
+    root_menu(content.padding(inset).background(surface))
 }
 
 #[cfg(test)]
@@ -276,6 +344,135 @@ mod tests {
             },
         ];
         state
+    }
+
+    /// Right-clicks `point` and returns the open menu's labels, rules as "—".
+    fn menu_at(tree: &mut UiTree, size: Size, point: Point) -> (Frame, Vec<String>) {
+        tree.handle_event(UiEvent::ContextMenu { position: point });
+        let frame = tree.layout(size);
+        let surface = bounds(&frame, "__context_menu:surface");
+        // The menu is painted last, after its own shadow.
+        let overlay = frame
+            .commands
+            .iter()
+            .rposition(|command| matches!(command, DrawCommand::Shadow { .. }))
+            .unwrap();
+        let mut rows: Vec<(f32, String)> = frame.commands[overlay..]
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { position, text, .. } if surface.contains(*position) => {
+                    Some((position.y, text.clone()))
+                }
+                DrawCommand::FillRect { rect, .. }
+                    if rect.height == 1.0 && surface.contains(center(*rect)) =>
+                {
+                    Some((rect.y, "—".into()))
+                }
+                _ => None,
+            })
+            .collect();
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        (frame, rows.into_iter().map(|(_, label)| label).collect())
+    }
+
+    /// Chooses the menu item labelled `label` and returns what it dispatched.
+    fn choose(tree: &mut UiTree, frame: &Frame, label: &str) -> Vec<UiAction> {
+        let text = frame
+            .commands
+            .iter()
+            .rev()
+            .find_map(|command| match command {
+                DrawCommand::Text { position, text, .. } if text == label => Some(*position),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing menu item {label}"));
+        let point = Point::new(text.x + 2.0, text.y + 4.0);
+        tree.handle_event(UiEvent::PointerDown(point));
+        tree.handle_event(UiEvent::PointerUp(point))
+    }
+
+    fn clicked(operation: &str, path: &str) -> Vec<UiAction> {
+        vec![UiAction::Clicked {
+            id: tree_action(operation, path),
+        }]
+    }
+
+    #[test]
+    fn right_click_opens_the_menu_of_the_row_the_header_or_the_empty_area() {
+        let mut state = state();
+        state.file_rows.push(FileRowView {
+            name: "README.md".into(),
+            depth: 0,
+            is_dir: false,
+            expanded: false,
+            can_load_more: false,
+        });
+        let size = Size::new(320.0, 400.0);
+        for compact in [false, true] {
+            let build = || {
+                let root = if compact {
+                    build_ide(&state, size.width)
+                } else {
+                    build(&state, size.width)
+                };
+                let mut tree = UiTree::new(root);
+                tree.set_reduced_motion(true);
+                let frame = tree.layout(size);
+                (tree, frame)
+            };
+            let paths = ["Copiar ruta", "Copiar ruta relativa"];
+            let (mut tree, frame) = build();
+            let (menu, labels) = menu_at(&mut tree, size, center(bounds(&frame, "file_row:1")));
+            assert_eq!(
+                labels,
+                [&["Abrir", "—", "Mencionar en el chat", "—"], &paths[..]].concat()
+            );
+            // The action carries the path, never the row's position.
+            assert_eq!(
+                choose(&mut tree, &menu, "Abrir"),
+                clicked("open", "src/commands.rs")
+            );
+
+            let (mut tree, frame) = build();
+            let (menu, labels) = menu_at(&mut tree, size, center(bounds(&frame, "file_row:3")));
+            assert_eq!(labels[..2], ["Abrir", "Abrir vista previa al costado"]);
+            assert_eq!(
+                choose(&mut tree, &menu, "Abrir vista previa al costado"),
+                clicked("preview", "README.md")
+            );
+
+            let (mut tree, frame) = build();
+            let (menu, labels) = menu_at(&mut tree, size, center(bounds(&frame, "file_row:0")));
+            assert_eq!(
+                labels,
+                [
+                    &["Contraer", "—", "Mencionar en el chat", "—"],
+                    &paths[..],
+                    &["—", "Contraer todo"]
+                ]
+                .concat()
+            );
+            assert_eq!(
+                choose(&mut tree, &menu, "Mencionar en el chat"),
+                clicked("mention", "src")
+            );
+
+            let root = ["Copiar ruta", "—", "Contraer todo", "Actualizar"];
+            let tree_area = bounds(&frame, "file_tree");
+            for point in [
+                center(bounds(&frame, "files_workspace")),
+                // Below the last of the four rows the tree is empty.
+                Point::new(center(tree_area).x, tree_area.y + tree_area.height - 8.0),
+            ] {
+                let (mut tree, _) = build();
+                let (menu, labels) = menu_at(&mut tree, size, point);
+                assert_eq!(labels, root, "compact={compact} at {point:?}");
+                assert_eq!(
+                    choose(&mut tree, &menu, "Actualizar"),
+                    clicked("refresh", "")
+                );
+            }
+        }
     }
 
     #[test]
@@ -456,5 +653,91 @@ mod tests {
                 id: "file_row:9999".into()
             }]
         );
+    }
+
+    /// A tree measured with the application's fonts, for the exported review.
+    fn native_tree(root: Element, size: Size) -> (eframe::egui::Context, UiTree) {
+        use eframe::egui;
+        let ctx = egui::Context::default();
+        crate::fonts::install(&ctx);
+        ctx.begin_pass(egui::RawInput::default());
+        let measure = ctx.clone();
+        let mut tree = UiTree::new(
+            Element::panel(root)
+                .background(theme::BACKGROUND)
+                .size(Some(size.width), Some(size.height)),
+        );
+        tree.set_reduced_motion(true);
+        tree.set_text_measurer(move |text, size, family| {
+            let family = match family {
+                FontFamily::Sans => egui::FontFamily::Proportional,
+                FontFamily::Monospace => egui::FontFamily::Monospace,
+            };
+            measure.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(text.to_owned(), egui::FontId::new(size, family), egui::Color32::WHITE)
+                    .size()
+                    .x
+            })
+        });
+        (ctx, tree)
+    }
+
+    fn export(frame: &Frame, size: Size, name: &str) {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/ui-separation/shots/file-tree");
+        std::fs::create_dir_all(&directory).unwrap();
+        let svg = std::env::temp_dir().join(format!("file-tree-{name}.svg"));
+        crate::settings_ui::visual_qa::write_native_frame_svg(frame, &svg, size.width, size.height)
+            .unwrap();
+        let tree = resvg::usvg::Tree::from_str(
+            &std::fs::read_to_string(&svg).unwrap(),
+            &crate::settings_ui::visual_qa::native_svg_options(),
+        )
+        .unwrap();
+        let mut image =
+            resvg::tiny_skia::Pixmap::new(size.width as u32, size.height as u32).unwrap();
+        resvg::render(
+            &tree,
+            resvg::tiny_skia::Transform::identity(),
+            &mut image.as_mut(),
+        );
+        image.save_png(directory.join(format!("{name}.png"))).unwrap();
+    }
+
+    #[test]
+    #[ignore = "opt-in PNG review of the file tree's menus with native fonts"]
+    fn export_file_tree_visual_review() {
+        let mut state = state();
+        state.file_rows.push(FileRowView {
+            name: "README.md".into(),
+            depth: 0,
+            is_dir: false,
+            expanded: false,
+            can_load_more: false,
+        });
+        for (surface, size) in [
+            ("dock", Size::new(360.0, 460.0)),
+            ("ide", Size::new(280.0, 460.0)),
+        ] {
+            let build = || {
+                if surface == "ide" {
+                    build_ide(&state, size.width)
+                } else {
+                    build(&state, size.width)
+                }
+            };
+            for (name, target) in [
+                ("menu-file", "file_row:3"),
+                ("menu-folder", "file_row:0"),
+                ("menu-root", "files_workspace"),
+            ] {
+                let (ctx, mut tree) = native_tree(build(), size);
+                let frame = tree.layout(size);
+                let (frame, _) = menu_at(&mut tree, size, center(bounds(&frame, target)));
+                export(&frame, size, &format!("{name}-{surface}"));
+                ctx.end_pass().textures_delta.clear();
+            }
+        }
     }
 }
