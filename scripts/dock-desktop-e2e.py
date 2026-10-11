@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Native Wayland terminal/session, browser retry and file navigation checks.
 
-Requires an editor-e2e build, Hyprland, wtype, grim, and the existing Playwright
-installation. The private headless runner provides a scoped Wayland pointer;
+Requires an editor-e2e build, Hyprland, wtype, grim, and a Chrome or Chromium
+the application can find. The private headless runner provides a scoped Wayland pointer;
 all data and shell commands stay in a new /tmp fixture.
 Observations are one-way; actions use the real keyboard/pointer with PID checks.
 """
@@ -51,12 +51,6 @@ def main():
     project.mkdir()
     source = project / "main.rs"
     source.write_text("fn main() {}\n")
-    dependencies = root / "state/browser-runtime/deps"
-    dependencies.parent.mkdir(parents=True)
-    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    module = Path(os.environ.get("OPENIDE_PLAYWRIGHT_MODULE_DIR", data_home / "openide/browser-runtime/deps"))
-    assert (module / "node_modules/playwright/package.json").is_file(), "Playwright must already be installed"
-    dependencies.symlink_to(module.resolve(), target_is_directory=True)
     server_state = {"ready": 0, "fail_retry": True, "value": None}
     lock = threading.Lock()
     html = b'''<!doctype html><html><meta charset="utf-8"><title>Dock fixture</title>

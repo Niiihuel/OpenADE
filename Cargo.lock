@@ -39,6 +39,7 @@ dependencies = [
  "notify",
  "notify-rust",
  "openide-bridge",
+ "openide-browser",
  "openide-cli",
  "openide-connections",
  "openide-core",

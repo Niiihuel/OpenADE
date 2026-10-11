@@ -42,12 +42,6 @@ def main():
     (root / ".openide-editor-fixture").touch()
     (root / "project").mkdir()
     (root / "project/main.rs").write_text("fn main() {}\n")
-    deps = root / "state/browser-runtime/deps"
-    deps.parent.mkdir(parents=True)
-    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    module = Path(os.environ.get("OPENIDE_PLAYWRIGHT_MODULE_DIR", data_home / "openide/browser-runtime/deps"))
-    assert (module / "node_modules/playwright/package.json").is_file(), "Playwright must already be installed"
-    deps.symlink_to(module.resolve(), target_is_directory=True)
     state = {"ready": False, "value": None}
     lock = threading.Lock()
     html = b'''<!doctype html><html><meta charset="utf-8"><title>OpenIDE browser E2E</title>

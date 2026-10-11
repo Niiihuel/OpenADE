@@ -490,11 +490,11 @@ fn pointer_during_pending_typing_is_an_ordered_barrier_but_navigation_blocks_it(
     }
     // The button is no longer down: the page is also told of the release.
     assert_eq!(delivered.len(), 8);
-    assert!(matches!(delivered[7], BrowserCommand::PointerUp { x, y } if x == 40.0 && y == 30.0));
+    assert!(matches!(delivered[7], BrowserCommand::PointerUp { x, y, .. } if x == 40.0 && y == 30.0));
     for (index, command) in delivered[..5].iter().enumerate() {
         assert!(matches!(command, BrowserCommand::Type { text } if text == &index.to_string()));
     }
-    assert!(matches!(delivered[5], BrowserCommand::PointerDown { x, y } if x == 40.0 && y == 30.0));
+    assert!(matches!(delivered[5], BrowserCommand::PointerDown { x, y, .. } if x == 40.0 && y == 30.0));
     assert!(matches!(&delivered[6], BrowserCommand::Type { text } if text == "después"));
 }
 
@@ -671,9 +671,9 @@ fn hover_reaches_the_page_one_move_at_a_time_and_a_drag_ends_wherever_it_is_rele
     }
     assert!(
         matches!(delivered.as_slice(), [
-            BrowserCommand::PointerDown { x, y },
+            BrowserCommand::PointerDown { x, y, .. },
             BrowserCommand::PointerMove { x: move_x, y: move_y },
-            BrowserCommand::PointerUp { x: up_x, y: up_y },
+            BrowserCommand::PointerUp { x: up_x, y: up_y, .. },
         ] if (*x, *y, *move_x, *move_y, *up_x, *up_y) == (5.0, 6.0, 0.0, 479.0, 0.0, 479.0)),
         "{delivered:?}"
     );
@@ -717,7 +717,7 @@ fn a_page_shown_again_takes_no_input_until_its_stream_is_back_and_a_press_is_alw
     app.tree.layout(Size::new(320.0, 272.0));
     assert!(app.handle_browser_event(&UiEvent::PointerUp(Point::new(-400.0, -400.0))));
     assert!(
-        matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { x, y }) if x == 30.0 && y == 40.0)
+        matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { x, y, .. }) if x == 30.0 && y == 40.0)
     );
     assert!(app.browser_pointer_down.is_none());
 
@@ -738,4 +738,107 @@ fn a_page_shown_again_takes_no_input_until_its_stream_is_back_and_a_press_is_alw
     app.browser_live.insert(id.get(), true);
     assert!(app.handle_browser_event(&UiEvent::PointerDown(inside)));
     assert!(matches!(commands.finish_next(), Some(BrowserCommand::PointerDown { .. })));
+}
+
+#[test]
+fn presses_close_in_time_and_place_are_one_run_of_clicks_and_other_buttons_click_whole() {
+    use openide_browser::MouseButton;
+    let (_root, mut app, id) = fixture();
+    // The page already has the size of its pane, so no resize joins the queue.
+    let page = BrowserSnapshot {
+        viewport_width: 320,
+        viewport_height: 240,
+        ..blank(1)
+    };
+    let commands = install_runtime(&mut app, id, page.clone());
+    app.apply_browser_snapshot(id.get(), page);
+    viewport(&mut app);
+    app.sync_browser_tab();
+    let rect = app.browser_viewport_rect().unwrap();
+    let at = |x: f32, y: f32| Point::new(rect.x + x, rect.y + y);
+    let ctx = egui::Context::default();
+    // The clicks the page is told a press and its release are.
+    let click = |app: &mut AgentsWindow, press: UiEvent, release: Point| -> (u8, u8) {
+        assert!(app.handle_browser_event(&press));
+        let Some(BrowserCommand::PointerDown { button: MouseButton::Left, clicks: down, .. }) = commands.finish_next() else {
+            panic!("a left press reaches the page");
+        };
+        assert!(app.handle_browser_event(&UiEvent::PointerUp(release)));
+        let Some(BrowserCommand::PointerUp { button: MouseButton::Left, clicks: up, .. }) = commands.finish_next() else {
+            panic!("and so does its release");
+        };
+        app.update_browser(&ctx);
+        (down, up)
+    };
+    let spot = at(30.0, 40.0);
+    assert_eq!(click(&mut app, UiEvent::PointerDown(spot), spot), (1, 1));
+    assert_eq!(click(&mut app, UiEvent::PointerDown(spot), spot), (2, 2));
+    // The window may name a press otherwise once it has seen a double
+    // click: it counts for the page all the same, a pixel or two away.
+    let editor = UiEvent::PointerDownEditor {
+        position: at(32.0, 41.0),
+        shift: false,
+        alt: false,
+        ctrl: false,
+        click_count: 1,
+    };
+    assert_eq!(click(&mut app, editor, at(32.0, 41.0)), (3, 3));
+    assert_eq!(click(&mut app, UiEvent::PointerDown(spot), spot), (3, 3), "a run stays at three");
+    // A release far from its press, after a drag, is still that press's.
+    let far = at(80.0, 40.0);
+    assert_eq!(click(&mut app, UiEvent::PointerDown(far), at(200.0, 90.0)), (1, 1), "elsewhere a run starts over");
+    assert_eq!(click(&mut app, UiEvent::PointerDown(far), far), (2, 2));
+    let (tab, _, x, y, count) = app.browser_click.unwrap();
+    let long_ago = Instant::now() - BROWSER_MULTI_CLICK - Duration::from_millis(50);
+    app.browser_click = Some((tab, long_ago, x, y, count));
+    assert_eq!(click(&mut app, UiEvent::PointerDown(far), far), (1, 1), "and so it does later");
+
+    // The secondary button: the page gets the whole click at once, and no
+    // release is owed.
+    assert!(app.handle_browser_event(&UiEvent::ContextMenu { position: spot }));
+    assert!(matches!(
+        commands.finish_next(),
+        Some(BrowserCommand::PointerDown { x, y, button: MouseButton::Right, clicks: 1 }) if (x, y) == (30.0, 40.0)
+    ));
+    assert!(matches!(
+        commands.finish_next(),
+        Some(BrowserCommand::PointerUp { x, y, button: MouseButton::Right, clicks: 1 }) if (x, y) == (30.0, 40.0)
+    ));
+    assert!(app.browser_pointer_down.is_none());
+    app.update_browser(&ctx);
+
+    // The middle button, which the window's own events do not carry.
+    let origin = egui::pos2(100.0, 50.0);
+    let middle = |position: Point| egui::RawInput {
+        events: vec![egui::Event::PointerButton {
+            pos: egui::pos2(origin.x + position.x, origin.y + position.y),
+            button: egui::PointerButton::Middle,
+            pressed: false,
+            modifiers: Default::default(),
+        }],
+        ..Default::default()
+    };
+    ctx.begin_pass(middle(spot));
+    assert!(app.handle_browser_middle_click(&ctx, origin));
+    ctx.end_pass().textures_delta.clear();
+    assert!(matches!(
+        commands.finish_next(),
+        Some(BrowserCommand::PointerDown { x, y, button: MouseButton::Middle, clicks: 1 }) if (x, y) == (30.0, 40.0)
+    ));
+    assert!(matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { button: MouseButton::Middle, .. })));
+    app.update_browser(&ctx);
+
+    // Outside the page nothing is the page's, and while it is between two
+    // documents a click over it is swallowed.
+    let toolbar = Point::new(rect.x + 30.0, rect.y - 10.0);
+    assert!(!app.handle_browser_event(&UiEvent::ContextMenu { position: toolbar }));
+    ctx.begin_pass(middle(toolbar));
+    assert!(!app.handle_browser_middle_click(&ctx, origin));
+    ctx.end_pass().textures_delta.clear();
+    app.view.browser.navigating = true;
+    assert!(app.handle_browser_event(&UiEvent::ContextMenu { position: spot }));
+    ctx.begin_pass(middle(spot));
+    assert!(app.handle_browser_middle_click(&ctx, origin));
+    ctx.end_pass().textures_delta.clear();
+    assert!(commands.finish_next().is_none());
 }

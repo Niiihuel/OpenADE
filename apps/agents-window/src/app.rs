@@ -1413,8 +1413,6 @@ pub struct AgentsWindow {
     browser_inputs: HashMap<u64, browser_input_app::BrowserInputQueue>,
     // Explicit retry preserves only navigation intent, never page mutations.
     browser_restart_urls: HashMap<u64, String>,
-    browser_install_response: Option<Receiver<Result<(), String>>>,
-    browser_installing: bool,
     // Tabs whose live surface holds a frame of their context, and whether it
     // came while the tab was watched: a frame from before it was hidden still
     // shows when it comes back, but takes no input.
@@ -1423,8 +1421,11 @@ pub struct AgentsWindow {
     // until the first frame has told it.
     browser_scale: f32,
     // A press a tab's page received and whose release it is still owed, with
-    // the page's pixel the pointer was last on.
-    browser_pointer_down: Option<(u64, f64, f64)>,
+    // the page's pixel the pointer was last on and the clicks the press counted.
+    browser_pointer_down: Option<(u64, f64, f64, u8)>,
+    // The last left press a tab's page took: when, where and which click of a
+    // run it was. The next one close to it in both is a double or triple click.
+    browser_click: Option<(u64, Instant, f64, f64, u8)>,
     session_changes_worker: Option<crate::session_changes::SessionChangesWorker>,
     environment_dirty: bool,
     environment_last_refresh: Instant,
@@ -1500,6 +1501,9 @@ pub struct AgentsWindow {
     github_contributions_worker: Option<GithubContributionsWorker>,
     github_contributions_generation: u64,
 }
+
+/// How soon after a press on the page the next one continues its run of clicks.
+const BROWSER_MULTI_CLICK: Duration = Duration::from_millis(500);
 
 fn browser_scroll_delta(event: &UiEvent) -> Option<(openide_ui::Point, f32, f32)> {
     let (position, x, y) = match event {
@@ -4715,6 +4719,16 @@ impl AgentsWindow {
         valid_owner.then(|| runtime.mcp_client())
     }
 
+    /// A browser call waits for approval: its card describes a ref from the
+    /// accessible tree the agent read it in.
+    fn remember_browser_refs(&mut self, tool_name: &str) {
+        if tool_name.starts_with("mcp__openide_browser__") {
+            if let Some(client) = self.browser_client_for_current_scope() {
+                self.view.browser_refs = client.last_snapshot();
+            }
+        }
+    }
+
     /// True when what the browser tab shows changed.
     fn sync_browser_tab(&mut self) -> bool {
         let active = self.active_browser_id();
@@ -4755,7 +4769,6 @@ impl AgentsWindow {
             self.view.browser = crate::browser_ui::BrowserUiState {
                 tab_id: active,
                 url_draft: draft.clone(),
-                installing: self.browser_installing,
                 ..Default::default()
             };
             self.tree.set_input_value("browser_url", draft);
@@ -4878,10 +4891,11 @@ impl AgentsWindow {
         self.view.browser.navigating = navigating;
         self.view.browser.started = snapshot.started;
         self.view.browser.error = snapshot.error;
-        self.view.browser.dependency_missing = snapshot.dependency_missing;
+        self.view.browser.load_failed =
+            snapshot.error_code.as_deref() == Some("navigation_failed");
+        self.view.browser.browser_missing = snapshot.browser_missing;
         self.view.browser.can_go_back = snapshot.can_go_back;
         self.view.browser.can_go_forward = snapshot.can_go_forward;
-        self.view.browser.installing = self.browser_installing;
         previous != self.view.browser
     }
 
@@ -5004,58 +5018,6 @@ impl AgentsWindow {
         for id in queued {
             self.drain_browser_inputs(id);
         }
-        if let Some(receiver) = &self.browser_install_response {
-            let result = match receiver.try_recv() {
-                Ok(result) => Some(result),
-                Err(TryRecvError::Disconnected) => Some(Err(
-                    "El instalador de navegador terminó sin resultado".into(),
-                )),
-                Err(TryRecvError::Empty) => None,
-            };
-            if let Some(result) = result {
-                self.browser_install_response = None;
-                self.browser_installing = false;
-                self.view.browser.installing = false;
-                match result {
-                    Ok(()) => {
-                        self.view.status = "Navegador instalado".into();
-                        // Retry only dependency startup, never a modifying page
-                        // action whose result could already have taken effect.
-                        let ids: Vec<_> = self
-                            .browsers
-                            .iter()
-                            .filter(|(_, runtime)| runtime.snapshot().dependency_missing)
-                            .map(|(id, _)| *id)
-                            .collect();
-                        for id in ids {
-                            if self
-                                .browser_requests
-                                .get(&id)
-                                .is_some_and(|requests| requests.len() >= 16)
-                            {
-                                continue;
-                            }
-                            if let Some(runtime) = self.browsers.get(&id) {
-                                if let Ok(request) =
-                                    runtime.submit(crate::browser_runtime::BrowserCommand::Snapshot)
-                                {
-                                    self.browser_requests.entry(id).or_default().push(request);
-                                }
-                            }
-                        }
-                        self.view.browser.error = None;
-                        self.sync_browser_tab();
-                    }
-                    Err(error) => {
-                        self.view.status = format!("No se pudo instalar el navegador: {error}");
-                        if !self.view.browser.started || self.view.browser.dependency_missing {
-                            self.view.browser.error = Some(error);
-                        }
-                    }
-                }
-                changed = true;
-            }
-        }
         let previous_tab = self.view.browser.tab_id;
         let previous_loading = self.view.browser.loading;
         let previous_navigating = self.view.browser.navigating;
@@ -5098,7 +5060,6 @@ impl AgentsWindow {
         if !self.browser_starts.is_empty()
             || !self.browser_requests.is_empty()
             || !self.browser_inputs.is_empty()
-            || self.browser_installing
         {
             ctx.request_repaint_after(Duration::from_millis(50));
         } else if active.is_some()
@@ -5167,32 +5128,9 @@ impl AgentsWindow {
         self.view.browser = crate::browser_ui::BrowserUiState {
             tab_id: Some(id),
             url_draft: draft,
-            installing: self.browser_installing,
             ..Default::default()
         };
         self.sync_browser_tab();
-    }
-
-    fn install_browser(&mut self) {
-        if self.browser_installing || self.active_browser_id().is_none() {
-            return;
-        }
-        let root = self.data_root.clone();
-        let (sender, receiver) = mpsc::sync_channel(1);
-        match std::thread::Builder::new()
-            .name("openide-browser-install".into())
-            .spawn(move || {
-                let _ = sender.send(crate::browser_runtime::install_runtime(&root));
-            }) {
-            Ok(_) => {
-                self.browser_installing = true;
-                self.view.browser.installing = true;
-                self.browser_install_response = Some(receiver);
-            }
-            Err(error) => {
-                self.view.browser.error = Some(format!("No pudo iniciar el instalador: {error}"));
-            }
-        }
     }
 
     fn copy_browser_mcp_config(&mut self, ctx: &egui::Context) {
@@ -5202,7 +5140,13 @@ impl AgentsWindow {
         let Some(runtime) = self.browsers.get(&id) else {
             return;
         };
-        let config = runtime.external_mcp_config();
+        let config = match runtime.external_mcp_config() {
+            Ok(config) => config,
+            Err(error) => {
+                self.view.status = error;
+                return;
+            }
+        };
         let env: BTreeMap<_, _> = config
             .env
             .iter()
@@ -5273,7 +5217,7 @@ impl AgentsWindow {
     /// Ends a press a page received: at `position` while that tab's page is
     /// still under it, and otherwise where the pointer last was on the page.
     fn release_browser_pointer(&mut self, position: Option<openide_ui::Point>) -> bool {
-        let Some((id, x, y)) = self.browser_pointer_down.take() else {
+        let Some((id, x, y, clicks)) = self.browser_pointer_down.take() else {
             return false;
         };
         let (x, y) = position
@@ -5281,13 +5225,98 @@ impl AgentsWindow {
             .and_then(|position| self.browser_page_point(position, true))
             .unwrap_or((x, y));
         if self.browsers.contains_key(&id) {
-            self.enqueue_browser_input(id, crate::browser_runtime::BrowserCommand::PointerUp { x, y });
+            self.enqueue_browser_input(
+                id,
+                crate::browser_runtime::BrowserCommand::PointerUp {
+                    x,
+                    y,
+                    button: openide_browser::MouseButton::Left,
+                    clicks,
+                },
+            );
         }
         true
     }
 
+    /// The page of the active tab is on screen, holds a frame of its own
+    /// context and nothing of the window covers it.
+    fn browser_takes_input(&self) -> bool {
+        self.active_browser_id().is_some()
+            && self.resource_pane_visible()
+            && !self.view.show_settings
+            && !self.view.show_command_center
+            && self.view.main_page == MainPage::Workspace
+            && !self.tree.has_open_popover()
+            && self.tree.frame().regions.iter().any(|region| region.id == "browser_viewport")
+            && self.view.browser.live
+            && self.view.browser.started
+            && self.active_browser_id().and_then(|id| self.browser_live.get(&id)) == Some(&true)
+    }
+
+    /// The page is between two documents: input now would reach the wrong one.
+    fn browser_navigating(&self) -> bool {
+        self.view.browser.navigating
+            || self
+                .active_browser_id()
+                .and_then(|id| self.browsers.get(&id))
+                .map(|runtime| runtime.snapshot())
+                .is_some_and(|snapshot| snapshot.navigating || snapshot.url != self.view.browser.url)
+    }
+
+    /// A whole click of the right or the middle button, which the window
+    /// hears of once. True when the position is the page's.
+    fn click_browser_page(
+        &mut self,
+        position: openide_ui::Point,
+        button: openide_browser::MouseButton,
+    ) -> bool {
+        use crate::browser_runtime::BrowserCommand;
+        if !self.browser_takes_input()
+            || self.tree.frame().hit_test(position) != Some("browser_viewport")
+        {
+            return false;
+        }
+        if let Some((x, y)) = self
+            .browser_page_point(position, false)
+            .filter(|_| !self.browser_navigating())
+        {
+            self.tree.focus("browser_viewport");
+            let clicks = 1;
+            if self.try_submit_browser_command(BrowserCommand::PointerDown { x, y, button, clicks }) {
+                self.submit_browser_command(BrowserCommand::PointerUp { x, y, button, clicks });
+            }
+        }
+        true
+    }
+
+    /// The middle button is not among the window's pointer events: its click
+    /// reaches the page when the button comes up over it.
+    fn handle_browser_middle_click(&mut self, ctx: &egui::Context, origin: egui::Pos2) -> bool {
+        let points: Vec<_> = ctx.input(|input| {
+            input
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Middle,
+                        pressed: false,
+                        ..
+                    } => Some(openide_ui::Point::new(pos.x - origin.x, pos.y - origin.y)),
+                    _ => None,
+                })
+                .collect()
+        });
+        let mut handled = false;
+        for point in points {
+            handled |= self.click_browser_page(point, openide_browser::MouseButton::Middle);
+        }
+        handled
+    }
+
     fn handle_browser_event(&mut self, event: &UiEvent) -> bool {
         use crate::browser_runtime::BrowserCommand;
+        use openide_browser::MouseButton;
         use openide_ui::Key;
         // The release is owed to the page whatever the window shows by now:
         // a navigation, a menu, another tab.
@@ -5296,27 +5325,15 @@ impl AgentsWindow {
                 return true;
             }
         }
-        if self.active_browser_id().is_none()
-            || !self.resource_pane_visible()
-            || self.view.show_settings
-            || self.view.show_command_center
-            || self.view.main_page != MainPage::Workspace
-            || self.tree.has_open_popover()
-            || !self.tree.frame().regions.iter().any(|region| region.id == "browser_viewport")
-            || !self.view.browser.live
-            || !self.view.browser.started
-            || self.active_browser_id().and_then(|id| self.browser_live.get(&id)) != Some(&true)
-        {
+        if !self.browser_takes_input() {
             return false;
         }
-        let backend = self
-            .active_browser_id()
-            .and_then(|id| self.browsers.get(&id))
-            .map(|runtime| runtime.snapshot());
-        let navigating = self.view.browser.navigating
-            || backend.as_ref().is_some_and(|snapshot| {
-                snapshot.navigating || snapshot.url != self.view.browser.url
-            });
+        // The window's secondary press is the page's right click: a page
+        // with a menu of its own opens it.
+        if let UiEvent::ContextMenu { position } = event {
+            return self.click_browser_page(*position, MouseButton::Right);
+        }
+        let navigating = self.browser_navigating();
         if let UiEvent::PointerDown(position)
         | UiEvent::PointerDownModified { position, .. }
         | UiEvent::PointerDownEditor { position, .. } = event
@@ -5334,12 +5351,30 @@ impl AgentsWindow {
                     return true;
                 };
                 self.tree.focus("browser_viewport");
+                // A press soon after another on the same spot is the next
+                // click of a run: the second selects a word, the third a
+                // paragraph. It is counted here, at the press, because the
+                // window only learns of a double click at its release.
+                let tab = self.view.browser.tab_id.unwrap_or_default();
+                let clicks = match self.browser_click {
+                    Some((clicked, at, last_x, last_y, count))
+                        if clicked == tab
+                            && at.elapsed() <= BROWSER_MULTI_CLICK
+                            && (x - last_x).abs() <= 4.0
+                            && (y - last_y).abs() <= 4.0 =>
+                    {
+                        (count + 1).min(3)
+                    }
+                    _ => 1,
+                };
                 // The press and its release are separate, so the page sees a
                 // drag between them: a text selection, a slider.
-                if !self.try_submit_browser_command(BrowserCommand::PointerDown { x, y }) {
+                let button = MouseButton::Left;
+                if !self.try_submit_browser_command(BrowserCommand::PointerDown { x, y, button, clicks }) {
                     return false;
                 }
-                self.browser_pointer_down = self.view.browser.tab_id.map(|id| (id, x, y));
+                self.browser_click = Some((tab, Instant::now(), x, y, clicks));
+                self.browser_pointer_down = Some((tab, x, y, clicks));
                 return true;
             }
         }
@@ -5354,11 +5389,11 @@ impl AgentsWindow {
             let over = self.tree.frame().hit_test(*position) == Some("browser_viewport");
             let pressed = self
                 .browser_pointer_down
-                .is_some_and(|(id, ..)| self.view.browser.tab_id == Some(id));
-            if !navigating && (over || pressed) {
-                if let Some((x, y)) = self.browser_page_point(*position, pressed) {
-                    if pressed {
-                        self.browser_pointer_down = self.view.browser.tab_id.map(|id| (id, x, y));
+                .filter(|(id, ..)| self.view.browser.tab_id == Some(*id));
+            if !navigating && (over || pressed.is_some()) {
+                if let Some((x, y)) = self.browser_page_point(*position, pressed.is_some()) {
+                    if let Some((id, _, _, clicks)) = pressed {
+                        self.browser_pointer_down = Some((id, x, y, clicks));
                     }
                     self.submit_browser_command(BrowserCommand::PointerMove { x, y });
                 }
@@ -6653,6 +6688,7 @@ impl AgentsWindow {
             git_panel: Default::default(),
             session_changes: Default::default(),
             browser: Default::default(),
+            browser_refs: Arc::from(""),
             review_detail: None,
             terminal_tabs: Vec::new(),
             terminal_controls: Default::default(),
@@ -6890,11 +6926,10 @@ impl AgentsWindow {
             browser_requests: HashMap::new(),
             browser_inputs: HashMap::new(),
             browser_restart_urls: HashMap::new(),
-            browser_install_response: None,
-            browser_installing: false,
             browser_live: HashMap::new(),
             browser_scale: 0.0,
             browser_pointer_down: None,
+            browser_click: None,
             session_changes_worker: crate::session_changes::SessionChangesWorker::spawn().ok(),
             environment_dirty: true,
             environment_last_refresh: Instant::now(),
@@ -13368,6 +13403,7 @@ impl AgentsWindow {
                         .iter()
                         .any(|permission| permission.request_id == *request_id)
                 {
+                    self.remember_browser_refs(&tool_call.name);
                     self.view.pending_permissions.push(PermissionView {
                         request_id: request_id.clone(),
                         tool_name: tool_call.name.clone(),
@@ -14595,6 +14631,7 @@ impl AgentsWindow {
                         .iter()
                         .any(|permission| permission.request_id == request_id)
                     {
+                        self.remember_browser_refs(&tool_call.name);
                         self.view.pending_permissions.push(PermissionView {
                             request_id,
                             tool_name: tool_call.name.clone(),
@@ -16148,7 +16185,6 @@ impl AgentsWindow {
                     }
                 },
                 "browser_restart" => { self.view.browser.more_open = false; self.restart_browser(); },
-                "browser_install" => self.install_browser(),
                 "browser_mcp_config" => { self.view.browser.more_open = false; self.copy_browser_mcp_config(ctx); },
                 "environment_open" | "dock_open:context" | "side_tab:context" => {
                     self.toggle_environment();
@@ -20571,6 +20607,7 @@ impl eframe::App for AgentsWindow {
         } else {
             if !workflow_modal_open && !self.tree.context_menu_open() {
                 needs_relayout |= self.handle_dock_middle_click(&ctx, area.min);
+                needs_relayout |= self.handle_browser_middle_click(&ctx, area.min);
                 needs_relayout |= self.handle_terminal_clipboard(&ctx);
             }
             for event in render::events(&ctx, area.min) {

@@ -288,6 +288,58 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
     }
 }
 
+/// A browser call that names its element by ref says what the ref is: the
+/// role and name the agent's last snapshot printed for it. A ref that
+/// snapshot does not hold stays as it was written.
+fn with_element(mut summary: ApprovalSummary, tool_name: &str, arguments: &str, snapshot: &str) -> ApprovalSummary {
+    let reference = tool_name
+        .starts_with("mcp__openide_browser__")
+        .then(|| serde_json::from_str::<Value>(arguments).ok())
+        .flatten()
+        .and_then(|arguments| arguments.get("ref")?.as_str().map(str::to_owned))
+        .filter(|reference| *reference == summary.target);
+    let Some((role, name)) = reference
+        .as_deref()
+        .and_then(|reference| openide_browser::element_of(snapshot, reference))
+    else {
+        return summary;
+    };
+    let role = match role.as_str() {
+        "button" => "botón",
+        "link" => "enlace",
+        "textbox" => "campo de texto",
+        "searchbox" => "campo de búsqueda",
+        "spinbutton" => "campo numérico",
+        "checkbox" => "casilla",
+        "radio" => "opción",
+        "switch" => "interruptor",
+        "slider" => "deslizador",
+        "combobox" => "lista desplegable",
+        "listbox" => "lista",
+        "option" => "opción de lista",
+        "menuitem" => "elemento de menú",
+        "tab" => "pestaña",
+        "heading" => "encabezado",
+        "paragraph" => "párrafo",
+        "img" => "imagen",
+        "iframe" => "marco",
+        "listitem" => "elemento de lista",
+        "row" => "fila",
+        "cell" => "celda",
+        "dialog" => "diálogo",
+        "generic" => "elemento",
+        other => other,
+    };
+    // The name is the page's: one line of it, and never the whole card.
+    let (name, clipped) = clip(&name.replace(['\r', '\n', '\t'], " "), 200);
+    summary.target = match (name.is_empty(), clipped) {
+        (true, _) => format!("{role} ({})", summary.target),
+        (false, false) => format!("{role} \"{name}\" ({})", summary.target),
+        (false, true) => format!("{role} \"{name}…\" ({})", summary.target),
+    };
+    summary
+}
+
 fn notice(
     target: &ApprovalTarget,
     summary: ApprovalSummary,
@@ -311,7 +363,12 @@ fn notice(
 pub(crate) fn inline_root(permission: &PermissionView, state: &ViewState, compact: bool) -> Element {
     notice(
         &root_target(permission, state),
-        summary(&permission.tool_name, &permission.arguments),
+        with_element(
+            summary(&permission.tool_name, &permission.arguments),
+            &permission.tool_name,
+            &permission.arguments,
+            &state.browser_refs,
+        ),
         "Aprobación pendiente".into(),
         compact,
     )
@@ -542,6 +599,41 @@ mod tests {
             summary("mcp__other__browser_evaluate", r#"{"expression":"1"}"#).title,
             "Usar conexión MCP"
         );
+    }
+
+    #[test]
+    fn a_browser_ref_is_shown_with_the_role_and_name_the_last_snapshot_gave_it() {
+        let snapshot = "- heading \"Cuenta\" [level=1] [ref=e1]\n- button \"Guardar\" [ref=e12] [cursor=pointer]\n- textbox [ref=e5]: ada@example.test\n- button \"Cancelar\\\" [ref=e13]\" [ref=e40]\n- tree \"Archivos\" [ref=e41]";
+        let card = |tool: &str, arguments: Value| {
+            let name = format!("mcp__openide_browser__{tool}");
+            let arguments = arguments.to_string();
+            with_element(summary(&name, &arguments), &name, &arguments, snapshot).target
+        };
+        assert_eq!(card("browser_click", json!({"ref":"e12"})), "botón \"Guardar\" (e12)");
+        assert_eq!(card("browser_fill", json!({"ref":"e5", "text":"PRIVATE_FILE_CONTENT"})), "campo de texto (e5)");
+        assert_eq!(card("browser_hover", json!({"ref":"e1"})), "encabezado \"Cuenta\" (e1)");
+        // A role without a word of its own keeps the snapshot's.
+        assert_eq!(card("browser_click", json!({"ref":"e41"})), "tree \"Archivos\" (e41)");
+        // Not in the last snapshot, or only inside another element's name: the bare ref.
+        assert_eq!(card("browser_click", json!({"ref":"e99"})), "e99");
+        assert_eq!(card("browser_click", json!({"ref":"e13"})), "e13");
+        // The other ways of naming an element are shown as they were given.
+        assert_eq!(card("browser_click", json!({"selector":"#guardar"})), "#guardar");
+        assert_eq!(card("browser_evaluate", json!({"expression":"el => el.id", "ref":"e12"})), "el => el.id");
+        // A long name is cut, and another server's tool is none of this.
+        let long = format!("- button \"{}\" [ref=e2]", "x".repeat(400));
+        let name = "mcp__openide_browser__browser_click";
+        let cut = with_element(summary(name, r#"{"ref":"e2"}"#), name, r#"{"ref":"e2"}"#, &long).target;
+        assert!(cut.starts_with("botón \"xxx") && cut.ends_with("…\" (e2)") && cut.len() < 240, "{cut}");
+        let other = "mcp__other__browser_click";
+        assert_eq!(with_element(summary(other, r#"{"ref":"e12"}"#), other, r#"{"ref":"e12"}"#, snapshot).target, "other · browser_click");
+        // The card itself reads the snapshot the view was given.
+        let mut state = fixture();
+        state.browser_refs = snapshot.into();
+        state.pending_permissions[0].tool_name = "mcp__openide_browser__browser_click".into();
+        state.pending_permissions[0].arguments = json!({"ref":"e12"}).to_string();
+        let frame = UiTree::new(inline_root(&state.pending_permissions[0], &state, false)).layout(Size::new(900.0, 600.0));
+        assert!(texts(&frame).contains("botón \"Guardar\" (e12)"), "{}", texts(&frame));
     }
 
     #[test]
