@@ -295,7 +295,14 @@ impl PauseView {
     /// The pause card at the end of a paused turn's transcript.
     /// `working` counts this session's subagents that are still running: a
     /// node the closed limit does not hold keeps going.
-    pub fn card(&self, session_id: &str, pause: &PausedTurn, working: usize, compact: bool) -> Element {
+    pub fn card(
+        &self,
+        session_id: &str,
+        pause: &PausedTurn,
+        working: usize,
+        compact: bool,
+        fallback: Option<&str>,
+    ) -> Element {
         let mut lines = Vec::new();
         lines.extend(self.reset_line(session_id, pause));
         match pause.class {
@@ -328,12 +335,20 @@ impl PauseView {
                 .size(ControlSize::Compact)
                 .render()
         };
-        let mut actions = vec![
-            theme::primary(format!("pause_continue:{session_id}"), "Continuar ahora")
+        // A fallback is a proposal: one click of the person's, never a
+        // switch they did not choose.
+        let mut actions = match fallback {
+            Some(model) => vec![
+                theme::primary(format!("pause_fallback:{session_id}"), format!("Continuar en {model}"))
+                    .size(ControlSize::Compact)
+                    .render(),
+                subtle(format!("pause_continue:{session_id}"), "Continuar ahora"),
+            ],
+            None => vec![theme::primary(format!("pause_continue:{session_id}"), "Continuar ahora")
                 .size(ControlSize::Compact)
-                .render(),
-            subtle(format!("pause_model:{session_id}"), "Cambiar de modelo"),
-        ];
+                .render()],
+        };
+        actions.push(subtle(format!("pause_model:{session_id}"), "Cambiar de modelo"));
         if pause.account_url().is_some() {
             actions.push(subtle(format!("pause_account:{session_id}"), "Abrir cuenta"));
         }

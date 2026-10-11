@@ -523,3 +523,94 @@ fn the_provider_stated_limit_is_remembered_when_its_notice_arrives() {
     app.process_event(AgentEvent::new(&session.id, 1, notice(openide_core::NOTICE_CONTEXT_LIMIT, "64000")));
     assert_eq!(native_provider::learned_context_limit(&app.data_root, "custom", MODEL), Some(64_000));
 }
+
+#[test]
+fn a_fallback_model_is_proposed_on_the_card_and_never_taken_without_the_person() {
+    let root = tempfile::tempdir().unwrap();
+    let fixture = StreamingHttpFixture::new(FIRST_VISIBLE.into(), SECOND_VISIBLE.into());
+    let mut app = switch_app(root.path(), &fixture.endpoint);
+    let session = paused(&app, root.path(), true, &[]);
+    open(&mut app, &session);
+    let before = journal(&app, &session);
+    assert!(app.view.model_switch.proposals.is_empty(), "no list, no proposal");
+
+    // The person orders their fallbacks in Settings.
+    app.view.model = OTHER.into();
+    click(&mut app, "fallback_add");
+    app.view.model = "streaming/model:third".into();
+    click(&mut app, "fallback_add");
+    click(&mut app, "fallback_up:1");
+    assert_eq!(
+        app.settings_preferences.fallback_models,
+        ["custom:streaming/model:third", &format!("custom:{OTHER}")]
+    );
+    app.view.model = MODEL.into();
+    let reopened = AgentsWindow::with_data_root(root.path().join("data"));
+    assert_eq!(reopened.view.model_switch.fallback_models.len(), 2);
+    assert!(!reopened.view.model_switch.auto_fallback, "automatic switching is opt-in");
+
+    // Only a connected, offered model is proposed: the first of the list
+    // is not a route here, the second is.
+    other_route(&mut app, "custom");
+    app.refresh_sessions();
+    assert_eq!(app.view.model_switch.proposals[&session].1, "Otro modelo");
+    assert!(!app.arm_auto_fallback(), "proposed, not taken");
+    assert_eq!(journal(&app, &session), before);
+
+    // A fallback whose own limit is closed is not proposed.
+    let key = {
+        let settings = NativeProviderSettings {
+            provider_id: "custom".into(),
+            model_id: OTHER.into(),
+            custom_endpoint: app.view.endpoint.clone(),
+        };
+        native_model_backend(settings.resolve_at(&app.data_root).unwrap(), "custom", None, None, &app.data_root, None, &[])
+            .unwrap()
+            .limit_key()
+            .unwrap()
+    };
+    openide_harness::limit_gate_block(
+        &key,
+        openide_harness::LimitBlock { class: TurnPauseClass::LimitReached, resets_at_ms: None, detail: "x".into() },
+    );
+    app.refresh_sessions();
+    assert!(app.view.model_switch.proposals.is_empty());
+    openide_harness::limit_gate_clear(&key);
+    app.refresh_sessions();
+
+    // One click on the card continues there.
+    click(&mut app, &format!("pause_fallback:{session}"));
+    assert!(
+        matches!(&journal(&app, &session).last().unwrap().kind,
+            AgentEventKind::TurnSuperseded { model_id, .. } if model_id == OTHER),
+        "{}",
+        app.view.status
+    );
+    let request = run_continuation(&mut app, &fixture);
+    assert_eq!(request["model"], OTHER);
+}
+
+#[test]
+fn automatic_fallback_only_happens_with_its_own_switch_on_and_once_per_pause() {
+    let root = tempfile::tempdir().unwrap();
+    let fixture = StreamingHttpFixture::new(FIRST_VISIBLE.into(), SECOND_VISIBLE.into());
+    let mut app = switch_app(root.path(), &fixture.endpoint);
+    let session = paused(&app, root.path(), false, &[]);
+    open(&mut app, &session);
+    app.view.model = OTHER.into();
+    click(&mut app, "fallback_add");
+    app.view.model = MODEL.into();
+    other_route(&mut app, "custom");
+    app.refresh_sessions();
+    assert!(!app.arm_auto_fallback());
+    click(&mut app, "settings_auto_fallback_toggle");
+    other_route(&mut app, "custom");
+    app.refresh_sessions();
+    assert!(app.view.model_switch.auto_fallback && app.settings_preferences.auto_switch_fallback);
+    let notifications = app.view.notifications.items().len();
+    app.window_focused = false;
+    assert!(app.arm_auto_fallback());
+    assert!(matches!(journal(&app, &session).last().unwrap().kind, AgentEventKind::TurnSuperseded { .. }));
+    assert_eq!(app.view.notifications.items().len(), notifications + 1, "the person is told");
+    assert!(!app.arm_auto_fallback(), "once per pause");
+}

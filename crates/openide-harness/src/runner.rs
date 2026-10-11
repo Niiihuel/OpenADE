@@ -474,10 +474,8 @@ impl AgentRunner {
             .chain(std::iter::once(&self.model));
         for (index, model) in candidates.enumerate() {
             let own = index == self.compaction_models.len();
-            let key = model.limit_key().unwrap_or_default();
-            if !key.is_empty()
-                && crate::limit_gate_check(&key, crate::provider_failure::now_ms()).is_some()
-            {
+            // Its account or its model family is known to be closed.
+            if crate::limit_gate::pause_before_request(model.as_ref(), &[], 0, true).is_some() {
                 continue;
             }
             // The budget is the target's: another model reads the history

@@ -70,6 +70,69 @@ pub(crate) struct SwitchView {
     pub proposals: BTreeMap<String, (String, String)>,
     /// Settings: ask before summarising for a newly chosen model.
     pub ask_before_summary: bool,
+    /// Tokens the provider reported for each session's committed responses.
+    pub usage: BTreeMap<String, u64>,
+    /// The same for every subagent below a session, summed.
+    pub subagent_usage: BTreeMap<String, u64>,
+    /// Settings: the ordered models offered when a pause has no end in sight.
+    pub fallback_models: Vec<String>,
+    /// Settings: move to the first available fallback without asking.
+    pub auto_fallback: bool,
+}
+
+/// `12.3k`, `1.2M`: a count of tokens short enough for a row.
+pub(crate) fn token_label(tokens: u64) -> String {
+    match tokens {
+        0..=999 => tokens.to_string(),
+        1_000..=999_999 => format!("{:.1}k", tokens as f64 / 1_000.0),
+        _ => format!("{:.1}M", tokens as f64 / 1_000_000.0),
+    }
+}
+
+/// Usage of every session and, for each, of the subagents below it.
+pub(crate) fn usage_rollup<'a>(
+    sessions: impl Iterator<Item = (&'a str, Option<&'a str>, &'a [AgentEvent])>,
+) -> (BTreeMap<String, u64>, BTreeMap<String, u64>) {
+    let mut own = BTreeMap::new();
+    let mut parents = BTreeMap::new();
+    for (id, parent, events) in sessions {
+        let total: u64 = events
+            .iter()
+            .filter_map(|event| match &event.kind {
+                AgentEventKind::ModelResponseCommitted { usage: Some(usage), .. } => {
+                    Some(usage.total_tokens)
+                }
+                _ => None,
+            })
+            .sum();
+        own.insert(id.to_owned(), total);
+        if let Some(parent) = parent {
+            parents.insert(id.to_owned(), parent.to_owned());
+        }
+    }
+    let mut below = BTreeMap::<String, u64>::new();
+    for (id, total) in &own {
+        let mut ancestor = parents.get(id);
+        // Bounded by the depth limit of a tree; a cycle cannot loop forever.
+        for _ in 0..16 {
+            let Some(parent) = ancestor else { break };
+            *below.entry(parent.clone()).or_default() += total;
+            ancestor = parents.get(parent);
+        }
+    }
+    (own, below)
+}
+
+impl SwitchView {
+    /// `Raíz 12.3k · Subagentes 40.1k` for a session that has subagents.
+    pub fn tree_usage_label(&self, session_id: &str) -> Option<String> {
+        let below = *self.subagent_usage.get(session_id)?;
+        Some(format!(
+            "Raíz {} · Subagentes {}",
+            token_label(self.usage.get(session_id).copied().unwrap_or(0)),
+            token_label(below)
+        ))
+    }
 }
 
 pub(crate) type SwitchQueue = VecDeque<SwitchStep>;
@@ -267,6 +330,42 @@ mod tests {
             mode: TurnMode::Build,
         }));
         assert!(unfinished_switch(&events).is_none());
+    }
+
+    #[test]
+    fn usage_is_summed_per_agent_and_rolled_up_the_tree() {
+        let used = |sequence, total_tokens| {
+            event(sequence, AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: openide_core::AgentMessage::assistant("x", vec![]),
+                response_id: None,
+                usage: Some(openide_core::ModelTokenUsage {
+                    input_tokens: total_tokens,
+                    output_tokens: 0,
+                    total_tokens,
+                    reasoning_tokens: None,
+                    cached_input_tokens: None,
+                }),
+            })
+        };
+        let root = [used(1, 10_000), used(2, 2_300)];
+        let child = [used(1, 40_000)];
+        let grandchild = [used(1, 100)];
+        let alone = [used(1, 5)];
+        let (own, below) = usage_rollup(
+            [
+                ("root", None, &root[..]),
+                ("child", Some("root"), &child[..]),
+                ("grandchild", Some("child"), &grandchild[..]),
+                ("alone", None, &alone[..]),
+            ]
+            .into_iter(),
+        );
+        let view = SwitchView { usage: own, subagent_usage: below, ..Default::default() };
+        assert_eq!(view.tree_usage_label("root").as_deref(), Some("Raíz 12.3k · Subagentes 40.1k"));
+        assert_eq!(view.tree_usage_label("child").as_deref(), Some("Raíz 40.0k · Subagentes 100"));
+        assert_eq!(view.tree_usage_label("alone"), None);
+        assert_eq!(token_label(1_250_000), "1.2M");
     }
 
     #[test]

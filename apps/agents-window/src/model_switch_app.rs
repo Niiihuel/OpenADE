@@ -355,6 +355,113 @@ impl AgentsWindow {
         }
     }
 
+    /// For each paused root with no end in sight (or every one, when the
+    /// person chose automatic fallback): the first model of their list that
+    /// is connected and whose limit is open. A proposal, shown on the card.
+    pub(super) fn fallback_proposals(&self) -> BTreeMap<String, (String, String)> {
+        let models = &self.view.model_switch.fallback_models;
+        if models.is_empty() {
+            return BTreeMap::new();
+        }
+        let available = models.iter().find_map(|entry| {
+            let (provider_id, model_id) = entry.split_once(':')?;
+            let route = self.view.composer_routes.iter().find(|route| {
+                route.backend == "native"
+                    && route.selectable()
+                    && route.provider_id == provider_id
+                    && route.model_id == model_id
+            })?;
+            let settings = NativeProviderSettings {
+                provider_id: provider_id.to_owned(),
+                model_id: model_id.to_owned(),
+                custom_endpoint: self.view.endpoint.clone(),
+            };
+            let connection = settings.resolve_at(&self.data_root).ok()?;
+            if !self.provider_ready_for_turn(provider_id, &connection) {
+                return None;
+            }
+            let backend = native_model_backend(
+                connection,
+                provider_id,
+                None,
+                None,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )
+            .ok()?;
+            (!openide_harness::limit_gate_blocked(backend.as_ref()))
+                .then(|| (route.route_id.clone(), route.model_name.clone()))
+        });
+        let Some(proposal) = available else {
+            return BTreeMap::new();
+        };
+        self.view
+            .pause
+            .sessions
+            .iter()
+            .filter(|(_, pause)| {
+                pause.parent.is_none()
+                    && (pause.resets_at_ms.is_none() || self.view.model_switch.auto_fallback)
+            })
+            .map(|(id, _)| (id.clone(), proposal.clone()))
+            .collect()
+    }
+
+    /// The card's one click: move to the proposed model, unless something
+    /// stands in the way, which is then shown instead of done.
+    pub(super) fn continue_on_fallback(&mut self, session_id: &str) {
+        let Some((route_id, _)) = self.view.model_switch.proposals.get(session_id).cloned() else {
+            self.view.status = "El modelo de respaldo ya no está disponible".to_owned();
+            return;
+        };
+        if self.view.selected_session.as_deref() != Some(session_id) {
+            self.open_session(session_id);
+        }
+        let Some(route) =
+            composer_selection::model_route_option_by_id(&self.view.composer_routes, &route_id).cloned()
+        else {
+            return;
+        };
+        if self.open_model_switch(&route)
+            && self.view.model_switch.confirm.as_ref().is_some_and(|confirm| confirm.blocker.is_none())
+        {
+            self.apply_model_switch_action("model_switch_confirm");
+        }
+    }
+
+    /// Only with "Cambiar automáticamente al modelo de respaldo" on, only
+    /// for the session on screen, and once per pause.
+    pub(super) fn arm_auto_fallback(&mut self) -> bool {
+        if !self.view.model_switch.auto_fallback
+            || !self.pause_idle()
+            || !self.switch_queue.is_empty()
+            || !self.pause_resume_queue.is_empty()
+        {
+            return false;
+        }
+        let Some(session_id) = self.view.selected_session.clone() else {
+            return false;
+        };
+        let Some(paused_at_ms) = self.view.pause.sessions.get(&session_id).map(|pause| pause.paused_at_ms)
+        else {
+            return false;
+        };
+        let Some((_, model)) = self.view.model_switch.proposals.get(&session_id).cloned() else {
+            return false;
+        };
+        if self.fallback_attempted.insert(session_id.clone(), paused_at_ms) == Some(paused_at_ms) {
+            return false;
+        }
+        self.notify_session(
+            crate::notifications::Event::TurnCompleted,
+            &format!("En pausa: continúa en {model}"),
+            &session_id,
+        );
+        self.continue_on_fallback(&session_id);
+        true
+    }
+
     /// One step of a switch in progress, once nothing else is running.
     pub(super) fn drive_switch_queue(&mut self) -> bool {
         if self.switch_queue.is_empty() || !self.pause_idle() {

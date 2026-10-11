@@ -78,7 +78,9 @@ pub use history_adapter::{
     adapt_history, adapt_request, image_placeholder, AdaptedRequest, Blocker, TargetCaps,
     ToolIdRule, INTERRUPTED_TOOL_RESULT,
 };
-pub use limit_gate::{limit_gate_block, limit_gate_check, limit_gate_clear, LimitBlock};
+pub use limit_gate::{
+    limit_gate_block, limit_gate_blocked, limit_gate_check, limit_gate_clear, LimitBlock,
+};
 pub use provider_failure::{stated_context_limit, FailureClass, ProviderFailure};
 pub use exec_policy::{
     ExecDecision, ExecEvaluation, ExecPatternToken, ExecPolicy, ExecPolicyError, ExecRule,

@@ -455,6 +455,15 @@ impl ModelBackend for AnthropicMessagesBackend {
     fn limit_key(&self) -> Option<String> {
         crate::backend::limit_key_for(&self.endpoint, self.api_key.as_deref())
     }
+    fn limit_family(&self) -> Option<String> {
+        // Anthropic counts its API rate limits per model class.
+        let model = self.model.to_ascii_lowercase();
+        ["opus", "sonnet", "haiku"]
+            .into_iter()
+            .find(|class| model.contains(class))
+            .map(str::to_owned)
+            .or(Some(model))
+    }
     fn supports_user_images(&self) -> bool {
         self.image_input_enabled
     }

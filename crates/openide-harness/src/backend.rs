@@ -335,6 +335,15 @@ pub trait ModelBackend: Send + Sync {
         None
     }
 
+    /// The part of the limit that is counted per model rather than per
+    /// account, where the provider counts that way: a reached usage limit
+    /// then holds only the agents on that family. Missing credit and a
+    /// rejected credential always hold the whole account. None: the
+    /// provider's limit is account-wide.
+    fn limit_family(&self) -> Option<String> {
+        None
+    }
+
     /// What this route accepts in a request. History that came from another
     /// provider is adapted to it before every request.
     fn target_caps(&self) -> crate::TargetCaps {

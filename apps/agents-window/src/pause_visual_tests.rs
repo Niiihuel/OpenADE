@@ -309,6 +309,52 @@ fn unfinished_switch() -> ViewState {
     state
 }
 
+/// A pause with no end in sight and a fallback model the person listed.
+fn fallback_proposal() -> ViewState {
+    let mut state = paused_state(paused(openide_core::TurnPauseClass::LimitReached, None));
+    state
+        .model_switch
+        .proposals
+        .insert(OWNER.into(), ("fixture".into(), "Claude Sonnet 5".into()));
+    state
+}
+
+/// A tree whose agents each report what they used.
+fn tree_usage() -> ViewState {
+    let mut state = waiting_on_child();
+    state.model_switch.usage = [("child-1", 40_100u64), ("child-2", 7_250), (OWNER, 12_300)]
+        .into_iter()
+        .map(|(id, tokens)| (id.to_owned(), tokens))
+        .collect();
+    state.model_switch.subagent_usage = [(OWNER.to_owned(), 47_350u64)].into_iter().collect();
+    state
+}
+
+#[test]
+fn a_fallback_is_a_proposal_on_the_card_and_each_agent_shows_its_usage() {
+    let card = texts(&fallback_proposal(), 900.0);
+    assert!(card.contains("Continuar en Claude Sonnet 5") && card.contains("Continuar ahora"), "{card}");
+    assert!(actions(&fallback_proposal(), 360.0).contains(&format!("pause_fallback:{OWNER}")));
+    assert!(!actions(&limit(), 360.0).iter().any(|id| id.starts_with("pause_fallback")));
+    let rows = texts(&tree_usage(), 900.0);
+    assert!(rows.contains("40.1k tokens"), "{rows}");
+    assert_eq!(
+        tree_usage().model_switch.tree_usage_label(OWNER).as_deref(),
+        Some("Raíz 12.3k · Subagentes 47.4k")
+    );
+    let settings = texts_of(
+        Element::column(vec![crate::settings_ui::provider_limits_group(&fallback_proposal(), false)]),
+        900.0,
+    );
+    for expected in [
+        "Preguntar antes de resumir al cambiar de modelo",
+        "Cambiar automáticamente al modelo de respaldo",
+        "Modelos de respaldo",
+    ] {
+        assert!(settings.contains(expected), "{expected}\n{settings}");
+    }
+}
+
 #[test]
 fn the_switch_dialogs_and_notices_say_what_will_happen() {
     let confirm = texts_of(window(switch_confirm(None), 900.0), 900.0);
@@ -388,9 +434,15 @@ fn export_pause_switch_visual_review() {
                     false,
                 ),
             ),
+            ("card-fallback-proposal", build_session_surface(&fallback_proposal(), width, false, false)),
+            ("usage-subagent-rows", build_session_surface(&tree_usage(), width, false, false)),
             ("settings-provider-limits", {
                 let mut state = limit();
                 state.model_switch.ask_before_summary = true;
+                state.model_switch.fallback_models =
+                    vec!["anthropic:claude-sonnet-5".into(), "openrouter:qwen/qwen3-coder".into()];
+                state.native_provider_id = "codex".into();
+                state.model = "gpt-6-luna".into();
                 Element::column(vec![crate::settings_ui::provider_limits_group(&state, width < 600.0)])
                     .padding(16.0)
             }),

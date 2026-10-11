@@ -2473,9 +2473,7 @@ fn compact_navigation(state: &ViewState) -> Element {
 
 /// Settings > Agente: what happens when a provider limit pauses a turn.
 pub(crate) fn provider_limits_group(state: &ViewState, compact: bool) -> Element {
-    settings_parts::settings_group(
-        "Límites del proveedor",
-            vec![
+    let mut rows =            vec![
                 settings_parts::switch_row(
                     "settings_auto_resume_toggle",
                     "Continuar automáticamente cuando se renueve el límite",
@@ -2492,8 +2490,45 @@ pub(crate) fn provider_limits_group(state: &ViewState, compact: bool) -> Element
                     true,
                     compact,
                 ),
-            ],
-    )
+            ];
+    rows.push(settings_parts::switch_row(
+        "settings_auto_fallback_toggle",
+        "Cambiar automáticamente al modelo de respaldo",
+        "Desactivado, el modelo de respaldo sólo se propone en la tarjeta de pausa y cambiar es un clic tuyo. Activado, un turno en pausa pasa solo al primer modelo de la lista que esté disponible, y queda un aviso.",
+        state.model_switch.auto_fallback,
+        true,
+        compact,
+    ));
+    let small = |id: String, label: &str| {
+        openide_ui::Button::new(id, label, theme::action_palette(theme::HOVER, theme::FOREGROUND))
+            .variant(openide_ui::ButtonVariant::Subtle)
+            .size(ControlSize::Compact)
+            .render()
+    };
+    for (index, route) in state.model_switch.fallback_models.iter().enumerate() {
+        let (provider, model) = route.split_once(':').unwrap_or(("", route));
+        let mut controls = Vec::new();
+        if index > 0 {
+            controls.push(small(format!("fallback_up:{index}"), "Subir"));
+        }
+        controls.push(small(format!("fallback_remove:{index}"), "Quitar"));
+        rows.push(settings_parts::settings_row(
+            format!("{}. {model}", index + 1),
+            format!("Modelo de respaldo · {provider}"),
+            Element::row(controls).gap(6.0),
+            compact,
+        ));
+    }
+    rows.push(settings_parts::settings_row(
+        "Modelos de respaldo",
+        format!(
+            "Cuando una pausa no tiene hora de renovación se propone continuar en el primero de esta lista que esté conectado y sin límite alcanzado. Seleccionado ahora: {} · {}.",
+            state.native_provider_id, state.model
+        ),
+        small("fallback_add".into(), "Agregar el modelo seleccionado"),
+        compact,
+    ));
+    settings_parts::settings_group("Límites del proveedor", rows)
 }
 
 

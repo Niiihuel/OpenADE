@@ -432,7 +432,16 @@ impl Host {
                 "waiting_permission"
             }
         } else if !replay.can_start_new_turn {
-            "interrupted"
+            // Held at a model boundary by a provider limit: nothing was lost
+            // and it continues, so it must not read as a broken turn.
+            if replay.pause.is_some() {
+                "paused"
+            } else {
+                "interrupted"
+            }
+        } else if replay.superseded.is_some() {
+            // Closed to continue on another model; the next turn follows.
+            "superseded"
         } else {
             stored
                 .events
@@ -946,6 +955,11 @@ impl Host {
                             AgentEventKind::TurnCompleted { .. } => last = "completed",
                             AgentEventKind::TurnFailed { .. } => last = "failed",
                             AgentEventKind::TurnCancelled => last = "cancelled",
+                            AgentEventKind::TurnPaused { .. } => last = "paused",
+                            AgentEventKind::TurnSuperseded { .. } => last = "superseded",
+                            AgentEventKind::ModelResponseCommitted { .. } if last == "paused" => {
+                                last = "interrupted"
+                            }
                             _ => {}
                         }
                     }

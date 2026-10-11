@@ -1310,6 +1310,8 @@ pub struct AgentsWindow {
     host_turn: Option<crate::model_switch::HostTurn>,
     /// `select_composer_route` is being called by the switch itself.
     model_switch_applying: bool,
+    /// The pause (by its time) each session was last moved to a fallback for.
+    fallback_attempted: BTreeMap<String, u64>,
     /// The model the person already agreed to summarise the conversation for.
     summary_acknowledged: Option<String>,
     pending_child_recovery_permission: Option<SubagentPermissionView>,
@@ -3876,9 +3878,12 @@ impl AgentsWindow {
                 let open = self.view.pause.detail_open.as_deref() == Some(session_id);
                 self.view.pause.detail_open = (!open).then(|| session_id.to_owned());
             }
+            "pause_fallback" => self.continue_on_fallback(session_id),
             "pause_model" => {
                 // Picking a route there asks to continue this turn on it.
-                self.open_session(session_id);
+                if self.view.selected_session.as_deref() != Some(session_id) {
+                    self.open_session(session_id);
+                }
                 self.view.composer_model_menu_open = true;
             }
             _ => {}
@@ -6400,6 +6405,8 @@ impl AgentsWindow {
             transcript: Vec::new(),
             model_switch: crate::model_switch::SwitchView {
                 ask_before_summary: settings_preferences.ask_before_summary_on_switch,
+                fallback_models: settings_preferences.fallback_models.clone(),
+                auto_fallback: settings_preferences.auto_switch_fallback,
                 ..Default::default()
             },
             pause: crate::pause::PauseView {
@@ -6672,6 +6679,7 @@ impl AgentsWindow {
             switch_queue: Default::default(),
             host_turn: None,
             model_switch_applying: false,
+            fallback_attempted: Default::default(),
             summary_acknowledged: None,
             pending_child_recovery_permission: None,
             active_mcp_oauth: None,
@@ -7855,6 +7863,21 @@ impl AgentsWindow {
                             plans.insert(record.session.id.clone(), plan);
                         }
                     }
+                    let (usage, subagent_usage) = crate::model_switch::usage_rollup(
+                        listing.sessions.iter().map(|record| {
+                            (
+                                record.session.id.as_str(),
+                                record
+                                    .session
+                                    .subagent
+                                    .as_ref()
+                                    .map(|link| link.parent_session_id.as_str()),
+                                record.events.as_slice(),
+                            )
+                        }),
+                    );
+                    self.view.model_switch.usage = usage;
+                    self.view.model_switch.subagent_usage = subagent_usage;
                     self.view.session_recovery = recoveries;
                     self.view.pause.sessions = pauses;
                     // While the switch is being carried out the card would
@@ -7862,6 +7885,7 @@ impl AgentsWindow {
                     if self.switch_queue.is_empty() && self.host_turn.is_none() {
                         self.view.model_switch.unfinished = switches;
                     }
+                    self.view.model_switch.proposals = self.fallback_proposals();
                     if self.view.pause.counting() {
                         self.view.pause.clock_ms = crate::pause::wall_clock_ms();
                     }
@@ -8664,6 +8688,8 @@ impl AgentsWindow {
     fn follow_pause_clock(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = self.drive_pause_queue();
         changed |= self.drive_switch_queue();
+        changed |= self.sync_tree_usage();
+        changed |= self.arm_auto_fallback();
         if self.view.pause.counting() {
             let now_ms = crate::pause::wall_clock_ms();
             ctx.request_repaint_after(Duration::from_millis(1000 - now_ms % 1000));
@@ -8679,6 +8705,31 @@ impl AgentsWindow {
         changed
     }
 
+    /// The context popover's subagent line: what the whole tree used. Kept
+    /// here because the popover's state is rebuilt from several places.
+    fn sync_tree_usage(&mut self) -> bool {
+        let Some(label) = self
+            .view
+            .selected_session
+            .as_deref()
+            .and_then(|id| self.view.model_switch.tree_usage_label(id))
+        else {
+            return false;
+        };
+        let Some(category) = self
+            .view
+            .native_context
+            .breakdown
+            .iter_mut()
+            .find(|category| category.id == "subagents" && category.value != label)
+        else {
+            return false;
+        };
+        category.value = label;
+        category.detail = "Tokens que el proveedor informó en las respuestas confirmadas de esta conversación y, sumados, en las de todos sus subagentes. Cada subagente tiene su propio journal y su propia ventana de contexto.".into();
+        true
+    }
+
     fn pause_idle(&self) -> bool {
         !self.view.running
             && self.active_run.is_none()
@@ -8692,6 +8743,29 @@ impl AgentsWindow {
     fn arm_auto_resume(&mut self) -> bool {
         if !self.pause_idle() || !self.pause_resume_queue.is_empty() {
             return false;
+        }
+        // A session that is not on screen cannot be continued behind the
+        // person's back by this window: its limit renewing is announced once.
+        let elsewhere: Vec<(String, u64)> = self
+            .view
+            .pause
+            .sessions
+            .iter()
+            .filter(|(id, pause)| {
+                pause.parent.is_none()
+                    && self.view.selected_session.as_deref() != Some(id.as_str())
+                    && matches!(self.view.pause.plan(id, pause),
+                        crate::pause::AutoResume::At(due) if self.view.pause.clock_ms >= due)
+            })
+            .map(|(id, pause)| (id.clone(), pause.paused_at_ms))
+            .collect();
+        for (id, paused_at_ms) in elsewhere {
+            self.view.pause.auto_attempted.insert(id.clone(), paused_at_ms);
+            self.notify_session(
+                crate::notifications::Event::TurnCompleted,
+                "Límite renovado: abrí la tarea para continuar",
+                &id,
+            );
         }
         let Some(session_id) = self.view.selected_session.clone() else {
             return false;
@@ -13624,7 +13698,17 @@ impl AgentsWindow {
             self.start_native_automation_resume(&stored.session, frozen);
             return;
         }
-        let connection = match self.native_settings().resolve_at(&self.data_root) {
+        // A paused turn continues on the route it was admitted on, whatever
+        // the composer shows now: the selection is for the next turn.
+        let resume_settings = match replay.pause.as_ref().and(replay.active_model_route.as_ref()) {
+            Some(route) => NativeProviderSettings {
+                provider_id: route.provider_id.clone(),
+                model_id: route.model_id.clone(),
+                custom_endpoint: self.view.endpoint.clone(),
+            },
+            None => self.native_settings(),
+        };
+        let connection = match resume_settings.resolve_at(&self.data_root) {
             Ok(connection) => connection,
             Err(error) => {
                 self.view.status = error;
@@ -13633,7 +13717,7 @@ impl AgentsWindow {
         };
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
-        let provider_id = self.view.native_provider_id.clone();
+        let provider_id = resume_settings.provider_id.clone();
         let wire_api = connection.wire_api;
         let compatibility = native_checkpoint_compatibility(&provider_id, &model_id, wire_api);
         if replay
@@ -18699,6 +18783,41 @@ impl AgentsWindow {
                     self.view.settings_reduced_motion = reduced;
                     self.tree.set_reduced_motion(reduced);
                     self.command_tree.set_reduced_motion(reduced);
+                }
+            }
+            UiAction::Clicked { id }
+                if id == "settings_auto_fallback_toggle"
+                    || id == "fallback_add"
+                    || id.starts_with("fallback_up:")
+                    || id.starts_with("fallback_remove:") =>
+            {
+                let mut next = self.settings_preferences.clone();
+                let index = id.split_once(':').and_then(|(_, index)| index.parse::<usize>().ok());
+                match (id.split(':').next().unwrap_or_default(), index) {
+                    ("settings_auto_fallback_toggle", _) => {
+                        next.auto_switch_fallback = !next.auto_switch_fallback
+                    }
+                    ("fallback_add", _) => {
+                        let route = format!("{}:{}", self.view.native_provider_id, self.view.model);
+                        if !next.fallback_models.contains(&route)
+                            && next.fallback_models.len() < crate::settings_preferences::MAX_FALLBACK_MODELS
+                        {
+                            next.fallback_models.push(route);
+                        }
+                    }
+                    ("fallback_up", Some(index)) if index > 0 && index < next.fallback_models.len() => {
+                        next.fallback_models.swap(index - 1, index)
+                    }
+                    ("fallback_remove", Some(index)) if index < next.fallback_models.len() => {
+                        next.fallback_models.remove(index);
+                    }
+                    _ => {}
+                }
+                let (models, auto) = (next.fallback_models.clone(), next.auto_switch_fallback);
+                if self.commit_settings_preferences(next, "Modelos de respaldo guardados") {
+                    self.view.model_switch.fallback_models = models;
+                    self.view.model_switch.auto_fallback = auto;
+                    self.refresh_sessions();
                 }
             }
             UiAction::Clicked { id } if id == "settings_ask_summary_toggle" => {

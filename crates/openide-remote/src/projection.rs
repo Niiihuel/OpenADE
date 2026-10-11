@@ -248,6 +248,18 @@ pub fn project_events(events: &[AgentEvent], after: u64, limit: usize) -> EventP
             Kind::TurnCancelled => {
                 item.kind = "turn_cancelled";
             }
+            // The provider's text stays local; a consumer learns the state,
+            // why in one word, and when it renews.
+            Kind::TurnPaused { class, resets_at_ms, .. } => {
+                item.kind = "turn_paused";
+                item.text = Some(
+                    serde_json::json!({"reason": class, "resets_at_ms": resets_at_ms}).to_string(),
+                );
+            }
+            Kind::TurnSuperseded { model_id, .. } => {
+                item.kind = "turn_superseded";
+                item.text = Some(model_id.clone());
+            }
             _ => continue,
         }
         if item.kind.starts_with("assistant_") {

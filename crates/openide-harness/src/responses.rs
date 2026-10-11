@@ -631,6 +631,21 @@ impl ModelBackend for ResponsesBackend {
         crate::backend::limit_key_for(&self.endpoint, self.api_key.as_deref())
     }
 
+    fn limit_family(&self) -> Option<String> {
+        // A ChatGPT plan has one usage limit for every model. The API
+        // counts per model; dated snapshots share their model's limit.
+        if self.chatgpt_plan {
+            return None;
+        }
+        let model = self.model.to_ascii_lowercase();
+        let dated = model.len() > 11
+            && model.as_bytes()[model.len() - 11] == b'-'
+            && model[model.len() - 10..]
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || byte == b'-');
+        Some(if dated { model[..model.len() - 11].to_owned() } else { model })
+    }
+
     fn supports_user_images(&self) -> bool {
         self.image_input_enabled
     }
