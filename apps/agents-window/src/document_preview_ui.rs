@@ -257,12 +257,17 @@ fn document_body(
 }
 
 fn preview(view: &PreviewView, width: f32, height: f32, split: bool) -> Element {
+    framed(preview_header(view, width, split), HEADER, view, width, height)
+}
+
+/// A preview under `header`, with its refresh notice between them.
+fn framed(header: Element, header_height: f32, view: &PreviewView, width: f32, height: f32) -> Element {
     let busy = if view.loading && view.document.is_some() {
         20.0
     } else {
         0.0
     };
-    let mut rows = vec![preview_header(view, width, split)];
+    let mut rows = vec![header];
     if busy > 0.0 {
         rows.push(
             Text::new("Actualizando…", theme::component_palette())
@@ -274,7 +279,7 @@ fn preview(view: &PreviewView, width: f32, height: f32, split: bool) -> Element 
                 .size(None, Some(busy)),
         );
     }
-    rows.push(preview_body(view, width, (height - HEADER - busy).max(0.0)).flex(1.0));
+    rows.push(preview_body(view, width, (height - header_height - busy).max(0.0)).flex(1.0));
     Element::column(rows)
         .size(Some(width), Some(height))
         .clip_children()
@@ -299,7 +304,7 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Option<Elemen
                     } else {
                         vec![IconButton::new(
                             &format!("markdown_preview_open:{}", editor.tab_id),
-                            Icon::PanelRight,
+                            crate::icons::PREVIEW_BESIDE,
                             theme::component_palette(),
                         )
                         .variant(ButtonVariant::Ghost)
@@ -338,6 +343,31 @@ pub(crate) fn build(state: &ViewState, width: f32, height: f32) -> Option<Elemen
             .size(Some(width), Some(height))
             .clip_children()
         });
+    }
+    // In IDE the rendered Markdown keeps its tab's breadcrumb row, whose
+    // switch returns to the source.
+    if let Some(editor) = editor
+        .filter(|_| view.kind == PreviewKind::Markdown && crate::ide_workspace::active(state))
+    {
+        let dirty = editor
+            .controller
+            .as_ref()
+            .and_then(|controller| controller.snapshot().ok())
+            .is_some_and(|snapshot| snapshot.is_dirty());
+        let (row, row_height) = crate::code_editor_ui::ide_breadcrumb_row(
+            editor,
+            &state.editor_workbench,
+            dirty,
+            width,
+            true,
+        );
+        return Some(framed(
+            row.size(Some(width), Some(row_height)),
+            row_height,
+            view,
+            width,
+            height,
+        ));
     }
     Some(preview(view, width, height, false))
 }
@@ -413,19 +443,22 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
         .gap(2.0)
         .render()
         .clip_children();
-    let breadcrumb = crate::code_editor_ui::path_breadcrumb(
+    // As tall as its source's row, so both groups start their content level.
+    const ROW: f32 = crate::code_editor_ui::MARKDOWN_ROW_HEIGHT;
+    let breadcrumb = crate::code_editor_ui::path_breadcrumb_with_height(
         &format!("{prefix}:path"),
         &path,
         false,
         (width - 12.0).max(0.0),
+        ROW,
     )
-    .size(Some((width - 12.0).max(0.0)), Some(22.0));
+    .size(Some((width - 12.0).max(0.0)), Some(ROW));
     let breadcrumb = Element::row(vec![
         Element::spacer().size(Some(6.0), None),
         breadcrumb,
         Element::spacer().size(Some(6.0), None),
     ])
-    .size(Some(width), Some(22.0))
+    .size(Some(width), Some(ROW))
     .clip_children();
     // Content retained during a refresh must not acquire the incoming render
     // identity: a pointer gesture spanning the response could target a new link.
@@ -437,7 +470,7 @@ pub(crate) fn secondary(tab: &MarkdownPreviewTab, width: f32, height: f32) -> El
     let body = document_body(
         &tab.preview,
         width,
-        (height - HEADER - 22.0).max(0.0),
+        (height - HEADER - ROW).max(0.0),
         &content_prefix,
         &tab.scroll_id(),
     );

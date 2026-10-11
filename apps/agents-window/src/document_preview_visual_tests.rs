@@ -314,7 +314,7 @@ fn markdown_preview_has_its_own_tab_close_and_toolbar_above_the_breadcrumb() {
             );
         }
         let expected_body_offset =
-            crate::dock_tab_ui::HEADER_HEIGHT + crate::code_editor_ui::BREADCRUMB_HEIGHT;
+            crate::dock_tab_ui::HEADER_HEIGHT + crate::code_editor_ui::MARKDOWN_ROW_HEIGHT;
         let source_group_top =
             source_tab.y - (crate::dock_tab_ui::HEADER_HEIGHT - crate::dock_tab_ui::TAB_HEIGHT);
         let preview_group_top =
@@ -432,7 +432,10 @@ fn closing_secondary_preview_returns_the_available_space_to_the_same_editor() {
 }
 
 fn export(frame: &Frame, size: Size, name: &str) {
-    let directory = Path::new(DIRECTORY);
+    export_to(Path::new(DIRECTORY), frame, size, name);
+}
+
+fn export_to(directory: &Path, frame: &Frame, size: Size, name: &str) {
     std::fs::create_dir_all(directory).unwrap();
     let path = directory.join(format!("{name}-{:.0}x{:.0}.svg", size.width, size.height));
     crate::settings_ui::visual_qa::write_native_frame_svg(frame, &path, size.width, size.height)
@@ -743,6 +746,39 @@ fn export_document_previews_visual_review() {
                     context.end_pass().textures_delta.clear();
                 }
             }
+        }
+    }
+}
+
+#[test]
+#[ignore = "exports the Markdown breadcrumb switch in both states as PNG under docs/ui-separation/shots/markdown-switch"]
+fn export_markdown_switch_visual_review() {
+    let directory = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/ui-separation/shots/markdown-switch"
+    ));
+    for (name, mode) in [("source", PreviewMode::Source), ("preview", PreviewMode::Preview)] {
+        let mut state = markdown_geometry_fixture();
+        state.markdown_preview = None;
+        state.document_preview.as_mut().unwrap().mode = mode;
+        for size in [Size::new(1100.0, 600.0), Size::new(520.0, 680.0)] {
+            let (context, mut tree) = view::ide_visual_tests::native_tree(view::build_window_view(
+                &state,
+                size.width,
+                size.height,
+            ));
+            let frame = tree.layout(size);
+            let [preview, source] =
+                ["preview", "source"].map(|key| region(&frame, &format!("document_preview_view:101:{key}")));
+            let path = region(&frame, "editor_copy_relative");
+            assert!(path.x + path.width <= preview.x, "the path ends before the switch");
+            assert!(preview.x + preview.width <= source.x);
+            assert_eq!(
+                frame.regions.iter().any(|region| region.id == "code_editor:101"),
+                mode == PreviewMode::Source
+            );
+            export_to(directory, &frame, size, name);
+            context.end_pass().textures_delta.clear();
         }
     }
 }

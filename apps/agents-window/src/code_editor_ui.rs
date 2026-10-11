@@ -2,8 +2,8 @@
 use crate::{keymap::KeymapProfile, theme, view::ViewState};
 use openide_ui::{
     AlertDialog, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, CodeEditor, CodeLanguage,
-    Component, ControlSize, EditorController, Element, Icon, IconButton, Text, TooltipPlacement,
-    TooltipSpec,
+    Component, ControlSize, EditorController, Element, IconButton, SegmentedControl, Tab,
+    Text, TooltipPlacement, TooltipSpec,
 };
 use std::path::Path;
 
@@ -11,6 +11,10 @@ const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 const TOOL_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 pub(crate) const BREADCRUMB_HEIGHT: f32 = 22.0;
 const BREADCRUMB_INSET: f32 = 6.0;
+/// The breadcrumb row of a Markdown file is as tall as the switch it ends with.
+pub(crate) const MARKDOWN_ROW_HEIGHT: f32 = 28.0;
+const MARKDOWN_SWITCH: [(&str, &str, f32); 2] =
+    [("preview", "Vista previa", 84.0), ("source", "Markdown", 72.0)];
 
 #[derive(Clone, Debug)]
 pub(crate) struct CodeEditorView {
@@ -79,6 +83,55 @@ fn editor_breadcrumb(
         .height(height)
         .overflow_open(workbench.breadcrumb_open)
         .render()
+}
+
+/// IDE's breadcrumb row and its height. A Markdown file ends it with
+/// "Vista previa | Markdown", which shows the same tab rendered or as source.
+pub(crate) fn ide_breadcrumb_row(
+    view: &CodeEditorView,
+    workbench: &crate::editor_workbench_ui::EditorWorkbenchView,
+    dirty: bool,
+    width: f32,
+    previewing: bool,
+) -> (Element, f32) {
+    let markdown = openide_preview::kind_for_path(Path::new(&view.path))
+        == Some(openide_preview::PreviewKind::Markdown);
+    let height = if markdown {
+        MARKDOWN_ROW_HEIGHT
+    } else {
+        BREADCRUMB_HEIGHT
+    };
+    let mut row = vec![Element::spacer().size(Some(BREADCRUMB_INSET), None)];
+    let mut available = (width - BREADCRUMB_INSET * 2.0).max(0.0);
+    let switch = markdown.then(|| {
+        // The actions are the in-place preview's own, so its host applies them.
+        SegmentedControl::new(
+            MARKDOWN_SWITCH
+                .into_iter()
+                .map(|(key, label, width)| {
+                    Tab::new(
+                        format!("document_preview_view:{}:{key}", view.tab_id),
+                        label,
+                        width,
+                    )
+                    .active((key == "preview") == previewing)
+                })
+                .collect(),
+            theme::segmented_palette(),
+        )
+        .render()
+    });
+    if switch.is_some() {
+        let switch_width = MARKDOWN_SWITCH.iter().map(|item| item.2).sum::<f32>() + 6.0;
+        available = (available - switch_width - BREADCRUMB_INSET).max(0.0);
+    }
+    row.push(editor_breadcrumb(view, workbench, dirty, available, height).flex(1.0));
+    if let Some(switch) = switch {
+        row.push(Element::spacer().size(Some(BREADCRUMB_INSET), None));
+        row.push(switch);
+    }
+    row.push(Element::spacer().size(Some(BREADCRUMB_INSET), None));
+    (Element::row(row).size(None, Some(height)), height)
 }
 
 /// The symbols around the caret, when the analysis is current and they fit
@@ -174,7 +227,7 @@ pub(crate) fn titlebar_actions(
             1,
             IconButton::new(
                 format!("markdown_preview_open:{}", view.tab_id),
-                Icon::PanelRightOpen,
+                crate::icons::PREVIEW_BESIDE,
                 theme::component_palette(),
             )
             .variant(ButtonVariant::Ghost)
@@ -345,7 +398,7 @@ pub(crate) fn build_with(
                     format!("markdown_preview_open:{}", view.tab_id),
                     "Abrir vista previa al costado",
                 )
-                .icon(Icon::PanelRightOpen)
+                .icon(crate::icons::PREVIEW_BESIDE)
                 .into(),
             );
         }
@@ -407,19 +460,8 @@ pub(crate) fn build_with(
             height,
         )
     } else {
-        let available = (width - BREADCRUMB_INSET * 2.0).max(0.0);
-        (
-            search_popover(
-                Element::row(vec![
-                    Element::spacer().size(Some(BREADCRUMB_INSET), None),
-                    editor_breadcrumb(view, workbench, dirty, available, BREADCRUMB_HEIGHT)
-                        .flex(1.0),
-                    Element::spacer().size(Some(BREADCRUMB_INSET), None),
-                ])
-                .size(None, Some(BREADCRUMB_HEIGHT)),
-            ),
-            BREADCRUMB_HEIGHT,
-        )
+        let (row, height) = ide_breadcrumb_row(view, workbench, dirty, width, false);
+        (search_popover(row), height)
     };
     let mut rows = vec![header.size(None, Some(header_height))];
     rows.extend(crate::editor_workbench_ui::tools(view, workbench, width));
@@ -702,7 +744,7 @@ mod tests {
                 OUTER_INSET
                     + TITLEBAR_HEIGHT
                     + crate::dock_tab_ui::HEADER_HEIGHT
-                    + BREADCRUMB_HEIGHT
+                    + MARKDOWN_ROW_HEIGHT
             );
             assert!(
                 (editor.y + editor.height - (height - OUTER_INSET - STATUSBAR_HEIGHT - terminal))
@@ -763,10 +805,11 @@ mod tests {
                 .find(|region| region.id == "code_editor:91")
                 .unwrap()
                 .rect;
-            assert_eq!(editor.y, BREADCRUMB_HEIGHT);
+            assert_eq!(editor.y, MARKDOWN_ROW_HEIGHT);
             assert_eq!(editor.width, width);
             assert_eq!(editor.y + editor.height, 640.0);
-            assert!(frame.commands.iter().any(|command| matches!(command,
+            // The filename has no room left beside the switch at 240 px.
+            assert!(width < 320.0 || frame.commands.iter().any(|command| matches!(command,
                 DrawCommand::Text { text, .. } if text == "alerts.md •"
             )));
             assert!(!frame.regions.iter().any(|region| {
@@ -780,10 +823,65 @@ mod tests {
                 .find(|region| region.id == "editor_copy_relative")
                 .unwrap()
                 .rect;
-            assert!(copy.y >= 0.0 && copy.y + copy.height <= BREADCRUMB_HEIGHT);
-            assert!(copy.x >= BREADCRUMB_INSET && copy.x + copy.width <= width - BREADCRUMB_INSET);
+            assert!(copy.y >= 0.0 && copy.y + copy.height <= MARKDOWN_ROW_HEIGHT);
+            let [preview, source] = ["preview", "source"].map(|key| {
+                frame
+                    .regions
+                    .iter()
+                    .find(|region| region.id == format!("document_preview_view:91:{key}"))
+                    .unwrap()
+                    .rect
+            });
+            assert!(copy.x >= BREADCRUMB_INSET && copy.x + copy.width <= preview.x);
+            assert!(preview.x + preview.width <= source.x);
+            assert!(source.x + source.width <= width - BREADCRUMB_INSET);
+            assert!(source.x + source.width >= width - BREADCRUMB_INSET - 4.0);
+            assert!(preview.y >= 0.0 && preview.y + preview.height <= MARKDOWN_ROW_HEIGHT);
             ctx.end_pass().textures_delta.clear();
         }
+    }
+
+    #[test]
+    fn only_markdown_ends_the_ide_breadcrumb_row_with_the_switch_and_marks_what_is_shown() {
+        let workbench = crate::editor_workbench_ui::EditorWorkbenchView::default();
+        let selected = |root: Element| {
+            let (ctx, mut tree) = native_header_tree(root);
+            let frame = tree.layout(Size::new(520.0, 640.0));
+            ctx.end_pass().textures_delta.clear();
+            // The selected segment is written in the palette's text ink.
+            ["Vista previa", "Markdown"].map(|label| {
+                frame.commands.iter().any(|command| matches!(command,
+                    DrawCommand::Text { text, color, .. }
+                        if text == label && *color == theme::segmented_palette().text))
+            })
+        };
+        let view = header_fixture(false);
+        for (previewing, expected) in [(false, [false, true]), (true, [true, false])] {
+            let (row, height) = ide_breadcrumb_row(&view, &workbench, false, 520.0, previewing);
+            assert_eq!(height, MARKDOWN_ROW_HEIGHT);
+            assert_eq!(selected(row), expected);
+        }
+        let mut code = header_fixture(false);
+        code.path = "src/alerts.rs".into();
+        let (ctx, mut tree) = native_header_tree(build_ide(
+            &code,
+            &workbench,
+            520.0,
+            KeymapProfile::default(),
+            false,
+        ));
+        let frame = tree.layout(Size::new(520.0, 640.0));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id.starts_with("document_preview_view:")));
+        let editor = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "code_editor:91")
+            .unwrap();
+        assert_eq!(editor.rect.y, BREADCRUMB_HEIGHT);
+        ctx.end_pass().textures_delta.clear();
     }
 
     #[test]
@@ -2125,7 +2223,7 @@ mod tests {
             .find(|region| region.id == view_id(view.tab_id))
             .unwrap()
             .rect;
-        assert_eq!(editor.y, BREADCRUMB_HEIGHT);
+        assert_eq!(editor.y, MARKDOWN_ROW_HEIGHT);
         context.end_pass().textures_delta.clear();
     }
 
