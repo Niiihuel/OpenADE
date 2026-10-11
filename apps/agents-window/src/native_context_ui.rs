@@ -18,6 +18,12 @@ pub(crate) struct NativeContextUiState {
     pub model: String,
     pub provider: String,
     pub window: Option<u64>,
+    /// Who stated the window or input limit, for the popover; empty when the
+    /// engine's own budget resolver did.
+    pub window_source: &'static str,
+    /// UTF-8 bytes that entered the context after the last measurement, or
+    /// since the checkpoint or the start when nothing was measured.
+    pub appended_bytes: u64,
     pub input_limit: Option<u64>,
     pub max_output: Option<u64>,
     pub output_reserve: Option<u64>,
@@ -47,6 +53,55 @@ pub(crate) enum NativeContextMeasurementStatus {
     AfterCheckpoint,
     UnverifiedLimit,
     Measured,
+}
+
+/// How full the context is, by the one rule every surface reads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ContextOccupancy {
+    pub used: u64,
+    pub capacity: u64,
+    /// Part of `used` is bytes / 4 rather than a provider count.
+    pub estimated: bool,
+}
+
+impl ContextOccupancy {
+    pub(crate) fn fraction(self) -> f32 {
+        (self.used as f64 / self.capacity as f64).clamp(0.0, 1.0) as f32
+    }
+
+    /// "42%" for a provider count and "~42%" for an estimate.
+    pub(crate) fn label(self) -> String {
+        let fraction = self.fraction();
+        if fraction > 0.0 && fraction < 0.01 {
+            "<1%".into()
+        } else {
+            format!(
+                "{}{:.0}%",
+                if self.estimated { "~" } else { "" },
+                fraction * 100.0
+            )
+        }
+    }
+}
+
+/// Bytes an event adds to what the next request carries. Stream deltas count
+/// only while a response is in flight; its commit replaces them.
+pub(crate) fn context_bytes(kind: &AgentEventKind) -> u64 {
+    use openide_core::ModelStreamEvent as Stream;
+    (match kind {
+        AgentEventKind::TurnAdmitted { prompt, .. }
+        | AgentEventKind::TurnAdmittedWithImages { prompt, .. } => prompt.len(),
+        AgentEventKind::TurnSteered { text, .. }
+        | AgentEventKind::TurnSteeredWithImages { text, .. }
+        | AgentEventKind::ToolResultMedia { text, .. } => text.len(),
+        AgentEventKind::ToolFinished { output, .. } => output.len(),
+        AgentEventKind::ModelStreamUpdate { update, .. } => match update {
+            Stream::TextDelta { content } | Stream::ReasoningDelta { content, .. } => content.len(),
+            Stream::ToolCallDelta { arguments_delta, .. } => arguments_delta.len(),
+            _ => 0,
+        },
+        _ => 0,
+    }) as u64
 }
 
 /// Compact observations retain their units; bytes/counts are never token shares.
@@ -159,6 +214,46 @@ impl NativeContextUiState {
         Some((used as f64 / capacity as f64).clamp(0.0, 1.0) as f32)
     }
 
+    /// The value the ring, its label, the popover and Settings all show.
+    /// A provider count when the latest response reported one and nothing was
+    /// added since; otherwise that count, or the stated sizes of the frozen
+    /// instructions, plus bytes / 4 of what was appended. `None` without a
+    /// known window: a ring cannot fill against nothing.
+    pub(crate) fn occupancy(&self) -> Option<ContextOccupancy> {
+        if self.error.is_some() {
+            return None;
+        }
+        let capacity = self.capacity()?;
+        let appended = self.appended_bytes.saturating_add(2) / 4;
+        let (base, estimated) = match self.used_tokens() {
+            Some(used) => (used, appended > 0),
+            None => {
+                let sizes: Vec<_> =
+                    crate::composer_context_ui::category_tokens(&self.breakdown, None)
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                // Nothing measured and nothing sized is unknown, not empty.
+                if sizes.is_empty() && self.appended_bytes == 0 {
+                    return None;
+                }
+                (sizes.into_iter().fold(0, u64::saturating_add), true)
+            }
+        };
+        Some(ContextOccupancy {
+            used: base.saturating_add(appended),
+            capacity,
+            estimated,
+        })
+    }
+
+    /// Count a live event of this conversation until the journal is read again.
+    pub(crate) fn note_event(&mut self, session_id: &str, kind: &AgentEventKind) {
+        if self.owner.as_deref() == Some(session_id) {
+            self.appended_bytes = self.appended_bytes.saturating_add(context_bytes(kind));
+        }
+    }
+
     pub(crate) fn measurement_label(&self) -> &'static str {
         if self.error.is_some() {
             return "Consulta no disponible";
@@ -170,7 +265,7 @@ impl NativeContextUiState {
             NativeContextMeasurementStatus::AfterCheckpoint => {
                 "Pendiente tras compactar el contexto"
             }
-            NativeContextMeasurementStatus::UnverifiedLimit => "Límite del modelo sin verificar",
+            NativeContextMeasurementStatus::UnverifiedLimit => "Ventana del modelo desconocida",
             NativeContextMeasurementStatus::Measured => "Último uso reportado",
         }
     }
@@ -393,6 +488,9 @@ impl NativeContextUiState {
         let mut context = None;
         let mut cache_reports = 0u64;
         let mut reasoning_reports = 0u64;
+        // Bytes since the checkpoint (or the start), and since the last
+        // response this route measured.
+        let (mut unmeasured, mut since_measure) = (0u64, 0u64);
         let mut total = ModelTokenUsage {
             input_tokens: 0,
             output_tokens: 0,
@@ -401,6 +499,12 @@ impl NativeContextUiState {
             cached_input_tokens: None,
         };
         for event in &stored.events {
+            // Deltas are superseded by the response that commits them.
+            if !matches!(event.kind, AgentEventKind::ModelStreamUpdate { .. }) {
+                let bytes = context_bytes(&event.kind);
+                unmeasured = unmeasured.saturating_add(bytes);
+                since_measure = since_measure.saturating_add(bytes);
+            }
             match &event.kind {
                 AgentEventKind::TurnAdmitted { .. }
                 | AgentEventKind::TurnAdmittedWithImages { .. } => {
@@ -425,7 +529,24 @@ impl NativeContextUiState {
                 AgentEventKind::ModelRequestStarted { step, model } => {
                     request = Some((*step, model.clone()))
                 }
-                AgentEventKind::ModelResponseCommitted { step, usage, .. } => {
+                AgentEventKind::ModelResponseCommitted {
+                    step,
+                    usage,
+                    assistant,
+                    ..
+                } => {
+                    // The reply joins the context too; a measured one is
+                    // already inside the count that replaces the estimate.
+                    let reply = serde_json::to_vec(assistant).map_or(0, |json| json.len()) as u64;
+                    unmeasured = unmeasured.saturating_add(reply);
+                    since_measure = if usage.is_some()
+                        && selected_route.is_some()
+                        && route.as_ref() == selected_route
+                    {
+                        0
+                    } else {
+                        since_measure.saturating_add(reply)
+                    };
                     let (request_step, request_model) = request.take().ok_or_else(|| {
                         format!(
                             "La respuesta del evento {} no tiene petición de modelo",
@@ -479,7 +600,8 @@ impl NativeContextUiState {
                     context = Some((event.sequence, version, digest))
                 }
                 AgentEventKind::CheckpointCommitted { .. } => {
-                    self.checkpoint_sequence = Some(event.sequence)
+                    self.checkpoint_sequence = Some(event.sequence);
+                    (unmeasured, since_measure) = (0, 0);
                 }
                 AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnCancelled
@@ -491,6 +613,7 @@ impl NativeContextUiState {
             }
         }
         let mut rows = Vec::new();
+        self.appended_bytes = unmeasured;
         if let Some((sequence, model, route, usage, owned)) = latest {
             self.last_usage_sequence = Some(sequence);
             rows.push(NativeContextRow::new(
@@ -519,6 +642,7 @@ impl NativeContextUiState {
                     "Uso de esta respuesta, sin sumar de nuevo cache ni razonamiento.",
                 ));
                 if owned && fresh {
+                    self.appended_bytes = since_measure;
                     self.last_usage = Some(usage.clone());
                     self.remaining_percent =
                         self.capacity()
@@ -875,6 +999,61 @@ pub(crate) mod tests {
             "selected-provider",
             "selected-model"
         ));
+    }
+
+    #[test]
+    fn occupancy_is_exact_after_a_measured_response_and_an_estimate_otherwise() {
+        let root = tempfile::tempdir().unwrap();
+        let route = route();
+        let prompt = "Count actual recorded usage".len() as u64;
+        let project = |usages: &[Option<ModelTokenUsage>]| {
+            let (store, id) =
+                journal_fixture(&root.path().join(usages.len().to_string()), root.path(), Some(&route), usages);
+            projection(&store.load(&id).unwrap().unwrap(), &route)
+        };
+
+        // The provider's count, with nothing added since: exact.
+        let mut measured = project(&[Some(usage(400, 20))]);
+        assert_eq!(measured.appended_bytes, 0);
+        let exact = measured.occupancy().unwrap();
+        assert_eq!((exact.used, exact.capacity, exact.estimated), (420, 1_000, false));
+        assert_eq!(exact.label(), "42%");
+        assert_eq!(Some(exact.fraction()), measured.used_fraction());
+
+        // Text streamed for this conversation raises it at once, as an estimate.
+        let delta = AgentEventKind::ModelStreamUpdate {
+            step: 2,
+            update: openide_core::ModelStreamEvent::TextDelta { content: "x".repeat(400) },
+        };
+        measured.note_event("another-session", &delta);
+        assert_eq!(measured.appended_bytes, 0);
+        let owner = measured.owner.clone().unwrap();
+        measured.note_event(&owner, &delta);
+        let streaming = measured.occupancy().unwrap();
+        assert_eq!((streaming.used, streaming.estimated), (520, true));
+        assert_eq!(streaming.label(), "~52%");
+
+        // No count from the provider: bytes / 4 of everything in the journal.
+        let unreported = project(&[None, None]);
+        assert_eq!(unreported.measurement_status, NativeContextMeasurementStatus::Unreported);
+        assert!(unreported.appended_bytes > 2 * prompt, "{}", unreported.appended_bytes);
+        let estimate = unreported.occupancy().unwrap();
+        assert!(estimate.estimated && estimate.used >= unreported.appended_bytes / 4);
+        assert!(estimate.label().starts_with('~') || estimate.label() == "<1%");
+
+        // Only what followed the last measured response is added to its count.
+        let mixed = project(&[None, Some(usage(100, 0))]);
+        assert_eq!((mixed.appended_bytes, mixed.occupancy().unwrap().used), (0, 100));
+
+        // No window: no fraction, whatever was counted. Nothing known: unknown.
+        let mut windowless = measured.clone();
+        (windowless.window, windowless.input_limit) = (None, None);
+        assert_eq!(windowless.occupancy(), None);
+        let blank = NativeContextUiState { window: Some(1_000), ..Default::default() };
+        assert_eq!(blank.occupancy(), None);
+        let mut failed = measured;
+        failed.error = Some("journal".into());
+        assert_eq!(failed.occupancy(), None);
     }
 
     #[test]

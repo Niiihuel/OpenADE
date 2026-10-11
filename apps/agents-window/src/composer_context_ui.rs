@@ -93,21 +93,26 @@ pub(crate) fn compaction_view(state: &ViewState) -> ContextCompactionView<'_> {
     }
 }
 
-fn tokens(value: u64) -> String {
-    if value >= 1_000_000 {
-        format!("{:.1}M", value as f64 / 1_000_000.0)
+/// A token count as the app writes it: "272K", "16.4K", "1M", "1.05M".
+pub(crate) fn tokens(value: u64) -> String {
+    let short = |scaled: f64, digits: usize, unit: &str| {
+        let text = format!("{scaled:.digits$}");
+        format!("{}{unit}", text.trim_end_matches('0').trim_end_matches('.'))
+    };
+    if value >= 999_950 {
+        short(value as f64 / 1_000_000.0, 2, "M")
     } else if value >= 1_000 {
-        format!("{:.1}K", value as f64 / 1_000.0)
+        short(value as f64 / 1_000.0, 1, "K")
     } else {
         value.to_string()
     }
 }
-fn percentage(fraction: f32) -> String {
-    if fraction > 0.0 && fraction < 0.01 {
-        "<1%".into()
-    } else {
-        format!("{:.0}%", fraction * 100.0)
-    }
+
+/// The figure Settings repeats: the same one the ring and its popover show.
+pub(crate) fn occupancy_text(usage: &crate::native_context_ui::NativeContextUiState) -> Option<String> {
+    usage
+        .occupancy()
+        .map(|occupancy| format!("{} usado", occupancy.label()))
 }
 fn usage_ink(fraction: Option<f32>) -> Color {
     match fraction {
@@ -247,23 +252,28 @@ pub(crate) fn diagnostic(usage: &crate::native_context_ui::NativeContextUiState)
 
 fn summary(props: &ComposerProps<'_>) -> Element {
     let usage = props.native_context;
-    let fraction = usage.and_then(|usage| usage.used_fraction());
-    let used = usage.and_then(|usage| usage.used_tokens());
+    let occupancy = usage.and_then(|usage| usage.occupancy());
+    let estimated = occupancy.is_some_and(|occupancy| occupancy.estimated);
+    let fraction = occupancy.map(|occupancy| occupancy.fraction());
+    // Without a window the last count is still worth stating.
+    let used = occupancy
+        .map(|occupancy| occupancy.used)
+        .or_else(|| usage.and_then(|usage| usage.used_tokens()));
     let capacity = usage.and_then(|usage| usage.capacity());
     let input_only = usage.is_some_and(|usage| {
         usage.window.filter(|limit| *limit > 0).is_none()
             && usage.input_limit.is_some_and(|limit| limit > 0)
     });
-    let total = match (used, capacity, fraction) {
-        (Some(used), Some(capacity), Some(fraction)) => format!(
-            "{} · ~{} / {} tokens",
-            percentage(fraction),
-            tokens(used),
-            tokens(capacity)
+    let total = match (occupancy, used) {
+        (Some(occupancy), _) => format!(
+            "{} · {}{} / {} tokens",
+            occupancy.label(),
+            if estimated { "~" } else { "" },
+            tokens(occupancy.used),
+            tokens(occupancy.capacity)
         ),
-        (_, Some(capacity), _) => format!("Capacidad: {} tokens", tokens(capacity)),
-        (Some(used), None, _) => format!("{} tokens", tokens(used)),
-        _ => "Capacidad sin verificar".into(),
+        (None, Some(used)) => format!("{} tokens · ventana desconocida", tokens(used)),
+        _ => "Ventana desconocida".into(),
     };
     let categories = usage.map_or(&[][..], |usage| &usage.breakdown);
     let shares = category_tokens(categories, used);
@@ -340,13 +350,30 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         Some("El resumen está guardado. El uso se medirá en la próxima respuesta.")
     } else if fraction.is_some_and(|fraction| fraction >= 0.8) {
         Some("Queda poco espacio. Puedes compactar para continuar.")
-    } else if fraction.is_none() {
-        Some(usage.map_or("Aún no hay una respuesta medida", |usage| {
-            usage.measurement_label()
-        }))
     } else {
         None
     };
+    // Why there is no figure, or why it is only an estimate, and for which model.
+    let reason = match usage {
+        _ if status.is_some() => None,
+        // Neither the provider nor the catalog states one for this model.
+        Some(usage) if usage.error.is_none() && capacity.is_none() => {
+            Some(format!("Ventana no publicada: {}", usage.model))
+        }
+        Some(usage) if estimated => Some(
+            match usage.measurement_status {
+                NativeContextMeasurementStatus::Measured => "Estimado hasta la próxima respuesta medida.",
+                NativeContextMeasurementStatus::Unreported => "Estimado: el proveedor no informó el uso.",
+                NativeContextMeasurementStatus::RouteMismatch => "Estimado: sin uso medido con este modelo.",
+                _ => "Estimado: aún no hay una respuesta medida.",
+            }
+            .into(),
+        ),
+        Some(usage) if occupancy.is_none() => Some(usage.measurement_label().into()),
+        Some(_) => None,
+        None => Some("Aún no hay una respuesta medida".into()),
+    };
+    let status = status.or(reason.as_deref());
     if let Some(status) = status {
         content.push(
             Text::new(status, theme::component_palette())
@@ -424,19 +451,33 @@ pub(crate) fn control_width(props: &ComposerProps<'_>) -> f32 {
     }
 }
 pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
-    let fraction = props.native_context.and_then(|usage| usage.used_fraction());
+    let occupancy = props.native_context.and_then(|usage| usage.occupancy());
+    let fraction = occupancy.map(|occupancy| occupancy.fraction());
     let help = props.native_context.map_or_else(
         || "El uso se informa al recibir una respuesta del modelo.".into(),
-        |usage| match (usage.used_tokens(), usage.capacity()) {
-            (Some(used), Some(capacity)) => format!(
-                "{used} de {capacity} tokens · última respuesta. Abrir contexto y compactación."
+        |usage| match occupancy {
+            Some(occupancy) => format!(
+                "{}{} de {} tokens · {}{}. Abrir contexto y compactación.",
+                if occupancy.estimated { "~" } else { "" },
+                tokens(occupancy.used),
+                tokens(occupancy.capacity),
+                if occupancy.estimated { "estimación" } else { "última respuesta" },
+                if usage.window_source.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · ventana según {}", usage.window_source)
+                }
             ),
-            _ => usage.measurement_label().into(),
+            None if usage.error.is_none() && usage.capacity().is_none() => {
+                format!("Ventana no publicada: {}", usage.model)
+            }
+            None => usage.measurement_label().into(),
         },
     );
     let trigger = Tooltip::new(
         ContextMeter::new("composer_context_toggle", None, theme::component_palette())
             .fraction(fraction)
+            .estimated(occupancy.is_some_and(|occupancy| occupancy.estimated))
             .usage_inks(theme::CONTEXT_WARNING, theme::CONTEXT_FULL)
             .compact(props.width < 490.0)
             .render()

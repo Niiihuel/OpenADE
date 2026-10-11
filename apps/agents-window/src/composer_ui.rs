@@ -3118,7 +3118,7 @@ pub(crate) mod tests {
                 frame.commands.iter().any(|command| matches!(command,
                     DrawCommand::Text { text, .. } if text.contains(needle)))
             };
-            assert!(painted("Aún no hay una respuesta medida"));
+            assert!(painted("Ventana no publicada: models/exact:v2"));
             assert!(!painted("0%"), "unknown is not a measured zero");
             assert!(!painted("SKILL-"), "provenance rows are only copied");
             let area = frame
@@ -3209,7 +3209,7 @@ pub(crate) mod tests {
             let frame = tree.layout(viewport);
             for label in [
                 "Uso de contexto",
-                "15% · ~300 / 2.0K tokens",
+                "15% · 300 / 2K tokens",
                 "Skills",
                 "~100",
             ] {

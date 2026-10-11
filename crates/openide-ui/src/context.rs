@@ -394,6 +394,7 @@ pub struct ContextMeter {
     compact: bool,
     percent: Option<u8>,
     fraction: Option<Option<f32>>,
+    estimated: bool,
     usage_inks: (Color, Color),
     palette: ComponentPalette,
 }
@@ -405,9 +406,16 @@ impl ContextMeter {
             compact: false,
             percent: percent.map(|value| value.min(100)),
             fraction: None,
+            estimated: false,
             usage_inks: (USAGE_HIGH, USAGE_FULL),
             palette,
         }
+    }
+    /// The fraction is the host's estimate, not a provider count: the label
+    /// leads with "~" and the arc is drawn lighter. The thresholds still apply.
+    pub fn estimated(mut self, estimated: bool) -> Self {
+        self.estimated = estimated;
+        self
     }
     /// The host's inks for a meter past four fifths and for a full one.
     pub fn usage_inks(mut self, high: Color, full: Color) -> Self {
@@ -433,10 +441,26 @@ impl Component for ContextMeter {
         let fraction = self
             .fraction
             .unwrap_or_else(|| self.percent.map(|value| value as f32 / 100.0));
-        let label = fraction.map_or_else(|| "Contexto".to_owned(), percent_label);
+        let label = fraction.map_or_else(
+            || "Contexto".to_owned(),
+            |fraction| {
+                let label = percent_label(fraction);
+                // "<1%" already says the figure is not exact.
+                if self.estimated && !label.starts_with('<') {
+                    format!("~{label}")
+                } else {
+                    label
+                }
+            },
+        );
         let ink = usage_color(fraction, self.usage_inks, self.palette);
+        let arc = if self.estimated {
+            Color::rgba(ink.r, ink.g, ink.b, 140)
+        } else {
+            ink
+        };
         let mut content =
-            vec![Element::progress_ring(fraction, self.palette.border, ink)
+            vec![Element::progress_ring(fraction, self.palette.border, arc)
                 .size(Some(16.0), Some(16.0))];
         if !self.compact {
             // Without a measurement `ink` is already the palette's muted.
@@ -479,6 +503,47 @@ impl ContextRow {
 mod tests {
     use super::*;
     use crate::{DrawCommand, Key, Size, UiAction, UiEvent, UiTree};
+
+    #[test]
+    fn an_estimated_meter_says_so_in_its_label_and_arc_and_keeps_the_thresholds() {
+        let palette = ComponentPalette::neutral_dark();
+        let ring_and_label = |fraction: f32, estimated: bool| {
+            let frame = UiTree::new(
+                ContextMeter::new("meter", None, palette)
+                    .fraction(Some(fraction))
+                    .estimated(estimated)
+                    .render(),
+            )
+            .layout(Size::new(120.0, 28.0));
+            let fill = frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::ProgressRing { fill, .. } => Some(*fill),
+                    _ => None,
+                })
+                .unwrap();
+            let label = frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Text { text, color, .. } => Some((text.clone(), *color)),
+                    _ => None,
+                })
+                .unwrap();
+            (fill, label)
+        };
+        let (exact, (exact_label, _)) = ring_and_label(0.42, false);
+        let (estimate, (estimate_label, _)) = ring_and_label(0.42, true);
+        assert_eq!((exact_label.as_str(), estimate_label.as_str()), ("42%", "~42%"));
+        assert_eq!((exact.a, estimate.a), (255, 140));
+        assert_eq!((exact.r, exact.g, exact.b), (estimate.r, estimate.g, estimate.b));
+        let (warning, (label, ink)) = ring_and_label(0.85, true);
+        assert_eq!(label, "~85%");
+        assert_eq!(ink, USAGE_HIGH);
+        assert_eq!((warning.r, warning.g, warning.b), (USAGE_HIGH.r, USAGE_HIGH.g, USAGE_HIGH.b));
+        assert_eq!(ring_and_label(0.004, true).1 .0, "<1%");
+    }
 
     #[test]
     fn the_meter_takes_its_threshold_inks_from_the_host() {
