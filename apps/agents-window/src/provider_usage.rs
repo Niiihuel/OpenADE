@@ -32,6 +32,12 @@ use crate::{
 };
 
 const MAX_RESPONSE_BYTES: u64 = 128 * 1024;
+/// Bounds of the local Codex read: a rollout can be tens of MB, with the
+/// newest limits near its end.
+const ROLLOUT_TAIL_BYTES: u64 = 4 * 1024 * 1024;
+const ROLLOUT_CHUNK_BYTES: u64 = 256 * 1024;
+const ROLLOUT_FILES: usize = 5;
+const ROLLOUT_ENTRIES: usize = 50_000;
 pub(crate) const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 pub(crate) const STALE_AFTER: Duration = Duration::from_secs(180);
 
@@ -97,6 +103,9 @@ pub(crate) struct ProviderUsageSnapshot {
     pub balances: Vec<UsageBalance>,
     /// Time of the latest successful measurement, retained on network errors.
     pub fetched_at_ms: Option<u64>,
+    /// Read from the Codex CLI's own session files: as old as its last turn,
+    /// so its age is shown as it is instead of as a failed refresh.
+    pub local: bool,
     pub account_url: Option<String>,
     pub message: Option<String>,
 }
@@ -199,6 +208,7 @@ fn snapshot(adapter: &Adapter, root: &Path, key_available: bool) -> ProviderUsag
         windows: Vec::new(),
         balances: Vec::new(),
         fetched_at_ms: None,
+        local: false,
         account_url: account_url(&adapter.id).map(str::to_owned),
         message,
     }
@@ -348,10 +358,15 @@ fn collect_usage(
             .flatten();
         let mut state = snapshot(adapter, root, key.is_some());
         // Only a sign-in that names its ChatGPT workspace can read the plan.
-        // Any other one keeps pointing at the account page, without a request.
+        // Any other one shows what the Codex CLI last recorded on this machine,
+        // or keeps pointing at the account page; neither sends a request.
         if adapter.id == "codex"
             && account.is_none()
             && state.status == ProviderUsageStatus::Loading
+            // Tests never read the real Codex home.
+            && !(!cfg!(test)
+                && crate::composer_selection::codex_home()
+                    .is_some_and(|home| apply_local_codex(&mut state, &home, now_ms())))
         {
             state.status = ProviderUsageStatus::External;
             state.message = Some(external_message(&adapter.id).into());
@@ -636,17 +651,164 @@ fn parse_codex(body: &Value, state: &mut ProviderUsageSnapshot) -> Result<(), &'
     state.windows = windows;
     state.balances.clear();
     if let Some(plan) = body.get("plan_type").and_then(Value::as_str) {
-        let mut name = plan.replace(['_', '-'], " ");
-        if let Some(first) = name.get_mut(..1) {
-            first.make_ascii_uppercase();
-        }
-        state.plan_label = Some(format!("ChatGPT {name}"));
+        state.plan_label = Some(chatgpt_plan(plan));
     }
     let reached = limits.get("limit_reached").and_then(Value::as_bool) == Some(true)
         || limits.get("allowed").and_then(Value::as_bool) == Some(false);
     state.message =
         reached.then(|| "Se alcanzó un límite del plan. Revisa su fecha de reinicio.".into());
     Ok(())
+}
+
+fn chatgpt_plan(plan: &str) -> String {
+    let mut name = plan.replace(['_', '-'], " ");
+    if let Some(first) = name.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    format!("ChatGPT {name}")
+}
+
+/// Newest first by modification time: a resumed session appends to its old file.
+fn newest_rollouts(home: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut pending = vec![(home.join("sessions"), 0)];
+    let mut visited = 0;
+    'walk: while let Some((directory, depth)) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            visited += 1;
+            if visited > ROLLOUT_ENTRIES {
+                break 'walk;
+            }
+            // Not followed through links, so the walk cannot loop.
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if kind.is_dir() && depth < 3 {
+                pending.push((entry.path(), depth + 1));
+            } else if kind.is_file() && name.starts_with("rollout-") && name.ends_with(".jsonl") {
+                if let Ok(modified) = entry.metadata().and_then(|file| file.modified()) {
+                    found.push((modified, entry.path()));
+                }
+            }
+        }
+    }
+    found.sort_by(|a, b| b.cmp(a));
+    found.truncate(ROLLOUT_FILES);
+    found.into_iter().map(|(_, path)| path).collect()
+}
+
+/// The plan's limits and their time in ms, when the line is such an event.
+fn rate_limits_line(line: &[u8]) -> Option<(Value, u64)> {
+    let line = std::str::from_utf8(line).ok()?;
+    if !line.contains("\"token_count\"") || !line.contains("\"rate_limits\"") {
+        return None;
+    }
+    let mut event: Value = serde_json::from_str(line).ok()?;
+    if event["type"] != "event_msg" || event["payload"]["type"] != "token_count" {
+        return None;
+    }
+    let at = chrono::DateTime::parse_from_rfc3339(event["timestamp"].as_str()?)
+        .ok()
+        .and_then(|at| u64::try_from(at.timestamp_millis()).ok())?;
+    let limits = event["payload"]["rate_limits"].take();
+    // Other metered limits use the same event; only "codex" is the plan itself.
+    let own = limits["limit_id"].is_null() || limits["limit_id"] == "codex";
+    (limits.is_object() && own).then_some((limits, at))
+}
+
+/// Reads backwards in chunks and never past the last `ROLLOUT_TAIL_BYTES`.
+fn last_rate_limits(path: &Path) -> Option<(Value, u64)> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut end = file.metadata().ok()?.len();
+    let floor = end.saturating_sub(ROLLOUT_TAIL_BYTES);
+    let mut carry = Vec::new();
+    while end > floor {
+        let start = end.saturating_sub(ROLLOUT_CHUNK_BYTES).max(floor);
+        let mut buffer = vec![0; (end - start) as usize];
+        file.seek(SeekFrom::Start(start)).ok()?;
+        file.read_exact(&mut buffer).ok()?;
+        buffer.append(&mut carry);
+        // A chunk begins inside a line unless it begins the file.
+        let whole = if start == 0 {
+            0
+        } else {
+            buffer
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(buffer.len(), |index| index + 1)
+        };
+        if let Some(found) = buffer[whole..]
+            .rsplit(|byte| *byte == b'\n')
+            .find_map(rate_limits_line)
+        {
+            return Some(found);
+        }
+        buffer.truncate(whole);
+        carry = buffer;
+        end = start;
+    }
+    None
+}
+
+/// What the Codex CLI last recorded in its own session files under `home`.
+/// Local files only, every field untrusted; false leaves `state` untouched.
+fn apply_local_codex(state: &mut ProviderUsageSnapshot, home: &Path, now: u64) -> bool {
+    let Some((limits, at)) = newest_rollouts(home)
+        .iter()
+        .find_map(|path| last_rate_limits(path))
+    else {
+        return false;
+    };
+    let mut windows = Vec::new();
+    // The plan decides which window is primary; only its length names it.
+    for key in ["primary", "secondary"] {
+        let row = &limits[key];
+        let Some(used) = number(row.get("used_percent")) else {
+            continue;
+        };
+        let used = used.clamp(0.0, 100.0);
+        let reset_at_ms = nonnegative(row.get("resets_at"))
+            .map(|seconds| (seconds * 1000.0) as u64)
+            .filter(|reset| *reset > 0 && *reset < now + 366 * 86_400_000);
+        // A window that has reset since the event no longer holds this percent.
+        if reset_at_ms.is_some_and(|reset| reset <= now) {
+            continue;
+        }
+        let label = match nonnegative(row.get("window_minutes")).map_or(0, |minutes| minutes as u64)
+        {
+            300 => "5 horas".to_owned(),
+            1_440 => "Diario".to_owned(),
+            10_080 => "Semanal".to_owned(),
+            0 => "Límite del plan".to_owned(),
+            minutes if minutes % 1_440 == 0 => format!("{} días", minutes / 1_440),
+            minutes if minutes % 60 == 0 => format!("{} horas", minutes / 60),
+            minutes => format!("{minutes} min"),
+        };
+        let mut window = usage_window(&label, used, UsageUnit::Percent);
+        window.limit = Some(100.0);
+        window.remaining = Some(100.0 - used);
+        window.reset_at_ms = reset_at_ms;
+        windows.push(window);
+    }
+    if windows.is_empty() {
+        return false;
+    }
+    state.status = ProviderUsageStatus::Ready;
+    state.windows = windows;
+    state.balances.clear();
+    if let Some(plan) = limits["plan_type"].as_str().filter(|plan| !plan.is_empty()) {
+        state.plan_label = Some(chatgpt_plan(plan));
+    }
+    state.fetched_at_ms = Some(at.min(now));
+    state.local = true;
+    state.message = Some("Límites de tu última sesión local de Codex.".into());
+    true
 }
 
 fn parse_opencode_go(body: &Value, state: &mut ProviderUsageSnapshot) -> Result<(), &'static str> {
@@ -878,6 +1040,189 @@ mod tests {
         }
         assert_eq!(untouched.windows, before.windows);
         assert_eq!(usage_url(ProviderRegistry::builtin().adapter("codex").unwrap()), Some("https://chatgpt.com/backend-api/wham/usage"));
+    }
+
+    const NOW: u64 = 1_800_000_000_000;
+
+    fn rollout(home: &Path, day: &str, name: &str, lines: &[String], age_seconds: u64) -> PathBuf {
+        let directory = home.join("sessions").join(day);
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(format!("rollout-{name}.jsonl"));
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(age_seconds))
+            .unwrap();
+        path
+    }
+
+    fn token_count(timestamp: &str, limits: Value) -> String {
+        json!({"timestamp": timestamp, "type": "event_msg",
+            "payload": {"type": "token_count", "info": null, "rate_limits": limits}})
+        .to_string()
+    }
+
+    fn local(home: &Path) -> Option<ProviderUsageSnapshot> {
+        let mut usage = state("codex");
+        apply_local_codex(&mut usage, home, NOW).then_some(usage)
+    }
+
+    fn week(used: f64) -> Value {
+        json!({"used_percent": used, "window_minutes": 10080, "resets_at": NOW / 1000 + 259_200})
+    }
+
+    #[test]
+    fn local_codex_limits_name_each_window_by_its_length_and_keep_the_event_time() {
+        let home = tempfile::tempdir().unwrap();
+        rollout(
+            home.path(),
+            "2027/01/15",
+            "weekly",
+            &[
+                token_count("2027-01-15T07:00:00.000Z", json!({"primary": week(12.0)})),
+                "{not json \"token_count\" \"rate_limits\"".into(),
+                json!({"timestamp":"2027-01-15T07:30:00Z","type":"response_item",
+                    "payload":{"text":"\"token_count\" \"rate_limits\""}})
+                .to_string(),
+                token_count(
+                    "2027-01-15T08:00:00.000Z",
+                    json!({"limit_id": "codex", "primary": week(58.0), "secondary": null,
+                        "credits": null, "plan_type": "pro"}),
+                ),
+                // Later lines without limits, or for another meter, are passed over.
+                token_count("2027-01-15T08:01:00.000Z", Value::Null),
+                token_count(
+                    "2027-01-15T08:02:00.000Z",
+                    json!({"limit_id": "codex_other", "primary": week(99.0)}),
+                ),
+                "truncated {\"type\":\"event_msg\",\"token_count\" \"rate_limits\"".into(),
+            ],
+            0,
+        );
+        let usage = local(home.path()).unwrap();
+        assert_eq!(usage.status, ProviderUsageStatus::Ready);
+        assert!(usage.local && usage.balances.is_empty());
+        assert_eq!(usage.plan_label.as_deref(), Some("ChatGPT Pro"));
+        assert_eq!(usage.fetched_at_ms, Some(NOW));
+        assert_eq!(usage.windows.len(), 1);
+        let window = &usage.windows[0];
+        assert_eq!((window.label.as_str(), window.used, window.remaining), ("Semanal", 58.0, Some(42.0)));
+        assert_eq!((window.unit, window.limit), (UsageUnit::Percent, Some(100.0)));
+        assert_eq!(window.reset_at_ms, Some(NOW + 259_200_000));
+
+        // Both windows, in the file's order, whichever one the plan calls primary.
+        let both = tempfile::tempdir().unwrap();
+        rollout(
+            both.path(),
+            "2027/01/15",
+            "both",
+            &[token_count(
+                "2027-01-15T07:59:00.000Z",
+                json!({"primary": {"used_percent": 30, "window_minutes": 300, "resets_at": NOW / 1000 + 600},
+                    "secondary": week(85.0), "plan_type": "plus"}),
+            )],
+            0,
+        );
+        let usage = local(both.path()).unwrap();
+        let rows: Vec<_> = usage.windows.iter().map(|w| (w.label.as_str(), w.used)).collect();
+        assert_eq!(rows, [("5 horas", 30.0), ("Semanal", 85.0)]);
+        assert_eq!(usage.fetched_at_ms, Some(NOW - 60_000));
+        assert_eq!(usage.plan_label.as_deref(), Some("ChatGPT Plus"));
+    }
+
+    #[test]
+    fn local_codex_limits_distrust_every_field_and_missing_data_stays_external() {
+        let home = tempfile::tempdir().unwrap();
+        // No directory, an empty one, and a file instead of the folder.
+        assert!(local(&home.path().join("absent")).is_none());
+        assert!(local(home.path()).is_none());
+        std::fs::write(home.path().join("sessions"), "x").unwrap();
+        assert!(local(home.path()).is_none());
+        std::fs::remove_file(home.path().join("sessions")).unwrap();
+
+        // Null windows, an unusable percent and a missing timestamp yield nothing.
+        let before = state("codex");
+        for (index, line) in [
+            token_count("2027-01-15T08:00:00Z", json!({"primary": null, "secondary": null})),
+            token_count("2027-01-15T08:00:00Z", json!({"primary": {"used_percent": "NaN"}})),
+            token_count("2027-01-15T08:00:00Z", json!({"primary": "x", "secondary": [1]})),
+            token_count("sometime", json!({"primary": week(40.0)})),
+            // The window has reset since: its old percent is no longer true.
+            token_count(
+                "2027-01-01T08:00:00Z",
+                json!({"primary": {"used_percent": 90, "window_minutes": 10080, "resets_at": NOW / 1000 - 1}}),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let case = tempfile::tempdir().unwrap();
+            rollout(case.path(), "2027/01/15", "bad", &[line], 0);
+            let mut usage = before.clone();
+            assert!(!apply_local_codex(&mut usage, case.path(), NOW), "case {index}");
+            assert_eq!(usage, before);
+        }
+
+        // Out-of-range values are clamped; absurd resets and lengths are dropped.
+        rollout(
+            home.path(),
+            "2027/01/15",
+            "odd",
+            &[token_count(
+                "2030-01-01T00:00:00Z",
+                json!({"primary": {"used_percent": 250.5, "window_minutes": 90, "resets_at": 9.9e15},
+                    "secondary": {"used_percent": -4, "window_minutes": -3, "resets_at": -1},
+                    "plan_type": 7}),
+            )],
+            0,
+        );
+        let usage = local(home.path()).unwrap();
+        let rows: Vec<_> = usage
+            .windows
+            .iter()
+            .map(|w| (w.label.as_str(), w.used, w.remaining, w.reset_at_ms))
+            .collect();
+        assert_eq!(
+            rows,
+            [("90 min", 100.0, Some(0.0), None), ("Límite del plan", 0.0, Some(100.0), None)]
+        );
+        // A clock ahead of ours never makes the data newer than now.
+        assert_eq!(usage.fetched_at_ms, Some(NOW));
+        assert_eq!(usage.plan_label.as_deref(), Some("Plan de ChatGPT"));
+    }
+
+    #[test]
+    fn local_codex_limits_come_from_the_newest_file_and_only_from_its_tail() {
+        let home = tempfile::tempdir().unwrap();
+        let line = |used| token_count("2027-01-15T08:00:00Z", json!({"primary": week(used)}));
+        // The newest file is the one written last, not the one in the latest folder.
+        rollout(home.path(), "2027/01/15", "old", &[line(10.0)], 3_600);
+        rollout(home.path(), "2027/01/02", "resumed", &[line(20.0)], 60);
+        std::fs::write(home.path().join("sessions/2027/01/15/notes.jsonl"), line(99.0)).unwrap();
+        assert_eq!(local(home.path()).unwrap().windows[0].used, 20.0);
+        // A newer file without limits falls back to the previous one.
+        rollout(home.path(), "2027/01/16", "empty", &["{\"type\":\"session_meta\"}".into()], 0);
+        assert_eq!(local(home.path()).unwrap().windows[0].used, 20.0);
+        assert_eq!(newest_rollouts(home.path()).len(), 3);
+
+        // A large file: the event is found across chunk boundaries, after a
+        // line longer than a chunk, without reading the head of the file.
+        let filler = format!("{{\"type\":\"response_item\",\"text\":\"{}\"}}", "x".repeat(1_000));
+        let mut lines = vec![line(1.0)];
+        lines.extend(std::iter::repeat_n(filler.clone(), 6_000));
+        lines.push(line(64.0));
+        lines.push(format!("{{\"text\":\"{}\"}}", "y".repeat(300_000)));
+        lines.extend(std::iter::repeat_n(filler.clone(), 300));
+        let large = rollout(home.path(), "2027/01/17", "large", &lines, 0);
+        assert!(std::fs::metadata(&large).unwrap().len() > ROLLOUT_TAIL_BYTES);
+        assert_eq!(local(home.path()).unwrap().windows[0].used, 64.0);
+        // Beyond the scanned tail the event is not looked for; older files are.
+        let mut lines = vec![line(2.0)];
+        lines.extend(std::iter::repeat_n(filler, 4_500));
+        rollout(home.path(), "2027/01/18", "deep", &lines, 0);
+        assert_eq!(local(home.path()).unwrap().windows[0].used, 64.0);
     }
 
     #[test]

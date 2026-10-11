@@ -151,6 +151,7 @@ impl AgentsWindow {
                 windows: vec![],
                 balances: vec![],
                 fetched_at_ms: None,
+                local: false,
                 account_url: configured.then(|| format!("https://fixture.invalid/account/{id}")),
                 message: None,
             };

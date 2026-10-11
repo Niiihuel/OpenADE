@@ -56,10 +56,12 @@ fn elapsed_label(timestamp: u64, now: u64) -> String {
 }
 
 fn stale(snapshot: &ProviderUsageSnapshot, now: u64) -> bool {
+    // A local reading is as old as the last Codex turn, which is not a failure.
     snapshot.status == ProviderUsageStatus::Error
-        || snapshot
-            .fetched_at_ms
-            .is_some_and(|timestamp| now.saturating_sub(timestamp) > STALE_AFTER.as_millis() as u64)
+        || !snapshot.local
+            && snapshot
+                .fetched_at_ms
+                .is_some_and(|timestamp| now.saturating_sub(timestamp) > STALE_AFTER.as_millis() as u64)
 }
 
 fn updated(snapshot: &ProviderUsageSnapshot, now: u64) -> String {
@@ -77,6 +79,8 @@ fn updated(snapshot: &ProviderUsageSnapshot, now: u64) -> String {
         "{} · {}",
         if stale(snapshot, now) {
             "Último dato"
+        } else if snapshot.local {
+            "Medido por Codex"
         } else {
             "Actualizado"
         },
@@ -217,6 +221,7 @@ fn fallback(state: &ViewState, id: &str, name: &str) -> ProviderUsageSnapshot {
         windows: Vec::new(),
         balances: Vec::new(),
         fetched_at_ms: None,
+        local: false,
         account_url: None,
         message: state.native_provider_registry_error.as_ref().map(|_| {
             "No se pudo cargar el catálogo de proveedores. Revisa su configuración.".into()
@@ -1093,6 +1098,7 @@ mod tests {
                 windows: Vec::new(),
                 balances: Vec::new(),
                 fetched_at_ms: None,
+                local: false,
                 account_url: Some("https://example.com/account".into()),
                 message: None,
             };
