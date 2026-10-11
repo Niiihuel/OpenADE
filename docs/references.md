@@ -62,7 +62,7 @@ assets del clon. `references/zed` continúa ignorado por Git y fuera de Cargo.
 
 [conversation-environment.md](conversation-environment.md) registra las
 referencias de ZCode consultadas para el selector, entorno, dock y navegador,
-junto con la integración propia de Playwright y los cambios por conversación.
+junto con el navegador propio y los cambios por conversación.
 
 Los tokens de color, tipografía y densidad se mapearon desde `DESIGN.md` y
 `packages/ui/src/styles.css` de ZCode a constantes semánticas Rust de

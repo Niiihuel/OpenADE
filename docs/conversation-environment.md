@@ -147,26 +147,22 @@ comandos. Los marcadores incompletos o ambiguos mantienen cobertura parcial.
 
 ## Navegador
 
-`browser_runtime.rs` supervisa un proceso Node con la biblioteca Playwright.
-Chromium usa un contexto aislado; la vista nativa dibuja sus capturas PNG y
-envía clics, texto, teclas y scroll al mismo actor que atiende las herramientas
-del agente. Hay navegación atrás/adelante, recarga, dirección y actualización
-de captura. La implementación utiliza las APIs públicas de
-[Playwright Library](https://playwright.dev/docs/library) y
-[Page](https://playwright.dev/docs/api/class-page).
+`browser_runtime.rs` inicia un Chrome headless y lo maneja directamente por el
+protocolo DevTools con el driver propio `crates/openide-browser`, sin Node,
+npm ni Playwright. Chromium usa un contexto aislado; la vista nativa muestra
+su flujo de cuadros y envía puntero, texto, teclas y scroll al mismo actor que
+atiende las herramientas del agente. Hay navegación atrás/adelante, recarga,
+dirección y actualización de la vista.
 
-Abrir el panel no descarga dependencias. Si faltan, **Instalar navegador**
-instala Playwright 1.63.0 y Chromium en el directorio administrado de datos;
-requiere Node, npm y las dependencias del sistema de Chromium. Hay un máximo de
-cuatro runtimes, cola compartida de 16 solicitudes, acciones con deadline y
-límites de JSON, capturas y árbol accesible. La vista se actualiza periódicamente
-cuando está visible; no es un WebView ni un video continuo. Esta primera versión
-mantiene una página, cierra ventanas emergentes y no acepta descargas.
-Los temporales del navegador son propios y sobreviven al cierre del shell que
-inició la app. En NixOS se puede usar el Chromium o Chrome empaquetado del
-sistema, siempre con un perfil aislado y sandbox habilitado. La selección del
-motor, la configuración y las pruebas reales se describen en
-[Runtime del navegador](browser-runtime.md).
+Abrir el panel no descarga ni instala nada: usa el Chrome, Chromium o Edge del
+sistema, o el que indique `OPENIDE_BROWSER_EXECUTABLE`. Si no encuentra
+ninguno lo dice y ofrece reintentar. Hay un máximo de cuatro runtimes, cola
+compartida de 16 solicitudes, acciones con deadline y límites de capturas y
+árbol accesible. No es un WebView. Mantiene una página, cierra ventanas
+emergentes y no acepta descargas. Los temporales del navegador son propios y
+sobreviven al cierre del shell que inició la app, siempre con un perfil
+aislado y sandbox habilitado. La selección del navegador y las pruebas reales
+se describen en [Runtime del navegador](browser-runtime.md).
 
 En el próximo turno Build, un navegador abierto y listo de la conversación
 se anuncia como `mcp__openide_browser__…`. El agente recibe estado, URL y árbol
@@ -179,7 +175,7 @@ validación de recuperación de herramientas pendientes. El catálogo y su forma
 de uso están en [Herramientas del navegador](browser-tools.md).
 
 El botón de conexión MCP copia configuración JSON de un proxy stdio conectado
-al mismo actor. Su endpoint y capacidad son efímeros: sirven mientras la
+al mismo actor: el propio ejecutable de la aplicación con `--browser-mcp`. Su endpoint y capacidad son efímeros: sirven mientras la
 pestaña permanezca abierta. Puede adaptarse al formato de configuración del
 cliente externo; no modifica la configuración personal de Codex.
 

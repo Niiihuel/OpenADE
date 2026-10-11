@@ -1,53 +1,80 @@
 # Navegador del proyecto
 
-La interfaz es nativa de OpenIDE. El contenido web lo procesa Chromium en un
-proceso supervisado por Rust, mediante Playwright 1.63.0. El contexto es nuevo
-y aislado por conversación: no abre el perfil personal de Chrome. El usuario y
-el agente comparten esa misma página, con una cola limitada y las políticas de
-permisos del host. No se repiten automáticamente acciones inciertas.
+La interfaz es nativa de OpenIDE. El contenido web lo procesa Chromium, en un
+proceso que la aplicación inicia y maneja directamente por el protocolo
+DevTools con su propio driver en Rust
+([`crates/openide-browser`](browser-driver.md)). No intervienen Node, npm ni
+Playwright: no hay otro proceso entre la ventana y el navegador. El contexto
+es nuevo y aislado por conversación: no abre el perfil personal de Chrome. El
+usuario y el agente comparten esa misma página, con una cola limitada y las
+políticas de permisos del host. No se repiten automáticamente acciones
+inciertas.
+
+## Piezas
+
+`apps/agents-window/src/browser_runtime.rs` es el actor de una conversación:
+
+| Hilo | Qué hace |
+| --- | --- |
+| Trabajador | Es dueño del `Driver`, cuya API es bloqueante: atiende un comando por vez de una cola de 16, sigue la visibilidad de la vista y pide el cuadro sin pérdida. |
+| Decodificador | Toma los cuadros del flujo del driver, descarta los que no son novedad y convierte los demás en píxeles. |
+| Broker | Escucha en `127.0.0.1` con un token por contexto y atiende a los clientes MCP externos. |
+| Lector del driver | Reparte respuestas y eventos del protocolo. Lo crea el propio driver. |
+
+`browser_mcp.rs` es el proxy MCP: el mismo ejecutable con `--browser-mcp`.
 
 ## Arranque y temporales
 
-El proceso Node recibe un entorno reducido, sin claves de proveedores ni
-`NODE_OPTIONS`. Rust reemplaza `TMPDIR`, `TMP` y `TEMP` con una carpeta propia,
-independiente del shell que inició la aplicación. Esto evita el error
-`mkdtemp …/nix-shell-…/playwright-artifacts-… ENOENT` cuando una aplicación
-desacoplada sigue viva después de cerrarse `nix-shell`.
+Chrome hereda un entorno reducido (`PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`,
+`LC_ALL`, `XDG_RUNTIME_DIR`), sin claves de proveedores ni el token del
+broker. Sus archivos van a un directorio privado `oid-XXXXXX` con modo 0700,
+que el driver crea bajo `<datos>/browser-runtime` cuando esa ruta es corta y
+bajo `/tmp` cuando no: Chromium crea sockets Unix por debajo de su raíz
+temporal y una ruta válida para archivos puede superar el límite de
+`sockaddr_un`. Nunca se usa el `TMPDIR` heredado, que puede pertenecer a un
+`nix-shell` que ya terminó. Cerrar la pestaña mata el grupo de procesos de
+Chrome y borra ese directorio antes de devolver el control; el cierre espera
+hasta un segundo a que el trabajador termine. Si la aplicación muere sin
+ejecutar destructores, Chrome ve cerrarse su tubería y termina solo, y el
+directorio lo recoge el siguiente arranque. El detalle está en
+[Driver del navegador](browser-driver.md#proceso-y-transporte).
 
-Antes de importar Playwright, el bridge crea un subdirectorio privado con modo
-0700. En Unix mantiene corta la raíz temporal: si la ruta administrada es
-demasiado profunda, usa una carpeta aleatoria `/tmp/oid-XXXXXX`. Chromium crea
-sockets Unix por debajo de esa raíz; una ruta válida para archivos puede
-superar el límite de `sockaddr_un` y fallar con `Socket path too long`.
-El cierre normal o por señal elimina sólo la carpeta creada por ese proceso.
-Los instaladores también reciben temporales propios, eliminados al finalizar.
-No se recrea un directorio efímero externo que ya fue borrado.
+### Qué navegador se usa
 
-En sistemas habituales se usa el Chromium instalado por Playwright. En NixOS,
-si existe, se selecciona el ejecutable empaquetado `chromium`,
-`chromium-browser`, `google-chrome-stable` o `google-chrome` del `PATH`: su
-wrapper proporciona las bibliotecas que no encuentra el binario Linux genérico
-descargado. `OPENIDE_BROWSER_EXECUTABLE` permite elegir explícitamente una ruta.
-En ambos casos se mantiene `chromiumSandbox: true` y un perfil temporal nuevo.
-El ejecutable debe ser compatible con Playwright; su documentación recomienda
-la distribución asociada y advierte que un `executablePath` externo requiere
-validación. [BrowserType.launch](https://playwright.dev/docs/api/class-browsertype#browser-type-launch).
+No se descarga ni se instala nada. Al iniciar cada contexto se busca, en este
+orden:
+
+1. El ejecutable de `OPENIDE_BROWSER_EXECUTABLE`, por ruta o por nombre en el
+   `PATH`. Si la variable apunta a algo que no existe se informa eso; no se
+   elige otro navegador en su lugar.
+2. Un Chrome, Chromium o Edge del sistema, en ese orden: por nombre en el
+   `PATH` (`google-chrome-stable`, `google-chrome`, `chromium`,
+   `chromium-browser`, `microsoft-edge-stable`, `microsoft-edge`; en Windows
+   `chrome` y `msedge`) y después en los lugares habituales de cada sistema
+   (`/opt/google/chrome`, `/snap/bin`; `/Applications` y `~/Applications`;
+   `Program Files`, `Program Files (x86)` y `LocalAppData`).
+3. Salvo en NixOS, donde ese binario genérico no encuentra sus bibliotecas, el
+   Chromium que una versión anterior de la aplicación haya descargado en
+   `<datos>/browser-runtime/deps/node_modules/playwright-core/.local-browsers/`,
+   la revisión más nueva.
+
+Si no hay ninguno, el panel muestra «No se encontró un navegador», dice qué
+instalar o qué variable definir y ofrece **Reintentar**, que abre un contexto
+nuevo y vuelve a buscar. El sandbox de Chromium queda siempre activo.
 
 El host pasa la escala de la ventana al iniciar el contexto: el
-`pixels_per_point` de egui, acotado a 1–3 y redondeado a dos decimales. El
-bridge lanza Chromium con `--force-device-scale-factor` y crea el contexto con
-el mismo `deviceScaleFactor`; con la emulación sola, los cuadros del screencast
-siguen saliendo a 1x. El viewport CSS sigue siendo el tamaño lógico de la
+`pixels_per_point` de egui, acotado a 1–3 y redondeado a dos decimales. Chrome
+se lanza con `--force-device-scale-factor`; con la emulación sola, los cuadros
+del flujo saldrían a 1x. El viewport CSS sigue siendo el tamaño lógico de la
 región visible, así que las coordenadas enviadas a la página no cambian. La
 escala queda fija mientras viva el contexto: si la ventana pasa a un monitor
 con otra, la página conserva la anterior y se muestra reescalada hasta
 **Reiniciar navegador**.
 
-Abrir la pestaña no instala nada. **Instalar navegador** instala la biblioteca
-y los binarios administrados; no añade bibliotecas al sistema ni modifica el
-perfil del usuario. En NixOS hace falta un navegador empaquetado compatible, o
-un entorno que proporcione las bibliotecas requeridas por el binario de
-Playwright. [Instalación de navegadores](https://playwright.dev/docs/browsers).
+El transporte del driver existe sólo para Unix. En Windows la aplicación
+compila y el panel muestra «Este sistema todavía no tiene un transporte para
+iniciar el navegador.» **Ese camino no se compiló ni se probó**: el entorno
+de desarrollo sólo tiene la biblioteca estándar de Linux.
 
 ## Interacción, errores y límites
 
@@ -61,17 +88,18 @@ geometría de la página al mostrar progreso, cola o un rechazo de entrada.
 
 La misma barra compacta se usa en IDE y Agentes: 32 px de alto, controles y
 dirección de 24 px, iconos de 16 px y margen de 4 px. El viewport del runtime
-descuenta estas medidas también antes de recibir la primera captura; mostrar
+descuenta estas medidas también antes de recibir el primer cuadro; mostrar
 la terminal conserva la correspondencia entre el área renderizada y las
 coordenadas enviadas al navegador.
 
 El contenido tiene estados mutuamente excluyentes: vacío, cargando, página o
-error de carga. Un error de navegación reemplaza la captura de Chrome y elimina
-su región interactiva. Para `ERR_CONNECTION_REFUSED` en localhost se indica que
-hay que verificar el servidor del proyecto y su puerto; la interfaz no inicia
-servidores. **Reintentar** vuelve a navegar si el proceso sigue disponible y
-recrea el contexto sólo si no pudo iniciarse. Los errores de entrada, como una
-copia sin selección, se muestran en el pie y conservan una página válida.
+error de carga. Una página que no cargó reemplaza la vista de Chrome y elimina
+su región interactiva, sea cual sea el texto del motivo. Para
+`ERR_CONNECTION_REFUSED` en localhost se indica que hay que verificar el
+servidor del proyecto y su puerto; la interfaz no inicia servidores.
+**Reintentar** vuelve a navegar si el contexto sigue disponible y abre uno
+nuevo sólo si no pudo iniciarse. Los errores de entrada, como una copia sin
+selección, se muestran en el pie y conservan una página válida.
 
 Las referencias de estructura, leídas sin copiar su implementación, son
 `references/zcode/packages/ui/src/EmbeddedBrowserPaneParts.tsx` (barra y menú)
@@ -79,30 +107,55 @@ y `references/zcode/packages/ui/src/browser-use/BrowserViewportSurface.tsx`
 (prioridad de errores y exclusión de la página fallida). OpenIDE conserva su
 runtime propio y el contexto aislado por conversación.
 
-El bridge soporta dirección HTTP/HTTPS sin credenciales incrustadas, historial,
-recarga, clic, localizadores públicos, texto Unicode, teclas, scroll y resize.
-La ventana envía además el puntero: movimiento, botón presionado y botón
-soltado, en los mismos píxeles CSS. La página recibe así estados `:hover` y
-arrastres (selección de texto, deslizadores); un arrastre que sale de la página
-sigue en su borde más cercano y la suelta se entrega siempre.
-El host envía ambos ejes del trackpad y convierte Shift + rueda vertical en
-desplazamiento horizontal. Pegar y confirmar texto de un método de entrada
-requieren que el viewport visible tenga foco; durante una navegación no se
-envían al documento nuevo. PageUp y PageDown llegan a la página.
-Las URLs `file:`, `javascript:` y similares no forman parte del protocolo.
-Cada respuesta a una herramienta contiene la URL, título, historial, captura
-PNG y, cuando corresponde, árbol accesible. Las respuestas a la entrada de la
-ventana no llevan imagen: su resultado llega por la vista en vivo. Se rechazan
-localizadores ambiguos.
+El runtime acepta dirección HTTP/HTTPS sin credenciales incrustadas, historial,
+recarga, clic, destinos por referencia, rol o selector, texto Unicode, teclas,
+scroll y resize. Las URLs `file:`, `javascript:` y similares no se navegan.
+
+La ventana envía además el puntero, en los mismos píxeles CSS:
+
+- **Movimiento, botón presionado y botón soltado.** La página recibe estados
+  `:hover` y arrastres (selección de texto, deslizadores); un arrastre que
+  sale de la página sigue en su borde más cercano y la suelta se entrega
+  siempre.
+- **Doble y triple clic.** Una pulsación a menos de 500 ms y de 4 píxeles de
+  la anterior es el siguiente clic de la misma serie: el segundo selecciona
+  una palabra y es el `dblclick` de la página, el tercero selecciona el
+  párrafo. La serie se cuenta al presionar, porque egui recién informa un
+  doble clic al soltar.
+- **Botón derecho y botón del medio.** Llegan como un clic completo en el
+  lugar del puntero: la página recibe `contextmenu` o `auxclick`. No se abre
+  un menú del sistema; una página con menú propio muestra el suyo.
+
+Las teclas modificadoras junto con un clic (Shift + clic para extender una
+selección, Ctrl + clic) no se transmiten, y la forma del cursor no cambia
+sobre la página: ver *Lo que no se incluye*. El host envía ambos ejes del
+trackpad y convierte Shift + rueda vertical en desplazamiento horizontal.
+Pegar y confirmar texto de un método de entrada requieren que el viewport
+visible tenga foco; durante una navegación no se envían al documento nuevo.
+PageUp y PageDown llegan a la página.
+
+Cada respuesta a una herramienta contiene la URL, el título, el historial y,
+cuando corresponde, el árbol accesible. La captura PNG del viewport ya no
+acompaña a cada respuesta: se toma sólo para `browser_take_screenshot` y para
+el `browser_snapshot` de un cliente MCP externo, que son quienes la leen. Las
+respuestas a la entrada de la ventana no llevan imagen ni árbol: su resultado
+llega por la vista en vivo. Se rechazan destinos ambiguos.
 
 Para el agente, el árbol accesible lleva referencias de elemento (`[ref=e12]`)
-y el bridge agrega puntero, selección, casillas, arrastre, esperas, evaluación
-de JavaScript en la página, consola, red, capturas y respuesta a diálogos. El
+y hay puntero, selección, casillas, arrastre, esperas, evaluación de
+JavaScript en la página, consola, red, capturas y respuesta a diálogos. El
 catálogo, el ciclo de trabajo, los límites de cada dato y lo que se dejó fuera
-están en [Herramientas del navegador](browser-tools.md). Un fallo que es la
-respuesta de la propia herramienta (una referencia caducada, un script que
-lanza un error, una espera agotada) viaja en `output.error` de una respuesta
-correcta: no se muestra como error de página ni cuenta como efecto incierto.
+están en [Herramientas del navegador](browser-tools.md).
+
+El driver dice qué significa cada fallo y el runtime lo traduce así:
+
+| Clase del driver | Para el agente | Para la ventana |
+| --- | --- | --- |
+| `Tool`: referencia caducada, destino ambiguo, script que lanza, espera agotada | Resultado de error que el modelo lee. No es efecto incierto ni error de página. | No ocurre. |
+| `Invalid`: la solicitud no es aceptable y nada llegó a la página (una tecla que no existe) | Igual que `Tool`. | Error en el pie. |
+| `Failed`: llegó a la página y falló o agotó su plazo | Efecto incierto si la acción modifica. | Error en el pie. |
+| `Navigation`: la página no cargó | Efecto incierto, como toda acción que modifica. | Estado de error de carga. |
+| `Closed`: el navegador o su página ya no están | Se pierde el contexto. | **Reintentar** abre uno nuevo. |
 
 La entrada de la ventana tiene una cola propia limitada a 128 comandos y
 256 KiB, con hasta cuatro operaciones en vuelo. Agrupa texto Unicode y scroll
@@ -110,88 +163,106 @@ adyacentes sin cruzar clics, teclas o navegaciones. De los movimientos del
 puntero en cola sólo sobrevive el más nuevo, con la misma regla; uno que no
 entra en una cola llena se omite sin aviso. Movimiento y rueda van de a uno en
 vuelo, responden sin estado de página y no cuentan como entradas pendientes ni
-reconstruyen la ventana. La cantidad pendiente se
-muestra en la cabecera; si se alcanza un límite se informa que la nueva entrada no
-se envió. Un rechazo anterior al envío conserva las entradas aceptadas para
-despacharlas cuando haya espacio. Las acciones del usuario omiten el árbol
-accesible; las solicitudes del agente mantienen esa información.
+reconstruyen la ventana. La cantidad pendiente se muestra en la cabecera; si
+se alcanza un límite se informa que la nueva entrada no se envió. Un rechazo
+anterior al envío conserva las entradas aceptadas para despacharlas cuando
+haya espacio.
 
-Copiar devuelve la selección al portapapeles nativo sin regenerar PNG ni ARIA.
-Cortar usa dos pasos: obtiene texto y un token, y sólo confirma la eliminación
-después de entregar la copia al host y validar la conversación, pestaña y foco.
-El bridge vuelve a comprobar que el campo, valor y selección no cambiaron.
-Admite corte en `input` y `textarea` editables, y copia de selección normal del
-documento. Los campos de contraseña no permiten copiar ni cortar; los de sólo
-lectura permiten copiar. El corte de `contenteditable` todavía no está
-implementado. La selección transferida tiene un máximo de 16 KiB y no se
-retiene en el snapshot compartido con herramientas.
+Copiar devuelve la selección al portapapeles nativo sin leer el árbol ni
+capturar nada. Cortar usa dos pasos: obtiene texto y un token, y sólo confirma
+la eliminación después de entregar la copia al host y validar la conversación,
+pestaña y foco. El driver vuelve a comprobar que el campo, valor y selección
+no cambiaron. Admite corte en `input` y `textarea` editables, y copia de
+selección normal del documento. Los campos de contraseña no permiten copiar ni
+cortar; los de sólo lectura permiten copiar. El corte de `contenteditable`
+todavía no está implementado. La selección transferida tiene un máximo de
+16 KiB y no se retiene en el estado compartido con herramientas.
 
-Las capturas tienen un máximo de 2 MiB; el protocolo JSONL, 4 MiB por respuesta
-y 64 KiB por solicitud; el árbol accesible, 64 KiB. Hay una página por contexto,
-sin descargas ni ventanas emergentes. La cola Rust admite 16 comandos; el proxy
-MCP acepta hasta cuatro solicitudes simultáneas y sólo contacta su broker local
-autenticado. La vista es un flujo de cuadros de Chromium, descrito en
-**Vista en vivo**; no es un WebView: no promete audio ni reproducción de video,
-formas del cursor, doble clic ni la latencia de un navegador de escritorio.
+Las capturas tienen un máximo de 2 MiB y el árbol accesible, 64 KiB. Hay una
+página por contexto, sin descargas ni ventanas emergentes. La cola Rust admite
+16 comandos. El broker acepta cuatro conexiones a la vez, una solicitud de
+hasta 64 KiB por conexión y responde hasta 4 MiB. La vista es un flujo de
+cuadros de Chromium, descrito en **Vista en vivo**; no es un WebView: no
+promete audio ni reproducción de video, formas del cursor ni la latencia de un
+navegador de escritorio.
 
-Si el compositor de Chromium todavía no tiene un frame después de navegar,
-se reintenta una vez **la captura**, nunca el clic o la escritura que la causó.
-La consulta periódica de estado no borra el error de navegación anterior. La
-interfaz muestra una explicación breve con detalle al pasar el puntero; una
-acción explícita posterior puede resolverla. La pérdida del proceso exige un
-contexto nuevo, para conservar la identidad de las herramientas pendientes.
-**Reintentar** conserva el destino HTTP/HTTPS y lo abre una sola vez cuando el
-nuevo contexto está listo, incluso si se cambió de pestaña mientras arrancaba.
-La barra conserva esa dirección durante `about:blank` y ante una página de
-error interna; sólo una navegación confirmada puede sustituirla. No se
-reproducen clics, formularios ni escritura de la instancia anterior.
+La consulta periódica de estado no borra el error de una navegación o de una
+entrada que falló, ni el aviso de un flujo detenido: los conserva hasta la
+siguiente acción explícita. La interfaz muestra una explicación breve con
+detalle al pasar el puntero. La pérdida del proceso exige un contexto nuevo,
+para conservar la identidad de las herramientas pendientes. **Reintentar**
+conserva el destino HTTP/HTTPS y lo abre una sola vez cuando el nuevo contexto
+está listo, incluso si se cambió de pestaña mientras arrancaba. La barra
+conserva esa dirección durante `about:blank` y ante una página de error
+interna; sólo una navegación confirmada puede sustituirla. No se reproducen
+clics, formularios ni escritura de la instancia anterior.
+
+## Conexión MCP externa
+
+**Copiar conexión MCP** copia la configuración de un servidor MCP por stdio:
+el propio ejecutable de la aplicación con `--browser-mcp`, y en su entorno
+`OPENIDE_BROWSER_BROKER` (`127.0.0.1:<puerto>`) y `OPENIDE_BROWSER_TOKEN` (64
+dígitos hexadecimales, uno por contexto). Además viaja sólo lo que el sistema
+necesita para volver a cargar ese ejecutable (`LD_LIBRARY_PATH` y sus
+equivalentes): sin eso un binario compilado dentro de `nix-shell` no arranca
+con el entorno vacío.
+
+Ese modo se atiende antes que cualquier otra cosa en `main`: no abre una
+ventana, no inicializa la GPU, no lee configuración y no crea archivos. Sólo
+transporta solicitudes acotadas al broker de su contexto; el navegador sigue
+siendo de la ventana.
+
+- Una línea JSON-RPC de entrada admite 64 KiB; una más larga termina el
+  proceso con código 1. Una respuesta admite 4 MiB.
+- Hasta cuatro solicitudes esperan al broker a la vez; la quinta recibe
+  «Browser request queue is full.». Una solicitud deja su lugar justo antes de
+  que se escriba su respuesta, así que quien ya la leyó puede reutilizar el
+  identificador y el lugar.
+- Cada solicitud usa una conexión propia. `notifications/cancelled`, el cierre
+  de la entrada estándar y el fin del proceso cierran esa conexión, que es la
+  cancelación que el broker entiende: una acción en cola no llega a
+  ejecutarse; una ya despachada pudo tener efecto. Una solicitud cancelada no
+  recibe respuesta.
+- El broker tiene 75 s para contestar.
+- Las señales terminan el proceso sin manejador propio: el sistema cierra sus
+  conexiones y el broker las ve como cancelaciones.
 
 ## Vista en vivo
 
-Mientras la superficie está visible, el bridge mantiene un screencast de CDP
-(`Page.startScreencast`, JPEG de calidad 80) en una sesión propia. Chromium
-entrega un cuadro cada vez que su compositor tiene uno y el bridge lo emite
-por stdout como una línea de evento no solicitada, junto a las respuestas:
+Mientras la superficie está visible, el trabajador mantiene el flujo de
+cuadros del driver (`Page.startScreencast`, JPEG de calidad 80). Oculta, lo
+detiene: Chrome deja de codificar y no llega ningún cuadro. Al volver a
+mostrarse, la pestaña pinta su último cuadro, pero la página no recibe entrada
+hasta el primer cuadro del flujo nuevo. La URL, el título y el historial se
+consultan cada 300 ms mientras está visible y sin comandos; es una sola
+consulta al protocolo, sin imagen.
 
-```json
-{"event":"frame","seq":12,"format":"jpeg","scale":2,"data":"<base64>"}
-{"event":"stream_lost","error":"…"}
-```
+**Contrapresión.** Chrome espera el acuse de un cuadro antes de enviar otro, y
+el driver lo acusa recién cuando el hilo decodificador lo toma. Si la vista se
+atrasa, Chrome saltea cuadros: en todo el camino hay a lo sumo un cuadro
+codificado esperando y uno decodificado que la ventana todavía no subió, y uno
+más nuevo reemplaza al que nadie tomó. Las respuestas a comandos no comparten
+canal con los cuadros. El hilo decodificador convierte JPEG o PNG en píxeles
+(crate `image`) y el hilo de la interfaz sólo entrega el resultado a
+`limn_egui::present_surface`, que escribe en la misma textura mientras el
+tamaño no cambie.
 
-`format` es `jpeg` o `png` y `scale` son los píxeles de dispositivo por píxel
-CSS del cuadro. Las líneas siguen acotadas a 4 MiB; el base64 que entrega
-Chromium se copia a la línea sin recodificar. El host activa y detiene el flujo
-con `{"type":"stream","enabled":…}` según `set_visible`: oculto no llega
-ningún cuadro. Al volver a mostrarse, la pestaña pinta su último cuadro, pero
-la página no recibe entrada hasta el primer cuadro del flujo nuevo. La URL, el título y el historial se consultan cada 300 ms sin
-imagen (`{"type":"state"}`) mientras está visible y sin comandos.
-
-**Contrapresión.** El bridge confirma un cuadro a Chromium
-(`Page.screencastFrameAck`) recién cuando su línea terminó de drenar. Si el
-host lee despacio, Chromium deja de producir cuadros en lugar de acumularlos:
-sólo esperan los que caben en el pipe y los que tenía en vuelo. Las respuestas
-comparten stdout y quedan, como mucho, detrás de esos cuadros. En el host el
-hilo lector separa eventos de respuestas sin bloquearse; cada etapa guarda un
-solo cuadro y uno más nuevo reemplaza al que nadie tomó. Un hilo propio
-decodifica (JPEG o PNG, con el crate `image`) y el hilo de la interfaz sólo
-entrega el resultado a `limn_egui::present_surface`, que escribe en la misma
-textura mientras el tamaño no cambie. No hay un `RasterImage`, un SHA-256 ni
-una reconstrucción de la ventana por cuadro.
-
-**Nítido en reposo.** 200 ms después del último cuadro, el bridge pide una
-captura PNG a escala de dispositivo por la misma sesión y la envía como cuadro
-`png`. Una página que sigue animando nunca llega a ese plazo; una que cambia
-menos de cinco veces por segundo (un cursor de texto que parpadea) recibe uno
-después de cada cambio. Se conserva el JPEG si la página cambió durante la captura, si el PNG no entra en
-una línea o si el cuadro está reducido por el presupuesto. Un cuadro idéntico
-al anterior no se reenvía: la propia captura provoca uno.
+**Nítido en reposo.** 200 ms después del último cuadro que mostró algo nuevo,
+el trabajador pide una captura PNG a escala de dispositivo
+(`Driver::capture_frame`) y la vista la muestra en lugar del JPEG. Una página
+que sigue animando nunca llega a ese plazo; una que cambia menos de cinco
+veces por segundo recibe una después de cada cambio. La captura se descarta si
+la página cambió mientras se tomaba. Un cuadro idéntico al anterior no es
+novedad: la propia captura hace que Chrome envíe uno, y sin esa regla una
+página quieta se capturaría sin fin.
 
 **Presupuesto.** Un cuadro tiene como máximo 3840 × 2160 píxeles (8 294 400).
 El viewport más grande, 1600 × 1200, entra completo a escala 2. Por encima
-(escala mayor que 2,08 con ese panel) el screencast recibe `maxWidth` y
-`maxHeight`, Chromium reduce el cuadro y el host lo muestra en su tamaño
-lógico, reescalado. Un JPEG que no entra en una línea se descarta y el flujo se
-reinicia con 20 puntos menos de calidad, hasta 20.
+(escala mayor que 2,08 con ese panel) el flujo se inicia con `maxWidth` y
+`maxHeight`, Chrome reduce el cuadro y el host lo muestra en su tamaño lógico,
+reescalado; en ese caso no se pide el cuadro sin pérdida, que tampoco
+entraría. El límite de 4 MiB por línea del protocolo anterior ya no existe, y
+con él la reducción de calidad del JPEG: el driver admite cuadros de 16 MiB.
 
 **Superficie.** La página se pinta con `Element::surface` de limn: el cuadro se
 ancla a la esquina superior izquierda de la región, alineado a la grilla de
@@ -199,44 +270,57 @@ píxeles, y cada píxel suyo ocupa un píxel físico. Un cuadro que difiere de l
 región por un píxel de redondeo se recorta o deja un borde; no se estira. Un
 punto es un píxel CSS, también mientras Chromium alcanza un cambio de tamaño.
 
-**Capturas del agente.** Las herramientas y el proxy MCP reciben la misma
-captura PNG a 1x (`scale: 'css'`) y el mismo árbol accesible, con los mismos
-límites. Con una escala distinta de 1 esa captura hace que Chromium dibuje la
-página a otra escala por un instante: el bridge no envía los cuadros de ese
-momento y, si pudieron ocultar un cambio real, pide el cuadro sin pérdida. Toda
-captura a escala CSS, del viewport, de la página completa o de un elemento, se
-toma dentro de `atCssScale` en el bridge para que eso valga también para ella.
+**Capturas del agente.** `browser_take_screenshot` y el `browser_snapshot`
+externo reciben un PNG a 1x. Con una escala distinta de 1 esa captura hace que
+Chrome dibuje la página a otra escala por un instante, y el flujo lo ve:
+medido con Chrome 150 a escala 2, llega un cuadro de la página reescalada (o
+del tamaño del recorte, 448 × 1600 para una página completa) y después el
+cuadro verdadero, idéntico al anterior. La vista no muestra los cuadros de ese
+momento: los saltea durante la captura y hasta 400 ms después, o hasta que
+vuelve el cuadro que tenía. Lo que un cuadro salteado pudo ocultar lo trae el
+cuadro sin pérdida que sigue.
 
-**Pérdida del flujo.** Si falla la confirmación de un cuadro, la captura sin
-pérdida o la sonda que acompaña a `state`, o si el proceso de la página
-termina, el bridge emite `stream_lost`. El host conserva la página, lo dice en el pie
-(«La vista en vivo se detuvo…») y vuelve a pedir el flujo cada 2 s.
-**Actualizar vista** lo reinicia a pedido.
+**Cambio de tamaño.** Después de un resize el flujo se reinicia con los
+límites del tamaño nuevo y la página recibe su cuadro sin pérdida a ese
+tamaño. A escala 1 Chrome no envía por sí solo un cuadro tras el cambio.
 
-**Mediciones.** Con el bridge de producción el 11 de octubre de 2026, sin la
-ventana: Google Chrome 150 a escala 2 y un viewport de 1280 × 800 (cuadros de
-2560 × 1600), sin otras compilaciones en curso en el equipo:
+**Pérdida del flujo.** Si el flujo no puede iniciarse o falla la captura sin
+pérdida, el trabajador lo detiene, lo dice en el pie («La vista en vivo se
+detuvo…») y vuelve a pedirlo a los 2 s. Si lo que falló es el navegador, se
+pierde el contexto. **Actualizar vista** reinicia el flujo a pedido.
 
-| Medida | Resultado |
-| --- | --- |
-| Cuadros por segundo, página animando | 34–38 (JPEG de unos 308 KiB en base64) |
-| De la rueda al primer cuadro, página animando | mediana 19–22 ms, p90 24–27 ms |
-| De la rueda al primer cuadro, página quieta | mediana 57–63 ms, p90 59–67 ms |
-| Respuesta a la rueda de la ventana | mediana 3 ms |
-| Ida y vuelta de un movimiento del puntero | 16,6 ms (quieta), 29 ms (animando) |
-| Respuesta a un comando durante el flujo | mediana 3–6 ms, máximo 7 ms |
-| Cuadro sin pérdida | 383 KiB en base64, 239–256 ms después del último cuadro |
-| Cuadros decodificados por segundo en el actor Rust, página animando | 37, ninguno reemplazado antes de decodificar |
-| Decodificación en el host, fuera del hilo de la interfaz | JPEG: mediana 9,2 ms, p90 9,7 ms; PNG: mediana 5,2 ms, p90 6,3 ms |
-| Entrega a la textura en el hilo de la interfaz | unos 5 µs por cuadro |
+**Mediciones.** Tomadas el 11 de octubre de 2026 a través del runtime real
+(trabajador, driver, decodificador), sin la ventana, con la prueba
+`real_chrome_measurements` compilada con el perfil `desktop`: Google Chrome
+150.0.7871.46 a escala 2 y un viewport de 1280 × 800 (cuadros de 2560 × 1600),
+carga de un minuto por debajo de 1 y ningún `rustc` en curso. Los tiempos
+hasta un cuadro son hasta el cuadro **ya decodificado y listo para la
+ventana**, así que incluyen la decodificación; las cifras anteriores del
+bridge se tomaban al llegar el cuadro codificado.
 
-Con la página quieta, Chromium solo, sin el bridge, tarda 54–65 ms de la rueda
-al cuadro a esta escala y 22 ms a escala 1: es el costo de rasterizar y
-codificar 4 megapíxeles, no del transporte. A escala 1 el mismo viewport da 60
-cuadros por segundo. Con otras compilaciones en curso en el mismo equipo se
-midieron 11–26 cuadros por segundo. La copia del cuadro a la GPU dentro del
-renderizador (16 MiB por cuadro) no se midió, y nadie verificó todavía estas
-propiedades mirando la ventana real.
+| Medida | Resultado | Cómo se tomó |
+| --- | --- | --- |
+| Lo que el navegador agrega al proceso de la aplicación, sin Chrome | 2,7 MB | PSS de `/proc/self/smaps_rollup` antes de iniciar el contexto y después de abrir una página y leer su árbol, con la vista oculta desde el arranque. Antes era un proceso Node de unos 107 MB. |
+| Procesos de Chrome | 325 MB en 11 procesos | Suma del PSS del grupo de procesos de Chrome en ese mismo momento. |
+| El proceso con la vista mostrando una página quieta, y animada | +61 MB y +65 MB | El mismo PSS con el flujo activo. Son los cuadros decodificados (16 MiB cada uno) y lo que el asignador retiene; esa parte de la vista ya existía con el bridge y no se midió entonces. |
+| Arranque hasta tener el contexto listo | 368 ms; 3,0 s la primera vez | Desde `BrowserRuntime::start` hasta `started`. La primera vez después de que otro entorno usó Chrome tarda unos 3 s, como ya se había medido con el driver solo. |
+| Arranque hasta el primer cuadro | 419 ms | Desde `start`, con la vista visible, hasta el primer cuadro decodificado. Con el contexto ya iniciado y oculto, mostrarlo da su primer cuadro a los 94 ms. |
+| Cuadros por segundo, página animando | 36,0 | Cuadros decodificados contados durante 4 s en la página fixture con una animación CSS. |
+| Cuadros por segundo, desplazamiento continuo | 31,9 | Un paso de rueda cada 16 ms como los envía la ventana, de a uno en vuelo, durante 4 s. |
+| De la rueda al siguiente cuadro, desplazando | mediana 31 ms, p90 60 ms | Desde que se envía cada paso hasta el primer cuadro decodificado posterior. |
+| Respuesta a la rueda de la ventana, desplazando | mediana 30 ms | Chrome contesta un paso de rueda cuando lo procesó, al ritmo de sus cuadros; por eso van de a uno y los siguientes se suman en la cola. En reposo contesta en unos 2 ms. |
+| De la rueda al primer cuadro, página quieta | mediana 64 ms, p90 65 ms | 20 pasos separados por 450 ms de quietud. |
+| Decodificación, fuera del hilo de la interfaz | JPEG de 192 KiB: mediana 8,1 ms; PNG de 224 KiB: 4,4 ms | 40 repeticiones de `decode_frame` sobre un cuadro de esa misma página. |
+| Entrega a la textura en el hilo de la interfaz | unos 3 µs por cuadro | `present_surface` sobre un contexto egui sin GPU. |
+| Cierre | 17 ms, ningún proceso del grupo de Chrome | Desde soltar el runtime hasta que vuelve. |
+
+Con la página quieta el límite es de Chrome: rasterizar y codificar 4
+megapíxeles después de estar en reposo lleva unos 55 ms a esta escala, medido
+también con el driver solo y con Playwright
+([Driver del navegador](browser-driver.md#mediciones)). A escala 1 el mismo
+viewport da 60 cuadros por segundo. La copia del cuadro a la GPU dentro del
+renderizador (16 MiB por cuadro) no se midió, y **nadie verificó todavía
+estas propiedades mirando la ventana real**.
 
 ## Motor: Chromium, Servo y lo que sigue
 
@@ -260,12 +344,18 @@ opción experimental. Playwright no lo maneja.
 
 El flujo comprimido no llega a la frecuencia de la pantalla. El plan acordado:
 
-1. Un manejador propio en Rust sobre el protocolo de Chrome, detrás de los
-   mismos comandos, que reemplaza al proceso Node y a Playwright (unos 119 MB
-   junto a los ~273 MB de Chromium, medidos aquí). La referencia de diseño es
+1. **Hecho.** Vista en vivo a la escala de la ventana, en lugar de capturas
+   periódicas.
+2. **Hecho.** Un manejador propio en Rust sobre el protocolo de Chrome
+   ([`crates/openide-browser`](browser-driver.md)). La referencia de diseño es
    [agent-browser](https://github.com/vercel-labs/agent-browser), que hizo esa
    misma migración. La conexión es por tubería privada, no por un puerto local.
-2. Chromium embebido (CEF) dibujando en una textura compartida de GPU, para
+3. **Hecho (11 de octubre de 2026).** La aplicación usa ese manejador detrás
+   de los mismos comandos y ya no ejecuta Node, npm ni Playwright: desaparecen
+   el proceso Node (unos 107 MB junto a los ~295 MB de Chromium, medidos aquí),
+   el instalador y los dos scripts `.mjs`. El proxy MCP externo es el propio
+   ejecutable.
+4. Chromium embebido (CEF) dibujando en una textura compartida de GPU, para
    mostrar la página sin comprimir a la frecuencia de la pantalla. El mismo
    manejador hablará con CEF, que expone el mismo protocolo dentro del proceso.
 
@@ -306,82 +396,105 @@ están fuera del repositorio, en `../openADE-spike-cef`.
 
 ## Validación reproducible
 
+Las pruebas rápidas forman parte de la suite central y no inician ningún
+navegador:
+
 ```sh
-rtk env OPENIDE_BROWSER_E2E_ARTIFACTS=/tmp/openide-browser-e2e-review \
-  node --test scripts/browser-e2e.mjs
+nix-shell --run "cargo test -p agents-window -- browser_ approval_ui"
 ```
 
-`OPENIDE_PLAYWRIGHT_MODULE_DIR` puede apuntar a una instalación existente de
-Playwright. El valor predeterminado es el directorio administrado de OpenIDE.
-La prueba no instala dependencias y sólo visita un servidor HTTP fixture local.
-Usa el bridge de producción y procesos Node reales; verifica temporal eliminado,
-ruta temporal larga, PNG, Unicode, selección con teclado, localizadores, scroll,
-historial, resize, error de navegación y recuperación, dependencia ausente y
-reintento, limpieza de perfiles y transporte del proxy MCP. Para la vista en
-vivo comprueba, a escala 1 y 2: cuadros mientras la página anima, tamaño igual
-a viewport × escala, ninguno oculta, el cuadro sin pérdida al quedar quieta y
-sin repetirse, respuestas a comandos durante el flujo, un lector detenido que
-no acumula cuadros, capturas del agente a 1x que no llegan a la vista, estado
-`:hover`, selección por arrastre y cuadros al nuevo tamaño tras un resize. Otro
-caso mide el flujo a 2560 × 1600 y lo informa como diagnóstico. También comprueba
-copia, corte en dos fases, rechazo si el campo cambia, campos de sólo lectura,
-contraseñas, `contenteditable` y límites de texto. El broker del
-último caso es una fixture local; no pretende probar el catálogo de permisos
-Rust ni los eventos de la ventana nativa.
+- `browser_runtime_tests.rs` maneja el runtime real (trabajador, driver,
+  decodificador y broker) contra un extremo DevTools guionado en lugar de
+  Chrome, por el mismo punto de reemplazo que usará un Chromium embebido
+  (`Driver::connect`). Cubre el arranque, la falta de navegador y su
+  reintento, el orden de búsqueda del ejecutable, las referencias y cada
+  clase de fallo, la entrada de la ventana con sus botones y clics, el flujo
+  (cuadros sólo mientras es visible, acuse al tomarlos, cuadro repetido, cuadro
+  sin pérdida al quedar quieta y sin repetirse, capturas del agente que no
+  llegan a la vista, presupuesto de píxeles, reinicio tras un resize y flujo
+  que no puede iniciarse), el catálogo, sus límites y el broker.
+- `browser_mcp_tests.rs` ejercita el proxy sobre tuberías contra un broker
+  local de prueba: transporte, solicitudes mal formadas, las cuatro en
+  espera, cancelación, límites de entrada y de salida y cierre.
+- `tests/browser_mcp.rs` ejecuta el binario construido con `--browser-mcp` y
+  el entorno vacío: sirve MCP, sale con código 1 sin su configuración y no
+  crea ningún archivo.
+- `browser_host_tests.rs` verifica el foco, las entradas, la serie de clics,
+  los botones derecho y del medio, el destino de reintento entre
+  conversaciones, la conservación de ráfagas de entrada y el portapapeles con
+  un actor de prueba sin navegador ni sockets. `browser_input_app.rs` contiene
+  las regresiones de orden, agrupación y rechazo antes de modificar una cola
+  llena. `browser_ui_tests.rs` cubre la barra a 240–900 px, los estados de
+  error y la falta de navegador.
 
-Validado el 11 de octubre de 2026 con Playwright 1.63.0 y Google Chrome
-150.0.7871.46 empaquetado por NixOS, con sandbox habilitado: pasaron los nueve
-casos reales, con los dos de las herramientas del agente y los tres del flujo.
-Las pruebas Rust de entorno, limpieza, límites y conservación del
-error están en `browser_runtime_tests.rs`, junto a las del flujo: eventos que
-no entran al canal de respuestas, reemplazo del cuadro que nadie tomó,
-formato y presupuesto de píxeles al decodificar, límites del puntero y de la
-escala, y el aviso de flujo perdido; las compila la suite central.
-`browser_host_tests.rs` verifica además el foco, las entradas, el destino de
-reintento entre conversaciones, la conservación de ráfagas de entrada y el
-portapapeles entre conversaciones con un actor de prueba sin Node, navegador,
-sockets ni acceso al entorno personal, y que el puntero llegue de a un
-movimiento en vuelo y que un arrastre termine donde se suelta.
-`browser_input_app.rs` contiene las regresiones de orden, agrupación y rechazo
-antes de modificar una cola llena. El mapeo 1:1 de la superficie a escala 1,
-1,5 y 2 y la reutilización de su textura se prueban en limn (`limn-egui`).
-
-Dos pruebas Rust opt-in recorren el camino real sin la GPU: el actor, su
-lector y su decodificador contra el bridge y Chromium reales con una página
-servida en localhost, y el costo por cuadro sobre los cuadros que guarda la
-prueba del bridge. Se ejecutan con el perfil optimizado:
+Las pruebas contra Chrome real están ignoradas por defecto y se activan con la
+variable del ejecutable. Usan un perfil descartable bajo un directorio de
+datos temporal y sólo visitan páginas que la propia prueba sirve en localhost:
 
 ```sh
-rtk env OPENIDE_PLAYWRIGHT_MODULE_DIR=<deps> OPENIDE_BROWSER_FRAME_SAMPLES=/tmp/openide-browser-e2e-review \
-  cargo test --profile desktop -p agents-window -- --ignored --nocapture \
-  frame_cost_on_the_decoder the_actor_streams
+OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
+  nix-shell --run "cargo test -p agents-window -- --ignored real_chrome"
 ```
 
-`browser_ui_tests.rs` cubre la barra a 240–900 px, estados de error sin captura,
-acciones del menú y geometría estable del viewport. La revisión visual opt-in
-con fuentes nativas exporta vacío, carga, conexión rechazada, página, menú y
-fallo de arranque a 320 y 640 px, sin lanzar procesos ni servidores:
+- Agente y cliente externo: arranque, navegación, captura con referencias,
+  acción por referencia, capturas reducidas, fallos que son respuestas, página
+  que no carga, y un cliente MCP que pasa por el binario real en modo proxy
+  (lista de herramientas, captura con imagen, clic por referencia). Al cerrar
+  no queda ningún proceso del grupo de Chrome ni su directorio.
+- Vista en vivo a escala 2: cuadros al tamaño de dispositivo, ninguno oculta,
+  página quieta que deja de enviar, capturas del agente que no llegan a la
+  vista, cambio hecho por el agente que sí llega y cuadros al nuevo tamaño
+  tras un resize.
+- Entrada de la ventana: `:hover`, selección por arrastre, doble y triple
+  clic, botones derecho y del medio, rueda, texto, teclas y portapapeles en
+  dos pasos.
+
+Las mediciones de arriba se repiten con el perfil optimizado, sin otra
+compilación en curso:
 
 ```sh
-rtk cargo test -p agents-window browser_ui::visual_tests::export_browser_ui_visual_review -- --ignored
+OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" nix-shell --run \
+  "cargo test --profile desktop -p agents-window -- --ignored --nocapture real_chrome_measurements"
+```
+
+Validado el 11 de octubre de 2026 con Google Chrome 150.0.7871.46 empaquetado
+por NixOS, con sandbox habilitado. Las pruebas del driver solo, también contra
+Chrome real, están en [Driver del navegador](browser-driver.md#validación).
+
+La revisión visual opt-in con fuentes nativas exporta vacío, carga, conexión
+rechazada, página, menú, fallo de arranque y falta de navegador a 240, 320 y
+640 px, sin lanzar procesos ni servidores:
+
+```sh
+nix-shell --run "cargo test -p agents-window browser_ui::visual_tests::export_browser_ui_visual_review -- --ignored"
 ```
 
 Los PNG/SVG se escriben en `/tmp/openide-browser-ui-review`. El contenido de la
-página es una fixture visual identificada; la prueba real del bridge anterior
-es la que valida la comunicación con Chromium.
+página es una fixture visual identificada.
 
-La prueba `scripts/browser-desktop-e2e.py` cubre el recorrido completo desde la
-ventana Wayland real; su última ejecución es anterior a la vista en vivo y no
-se repitió con ella: arranque con `TMPDIR` eliminado, navegación al
-servidor HTTP local, clic de foco, ráfaga de texto Unicode, copia al portapapeles
-del sistema, corte confirmado y pegado íntegro. Pasaron sus cinco comprobaciones.
-Requiere un build con `--features editor-e2e`, Hyprland, `wtype`, `dotool`,
-`grim` y `wl-paste`. Usa un directorio marcado y un workspace aislados; verifica
-el PID antes de enviar entrada. La feature y los argumentos de fixture no se
-incluyen en el build normal.
+`scripts/browser-desktop-e2e.py` y `scripts/dock-desktop-e2e.py` recorren la
+ventana Wayland real (arranque con `TMPDIR` eliminado, navegación a un
+servidor local, foco, texto Unicode, copia, corte y pegado). Su última
+ejecución es anterior a la vista en vivo y a este cambio de driver: **no se
+repitieron**. Ya no necesitan una instalación de Playwright; sí un build con
+`--features editor-e2e`, Hyprland, `wtype`, `dotool`, `grim` y `wl-paste`.
 
 ```sh
-rtk cargo build --profile desktop -p agents-window --features editor-e2e
-rtk python3 scripts/browser-desktop-e2e.py --binary target/desktop/agents-window \
+nix-shell --run "cargo build --profile desktop -p agents-window --features editor-e2e"
+python3 scripts/browser-desktop-e2e.py --binary target/desktop/agents-window \
   --output /tmp/openade-browser-native-e2e
 ```
+
+## Lo que no se incluye
+
+- **Modificadores con el clic.** Shift + clic y Ctrl + clic llegan a la página
+  como un clic simple. El driver toma los modificadores de las teclas que tiene
+  apretadas, y la ventana envía combinaciones completas (`Control+A`), no
+  teclas sueltas: transmitirlos exige que el driver acepte modificadores por
+  evento o que la ventana le envíe la tecla al bajar y al subir.
+- **Forma del cursor.** El protocolo no avisa cuando la página cambia el
+  cursor; habría que consultarlo en cada movimiento.
+- **Descarga de un navegador.** Sin un Chrome, Chromium o Edge instalado el
+  panel lo dice y no hace nada más. El plan es embeber el motor.
+- **Windows.** Falta el transporte de tubería del driver; ver
+  [Otros transportes](browser-driver.md#otros-transportes).

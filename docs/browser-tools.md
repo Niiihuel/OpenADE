@@ -5,8 +5,10 @@ que el usuario está viendo** en el panel, mediante herramientas tipadas y bajo
 la política de permisos del host. El vocabulario, el ciclo de trabajo con
 referencias y las guardas siguen la skill de Playwright de Codex
 (`openai/skills`, `skills/.curated/playwright`, Apache-2.0), que documenta
-`playwright-cli`. Se adopta su forma de trabajar, no su CLI. El proceso, sus
-límites de transporte y la vista están en [Runtime del navegador](browser-runtime.md).
+`playwright-cli`. Se adopta su forma de trabajar, no su CLI ni su biblioteca:
+las herramientas las ejecuta el driver propio en Rust
+([Driver del navegador](browser-driver.md)), sin Node ni Playwright. El
+proceso, sus límites y la vista están en [Runtime del navegador](browser-runtime.md).
 
 Las herramientas se anuncian como `mcp__openide_browser__<nombre>` al motor
 propio y con su nombre simple al proxy MCP externo. Ambos caminos usan el mismo
@@ -20,7 +22,7 @@ o `selector` (un selector que identifique un único elemento).
 
 | Herramienta | Argumentos | Efecto |
 | --- | --- | --- |
-| `browser_snapshot` | — | Lectura |
+| `browser_snapshot` | `interactive_only`, `max_depth`, `selector`, los tres opcionales | Lectura |
 | `browser_navigate` | `url` (HTTP/HTTPS) | Modifica |
 | `browser_back`, `browser_forward`, `browser_reload` | — | Modifica |
 | `browser_click` | destino, o `x` + `y` del viewport | Modifica |
@@ -49,7 +51,9 @@ Las acciones devuelven URL, título, historial y una captura accesible nueva.
 `browser_evaluate`, `browser_console_messages`, `browser_network_requests`,
 `browser_take_screenshot` y `browser_handle_dialog` devuelven sólo su dato junto
 con URL y título, sin el árbol accesible, para que el dato no quede detrás de
-un árbol extenso.
+un árbol extenso. Ninguna respuesta lleva una imagen del viewport, salvo
+`browser_take_screenshot` y el `browser_snapshot` de un cliente MCP externo;
+`screenshot_available` dice si la respuesta trae una.
 
 ## Flujo principal
 
@@ -67,6 +71,34 @@ browser_snapshot {}
 browser_click {"ref":"e3"}
 browser_snapshot {}
 ```
+
+## Capturas reducidas
+
+El árbol completo de una página grande no entra en lo que el motor propio le
+entrega al modelo (16.000 caracteres por resultado). `browser_snapshot` acepta
+tres argumentos opcionales para pedir menos, y su descripción se lo dice al
+modelo:
+
+| Argumento | Efecto |
+| --- | --- |
+| `interactive_only` (booleano) | Sólo lo accionable y los contenedores con nombre que lo agrupan. |
+| `max_depth` (0 a 64) | Deja fuera lo anidado más allá de ese nivel; los elementos más externos son el nivel 0. |
+| `selector` (hasta 1024 bytes) | El subárbol del único elemento que coincide con ese selector CSS. |
+
+```text
+browser_snapshot {"interactive_only":true}
+browser_snapshot {"selector":"main form","max_depth":3}
+```
+
+Un elemento conserva su referencia entre una captura completa y una reducida.
+Una captura con `selector` agrega referencias; una de la página completa
+reemplaza el conjunto. Un selector que no coincide con un elemento visible es
+un error de herramienta. Medido con Chrome real sobre la página fixture de las
+pruebas (40 filas de texto y cinco controles), `interactive_only` deja menos de
+la cuarta parte del texto.
+
+Sólo `browser_snapshot` toma estos argumentos: la captura que acompaña a cada
+acción sigue siendo la completa.
 
 ## Cuándo volver a capturar
 
@@ -134,27 +166,28 @@ valor no serializable se devuelve como texto (`undefined`).
 
 ## Referencias
 
-`browser_snapshot` usa el modo `ai` de `page.ariaSnapshot`, una opción pública
-de Playwright 1.63 que agrega `[ref=…]` e incluye el contenido de los iframes.
-Una referencia se resuelve con `page.locator('aria-ref=e12')`. `page.locator`
-es API pública y `aria-ref` es el motor de selectores que usan las herramientas
-de agente incluidas en el propio Playwright, pero **no figura en la lista de
-motores de selectores documentados** ni en los tipos del paquete instalado. Es
-el único punto de esta integración que depende de un comportamiento no
-documentado como público; está verificado contra Chromium real con la versión
-fijada (1.63.0) y lo cubre la prueba del bridge. La alternativa sólo con API
-documentada sería reconstruir `getByRole(rol, {name}).nth(n)` a partir de
-`ariaSnapshotJSON`; se descartó porque el orden de coincidencias de `getByRole`
-no tiene por qué ser el del árbol y puede señalar otro elemento sin avisar.
+`browser_snapshot` compone su texto a partir del árbol de accesibilidad de
+Chrome, con la forma de `ariaSnapshot({ mode: 'ai' })` de Playwright: una
+línea por elemento con su rol, su nombre y sus estados, y `[ref=…]` en lo que
+tiene caja y recibe eventos del puntero. El contenido de los `<iframe>` va
+incluido, con referencias de la forma `f1e12`. La composición, sus diferencias
+con Playwright y la única pérdida conocida (lo visible dentro de un contenedor
+`aria-hidden` no figura) están en
+[Driver del navegador](browser-driver.md#captura-accesible-y-referencias).
 
-Si la captura en modo `ai` falla, la respuesta conserva el árbol sin
-referencias. Los destinos por rol y nombre o por selector no dependen de ellas.
-No se probó con otra versión de Playwright que la fijada.
+Una referencia nombra un nodo de un documento: antes de actuar se comprueba
+que el marco siga mostrando ese documento y que el nodo siga conectado. Ya no
+se depende del motor de selectores `aria-ref` de Playwright, que no figuraba
+entre sus motores documentados.
 
-Cualquier captura accesible posterior reemplaza el conjunto de referencias
-resolubles. El bridge termina toda respuesta con árbol accesible en modo `ai`,
-de modo que las referencias de la última respuesta siempre son válidas. La
-entrada del usuario no toma capturas accesibles y no las invalida.
+Los destinos por rol y nombre y por selector buscan sólo en el marco
+principal; dentro de un marco se usa una referencia. El selector es CSS: los
+motores propios de Playwright (`text=`, `role=`, `>>`, `:has-text()`) no
+existen aquí.
+
+Si el árbol no pudo leerse después de una acción, la acción no se informa como
+fallida: la respuesta llega sin árbol y el motivo queda en `error`. La entrada
+del usuario no toma capturas accesibles y no invalida las referencias.
 
 ## Límites
 
@@ -179,7 +212,8 @@ El motor propio entrega al modelo como máximo 16.000 caracteres por resultado
 (`max_tool_output_chars`); por eso los registros se limitan a 12 KiB y las
 herramientas de datos no repiten el árbol accesible. Un árbol o un valor
 evaluado más largo que ese máximo llega cortado al modelo del motor propio
-aunque el bridge lo haya entregado completo.
+aunque el runtime lo haya entregado completo: para eso están las
+[capturas reducidas](#capturas-reducidas).
 
 ## Diálogos
 
@@ -225,14 +259,13 @@ imágenes sí la entrega a su modelo. Para leer la página se usa
 - Las URLs de red se devuelven **tal cual**, cortadas a 512 bytes: una URL con
   un token en la consulta lo muestra. No se oculta nada en silencio.
 - Nunca se devuelven cuerpos ni cabeceras de solicitudes o respuestas.
-- `browser_evaluate` ejecuta JavaScript sólo en el contexto de la página.
-  Playwright evalúa la cadena dentro del documento; el proceso Node del bridge
-  no la interpreta y la página no tiene acceso a Node (`process` y `require` no
-  existen). El script puede leer y cambiar lo que la página puede: su DOM, su
-  almacenamiento y las solicitudes de su origen.
-- Un script que bloquea el hilo de la página (un bucle infinito síncrono) deja
-  la página sin responder y el contexto se pierde, igual que si lo hiciera el
-  sitio. Sólo los scripts que no terminan de forma asíncrona se abandonan.
+- `browser_evaluate` ejecuta JavaScript sólo en el contexto de la página:
+  Chrome evalúa la cadena dentro del documento y nada en el proceso de la
+  aplicación la interpreta. El script puede leer y cambiar lo que la página
+  puede: su DOM, su almacenamiento y las solicitudes de su origen.
+- Un script que espera una promesa que no se resuelve se abandona a los 10 s.
+  Uno que nunca cede el hilo de la página (un bucle infinito síncrono) se
+  detiene, y la página sigue funcionando; antes ese caso perdía el contexto.
 - Una acción incierta no se repite automáticamente: primero se inspecciona.
 
 ## Permisos
@@ -246,9 +279,16 @@ script (hasta 4 KiB, como un comando). «Permitir en la sesión» vale para esa
 misma llamada con esos mismos argumentos. En modo Plan las herramientas MCP no
 se anuncian.
 
-La tarjeta y la fila del chat identifican un destino por su referencia
-(`e12`), su selector o su nombre accesible. La referencia no describe el
-elemento por sí sola: se interpreta junto con la captura anterior.
+La tarjeta de aprobación dice qué es una referencia: `botón "Guardar" (e12)`,
+`campo de texto (e5)`. El rol y el nombre son los que imprimió la última
+captura accesible que leyó el agente, que el runtime conserva; el rol se
+muestra en español cuando es uno de los comunes y tal como lo da la captura si
+no. Si la referencia no está en esa captura se muestra sola, como antes. Sólo
+se lee la estructura de la línea de la captura: un nombre o un texto de la
+página que contenga `[ref=…]` no puede hacerse pasar por otro elemento. Un
+destino dado por selector o por nombre accesible se muestra como se escribió.
+`browser_drag`, que nombra dos elementos, sigue mostrando sólo la herramienta.
+La fila del chat mantiene la referencia sola.
 
 El proxy MCP externo (**Copiar conexión MCP**) no pasa por esa política: el
 cliente externo administra sus permisos, igual que para las demás herramientas
@@ -287,22 +327,30 @@ del modelo con la que se verifican y reanudan turnos guardados.
 ## Validación
 
 ```sh
-rtk env OPENIDE_BROWSER_E2E_ARTIFACTS=/tmp/openide-browser-e2e-review \
-  node --test scripts/browser-e2e.mjs
-nix-shell --run "cargo test -p agents-window -- browser_runtime tool_presentation approval_ui environment_runtime"
+nix-shell --run "cargo test -p agents-window -- browser_ tool_presentation approval_ui environment_runtime"
+OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
+  nix-shell --run "cargo test -p agents-window -- --ignored real_chrome"
+OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
+  nix-shell --run "cargo test -p openide-browser --test chrome -- --ignored"
 ```
 
-La prueba del bridge usa Chromium real y sólo visita un servidor HTTP local.
-Cubre referencias (resolución, iframe, estabilidad, caducidad, destino ambiguo
-y sin coincidencias), cada herramienta nueva, la consola y la red con sus
-límites y su reinicio al navegar, `browser_evaluate` (valor, función, elemento,
-error, resultado truncado, script que no termina, ausencia de Node), diálogos
-(descarte predeterminado registrado, aceptación armada con texto, uso único,
-olvido al navegar) y capturas (viewport, elemento, página completa, exceso de
-2 MiB). Las pruebas Rust cubren el catálogo anunciado a ambos clientes, los
-límites de cada esquema, la clasificación de `mutating()`, el resultado
-acotado, el camino de aprobación y las filas del chat.
+La primera línea no necesita un navegador: maneja el runtime real contra un
+extremo DevTools guionado y cubre el catálogo anunciado a ambos clientes, los
+límites de cada esquema, la clasificación de `mutating()`, cada clase de fallo
+(respuesta de herramienta, efecto incierto, página que no carga, contexto
+perdido), las capturas reducidas, el camino de aprobación con la descripción
+de la referencia y las filas del chat.
 
-Validado el 11 de octubre de 2026 con Playwright 1.63.0 y Google Chrome
-150.0.7871.46 empaquetado por NixOS, con sandbox habilitado: los seis casos
-reales pasaron.
+Las otras dos usan Chrome real y sólo visitan un servidor HTTP local. La del
+runtime recorre arranque, captura, acción por referencia, capturas reducidas y
+un cliente MCP externo a través del proxy. La del driver cubre en detalle lo
+que antes cubría la prueba del bridge: referencias (resolución, iframe,
+estabilidad, caducidad, destino ambiguo y sin coincidencias), cada
+herramienta, la consola y la red con sus límites y su reinicio al navegar,
+`browser_evaluate` (valor, función, elemento, error, resultado truncado,
+script que no termina), diálogos (descarte predeterminado registrado,
+aceptación armada con texto, uso único, olvido al navegar) y capturas
+(viewport, elemento, página completa, exceso de 2 MiB).
+
+Validado el 11 de octubre de 2026 con Google Chrome 150.0.7871.46 empaquetado
+por NixOS, con sandbox habilitado.
