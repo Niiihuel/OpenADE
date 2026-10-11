@@ -141,6 +141,15 @@ fn balance_amount(snapshot: &ProviderUsageSnapshot) -> Option<String> {
     })
 }
 
+/// The measured window closest to its limit, with its used percent.
+pub(crate) fn tightest(snapshot: &ProviderUsageSnapshot) -> Option<(&UsageWindow, f64)> {
+    snapshot
+        .windows
+        .iter()
+        .filter_map(|window| Some((window, window.used_percent()?)))
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+}
+
 fn headline(snapshot: &ProviderUsageSnapshot) -> (String, String, Color) {
     if let Some(value) = balance_amount(snapshot) {
         return (value, snapshot.balances[0].label.clone(), theme::FOREGROUND);
@@ -156,16 +165,11 @@ fn headline(snapshot: &ProviderUsageSnapshot) -> (String, String, Color) {
             theme::FOREGROUND,
         );
     }
-    if let Some(window) = snapshot
-        .windows
-        .iter()
-        .find(|window| window.remaining_percent().is_some())
-    {
-        let remaining = window.remaining_percent().unwrap();
+    if let Some((window, used)) = tightest(snapshot) {
         return (
-            format!("{remaining:.0}%"),
-            format!("disponible · {}", window.label),
-            usage_color(100.0 - remaining),
+            amount(used, UsageUnit::Percent),
+            format!("usado · {}", window.label),
+            usage_color(used),
         );
     }
     if let Some(window) = snapshot.windows.first() {
@@ -843,6 +847,7 @@ fn usage_anchor(
     icon: Icon,
     summary: String,
     color: Color,
+    bar: Option<Element>,
     count: usize,
     open: bool,
     width: f32,
@@ -874,6 +879,10 @@ fn usage_anchor(
     .trailing(centered(Icon::ChevronRight, theme::FOREGROUND_SUBTLE).size(Some(16.0), Some(32.0)))
     .filled()
     .sizing(crate::ui_sizing::USAGE_ANCHOR);
+    // Beside the title, so the row keeps its two lines and its height.
+    if let Some(bar) = bar.filter(|_| width >= 200.0) {
+        row = row.meta_element(bar.size(Some(48.0), Some(4.0)).centered_y());
+    }
     if count > 1 {
         row = row.meta_element(
             Text::new(format!("+{}", count - 1), theme::component_palette())
@@ -912,15 +921,22 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
                 .iter()
                 .find(|(id, _, _)| available(id))
         });
-    let (icon, summary, help, color) = if let Some((id, name, _)) = selected {
+    let (icon, summary, help, color, bar) = if let Some((id, name, _)) = selected {
         let snapshot = snapshot(state, id, name);
         let (value, label, color) = headline(&snapshot);
         let out_of_date = stale(&snapshot, now_ms());
+        // A plan's windows are told apart by name: "58% semanal".
+        let plan = tightest(&snapshot).filter(|(window, _)| window.unit == UsageUnit::Percent);
         let detail = if out_of_date {
             "Sin actualizar".to_owned()
+        } else if let Some((window, _)) = plan {
+            format!("{value} {}", window.label.to_lowercase())
         } else {
             value.clone()
         };
+        let bar = plan
+            .filter(|_| !out_of_date)
+            .and_then(|(window, _)| progress(window));
         (
             icon_for_provider(id),
             format!("{name} · {detail}"),
@@ -933,6 +949,7 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
             } else {
                 color
             },
+            bar,
         )
     } else {
         (
@@ -940,12 +957,14 @@ pub(crate) fn sidebar_card(state: &ViewState, width: f32) -> Element {
             "Conectar proveedor".into(),
             "Conecta un proveedor para consultar su cuenta y consumo.".into(),
             theme::FOREGROUND_SUBTLE,
+            None,
         )
     };
     let anchor = usage_anchor(
         icon,
         summary,
         color,
+        bar,
         count,
         state.provider_usage_open,
         content_width,
@@ -1247,6 +1266,80 @@ mod tests {
         tree
     }
 
+    /// Codex as the local read leaves it: (label, used percent, reset in hours).
+    fn codex_local(windows: &[(&str, f64, u64)], age_ms: u64) -> ViewState {
+        let mut state = fixture();
+        only_account(&mut state, "codex");
+        let now = now_ms();
+        let account = state.provider_usage.get_mut("codex").unwrap();
+        account.status = ProviderUsageStatus::Ready;
+        account.local = true;
+        account.plan_label = Some("ChatGPT Pro".into());
+        account.fetched_at_ms = Some(now - age_ms);
+        account.message = Some("Límites de tu última sesión local de Codex.".into());
+        account.windows = windows
+            .iter()
+            .map(|(label, used, hours)| UsageWindow {
+                label: (*label).into(),
+                used: *used,
+                limit: Some(100.0),
+                remaining: Some(100.0 - used),
+                unit: UsageUnit::Percent,
+                reset_at_ms: Some(now + hours * 3_600_000 + 60_000),
+                reset_label: None,
+            })
+            .collect();
+        state
+    }
+
+    #[test]
+    fn local_codex_windows_show_bars_plan_reset_and_honest_age_everywhere() {
+        let bar = |frame: &Frame, color: Color, height: f32| {
+            frame.commands.iter().any(|command| matches!(command,
+                DrawCommand::FillRect { rect, color: painted, .. }
+                    if *painted == color && rect.height == height && rect.width > 0.0))
+        };
+        // Twenty hours old: far past STALE_AFTER, and still not a failure.
+        let mut state = codex_local(&[("Semanal", 58.0, 72)], 72_000_000);
+        let mut tree = native_tree(sidebar_card(&state, 264.0));
+        let frame = tree.layout(Size::new(264.0, 160.0));
+        let painted = frame_text(&frame);
+        assert!(painted.contains("Codex · 58% semanal"), "{painted}");
+        assert!(!painted.contains("Sin actualizar"), "{painted}");
+        assert!(bar(&frame, theme::FOREGROUND, 4.0) && bar(&frame, theme::TRACK, 4.0));
+        let row = frame.regions.iter().find(|r| r.id == "usage_toggle").unwrap().rect;
+        assert_eq!(row.height, 44.0);
+        // A narrow sidebar keeps the text and gives up the bar.
+        let narrow = native_tree(sidebar_card(&state, 180.0)).layout(Size::new(180.0, 160.0));
+        assert!(!bar(&narrow, theme::TRACK, 4.0));
+
+        let mut card = native_tree(provider_card(&state, "codex", 420.0).unwrap());
+        let frame = card.layout(Size::new(420.0, 600.0));
+        let painted = frame_text(&frame);
+        for text in ["58%", "usado · Semanal", "42% restante", "ChatGPT Pro", "Se renueva en 3 d 0 h", "Medido por Codex · hace 20 h"] {
+            assert!(painted.contains(text), "missing {text}: {painted}");
+        }
+        assert!(!painted.contains("se consulta en tu cuenta"), "{painted}");
+        assert!(bar(&frame, theme::FOREGROUND, 4.0));
+
+        state.provider_usage_open = true;
+        let frame = popup_tree(&state, 360.0).layout(Size::new(360.0, 720.0));
+        let painted = frame_text(&frame);
+        for text in ["58% usado", "ChatGPT Pro", "Se renueva en 3 d 0 h", "Medido por Codex · hace 20 h"] {
+            assert!(painted.contains(text), "missing {text}: {painted}");
+        }
+        assert!(!painted.contains("Sin actualizar") && !painted.contains("en su web"));
+
+        // The summary follows the tightest window, in its warning ink from 80 %.
+        let state = codex_local(&[("5 horas", 30.0, 2), ("Semanal", 85.0, 72)], 60_000);
+        let frame = native_tree(sidebar_card(&state, 264.0)).layout(Size::new(264.0, 160.0));
+        assert!(frame_text(&frame).contains("Codex · 85% semanal"));
+        assert!(bar(&frame, theme::WARNING, 4.0));
+        let account = &state.provider_usage["codex"];
+        assert_eq!(tightest(account).map(|(window, used)| (window.label.as_str(), used)), Some(("Semanal", 85.0)));
+        assert_eq!(headline(account).2, theme::WARNING);
+    }
+
     fn only_account(state: &mut ViewState, selected: &str) {
         state.native_provider_id = selected.into();
         for (id, connection) in &mut state.provider_connections {
@@ -1389,7 +1482,8 @@ mod tests {
             assert!(action.rect.x >= 0.0 && action.rect.x + action.rect.width <= width);
             let painted = frame_text(&frame);
             assert!(painted.contains("OpenCode"), "{painted}");
-            assert!(painted.contains("18%"), "{painted}");
+            // The tightest window, not the first one, and by how much is used.
+            assert!(painted.contains("82%") && !painted.contains("18%"), "{painted}");
             assert!(
                 !painted.contains("$7.00"),
                 "unselected balance leaked into summary: {painted}"
@@ -2102,6 +2196,36 @@ mod tests {
                 &format!("usage-popover-{label}"),
                 360.0,
                 520.0,
+            );
+        }
+        // Codex as read from its local sessions.
+        for (name, windows) in [
+            ("58", &[("Semanal", 58.0, 72)][..]),
+            ("85", &[("Semanal", 85.0, 72)][..]),
+            ("both", &[("5 horas", 30.0, 2), ("Semanal", 85.0, 72)][..]),
+        ] {
+            let mut local = codex_local(windows, 72_000_000);
+            export(
+                &mut popup_tree(&local, 264.0),
+                &format!("usage-bars-sidebar-{name}"),
+                264.0,
+                80.0,
+            );
+            let card = Element::column(vec![provider_card(&local, "codex", 420.0).unwrap()])
+                .padding(20.0)
+                .background(theme::BACKGROUND);
+            export(
+                &mut native_tree(card),
+                &format!("usage-bars-settings-{name}"),
+                460.0,
+                360.0,
+            );
+            local.provider_usage_open = true;
+            export(
+                &mut popup_tree(&local, 360.0),
+                &format!("usage-bars-popover-{name}"),
+                360.0,
+                360.0,
             );
         }
         state.provider_usage_open = false;
