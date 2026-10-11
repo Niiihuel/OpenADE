@@ -1674,7 +1674,9 @@ fn execute(
                 None if *full_page => Capture::FullPage,
                 None => Capture::Viewport,
             };
-            let png = view.at_css_scale(scale, || driver.screenshot(capture))?;
+            // Past the viewport Chrome lays the page out again at any scale.
+            let redraws = scale != 1.0 || !matches!(capture, Capture::Viewport);
+            let png = view.while_redrawing(redraws, || driver.screenshot(capture))?;
             reply.output = Some(BrowserToolOutput {
                 data: data(
                     "screenshot",
@@ -1721,7 +1723,7 @@ fn execute(
     if pending.include_image {
         // Reading never changes the page: without the picture the snapshot
         // is still an answer.
-        if let Ok(png) = view.at_css_scale(scale, || driver.screenshot(Capture::Viewport)) {
+        if let Ok(png) = view.while_redrawing(scale != 1.0, || driver.screenshot(Capture::Viewport)) {
             reply.screenshot = Some(Arc::from(
                 base64::engine::general_purpose::STANDARD.encode(&png.data),
             ));
@@ -1759,9 +1761,9 @@ struct Feed {
     epoch: u64,
     /// The last frame of this stream was skipped, not shown.
     skipped: bool,
-    /// An agent capture at CSS scale is making Chrome draw the page at
-    /// another scale, or did until a moment ago. Frames of that moment are
-    /// not the page.
+    /// An agent capture is making Chrome draw the page another way (at CSS
+    /// scale, or past the viewport), or did until a moment ago. Frames of
+    /// that moment are not the page.
     rerendering: bool,
     settling_until: Option<Instant>,
 }
@@ -1788,12 +1790,13 @@ impl LiveView {
         feed.changed_at = Some(Instant::now());
     }
 
-    /// A capture at CSS scale makes Chrome draw the page at another scale
-    /// for a moment, and the stream sees it. The view skips the frames of
-    /// that moment and keeps the last true one, until the frame it had comes
-    /// back or, on a page that moved meanwhile, for `RERENDER_SETTLE`.
-    fn at_css_scale<T>(&self, scale: f32, take: impl FnOnce() -> T) -> T {
-        if scale == 1.0 {
+    /// A capture at CSS scale on a denser display, or one that reaches past
+    /// the viewport, makes Chrome draw the page another way for a moment, and
+    /// the stream sees it. The view skips the frames of that moment and keeps
+    /// the last true one, until the frame it had comes back or, on a page
+    /// that moved meanwhile, for `RERENDER_SETTLE`.
+    fn while_redrawing<T>(&self, redraws: bool, take: impl FnOnce() -> T) -> T {
+        if !redraws {
             return take();
         }
         self.feed().rerendering = true;

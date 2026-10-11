@@ -283,7 +283,9 @@ externo reciben un PNG a 1x. Con una escala distinta de 1 esa captura hace que
 Chrome dibuje la página a otra escala por un instante, y el flujo lo ve:
 medido con Chrome 150 a escala 2, llega un cuadro de la página reescalada (o
 del tamaño del recorte, 448 × 1600 para una página completa) y después el
-cuadro verdadero, idéntico al anterior. La vista no muestra los cuadros de ese
+cuadro verdadero, idéntico al anterior. Una captura que va más allá del
+viewport (página completa o un elemento) provoca lo mismo a cualquier escala:
+a escala 1 llegó un cuadro de 121 × 480. La vista no muestra los cuadros de ese
 momento: los saltea durante la captura y hasta 400 ms después, o hasta que
 vuelve el cuadro que tenía. Lo que un cuadro salteado pudo ocultar lo trae el
 cuadro sin pérdida que sigue.
