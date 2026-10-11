@@ -120,7 +120,6 @@ fn cancelling_a_pause_ends_the_turn_in_place_and_the_setting_is_saved() {
     assert_eq!(app.view.pause.detail_open.as_deref(), Some(session_id.as_str()));
     app.apply_action(UiAction::Clicked { id: format!("pause_model:{session_id}") }, &ctx);
     assert!(app.view.composer_model_menu_open);
-    assert_eq!(app.view.pause.model_note.as_deref(), Some(session_id.as_str()));
     assert!(app.view.pause.sessions.contains_key(&session_id), "the picker changes nothing by itself");
 
     app.apply_action(UiAction::Clicked { id: format!("pause_cancel:{session_id}") }, &ctx);

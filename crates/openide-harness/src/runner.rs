@@ -66,6 +66,10 @@ pub struct AgentRunner {
     native_runtime_identity: Option<NativeRuntimeIdentity>,
     event_journal: Option<Arc<dyn NativeEventJournal>>,
     auto_compaction: Option<AutoCompaction>,
+    /// Models that may write the summary before the turn's own, best first.
+    compaction_models: Vec<Arc<dyn ModelBackend>>,
+    /// Reported tokens per thousand estimated, measured by an earlier turn.
+    token_calibration: Option<u32>,
     session_approvals: Option<(Arc<SessionStore>, CommandIsolation)>,
     user_interaction: Option<Arc<SessionStore>>,
     native_steering_store: Option<Arc<SessionStore>>,
@@ -296,6 +300,8 @@ impl AgentRunner {
             native_runtime_identity: None,
             event_journal: None,
             auto_compaction: None,
+            compaction_models: Vec::new(),
+            token_calibration: None,
             session_approvals: None,
             user_interaction: None,
             native_steering_store: None,
@@ -435,6 +441,83 @@ impl AgentRunner {
             compatibility,
         });
         self
+    }
+
+    /// Models tried, in order, to summarise a conversation that does not fit
+    /// this turn's model: the route the conversation came from, then any
+    /// other connected one. A model whose limit is closed is skipped; the
+    /// turn's own model is always the last candidate.
+    pub fn with_compaction_models(mut self, models: Vec<Arc<dyn ModelBackend>>) -> Self {
+        self.compaction_models = models;
+        self
+    }
+
+    /// Start the budget from the ratio an earlier turn measured, so the
+    /// first request after a model switch is not estimated blind.
+    pub fn with_token_calibration(mut self, ratio_permille: Option<u32>) -> Self {
+        self.token_calibration = ratio_permille;
+        self
+    }
+
+    /// Summarise the completed prefix with the best model available. None:
+    /// no candidate could, and the caller falls back to trimming.
+    async fn compact_for_fit(
+        &self,
+        config: &AutoCompaction,
+        lease: &NativeSessionLease,
+        budget: &CheckpointBudgetSnapshot,
+        cancel: &CancellationToken,
+    ) -> Result<Option<crate::CheckpointCommit>, AgentError> {
+        let candidates = self
+            .compaction_models
+            .iter()
+            .chain(std::iter::once(&self.model));
+        for (index, model) in candidates.enumerate() {
+            let own = index == self.compaction_models.len();
+            // Its account or its model family is known to be closed.
+            if crate::limit_gate::pause_before_request(model.as_ref(), &[], 0, true).is_some() {
+                continue;
+            }
+            // The budget is the target's: another model reads the history
+            // with its own window, which this turn does not know.
+            let budget = if own {
+                budget.clone()
+            } else {
+                CheckpointBudgetSnapshot::unverified(
+                    budget.estimated_input_tokens,
+                    budget.observed_input_tokens,
+                )
+            };
+            let mut coordinator = CheckpointCoordinator::new(
+                config.sessions.clone(),
+                config.checkpoints.clone(),
+                model.clone(),
+                config.compatibility.clone(),
+                budget,
+            );
+            if !own {
+                coordinator = coordinator.with_foreign_summarizer();
+            }
+            match coordinator.compact_completed_prefix(lease, cancel.clone()).await {
+                Ok(committed) => return Ok(Some(committed)),
+                // Nothing to summarise, whoever is asked.
+                Err(CheckpointCoordinatorError::NoNewHistory) => return Ok(None),
+                Err(CheckpointCoordinatorError::Compact(AgentError::Cancelled)) => {
+                    return Err(AgentError::Cancelled)
+                }
+                // A limited model is skipped, not fatal: its gate closes so
+                // the tree stops asking it, and the next candidate is tried.
+                Err(CheckpointCoordinatorError::Compact(AgentError::Provider(failure))) => {
+                    let _ = crate::limit_gate::pause_for_failure(model.as_ref(), &failure, 0);
+                }
+                // It could not read or summarise this history: try the next.
+                Err(_error) => {
+                    #[cfg(test)]
+                    eprintln!("compact_for_fit candidate failed: {_error}");
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Starts a worker thread. Callers may poll `handle.events` from a synchronous UI loop.
@@ -1095,7 +1178,11 @@ impl AgentRunner {
                 .map_err(|error| AgentError::InvalidRequest(format!("admitted images: {error}")))?,
         );
         let mut tool_count = 0usize;
-        let mut budget_state = TokenBudgetState::default();
+        let mut budget_state = self
+            .token_calibration
+            .map_or_else(TokenBudgetState::default, TokenBudgetState::calibrated);
+        let mut output_continuations = 0usize;
+        let mut context_retry_used = false;
         for step in 1..=self.limits.max_model_steps {
             self.process_manual_commands(native.lease, &cancel).await?;
             if cancel.is_cancelled() {
@@ -1134,9 +1221,6 @@ impl AgentRunner {
                             assessment.projected_input_tokens.saturating_add(policy.tool_schema_reserve_tokens)
                         } else { assessment.projected_total_tokens }, assessment.auto_compact_threshold_tokens
                     );
-                    let (Some(config), Some(lease)) = (&self.auto_compaction, native.lease) else {
-                        return Err(AgentError::Limit(limit_message));
-                    };
                     let budget = CheckpointBudgetSnapshot {
                         input_limit_tokens: policy.input_limit_tokens,
                         context_window_tokens: policy.context_window_tokens,
@@ -1146,58 +1230,65 @@ impl AgentRunner {
                         tool_schema_reserve_tokens: policy.tool_schema_reserve_tokens,
                         limits_unverified: false,
                     };
-                    let coordinator = CheckpointCoordinator::new(
-                        config.sessions.clone(),
-                        config.checkpoints.clone(),
-                        self.model.clone(),
-                        config.compatibility.clone(),
-                        budget,
-                    );
-                    let committed = match coordinator
-                        .compact_completed_prefix(lease, cancel.clone())
-                        .await
-                    {
-                        Ok(committed) => committed,
-                        Err(CheckpointCoordinatorError::NoNewHistory) => {
+                    // A summary first: it keeps what happened. Only when no
+                    // model can write one are old tool outputs cut instead.
+                    let committed = match (&self.auto_compaction, native.lease) {
+                        (Some(config), Some(lease)) => {
+                            self.compact_for_fit(config, lease, &budget, &cancel).await?
+                        }
+                        _ => None,
+                    };
+                    let notice = if let Some(committed) = committed {
+                        if committed.replay.recovery
+                            != (ReplayRecovery::ReadyForModel { next_step: step })
+                            || committed
+                                .replay
+                                .active_turn
+                                .as_ref()
+                                .is_none_or(|turn| turn.prompt != active_prompt)
+                            || committed.replay.active_tool_catalog_digest.as_deref()
+                                != Some(catalog.digest_hex().as_str())
+                        {
+                            return Err(AgentError::Runtime(
+                                "compaction did not preserve the active turn and tool catalog".into(),
+                            ));
+                        }
+                        sink.forward_persisted(committed.marker_event)?;
+                        let system = messages
+                            .first()
+                            .cloned()
+                            .ok_or_else(|| AgentError::Runtime("system context is missing".into()))?;
+                        messages = vec![system];
+                        messages.extend(committed.replay.history);
+                        current_prompt_index = messages
+                            .iter()
+                            .rposition(|message| message.role == MessageRole::User)
+                            .ok_or_else(|| {
+                                AgentError::Runtime("compaction lost the active user input".into())
+                            })?;
+                        if let Some(context_policy) = self.context_policy {
+                            context_policy.compact(&mut messages, &mut current_prompt_index)?;
+                        }
+                        openide_core::NOTICE_CONTEXT_SUMMARIZED
+                    } else {
+                        let stubbed = crate::context::stub_largest_tool_results(
+                            &mut messages,
+                            KEEP_RECENT_TOOL_RESULTS,
+                            |messages| {
+                                policy
+                                    .assess_request(
+                                        &mut budget_state.clone(),
+                                        messages,
+                                        catalog.definitions(),
+                                    )
+                                    .is_ok_and(|fit| fit.decision == TokenBudgetDecision::Continue)
+                            },
+                        );
+                        if stubbed == 0 {
                             return Err(AgentError::Limit(limit_message));
                         }
-                        Err(CheckpointCoordinatorError::Compact(error)) => return Err(error),
-                        Err(error) => {
-                            return Err(AgentError::Runtime(format!(
-                                "semantic compaction failed: {error}"
-                            )));
-                        }
+                        openide_core::NOTICE_CONTEXT_TRIMMED
                     };
-                    if committed.replay.recovery
-                        != (ReplayRecovery::ReadyForModel { next_step: step })
-                        || committed
-                            .replay
-                            .active_turn
-                            .as_ref()
-                            .is_none_or(|turn| turn.prompt != active_prompt)
-                        || committed.replay.active_tool_catalog_digest.as_deref()
-                            != Some(catalog.digest_hex().as_str())
-                    {
-                        return Err(AgentError::Runtime(
-                            "compaction did not preserve the active turn and tool catalog".into(),
-                        ));
-                    }
-                    sink.forward_persisted(committed.marker_event)?;
-                    let system = messages
-                        .first()
-                        .cloned()
-                        .ok_or_else(|| AgentError::Runtime("system context is missing".into()))?;
-                    messages = vec![system];
-                    messages.extend(committed.replay.history);
-                    current_prompt_index = messages
-                        .iter()
-                        .rposition(|message| message.role == MessageRole::User)
-                        .ok_or_else(|| {
-                            AgentError::Runtime("compaction lost the active user input".into())
-                        })?;
-                    if let Some(context_policy) = self.context_policy {
-                        context_policy.compact(&mut messages, &mut current_prompt_index)?;
-                    }
                     budget_state.reset();
                     let reassessment = policy
                         .assess_model_request(
@@ -1208,13 +1299,18 @@ impl AgentRunner {
                             cancel.clone(),
                         )
                         .await?;
-                    if reassessment.decision != TokenBudgetDecision::Continue {
+                    if reassessment.decision == TokenBudgetDecision::Reject {
                         return Err(AgentError::Limit(format!(
-                            "semantic compaction could not fit the next model request: projected {} tokens, threshold {}",
+                            "the conversation still does not fit the model after reducing it: projected {} tokens, threshold {}",
                             reassessment.projected_total_tokens,
                             reassessment.auto_compact_threshold_tokens
                         )));
                     }
+                    // Never silent: the person sees what was done to fit.
+                    sink.emit(AgentEventKind::HostNotice {
+                        code: notice.into(),
+                        detail: self.model.model_id().to_owned(),
+                    })?;
                 }
             }
             let mut model_messages = messages.clone();
@@ -1257,17 +1353,80 @@ impl AgentRunner {
                 },
             )
             .await?;
-            let completion = match self
+            // The target sees a copy it accepts; `messages` and the journal
+            // keep what was said, with the real names and identifiers.
+            let mut adapted = crate::history_adapter::adapt_for(
+                self.model.as_ref(),
+                &model_messages,
+                catalog.definitions(),
+            )?;
+            let mut attempt = self
                 .model_step(
-                    &model_messages,
-                    catalog.definitions(),
+                    &adapted.messages,
+                    &adapted.tools,
                     cancel.clone(),
                     sink,
                     step,
                     native.lease,
                 )
-                .await
-            {
+                .await;
+            // The provider says the request is too large. Learn its limit
+            // when it states one, cut the largest old tool outputs and send
+            // the same step once more, but only if the request really shrank.
+            if let Err(AgentError::Provider(failure)) = &attempt {
+                if failure.class == crate::FailureClass::ContextTooLarge && !context_retry_used {
+                    context_retry_used = true;
+                    let stated = failure.stated_context_limit();
+                    if let Some(limit) = stated {
+                        sink.emit(AgentEventKind::HostNotice {
+                            code: openide_core::NOTICE_CONTEXT_LIMIT.into(),
+                            detail: limit.to_string(),
+                        })?;
+                    }
+                    let size = |messages: &[AgentMessage]| {
+                        crate::context::estimate_input_tokens(messages, catalog.definitions())
+                    };
+                    let before = size(&adapted.messages);
+                    let ratio = u64::from(budget_state.ratio_permille().unwrap_or(1000));
+                    let target = stated
+                        .map(|limit| limit.saturating_mul(800) / ratio)
+                        .unwrap_or(u64::MAX)
+                        .min(before.saturating_mul(7) / 10);
+                    let stubbed = crate::context::stub_largest_tool_results(
+                        &mut messages,
+                        KEEP_RECENT_TOOL_RESULTS,
+                        |messages| size(messages) <= target,
+                    );
+                    let mut retry_messages = messages.clone();
+                    if model_messages.len() == messages.len() + 1 {
+                        retry_messages.insert(1, model_messages[1].clone());
+                    }
+                    let retry = crate::history_adapter::adapt_for(
+                        self.model.as_ref(),
+                        &retry_messages,
+                        catalog.definitions(),
+                    )?;
+                    if stubbed > 0 && size(&retry.messages) < before {
+                        sink.emit(AgentEventKind::HostNotice {
+                            code: openide_core::NOTICE_CONTEXT_TRIMMED.into(),
+                            detail: self.model.model_id().to_owned(),
+                        })?;
+                        budget_state.reset();
+                        adapted = retry;
+                        attempt = self
+                            .model_step(
+                                &adapted.messages,
+                                &adapted.tools,
+                                cancel.clone(),
+                                sink,
+                                step,
+                                native.lease,
+                            )
+                            .await;
+                    }
+                }
+            }
+            let completion = match attempt {
                 // The request was never committed and tools only run after a
                 // commit: the turn pauses in ModelInFlight and can be resent.
                 Err(AgentError::Provider(failure)) => {
@@ -1281,8 +1440,14 @@ impl AgentRunner {
                 }
                 result => result?,
             };
+            let mut completion = completion;
+            adapted.restore(&mut completion);
             if cancel.is_cancelled() {
                 return Err(AgentError::Cancelled);
+            }
+            let truncated = completion.truncated;
+            if truncated && completion.output.content.trim().is_empty() {
+                return Err(AgentError::Model(OUTPUT_LIMIT_WITHOUT_TEXT.into()));
             }
             let mut assistant =
                 AgentMessage::assistant(completion.output.content, completion.output.tool_calls);
@@ -1315,6 +1480,36 @@ impl AgentRunner {
                 sink.emit(AgentEventKind::AssistantMessage {
                     content: assistant.content.clone(),
                 })?;
+                // A response cut at the output limit is asked to go on, a few
+                // times; after that the turn ends with what there is.
+                output_continuations = if truncated { output_continuations + 1 } else { 0 };
+                let continue_output = truncated && output_continuations <= MAX_OUTPUT_CONTINUATIONS;
+                if truncated && !continue_output {
+                    sink.emit(AgentEventKind::HostNotice {
+                        code: openide_core::NOTICE_OUTPUT_LIMIT.into(),
+                        detail: self.model.model_id().to_owned(),
+                    })?;
+                }
+                if continue_output {
+                    if let Some(steering) = &steering {
+                        steering
+                            .store
+                            .enqueue_native_steer(
+                                &sink.session_id,
+                                &steering.turn_id,
+                                &format!("{HOST_CONTINUE_INPUT}{step}"),
+                                OUTPUT_LIMIT_CONTINUATION,
+                            )
+                            .map_err(|error| {
+                                AgentError::Runtime(format!("output continuation: {error}"))
+                            })?;
+                    } else {
+                        messages.push(assistant);
+                        messages.push(AgentMessage::user(OUTPUT_LIMIT_CONTINUATION));
+                        current_prompt_index = messages.len() - 1;
+                        continue;
+                    }
+                }
                 if let Some(steering) = &steering {
                     let response = assistant.content.clone();
                     messages.push(assistant);
@@ -2207,6 +2402,36 @@ impl AgentRunner {
     }
 }
 
+/// Tool results kept whole when older ones are cut to fit a model.
+const KEEP_RECENT_TOOL_RESULTS: usize = 3;
+/// Continuations asked of one response cut at the provider's output limit.
+pub(crate) const MAX_OUTPUT_CONTINUATIONS: usize = 3;
+/// Steering inputs with this prefix were written by the host, not typed.
+pub const HOST_CONTINUE_INPUT: &str = "host-continue-";
+pub(crate) const OUTPUT_LIMIT_CONTINUATION: &str = "Your previous response was cut off by the output limit. Continue exactly where it stopped: do not repeat what you already wrote, and split large tool calls into smaller ones.";
+pub(crate) const OUTPUT_LIMIT_WITHOUT_TEXT: &str =
+    "model stopped at its output limit before any text or a complete tool call";
+
+/// Host continuations already asked since the last tool result or user input.
+pub(crate) fn trailing_output_continuations(events: &[AgentEvent]) -> usize {
+    let mut count = 0;
+    for event in events.iter().rev() {
+        match &event.kind {
+            AgentEventKind::TurnSteered { input_id, .. }
+                if input_id.starts_with(HOST_CONTINUE_INPUT) =>
+            {
+                count += 1
+            }
+            AgentEventKind::TurnSteered { .. }
+            | AgentEventKind::TurnSteeredWithImages { .. }
+            | AgentEventKind::TurnStarted { .. }
+            | AgentEventKind::ToolFinished { .. } => break,
+            _ => {}
+        }
+    }
+    count
+}
+
 /// A delivery failure occurs after ToolStarted. Do not convert it into an
 /// ordinary tool result or execute post hooks after the journal failed.
 fn tool_output_delivery_error(error: AgentError) -> AgentError {
@@ -2476,6 +2701,7 @@ mod tests {
                     usage: None,
                     response_id: None,
                     provider_output_items: vec![],
+                    truncated: false,
                 }),
                 QueuedStreamOutcome::Error => {
                     Err(AgentError::Model("stream failed after publication".into()))
@@ -3488,7 +3714,7 @@ mod tests {
                 event.kind,
                 AgentEventKind::TurnCompleted { .. }
                     | AgentEventKind::TurnFailed { .. }
-                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
             );
             events.push(event);
             if terminal {
@@ -4331,14 +4557,15 @@ mod tests {
         });
         let budget = TokenBudgetPolicy {
             input_limit_tokens: None,
+            // Sized for the estimator's 13 tokens per 40 bytes.
             context_window_tokens: if reject_before_compaction {
-                12_000
+                4_000
             } else {
-                30_000
+                10_000
             },
             output_reserve_tokens: 100,
             tool_schema_reserve_tokens: 100,
-            auto_compact_token_limit: (!reject_before_compaction).then_some(10_000),
+            auto_compact_token_limit: (!reject_before_compaction).then_some(3_600),
         };
         let runner = AgentRunner::new(model.clone(), tool.clone())
             .with_native_runtime_identity("test", "https://test.example/v1")
@@ -4346,10 +4573,11 @@ mod tests {
             .with_auto_compaction(store.clone(), checkpoints.clone(), compatibility.clone());
         let handle = runner.start_with_lease(request, lease);
         let events = receive_until_terminal(&handle);
-        assert!(matches!(
-            events.last().unwrap().kind,
-            AgentEventKind::TurnCompleted { steps: 2, .. }
-        ));
+        assert!(
+            matches!(events.last().unwrap().kind, AgentEventKind::TurnCompleted { steps: 2, .. }),
+            "{:?}",
+            events.last()
+        );
         assert_eq!(tool.executions.load(Ordering::SeqCst), 1);
         let marker = events
             .iter()
@@ -5733,6 +5961,502 @@ mod tests {
         assert!(crate::native_remote_owner(&store, &session_id, "turn-1")
             .unwrap()
             .is_none());
+    }
+
+    /// Cuts its first `cut` responses at the output limit.
+    struct CuttingModel {
+        cut: usize,
+        calls: AtomicUsize,
+        seen: Mutex<Vec<Vec<AgentMessage>>>,
+        caps: crate::TargetCaps,
+    }
+
+    impl CuttingModel {
+        fn new(cut: usize) -> Arc<Self> {
+            Arc::new(Self {
+                cut,
+                calls: AtomicUsize::new(0),
+                seen: Mutex::new(Vec::new()),
+                caps: crate::TargetCaps::PERMISSIVE,
+            })
+        }
+    }
+
+    #[async_trait]
+    impl ModelBackend for CuttingModel {
+        fn model_id(&self) -> &str {
+            "scripted"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([4; 32])
+        }
+        fn target_caps(&self) -> crate::TargetCaps {
+            self.caps
+        }
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            unreachable!()
+        }
+        async fn stream_complete_detailed(
+            &self,
+            messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+            _deltas: tokio::sync::mpsc::UnboundedSender<String>,
+        ) -> Result<crate::ModelCompletion, AgentError> {
+            self.seen.lock().unwrap().push(messages.to_vec());
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            let mut completion = crate::ModelCompletion::from(ModelOutput {
+                content: format!("parte {}", call + 1),
+                tool_calls: vec![],
+            });
+            completion.truncated = call < self.cut;
+            Ok(completion)
+        }
+    }
+
+    /// Writes a summary, or refuses with a provider failure of `class`.
+    struct Summarizer {
+        key: &'static str,
+        fails: Option<crate::FailureClass>,
+        calls: AtomicUsize,
+    }
+
+    impl Summarizer {
+        fn new(key: &'static str, fails: Option<crate::FailureClass>) -> Arc<Self> {
+            Arc::new(Self { key, fails, calls: AtomicUsize::new(0) })
+        }
+    }
+
+    #[async_trait]
+    impl ModelBackend for Summarizer {
+        fn model_id(&self) -> &str {
+            self.key
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([5; 32])
+        }
+        fn limit_key(&self) -> Option<String> {
+            Some(self.key.to_owned())
+        }
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(class) = self.fails {
+                return Err(AgentError::Provider(crate::ProviderFailure::new(class, "HTTP 429")));
+            }
+            Ok(ModelOutput {
+                content: json!({
+                    "objective":"Continue","decisions":[],"files":[],
+                    "current_state":"Earlier turn complete","constraints":[],"remaining_work":[]
+                })
+                .to_string(),
+                tool_calls: vec![],
+            })
+        }
+    }
+
+    /// A session with one completed turn and a second one admitted.
+    fn session_to_compact(dir: &Path) -> (Arc<SessionStore>, AutoCompaction, openide_core::NativeSessionLease) {
+        let root = dir.join("sessions");
+        let store = Arc::new(SessionStore::open(&root).unwrap());
+        let checkpoints = Arc::new(CheckpointFileStore::new(&root).unwrap());
+        let session = store.create(dir, "native").unwrap();
+        let answer = "earlier confirmed result ".repeat(50);
+        let first = store
+            .admit_native_turn(&session.id, "turn-1", "Prior task", "scripted", TurnMode::Build)
+            .unwrap();
+        for (offset, kind) in [
+            AgentEventKind::TurnStarted { prompt: "Prior task".into() },
+            AgentEventKind::ModelRequestStarted { step: 1, model: "scripted".into() },
+            AgentEventKind::ModelResponseCommitted {
+                step: 1,
+                assistant: AgentMessage::assistant(&answer, vec![]),
+                response_id: None,
+                usage: None,
+            },
+            AgentEventKind::AssistantMessage { content: answer.clone() },
+            AgentEventKind::TurnCompleted { response: answer.clone(), steps: 1 },
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            store
+                .append_native_event(&AgentEvent::new(&session.id, first.sequence + 1 + offset as u64, kind))
+                .unwrap();
+        }
+        let lease = store.try_acquire_native_lease(&session.id).unwrap();
+        let second = store
+            .admit_native_turn(&session.id, "turn-2", "Continue", "scripted", TurnMode::Build)
+            .unwrap();
+        store
+            .append_native_event(&AgentEvent::new(
+                &session.id,
+                second.sequence + 1,
+                AgentEventKind::TurnStarted { prompt: "Continue".into() },
+            ))
+            .unwrap();
+        let config = AutoCompaction {
+            sessions: store.clone(),
+            checkpoints,
+            compatibility: CheckpointCompatibility {
+                provider: "test".into(),
+                model: "scripted".into(),
+                context_format_key: "test-v1".into(),
+            },
+        };
+        (store, config, lease)
+    }
+
+    fn fit_budget() -> CheckpointBudgetSnapshot {
+        CheckpointBudgetSnapshot {
+            input_limit_tokens: None,
+            context_window_tokens: 100_000,
+            estimated_input_tokens: 1_000,
+            observed_input_tokens: None,
+            output_reserve_tokens: 100,
+            tool_schema_reserve_tokens: 100,
+            limits_unverified: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn the_summary_is_written_by_the_best_model_available_and_a_limited_one_is_skipped() {
+        use crate::FailureClass::LimitReached;
+        let cancel = CancellationToken::new();
+        // The route the conversation came from can read it: it summarises.
+        let dir = tempfile::tempdir().unwrap();
+        let (store, config, lease) = session_to_compact(dir.path());
+        let previous = Summarizer::new("fit-previous-open", None);
+        let target = Summarizer::new("fit-target-a", None);
+        let runner = AgentRunner::new(target.clone(), Arc::new(EchoTool))
+            .with_compaction_models(vec![previous.clone()]);
+        let committed = runner.compact_for_fit(&config, &lease, &fit_budget(), &cancel).await.unwrap();
+        assert!(committed.is_some());
+        assert_eq!((previous.calls.load(Ordering::SeqCst), target.calls.load(Ordering::SeqCst)), (1, 0));
+        // Additive: the journal grew by the marker and lost nothing.
+        let events = store.load(lease.session_id()).unwrap().unwrap().events;
+        assert!(matches!(events.last().unwrap().kind, AgentEventKind::CheckpointCommitted { .. }));
+        assert!(events.iter().any(|event| matches!(event.kind, AgentEventKind::TurnCompleted { .. })));
+
+        // The previous route is limited: the next candidate summarises, and
+        // the closed limit is remembered instead of asked again.
+        let dir = tempfile::tempdir().unwrap();
+        let (_store, config, lease) = session_to_compact(dir.path());
+        let limited = Summarizer::new("fit-previous-limited", Some(LimitReached));
+        let other = Summarizer::new("fit-other-open", None);
+        let target = Summarizer::new("fit-target-b", None);
+        let runner = AgentRunner::new(target.clone(), Arc::new(EchoTool))
+            .with_compaction_models(vec![limited.clone(), other.clone()]);
+        assert!(runner.compact_for_fit(&config, &lease, &fit_budget(), &cancel).await.unwrap().is_some());
+        assert_eq!(
+            (limited.calls.load(Ordering::SeqCst), other.calls.load(Ordering::SeqCst), target.calls.load(Ordering::SeqCst)),
+            (1, 1, 0)
+        );
+        assert!(crate::limit_gate_check("fit-previous-limited", 0).is_some());
+
+        // Nobody can: no summary, and the caller falls back to trimming.
+        let dir = tempfile::tempdir().unwrap();
+        let (store, config, lease) = session_to_compact(dir.path());
+        let before = store.load(lease.session_id()).unwrap().unwrap().events;
+        let target = Summarizer::new("scripted", Some(LimitReached));
+        let runner = AgentRunner::new(target.clone(), Arc::new(EchoTool))
+            .with_compaction_models(vec![limited.clone()]);
+        assert!(runner.compact_for_fit(&config, &lease, &fit_budget(), &cancel).await.unwrap().is_none());
+        assert_eq!(limited.calls.load(Ordering::SeqCst), 1, "a closed gate is not asked again");
+        assert_eq!(store.load(lease.session_id()).unwrap().unwrap().events, before);
+        for key in ["fit-previous-limited", "scripted"] {
+            crate::limit_gate_clear(key);
+        }
+    }
+
+    /// Refuses requests larger than `limit` bytes of history, as a provider
+    /// with a small window does, and says what its limit is.
+    struct SmallWindow {
+        limit: usize,
+        seen: Mutex<Vec<Vec<AgentMessage>>>,
+    }
+
+    #[async_trait]
+    impl ModelBackend for SmallWindow {
+        fn model_id(&self) -> &str {
+            "small-window"
+        }
+        async fn complete(
+            &self,
+            messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            self.seen.lock().unwrap().push(messages.to_vec());
+            let size: usize = messages.iter().skip(1).map(|message| message.content.len()).sum();
+            if size > self.limit {
+                return Err(AgentError::Provider(crate::ProviderFailure::new(
+                    crate::FailureClass::ContextTooLarge,
+                    "HTTP 400: This model's maximum context length is 8000 tokens. However, your messages resulted in 30000 tokens.",
+                )));
+            }
+            Ok(ModelOutput { content: "entró".into(), tool_calls: vec![] })
+        }
+    }
+
+    fn history_with_tool_outputs(sizes: &[usize]) -> Vec<AgentMessage> {
+        let mut history = vec![AgentMessage::user("tarea anterior")];
+        for (index, size) in sizes.iter().enumerate() {
+            let id = format!("call-{index}");
+            history.push(AgentMessage::assistant(
+                "",
+                vec![ToolCall { id: id.clone(), name: "echo".into(), arguments: json!({}) }],
+            ));
+            history.push(AgentMessage::tool(id, "o".repeat(*size)));
+        }
+        history.push(AgentMessage::assistant("hecho", vec![]));
+        history
+    }
+
+    #[test]
+    fn a_too_large_request_learns_the_limit_trims_and_is_sent_once_more() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = Arc::new(SmallWindow { limit: 20_000, seen: Mutex::new(Vec::new()) });
+        let mut request = request(dir.path().to_path_buf());
+        request.history = history_with_tool_outputs(&[30_000, 400, 300, 200, 100]);
+        let journal = request.history.clone();
+        let events: Vec<_> = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .start(request)
+            .events
+            .into_iter()
+            .collect();
+        assert!(
+            matches!(&events.last().unwrap().kind, AgentEventKind::TurnCompleted { response, steps: 1 } if response == "entró"),
+            "{:?}",
+            events.last()
+        );
+        let notices: Vec<(&str, &str)> = events
+            .iter()
+            .filter_map(|event| match &event.kind {
+                AgentEventKind::HostNotice { code, detail } => Some((code.as_str(), detail.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            notices,
+            [
+                (openide_core::NOTICE_CONTEXT_LIMIT, "8000"),
+                (openide_core::NOTICE_CONTEXT_TRIMMED, "small-window"),
+            ]
+        );
+        // One request of the step in the journal, two attempts on the wire.
+        assert_eq!(
+            events.iter().filter(|event| matches!(event.kind, AgentEventKind::ModelRequestStarted { .. })).count(),
+            1
+        );
+        let seen = model.seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        // The largest old output went; every call still has its result and
+        // the newest results are whole.
+        let retry = &seen[1];
+        assert!(!retry.iter().any(|message| message.content.len() == 30_000));
+        assert!(retry.iter().any(|message| message.content.len() == 100));
+        let calls: usize = retry.iter().map(|message| message.tool_calls.len()).sum();
+        let results = retry.iter().filter(|message| message.role == MessageRole::Tool).count();
+        assert_eq!((calls, results), (5, 5));
+        assert_eq!(journal, history_with_tool_outputs(&[30_000, 400, 300, 200, 100]));
+    }
+
+    #[test]
+    fn a_too_large_request_is_not_sent_again_when_nothing_can_shrink() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = Arc::new(SmallWindow { limit: 10, seen: Mutex::new(Vec::new()) });
+        let mut request = request(dir.path().to_path_buf());
+        // No old tool output to cut: only prose, which is never dropped.
+        request.history = vec![AgentMessage::user("x".repeat(5_000)), AgentMessage::assistant("y".repeat(5_000), vec![])];
+        let events: Vec<_> = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .start(request)
+            .events
+            .into_iter()
+            .collect();
+        assert!(matches!(events.last().unwrap().kind, AgentEventKind::TurnFailed { .. }));
+        assert_eq!(model.seen.lock().unwrap().len(), 1, "the same request is never repeated");
+        assert!(!events.iter().any(|event| matches!(&event.kind,
+            AgentEventKind::HostNotice { code, .. } if code == openide_core::NOTICE_CONTEXT_TRIMMED)));
+
+        // And a second refusal after the one retry ends the turn.
+        let model = Arc::new(SmallWindow { limit: 10, seen: Mutex::new(Vec::new()) });
+        let mut request = self::request(dir.path().to_path_buf());
+        request.history = history_with_tool_outputs(&[30_000, 400, 300, 200, 100]);
+        let events: Vec<_> = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .start(request)
+            .events
+            .into_iter()
+            .collect();
+        assert!(matches!(events.last().unwrap().kind, AgentEventKind::TurnFailed { .. }));
+        assert_eq!(model.seen.lock().unwrap().len(), 2, "retried once, never twice");
+    }
+
+    #[test]
+    fn a_conversation_that_cannot_be_summarised_is_trimmed_with_a_notice() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = Arc::new(SmallWindow { limit: usize::MAX, seen: Mutex::new(Vec::new()) });
+        let mut request = request(dir.path().to_path_buf());
+        request.history = history_with_tool_outputs(&[30_000, 20_000, 300, 200, 100]);
+        // No journal, so no summary can be committed: the fallback applies.
+        let events: Vec<_> = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .with_token_budget_policy(TokenBudgetPolicy {
+                input_limit_tokens: None,
+                context_window_tokens: 8_000,
+                output_reserve_tokens: 500,
+                tool_schema_reserve_tokens: 100,
+                auto_compact_token_limit: None,
+            })
+            .start(request)
+            .events
+            .into_iter()
+            .collect();
+        assert!(matches!(events.last().unwrap().kind, AgentEventKind::TurnCompleted { .. }), "{:?}", events.last());
+        assert!(events.iter().any(|event| matches!(&event.kind,
+            AgentEventKind::HostNotice { code, detail }
+                if code == openide_core::NOTICE_CONTEXT_TRIMMED && detail == "small-window")));
+        let seen = model.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(!seen[0].iter().any(|message| message.content.len() >= 20_000));
+        assert!(seen[0].iter().any(|message| message.content.len() == 300));
+    }
+
+    #[test]
+    fn a_response_cut_at_the_output_limit_is_continued_instead_of_failing() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = CuttingModel::new(2);
+        let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool));
+        let events: Vec<_> = runner.start(request(dir.path().to_path_buf())).events.into_iter().collect();
+        assert!(matches!(
+            &events.last().unwrap().kind,
+            AgentEventKind::TurnCompleted { response, steps: 3 } if response == "parte 3"
+        ));
+        let seen = model.seen.lock().unwrap();
+        let last = &seen[2];
+        assert_eq!(last[last.len() - 2].content, "parte 2");
+        assert_eq!(last[last.len() - 1].content, OUTPUT_LIMIT_CONTINUATION);
+        assert!(!events.iter().any(|event| matches!(event.kind, AgentEventKind::HostNotice { .. })));
+    }
+
+    #[test]
+    fn continuations_are_bounded_and_the_journal_replays_them_as_host_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(dir.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, dir.path());
+        let session_id = request.session_id.clone().unwrap();
+        let model = CuttingModel::new(usize::MAX);
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let runner = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .with_native_runtime_identity("test", "https://test.example/v1")
+            .with_event_journal(store.clone())
+            .with_native_steering(store.clone());
+        let events = receive_until_terminal(&runner.start_with_lease(request, lease));
+        // One response and MAX continuations of it, then the turn ends.
+        assert_eq!(model.calls.load(Ordering::SeqCst), MAX_OUTPUT_CONTINUATIONS + 1);
+        let host_inputs = events
+            .iter()
+            .filter(|event| matches!(&event.kind,
+                AgentEventKind::TurnSteered { input_id, text, .. }
+                    if input_id.starts_with(HOST_CONTINUE_INPUT) && text == OUTPUT_LIMIT_CONTINUATION))
+            .count();
+        assert_eq!(host_inputs, MAX_OUTPUT_CONTINUATIONS);
+        let notice = events
+            .iter()
+            .position(|event| matches!(&event.kind,
+                AgentEventKind::HostNotice { code, .. } if code == openide_core::NOTICE_OUTPUT_LIMIT))
+            .expect("the person is told the answer stayed incomplete");
+        assert!(matches!(events[notice + 1].kind, AgentEventKind::TurnCompleted { steps: 4, .. }));
+        let record = store.load(&session_id).unwrap().unwrap();
+        assert_eq!(trailing_output_continuations(&record.events), MAX_OUTPUT_CONTINUATIONS);
+    }
+
+    #[test]
+    fn the_model_gets_an_adapted_copy_and_its_calls_keep_their_real_names() {
+        struct OldNames;
+        #[async_trait]
+        impl ModelBackend for OldNames {
+            fn model_id(&self) -> &str {
+                "scripted"
+            }
+            fn target_caps(&self) -> crate::TargetCaps {
+                crate::TargetCaps {
+                    vision: false,
+                    tools: true,
+                    tool_call_id: crate::ToolIdRule::Alnum9,
+                    tool_name_max: Some(16),
+                }
+            }
+            async fn complete(
+                &self,
+                messages: &[AgentMessage],
+                tools: &[ToolDefinition],
+                _cancel: CancellationToken,
+            ) -> Result<ModelOutput, AgentError> {
+                assert!(tools.iter().all(|tool| tool.name.len() <= 16));
+                let foreign = messages.iter().find(|message| !message.tool_calls.is_empty()).unwrap();
+                assert_eq!(foreign.tool_calls[0].id.len(), 9);
+                if messages.last().unwrap().role == MessageRole::Tool
+                    && messages.last().unwrap().content == "hello"
+                {
+                    return Ok(ModelOutput { content: "listo".into(), tool_calls: vec![] });
+                }
+                let echo = tools.iter().find(|tool| tool.name.starts_with("echo")).unwrap();
+                Ok(ModelOutput {
+                    content: String::new(),
+                    tool_calls: vec![ToolCall {
+                        id: "id with spaces".into(),
+                        name: echo.name.clone(),
+                        arguments: json!({"text": "hello"}),
+                    }],
+                })
+            }
+        }
+        struct LongEcho;
+        #[async_trait]
+        impl ToolExecutor for LongEcho {
+            fn definitions(&self) -> Vec<ToolDefinition> {
+                vec![ToolDefinition {
+                    name: "echo_with_a_long_name".into(),
+                    description: "echo".into(),
+                    parameters: json!({"type":"object","properties":{"text":{"type":"string"}}}),
+                }]
+            }
+            async fn execute(&self, call: &ToolCall, _context: &ToolContext) -> Result<ToolOutput, AgentError> {
+                assert_eq!(call.name, "echo_with_a_long_name");
+                Ok(ToolOutput { content: call.arguments["text"].as_str().unwrap().into(), is_error: false })
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut request = request(dir.path().to_path_buf());
+        request.history = vec![
+            AgentMessage::user("antes"),
+            AgentMessage::assistant("", vec![ToolCall {
+                id: "toolu_from_another_provider".into(),
+                name: "echo_with_a_long_name".into(),
+                arguments: json!({"text": "x"}),
+            }]),
+            AgentMessage::tool("toolu_from_another_provider", "x"),
+        ];
+        let runner = AgentRunner::new(Arc::new(OldNames), Arc::new(LongEcho));
+        let events: Vec<_> = runner.start(request).events.into_iter().collect();
+        assert!(
+            matches!(&events.last().unwrap().kind, AgentEventKind::TurnCompleted { response, .. } if response == "listo"),
+            "{:?}",
+            events.last()
+        );
+        // The journal names the real tool and the model's own identifier.
+        assert!(events.iter().any(|event| matches!(&event.kind,
+            AgentEventKind::ToolStarted { tool_call }
+                if tool_call.name == "echo_with_a_long_name" && tool_call.id == "id with spaces")));
     }
 
     #[test]

@@ -142,6 +142,8 @@ mod native_settings_choice_app_tests;
 #[path = "native_streaming_app_tests.rs"]
 mod native_streaming_app_tests;
 #[cfg(test)]
+#[path = "model_switch_app.rs"]
+mod model_switch_app;
 #[path = "pause_app_tests.rs"]
 mod pause_app_tests;
 #[cfg(test)]
@@ -444,8 +446,15 @@ pub(crate) fn native_model_backend(
     }
     match connection.wire_api {
         NativeWireApi::Responses => {
+            let model_id_for_caps = connection.model_id.clone();
             let mut model =
                 ResponsesBackend::new(connection.endpoint, connection.api_key, connection.model_id);
+            model = model.with_image_input_enabled(native_image_input_supported(
+                &adapter,
+                &model_id_for_caps,
+                catalog,
+                discoveries,
+            ));
             if provider_id == "codex" {
                 model = model.with_chatgpt_plan().with_bearer_token_provider(
                     crate::provider_connections::codex_token_source(data_root.to_path_buf())?,
@@ -476,6 +485,11 @@ pub(crate) fn native_model_backend(
             )
             .with_capabilities(capabilities)
             .map_err(|error| error.to_string())?;
+            if provider_id == "mistral" {
+                // Mistral refuses a tool call identifier that is not nine
+                // alphanumerics, which no other provider's identifiers are.
+                model = model.with_tool_call_id_rule(openide_harness::ToolIdRule::Alnum9);
+            }
             if let Some(limit) = &output_limit {
                 if adapter
                     .chat_request_fields
@@ -503,9 +517,16 @@ pub(crate) fn native_model_backend(
         NativeWireApi::AnthropicMessages => {
             let maximum =
                 native_output_maximum(&adapter, &connection.model_id, catalog, discoveries);
+            // Ask for what the budget reserves: the model's declared maximum
+            // output when it is known, never the old fixed 4096 that cut long
+            // answers short. An undeclared model keeps that default.
             let tokens = output_limit
                 .as_ref()
                 .map(|limit| limit.tokens)
+                .or_else(|| {
+                    native_token_budget(&adapter, &connection.model_id, catalog, discoveries)
+                        .map(|budget| budget.output_reserve_tokens)
+                })
                 .unwrap_or_else(|| {
                     maximum.map_or(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS, |max| {
                         max.min(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
@@ -790,6 +811,20 @@ fn native_declared_capability(
         })
 }
 
+/// The budget a subagent's identity has always been derived from: the
+/// declared limits with the model's whole maximum output reserved. The budget
+/// a turn runs with reserves less and may follow a learned window; a child's
+/// identity must not move with it, or every child reserved earlier would
+/// stop being resumable.
+pub(crate) fn native_identity_budget(
+    adapter: &native_provider::Adapter,
+    model_id: &str,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
+) -> Option<TokenBudgetPolicy> {
+    declared_token_budget(adapter, model_id, catalog, discoveries, true)
+}
+
 /// Use one exact model's declared pair of limits. Do not combine a partial
 /// account listing with a different/stale catalog or a reviewed output cap.
 pub(crate) fn native_token_budget(
@@ -797,6 +832,16 @@ pub(crate) fn native_token_budget(
     model_id: &str,
     catalog: Option<&CatalogSnapshot>,
     discoveries: &[native_provider::ProviderModelDiscovery],
+) -> Option<TokenBudgetPolicy> {
+    declared_token_budget(adapter, model_id, catalog, discoveries, false)
+}
+
+fn declared_token_budget(
+    adapter: &native_provider::Adapter,
+    model_id: &str,
+    catalog: Option<&CatalogSnapshot>,
+    discoveries: &[native_provider::ProviderModelDiscovery],
+    identity: bool,
 ) -> Option<TokenBudgetPolicy> {
     let selected_adapter = adapter.for_model(model_id).ok()?;
     let adapter = &selected_adapter;
@@ -857,7 +902,9 @@ pub(crate) fn native_token_budget(
                 (adapter.wire_api == NativeWireApi::AnthropicMessages)
                     .then_some(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
             })?;
-        let output_reserve_tokens = if adapter.wire_api == NativeWireApi::AnthropicMessages {
+        let output_reserve_tokens = if !identity {
+            native_output_reserve(maximum, context_window_tokens)
+        } else if adapter.wire_api == NativeWireApi::AnthropicMessages {
             maximum.min(DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS)
         } else {
             maximum
@@ -872,7 +919,48 @@ pub(crate) fn native_token_budget(
     }
     native_provider::native_model_capabilities(&adapter.id, model_id)
         .filter(|capabilities| capabilities.wire_api == adapter.wire_api)?;
-    native_provider::verified_token_budget(&adapter.id, model_id)
+    let mut budget = native_provider::verified_token_budget(&adapter.id, model_id)?;
+    if !identity {
+        budget.output_reserve_tokens =
+            native_output_reserve(budget.output_reserve_tokens, budget.context_window_tokens);
+    }
+    Some(budget)
+}
+
+/// The window budgeted for a route that declares none and has none learned.
+pub(crate) const ASSUMED_CONTEXT_WINDOW: u64 = 128_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ContextWindowSource {
+    /// The provider's listing or the reviewed registry.
+    Declared,
+    /// The limit the provider stated when it refused a request.
+    Learned,
+    /// The bundled model catalog.
+    Catalog,
+    /// Nothing known: `ASSUMED_CONTEXT_WINDOW`.
+    Assumed,
+}
+
+impl ContextWindowSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Declared => "declarada por el proveedor",
+            Self::Learned => "aprendida de un rechazo del proveedor",
+            Self::Catalog => "del catálogo incluido",
+            Self::Assumed => "supuesta (128k) hasta que el proveedor informe la suya",
+        }
+    }
+}
+
+/// Room kept for the answer: the model's maximum output, at most a fifth of
+/// its window so a large maximum cannot crowd the conversation out.
+pub(crate) fn native_output_reserve(maximum: u64, context_window_tokens: u64) -> u64 {
+    if context_window_tokens == 0 {
+        maximum
+    } else {
+        maximum.min(context_window_tokens / 5).max(1)
+    }
 }
 
 /// The one rule every turn path uses to decide whether a provider can
@@ -1218,6 +1306,16 @@ pub struct AgentsWindow {
     active_child_recovery: Option<SubagentRecoveryHandle>,
     /// Paused sessions still to continue, leaves first. One runs at a time.
     pause_resume_queue: std::collections::VecDeque<String>,
+    /// Steps left of a model switch in progress.
+    switch_queue: crate::model_switch::SwitchQueue,
+    /// The turn `start_run` starts for the host instead of the composer's.
+    host_turn: Option<crate::model_switch::HostTurn>,
+    /// `select_composer_route` is being called by the switch itself.
+    model_switch_applying: bool,
+    /// The pause (by its time) each session was last moved to a fallback for.
+    fallback_attempted: BTreeMap<String, u64>,
+    /// The model the person already agreed to summarise the conversation for.
+    summary_acknowledged: Option<String>,
     pending_child_recovery_permission: Option<SubagentPermissionView>,
     active_mcp_oauth: Option<McpOAuthController>,
     active_mcp_inspection: Option<crate::mcp_inspection::McpInspectionController>,
@@ -2638,7 +2736,7 @@ fn history_from_events(events: &[AgentEvent]) -> Vec<AgentMessage> {
                     );
                 }
             }
-            AgentEventKind::TurnCancelled | AgentEventKind::TurnFailed { .. } => {
+            AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } | AgentEventKind::TurnFailed { .. } => {
                 if !calls.is_empty() {
                     flush_tool_batch(
                         &mut history,
@@ -2846,6 +2944,172 @@ impl AgentsWindow {
             })
     }
 
+    /// The budget of a route and where its context window comes from. A
+    /// route that declares none is no longer left unbudgeted: the provider's
+    /// own stated limit, then the bundled catalog, then an assumed 128k.
+    pub(crate) fn native_budget_with_window(
+        &self,
+        adapter: &native_provider::Adapter,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Option<(TokenBudgetPolicy, ContextWindowSource)> {
+        let catalog = self.view.catalog.as_deref();
+        let learned = native_provider::learned_context_limit(&self.data_root, provider_id, model_id);
+        if let Some(mut budget) = native_token_budget(adapter, model_id, catalog, &self.model_discoveries) {
+            // What the provider itself refused beats what a listing declared.
+            let Some(learned) = learned.filter(|limit| {
+                budget.context_window_tokens == 0 || *limit < budget.context_window_tokens
+            }) else {
+                return Some((budget, ContextWindowSource::Declared));
+            };
+            if budget.context_window_tokens == 0 {
+                budget.input_limit_tokens = budget.input_limit_tokens.map(|limit| limit.min(learned));
+            } else {
+                budget.context_window_tokens = learned;
+                budget.output_reserve_tokens = native_output_reserve(budget.output_reserve_tokens, learned);
+            }
+            return Some((budget, ContextWindowSource::Learned));
+        }
+        if !native_request_capabilities(adapter, model_id, catalog, &self.model_discoveries).tool_calls {
+            return None;
+        }
+        let listed = crate::model_metadata::native_route(provider_id, model_id, catalog, &self.model_discoveries)
+            .context_tokens
+            .filter(|tokens| *tokens > 0);
+        let (window, source) = match (learned, listed) {
+            (Some(window), _) => (window, ContextWindowSource::Learned),
+            (None, Some(window)) => (window, ContextWindowSource::Catalog),
+            (None, None) => (ASSUMED_CONTEXT_WINDOW, ContextWindowSource::Assumed),
+        };
+        let maximum = native_output_maximum(adapter, model_id, catalog, &self.model_discoveries)
+            .filter(|maximum| *maximum > 0 && *maximum <= window)
+            .unwrap_or(window / 5);
+        Some((
+            TokenBudgetPolicy {
+                input_limit_tokens: None,
+                context_window_tokens: window,
+                output_reserve_tokens: native_output_reserve(maximum, window),
+                tool_schema_reserve_tokens: 1_000,
+                auto_compact_token_limit: None,
+            },
+            source,
+        ))
+    }
+
+    /// Whether `history` is past the point where `model_id` compacts it.
+    pub(crate) fn history_needs_summary(
+        &self,
+        history: &[AgentMessage],
+        provider_id: &str,
+        model_id: &str,
+    ) -> bool {
+        let Some(budget) = self.token_budget_for_native_model(provider_id, model_id) else {
+            return false;
+        };
+        let text: Vec<AgentMessage> = history
+            .iter()
+            .cloned()
+            .map(|mut message| {
+                message.images.clear();
+                message
+            })
+            .collect();
+        budget
+            .assess_request(&mut openide_harness::TokenBudgetState::default(), &text, &[])
+            .is_ok_and(|fit| fit.decision != openide_harness::TokenBudgetDecision::Continue)
+    }
+
+    /// What a subagent on this route is identified by; see
+    /// `native_identity_budget`. A configured output limit was always part
+    /// of it.
+    fn identity_budget_for_native_model(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Option<TokenBudgetPolicy> {
+        let adapter = native_provider::adapter_for_model_at(&self.data_root, provider_id, model_id)
+            .ok()??;
+        let mut budget = native_identity_budget(
+            &adapter,
+            model_id,
+            self.view.catalog.as_deref(),
+            &self.model_discoveries,
+        )?;
+        if provider_id != "codex" {
+            if let Some(limit) = native_provider::configured_output_limit(
+                &self.data_root,
+                provider_id,
+                model_id,
+                adapter.wire_api,
+            )
+            .ok()?
+            {
+                budget.output_reserve_tokens = limit.tokens;
+            }
+        }
+        Some(budget)
+    }
+
+    fn compaction_models_for(
+        &self,
+        previous: Option<&openide_core::ModelRouteSnapshot>,
+        target_provider: &str,
+        target_model: &str,
+    ) -> Vec<Arc<dyn ModelBackend>> {
+        let build = |provider_id: &str, model_id: &str| -> Option<Arc<dyn ModelBackend>> {
+            if provider_id == target_provider && model_id == target_model {
+                return None;
+            }
+            let settings = NativeProviderSettings {
+                provider_id: provider_id.to_owned(),
+                model_id: model_id.to_owned(),
+                custom_endpoint: self.view.endpoint.clone(),
+            };
+            let connection = settings.resolve_at(&self.data_root).ok()?;
+            if !self.provider_ready_for_turn(provider_id, &connection) {
+                return None;
+            }
+            native_model_backend(
+                connection,
+                provider_id,
+                None,
+                None,
+                &self.data_root,
+                self.view.catalog.as_deref(),
+                &self.model_discoveries,
+            )
+            .ok()
+        };
+        let mut models = Vec::new();
+        let previous = previous.map(|route| (route.provider_id.clone(), route.model_id.clone()));
+        if let Some((provider_id, model_id)) = &previous {
+            models.extend(build(provider_id, model_id));
+        }
+        let declared_window = |provider_id: &str, model_id: &str| {
+            let adapter = native_provider::adapter_for_model_at(&self.data_root, provider_id, model_id)
+                .ok()
+                .flatten()?;
+            native_token_budget(&adapter, model_id, self.view.catalog.as_deref(), &self.model_discoveries)
+                .map(|budget| budget.context_window_tokens.max(budget.input_limit_tokens.unwrap_or(0)))
+        };
+        let target_window = declared_window(target_provider, target_model).unwrap_or(0);
+        let largest = self
+            .view
+            .composer_routes
+            .iter()
+            .filter(|route| route.backend == "native" && route.selectable())
+            .filter(|route| previous.as_ref() != Some(&(route.provider_id.clone(), route.model_id.clone())))
+            .filter_map(|route| {
+                let window = declared_window(&route.provider_id, &route.model_id)?;
+                (window > target_window).then_some((window, route))
+            })
+            .max_by_key(|(window, _)| *window);
+        if let Some((_, route)) = largest {
+            models.extend(build(&route.provider_id, &route.model_id));
+        }
+        models
+    }
+
     fn token_budget_for_native_model(
         &self,
         provider_id: &str,
@@ -2853,12 +3117,7 @@ impl AgentsWindow {
     ) -> Option<TokenBudgetPolicy> {
         let adapter = native_provider::adapter_for_model_at(&self.data_root, provider_id, model_id)
             .ok()??;
-        let mut budget = native_token_budget(
-            &adapter,
-            model_id,
-            self.view.catalog.as_deref(),
-            &self.model_discoveries,
-        )?;
+        let mut budget = self.native_budget_with_window(&adapter, provider_id, model_id)?.0;
         if provider_id == "codex" {
             return Some(budget);
         }
@@ -3652,10 +3911,12 @@ impl AgentsWindow {
                 let open = self.view.pause.detail_open.as_deref() == Some(session_id);
                 self.view.pause.detail_open = (!open).then(|| session_id.to_owned());
             }
+            "pause_fallback" => self.continue_on_fallback(session_id),
             "pause_model" => {
-                // Switching the model of an open turn is refused by resume
-                // (its route must match): open the picker and say so.
-                self.view.pause.model_note = Some(session_id.to_owned());
+                // Picking a route there asks to continue this turn on it.
+                if self.view.selected_session.as_deref() != Some(session_id) {
+                    self.open_session(session_id);
+                }
                 self.view.composer_model_menu_open = true;
             }
             _ => {}
@@ -6175,6 +6436,12 @@ impl AgentsWindow {
             file_delete: None,
             file_clipboard: None,
             transcript: Vec::new(),
+            model_switch: crate::model_switch::SwitchView {
+                ask_before_summary: settings_preferences.ask_before_summary_on_switch,
+                fallback_models: settings_preferences.fallback_models.clone(),
+                auto_fallback: settings_preferences.auto_switch_fallback,
+                ..Default::default()
+            },
             pause: crate::pause::PauseView {
                 auto_enabled: settings_preferences.auto_resume_on_limit,
                 ..Default::default()
@@ -6442,6 +6709,11 @@ impl AgentsWindow {
             active_resume: None,
             active_child_recovery: None,
             pause_resume_queue: Default::default(),
+            switch_queue: Default::default(),
+            host_turn: None,
+            model_switch_applying: false,
+            fallback_attempted: Default::default(),
+            summary_acknowledged: None,
             pending_child_recovery_permission: None,
             active_mcp_oauth: None,
             active_mcp_inspection: None,
@@ -7586,7 +7858,21 @@ impl AgentsWindow {
                     let mut recoveries = BTreeMap::new();
                     let mut plans = BTreeMap::new();
                     let mut pauses = BTreeMap::new();
+                    let mut switches = BTreeMap::new();
                     for record in &listing.sessions {
+                        // A root whose switch stopped half way; a subagent's
+                        // is completed by resuming it.
+                        if let Some(mut switch) = crate::model_switch::unfinished_switch(&record.events)
+                            .filter(|_| record.session.subagent.is_none())
+                        {
+                            switch.error = self
+                                .view
+                                .model_switch
+                                .unfinished
+                                .get(&record.session.id)
+                                .and_then(|known| known.error.clone());
+                            switches.insert(record.session.id.clone(), switch);
+                        }
                         let (recovery, plan, pause) =
                             native_session_views(&self.data_root, record);
                         if let Some(recovery) = recovery {
@@ -7610,8 +7896,29 @@ impl AgentsWindow {
                             plans.insert(record.session.id.clone(), plan);
                         }
                     }
+                    let (usage, subagent_usage) = crate::model_switch::usage_rollup(
+                        listing.sessions.iter().map(|record| {
+                            (
+                                record.session.id.as_str(),
+                                record
+                                    .session
+                                    .subagent
+                                    .as_ref()
+                                    .map(|link| link.parent_session_id.as_str()),
+                                record.events.as_slice(),
+                            )
+                        }),
+                    );
+                    self.view.model_switch.usage = usage;
+                    self.view.model_switch.subagent_usage = subagent_usage;
                     self.view.session_recovery = recoveries;
                     self.view.pause.sessions = pauses;
+                    // While the switch is being carried out the card would
+                    // only offer what is already happening.
+                    if self.switch_queue.is_empty() && self.host_turn.is_none() {
+                        self.view.model_switch.unfinished = switches;
+                    }
+                    self.view.model_switch.proposals = self.fallback_proposals();
                     if self.view.pause.counting() {
                         self.view.pause.clock_ms = crate::pause::wall_clock_ms();
                     }
@@ -8079,7 +8386,7 @@ impl AgentsWindow {
                         AgentEventKind::TurnStarted { .. }
                             | AgentEventKind::TurnCompleted { .. }
                             | AgentEventKind::TurnFailed { .. }
-                            | AgentEventKind::TurnCancelled
+                            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                     );
                 }
                 Ok(SubagentBridgeEvent::Closed { child_session_id }) => {
@@ -8413,6 +8720,9 @@ impl AgentsWindow {
     /// paused sessions being continued.
     fn follow_pause_clock(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = self.drive_pause_queue();
+        changed |= self.drive_switch_queue();
+        changed |= self.sync_tree_usage();
+        changed |= self.arm_auto_fallback();
         if self.view.pause.counting() {
             let now_ms = crate::pause::wall_clock_ms();
             ctx.request_repaint_after(Duration::from_millis(1000 - now_ms % 1000));
@@ -8428,6 +8738,31 @@ impl AgentsWindow {
         changed
     }
 
+    /// The context popover's subagent line: what the whole tree used. Kept
+    /// here because the popover's state is rebuilt from several places.
+    fn sync_tree_usage(&mut self) -> bool {
+        let Some(label) = self
+            .view
+            .selected_session
+            .as_deref()
+            .and_then(|id| self.view.model_switch.tree_usage_label(id))
+        else {
+            return false;
+        };
+        let Some(category) = self
+            .view
+            .native_context
+            .breakdown
+            .iter_mut()
+            .find(|category| category.id == "subagents" && category.value != label)
+        else {
+            return false;
+        };
+        category.value = label;
+        category.detail = "Tokens que el proveedor informó en las respuestas confirmadas de esta conversación y, sumados, en las de todos sus subagentes. Cada subagente tiene su propio journal y su propia ventana de contexto.".into();
+        true
+    }
+
     fn pause_idle(&self) -> bool {
         !self.view.running
             && self.active_run.is_none()
@@ -8441,6 +8776,29 @@ impl AgentsWindow {
     fn arm_auto_resume(&mut self) -> bool {
         if !self.pause_idle() || !self.pause_resume_queue.is_empty() {
             return false;
+        }
+        // A session that is not on screen cannot be continued behind the
+        // person's back by this window: its limit renewing is announced once.
+        let elsewhere: Vec<(String, u64)> = self
+            .view
+            .pause
+            .sessions
+            .iter()
+            .filter(|(id, pause)| {
+                pause.parent.is_none()
+                    && self.view.selected_session.as_deref() != Some(id.as_str())
+                    && matches!(self.view.pause.plan(id, pause),
+                        crate::pause::AutoResume::At(due) if self.view.pause.clock_ms >= due)
+            })
+            .map(|(id, pause)| (id.clone(), pause.paused_at_ms))
+            .collect();
+        for (id, paused_at_ms) in elsewhere {
+            self.view.pause.auto_attempted.insert(id.clone(), paused_at_ms);
+            self.notify_session(
+                crate::notifications::Event::TurnCompleted,
+                "Límite renovado: abrí la tarea para continuar",
+                &id,
+            );
         }
         let Some(session_id) = self.view.selected_session.clone() else {
             return false;
@@ -10693,6 +11051,15 @@ impl AgentsWindow {
         for category in observations.categories {
             projected.set_category(category);
         }
+        // Say where a window that the provider did not declare comes from.
+        if let Some((_, source)) = native_provider::adapter_for_model_at(&self.data_root, &provider, &model)
+            .ok()
+            .flatten()
+            .and_then(|adapter| self.native_budget_with_window(&adapter, &provider, &model))
+            .filter(|(_, source)| *source != ContextWindowSource::Declared)
+        {
+            projected.window_source = source.label();
+        }
         if projected.capacity().is_none() {
             // The engine has no budget for this route. The meter may still
             // fill against a window a named source states; nothing executes
@@ -11069,6 +11436,17 @@ impl AgentsWindow {
                 self.visit_navigation();
             }
             return false;
+        }
+        // A paused turn does not change model in place: it is closed and
+        // continued on the route, after the person confirms.
+        if !self.model_switch_applying
+            && self
+                .view
+                .selected_session
+                .as_ref()
+                .is_some_and(|id| self.view.pause.sessions.contains_key(id))
+        {
+            return self.open_model_switch(&route);
         }
         if self.composer_selection_busy() || self.view.composer_pending.is_some() {
             let desired_effort = self
@@ -11965,8 +12343,16 @@ impl AgentsWindow {
         if self.prepare_composer_mode_command() {
             return;
         }
-        let visible_prompt = self.view.prompt.trim().to_owned();
-        let attachments = self.view.composer_attachments.clone();
+        // The host's own turn (a continuation on another model) uses none of
+        // what is in the composer and leaves the person's draft alone.
+        let host_turn = self.host_turn.take();
+        let (visible_prompt, attachments) = match &host_turn {
+            Some(turn) => (turn.prompt.clone(), Vec::new()),
+            None => (
+                self.view.prompt.trim().to_owned(),
+                self.view.composer_attachments.clone(),
+            ),
+        };
         if visible_prompt.is_empty() && attachments.is_empty() {
             return;
         }
@@ -12024,9 +12410,12 @@ impl AgentsWindow {
         } else {
             composer_prompt_with_attachments(&visible_prompt, &attachments)
         };
-        let native_images = native_attachments
-            .map(|payload| payload.images)
-            .unwrap_or_default();
+        let native_images = match &host_turn {
+            Some(turn) => turn.images.clone(),
+            None => native_attachments
+                .map(|payload| payload.images)
+                .unwrap_or_default(),
+        };
         let submitted_draft_key = self.draft_key();
         let submitted_dock_collapsed = self.dock.is_collapsed(&self.dock_scope());
         let active_goal = self.view.composer_goal.clone();
@@ -12173,7 +12562,7 @@ impl AgentsWindow {
             },
         };
         self.bind_session_start_context(&id);
-        if prompt != visible_prompt {
+        if prompt != visible_prompt && host_turn.is_none() {
             self.record_typed_prompt(&id, &prompt, &visible_prompt);
         }
         if submitted_draft_key.1.is_none() {
@@ -12259,6 +12648,25 @@ impl AgentsWindow {
                 self.view.status = recovery_status(&replay.recovery).to_owned();
                 return;
             }
+            // A conversation that came from another route and does not fit
+            // this one is summarised before the request. With the setting on
+            // the person is asked first: the same send, once more, goes ahead.
+            let changed_route = replay.history_model_route.as_ref().is_some_and(|route| {
+                route.provider_id != turn_settings.provider_id || route.model_id != model_id
+            });
+            let acknowledged = self.summary_acknowledged.take();
+            if self.view.model_switch.ask_before_summary
+                && host_turn.is_none()
+                && changed_route
+                && acknowledged.as_deref() != Some(model_id.as_str())
+                && self.history_needs_summary(&replay.history, &turn_settings.provider_id, &model_id)
+            {
+                self.summary_acknowledged = Some(model_id.clone());
+                self.show_composer_error(format!(
+                    "La conversación no entra en {model_id}. Enviá de nuevo para resumirla y continuar, o elegí otro modelo."
+                ));
+                return;
+            }
             let target_compatibility =
                 native_checkpoint_compatibility(&turn_settings.provider_id, &model_id, wire_api);
             if replay
@@ -12316,6 +12724,28 @@ impl AgentsWindow {
             } else {
                 None
             };
+            // What the last request really cost against what it was estimated
+            // at, so the first request of this turn is not budgeted blind,
+            // also on a model that never saw this conversation.
+            let token_calibration = replay.latest_usage.as_ref().and_then(|usage| {
+                let sent = match replay.history.last() {
+                    Some(last) if last.role == openide_core::MessageRole::Assistant => {
+                        &replay.history[..replay.history.len() - 1]
+                    }
+                    _ => &replay.history[..],
+                };
+                let estimated = openide_harness::estimate_input_tokens(sent, &[]);
+                (estimated > 0 && usage.input_tokens > 0)
+                    .then(|| (usage.input_tokens.saturating_mul(1000) / estimated).min(u64::from(u32::MAX)) as u32)
+            });
+            // Who may summarise if the conversation does not fit this model:
+            // the route it came from, then the connected model with the
+            // largest declared window.
+            let compaction_models = self.compaction_models_for(
+                replay.history_model_route.as_ref(),
+                &turn_settings.provider_id,
+                &model_id,
+            );
             request.history = replay.history;
             request.sequence_start = replay.last_sequence;
             let token_budget =
@@ -12419,6 +12849,9 @@ impl AgentsWindow {
                     return;
                 }
             }
+            child_worker = child_worker.with_identity_budget(
+                self.identity_budget_for_native_model(&turn_settings.provider_id, &model_id),
+            );
             if let Some(budget) = token_budget {
                 child_worker = child_worker.with_token_budget_policy(budget);
             }
@@ -12449,7 +12882,9 @@ impl AgentsWindow {
                 }
             };
             let instructions = full_instructions;
-            let turn_id = Uuid::new_v4().to_string();
+            let turn_id = host_turn
+                .as_ref()
+                .map_or_else(|| Uuid::new_v4().to_string(), |turn| turn.turn_id.clone());
             let session_id = request
                 .session_id
                 .as_deref()
@@ -12485,6 +12920,8 @@ impl AgentsWindow {
                 }
             };
             let mut runner = AgentRunner::new(model, tools)
+                .with_token_calibration(token_calibration)
+                .with_compaction_models(compaction_models)
                 .with_command_hooks(command_hooks)
                 .with_permission_policy(policy)
                 .with_session_approvals(store.clone(), self.agent_tool_settings.command_isolation())
@@ -12556,16 +12993,18 @@ impl AgentsWindow {
         self.dock.set_collapsed(&scope, submitted_dock_collapsed);
         self.ensure_dock_tabs();
         self.visit_navigation();
-        self.pending_prompt = Some(visible_prompt);
-        self.pending_attachments = attachments;
         self.run_has_output = false;
-        self.view.prompt.clear();
-        self.view.composer_attachments.clear();
+        if host_turn.is_none() {
+            self.pending_prompt = Some(visible_prompt);
+            self.pending_attachments = attachments;
+            self.view.prompt.clear();
+            self.view.composer_attachments.clear();
+            self.clear_draft_key(&submitted_draft_key);
+            self.draft_dirty_at = None;
+            self.tree.set_input_value("prompt", "");
+        }
         self.view.composer_add_menu_open = false;
         self.view.composer_project_menu_open = false;
-        self.clear_draft_key(&submitted_draft_key);
-        self.draft_dirty_at = None;
-        self.tree.set_input_value("prompt", "");
         self.tree.scroll_to_end("transcript");
         self.view.running = true;
         self.view.status = format!("Ejecutando {backend}...");
@@ -12790,7 +13229,7 @@ impl AgentsWindow {
             AgentEventKind::ToolFinished { .. }
                 | AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                 | AgentEventKind::ModelRequestStarted { .. }
         ) {
             self.environment_dirty = true;
@@ -12938,6 +13377,17 @@ impl AgentsWindow {
                 self.view.running = false;
                 self.view.status = "Turno cancelado".to_owned();
                 self.restore_pending_prompt();
+            }
+            AgentEventKind::HostNotice { code, detail } if code == openide_core::NOTICE_CONTEXT_LIMIT => {
+                // The provider said how much it takes: budget with it from now on.
+                if let Ok(tokens) = detail.parse::<u64>() {
+                    let _ = native_provider::save_learned_context_limit(
+                        &self.data_root,
+                        &self.view.native_provider_id,
+                        &self.view.model,
+                        tokens,
+                    );
+                }
             }
             AgentEventKind::TurnPaused { .. } => {
                 // The turn stays open with its message admitted: nothing is
@@ -13307,7 +13757,17 @@ impl AgentsWindow {
             self.start_native_automation_resume(&stored.session, frozen);
             return;
         }
-        let connection = match self.native_settings().resolve_at(&self.data_root) {
+        // A paused turn continues on the route it was admitted on, whatever
+        // the composer shows now: the selection is for the next turn.
+        let resume_settings = match replay.pause.as_ref().and(replay.active_model_route.as_ref()) {
+            Some(route) => NativeProviderSettings {
+                provider_id: route.provider_id.clone(),
+                model_id: route.model_id.clone(),
+                custom_endpoint: self.view.endpoint.clone(),
+            },
+            None => self.native_settings(),
+        };
+        let connection = match resume_settings.resolve_at(&self.data_root) {
             Ok(connection) => connection,
             Err(error) => {
                 self.view.status = error;
@@ -13316,7 +13776,7 @@ impl AgentsWindow {
         };
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
-        let provider_id = self.view.native_provider_id.clone();
+        let provider_id = resume_settings.provider_id.clone();
         let wire_api = connection.wire_api;
         let compatibility = native_checkpoint_compatibility(&provider_id, &model_id, wire_api);
         if replay
@@ -13339,6 +13799,7 @@ impl AgentsWindow {
         // A model without a verified window can still resume. It follows the
         // same no-auto-compaction behavior as its original native run.
         let budget_policy = self.token_budget_for_native_model(&provider_id, &model_id);
+        let child_identity_budget = self.identity_budget_for_native_model(&provider_id, &model_id);
         if !self.provider_ready_for_turn(&provider_id, &connection) {
             self.view.status = "Falta la clave API del proveedor nativo".to_owned();
             return;
@@ -13485,6 +13946,7 @@ impl AgentsWindow {
             command_isolation: self.agent_tool_settings.command_isolation(),
             command_hooks,
             budget_policy,
+            child_identity_budget: Some(child_identity_budget),
             system_instructions,
             pre_context_instructions,
             limits: RunLimits::default(),
@@ -13600,6 +14062,7 @@ impl AgentsWindow {
                 command_isolation: CommandIsolation::HostUnrestricted,
                 command_hooks: Arc::new(CommandHooks::default()),
                 budget_policy: frozen.budget(),
+                child_identity_budget: None,
                 system_instructions: frozen.instructions().to_owned(),
                 pre_context_instructions: None,
                 limits: frozen.limits(),
@@ -13682,7 +14145,18 @@ impl AgentsWindow {
         let model_id = connection.model_id.clone();
         let endpoint = connection.endpoint.clone();
         let wire_api = connection.wire_api;
-        if admitted_model != model_id {
+        // A subagent moved to another model answers to that one from then on.
+        let expected_model = stored
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.kind {
+                AgentEventKind::TurnSuperseded { model_id, .. } => Some(model_id.clone()),
+                _ => None,
+            })
+            .unwrap_or(admitted_model);
+        let moving = self.model_switch_applying || !self.switch_queue.is_empty();
+        if expected_model != model_id && !moving {
             return Err("Selecciona el modelo original del subagente".into());
         }
         if !self.provider_ready_for_turn(&provider, &connection) {
@@ -13750,6 +14224,7 @@ impl AgentsWindow {
         )? {
             worker = worker.with_persistent_commands(profile);
         }
+        worker = worker.with_identity_budget(self.identity_budget_for_native_model(&provider, &model_id));
         if let Some(budget) = self.token_budget_for_native_model(&provider, &model_id) {
             let checkpoints = Arc::new(
                 CheckpointFileStore::new(self.data_root.join("sessions"))
@@ -16513,6 +16988,9 @@ impl AgentsWindow {
                     self.open_session(session_id);
                 }
             }
+            UiAction::Clicked { id } if id.starts_with("model_switch_") => {
+                self.apply_model_switch_action(&id);
+            }
             UiAction::Clicked { id } if id.starts_with("pause_") => {
                 self.apply_pause_action(&id, &ctx);
             }
@@ -18364,6 +18842,49 @@ impl AgentsWindow {
                     self.view.settings_reduced_motion = reduced;
                     self.tree.set_reduced_motion(reduced);
                     self.command_tree.set_reduced_motion(reduced);
+                }
+            }
+            UiAction::Clicked { id }
+                if id == "settings_auto_fallback_toggle"
+                    || id == "fallback_add"
+                    || id.starts_with("fallback_up:")
+                    || id.starts_with("fallback_remove:") =>
+            {
+                let mut next = self.settings_preferences.clone();
+                let index = id.split_once(':').and_then(|(_, index)| index.parse::<usize>().ok());
+                match (id.split(':').next().unwrap_or_default(), index) {
+                    ("settings_auto_fallback_toggle", _) => {
+                        next.auto_switch_fallback = !next.auto_switch_fallback
+                    }
+                    ("fallback_add", _) => {
+                        let route = format!("{}:{}", self.view.native_provider_id, self.view.model);
+                        if !next.fallback_models.contains(&route)
+                            && next.fallback_models.len() < crate::settings_preferences::MAX_FALLBACK_MODELS
+                        {
+                            next.fallback_models.push(route);
+                        }
+                    }
+                    ("fallback_up", Some(index)) if index > 0 && index < next.fallback_models.len() => {
+                        next.fallback_models.swap(index - 1, index)
+                    }
+                    ("fallback_remove", Some(index)) if index < next.fallback_models.len() => {
+                        next.fallback_models.remove(index);
+                    }
+                    _ => {}
+                }
+                let (models, auto) = (next.fallback_models.clone(), next.auto_switch_fallback);
+                if self.commit_settings_preferences(next, "Modelos de respaldo guardados") {
+                    self.view.model_switch.fallback_models = models;
+                    self.view.model_switch.auto_fallback = auto;
+                    self.refresh_sessions();
+                }
+            }
+            UiAction::Clicked { id } if id == "settings_ask_summary_toggle" => {
+                let mut next = self.settings_preferences.clone();
+                next.ask_before_summary_on_switch = !next.ask_before_summary_on_switch;
+                let enabled = next.ask_before_summary_on_switch;
+                if self.commit_settings_preferences(next, "Preferencia de resumen guardada") {
+                    self.view.model_switch.ask_before_summary = enabled;
                 }
             }
             UiAction::Clicked { id } if id == "settings_auto_resume_toggle" => {

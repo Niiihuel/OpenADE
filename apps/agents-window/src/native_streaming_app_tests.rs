@@ -3060,3 +3060,7 @@ fn notifications_e2e_a_turn_that_ends_unwatched_is_recorded_and_opens_its_task()
     let reopened = AgentsWindow::with_data_root(app.data_root.clone());
     assert_eq!(reopened.view.notifications.settings, saved);
 }
+
+#[cfg(unix)]
+#[path = "model_switch_app_tests.rs"]
+mod model_switch_app_tests;

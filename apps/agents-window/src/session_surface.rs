@@ -2506,7 +2506,15 @@ fn timeline(state: &ViewState, width: f32) -> Element {
                             && run.status == openide_harness::SubagentStatus::Running
                     })
                     .count();
-                rows.push(state.pause.card(session_id, pause, working, width < COMPACT_BREAKPOINT));
+                rows.push(state.pause.card(
+                    session_id,
+                    pause,
+                    working,
+                    width < COMPACT_BREAKPOINT,
+                    state.model_switch.proposals.get(session_id).map(|(_, model)| model.as_str()),
+                ));
+            } else if let Some(card) = state.model_switch.unfinished_card(session_id) {
+                rows.push(card);
             } else if !child_card_already_visible {
                 rows.push(native_recovery_card(session_id, recovery));
             }
@@ -2935,6 +2943,7 @@ fn persisted_subagent_card(
     show_inputs: bool,
     edit: Option<&crate::view::SubagentInputEditView>,
     paused: Option<&crate::pause::PausedTurn>,
+    usage: Option<u64>,
 ) -> Element {
     // Paused on a limit is its own state, never "interrupted" or "failed".
     // Its actions are offered once, on the root's pause card.
@@ -2956,8 +2965,13 @@ fn persisted_subagent_card(
         Text::new(&run.title, theme::component_palette()).render(),
         Text::new(
             format!(
-                "{status} · Nivel {} · {} entradas pendientes",
-                run.depth, run.open_inputs
+                "{status} · Nivel {} · {} entradas pendientes{}",
+                run.depth,
+                run.open_inputs,
+                usage
+                    .filter(|tokens| *tokens > 0)
+                    .map(|tokens| format!(" · {} tokens", crate::model_switch::token_label(tokens)))
+                    .unwrap_or_default()
             ),
             theme::component_palette(),
         )
@@ -3214,6 +3228,7 @@ fn related_subagent_rows(state: &ViewState, compact: bool) -> Vec<Element> {
                         == Some(run.child_session_id.as_str()),
                     state.subagent_input_edit.as_ref(),
                     state.pause.sessions.get(&run.child_session_id),
+                    state.model_switch.usage.get(&run.child_session_id).copied(),
                 )
             }),
     );
@@ -4045,6 +4060,7 @@ mod tests {
         ViewState {
             tour: Default::default(),
             pause: Default::default(),
+            model_switch: Default::default(),
             keymap_profile: crate::keymap::KeymapProfile::default(),
             vim_mode: false,
             settings_keymap_menu_open: false,
@@ -6008,6 +6024,7 @@ mod tests {
                             == Some(run.child_session_id.as_str()),
                         state.subagent_input_edit.as_ref(),
                         None,
+                        None,
                     )
                 }),
         );
@@ -6389,6 +6406,7 @@ mod tests {
                     selected,
                     false,
                     true,
+                    None,
                     None,
                     None,
                 ));

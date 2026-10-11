@@ -1217,6 +1217,65 @@ impl SubagentCoordinator {
         Ok(record(child, state))
     }
 
+    /// Move a child to another model route: close its paused turn with
+    /// `TurnSuperseded` and give it `new_identity_digest`, the identity of the
+    /// worker that will continue it.
+    ///
+    /// Allowed ONLY while the child is paused at a clean boundary: it is a
+    /// direct child of `control`, the registry has it `Interrupted` with no
+    /// cancellation requested, no worker holds its lease, and the last event
+    /// of its journal is the `TurnPaused` of its open turn (which replay only
+    /// accepts at a model boundary, with every tool result committed) or the
+    /// `TurnSuperseded` of an earlier attempt, which this call completes.
+    /// Anything else is refused and changes nothing.
+    pub fn rebind_child(
+        &self,
+        control: &SubagentControl,
+        child_id: &str,
+        new_identity_digest: &str,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Result<SubagentRecord, SubagentError> {
+        let _registry_lock = self.lock_registry()?;
+        let mut registry = self.read_registry()?;
+        let sessions = self.reconcile(&mut registry)?;
+        self.require_direct_child_control(control, child_id, &sessions)?;
+        let state = registry.state(child_id);
+        let refused = || SubagentError::InvalidTransition {
+            child: child_id.to_owned(),
+            from: state.status,
+            to: SubagentStatus::Interrupted,
+        };
+        if state.status != SubagentStatus::Interrupted || state.cancellation_requested {
+            return Err(refused());
+        }
+        let lease = self.sessions.try_acquire_native_lease(child_id)?;
+        let stored = self
+            .sessions
+            .load(child_id)?
+            .ok_or(StoreError::UnknownSession(child_id.to_owned()))?;
+        match stored.events.last().map(|event| (&event.kind, event.sequence)) {
+            Some((openide_core::AgentEventKind::TurnPaused { step, .. }, sequence)) => {
+                self.sessions.append_native_event(&openide_core::AgentEvent::new(
+                    child_id,
+                    sequence + 1,
+                    openide_core::AgentEventKind::TurnSuperseded {
+                        provider_id: provider_id.to_owned(),
+                        model_id: model_id.to_owned(),
+                        next_turn_id: Uuid::new_v4().to_string(),
+                        // Step 1 never got a response: its own prompt is
+                        // admitted again instead of a continuation.
+                        host_prompt: *step > 1,
+                    },
+                ))?;
+            }
+            Some((openide_core::AgentEventKind::TurnSuperseded { .. }, _)) => {}
+            _ => return Err(refused()),
+        }
+        let session = self.sessions.rebind_native_child(&lease, new_identity_digest)?;
+        Ok(record(session, state))
+    }
+
     /// Persist an explicit recovery pause while the child OS lease is still
     /// held. The next attempt must claim `Interrupted`; no new turn is admitted.
     /// A previously requested cancellation remains terminal in the sidecar.

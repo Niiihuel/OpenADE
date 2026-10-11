@@ -282,6 +282,9 @@ pub struct ModelCompletion {
     pub response_id: Option<String>,
     pub usage: Option<ModelTokenUsage>,
     pub provider_output_items: Vec<Value>,
+    /// The provider stopped at its output limit: `output` is the text so far,
+    /// with no tool call and no provider items, and can be continued.
+    pub truncated: bool,
 }
 
 impl From<ModelOutput> for ModelCompletion {
@@ -291,6 +294,7 @@ impl From<ModelOutput> for ModelCompletion {
             response_id: None,
             usage: None,
             provider_output_items: Vec::new(),
+            truncated: false,
         }
     }
 }
@@ -329,6 +333,21 @@ pub trait ModelBackend: Send + Sync {
     /// that limit closes. None opts out of the shared gate.
     fn limit_key(&self) -> Option<String> {
         None
+    }
+
+    /// The part of the limit that is counted per model rather than per
+    /// account, where the provider counts that way: a reached usage limit
+    /// then holds only the agents on that family. Missing credit and a
+    /// rejected credential always hold the whole account. None: the
+    /// provider's limit is account-wide.
+    fn limit_family(&self) -> Option<String> {
+        None
+    }
+
+    /// What this route accepts in a request. History that came from another
+    /// provider is adapted to it before every request.
+    fn target_caps(&self) -> crate::TargetCaps {
+        crate::TargetCaps::PERMISSIVE
     }
 
     async fn complete(
@@ -744,10 +763,17 @@ pub struct OpenAiCompatibleBackend {
     capabilities: ModelRequestCapabilities,
     reasoning_effort: Option<String>,
     request_fields: BTreeMap<String, Value>,
+    tool_call_id_rule: crate::ToolIdRule,
     client: Client,
 }
 
 impl OpenAiCompatibleBackend {
+    /// Providers on this wire differ in the tool call identifiers they take.
+    pub fn with_tool_call_id_rule(mut self, rule: crate::ToolIdRule) -> Self {
+        self.tool_call_id_rule = rule;
+        self
+    }
+
     pub fn new(
         endpoint: impl Into<String>,
         api_key: Option<String>,
@@ -766,6 +792,8 @@ impl OpenAiCompatibleBackend {
             capabilities: ModelRequestCapabilities::default(),
             reasoning_effort: None,
             request_fields: BTreeMap::new(),
+            // OpenAI caps the identifier of a tool call at 40 characters.
+            tool_call_id_rule: crate::ToolIdRule::Token { max_len: 40 },
             client: model_http_client_builder()
                 .build()
                 .expect("reqwest client configuration is valid"),
@@ -967,6 +995,16 @@ impl ModelBackend for OpenAiCompatibleBackend {
         limit_key_for(&self.endpoint, self.api_key.as_deref())
     }
 
+    fn target_caps(&self) -> crate::TargetCaps {
+        crate::TargetCaps {
+            // This transport sends text parts only.
+            vision: false,
+            tools: self.capabilities.tool_calls,
+            tool_call_id: self.tool_call_id_rule,
+            tool_name_max: Some(64),
+        }
+    }
+
     fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
         let capabilities = serde_json::to_string(&self.capabilities)
             .expect("validated model capability contract serializes");
@@ -1101,11 +1139,13 @@ impl OpenAiCompatibleBackend {
                 let mut reasoning_bytes = 0;
                 let mut reasoning_events = Vec::new();
                 reasoning.ingest(body.pointer("/choices/0/message").unwrap_or(&Value::Null), &mut reasoning_bytes, &mut reasoning_events).map_err(ModelAttemptError::Terminal)?;
+                let truncated = stopped_at_output_limit(body.pointer("/choices/0/finish_reason").and_then(Value::as_str));
                 let completion = ModelCompletion {
                     output: parse_model_output(&body).map_err(ModelAttemptError::Terminal)?,
                     response_id: body.get("id").and_then(Value::as_str).map(str::to_owned),
                     usage: parse_chat_usage(&body).map_err(ModelAttemptError::Terminal)?,
-                    provider_output_items: reasoning.into_items(),
+                    provider_output_items: if truncated { Vec::new() } else { reasoning.into_items() },
+                    truncated,
                 };
                 let mut events = validated_completion_events(&completion);
                 events.splice(1..1, reasoning_events);
@@ -1370,6 +1410,13 @@ impl SseAssembler {
             ));
         }
         validate_finish_reason(self.finish_reason.as_deref())?;
+        if stopped_at_output_limit(self.finish_reason.as_deref()) {
+            // A call cut by the limit has no usable arguments: keep the text.
+            return Ok(ModelOutput {
+                content: self.content,
+                tool_calls: Vec::new(),
+            });
+        }
         if !self.calls.is_empty()
             && !matches!(
                 self.finish_reason.as_deref(),
@@ -1409,12 +1456,14 @@ impl SseAssembler {
     fn finish_detailed(mut self) -> Result<ModelCompletion, AgentError> {
         let response_id = self.response_id.clone();
         let usage = self.usage.clone();
-        let provider_output_items = std::mem::take(&mut self.reasoning).into_items();
+        let truncated = stopped_at_output_limit(self.finish_reason.as_deref());
+        let reasoning = std::mem::take(&mut self.reasoning).into_items();
         Ok(ModelCompletion {
             output: self.finish()?,
             response_id,
             usage,
-            provider_output_items,
+            provider_output_items: if truncated { Vec::new() } else { reasoning },
+            truncated,
         })
     }
 }
@@ -1669,6 +1718,9 @@ fn parse_model_output(body: &Value) -> Result<ModelOutput, AgentError> {
             });
         }
     }
+    if stopped_at_output_limit(finish_reason) {
+        tool_calls.clear();
+    }
     if !tool_calls.is_empty() && !matches!(finish_reason, Some("tool_calls" | "function_call")) {
         return Err(AgentError::Model(
             "tool calls have no matching finish reason".into(),
@@ -1693,12 +1745,15 @@ fn validate_chat_provider_status(body: &Value) -> Result<(), AgentError> {
     Ok(())
 }
 
+fn stopped_at_output_limit(reason: Option<&str>) -> bool {
+    reason == Some("length")
+}
+
 fn validate_finish_reason(reason: Option<&str>) -> Result<(), AgentError> {
     match reason {
         None | Some("stop" | "tool_calls" | "function_call") => Ok(()),
-        Some("length") => Err(AgentError::Model(
-            "model stopped at its output limit; refusing an incomplete response".into(),
-        )),
+        // Reported as `ModelCompletion::truncated`; the runner continues it.
+        Some("length") => Ok(()),
         Some("content_filter") => Err(AgentError::Model(
             "provider filtered the model response".into(),
         )),
@@ -2413,7 +2468,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_output_limit_even_if_tool_arguments_are_valid_json() {
+    fn an_output_limit_stop_keeps_the_text_and_never_a_tool_call() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let mut assembler = SseAssembler::default();
         let call = json!({"choices":[{"delta":{"tool_calls":[{
@@ -2429,14 +2484,12 @@ mod tests {
             )
             .unwrap();
         assembler.ingest(b"data: [DONE]", &sender).unwrap();
-        assert!(matches!(
-            assembler.finish(),
-            Err(AgentError::Model(message)) if message.contains("output limit")
-        ));
-        assert!(matches!(
-            parse_model_output(&json!({"choices":[{"finish_reason":"length","message":{"content":"","tool_calls":[]}}]})),
-            Err(AgentError::Model(message)) if message.contains("output limit")
-        ));
+        assert!(assembler.finish().unwrap().tool_calls.is_empty());
+        let output = parse_model_output(&json!({"choices":[{"finish_reason":"length","message":{"content":"mitad","tool_calls":[
+            {"id":"call-1","function":{"name":"write_file","arguments":"{}"}}]}}]}))
+        .unwrap();
+        assert_eq!(output.content, "mitad");
+        assert!(output.tool_calls.is_empty());
     }
 
     #[test]

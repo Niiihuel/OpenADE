@@ -108,6 +108,19 @@ pub struct ReplayPause {
     pub pauses_in_turn: u32,
 }
 
+/// A switch to another model that closed its turn and has not yet admitted
+/// the one that continues it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReplaySuperseded {
+    pub provider_id: String,
+    pub model_id: String,
+    pub next_turn_id: String,
+    pub host_prompt: bool,
+    /// Where the superseded turn's own prompt (and images) were admitted.
+    pub prompt_event_sequence: Option<u64>,
+    pub event_sequence: u64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeReplay {
     pub session_id: String,
@@ -132,6 +145,8 @@ pub struct NativeReplay {
     /// Set while the open turn is paused for a known cause. It marks the
     /// same recovery state as clean; it never changes that state.
     pub pause: Option<ReplayPause>,
+    /// Set from a `TurnSuperseded` until the next turn is admitted.
+    pub superseded: Option<ReplaySuperseded>,
     pub pending_tool_batch: Option<ReplayedToolBatch>,
     pub latest_response_id: Option<String>,
     pub latest_usage: Option<ModelTokenUsage>,
@@ -192,6 +207,7 @@ struct ReplayBuilder {
     turn_has_committed_response: bool,
     model_flight: Option<ModelFlight>,
     pause: Option<ReplayPause>,
+    superseded: Option<ReplaySuperseded>,
     pauses_in_turn: u32,
     pending_batch: Option<ReplayedToolBatch>,
     pending_permission: Option<PendingPermission>,
@@ -310,6 +326,7 @@ pub fn replay_native(
         turn_has_committed_response: false,
         model_flight: None,
         pause: None,
+        superseded: None,
         pauses_in_turn: 0,
         pending_batch: None,
         pending_permission: None,
@@ -390,6 +407,7 @@ pub fn replay_native(
         active_turn: builder.active_turn,
         recovery,
         pause: builder.pause,
+        superseded: builder.superseded,
         pending_tool_batch: builder.pending_batch,
         latest_response_id: builder.latest_response_id,
         latest_usage: builder.latest_usage,
@@ -438,6 +456,7 @@ impl ReplayBuilder {
             AgentEventKind::SessionStarted { .. }
             | AgentEventKind::CheckpointCommitted { .. }
             | AgentEventKind::AssistantDelta { .. }
+            | AgentEventKind::HostNotice { .. }
             | AgentEventKind::ProcessOutput { .. } => {}
             AgentEventKind::TurnAdmitted {
                 turn_id,
@@ -472,6 +491,7 @@ impl ReplayBuilder {
                 {
                     return Err(Self::conflict(event, "invalid admitted turn"));
                 }
+                self.superseded = None;
                 if validate_user_images(&images).is_err()
                     || images.is_empty()
                         && matches!(&event.kind, AgentEventKind::TurnAdmittedWithImages { .. })
@@ -1380,7 +1400,37 @@ impl ReplayBuilder {
                     pauses_in_turn: self.pauses_in_turn,
                 });
             }
-            AgentEventKind::TurnFailed { .. } | AgentEventKind::TurnCancelled => {
+            AgentEventKind::TurnFailed { .. }
+            | AgentEventKind::TurnCancelled
+            | AgentEventKind::TurnSuperseded { .. } => {
+                if let AgentEventKind::TurnSuperseded {
+                    provider_id,
+                    model_id,
+                    next_turn_id,
+                    host_prompt,
+                } = &event.kind
+                {
+                    // Only a turn paused at its model boundary can move: no
+                    // tool is open, so closing it loses and repeats nothing.
+                    if self.pause.is_none()
+                        || self.pending_batch.is_some()
+                        || self.pending_permission.is_some()
+                        || !self.started_tools.is_empty()
+                        || next_turn_id.is_empty()
+                        || provider_id.is_empty()
+                        || model_id.is_empty()
+                    {
+                        return Err(Self::conflict(event, "supersede needs a paused turn"));
+                    }
+                    self.superseded = Some(ReplaySuperseded {
+                        provider_id: provider_id.clone(),
+                        model_id: model_id.clone(),
+                        next_turn_id: next_turn_id.clone(),
+                        host_prompt: *host_prompt,
+                        prompt_event_sequence: self.active_prompt_event_sequence,
+                        event_sequence: event.sequence,
+                    });
+                }
                 self.pause = None;
                 let turn = self
                     .active_turn
@@ -2253,6 +2303,83 @@ mod tests {
         let line = serde_json::to_string(&events[4]).unwrap();
         assert!(line.contains("\"turn_paused\"") && line.contains("\"out_of_credits\""));
         assert_eq!(serde_json::from_str::<AgentEvent>(&line).unwrap(), events[4]);
+    }
+
+    #[test]
+    fn a_superseded_turn_closes_like_a_cancellation_and_names_what_continues_it() {
+        let superseded = |host_prompt| AgentEventKind::TurnSuperseded {
+            provider_id: "other".into(),
+            model_id: "other-model".into(),
+            next_turn_id: "turn-2".into(),
+            host_prompt,
+        };
+        let paused = |step| AgentEventKind::TurnPaused {
+            class: crate::TurnPauseClass::LimitReached,
+            limit_key: "key".into(),
+            resets_at_ms: None,
+            step,
+            detail: "HTTP 429".into(),
+        };
+        let replay = |events: &[AgentEvent]| replay_native("session-1", events, None, &compatibility());
+        let started = vec![
+            event(1, admitted()),
+            event(2, AgentEventKind::TurnStarted { prompt: "Build this".into() }),
+        ];
+        // Only a paused turn can move: an open one must be cancelled or resumed.
+        let mut open = started.clone();
+        open.push(event(3, superseded(false)));
+        assert!(replay(&open).is_err());
+
+        // Paused before any response: the prompt leaves the model history,
+        // exactly as a cancellation does, and waits to be admitted again.
+        let mut first = started.clone();
+        first.push(event(3, paused(1)));
+        first.push(event(4, superseded(false)));
+        let state = replay(&first).unwrap();
+        assert_eq!(state.recovery, ReplayRecovery::Idle);
+        assert!(state.can_start_new_turn && state.pause.is_none() && state.history.is_empty());
+        let pending = state.superseded.unwrap();
+        assert_eq!(
+            (pending.model_id.as_str(), pending.next_turn_id.as_str(), pending.host_prompt, pending.prompt_event_sequence, pending.event_sequence),
+            ("other-model", "turn-2", false, Some(1), 4)
+        );
+        let mut cancelled = first[..3].to_vec();
+        cancelled.push(event(4, AgentEventKind::TurnCancelled));
+        let as_cancelled = replay(&cancelled).unwrap();
+        assert_eq!((&state.history, &state.recovery), (&as_cancelled.history, &as_cancelled.recovery));
+        assert!(as_cancelled.superseded.is_none());
+
+        // Paused after committed work: every pair stays in the history.
+        let mut worked = started.clone();
+        worked.push(event(3, AgentEventKind::ModelRequestStarted { step: 1, model: "gpt-example".into() }));
+        worked.push(event(4, response(1, AgentMessage::assistant("", vec![call("a")]))));
+        worked.push(event(5, AgentEventKind::ToolStarted { tool_call: call("a") }));
+        worked.push(event(6, AgentEventKind::ToolFinished { tool_call_id: "a".into(), output: "ok".into(), is_error: false }));
+        worked.push(event(7, paused(2)));
+        worked.push(event(8, superseded(true)));
+        let state = replay(&worked).unwrap();
+        assert_eq!(state.history.len(), 3, "prompt, call and result");
+        assert!(state.superseded.is_some());
+        // The admission that continues it settles the switch.
+        worked.push(event(9, AgentEventKind::TurnAdmitted {
+            turn_id: "turn-2".into(),
+            prompt: "continue".into(),
+            model: "other-model".into(),
+            mode: TurnMode::Build,
+        }));
+        assert!(replay(&worked).unwrap().superseded.is_none());
+        // A second terminal event on the closed turn is refused.
+        let mut twice = first.clone();
+        twice.push(event(5, AgentEventKind::TurnCancelled));
+        assert!(replay(&twice).is_err());
+        // Old journals have no such event and new ones round-trip it.
+        let line = serde_json::to_string(&first[3]).unwrap();
+        assert!(line.contains("\"turn_superseded\""));
+        assert_eq!(serde_json::from_str::<AgentEvent>(&line).unwrap(), first[3]);
+        let notice = AgentEvent::new("session-1", 5, AgentEventKind::HostNotice { code: "x".into(), detail: "y".into() });
+        let mut noted = first.clone();
+        noted.push(notice);
+        assert!(replay(&noted).unwrap().superseded.is_some(), "a notice changes nothing");
     }
 
     #[test]

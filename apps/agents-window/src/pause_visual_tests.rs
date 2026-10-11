@@ -194,9 +194,11 @@ fn a_paused_turn_shows_its_cause_and_actions_instead_of_the_recovery_card() {
 }
 
 fn texts(state: &ViewState, width: f32) -> String {
-    let (context, mut tree) = super::file_activity_visual_tests::native_tree(
-        build_session_surface(state, width, false, false),
-    );
+    texts_of(build_session_surface(state, width, false, false), width)
+}
+
+fn texts_of(element: Element, width: f32) -> String {
+    let (context, mut tree) = super::file_activity_visual_tests::native_tree(element);
     let frame = tree.layout(Size::new(width, 600.0));
     let mut output = context.end_pass();
     output.textures_delta.clear();
@@ -256,6 +258,201 @@ fn export_pause_visual_review() {
         save(&mut tree, &directory, "sidebar-row", width);
         let mut output = context.end_pass();
         output.textures_delta.clear();
+    }
+}
+
+fn switch_confirm(blocker: Option<crate::model_switch::SwitchBlocker>) -> ViewState {
+    let mut state = limit();
+    state.model_switch.confirm = Some(crate::model_switch::SwitchConfirm {
+        session_id: OWNER.into(),
+        route_id: "fixture".into(),
+        model_name: "Claude Sonnet 5".into(),
+        moving: 3,
+        working: 1,
+        child: false,
+        notices: vec!["El esfuerzo «xhigh» no está en Claude Sonnet 5: se usa el predeterminado.".into()],
+        blocker,
+    });
+    state
+}
+
+/// A conversation that moved to another model, with the given host notices.
+fn continued(notices: &[&str]) -> ViewState {
+    let mut state = state();
+    let notice = |message: &str| TranscriptItem::Notice { message: message.into(), is_error: false };
+    state.transcript.push(TranscriptItem::Assistant {
+        content: "Empiezo por los tests de facturas.".into(),
+        streaming: false,
+    });
+    state.transcript.extend(notices.iter().map(|message| notice(message)));
+    state.transcript.push(TranscriptItem::Assistant {
+        content: "Sigo con los tests de pagos: los de facturas ya estaban migrados.".into(),
+        streaming: false,
+    });
+    state
+}
+
+fn unfinished_switch() -> ViewState {
+    let mut state = paused_state(paused(openide_core::TurnPauseClass::LimitReached, None));
+    state.pause.sessions.clear();
+    state.pause.composer = None;
+    state.model_switch.unfinished.insert(
+        OWNER.into(),
+        crate::model_switch::UnfinishedSwitch {
+            provider_id: "anthropic".into(),
+            model_id: "claude-sonnet-5".into(),
+            next_turn_id: "next".into(),
+            host_prompt: true,
+            error: Some("Anthropic no está conectado.".into()),
+        },
+    );
+    state
+}
+
+/// A pause with no end in sight and a fallback model the person listed.
+fn fallback_proposal() -> ViewState {
+    let mut state = paused_state(paused(openide_core::TurnPauseClass::LimitReached, None));
+    state
+        .model_switch
+        .proposals
+        .insert(OWNER.into(), ("fixture".into(), "Claude Sonnet 5".into()));
+    state
+}
+
+/// A tree whose agents each report what they used.
+fn tree_usage() -> ViewState {
+    let mut state = waiting_on_child();
+    state.model_switch.usage = [("child-1", 40_100u64), ("child-2", 7_250), (OWNER, 12_300)]
+        .into_iter()
+        .map(|(id, tokens)| (id.to_owned(), tokens))
+        .collect();
+    state.model_switch.subagent_usage = [(OWNER.to_owned(), 47_350u64)].into_iter().collect();
+    state
+}
+
+#[test]
+fn a_fallback_is_a_proposal_on_the_card_and_each_agent_shows_its_usage() {
+    let card = texts(&fallback_proposal(), 900.0);
+    assert!(card.contains("Continuar en Claude Sonnet 5") && card.contains("Continuar ahora"), "{card}");
+    assert!(actions(&fallback_proposal(), 360.0).contains(&format!("pause_fallback:{OWNER}")));
+    assert!(!actions(&limit(), 360.0).iter().any(|id| id.starts_with("pause_fallback")));
+    let rows = texts(&tree_usage(), 900.0);
+    assert!(rows.contains("40.1k tokens"), "{rows}");
+    assert_eq!(
+        tree_usage().model_switch.tree_usage_label(OWNER).as_deref(),
+        Some("Raíz 12.3k · Subagentes 47.4k")
+    );
+    let settings = texts_of(
+        Element::column(vec![crate::settings_ui::provider_limits_group(&fallback_proposal(), false)]),
+        900.0,
+    );
+    for expected in [
+        "Preguntar antes de resumir al cambiar de modelo",
+        "Cambiar automáticamente al modelo de respaldo",
+        "Modelos de respaldo",
+    ] {
+        assert!(settings.contains(expected), "{expected}\n{settings}");
+    }
+}
+
+#[test]
+fn the_switch_dialogs_and_notices_say_what_will_happen() {
+    let confirm = texts_of(window(switch_confirm(None), 900.0), 900.0);
+    for expected in [
+        "Continuar en Claude Sonnet 5",
+        "3 agentes en pausa pasan a Claude Sonnet 5.",
+        "1 agente sigue trabajando en su modelo actual.",
+        "Las herramientas que ya terminaron no se repiten.",
+    ] {
+        assert!(confirm.contains(expected), "{expected}\n{confirm}");
+    }
+    let images = texts_of(
+        window(switch_confirm(Some(crate::model_switch::SwitchBlocker::Images { count: 2 })), 360.0),
+        360.0,
+    );
+    assert!(images.contains("Enviar sin imágenes") && images.contains("Elegir otro modelo"), "{images}");
+    let card = texts(&unfinished_switch(), 360.0);
+    assert!(card.contains("El cambio a claude-sonnet-5 no terminó"), "{card}");
+    let notice = texts(&continued(&[&crate::transcript::continuation_notice("Claude Sonnet 5")]), 900.0);
+    assert!(notice.contains("Continúa en Claude Sonnet 5 desde donde quedó"), "{notice}");
+}
+
+#[test]
+#[ignore = "exports the model switch states as PNG under docs/ui-separation/shots/pause-switch"]
+fn export_pause_switch_visual_review() {
+    let directory = std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/ui-separation/shots/pause-switch"
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    use crate::model_switch::SwitchBlocker;
+    for width in [360.0, 900.0] {
+        for (name, element) in [
+            ("switch-confirm-tree", window(switch_confirm(None), width)),
+            (
+                "blocker-images",
+                window(switch_confirm(Some(SwitchBlocker::Images { count: 2 })), width),
+            ),
+            (
+                "blocker-refused",
+                window(
+                    switch_confirm(Some(SwitchBlocker::Refused(
+                        "El proveedor declara que mistral-small no admite herramientas en esta ruta nativa".into(),
+                    ))),
+                    width,
+                ),
+            ),
+            (
+                "continuation-notice",
+                build_session_surface(
+                    &continued(&[&crate::transcript::continuation_notice("Claude Sonnet 5")]),
+                    width,
+                    false,
+                    false,
+                ),
+            ),
+            (
+                "switch-unfinished",
+                build_session_surface(&unfinished_switch(), width, false, false),
+            ),
+            (
+                "notice-summarized-and-trimmed",
+                build_session_surface(
+                    &continued(&[
+                        &crate::transcript::host_notice_text(
+                            openide_core::NOTICE_CONTEXT_SUMMARIZED,
+                            "Claude Sonnet 5",
+                        ),
+                        &crate::transcript::host_notice_text(
+                            openide_core::NOTICE_CONTEXT_TRIMMED,
+                            "Claude Sonnet 5",
+                        ),
+                        &crate::transcript::host_notice_text(openide_core::NOTICE_CONTEXT_LIMIT, "128000"),
+                    ]),
+                    width,
+                    false,
+                    false,
+                ),
+            ),
+            ("card-fallback-proposal", build_session_surface(&fallback_proposal(), width, false, false)),
+            ("usage-subagent-rows", build_session_surface(&tree_usage(), width, false, false)),
+            ("settings-provider-limits", {
+                let mut state = limit();
+                state.model_switch.ask_before_summary = true;
+                state.model_switch.fallback_models =
+                    vec!["anthropic:claude-sonnet-5".into(), "openrouter:qwen/qwen3-coder".into()];
+                state.native_provider_id = "codex".into();
+                state.model = "gpt-6-luna".into();
+                Element::column(vec![crate::settings_ui::provider_limits_group(&state, width < 600.0)])
+                    .padding(16.0)
+            }),
+        ] {
+            let (context, mut tree) = super::file_activity_visual_tests::native_tree(element);
+            tree.set_reduced_motion(true);
+            save(&mut tree, &directory, name, width);
+            let mut output = context.end_pass();
+            output.textures_delta.clear();
+        }
     }
 }
 

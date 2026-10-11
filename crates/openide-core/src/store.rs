@@ -387,7 +387,7 @@ fn active_native_turn_id(events: &[AgentEvent]) -> Option<&str> {
             }
             AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled => active = None,
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => active = None,
             _ => {}
         }
     }
@@ -476,7 +476,7 @@ fn native_steer_awaiting_model(events: &[AgentEvent]) -> bool {
             | AgentEventKind::TurnAdmittedWithImages { .. }
             | AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled => awaiting = false,
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => awaiting = false,
             _ => {}
         }
     }
@@ -1831,6 +1831,27 @@ impl SessionStore {
         Ok(session)
     }
 
+    /// Give a subagent session the identity of the route it continues on.
+    /// The caller holds the child's lease, so no worker is running it, and
+    /// has verified that its turn is closed at a model boundary.
+    pub fn rebind_native_child(
+        &self,
+        child_lease: &NativeSessionLease,
+        request_digest: &str,
+    ) -> Result<Session, StoreError> {
+        let valid = request_digest.len() == 64
+            && request_digest.bytes().all(|byte| byte.is_ascii_hexdigit());
+        let session = self.native_session_for_lease(child_lease)?;
+        if !valid || session.subagent.is_none() {
+            return Err(StoreError::ConflictingSubagentIdentity);
+        }
+        self.update_metadata(&session.id, |session| {
+            if let Some(link) = session.subagent.as_mut() {
+                link.request_digest = request_digest.to_owned();
+            }
+        })
+    }
+
     pub fn create(
         &self,
         workspace: impl Into<PathBuf>,
@@ -2062,7 +2083,7 @@ impl SessionStore {
                 &event.kind,
                 AgentEventKind::TurnCompleted { .. }
                     | AgentEventKind::TurnFailed { .. }
-                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
             ) {
                 let inbox = self.read_native_steer_inbox(session_id)?;
                 if !pending_native_steers_from(&inbox, &committed_native_steers(&saved)?)?
@@ -2679,7 +2700,7 @@ impl SessionStore {
             AgentEventKind::ModelRequestStarted { .. }
                 | AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
         ) {
             Some(
                 crate::native_command_operation::lock_and_require_no_pending(
@@ -2697,7 +2718,7 @@ impl SessionStore {
             &event.kind,
             AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
         ) {
             let inbox = self.read_native_steer_inbox(session_id)?;
             let events = self.events.load(session_id)?;

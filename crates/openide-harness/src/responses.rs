@@ -77,6 +77,7 @@ impl From<ResponsesResult> for ModelCompletion {
             response_id: Some(result.response_id),
             usage: result.usage,
             provider_output_items: result.output_items,
+            truncated: false,
         }
     }
 }
@@ -99,6 +100,7 @@ pub struct ResponsesBackend {
     max_output_tokens: Option<u64>,
     web_search: Option<HostedWebSearchConfig>,
     chatgpt_plan: bool,
+    image_input_enabled: bool,
     bearer_token_provider: Option<Arc<dyn Fn() -> Result<String, String> + Send + Sync>>,
     client: Client,
     replay: Mutex<Vec<CachedOutput>>,
@@ -120,12 +122,19 @@ impl ResponsesBackend {
             max_output_tokens: None,
             web_search: None,
             chatgpt_plan: false,
+            image_input_enabled: true,
             bearer_token_provider: None,
             client: model_http_client_builder()
                 .build()
                 .expect("reqwest client configuration is valid"),
             replay: Mutex::new(Vec::new()),
         }
+    }
+
+    /// A model that cannot see images gets a text placeholder for each one.
+    pub fn with_image_input_enabled(mut self, enabled: bool) -> Self {
+        self.image_input_enabled = enabled;
+        self
     }
 
     /// Override the default idle timeout with an explicit total request limit.
@@ -622,8 +631,32 @@ impl ModelBackend for ResponsesBackend {
         crate::backend::limit_key_for(&self.endpoint, self.api_key.as_deref())
     }
 
+    fn limit_family(&self) -> Option<String> {
+        // A ChatGPT plan has one usage limit for every model. The API
+        // counts per model; dated snapshots share their model's limit.
+        if self.chatgpt_plan {
+            return None;
+        }
+        let model = self.model.to_ascii_lowercase();
+        let dated = model.len() > 11
+            && model.as_bytes()[model.len() - 11] == b'-'
+            && model[model.len() - 10..]
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || byte == b'-');
+        Some(if dated { model[..model.len() - 11].to_owned() } else { model })
+    }
+
     fn supports_user_images(&self) -> bool {
-        true
+        self.image_input_enabled
+    }
+
+    fn target_caps(&self) -> crate::TargetCaps {
+        crate::TargetCaps {
+            vision: self.image_input_enabled,
+            tools: true,
+            tool_call_id: crate::ToolIdRule::Token { max_len: 64 },
+            tool_name_max: Some(64),
+        }
     }
 
     async fn count_input_tokens(
@@ -708,6 +741,7 @@ impl ModelBackend for ResponsesBackend {
             response_id: Some(result.response_id),
             usage: result.usage,
             provider_output_items: result.output_items,
+            truncated: false,
         })
     }
 
@@ -2426,7 +2460,7 @@ mod tests {
                 event.kind,
                 AgentEventKind::TurnCompleted { .. }
                     | AgentEventKind::TurnFailed { .. }
-                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
             );
             events.push(event);
             if terminal {

@@ -97,7 +97,7 @@ impl NativeGoalToolExecutor {
                     terminal = true;
                     completed = true;
                 }
-                AgentEventKind::TurnFailed { .. } | AgentEventKind::TurnCancelled => {
+                AgentEventKind::TurnFailed { .. } | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => {
                     terminal = true
                 }
                 _ => {}

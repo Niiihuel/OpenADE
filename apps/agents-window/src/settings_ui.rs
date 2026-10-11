@@ -745,17 +745,7 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 page_note("Plan y Build", "Plan usa herramientas de lectura. Build permite cambios según estos permisos; activar un permiso no ejecuta ninguna herramienta.", Icon::Chat),
             ],
         ),
-        settings_parts::settings_group(
-            "Límites del proveedor",
-            vec![settings_parts::switch_row(
-                "settings_auto_resume_toggle",
-                "Continuar automáticamente cuando se renueve el límite",
-                "Un turno en pausa por un límite de uso retoma solo a la hora que informa el proveedor, sin reenviar tu mensaje. Nunca continúa solo si falta crédito, hay que reconectar la cuenta o faltan más de 24 horas.",
-                state.pause.auto_enabled,
-                true,
-                compact,
-            )],
-        ),
+        provider_limits_group(state, compact),
         settings_parts::settings_group("Ejecución de comandos", isolation_rows),
         external_agents::review_model_group(state, compact),
         settings_parts::settings_group(
@@ -2480,6 +2470,67 @@ fn compact_navigation(state: &ViewState) -> Element {
     }
     Element::column(items).gap(8.0)
 }
+
+/// Settings > Agente: what happens when a provider limit pauses a turn.
+pub(crate) fn provider_limits_group(state: &ViewState, compact: bool) -> Element {
+    let mut rows =            vec![
+                settings_parts::switch_row(
+                    "settings_auto_resume_toggle",
+                    "Continuar automáticamente cuando se renueve el límite",
+                    "Un turno en pausa por un límite de uso retoma solo a la hora que informa el proveedor, sin reenviar tu mensaje. Nunca continúa solo si falta crédito, hay que reconectar la cuenta o faltan más de 24 horas.",
+                    state.pause.auto_enabled,
+                    true,
+                    compact,
+                ),
+                settings_parts::switch_row(
+                    "settings_ask_summary_toggle",
+                    "Preguntar antes de resumir al cambiar de modelo",
+                    "Si la conversación no entra en el modelo elegido se resume antes de continuar y queda un aviso en la conversación. Con esto activado se pregunta primero. El historial completo nunca se borra.",
+                    state.model_switch.ask_before_summary,
+                    true,
+                    compact,
+                ),
+            ];
+    rows.push(settings_parts::switch_row(
+        "settings_auto_fallback_toggle",
+        "Cambiar automáticamente al modelo de respaldo",
+        "Desactivado, el modelo de respaldo sólo se propone en la tarjeta de pausa y cambiar es un clic tuyo. Activado, un turno en pausa pasa solo al primer modelo de la lista que esté disponible, y queda un aviso.",
+        state.model_switch.auto_fallback,
+        true,
+        compact,
+    ));
+    let small = |id: String, label: &str| {
+        openide_ui::Button::new(id, label, theme::action_palette(theme::HOVER, theme::FOREGROUND))
+            .variant(openide_ui::ButtonVariant::Subtle)
+            .size(ControlSize::Compact)
+            .render()
+    };
+    for (index, route) in state.model_switch.fallback_models.iter().enumerate() {
+        let (provider, model) = route.split_once(':').unwrap_or(("", route));
+        let mut controls = Vec::new();
+        if index > 0 {
+            controls.push(small(format!("fallback_up:{index}"), "Subir"));
+        }
+        controls.push(small(format!("fallback_remove:{index}"), "Quitar"));
+        rows.push(settings_parts::settings_row(
+            format!("{}. {model}", index + 1),
+            format!("Modelo de respaldo · {provider}"),
+            Element::row(controls).gap(6.0),
+            compact,
+        ));
+    }
+    rows.push(settings_parts::settings_row(
+        "Modelos de respaldo",
+        format!(
+            "Cuando una pausa no tiene hora de renovación se propone continuar en el primero de esta lista que esté conectado y sin límite alcanzado. Seleccionado ahora: {} · {}.",
+            state.native_provider_id, state.model
+        ),
+        small("fallback_add".into(), "Agregar el modelo seleccionado"),
+        compact,
+    ));
+    settings_parts::settings_group("Límites del proveedor", rows)
+}
+
 
 pub fn build_settings_page(
     state: &ViewState,

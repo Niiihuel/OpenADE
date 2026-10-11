@@ -299,6 +299,7 @@ impl AutomationFixture {
             command_isolation: CommandIsolation::HostUnrestricted,
             command_hooks: Arc::new(CommandHooks::default()),
             budget_policy: frozen.budget(),
+            child_identity_budget: None,
             system_instructions: frozen.instructions().into(),
             pre_context_instructions: None,
             limits: frozen.limits(),

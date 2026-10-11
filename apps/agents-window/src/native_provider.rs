@@ -1374,6 +1374,65 @@ pub(crate) fn verified_token_budget(
     })
 }
 
+/// Context windows providers stated in a "request too large" error, by
+/// exact route. A learned window is the provider's own word: it is used
+/// before a catalog's and instead of the assumed default.
+const LEARNED_CONTEXT_LIMITS: &str = "native-context-limits.json";
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+struct LearnedContextLimits {
+    version: u32,
+    /// `provider\nmodel` -> tokens.
+    limits: BTreeMap<String, u64>,
+}
+
+fn load_learned_context_limits(root: &Path) -> LearnedContextLimits {
+    // Losing this file only costs one more refused request per route.
+    fs::read(root.join(LEARNED_CONTEXT_LIMITS))
+        .ok()
+        .filter(|bytes| bytes.len() as u64 <= MAX_SETTINGS_BYTES)
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+pub(crate) fn learned_context_limit(root: &Path, provider_id: &str, model_id: &str) -> Option<u64> {
+    load_learned_context_limits(root)
+        .limits
+        .get(&format!("{provider_id}\n{model_id}"))
+        .copied()
+        .filter(|tokens| (1_000..=100_000_000).contains(tokens))
+}
+
+pub(crate) fn save_learned_context_limit(
+    root: &Path,
+    provider_id: &str,
+    model_id: &str,
+    tokens: u64,
+) -> Result<(), String> {
+    if !(1_000..=100_000_000).contains(&tokens) || provider_id.is_empty() || model_id.is_empty() {
+        return Err("Límite de contexto inválido".into());
+    }
+    let mut file = load_learned_context_limits(root);
+    file.version = 1;
+    if file.limits.len() >= 512 && !file.limits.contains_key(&format!("{provider_id}\n{model_id}")) {
+        return Err("Demasiados límites de contexto aprendidos".into());
+    }
+    file.limits.insert(format!("{provider_id}\n{model_id}"), tokens);
+    let payload = serde_json::to_vec_pretty(&file).map_err(|error| error.to_string())?;
+    fs::create_dir_all(root).map_err(|error| error.to_string())?;
+    let temp = root.join(format!(
+        ".native-context-limits-{}-{}.tmp",
+        std::process::id(),
+        SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = fs::write(&temp, &payload)
+        .and_then(|()| replace_settings_atomically(&temp, &root.join(LEARNED_CONTEXT_LIMITS)));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result.map_err(|error| format!("No se pudo guardar el límite de contexto: {error}"))
+}
+
 /// Host-selected generation limits scoped to an exact route. No remote
 /// listing can choose these wire fields or alter the provider endpoint.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

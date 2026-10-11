@@ -560,6 +560,7 @@ pub struct ViewState {
     pub transcript: Vec<TranscriptItem>,
     /// Provider retries, limit pauses and the clock their countdowns read.
     pub(crate) pause: crate::pause::PauseView,
+    pub(crate) model_switch: crate::model_switch::SwitchView,
     /// Durations of the transcript's reasoning rows and tool calls.
     pub item_times: crate::transcript::ItemTimes,
     pub running: bool,
@@ -3518,6 +3519,7 @@ pub(crate) fn dialog_open(state: &ViewState, viewport_width: f32) -> bool {
 
 fn dialogs(state: &ViewState, base: Element, viewport_width: f32) -> Element {
     let base = confirmation_dialog(state, base, viewport_width);
+    let base = crate::model_switch::confirm_dialog(base, state, viewport_width);
     let base = crate::github_account_ui::sign_in_alert(state, base, viewport_width);
     let base = settings_ui::provider_connect_modal(state, base, viewport_width);
     let base = settings_ui::mcp_editor_modal(state, base, viewport_width);
@@ -3970,6 +3972,7 @@ pub(crate) mod tests {
             pending_delete_session_id: None,
             transcript: Vec::new(),
             pause: Default::default(),
+            model_switch: Default::default(),
             item_times: Default::default(),
             running: false,
             background_run_selected: false,

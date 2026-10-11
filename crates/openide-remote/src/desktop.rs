@@ -123,7 +123,7 @@ impl DesktopSessions {
                 }
                 AgentEventKind::TurnCompleted { .. }
                 | AgentEventKind::TurnFailed { .. }
-                | AgentEventKind::TurnCancelled => active = None,
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => active = None,
                 _ => {}
             }
         }
@@ -178,7 +178,29 @@ impl DesktopSessions {
             // to remote controls. Show their activity without enabling actions.
             "running"
         } else if active.is_some() {
-            "interrupted"
+            // The last word of an open turn is its pause while it is paused:
+            // any later request or response would follow it in the journal.
+            let paused = stored
+                .events
+                .iter()
+                .rev()
+                .find(|event| !matches!(event.kind, AgentEventKind::HostNotice { .. }))
+                .is_some_and(|event| matches!(event.kind, AgentEventKind::TurnPaused { .. }));
+            if paused {
+                "paused"
+            } else {
+                "interrupted"
+            }
+        } else if matches!(
+            stored
+                .events
+                .iter()
+                .rev()
+                .find(|event| !matches!(event.kind, AgentEventKind::HostNotice { .. }))
+                .map(|event| &event.kind),
+            Some(AgentEventKind::TurnSuperseded { .. })
+        ) {
+            "superseded"
         } else {
             stored
                 .events

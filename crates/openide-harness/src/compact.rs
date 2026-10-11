@@ -108,6 +108,8 @@ pub struct CompactSummary {
 pub struct CompactService {
     model: Arc<dyn ModelBackend>,
     limits: CompactLimits,
+    /// The summary is written by another model than the one it is for.
+    foreign_summarizer: bool,
 }
 
 impl CompactService {
@@ -115,11 +117,21 @@ impl CompactService {
         Self {
             model,
             limits: CompactLimits::default(),
+            foreign_summarizer: false,
         }
     }
 
     pub fn with_limits(mut self, limits: CompactLimits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Let a model other than the checkpoint's own write the summary: the
+    /// previous route, or a larger one, when the target cannot read the
+    /// conversation it is about to continue. The summary is plain text and
+    /// the checkpoint still belongs to the target's route.
+    pub fn with_foreign_summarizer(mut self) -> Self {
+        self.foreign_summarizer = true;
         self
     }
 
@@ -134,7 +146,12 @@ impl CompactService {
             return Err(AgentError::Cancelled);
         }
         validate_limits(self.limits)?;
-        validate_request(&request, self.model.model_id())?;
+        let summarizer = if self.foreign_summarizer {
+            request.compatibility.model.as_str()
+        } else {
+            self.model.model_id()
+        };
+        validate_request(&request, summarizer)?;
         let retained_user_messages = retain_recent_users(
             request.prior_checkpoint.as_ref(),
             &request.committed_messages,

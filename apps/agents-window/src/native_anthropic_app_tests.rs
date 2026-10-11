@@ -342,7 +342,7 @@ fn messages_factory_uses_exact_effort_output_policy_and_frozen_authority_after_r
     assert_eq!(captured.len(), 3);
     assert_eq!(captured[0].body["output_config"], json!({"effort":"high"}));
     for request in &captured[..3] {
-        assert_eq!(request.body["max_tokens"], 4096);
+        assert_eq!(request.body["max_tokens"], 8192);
         assert_eq!(request.body["thinking"], json!({"type":"adaptive"}));
         assert!(request.body.get("reasoning_effort").is_none());
         assert!(request.body.get("max_completion_tokens").is_none());

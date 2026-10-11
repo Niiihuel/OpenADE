@@ -321,6 +321,11 @@ pub struct TranscriptProjection {
     pending_web_citations: Vec<(String, String)>,
     pending_admission_images: Vec<TranscriptImage>,
     pending_admission_sequence: Option<u64>,
+    /// `(next_turn_id, model)` of a superseded turn awaiting its continuation.
+    superseded_by: Option<(String, String)>,
+    /// Model of the admitted turn that continues a superseded one: its prompt
+    /// is shown as a notice, never as something the person typed.
+    continuation_model: Option<String>,
     user_turns: Vec<UserTurn>,
     tool_disclosure_aliases: Vec<(String, String)>,
 }
@@ -379,7 +384,7 @@ impl TranscriptProjection {
                         &event.kind,
                         AgentEventKind::TurnCompleted { .. }
                             | AgentEventKind::TurnFailed { .. }
-                            | AgentEventKind::TurnCancelled
+                            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                     )
                 })
             });
@@ -439,6 +444,14 @@ impl TranscriptProjection {
     /// A live turn is admitted by the host, so its admission never arrives
     /// as an event here: without this its message would only become a turn,
     /// and editable, when the session is read again.
+    fn note_continuation(&mut self, turn_id: &str) {
+        self.continuation_model = self
+            .superseded_by
+            .take()
+            .filter(|(next, _)| next == turn_id)
+            .map(|(_, model)| model);
+    }
+
     pub fn note_admission(&mut self, sequence: u64) {
         self.pending_admission_sequence = Some(sequence);
     }
@@ -484,7 +497,7 @@ impl TranscriptProjection {
             AgentEventKind::TurnStarted { .. } => self.turn_started_ms = Some(now),
             AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled => {
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. } => {
                 let users = self
                     .items
                     .iter()
@@ -605,7 +618,8 @@ impl TranscriptProjection {
                 self.pending_admission_sequence = Some(event.sequence);
             }
             AgentEventKind::TurnStarted { .. } => {
-                if let Some(sequence) = self.pending_admission_sequence.take() {
+                let typed = !matches!(self.items.last(), Some(TranscriptItem::Notice { .. }));
+                if let Some(sequence) = self.pending_admission_sequence.take().filter(|_| typed) {
                     let users = self
                         .items
                         .iter()
@@ -752,15 +766,33 @@ impl TranscriptProjection {
                 }));
                 true
             }
-            AgentEventKind::TurnAdmitted { .. } => {
+            AgentEventKind::TurnAdmitted { turn_id, .. } => {
                 self.pending_admission_images.clear();
+                self.note_continuation(turn_id);
                 false
+            }
+            AgentEventKind::TurnSuperseded { model_id, next_turn_id, .. } => {
+                self.finish_model(ActivityStatus::Cancelled);
+                self.finish_model_stream(ModelStreamStatus::Cancelled);
+                self.finish_streaming();
+                self.flush_web_citations();
+                self.superseded_by = Some((next_turn_id.clone(), model_id.clone()));
+                self.reset_turn();
+                true
             }
             // The turn stays open exactly as an interrupted one. Its cause is
             // shown by the pause card, from replay, not by a transcript row.
             AgentEventKind::TurnPaused { .. } => false,
-            AgentEventKind::TurnAdmittedWithImages { images, .. } => {
+            AgentEventKind::HostNotice { code, detail } => {
+                self.items.push(TranscriptItem::Notice {
+                    message: host_notice_text(code, detail),
+                    is_error: false,
+                });
+                true
+            }
+            AgentEventKind::TurnAdmittedWithImages { images, turn_id, .. } => {
                 self.pending_admission_images = transcript_images(images);
+                self.note_continuation(turn_id);
                 false
             }
             AgentEventKind::ModelStreamUpdate { step, update } => {
@@ -836,20 +868,39 @@ impl TranscriptProjection {
                 self.reset_turn();
                 self.committed_tool_batch.clear();
                 self.unfinished_tool_calls.clear();
-                self.items.push(TranscriptItem::User {
-                    content: prompt.clone(),
-                    images: std::mem::take(&mut self.pending_admission_images),
+                self.items.push(match self.continuation_model.take() {
+                    // The conversation already shows what the person asked.
+                    Some(model) => {
+                        self.pending_admission_images.clear();
+                        TranscriptItem::Notice {
+                            message: continuation_notice(&model),
+                            is_error: false,
+                        }
+                    }
+                    None => TranscriptItem::User {
+                        content: prompt.clone(),
+                        images: std::mem::take(&mut self.pending_admission_images),
+                    },
                 });
                 true
             }
-            AgentEventKind::TurnSteered { text, .. } => {
+            AgentEventKind::TurnSteered { text, input_id, .. } => {
                 self.finish_streaming();
                 self.active_assistant_rows.clear();
                 self.active_assistant_committed = false;
                 self.committed_final_assistant.clear();
-                self.items.push(TranscriptItem::User {
-                    content: text.clone(),
-                    images: Vec::new(),
+                // What the host wrote for the model is a notice, never a
+                // bubble the person could mistake for their own or edit.
+                self.items.push(if input_id.starts_with(openide_harness::HOST_CONTINUE_INPUT) {
+                    TranscriptItem::Notice {
+                        message: "La respuesta llegó al límite de salida del modelo: se le pidió continuar".into(),
+                        is_error: false,
+                    }
+                } else {
+                    TranscriptItem::User {
+                        content: text.clone(),
+                        images: Vec::new(),
+                    }
                 });
                 true
             }
@@ -3542,5 +3593,28 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+pub(crate) fn continuation_notice(model: &str) -> String {
+    format!("Continúa en {model} desde donde quedó")
+}
+
+/// The words for something the host did on its own.
+pub(crate) fn host_notice_text(code: &str, detail: &str) -> String {
+    match code {
+        openide_core::NOTICE_OUTPUT_LIMIT => format!(
+            "{detail} llegó a su límite de salida varias veces seguidas: la respuesta quedó incompleta"
+        ),
+        openide_core::NOTICE_CONTEXT_SUMMARIZED => format!(
+            "La conversación no entraba en {detail}: se resumió antes de continuar"
+        ),
+        openide_core::NOTICE_CONTEXT_TRIMMED => format!(
+            "La conversación no entraba en {detail}: se recortaron salidas de herramientas antiguas"
+        ),
+        openide_core::NOTICE_CONTEXT_LIMIT => format!(
+            "El proveedor informó su límite de contexto: {detail} tokens. Se usa desde ahora para este modelo"
+        ),
+        _ => detail.to_owned(),
     }
 }

@@ -364,8 +364,13 @@ fn ordinary_json_preserves_signed_blocks_and_rejects_every_unsafe_terminal_and_f
             cached_input_tokens: Some(5)
         }
     );
+    // The output limit keeps the text, drops the cut call and its blocks.
+    let mut cut = value.clone();
+    cut["stop_reason"] = "max_tokens".into();
+    let cut = parse_message(&cut, MODEL, &test_endpoint_digest()).unwrap();
+    assert!(cut.truncated && cut.output.tool_calls.is_empty());
+    assert!(cut.provider_output_items.is_empty());
     for reason in [
-        "max_tokens",
         "pause_turn",
         "refusal",
         "stop_sequence",
@@ -468,7 +473,14 @@ fn sse_rejects_duplicate_out_of_order_unknown_and_malformed_blocks_without_tools
         assert!(ingest([start(), invalid]).is_err());
     }
     let opening = json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"a","name":"read_file","input":{}}});
-    for args in ["{\"path\":", "[]", "null"] {
+    // Half a tool input is only excused by a max_tokens stop.
+    let cut = |reason: &str| {
+        let (stream, _) = ingest([start(),opening.clone(),json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}),json!({"type":"content_block_stop","index":0}),json!({"type":"message_delta","delta":{"stop_reason":reason,"stop_sequence":null},"usage":{"output_tokens":5}}),json!({"type":"message_stop"})]).unwrap();
+        stream.finish(MODEL, &test_endpoint_digest())
+    };
+    assert!(cut("tool_use").is_err());
+    assert!(cut("max_tokens").is_ok_and(|completion| completion.truncated && completion.output.tool_calls.is_empty()));
+    for args in ["[]", "null"] {
         assert!(ingest([start(),opening.clone(),json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":args}}),json!({"type":"content_block_stop","index":0})]).is_err());
     }
     assert!(ingest([start(),json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}),json!({"type":"content_block_stop","index":0})]).is_err());

@@ -845,7 +845,7 @@ mod tests {
                 event.kind,
                 AgentEventKind::TurnCompleted { .. }
                     | AgentEventKind::TurnFailed { .. }
-                    | AgentEventKind::TurnCancelled
+                    | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
             );
             events.push(event);
             if terminal {

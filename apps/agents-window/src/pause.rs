@@ -197,8 +197,6 @@ pub(crate) struct PauseView {
     pub sessions: BTreeMap<String, PausedTurn>,
     /// The session whose provider text is unfolded.
     pub detail_open: Option<String>,
-    /// The paused session whose "Cambiar de modelo" note is showing.
-    pub model_note: Option<String>,
     /// Settings: continue by itself when the limit renews.
     pub auto_enabled: bool,
     /// Sessions whose automatic continuation the user cancelled with Esc.
@@ -297,7 +295,14 @@ impl PauseView {
     /// The pause card at the end of a paused turn's transcript.
     /// `working` counts this session's subagents that are still running: a
     /// node the closed limit does not hold keeps going.
-    pub fn card(&self, session_id: &str, pause: &PausedTurn, working: usize, compact: bool) -> Element {
+    pub fn card(
+        &self,
+        session_id: &str,
+        pause: &PausedTurn,
+        working: usize,
+        compact: bool,
+        fallback: Option<&str>,
+    ) -> Element {
         let mut lines = Vec::new();
         lines.extend(self.reset_line(session_id, pause));
         match pause.class {
@@ -324,24 +329,26 @@ impl PauseView {
         } else if sharing > 1 {
             lines.push(format!("{sharing} agentes en pausa por este límite."));
         }
-        if self.model_note.as_deref() == Some(session_id) {
-            lines.push(
-                "Para usar otro modelo, cancelá este turno o dejá que continúe: un turno en curso no cambia de modelo."
-                    .into(),
-            );
-        }
         let subtle = |id: String, label: &str| {
             Button::new(id, label, theme::action_palette(theme::HOVER, theme::FOREGROUND))
                 .variant(ButtonVariant::Subtle)
                 .size(ControlSize::Compact)
                 .render()
         };
-        let mut actions = vec![
-            theme::primary(format!("pause_continue:{session_id}"), "Continuar ahora")
+        // A fallback is a proposal: one click of the person's, never a
+        // switch they did not choose.
+        let mut actions = match fallback {
+            Some(model) => vec![
+                theme::primary(format!("pause_fallback:{session_id}"), format!("Continuar en {model}"))
+                    .size(ControlSize::Compact)
+                    .render(),
+                subtle(format!("pause_continue:{session_id}"), "Continuar ahora"),
+            ],
+            None => vec![theme::primary(format!("pause_continue:{session_id}"), "Continuar ahora")
                 .size(ControlSize::Compact)
-                .render(),
-            subtle(format!("pause_model:{session_id}"), "Cambiar de modelo"),
-        ];
+                .render()],
+        };
+        actions.push(subtle(format!("pause_model:{session_id}"), "Cambiar de modelo"));
         if pause.account_url().is_some() {
             actions.push(subtle(format!("pause_account:{session_id}"), "Abrir cuenta"));
         }

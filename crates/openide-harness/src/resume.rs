@@ -253,6 +253,51 @@ pub fn cancel_paused_turn(
     Ok(event)
 }
 
+/// What the host tells the model when a conversation continues on another
+/// model after a pause. Shown to the person as a notice, never as a message
+/// of theirs.
+pub const MODEL_SWITCH_CONTINUATION: &str = "The previous turn was interrupted by a provider limit and this conversation now continues on a different model. Continue the interrupted work from where it stopped, using the conversation so far as the source of truth. Every tool call above that has a result has already run: do not repeat it. Do the step that was still pending; if the work was already finished, give the final answer. Reply in the language the user has been using.";
+
+/// Close a turn paused at a model boundary so the conversation continues on
+/// another route in the turn `next_turn_id`. Refused for any other recovery
+/// state. Whether the next turn re-admits this turn's prompt or opens with
+/// `MODEL_SWITCH_CONTINUATION` is recorded in the event: a turn paused before
+/// its first response has nothing to continue from but its own prompt.
+pub fn supersede_paused_turn(
+    sessions: &SessionStore,
+    checkpoints: &CheckpointFileStore,
+    lease: &NativeSessionLease,
+    provider_id: &str,
+    model_id: &str,
+    next_turn_id: &str,
+) -> Result<AgentEvent, ResumeError> {
+    let (_, _, replay) = load_manual_replay(sessions, checkpoints, lease)?;
+    let Some(pause) = replay.pause.as_ref().filter(|_| {
+        matches!(
+            replay.recovery,
+            ReplayRecovery::ReadyForModel { .. } | ReplayRecovery::ModelInFlight { .. }
+        )
+    }) else {
+        return Err(ResumeError::StaleResolution);
+    };
+    let sequence = replay
+        .last_sequence
+        .checked_add(1)
+        .ok_or(ResumeError::SequenceExhausted)?;
+    let event = AgentEvent::new(
+        lease.session_id(),
+        sequence,
+        AgentEventKind::TurnSuperseded {
+            provider_id: provider_id.to_owned(),
+            model_id: model_id.to_owned(),
+            next_turn_id: next_turn_id.to_owned(),
+            host_prompt: pause.step > 1,
+        },
+    );
+    sessions.append_native_event(&event)?;
+    Ok(event)
+}
+
 /// Record a human decision to abandon the remaining tool calls of a failed
 /// or cancelled turn. This route needs no model, provider credentials, tool
 /// executor, or current settings. The session lease must already be held.
@@ -1468,13 +1513,19 @@ impl ResumeEngine {
             )
             .await?;
         }
+        // The target sees a copy it accepts; the journal keeps what was said.
+        let adapted = crate::history_adapter::adapt_for(
+            self.model.as_ref(),
+            &messages,
+            catalog.definitions(),
+        )?;
         let (sender, mut receiver) = crate::model_event_channel(cancel.clone());
         let mut pending_delivery = None;
         let mut delivery_failed = false;
         let completion_result = {
             let future =
                 self.model
-                    .stream_events(&messages, catalog.definitions(), cancel.clone(), sender);
+                    .stream_events(&adapted.messages, &adapted.tools, cancel.clone(), sender);
             tokio::pin!(future);
             loop {
                 tokio::select! {
@@ -1526,9 +1577,14 @@ impl ResumeEngine {
                 self.append(lease, replay.last_sequence, events, kind)?;
             }
         }
-        let completion = completion_result?;
+        let mut completion = completion_result?;
+        adapted.restore(&mut completion);
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled.into());
+        }
+        let truncated = completion.truncated;
+        if truncated && completion.output.content.trim().is_empty() {
+            return Err(AgentError::Model(crate::runner::OUTPUT_LIMIT_WITHOUT_TEXT.into()).into());
         }
         let mut assistant =
             AgentMessage::assistant(completion.output.content, completion.output.tool_calls);
@@ -1600,6 +1656,33 @@ impl ResumeEngine {
                         plan: PlanSnapshot::from_plan_response(&assistant.content),
                     },
                 )?;
+            }
+            if truncated {
+                let asked = crate::runner::trailing_output_continuations(&record.events);
+                if let Some(turn_id) = turn
+                    .turn_id
+                    .as_deref()
+                    .filter(|_| asked < crate::runner::MAX_OUTPUT_CONTINUATIONS)
+                {
+                    // The drain in `finish_model_response` commits it and
+                    // leaves the turn ready for the next request.
+                    self.sessions.enqueue_native_steer(
+                        lease.session_id(),
+                        turn_id,
+                        &format!("{}{step}", crate::runner::HOST_CONTINUE_INPUT),
+                        crate::runner::OUTPUT_LIMIT_CONTINUATION,
+                    )?;
+                } else {
+                    self.append(
+                        lease,
+                        replay.last_sequence,
+                        events,
+                        AgentEventKind::HostNotice {
+                            code: openide_core::NOTICE_OUTPUT_LIMIT.into(),
+                            detail: self.model.model_id().to_owned(),
+                        },
+                    )?;
+                }
             }
             self.finish_model_response(lease, replay, events, assistant.content, step, &cancel)
                 .await?;

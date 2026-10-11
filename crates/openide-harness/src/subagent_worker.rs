@@ -416,6 +416,11 @@ pub struct SubagentWorker {
     permission_policy: PermissionPolicy,
     limits: RunLimits,
     token_budget: Option<TokenBudgetPolicy>,
+    /// The budget a child's identity is derived from, when it is not the one
+    /// it runs with. The running budget may follow what a provider teaches
+    /// the host (a learned window, a smaller reserve) without turning every
+    /// child reserved earlier into a conflicting identity.
+    identity_budget: Option<Option<TokenBudgetPolicy>>,
     auto_compaction: Option<(Arc<CheckpointFileStore>, CheckpointCompatibility)>,
     command_hooks: Arc<CommandHooks>,
     session_approval_isolation: Option<CommandIsolation>,
@@ -448,6 +453,7 @@ impl SubagentWorker {
             permission_policy: PermissionPolicy::new(),
             limits: RunLimits::default(),
             token_budget: None,
+            identity_budget: None,
             auto_compaction: None,
             command_hooks: Arc::new(CommandHooks::default()),
             session_approval_isolation: None,
@@ -476,6 +482,12 @@ impl SubagentWorker {
 
     pub fn with_token_budget_policy(mut self, policy: TokenBudgetPolicy) -> Self {
         self.token_budget = Some(policy);
+        self
+    }
+
+    /// See `identity_budget`. Without this the running budget identifies.
+    pub fn with_identity_budget(mut self, budget: Option<TokenBudgetPolicy>) -> Self {
+        self.identity_budget = Some(budget);
         self
     }
 
@@ -615,7 +627,7 @@ impl SubagentWorker {
         ] {
             identity.update((value as u64).to_be_bytes());
         }
-        if let Some(budget) = self.token_budget {
+        if let Some(budget) = self.identity_budget.unwrap_or(self.token_budget) {
             identity.update([1]);
             identity.update(budget.context_window_tokens.to_be_bytes());
             identity.update(budget.output_reserve_tokens.to_be_bytes());
@@ -1250,7 +1262,24 @@ impl SubagentWorker {
             .sessions
             .load(&child_id)?
             .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.clone()))?;
-        let admitted = record
+        // A child moved to another model keeps the turns of its earlier
+        // route: they answer to the model that ran them, and the turn that
+        // continues a superseded one is the host's, not a mailbox input.
+        let switches = record
+            .events
+            .iter()
+            .filter_map(|event| match &event.kind {
+                AgentEventKind::TurnSuperseded {
+                    next_turn_id,
+                    host_prompt,
+                    ..
+                } => Some((event.sequence, next_turn_id.as_str(), *host_prompt)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let moved_at = switches.last().map_or(0, |switch| switch.0);
+        let own_model = self.model.model_id().to_owned();
+        let all_admitted = record
             .events
             .iter()
             .filter_map(|event| match &event.kind {
@@ -1259,9 +1288,64 @@ impl SubagentWorker {
                     prompt,
                     model,
                     mode,
-                } => Some((turn_id, prompt, model, mode)),
+                } => Some((
+                    turn_id,
+                    prompt,
+                    if event.sequence < moved_at { &own_model } else { model },
+                    mode,
+                )),
                 _ => None,
             })
+            .collect::<Vec<_>>();
+        let continued = |turn_id: &str| switches.iter().any(|switch| switch.1 == turn_id);
+        if let Some((_, next_turn_id, host_prompt)) = switches
+            .last()
+            .filter(|switch| !all_admitted.iter().any(|turn| turn.0 == switch.1))
+            .copied()
+        {
+            // The switch closed the old turn and its continuation was never
+            // admitted: admit it on this worker's route and run it. Nothing
+            // of the closed turn is repeated; its tools all have results.
+            let superseded_prompt = all_admitted
+                .last()
+                .map(|turn| turn.1.clone())
+                .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.clone()))?;
+            let continuation = if host_prompt {
+                crate::MODEL_SWITCH_CONTINUATION.to_owned()
+            } else {
+                superseded_prompt
+            };
+            let turn_mode = *all_admitted.last().expect("checked above").3;
+            let next_turn_id = next_turn_id.to_owned();
+            let run = self.coordinator.resume_child_control(&control, &child_id)?;
+            let worker = self.clone();
+            let moved_control = control.clone();
+            let moved_child = child_id.clone();
+            let moved_cancel = worker_cancel.clone();
+            let terminal = tokio::task::spawn_blocking(move || {
+                let result = worker.run_continuation(
+                    &moved_control,
+                    &run,
+                    &moved_child,
+                    &next_turn_id,
+                    &continuation,
+                    turn_mode,
+                    &moved_cancel,
+                );
+                drop(run);
+                result
+            })
+            .await
+            .map_err(|error| SubagentWorkerError::Join(error.to_string()))??;
+            if terminal.status == SubagentStatus::Completed {
+                self.drain_queued_prepared(control, child_id, worker_cancel)
+                    .await?;
+            }
+            return Ok(SubagentRecoveryState::Terminal(terminal));
+        }
+        let admitted = all_admitted
+            .into_iter()
+            .filter(|turn| !continued(turn.0))
             .collect::<Vec<_>>();
         let (_, active_input, _) = self.coordinator.input_state(&control, &child_id)?;
         let inputs = self.coordinator.inputs_control(&control, &child_id)?;
@@ -1671,6 +1755,111 @@ impl SubagentWorker {
         }
     }
 
+    /// Admit and run the turn that continues a superseded one.
+    #[allow(clippy::too_many_arguments)]
+    fn run_continuation(
+        &self,
+        control: &SubagentControl,
+        run: &SubagentRunLease,
+        child_id: &str,
+        turn_id: &str,
+        prompt: &str,
+        mode: TurnMode,
+        cancellation: &CancellationToken,
+    ) -> Result<SubagentTurnResult, SubagentWorkerError> {
+        let stored = self
+            .sessions
+            .load(child_id)?
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        let checkpoints = CheckpointFileStore::new(self.sessions.storage_root())?;
+        let expected = stored
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.kind {
+                AgentEventKind::CheckpointCommitted { reference } => {
+                    Some(reference.compatibility.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| CheckpointCompatibility {
+                provider: String::new(),
+                model: String::new(),
+                context_format_key: String::new(),
+            });
+        let replay = replay_native(child_id, &stored.events, Some(&checkpoints), &expected)?;
+        if replay.recovery != ReplayRecovery::Idle
+            || replay.superseded.as_ref().is_none_or(|next| next.next_turn_id != turn_id)
+        {
+            self.coordinator.pause_child(run)?;
+            return Err(SubagentWorkerError::UnresolvedChild(child_id.to_owned()));
+        }
+        if cancellation.is_cancelled() || self.coordinator.cancellation_requested(run)? {
+            self.request_cancel_and_revoke(control, child_id)?;
+            self.coordinator.pause_child(run)?;
+            return Err(SubagentWorkerError::Cancelled);
+        }
+        let admission = self.sessions.admit_native_turn(
+            child_id,
+            turn_id,
+            prompt,
+            self.model.model_id(),
+            mode,
+        )?;
+        self.execute_claimed_turn(
+            control,
+            run,
+            child_id,
+            &stored.session.workspace,
+            admission.sequence,
+            prompt,
+            mode,
+            replay.history,
+            cancellation,
+        )
+    }
+
+    /// Move one paused child to this worker's route. See
+    /// `SubagentCoordinator::rebind_child` for when that is allowed. The
+    /// child stays `Interrupted`: resuming it with this worker admits the
+    /// turn that continues it.
+    pub fn switch_paused_child(
+        &self,
+        parent_lease: &NativeSessionLease,
+        child_id: &str,
+    ) -> Result<(), SubagentWorkerError> {
+        let control = self.coordinator.issue_control(parent_lease)?;
+        let stored = self
+            .sessions
+            .load(child_id)?
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        let link = stored
+            .session
+            .subagent
+            .as_ref()
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        // The identity of a child is that of its spawn: the first admission.
+        let (prompt, mode) = stored
+            .events
+            .iter()
+            .find_map(|event| match &event.kind {
+                AgentEventKind::TurnAdmitted { prompt, mode, .. } => Some((prompt.as_str(), *mode)),
+                _ => None,
+            })
+            .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(child_id.to_owned()))?;
+        let digest = self
+            .spec_for(&stored.session.workspace, prompt, mode, link.depth)?
+            .digest_hex()?;
+        self.coordinator.rebind_child(
+            &control,
+            child_id,
+            &digest,
+            &self.provider,
+            self.model.model_id(),
+        )?;
+        Ok(())
+    }
+
     fn run_claimed_input(
         &self,
         control: &SubagentControl,
@@ -2075,7 +2264,7 @@ fn is_terminal(kind: &AgentEventKind) -> bool {
         kind,
         AgentEventKind::TurnCompleted { .. }
             | AgentEventKind::TurnFailed { .. }
-            | AgentEventKind::TurnCancelled
+            | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
     )
 }
 
@@ -3327,6 +3516,194 @@ mod tests {
             .unwrap()
             .iter()
             .any(|child| child.session.id == child_id && child.status == SubagentStatus::Completed));
+    }
+
+    /// Calls `effect` once, then hits its limit forever.
+    struct WorksThenLimited(AtomicUsize);
+
+    #[async_trait]
+    impl ModelBackend for WorksThenLimited {
+        fn model_id(&self) -> &str {
+            "fixture-child"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Ok(ModelOutput {
+                    content: String::new(),
+                    tool_calls: vec![ToolCall {
+                        id: "call:made by route A".into(),
+                        name: "effect".into(),
+                        arguments: json!({}),
+                    }],
+                });
+            }
+            Err(AgentError::Provider(crate::ProviderFailure::new(
+                crate::FailureClass::LimitReached,
+                "HTTP 429: usage_limit_reached",
+            )))
+        }
+    }
+
+    /// The route a paused child moves to. Records what it was sent.
+    struct OtherRoute(Mutex<Vec<Vec<AgentMessage>>>);
+
+    #[async_trait]
+    impl ModelBackend for OtherRoute {
+        fn model_id(&self) -> &str {
+            "fixture-other"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([8; 32])
+        }
+        async fn complete(
+            &self,
+            messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            self.0.lock().unwrap().push(messages.to_vec());
+            Ok(ModelOutput {
+                content: "finished on the other route".into(),
+                tool_calls: Vec::new(),
+            })
+        }
+    }
+
+    fn other_route(
+        sessions: &Arc<SessionStore>,
+        coordinator: &Arc<SubagentCoordinator>,
+        tools: Arc<dyn ToolExecutor>,
+    ) -> (Arc<OtherRoute>, SubagentWorker) {
+        let model = Arc::new(OtherRoute(Mutex::new(Vec::new())));
+        let worker = SubagentWorker::new(
+            coordinator.clone(),
+            sessions.clone(),
+            model.clone(),
+            tools,
+            "other",
+            "https://other.example/v1",
+        )
+        .with_permission_policy(PermissionPolicy::new().with_tool("effect", PermissionMode::Allow));
+        (model, worker)
+    }
+
+    #[tokio::test]
+    async fn a_paused_child_moves_to_another_route_without_repeating_its_tools() {
+        let root = tempfile::tempdir().unwrap();
+        let tools = Arc::new(CountingTools(AtomicUsize::new(0)));
+        let (sessions, coordinator, worker) =
+            reopened_worker(root.path(), Arc::new(WorksThenLimited(AtomicUsize::new(0))), tools.clone());
+        let worker = worker
+            .with_permission_policy(PermissionPolicy::new().with_tool("effect", PermissionMode::Allow));
+        let parent = sessions.create(root.path(), "native").unwrap();
+        let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+        let paused = worker
+            .run(parent_lease.clone(), "spawn-move".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(paused.status, SubagentStatus::Interrupted);
+        assert_eq!(tools.0.load(Ordering::SeqCst), 1);
+        let child_id = paused.child_session_id;
+        let before = sessions.load(&child_id).unwrap().unwrap();
+
+        let (other_model, other) = other_route(&sessions, &coordinator, tools.clone());
+        other.switch_paused_child(&parent_lease, &child_id).unwrap();
+        let moved = sessions.load(&child_id).unwrap().unwrap();
+        assert_eq!(&moved.events[..before.events.len()], before.events.as_slice(), "the journal only grows");
+        assert!(matches!(
+            &moved.events.last().unwrap().kind,
+            AgentEventKind::TurnSuperseded { provider_id, model_id, host_prompt: true, .. }
+                if provider_id == "other" && model_id == "fixture-other"
+        ));
+        assert_ne!(
+            moved.session.subagent.as_ref().unwrap().request_digest,
+            before.session.subagent.as_ref().unwrap().request_digest
+        );
+        // Still paused for the registry, and the old route no longer owns it.
+        assert_eq!(coordinator.list_children(&parent_lease).unwrap()[0].status, SubagentStatus::Interrupted);
+        assert!(worker
+            .resume(parent_lease.clone(), child_id.clone(), "spawn-move".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .is_err());
+        // Repeating the switch completes it instead of superseding twice.
+        other.switch_paused_child(&parent_lease, &child_id).unwrap();
+        assert_eq!(sessions.load(&child_id).unwrap().unwrap().events.len(), moved.events.len());
+
+        let resumed = other
+            .resume(parent_lease.clone(), child_id.clone(), "spawn-move".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(matches!(
+            resumed,
+            SubagentRecoveryState::Terminal(SubagentTurnResult { status: SubagentStatus::Completed, .. })
+        ));
+        assert_eq!(tools.0.load(Ordering::SeqCst), 1, "the completed tool never runs again");
+        let seen = other_model.0.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        let request = &seen[0];
+        assert_eq!(request.last().unwrap().content, crate::MODEL_SWITCH_CONTINUATION);
+        // The first route's work reaches the new one: the task, the call it
+        // made (under an identifier this route accepts) and its result.
+        assert!(request.iter().any(|message| message.content == "Work"));
+        assert!(request.iter().any(|message| message.content == "done" && message.role == MessageRole::Tool));
+        let events = sessions.load(&child_id).unwrap().unwrap().events;
+        assert!(matches!(
+            &events.iter().rev().find(|event| matches!(event.kind, AgentEventKind::TurnAdmitted { .. })).unwrap().kind,
+            AgentEventKind::TurnAdmitted { model, prompt, .. }
+                if model == "fixture-other" && prompt == crate::MODEL_SWITCH_CONTINUATION
+        ));
+        // A finished child cannot be moved, and it resumes as finished.
+        assert!(other.switch_paused_child(&parent_lease, &child_id).is_err());
+        assert!(matches!(
+            other
+                .resume(parent_lease.clone(), child_id.clone(), "spawn-move".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+                .await
+                .unwrap(),
+            SubagentRecoveryState::Terminal(SubagentTurnResult { status: SubagentStatus::Completed, .. })
+        ));
+        assert_eq!(seen.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_child_paused_before_any_response_is_given_its_own_task_again() {
+        let root = tempfile::tempdir().unwrap();
+        let tools = Arc::new(CountingTools(AtomicUsize::new(0)));
+        let limited = Arc::new(LimitedChildModel { failures: usize::MAX, calls: AtomicUsize::new(0) });
+        let (sessions, coordinator, worker) = reopened_worker(root.path(), limited, tools.clone());
+        let worker = worker
+            .with_permission_policy(PermissionPolicy::new().with_tool("effect", PermissionMode::Allow));
+        let parent = sessions.create(root.path(), "native").unwrap();
+        let parent_lease = Arc::new(sessions.try_acquire_native_lease(&parent.id).unwrap());
+        let paused = worker
+            .run(parent_lease.clone(), "spawn-first".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        let child_id = paused.child_session_id;
+        let (other_model, other) = other_route(&sessions, &coordinator, tools);
+        other.switch_paused_child(&parent_lease, &child_id).unwrap();
+        let resumed = other
+            .resume(parent_lease.clone(), child_id.clone(), "spawn-first".into(), "Work".into(), TurnMode::Build, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(matches!(
+            resumed,
+            SubagentRecoveryState::Terminal(SubagentTurnResult { status: SubagentStatus::Completed, .. })
+        ));
+        let seen = other_model.0.lock().unwrap();
+        let users: Vec<&str> = seen[0]
+            .iter()
+            .filter(|message| message.role == MessageRole::User)
+            .map(|message| message.content.as_str())
+            .collect();
+        assert_eq!(users, ["Work"], "the task once, and no host text");
     }
 
     #[tokio::test]

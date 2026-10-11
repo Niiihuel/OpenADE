@@ -120,6 +120,14 @@ pub(crate) struct SettingsPreferences {
     pub vim_mode: bool,
     /// Continue a turn paused on a provider limit when the limit renews.
     pub auto_resume_on_limit: bool,
+    /// Ask before summarising a conversation that does not fit a newly
+    /// chosen model, instead of doing it and saying so.
+    pub ask_before_summary_on_switch: bool,
+    /// `provider:model` routes offered, in this order, when a pause has no
+    /// end in sight.
+    pub fallback_models: Vec<String>,
+    /// Move a paused turn to the first available fallback without asking.
+    pub auto_switch_fallback: bool,
     pub terminal_shell: TerminalShell,
     pub reopen_last_workspace: bool,
     pub last_workspace: Option<PathBuf>,
@@ -148,6 +156,9 @@ impl Default for SettingsPreferences {
             keymap_profile: KeymapProfile::default(),
             vim_mode: false,
             auto_resume_on_limit: true,
+            ask_before_summary_on_switch: false,
+            fallback_models: Vec::new(),
+            auto_switch_fallback: false,
             terminal_shell: TerminalShell::System,
             reopen_last_workspace: false,
             last_workspace: None,
@@ -209,6 +220,27 @@ impl SettingsPreferences {
             .and_then(serde_json::Value::as_bool)
         {
             preferences.auto_resume_on_limit = enabled;
+        }
+        if let Some(enabled) = value
+            .get("ask_before_summary_on_switch")
+            .and_then(serde_json::Value::as_bool)
+        {
+            preferences.ask_before_summary_on_switch = enabled;
+        }
+        if let Some(models) = value.get("fallback_models").and_then(serde_json::Value::as_array) {
+            preferences.fallback_models = models
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .filter(|route| route.len() <= 640 && route.contains(':'))
+                .take(MAX_FALLBACK_MODELS)
+                .map(str::to_owned)
+                .collect();
+        }
+        if let Some(enabled) = value
+            .get("auto_switch_fallback")
+            .and_then(serde_json::Value::as_bool)
+        {
+            preferences.auto_switch_fallback = enabled;
         }
         if let Some(reopen) = value
             .get("reopen_last_workspace")
@@ -331,6 +363,9 @@ impl SettingsPreferences {
             "keymap_profile": self.keymap_profile.id(),
             "vim_mode": self.vim_mode,
             "auto_resume_on_limit": self.auto_resume_on_limit,
+            "ask_before_summary_on_switch": self.ask_before_summary_on_switch,
+            "fallback_models": self.fallback_models,
+            "auto_switch_fallback": self.auto_switch_fallback,
             "terminal_shell": self.terminal_shell,
             "reopen_last_workspace": self.reopen_last_workspace,
             "last_workspace": workspace_text,
@@ -838,3 +873,6 @@ mod tests {
         );
     }
 }
+
+/// A list a person orders by hand stays short.
+pub(crate) const MAX_FALLBACK_MODELS: usize = 8;

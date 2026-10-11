@@ -607,7 +607,7 @@ impl NativeContextUiState {
                     (unmeasured, since_measure) = (0, 0);
                 }
                 AgentEventKind::TurnCompleted { .. }
-                | AgentEventKind::TurnCancelled
+                | AgentEventKind::TurnCancelled | AgentEventKind::TurnSuperseded { .. }
                 | AgentEventKind::TurnFailed { .. } => {
                     route = None;
                     request = None;

@@ -1893,7 +1893,7 @@ mod tests {
                     .as_str()
                     .unwrap()
                     .len(),
-                80_000
+                240_000
             );
             let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Accepted\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
             write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
@@ -1919,7 +1919,7 @@ mod tests {
                 sequence_start: 0,
                 workspace: root.path().to_path_buf(),
                 history: vec![],
-                prompt: "x".repeat(80_000),
+                prompt: "x".repeat(240_000),
                 mode: openide_core::TurnMode::Plan,
             });
             loop {
