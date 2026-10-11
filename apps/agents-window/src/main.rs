@@ -62,6 +62,7 @@ mod file_activity_ui;
 #[cfg(test)]
 mod file_icon_integration_tests;
 mod file_watch;
+mod file_ops;
 mod files;
 mod folder_dialog;
 mod fonts;

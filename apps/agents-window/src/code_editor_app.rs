@@ -121,6 +121,17 @@ impl CodeEditorHost {
                     .is_some_and(|c| c.snapshot().map_or(true, |s| s.is_dirty()))
         })
     }
+    /// Whether a document at or under `relative` holds text not yet on disk.
+    pub(in crate::app) fn has_unsaved_under(&self, workspace: &Path, relative: &Path) -> bool {
+        self.documents.iter().any(|((root, path), d)| {
+            root == workspace
+                && path.starts_with(relative)
+                && (d.saving.is_some()
+                    || d.controller
+                        .as_ref()
+                        .is_some_and(|c| c.snapshot().map_or(true, |s| s.is_dirty())))
+        })
+    }
     fn active_document(&self) -> Option<&Document> {
         self.documents.get(self.active.as_ref()?)
     }

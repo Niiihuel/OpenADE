@@ -3208,9 +3208,9 @@ pub(crate) mod tests {
             let frame = tree.layout(viewport);
             for label in [
                 "Uso de contexto",
-                "300 / 2.0K tokens · 15%",
+                "15% · ~300 / 2.0K tokens",
                 "Skills",
-                "2 · 400 bytes",
+                "~100",
             ] {
                 assert!(
                     frame.commands.iter().any(|command| matches!(command,
@@ -3232,7 +3232,7 @@ pub(crate) mod tests {
                 .iter()
                 .find_map(|command| match command {
                     DrawCommand::FillRect { rect, color, .. }
-                        if *color == theme::TREE_GUIDE && (rect.height - 4.0).abs() < 0.01 =>
+                        if *color == theme::TRACK && (rect.height - 6.0).abs() < 0.01 =>
                     {
                         Some(rect)
                     }

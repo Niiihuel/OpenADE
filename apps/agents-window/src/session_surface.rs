@@ -3756,6 +3756,9 @@ mod tests {
             file_rows: vec![],
             files_status: String::new(),
             file_root_can_load_more: false,
+            file_draft: None,
+            file_delete: None,
+            file_clipboard: None,
             show_archived: false,
             session_organization: crate::view::SessionOrganization::Project,
             session_sort: openide_core::SessionSort::Updated,
@@ -4510,7 +4513,7 @@ mod tests {
             state.composer_context_open = true;
             tree.set_root(build_session_surface(&state, width, false, false));
             let summary = tree.layout(viewport);
-            for value in ["300 / 2.0K tokens · 15%", "Herramientas", "4 definiciones"] {
+            for value in ["15% · ~300 / 2.0K tokens", "Herramientas"] {
                 assert!(
                     visible_text(&summary).contains(value),
                     "missing {value} at {width}"
@@ -4570,7 +4573,7 @@ mod tests {
                     text.contains("Aún no hay una respuesta medida"),
                     "{changed}: {text}"
                 );
-                assert!(!text.contains("15%") && !text.contains("300 / 2.0K tokens"));
+                assert!(!text.contains("15%") && !text.contains("~300 / 2.0K tokens"));
             }
         }
     }

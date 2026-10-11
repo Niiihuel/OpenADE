@@ -255,6 +255,12 @@ impl FileExplorer {
         Ok(true)
     }
 
+    /// Collapse every folder; the cached listings stay for the next expansion.
+    pub fn collapse_all(&mut self) {
+        self.expanded.clear();
+        self.rebuild_rows();
+    }
+
     /// Expand a breadcrumb hierarchy without toggling already-open ancestors.
     pub fn reveal(&mut self, relative: &Path) -> io::Result<()> {
         let mut ancestor = PathBuf::new();
@@ -732,6 +738,22 @@ pub fn read_text_preview_page(
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn collapse_all_leaves_only_the_root_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("src/deep")).unwrap();
+        fs::write(temp.path().join("src/deep/a.rs"), "x").unwrap();
+        let mut explorer = FileExplorer::new(temp.path()).unwrap();
+        explorer.reveal(Path::new("src/deep")).unwrap();
+        assert_eq!(explorer.rows().len(), 3);
+        explorer.collapse_all();
+        assert_eq!(explorer.rows().len(), 1);
+        assert!(!explorer.rows()[0].expanded);
+        // The nested folder does not come back expanded with its parent.
+        explorer.toggle(Path::new("src")).unwrap();
+        assert_eq!(explorer.rows().len(), 2);
+    }
 
     #[test]
     fn lists_directories_first_and_previews_workspace_text() {
