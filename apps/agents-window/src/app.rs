@@ -12274,6 +12274,8 @@ impl AgentsWindow {
             self.view.files_status = format!("No se pudo actualizar: {error}");
         }
         self.refresh_file_rows();
+        // The tree marks what version control says of the files it lists.
+        self.environment_dirty = true;
         true
     }
 
@@ -19318,6 +19320,8 @@ impl eframe::App for AgentsWindow {
         early_changed |= self.view.show_jump_to_bottom != show_jump;
         self.view.show_jump_to_bottom = show_jump;
         let window_focused = ctx.input(|input| input.focused);
+        // Files may have changed while another program had the focus.
+        self.environment_dirty |= window_focused && !self.window_focused;
         self.window_focused = window_focused;
         early_changed |= self
             .tree
@@ -19543,7 +19547,7 @@ impl eframe::App for AgentsWindow {
             needs_relayout = true;
         }
         needs_relayout |= self.sync_git_panel_reveal();
-        needs_relayout |= self.sync_terminal_session_reveal();
+        needs_relayout |= self.sync_tab_reveal();
         needs_relayout |= self.update_command_search(&ctx);
         needs_relayout |= self.poll_project_actions(&ctx);
         // Disclosures can change during input handling. Start their background

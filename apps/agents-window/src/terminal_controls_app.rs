@@ -77,14 +77,21 @@ impl AgentsWindow {
         }
     }
 
-    /// A session's tab shows its close button under the pointer or the focus.
-    pub(super) fn sync_terminal_session_reveal(&mut self) -> bool {
-        let revealed = [self.tree.hovered_id(), self.tree.focused_id()]
-            .into_iter()
-            .flatten()
-            .find_map(crate::terminal_dock_ui::session_of);
-        let changed = self.view.terminal_controls.revealed != revealed;
-        self.view.terminal_controls.revealed = revealed;
+    /// A session's tab shows its close button under the pointer or the
+    /// focus, and so does a file tab with unsaved changes.
+    pub(super) fn sync_tab_reveal(&mut self) -> bool {
+        let on = |tab: fn(&str) -> Option<u64>| {
+            [self.tree.hovered_id(), self.tree.focused_id()]
+                .into_iter()
+                .flatten()
+                .find_map(tab)
+        };
+        let session = on(crate::terminal_dock_ui::session_of);
+        let file = on(crate::view::dock_chrome::tab_of);
+        let changed = self.view.terminal_controls.revealed != session
+            || self.view.git_panel.tab_revealed != file;
+        self.view.terminal_controls.revealed = session;
+        self.view.git_panel.tab_revealed = file;
         changed
     }
 

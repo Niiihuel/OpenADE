@@ -13,6 +13,9 @@ use std::sync::Arc;
 const ROW_HEIGHT: f32 = 24.0;
 const TOOL_SIZE: f32 = crate::dock_tab_ui::TOOL_SIZE;
 const INSET: f32 = 8.0;
+/// The column of a row's version-control mark, and the dot a folder shows.
+const MARK_COLUMN: f32 = 12.0;
+const FOLDER_MARK: f32 = 6.0;
 
 /// A menu action names its target by workspace-relative path, never by row:
 /// the watcher reorders rows while a menu is open. The root is the empty path.
@@ -382,6 +385,7 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                 })
                 .collect::<Vec<_>>(),
         ));
+        let decorations = crate::git_decorations::for_state(state);
         let draft = state.file_draft.clone();
         let can_paste = state.file_clipboard.is_some();
         let count = shown.len() + usize::from(state.file_root_can_load_more);
@@ -423,7 +427,15 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                 } else {
                     Element::spacer().size(Some(14.0), Some(14.0))
                 };
-                let title = Element::row(vec![
+                // A file shows its own state; a folder, the strongest inside it.
+                let mark = decorations.as_ref().and_then(|decorations| {
+                    if entry.is_dir {
+                        decorations.folder(&paths[index])
+                    } else {
+                        decorations.file(&paths[index])
+                    }
+                });
+                let mut title = vec![
                     Element::icon(if entry.is_dir {
                         openide_ui::folder_icon(&entry.name, entry.expanded)
                     } else {
@@ -433,11 +445,29 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                     Element::faded_text(&entry.name, 12.0)
                         .font_family(FontFamily::Sans)
                         .font_size(13.0)
-                        .foreground(theme::FOREGROUND)
+                        .foreground(mark.map_or(theme::FOREGROUND, |mark| mark.color))
                         .flex(1.0)
                         .size(None, Some(ROW_HEIGHT)),
-                ])
-                .gap(6.0);
+                ];
+                if let Some(mark) = mark {
+                    // One column at the row's end; the name fades before it.
+                    title.push(
+                        if entry.is_dir {
+                            Element::spacer()
+                                .background(mark.color)
+                                .radius(FOLDER_MARK / 2.0)
+                                .size(Some(FOLDER_MARK), Some(FOLDER_MARK))
+                        } else {
+                            Element::truncated_text(mark.letter)
+                                .font_family(FontFamily::Monospace)
+                                .font_size(11.0)
+                                .foreground(mark.color)
+                        }
+                        .centered()
+                        .size(Some(MARK_COLUMN), Some(ROW_HEIGHT)),
+                    );
+                }
+                let title = Element::row(title).gap(6.0);
                 let action = format!("file_row:{index}");
                 let mut row = TreeRow::new(
                     |content| Element::clickable(&action, content),
@@ -477,6 +507,11 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                     &paths[index],
                     theme::component_palette(),
                 )
+                .description(match mark {
+                    Some(_) if entry.is_dir => "Contiene cambios",
+                    Some(mark) => mark.label,
+                    None => "",
+                })
                 .placement(if compact {
                     TooltipPlacement::Right
                 } else {
@@ -1111,6 +1146,220 @@ mod tests {
             &mut image.as_mut(),
         );
         image.save_png(directory.join(format!("{name}.png"))).unwrap();
+    }
+
+    const LONG: &str = "a_file_whose_name_is_far_too_long_for_a_narrow_tree_to_show_whole.rs";
+
+    /// A tree with a conflict, changes and untracked files under folders, one
+    /// of them folded and one that can load more.
+    fn decorated() -> ViewState {
+        let mut state = crate::view::tests::empty_state();
+        state.workspace = "/workspace/openADE".into();
+        state.file_rows = [
+            ("src", 0, true, true, true),
+            ("deep", 1, true, false, false),
+            ("merge", 1, true, true, false),
+            ("both.rs", 2, false, false, false),
+            (LONG, 1, false, false, false),
+            ("notes.md", 1, false, false, false),
+            ("clean.rs", 1, false, false, false),
+            ("docs", 0, true, false, false),
+            ("vendor", 0, true, false, false),
+            ("Cargo.toml", 0, false, false, false),
+            ("README.md", 0, false, false, false),
+        ]
+        .into_iter()
+        .map(|(name, depth, is_dir, expanded, can_load_more)| FileRowView {
+            name: name.into(),
+            depth,
+            is_dir,
+            expanded,
+            can_load_more,
+        })
+        .collect();
+        let long = format!("src/{LONG}");
+        state.git_review = Some(Ok(Arc::new(crate::git_decorations::tests::review(
+            &[("Cargo.toml", "Nuevo")],
+            &[
+                ("src/deep/inner/changed.rs", "Modificado"),
+                ("src/merge/both.rs", "Conflicto"),
+                (long.as_str(), "Modificado"),
+                ("Cargo.toml", "Modificado"),
+            ],
+            &["src/notes.md", "docs/draft.md"],
+        ))));
+        state
+    }
+
+    /// The ink of a row's name and where its visible part ends.
+    fn name(frame: &Frame, text: &str) -> (Color, f32) {
+        let mut ink = None;
+        let mut end = 0.0_f32;
+        for pair in frame.commands.windows(2) {
+            if let [DrawCommand::PushClip(clip), DrawCommand::Text { text: painted, color, .. }] = pair {
+                if painted == text {
+                    ink.get_or_insert(*color);
+                    end = end.max(clip.x + clip.width);
+                }
+            }
+        }
+        (ink.unwrap_or_else(|| panic!("no name {text}")), end)
+    }
+
+    /// The mark painted in `row`: its letter, or "·" for a dot, its color
+    /// and the center of what was painted.
+    fn mark(frame: &Frame, row: usize) -> Option<(String, Color, f32)> {
+        let row = bounds(frame, &format!("file_row:{row}"));
+        let inside = |y: f32| y >= row.y && y < row.y + row.height;
+        frame.commands.iter().find_map(|command| match command {
+            DrawCommand::Text { text, color, position, font_family: FontFamily::Monospace, .. }
+                if inside(position.y) =>
+            {
+                Some((text.clone(), *color, position.x + 7.0 / 2.0))
+            }
+            DrawCommand::FillRect { rect, color, .. }
+                if rect.width == FOLDER_MARK && rect.height == FOLDER_MARK && inside(rect.y) =>
+            {
+                Some(("·".into(), *color, rect.x + rect.width / 2.0))
+            }
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn decorated_rows_tint_their_name_and_mark_one_column_the_name_never_reaches() {
+        let state = decorated();
+        for ide in [false, true] {
+            for width in [240.0, 320.0, 480.0] {
+                let case = format!("ide={ide} width={width}");
+                let size = Size::new(width, 420.0);
+                let root = if ide { build_ide(&state, width) } else { build(&state, width) };
+                let mut tree = UiTree::new(root);
+                tree.set_reduced_motion(true);
+                tree.set_text_measurer(|text, _, _| text.chars().count() as f32 * 7.0);
+                let frame = tree.layout(size);
+                let mut column = None;
+                for (row, text, expected) in [
+                    (0, "src", Some(("·", theme::DESTRUCTIVE))),
+                    (1, "deep", Some(("·", theme::WARNING))),
+                    (2, "merge", Some(("·", theme::DESTRUCTIVE))),
+                    (3, "both.rs", Some(("!", theme::DESTRUCTIVE))),
+                    (4, LONG, Some(("M", theme::WARNING))),
+                    (5, "notes.md", Some(("U", theme::DIFF_ADDED))),
+                    (6, "clean.rs", None),
+                    (7, "docs", Some(("·", theme::DIFF_ADDED))),
+                    (8, "vendor", None),
+                    (9, "Cargo.toml", Some(("M", theme::WARNING))),
+                    (10, "README.md", None),
+                ] {
+                    let (ink, end) = name(&frame, text);
+                    let painted = mark(&frame, row);
+                    let Some((letter, color)) = expected else {
+                        assert_eq!(ink, theme::FOREGROUND, "{case} {text}");
+                        assert_eq!(painted, None, "{case} {text}");
+                        continue;
+                    };
+                    let (painted, mark_ink, center) = painted.unwrap_or_else(|| panic!("{case} {text}"));
+                    assert_eq!((painted.as_str(), mark_ink, ink), (letter, color, color), "{case} {text}");
+                    assert!(end <= center - MARK_COLUMN / 2.0, "{case} {text}: {end} {center}");
+                    if row == 0 {
+                        // The row's own control keeps the end; the mark is before it.
+                        assert!(center + MARK_COLUMN / 2.0 <= bounds(&frame, "file_more:0").x, "{case}");
+                    } else {
+                        assert_eq!(*column.get_or_insert(center), center, "{case} {text}");
+                    }
+                }
+                let row = bounds(&frame, "file_row:10");
+                assert_eq!(column, Some(row.x + row.width - 8.0 - MARK_COLUMN / 2.0), "{case}");
+                // Under the pointer the name keeps its tint.
+                tree.handle_event(UiEvent::PointerMove(center(bounds(&frame, "file_row:9"))));
+                assert_eq!(name(&tree.layout(size), "Cargo.toml").0, theme::WARNING, "{case}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_decorated_row_says_its_state_in_words_in_its_hint() {
+        let state = decorated();
+        let size = Size::new(320.0, 420.0);
+        let hint = |row: usize| {
+            let mut tree = UiTree::new(build(&state, size.width));
+            tree.set_reduced_motion(true);
+            let now = std::time::Instant::now();
+            let frame = tree.layout_at(size, now);
+            let target = bounds(&frame, &format!("file_row:{row}"));
+            tree.handle_event_at(UiEvent::PointerMove(center(target)), now);
+            let frame = tree.layout_at(size, now + std::time::Duration::from_secs(2));
+            frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Text { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        for (row, words, said) in [
+            (3, "En conflicto", true),
+            (5, "Sin seguimiento", true),
+            (9, "Modificado", true),
+            (7, "Contiene cambios", true),
+            (10, "Modificado", false),
+            (8, "Contiene cambios", false),
+        ] {
+            assert_eq!(hint(row).iter().any(|text| text == words), said, "{row} {words}");
+        }
+    }
+
+    #[test]
+    fn a_folder_outside_a_repository_and_a_snapshot_not_yet_read_have_no_decorations() {
+        let size = Size::new(320.0, 420.0);
+        let frame = |review| {
+            let mut state = decorated();
+            state.git_review = review;
+            let mut tree = UiTree::new(build(&state, size.width));
+            tree.set_reduced_motion(true);
+            tree.layout(size)
+        };
+        let unread = frame(None);
+        let outside = frame(Some(Err(crate::git_review::NOT_A_REPOSITORY.into())));
+        assert_eq!(unread.commands, outside.commands);
+        for row in 0..11 {
+            assert_eq!(mark(&unread, row), None);
+        }
+        for text in ["src", LONG, "notes.md", "Cargo.toml"] {
+            assert_eq!(name(&unread, text).0, theme::FOREGROUND);
+        }
+    }
+
+    #[test]
+    #[ignore = "exports the file tree's version-control marks as PNG under docs/ui-separation/shots/git-decorations"]
+    fn export_git_decorations_tree_visual_review() {
+        let state = decorated();
+        for (surface, ide) in [("dock", false), ("ide", true)] {
+            for width in [280.0, 420.0] {
+                let size = Size::new(width, 320.0);
+                let root = if ide { build_ide(&state, width) } else { build(&state, width) };
+                let (ctx, mut tree) = native_tree(root, size);
+                let frame = tree.layout(size);
+                crate::view::ide_visual_tests::export_shot(
+                    &frame,
+                    size,
+                    "git-decorations",
+                    &format!("tree-{surface}-{width:.0}"),
+                );
+                if width == 280.0 {
+                    tree.handle_event(UiEvent::PointerMove(center(bounds(&frame, "file_row:9"))));
+                    crate::view::ide_visual_tests::export_shot(
+                        &tree.layout(size),
+                        size,
+                        "git-decorations",
+                        &format!("tree-{surface}-{width:.0}-hover"),
+                    );
+                }
+                ctx.end_pass().textures_delta.clear();
+            }
+        }
     }
 
     #[test]

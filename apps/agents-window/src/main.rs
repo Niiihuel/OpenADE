@@ -69,6 +69,7 @@ mod folder_dialog;
 mod fonts;
 mod git_actions;
 mod git_branches;
+mod git_decorations;
 mod git_review;
 mod github;
 mod github_account;
