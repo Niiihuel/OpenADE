@@ -46,7 +46,9 @@ orden:
 
 1. El ejecutable de `OPENIDE_BROWSER_EXECUTABLE`, por ruta o por nombre en el
    `PATH`. Si la variable apunta a algo que no existe se informa eso; no se
-   elige otro navegador en su lugar.
+   elige otro navegador en su lugar. Un navegador se inicia siempre por el
+   nombre con el que se lo encontró y no por el destino de su enlace: el de un
+   snap es un enlace a `snap`, que lee ese nombre.
 2. Un Chrome, Chromium o Edge del sistema, en ese orden: por nombre en el
    `PATH` (`google-chrome-stable`, `google-chrome`, `chromium`,
    `chromium-browser`, `microsoft-edge-stable`, `microsoft-edge`; en Windows
@@ -73,10 +75,11 @@ escala queda fija mientras viva el contexto: si la ventana pasa a un monitor
 con otra, la página conserva la anterior y se muestra reescalada hasta
 **Reiniciar navegador**.
 
-El transporte del driver existe sólo para Unix. En Windows la aplicación
-compila y el panel muestra «Este sistema todavía no tiene un transporte para
-iniciar el navegador.» **Ese camino no se compiló ni se probó**: el entorno
-de desarrollo sólo tiene la biblioteca estándar de Linux.
+El transporte del driver existe sólo para Unix. En Windows el panel dice «El
+navegador todavía no funciona en este sistema» y no ofrece nada más que el
+detalle. **Ese camino no se compiló ni se probó**, y el de macOS tampoco: el
+entorno de desarrollo sólo tiene la biblioteca estándar de Linux, y las
+separaciones por `cfg` se revisaron leyendo el código.
 
 ## Interacción, errores y límites
 
@@ -235,7 +238,9 @@ Mientras la superficie está visible, el trabajador mantiene el flujo de
 cuadros del driver (`Page.startScreencast`, JPEG de calidad 80). Oculta, lo
 detiene: Chrome deja de codificar y no llega ningún cuadro. Al volver a
 mostrarse, la pestaña pinta su último cuadro, pero la página no recibe entrada
-hasta el primer cuadro del flujo nuevo. La URL, el título y el historial se
+hasta el primer cuadro del flujo nuevo. Mostrarla siempre inicia un flujo
+nuevo, también cuando el trabajador estaba ocupado con un comando y nunca
+llegó a verla oculta. La URL, el título y el historial se
 consultan cada 300 ms mientras está visible y sin comandos; es una sola
 consulta al protocolo, sin imagen.
 
@@ -263,7 +268,8 @@ El viewport más grande, 1600 × 1200, entra completo a escala 2. Por encima
 (escala mayor que 2,08 con ese panel) el flujo se inicia con `maxWidth` y
 `maxHeight`, Chrome reduce el cuadro y el host lo muestra en su tamaño lógico,
 reescalado; en ese caso no se pide el cuadro sin pérdida, que tampoco
-entraría. El límite de 4 MiB por línea del protocolo anterior ya no existe, y
+entraría, y lo que una captura del agente hizo saltear lo trae un flujo nuevo:
+el trabajador lo reinicia cuando la página queda quieta. El límite de 4 MiB por línea del protocolo anterior ya no existe, y
 con él la reducción de calidad del JPEG: el driver admite cuadros de 16 MiB.
 
 **Superficie.** La página se pinta con `Element::surface` de limn: el cuadro se
@@ -286,10 +292,13 @@ cuadro sin pérdida que sigue.
 límites del tamaño nuevo y la página recibe su cuadro sin pérdida a ese
 tamaño. A escala 1 Chrome no envía por sí solo un cuadro tras el cambio.
 
-**Pérdida del flujo.** Si el flujo no puede iniciarse o falla la captura sin
-pérdida, el trabajador lo detiene, lo dice en el pie («La vista en vivo se
-detuvo…») y vuelve a pedirlo a los 2 s. Si lo que falló es el navegador, se
-pierde el contexto. **Actualizar vista** reinicia el flujo a pedido.
+**Pérdida del flujo.** Si el flujo no puede iniciarse, el trabajador lo dice
+en el pie («La vista en vivo se detuvo…») y vuelve a pedirlo a los 2 s. Si lo
+que falló es el navegador, se pierde el contexto. Una captura sin pérdida que
+no se puede obtener (por ejemplo un PNG de más de 16 MiB) no detiene nada: el
+JPEG queda y ese flujo no vuelve a pedirla; si Chrome todavía no tiene un
+cuadro que dar, se pide de nuevo. **Actualizar vista** reinicia el flujo a
+pedido.
 
 **Mediciones.** Tomadas el 11 de octubre de 2026 a través del runtime real
 (trabajador, driver, decodificador), sin la ventana, con la prueba

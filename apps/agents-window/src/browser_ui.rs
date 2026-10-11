@@ -243,6 +243,11 @@ fn error_copy(browser: &BrowserUiState) -> (String, String) {
             "El navegador no pudo iniciarse".into(),
             "Faltan bibliotecas del sistema. Usá un Chromium instalado en este equipo.".into(),
         )
+    } else if error.contains("no tiene un transporte") {
+        (
+            "El navegador todavía no funciona en este sistema".into(),
+            "Esta versión de OpenIDE no puede iniciar su navegador en este sistema operativo.".into(),
+        )
     } else if !browser.started {
         (
             "El navegador no pudo iniciarse".into(),

@@ -858,7 +858,15 @@ impl BrowserRuntime {
     }
     /// Returns whether the surface was visible until now.
     pub(crate) fn set_visible(&self, visible: bool) -> bool {
-        self.handle.visible.swap(visible, Ordering::AcqRel)
+        let was = self.handle.visible.swap(visible, Ordering::AcqRel);
+        // The worker samples visibility between requests and may never see
+        // that the surface was hidden meanwhile. Shown again, it is owed a
+        // frame of a new stream either way: the window waits for one before
+        // it sends the page any input.
+        if visible && !was {
+            self.handle.view.restart.store(true, Ordering::Release);
+        }
+        was
     }
     pub(crate) fn visible(&self) -> bool {
         self.handle.visible.load(Ordering::Acquire)
@@ -1253,7 +1261,8 @@ impl Worker {
     }
 
     /// Lets go of the browser: it is killed and reaped and its directory is
-    /// removed.
+    /// removed. Also when the worker unwinds, so the process id never
+    /// outlives the browser it names.
     fn stop(&mut self) {
         self.streaming = false;
         self.handle.view.feed().stream = None;
@@ -1383,6 +1392,8 @@ impl Worker {
                         feed.stream = Some(stream);
                         feed.scale = scale;
                         feed.epoch += 1;
+                        feed.skipped = false;
+                        feed.settling_until = None;
                         // A page that is already still may not send a frame
                         // of its own: the lossless one is its first.
                         feed.changes += 1;
@@ -1425,12 +1436,27 @@ impl Worker {
                             view.arrived.notify_one();
                         }
                     }
+                    Err(error) if error.kind == ErrorKind::Closed => lost = Some(error),
                     // The compositor has no frame to give yet: asked again.
                     Err(error) if error.message.contains("Unable to capture screenshot") => {
                         view.arm()
                     }
-                    Err(error) => lost = Some(error),
+                    // A capture that cannot be had (a page whose PNG is over
+                    // the frame limit) is not a stream that stopped: the
+                    // JPEG stays, and this stream is not asked again.
+                    Err(_) => self.lossless = false,
                 }
+            }
+        }
+        if self.streaming && !self.lossless && lost.is_none() {
+            // Without a lossless frame to bring back what a skipped frame
+            // hid, a new stream does: its first frame is always shown.
+            let feed = view.feed();
+            let settled = !feed.rerendering
+                && feed.settling_until.is_none_or(|until| Instant::now() >= until)
+                && feed.changed_at.is_some_and(|at| at.elapsed() >= STILL_DELAY);
+            if feed.skipped && settled {
+                view.restart.store(true, Ordering::Release);
             }
         }
         match lost {
@@ -1445,6 +1471,12 @@ impl Worker {
             }
             None => {}
         }
+    }
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -1725,6 +1757,8 @@ struct Feed {
     changed_at: Option<Instant>,
     /// Counts streams: the first frame of one is news whatever it shows.
     epoch: u64,
+    /// The last frame of this stream was skipped, not shown.
+    skipped: bool,
     /// An agent capture at CSS scale is making Chrome draw the page at
     /// another scale, or did until a moment ago. Frames of that moment are
     /// not the page.
@@ -1878,6 +1912,7 @@ impl Shown {
         // unchanged.
         if data == self.jpeg {
             feed.settling_until = None;
+            feed.skipped = false;
             self.skipped.clear();
             return None;
         }
@@ -1891,6 +1926,7 @@ impl Shown {
             || feed
                 .settling_until
                 .is_some_and(|until| Instant::now() < until);
+        feed.skipped = suspect;
         if suspect {
             // What a skipped frame may have hidden, the lossless frame that
             // follows brings back.
@@ -1908,11 +1944,12 @@ impl Shown {
         data: Vec<u8>,
         after: u64,
     ) -> Option<(Vec<u8>, f32)> {
-        let feed = view.feed();
+        let mut feed = view.feed();
         self.follow(&feed);
         if feed.changes != after {
             return None;
         }
+        feed.skipped = false;
         // This capture is the page a skipped frame showed: that frame is its
         // twin, and is no news when the capture makes Chrome send it again.
         if !self.skipped.is_empty() {
@@ -2634,8 +2671,10 @@ fn resolve_executable(path: &Path, search_path: Option<&std::ffi::OsStr>) -> Pat
             };
             #[cfg(not(unix))]
             let executable = candidate.is_file();
+            // By the name it was found under, never by what that links to:
+            // a snap's browser is a link to `snap`, which reads its name.
             if executable {
-                if let Ok(absolute) = fs::canonicalize(&candidate) {
+                if let Ok(absolute) = std::path::absolute(&candidate) {
                     return absolute;
                 }
             }
@@ -2643,7 +2682,7 @@ fn resolve_executable(path: &Path, search_path: Option<&std::ffi::OsStr>) -> Pat
             if path.extension().is_none() {
                 let candidate = candidate.with_extension("exe");
                 if candidate.is_file() {
-                    if let Ok(absolute) = fs::canonicalize(&candidate) {
+                    if let Ok(absolute) = std::path::absolute(&candidate) {
                         return absolute;
                     }
                 }

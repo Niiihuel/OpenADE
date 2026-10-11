@@ -456,7 +456,7 @@ fn the_browser_is_the_one_named_then_a_system_one_then_an_earlier_download() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "#!/bin/sh\n").unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-        fs::canonicalize(path).unwrap()
+        path.to_owned()
     };
     let (first, second) = (root.path().join("bin-a"), root.path().join("bin-b"));
     let edge = executable(&second.join("microsoft-edge"));
@@ -467,6 +467,7 @@ fn the_browser_is_the_one_named_then_a_system_one_then_an_earlier_download() {
     let browsers = data.join("browser-runtime/deps/node_modules/playwright-core/.local-browsers");
     executable(&browsers.join("chromium-1100/chrome-linux/chrome"));
     let newest = executable(&browsers.join("chromium-1208/chrome-linux64/chrome"));
+    assert!(newest.is_absolute());
     executable(&browsers.join("chromium_headless_shell-1300/chrome-linux/headless_shell"));
     fs::create_dir_all(browsers.join("chromium-9999")).unwrap();
     let choose = |named: Option<&str>, search: Option<&std::ffi::OsStr>, usual: &[PathBuf], downloads: Option<&Path>| {
@@ -485,7 +486,11 @@ fn the_browser_is_the_one_named_then_a_system_one_then_an_earlier_download() {
 
     // On PATH: Chrome before Chromium before Edge, whatever the directory order.
     assert_eq!(choose(None, Some(&search), &usual, Some(&data)), Ok(chromium));
-    let chrome = executable(&second.join("google-chrome"));
+    // A browser is started by the name it was found under: a snap's is a
+    // link to a launcher that reads that name.
+    let launcher = executable(&root.path().join("snap"));
+    std::os::unix::fs::symlink(&launcher, second.join("google-chrome")).unwrap();
+    let chrome = second.join("google-chrome");
     assert_eq!(choose(None, Some(&search), &usual, Some(&data)), Ok(chrome));
     // A file that cannot be executed is not a browser.
     fs::write(first.join("google-chrome-stable"), "").unwrap_or_else(|_| {
@@ -500,7 +505,7 @@ fn the_browser_is_the_one_named_then_a_system_one_then_an_earlier_download() {
     let nowhere = std::env::join_paths([&first]).unwrap();
     assert_eq!(choose(None, Some(&nowhere), &usual, Some(&data)), Ok(usual[1].clone()));
     assert_eq!(choose(None, Some(&nowhere), &usual[..1], Some(&data)), Ok(newest));
-    assert_eq!(choose(None, None, &[], Some(&data)).map(|path| path.ends_with("chromium-1208/chrome-linux64/chrome")), Ok(true));
+    assert_eq!(choose(None, None, &[], Some(&data)), Ok(browsers.join("chromium-1208/chrome-linux64/chrome")));
     // Where that download cannot run it is not offered, and with nothing
     // at all the panel is told what to install.
     for downloads in [None, Some(root.path())] {
@@ -1550,6 +1555,113 @@ fn a_stream_that_cannot_start_says_so_keeps_the_page_and_is_asked_for_again() {
     assert_eq!(endpoint.asked("Page.startScreencast").len(), 1);
     failing.store(false, Ordering::Release);
     until("the stream to come back", || runtime.snapshot().error.is_none());
+    assert_eq!(endpoint.asked("Page.startScreencast").len(), 2);
+}
+
+#[test]
+fn a_lossless_frame_that_cannot_be_had_leaves_the_stream_running_and_is_not_asked_for_again() {
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 2.0, |method, params, browser| match method {
+        "Page.captureScreenshot" if params["format"] == "png" && params.get("clip").is_none() => {
+            // The compositor has no frame yet; after that, the capture is
+            // one Chrome cannot give at all.
+            let first = stills(browser) == 1;
+            Some(Err(if first { "Unable to capture screenshot" } else { "Internal error" }))
+        }
+        _ => None,
+    });
+    until("the stream to start", || !endpoint.asked("Page.startScreencast").is_empty());
+    // A surface without a frame yet is asked again once more time has passed.
+    until("the second attempt", || stills(&endpoint) == 2);
+    thread::sleep(STILL_DELAY * 3);
+    assert_eq!(stills(&endpoint), 2, "a capture that failed for good is not repeated");
+    // The JPEG stream goes on as if nothing had happened.
+    assert!(endpoint.asked("Page.stopScreencast").is_empty());
+    assert!(runtime.snapshot().error.is_none());
+    endpoint.frame(&picture(image::ImageFormat::Jpeg, 64, 48, 10), 1);
+    until("a frame of the stream", || runtime.take_frame().is_some());
+    thread::sleep(STILL_DELAY * 3);
+    assert_eq!(stills(&endpoint), 2);
+    // A new stream may try again, once.
+    runtime.restart_stream();
+    until("the next stream's attempt", || stills(&endpoint) == 3);
+    thread::sleep(STILL_DELAY * 3);
+    assert_eq!(stills(&endpoint), 3);
+    assert!(runtime.snapshot().error.is_none());
+}
+
+#[test]
+fn a_surface_hidden_and_shown_while_the_worker_was_busy_still_gets_a_frame_of_a_new_stream() {
+    let release = Arc::new(AtomicBool::new(false));
+    let held = release.clone();
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, move |method, params, _| match method {
+        // A script the page takes its time with.
+        "Runtime.evaluate" if params["expression"] == "espera()" => {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while !held.load(Ordering::Acquire) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(2));
+            }
+            Some(Ok(json!({"result": {"type": "number", "value": 1}})))
+        }
+        _ => None,
+    });
+    until("the first frame of a still page", || runtime.take_frame().is_some());
+    assert_eq!(endpoint.asked("Page.startScreencast").len(), 1);
+    let evaluate = BrowserCommand::Evaluate {
+        expression: "espera()".into(),
+        selector: None,
+        role: None,
+        name: None,
+        reference: None,
+    };
+    let waiting = runtime.handle.submit(evaluate).unwrap();
+    until("the script to reach the page", || !endpoint.asked("Runtime.evaluate").is_empty());
+    // The tab is left and come back to while the worker waits on the page:
+    // it never sees the surface hidden. The window still waits for a frame
+    // of a new stream before it sends the page any input.
+    assert!(runtime.set_visible(false));
+    assert!(!runtime.set_visible(true));
+    release.store(true, Ordering::Release);
+    finish(waiting).unwrap();
+    until("a new stream", || endpoint.asked("Page.startScreencast").len() == 2);
+    until("its first frame", || runtime.take_frame().is_some());
+    // Staying visible asks for nothing more.
+    assert!(runtime.set_visible(true));
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(endpoint.asked("Page.startScreencast").len(), 2);
+}
+
+#[test]
+fn a_scaled_down_stream_starts_over_to_show_what_an_agent_capture_made_it_skip() {
+    let changed = picture(image::ImageFormat::Jpeg, 64, 48, 200);
+    let other = changed.clone();
+    let (runtime, endpoint, _workspace) = scripted((1600, 1200), 3.0, move |method, params, browser| match method {
+        // The page changes under the agent's capture.
+        "Page.captureScreenshot" if params["format"] == "png" && params.get("clip").is_some() => {
+            browser.frame(&other, 300);
+            Some(Ok(encoded(&picture(image::ImageFormat::Png, 64, 48, 0))))
+        }
+        _ => None,
+    });
+    until("the stream to start", || !endpoint.asked("Page.startScreencast").is_empty());
+    endpoint.frame(&picture(image::ImageFormat::Jpeg, 64, 48, 10), 1);
+    until("a frame of the stream", || runtime.take_frame().is_some());
+    let capture = BrowserCommand::TakeScreenshot {
+        full_page: false,
+        selector: None,
+        role: None,
+        name: None,
+        reference: None,
+    };
+    finish(runtime.handle.submit(capture).unwrap()).unwrap();
+    until("the frame of that moment to be taken", || acknowledged(&endpoint, 300));
+    assert!(runtime.take_frame().is_none(), "a frame of the capture's moment is not shown");
+    // No lossless frame can bring it back at this scale: a new stream does.
+    until("the stream to start over", || endpoint.asked("Page.startScreencast").len() == 2);
+    assert_eq!(stills(&endpoint), 0);
+    endpoint.frame(&changed, 301);
+    until("the page as it is now", || runtime.take_frame().is_some());
+    // And once is enough.
+    thread::sleep(RERENDER_SETTLE + STILL_DELAY * 2);
     assert_eq!(endpoint.asked("Page.startScreencast").len(), 2);
 }
 

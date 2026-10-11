@@ -657,6 +657,35 @@ fn real_chrome_measurements_of_the_live_view_and_of_what_the_browser_adds() {
         driver.navigate(&format!("{origin}/")).unwrap();
         let stream = driver.start_stream(FrameFormat::Jpeg { quality: FRAME_QUALITY }, None).unwrap();
         let jpeg = stream.next(Duration::from_secs(5)).expect("a frame").data;
+        // The same scroll with the driver alone and frames taken undecoded:
+        // what the runtime's own path costs is the difference.
+        let taken = Arc::new(AtomicUsize::new(0));
+        let (counter, frames, done) = (taken.clone(), stream.clone(), Arc::new(AtomicBool::new(false)));
+        let stop = done.clone();
+        let consumer = thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                if frames.next(Duration::from_millis(50)).is_some() {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+        thread::sleep(Duration::from_millis(600));
+        let (mut direction, mut travelled, mut replies) = (30.0, 0.0, Vec::new());
+        let (from, started) = (taken.load(Ordering::Relaxed), Instant::now());
+        while started.elapsed() < Duration::from_secs(4) {
+            let tick = Instant::now();
+            driver.wheel(640.0, 400.0, 0.0, direction).unwrap();
+            replies.push(tick.elapsed());
+            travelled += direction;
+            if !(0.0..1200.0).contains(&travelled) {
+                direction = -direction;
+            }
+            thread::sleep(Duration::from_millis(16).saturating_sub(tick.elapsed()));
+        }
+        let rate = (taken.load(Ordering::Relaxed) - from) as f64 / started.elapsed().as_secs_f64();
+        done.store(true, Ordering::Release);
+        consumer.join().unwrap();
+        eprintln!("the driver alone, same page and scroll: {rate:.1} undecoded frames per second; wheel reply {}", summary(replies));
         driver.stop_stream().unwrap();
         [(image::ImageFormat::Jpeg, jpeg), (image::ImageFormat::Png, driver.capture_frame().unwrap().data)]
     };

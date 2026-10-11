@@ -171,6 +171,20 @@ fn initial_blank_loading_and_missing_browser_states_have_no_clickable_page() {
 }
 
 #[test]
+fn a_system_the_browser_cannot_start_on_is_told_so_instead_of_being_asked_to_retry() {
+    let mut state = state();
+    state.browser.started = false;
+    state.browser.error = Some("El navegador no pudo iniciarse: Este sistema todavía no tiene un transporte para iniciar el navegador.".into());
+    assert_eq!(surface(&state.browser), Surface::Error);
+    let (title, description) = error_copy(&state.browser);
+    assert_eq!(title, "El navegador todavía no funciona en este sistema");
+    assert!(description.contains("sistema operativo"), "{description}");
+    // Any other failed start keeps the offer to try again.
+    state.browser.error = Some("El navegador no pudo iniciarse: salió con código 1".into());
+    assert_eq!(error_copy(&state.browser).0, "El navegador no pudo iniciarse");
+}
+
+#[test]
 fn a_page_that_did_not_load_is_an_error_whatever_its_reason_reads_like() {
     let mut state = state();
     state.browser.error = Some("Timeout 10000ms exceeded.".into());
