@@ -598,6 +598,15 @@ fn streaming_http_frames_precede_terminal_and_commit_one_exact_history_on_reopen
 
 #[test]
 fn streaming_http_cancel_after_visible_delta_keeps_partial_ui_out_of_history_without_retry() {
+    cancel_after_visible_delta("run_toggle");
+}
+
+#[test]
+fn stop_on_the_running_user_message_cancels_like_the_composer() {
+    cancel_after_visible_delta("turn_stop");
+}
+
+fn cancel_after_visible_delta(control: &str) {
     let root = tempfile::tempdir().unwrap();
     let fixture = StreamingHttpFixture::new(FIRST_VISIBLE.into(), SECOND_VISIBLE.into());
     let (mut app, session_id) = app_for_stream(root.path(), &fixture);
@@ -610,7 +619,7 @@ fn streaming_http_cancel_after_visible_delta_keeps_partial_ui_out_of_history_wit
     let stop = frame
         .regions
         .iter()
-        .find(|region| region.id == "run_toggle")
+        .find(|region| region.id == control)
         .unwrap()
         .rect;
     let point = Point::new(stop.x + stop.width / 2.0, stop.y + stop.height / 2.0);
@@ -619,7 +628,7 @@ fn streaming_http_cancel_after_visible_delta_keeps_partial_ui_out_of_history_wit
     assert_eq!(
         actions,
         vec![UiAction::Clicked {
-            id: "run_toggle".into()
+            id: control.into()
         }]
     );
     for action in actions {

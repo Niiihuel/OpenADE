@@ -11331,6 +11331,37 @@ impl AgentsWindow {
         }
     }
 
+    /// Cancel what the selected session is running. False when it runs
+    /// nothing.
+    fn cancel_selected_run(&mut self) -> bool {
+        if self.view.background_run_selected {
+            if let Some(selected) = self.view.selected_session.as_deref() {
+                if let Some(run) = self
+                    .background_automation_runs
+                    .iter()
+                    .find(|run| run.session_id == selected)
+                {
+                    run.run.cancel();
+                    self.view.status = "Cancelando automatización…".to_owned();
+                }
+            }
+        } else if self.view.running {
+            if let Some(run) = &self.active_run {
+                run.cancel();
+                self.view.status = "Cancelando...".to_owned();
+            } else if let Some(resume) = &self.active_resume {
+                resume.cancel();
+                self.view.status = "Cancelando recuperación...".to_owned();
+            } else if let Some(child) = &self.active_child_recovery {
+                child.cancel();
+                self.view.status = "Cancelando recuperación del subagente...".to_owned();
+            }
+        } else {
+            return false;
+        }
+        true
+    }
+
     fn start_run(&mut self) {
         // A turn may carry its own model (a review, for one) without touching
         // the user's selection. Taken here so every early return discards it
@@ -15938,31 +15969,14 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id == "run_toggle" => {
-                if self.view.background_run_selected {
-                    if let Some(selected) = self.view.selected_session.as_deref() {
-                        if let Some(run) = self
-                            .background_automation_runs
-                            .iter()
-                            .find(|run| run.session_id == selected)
-                        {
-                            run.run.cancel();
-                            self.view.status = "Cancelando automatización…".to_owned();
-                        }
-                    }
-                } else if self.view.running {
-                    if let Some(run) = &self.active_run {
-                        run.cancel();
-                        self.view.status = "Cancelando...".to_owned();
-                    } else if let Some(resume) = &self.active_resume {
-                        resume.cancel();
-                        self.view.status = "Cancelando recuperación...".to_owned();
-                    } else if let Some(child) = &self.active_child_recovery {
-                        child.cancel();
-                        self.view.status = "Cancelando recuperación del subagente...".to_owned();
-                    }
-                } else {
+                if !self.cancel_selected_run() {
                     self.start_run();
                 }
+            }
+            // The stop control of a user message: it never starts a turn,
+            // even when its click lands after the turn it showed has ended.
+            UiAction::Clicked { id } if id == "turn_stop" => {
+                self.cancel_selected_run();
             }
             UiAction::Clicked { id } if id == "run_steer" => self.queue_native_steer(),
             UiAction::Clicked { id } if id.starts_with("session_approval_revoke:") => {

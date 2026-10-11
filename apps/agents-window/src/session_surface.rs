@@ -37,6 +37,10 @@ const COMPACT_BREAKPOINT: f32 = 470.0;
 const HEADER_PADDING: f32 = 4.0;
 const HEADER_HEIGHT: f32 = crate::dock_tab_ui::HEADER_HEIGHT;
 const HEADER_FADE_HEIGHT: f32 = 42.0;
+/// Where a pinned user message rests below the header, and the height it
+/// keeps there: three lines of 21 inside the card's padding.
+const USER_PIN_INSET: f32 = 10.0;
+const USER_PIN_HEIGHT: f32 = 84.0;
 pub(crate) const TRANSCRIPT_BOTTOM_FADE_HEIGHT: f32 = 32.0;
 const HEADER_ACTION_SIZE: f32 = crate::sidebar_chrome::TOOL_SIZE;
 const HEADER_GAP: f32 = 4.0;
@@ -75,6 +79,10 @@ mod file_activity_visual_tests;
 #[cfg(test)]
 #[path = "chat_dock_visual_tests.rs"]
 mod chat_dock_visual_tests;
+
+#[cfg(test)]
+#[path = "sticky_edit_rewind_visual_tests.rs"]
+mod sticky_edit_rewind_visual_tests;
 
 pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     let preview = image.raster.as_ref().map_or_else(
@@ -238,6 +246,50 @@ pub(crate) fn header(
         .render()
 }
 
+/// A user's message. It stays at the top of the transcript while its turn
+/// scrolls under it, giving up height so a long prompt cannot cover the
+/// turn, and offers to stop the turn while it runs.
+fn user_message(
+    content: &str,
+    images: &[TranscriptImage],
+    item_index: usize,
+    state: &ViewState,
+    running: bool,
+) -> Element {
+    let mut contents = vec![rich_text::render_user_message(content, &format!(
+        "user:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
+    ))];
+    for image in images {
+        contents.push(user_image(image));
+    }
+    let mut body = Element::column(contents).gap(8.0);
+    if running {
+        body = Element::row(vec![
+            body.flex(1.0),
+            Tooltip::new(
+                UiIconButton::new(
+                    "turn_stop",
+                    Icon::Stop,
+                    theme::action_palette(theme::HOVER, theme::FOREGROUND),
+                )
+                .variant(ButtonVariant::Subtle)
+                .size(ControlSize::Compact)
+                .render(),
+                "turn_stop",
+                "Detener ejecución",
+                theme::component_palette(),
+            )
+            .render(),
+        ])
+        .gap(8.0);
+    }
+    Card::new(body, theme::card_palette())
+        .border(false)
+        .render()
+        .sticky_top_inset(USER_PIN_INSET)
+        .sticky_top_max_height(USER_PIN_HEIGHT)
+}
+
 fn message(
     item: &TranscriptItem,
     item_index: usize,
@@ -246,15 +298,7 @@ fn message(
 ) -> Element {
     match item {
         TranscriptItem::User { content, images } => {
-            let mut contents = vec![rich_text::render_user_message(content, &format!(
-                "user:{}:{item_index}", state.selected_session.as_deref().unwrap_or("draft")
-            ))];
-            for image in images {
-                contents.push(user_image(image));
-            }
-            Card::new(Element::column(contents).gap(8.0), theme::card_palette())
-                .border(false)
-                .render()
+            user_message(content, images, item_index, state, false)
         }
         TranscriptItem::Assistant { content, streaming } => {
             let visible = state.stream_presentation.visible_bytes(item_index, content);
@@ -1961,6 +2005,10 @@ fn timeline(state: &ViewState, width: f32) -> Element {
     // The host's flags can outlive a turn, so they only count where the
     // transcript agrees that more is coming.
     let host_running = state.running || state.background_run_selected;
+    let last_user = state
+        .transcript
+        .iter()
+        .rposition(|item| matches!(item, TranscriptItem::User { .. }));
     // A live exploration group at the end says the turn is waiting in its
     // own ticker, so the trailing waiting line stays out.
     let mut live_group_tail = false;
@@ -2085,11 +2133,15 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             index += 1;
             continue;
         }
-        if matches!(item, TranscriptItem::User { .. }) {
+        if let TranscriptItem::User { content, images } = item {
             turn_number += 1;
             if turn_number > 1 {
                 rows.push(Element::spacer().size(None, Some(8.0)));
             }
+            let running = host_running && Some(index) == last_user;
+            rows.push(user_message(content, images, index, state, running));
+            index += 1;
+            continue;
         }
         rows.push(message(item, index, reading_width, state));
         index += 1;
