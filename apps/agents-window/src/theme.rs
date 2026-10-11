@@ -86,6 +86,23 @@ pub const WARNING: Color = Color::rgb(224, 179, 106);
 pub const CONTEXT_WARNING: Color = Color::rgb(225, 169, 65);
 /// The ring of a full context meter; its text beside the bar is `DESTRUCTIVE`.
 pub const CONTEXT_FULL: Color = Color::rgb(235, 115, 119);
+/// One hue per category of the context bar and its legend, told apart on the
+/// menu surface. Existing accents are reused; teal and pink exist only here.
+const CONTEXT_CATEGORY_INKS: [(&str, Color); 7] = [
+    ("system", LINK),
+    ("tools", EFFORT_ULTRA),
+    ("project", ACTIVITY_ADDED),
+    ("skills", WARNING),
+    ("mcp", Color::rgb(86, 196, 205)),
+    ("subagents", Color::rgb(236, 128, 180)),
+    ("conversation", ASSISTANT),
+];
+pub fn context_category_ink(id: &str) -> Color {
+    CONTEXT_CATEGORY_INKS
+        .iter()
+        .find(|(category, _)| *category == id)
+        .map_or(FOREGROUND_SUBTLE, |(_, ink)| *ink)
+}
 /// The counts in a file card's header: a third diff pair kept as it is.
 pub const ACTIVITY_ADDED: Color = Color::rgb(105, 210, 145);
 pub const ACTIVITY_REMOVED: Color = Color::rgb(240, 125, 130);

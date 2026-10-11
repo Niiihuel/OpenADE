@@ -14,8 +14,9 @@ use openide_ui::{
 };
 use std::path::Path;
 
-const CASES: [&str; 10] = [
+const CASES: [&str; 11] = [
     "unknown",
+    "unknown-window",
     "measured-30",
     "tiny",
     "near-full-95",
@@ -26,7 +27,15 @@ const CASES: [&str; 10] = [
     "compacting",
     "error",
 ];
-const SOURCES: [&str; 5] = ["Sistema", "Proyecto", "Skills", "Herramientas", "MCP"];
+const SOURCES: [&str; 7] = [
+    "Sistema",
+    "Proyecto",
+    "Skills",
+    "Herramientas",
+    "MCP",
+    "Subagentes",
+    "Conversación",
+];
 const DRAFT: &str = "Revisá el uso de contexto sin modificar los archivos.";
 const DETAIL_MARKER: &str = "DIAGNOSTIC_FINGERPRINT_NOT_SUMMARY";
 
@@ -71,6 +80,11 @@ fn fixture(name: &str) -> view::ViewState {
             context.last_usage = None;
             context.measurement_status = NativeContextMeasurementStatus::NoResponse;
         }
+        // A measured response on a route whose window nobody verified.
+        "unknown-window" => {
+            context.window = None;
+            context.measurement_status = NativeContextMeasurementStatus::UnverifiedLimit;
+        }
         "compacted" => {
             context.last_usage = None;
             context.checkpoint_sequence = Some(42);
@@ -90,23 +104,35 @@ fn fixture(name: &str) -> view::ViewState {
         .map(|fraction| ((1.0 - fraction) * 100.0).round() as u8);
     let values = if name == "five-long-sources" {
         [
-            "84 296 bytes de instrucciones combinadas y verificadas",
-            "12 documentos · 96 512 bytes del proyecto seleccionado",
-            "24 skills seleccionadas · 188 765 bytes renderizados",
+            "84296 bytes de instrucciones combinadas y verificadas",
+            "12 documentos · 96512 bytes del proyecto seleccionado",
+            "24 skills seleccionadas · 188765 bytes renderizados",
             "Catálogo congelado · cantidad y tokens no registrados",
             "12 servidores habilitados · 384 herramientas observadas",
+            "Sin desglose",
+            "240000 entrada · 60000 salida",
         ]
     } else {
         [
-            "8 192 bytes",
-            "3 docs · 4 096 bytes",
-            "4 locales · 2 048 bytes",
+            "8192 bytes",
+            "3 docs · 4096 bytes",
+            "4 locales · 2048 bytes",
             "Cantidad desconocida",
             "2 servidores",
+            "Sin desglose",
+            "240000 entrada · 60000 salida",
         ]
     };
-    for ((id, label), value) in ["system", "project", "skills", "tools", "mcp"]
-        .into_iter()
+    for ((id, label), value) in [
+        "system",
+        "project",
+        "skills",
+        "tools",
+        "mcp",
+        "subagents",
+        "conversation",
+    ]
+    .into_iter()
         .zip(SOURCES)
         .zip(values)
     {
@@ -342,25 +368,28 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
             let (ctx, mut tree) = native_tree(root(&state, size), size);
             let frame = tree.layout(size);
             assert_popup_bounds(&frame, size);
-            let popup = region(&frame, "popover_surface:composer_context_dismiss");
             let text = visible_text(&frame, size);
             for label in SOURCES {
                 assert!(text.iter().any(|text| text == label), "{label}: {text:?}");
             }
-            assert!(text.iter().any(|text| text == "30.0K / 100.0K tokens · 30%"));
+            assert!(text
+                .iter()
+                .any(|text| text == "30% · ~30.0K / 100.0K tokens"));
             assert!(text.iter().any(|text| text == "Copiar diagnóstico"));
             assert!(
                 !text.iter().any(|text| text == "Detalles"),
                 "there is no second level"
             );
-            // "Cantidad desconocida" carries no figure.
-            assert_eq!(text.iter().filter(|text| *text == "–").count(), 1);
-            for command in &frame.commands {
-                if let DrawCommand::Text { position, text, .. } = command {
-                    if text.contains("bytes") {
-                        assert!(position.x >= popup.x, "{text} starts outside the popover");
-                    }
+            // Tools, MCP and subagents state no size; raw units stay in the dump.
+            assert_eq!(text.iter().filter(|text| *text == "–").count(), 3);
+            assert!(!text.iter().any(|text| text.contains("bytes")));
+            if name == "measured-30" {
+                // 8192, 4096 and 2048 bytes at four a token; the rest is conversation.
+                for figure in ["~2.0K", "~1.0K", "~512", "~26.4K"] {
+                    assert!(text.iter().any(|text| text == figure), "{figure}: {text:?}");
                 }
+                assert!(crate::composer_context_ui::diagnostic(&state.native_context)
+                    .contains("Proyecto: 3 docs · 4096 bytes — "));
             }
             tree.scroll_to_end("composer_context_summary");
             tree.layout(size);
@@ -375,9 +404,116 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
     }
 }
 
+/// The bar's painted pieces: its track and, left to right, its segments.
+fn bar(frame: &Frame) -> (Rect, Vec<(Rect, openide_ui::Color)>) {
+    let fills: Vec<_> = frame
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawCommand::FillRect { rect, color, .. } if rect.height == 6.0 => {
+                Some((*rect, *color))
+            }
+            _ => None,
+        })
+        .collect();
+    let track = fills
+        .iter()
+        .find(|(_, color)| *color == theme::TRACK)
+        .expect("the bar paints its track")
+        .0;
+    (
+        track,
+        fills
+            .into_iter()
+            .filter(|(_, color)| *color != theme::TRACK)
+            .collect(),
+    )
+}
+
+#[test]
+fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
+    let ink = theme::context_category_ink;
+    for width in [360.0, 900.0] {
+        for (name, inks, fills_track) in [
+            (
+                "measured-30",
+                vec!["system", "project", "skills", "conversation"],
+                false,
+            ),
+            // 95 000 of 100 000 tokens leave a twentieth of the track free.
+            (
+                "near-full-95",
+                vec!["system", "project", "skills", "conversation"],
+                false,
+            ),
+            // Without a window the measured segments share the whole track.
+            (
+                "unknown-window",
+                vec!["system", "project", "skills", "conversation"],
+                true,
+            ),
+            // Nothing measured: only what states its bytes, against the window.
+            ("unknown", vec!["system", "project", "skills"], false),
+            ("compacted", vec!["system", "project", "skills"], false),
+            ("error", vec!["system", "project", "skills"], false),
+        ] {
+            // Tall enough that the seven rows and a status line need no scrollbar.
+            let size = Size::new(width, 520.0);
+            let mut state = fixture(name);
+            state.composer_context_open = true;
+            let (ctx, mut tree) = native_tree(root(&state, size), size);
+            let frame = tree.layout(size);
+            let (track, segments) = bar(&frame);
+            let popup = region(&frame, "popover_surface:composer_context_dismiss");
+            // The segments are sized for exactly the track the popover lays out.
+            assert!((track.width - (popup.width - 32.0)).abs() < 0.1, "{track:?}");
+            assert_eq!(
+                segments.iter().map(|(_, color)| *color).collect::<Vec<_>>(),
+                inks.iter().map(|id| ink(id)).collect::<Vec<_>>(),
+                "{name}"
+            );
+            let painted: f32 = segments.iter().map(|(rect, _)| rect.width).sum();
+            assert!(painted <= track.width + 0.1, "{name}: {painted}");
+            assert_eq!((painted - track.width).abs() < 0.1, fills_track, "{name}");
+            assert!(segments.iter().all(|(rect, _)| rect.width >= 2.0
+                && rect.x >= track.x - 0.1
+                && rect.x + rect.width <= track.x + track.width + 0.1));
+            if name == "near-full-95" {
+                assert!((painted / track.width - 0.95).abs() < 0.01, "{painted}");
+            }
+            let text = visible_text(&frame, size);
+            let has = |value: &str| text.iter().any(|text| text == value);
+            match name {
+                "near-full-95" => assert!(has("95% · ~95.0K / 100.0K tokens")),
+                "unknown-window" => {
+                    assert!(has("30.0K tokens") && has("Límite del modelo sin verificar"));
+                    assert!(!text.iter().any(|text| text.contains('%')));
+                }
+                "unknown" => assert!(has("Capacidad: 100.0K tokens") && !has("~26.4K")),
+                _ => {}
+            }
+            assert!(
+                !frame.commands.iter().any(|command| matches!(command,
+                    DrawCommand::FillRect { rect, .. } if rect.width == 5.0)),
+                "{name} at {width}: content that fits paints no scrollbar thumb"
+            );
+            // Every legend row carries its 10 px swatch.
+            let swatches = frame
+                .commands
+                .iter()
+                .filter(|command| matches!(command, DrawCommand::FillRect { rect, radius, .. }
+                    if rect.width == 10.0 && rect.height == 10.0 && *radius == 2.0))
+                .count();
+            assert_eq!(swatches, SOURCES.len(), "{name}");
+            ctx.end_pass().textures_delta.clear();
+        }
+    }
+}
+
 #[test]
 fn context_shows_one_status_line_only_when_the_measurement_needs_it() {
-    const STATUSES: [&str; 4] = [
+    const STATUSES: [&str; 5] = [
+        "Límite del modelo sin verificar",
         "Aún no hay una respuesta medida",
         "Queda poco espacio. Puedes compactar para continuar.",
         "El resumen está guardado. El uso se medirá en la próxima respuesta.",
@@ -386,10 +522,11 @@ fn context_shows_one_status_line_only_when_the_measurement_needs_it() {
     for (name, expected) in [
         ("measured-30", None),
         ("tiny", None),
-        ("unknown", Some(STATUSES[0])),
-        ("near-full-95", Some(STATUSES[1])),
-        ("compacted", Some(STATUSES[2])),
-        ("error", Some(STATUSES[3])),
+        ("unknown", Some(STATUSES[1])),
+        ("unknown-window", Some("Límite del modelo sin verificar")),
+        ("near-full-95", Some(STATUSES[2])),
+        ("compacted", Some(STATUSES[3])),
+        ("error", Some(STATUSES[4])),
     ] {
         let size = Size::new(900.0, 420.0);
         let mut state = fixture(name);
@@ -468,7 +605,8 @@ fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() 
 
 #[test]
 fn failed_context_keeps_its_error_visible_without_reusing_old_measurements() {
-    let size = Size::new(360.0, 420.0);
+    // Seven categories and a wrapped error fit once the window allows the cap.
+    let size = Size::new(360.0, 520.0);
     let mut state = fixture("measured-30");
     state.native_context.error =
         Some("No se puede verificar el journal de esta conversación".into());
@@ -534,7 +672,7 @@ fn export_context_visual_review() {
     std::fs::create_dir_all(&directory).unwrap();
     for name in CASES {
         for width in [360.0, 900.0] {
-            for height in [320.0, 420.0] {
+            for height in [320.0, 420.0, 520.0] {
                 let size = Size::new(width, height);
                 let mut state = fixture(name);
                 state.composer_context_open = true;
