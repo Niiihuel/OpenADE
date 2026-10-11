@@ -495,6 +495,9 @@ pub struct ViewState {
     /// The relative path awaiting confirmation to go to the trash, and
     /// whether it is a folder.
     pub file_delete: Option<(String, bool)>,
+    /// What Cortar or Copiar took, as relative paths, and whether it was cut.
+    /// It is the tree's own clipboard, never the system's.
+    pub file_clipboard: Option<(Vec<String>, bool)>,
     pub show_archived: bool,
     pub session_organization: SessionOrganization,
     pub session_sort: SessionSort,
@@ -3842,6 +3845,7 @@ pub(crate) mod tests {
             file_root_can_load_more: false,
             file_draft: None,
             file_delete: None,
+            file_clipboard: None,
             show_archived: false,
             session_organization: SessionOrganization::Project,
             session_sort: SessionSort::Updated,

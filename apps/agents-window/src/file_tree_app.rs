@@ -100,6 +100,39 @@ impl AgentsWindow {
                 self.open_file_draft(kind, &folder);
             }
             ("rename", Some(_)) => self.open_file_draft(FileDraftKind::Rename, &relative),
+            ("cut" | "copy", Some(_)) => {
+                self.view.file_clipboard = Some((vec![path.to_owned()], operation == "cut"));
+            }
+            ("duplicate", Some(_)) => {
+                let op = Op::Paste {
+                    into: relative.parent().map(Path::to_owned).unwrap_or_default(),
+                    sources: vec![relative],
+                    cut: false,
+                };
+                self.start_file_op(op, ctx);
+            }
+            ("paste", _) => {
+                let Some((sources, cut)) = self.view.file_clipboard.clone() else {
+                    return true;
+                };
+                let sources: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
+                // Beside a file, inside a folder or the root.
+                let into = if is_dir {
+                    relative
+                } else {
+                    relative.parent().map(Path::to_owned).unwrap_or_default()
+                };
+                // The editor keeps a document by its path and cannot follow a move.
+                if cut
+                    && sources
+                        .iter()
+                        .any(|source| self.code_editor.has_unsaved_under(&workspace, source))
+                {
+                    self.view.status = "Guarda los cambios abiertos antes de mover".into();
+                } else {
+                    self.start_file_op(Op::Paste { sources, cut, into }, ctx);
+                }
+            }
             ("delete", Some(_)) => self.view.file_delete = Some((path.to_owned(), is_dir)),
             ("collapse_all", _) => {
                 if let Some(explorer) = &mut self.file_explorer {
@@ -258,7 +291,17 @@ impl AgentsWindow {
             let _ = explorer.refresh();
         }
         self.refresh_file_rows();
-        let named = !matches!(op, Op::Trash { .. });
+        let named = !matches!(op, Op::Trash { .. } | Op::Paste { .. });
+        if let Op::Paste { into, cut, .. } = &op {
+            // What was pasted is shown, and a cut is spent once it has moved.
+            if let Some(explorer) = &mut self.file_explorer {
+                let _ = explorer.reveal(into);
+            }
+            self.refresh_file_rows();
+            if *cut && result.is_ok() {
+                self.view.file_clipboard = None;
+            }
+        }
         match result {
             Ok(created) => {
                 if named {
@@ -280,7 +323,16 @@ impl AgentsWindow {
                     draft.error = Some(failure.message);
                     self.file_draft_focus_pending = true;
                 }
-                _ => self.view.status = failure.message,
+                _ if failure.created.is_empty() => self.view.status = failure.message,
+                _ => {
+                    let partial: Vec<_> = failure
+                        .created
+                        .iter()
+                        .map(|path| path.to_string_lossy())
+                        .collect();
+                    self.view.status =
+                        format!("{}. Quedó creado: {}", failure.message, partial.join(", "));
+                }
             },
         }
         true
@@ -581,6 +633,89 @@ mod tests {
         assert!(!project.join("src").exists());
         assert!(project.join("src.trashed/main.rs").is_file());
         assert_eq!(names(&app), ["src.trashed", "LEEME.md"]);
+    }
+
+    fn run(app: &mut AgentsWindow, operation: &str, path: &str) {
+        act(app, operation, path);
+        pump(app);
+    }
+
+    #[test]
+    fn copy_cut_duplicate_and_paste_use_the_trees_own_clipboard() {
+        let (_root, mut app) = fixture();
+        let project = PathBuf::from(&app.view.workspace);
+        let read = |path: &str| std::fs::read_to_string(project.join(path)).unwrap();
+        // Nothing cut or copied: Pegar does nothing.
+        run(&mut app, "paste", "src");
+        assert!(app.file_op.is_none() && !project.join("src/README.md").exists());
+        // Copiar never reaches the system clipboard, and copies on every paste.
+        assert!(act(&mut app, "copy", "README.md").is_empty());
+        assert_eq!(
+            app.view.file_clipboard,
+            Some((vec!["README.md".into()], false))
+        );
+        run(&mut app, "paste", "src");
+        assert_eq!(read("src/README.md"), "# Hola");
+        assert_eq!(
+            names(&app),
+            ["src", "deep", "main.rs", "README.md", "README.md"],
+            "the folder pasted into opens"
+        );
+        // On a file the paste lands beside it, under a name that is free.
+        run(&mut app, "paste", "src/main.rs");
+        assert_eq!(read("src/README copia.md"), "# Hola");
+        run(&mut app, "paste", "");
+        assert_eq!(read("README copia.md"), "# Hola");
+        assert!(app.view.file_clipboard.is_some());
+        run(&mut app, "duplicate", "src/main.rs");
+        assert_eq!(read("src/main copia.rs"), "fn main() {}");
+        run(&mut app, "duplicate", "src");
+        assert_eq!(read("src copia/deep/mod.rs"), "x");
+        // Cortar moves only when pasted, once.
+        act(&mut app, "cut", "src/main.rs");
+        assert!(project.join("src/main.rs").is_file());
+        run(&mut app, "paste", "");
+        assert_eq!(read("main.rs"), "fn main() {}");
+        assert!(!project.join("src/main.rs").exists());
+        assert_eq!(app.view.file_clipboard, None);
+        run(&mut app, "paste", "src");
+        assert!(!project.join("src/main.rs").exists());
+        assert_eq!(read("README.md"), "# Hola");
+    }
+
+    #[test]
+    fn a_paste_that_cannot_run_says_why_and_moves_nothing() {
+        let (_root, mut app) = fixture();
+        let project = PathBuf::from(&app.view.workspace);
+        act(&mut app, "toggle", "src");
+        act(&mut app, "cut", "src");
+        run(&mut app, "paste", "src/deep");
+        assert_eq!(
+            app.view.status,
+            "Una carpeta no se puede pegar dentro de sí misma"
+        );
+        assert!(project.join("src/main.rs").is_file());
+        assert!(app.view.file_clipboard.is_some(), "a failed cut is not spent");
+        // The source left the disk after it was copied.
+        act(&mut app, "copy", "README.md");
+        std::fs::remove_file(project.join("README.md")).unwrap();
+        run(&mut app, "paste", "src");
+        assert_eq!(app.view.status, "No se pudo pegar: ya no existe");
+        assert!(!app.view.status.contains(project.to_string_lossy().as_ref()));
+        // A document still being written is not moved from under the editor.
+        app.init_code_editor_recovery();
+        app.code_editor_create("src/draft.rs".into(), "texto".into())
+            .unwrap();
+        act(&mut app, "cut", "src");
+        std::fs::create_dir(project.join("otra")).unwrap();
+        app.file_explorer.as_mut().unwrap().refresh().unwrap();
+        app.refresh_file_rows();
+        run(&mut app, "paste", "otra");
+        assert_eq!(app.view.status, "Guarda los cambios abiertos antes de mover");
+        assert!(project.join("src").is_dir() && !project.join("otra/src").exists());
+        // Leaving the project empties the clipboard of its paths.
+        app.invalidate_workspace_files();
+        assert_eq!(app.view.file_clipboard, None);
     }
 
     #[test]

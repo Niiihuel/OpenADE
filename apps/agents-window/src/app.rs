@@ -5634,6 +5634,10 @@ impl AgentsWindow {
         self.view.file_rows.clear();
         self.view.files_status.clear();
         self.view.file_root_can_load_more = false;
+        // These name paths of the project that is leaving.
+        self.view.file_draft = None;
+        self.view.file_delete = None;
+        self.view.file_clipboard = None;
         self.view.review_page = 0;
         if self.view.show_command_center {
             self.request_command_search();
@@ -5937,6 +5941,7 @@ impl AgentsWindow {
             file_root_can_load_more: false,
             file_draft: None,
             file_delete: None,
+            file_clipboard: None,
             transcript: Vec::new(),
             item_times: Default::default(),
             running: false,

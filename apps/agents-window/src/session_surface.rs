@@ -3693,6 +3693,7 @@ mod tests {
             file_root_can_load_more: false,
             file_draft: None,
             file_delete: None,
+            file_clipboard: None,
             show_archived: false,
             session_organization: crate::view::SessionOrganization::Project,
             session_sort: openide_core::SessionSort::Updated,

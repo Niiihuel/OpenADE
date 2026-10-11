@@ -21,14 +21,23 @@ pub(crate) fn tree_action(operation: &str, path: &str) -> String {
 }
 
 /// The menu of `path`: groups of (operation, label) with a rule between them.
-fn tree_menu(child: Element, path: &str, groups: &[&[(&str, &str)]]) -> Element {
+/// Pegar is there but disabled while the tree's clipboard is empty.
+fn tree_menu(
+    child: Element,
+    path: &str,
+    can_paste: bool,
+    groups: &[&[(&str, &str)]],
+) -> Element {
     let mut entries = Vec::new();
     for group in groups.iter().filter(|group| !group.is_empty()) {
         if !entries.is_empty() {
             entries.push(ContextMenuEntry::Separator);
         }
         entries.extend(group.iter().map(|(operation, label)| {
-            ContextMenuEntry::Item(ContextMenuItem::new(tree_action(operation, path), *label))
+            ContextMenuEntry::Item(
+                ContextMenuItem::new(tree_action(operation, path), *label)
+                    .enabled(*operation != "paste" || can_paste),
+            )
         }));
     }
     ContextMenu::new(
@@ -51,17 +60,31 @@ const NEW: &[(&str, &str)] = &[
     ("new_folder", "Nueva carpeta…"),
 ];
 const EDIT: &[(&str, &str)] = &[("rename", "Renombrar…"), ("delete", "Eliminar")];
+/// Pegar puts the clipboard beside a file, or inside a folder or the root.
+const CLIPBOARD: &[(&str, &str)] = &[
+    ("cut", "Cortar"),
+    ("copy", "Copiar"),
+    ("duplicate", "Duplicar"),
+    ("paste", "Pegar"),
+];
 
-fn row_menu(child: Element, path: &str, entry: &crate::view::FileRowView) -> Element {
+fn row_menu(
+    child: Element,
+    path: &str,
+    entry: &crate::view::FileRowView,
+    can_paste: bool,
+) -> Element {
     if entry.is_dir {
         let toggle = if entry.expanded { "Contraer" } else { "Expandir" };
         return tree_menu(
             child,
             path,
+            can_paste,
             &[
                 &[("toggle", toggle)],
                 NEW,
                 MENTION,
+                CLIPBOARD,
                 PATHS,
                 &[("collapse_all", "Contraer todo")],
                 EDIT,
@@ -74,16 +97,23 @@ fn row_menu(child: Element, path: &str, entry: &crate::view::FileRowView) -> Ele
     if markdown {
         open.push(("preview", "Abrir vista previa al costado"));
     }
-    tree_menu(child, path, &[&open, NEW, MENTION, PATHS, EDIT])
+    tree_menu(
+        child,
+        path,
+        can_paste,
+        &[&open, NEW, MENTION, CLIPBOARD, PATHS, EDIT],
+    )
 }
 
 /// The header and the empty part of the tree act on the workspace root.
-fn root_menu(child: Element) -> Element {
+fn root_menu(child: Element, can_paste: bool) -> Element {
     tree_menu(
         child,
         "",
+        can_paste,
         &[
             NEW,
+            &CLIPBOARD[3..],
             &PATHS[..1],
             &[("collapse_all", "Contraer todo"), ("refresh", "Actualizar")],
         ],
@@ -334,6 +364,7 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                 .collect::<Vec<_>>(),
         ));
         let draft = state.file_draft.clone();
+        let can_paste = state.file_clipboard.is_some();
         let count = shown.len() + usize::from(state.file_root_can_load_more);
         content.push(
             ScrollArea::uniform_list("file_tree", count, ROW_HEIGHT, move |position| {
@@ -434,7 +465,7 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
                 })
                 .render()
                 .size(Some(inner), Some(ROW_HEIGHT));
-                row_menu(row, &paths[index], entry)
+                row_menu(row, &paths[index], entry, can_paste)
             })
             .tint(theme::FOREGROUND_SUBTLE)
             .render()
@@ -442,10 +473,11 @@ fn build_contents(state: &ViewState, width: f32, surface: Color, compact: bool) 
             .flex(1.0),
         );
     }
+    let can_paste = state.file_clipboard.is_some();
     let content = Element::column(content)
         .gap(crate::sidebar_chrome::GAP)
         .flex(1.0);
-    root_menu(content.padding(inset).background(surface))
+    root_menu(content.padding(inset).background(surface), can_paste)
 }
 
 #[cfg(test)]
@@ -495,11 +527,9 @@ mod tests {
         state
     }
 
-    /// Right-clicks `point` and returns the open menu's labels, rules as "—".
-    fn menu_at(tree: &mut UiTree, size: Size, point: Point) -> (Frame, Vec<String>) {
-        tree.handle_event(UiEvent::ContextMenu { position: point });
-        let frame = tree.layout(size);
-        let surface = bounds(&frame, "__context_menu:surface");
+    /// The labels the open menu paints, top to bottom, with rules as "—".
+    fn painted_menu(frame: &Frame) -> Vec<String> {
+        let surface = bounds(frame, "__context_menu:surface");
         // The menu is painted last, after its own shadow.
         let overlay = frame
             .commands
@@ -521,19 +551,43 @@ mod tests {
             })
             .collect();
         rows.sort_by(|a, b| a.0.total_cmp(&b.0));
-        (frame, rows.into_iter().map(|(_, label)| label).collect())
+        rows.into_iter().map(|(_, label)| label).collect()
+    }
+
+    fn scroll_menu(tree: &mut UiTree, size: Size, delta_y: f32) -> Frame {
+        let surface = bounds(tree.frame(), "__context_menu:surface");
+        tree.handle_event(UiEvent::ScrollDirect {
+            position: Point::new(surface.x + 20.0, surface.y + 20.0),
+            delta_y,
+        });
+        tree.layout(size)
+    }
+
+    /// Right-clicks `point` and returns every label of the menu that opens.
+    /// A long menu scrolls inside limn's cap: its two ends are read and joined.
+    fn menu_at(tree: &mut UiTree, size: Size, point: Point) -> Vec<String> {
+        tree.handle_event(UiEvent::ContextMenu { position: point });
+        let mut labels = painted_menu(&tree.layout(size));
+        let end = painted_menu(&scroll_menu(tree, size, -10_000.0));
+        let shared = (0..=end.len().min(labels.len()))
+            .rev()
+            .find(|shared| labels[labels.len() - shared..] == end[..*shared])
+            .unwrap_or(0);
+        labels.extend_from_slice(&end[shared..]);
+        scroll_menu(tree, size, 10_000.0);
+        labels
     }
 
     /// Chooses the menu item labelled `label` and returns what it dispatched.
-    fn choose(tree: &mut UiTree, frame: &Frame, label: &str) -> Vec<UiAction> {
-        let text = frame
-            .commands
-            .iter()
-            .rev()
-            .find_map(|command| match command {
+    fn choose(tree: &mut UiTree, size: Size, label: &str) -> Vec<UiAction> {
+        let find = |frame: &Frame| {
+            frame.commands.iter().rev().find_map(|command| match command {
                 DrawCommand::Text { position, text, .. } if text == label => Some(*position),
                 _ => None,
             })
+        };
+        let text = find(tree.frame())
+            .or_else(|| find(&scroll_menu(tree, size, -10_000.0)))
             .unwrap_or_else(|| panic!("missing menu item {label}"));
         let point = Point::new(text.x + 2.0, text.y + 4.0);
         tree.handle_event(UiEvent::PointerDown(point));
@@ -556,6 +610,7 @@ mod tests {
             expanded: false,
             can_load_more: false,
         });
+        state.file_clipboard = Some((vec!["Cargo.toml".into()], false));
         let size = Size::new(320.0, 400.0);
         for compact in [false, true] {
             let build = || {
@@ -571,15 +626,17 @@ mod tests {
             };
             let paths = ["Copiar ruta", "Copiar ruta relativa"];
             let (mut tree, frame) = build();
-            let (menu, labels) = menu_at(&mut tree, size, center(bounds(&frame, "file_row:1")));
+            let labels = menu_at(&mut tree, size, center(bounds(&frame, "file_row:1")));
             let new = ["—", "Nuevo archivo…", "Nueva carpeta…", "—"];
             let edit = ["—", "Renombrar…", "Eliminar"];
+            let clipboard = ["Cortar", "Copiar", "Duplicar", "Pegar", "—"];
             assert_eq!(
                 labels,
                 [
                     &["Abrir"],
                     &new[..],
                     &["Mencionar en el chat", "—"],
+                    &clipboard[..],
                     &paths[..],
                     &edit[..]
                 ]
@@ -587,26 +644,27 @@ mod tests {
             );
             // The action carries the path, never the row's position.
             assert_eq!(
-                choose(&mut tree, &menu, "Abrir"),
+                choose(&mut tree, size, "Abrir"),
                 clicked("open", "src/commands.rs")
             );
 
             let (mut tree, frame) = build();
-            let (menu, labels) = menu_at(&mut tree, size, center(bounds(&frame, "file_row:3")));
+            let labels = menu_at(&mut tree, size, center(bounds(&frame, "file_row:3")));
             assert_eq!(labels[..2], ["Abrir", "Abrir vista previa al costado"]);
             assert_eq!(
-                choose(&mut tree, &menu, "Abrir vista previa al costado"),
+                choose(&mut tree, size, "Abrir vista previa al costado"),
                 clicked("preview", "README.md")
             );
 
             let (mut tree, frame) = build();
-            let (menu, labels) = menu_at(&mut tree, size, center(bounds(&frame, "file_row:0")));
+            let labels = menu_at(&mut tree, size, center(bounds(&frame, "file_row:0")));
             assert_eq!(
                 labels,
                 [
                     &["Contraer"],
                     &new[..],
                     &["Mencionar en el chat", "—"],
+                    &clipboard[..],
                     &paths[..],
                     &["—", "Contraer todo"],
                     &edit[..]
@@ -614,7 +672,7 @@ mod tests {
                 .concat()
             );
             assert_eq!(
-                choose(&mut tree, &menu, "Mencionar en el chat"),
+                choose(&mut tree, size, "Mencionar en el chat"),
                 clicked("mention", "src")
             );
             for (label, operation, row, path) in [
@@ -622,15 +680,21 @@ mod tests {
                 ("Nueva carpeta…", "new_folder", "file_row:0", "src"),
                 ("Renombrar…", "rename", "file_row:2", "Cargo.toml"),
                 ("Eliminar", "delete", "file_row:0", "src"),
+                ("Cortar", "cut", "file_row:1", "src/commands.rs"),
+                ("Copiar", "copy", "file_row:0", "src"),
+                ("Duplicar", "duplicate", "file_row:2", "Cargo.toml"),
+                ("Pegar", "paste", "file_row:1", "src/commands.rs"),
             ] {
                 let (mut tree, frame) = build();
-                let (menu, _) = menu_at(&mut tree, size, center(bounds(&frame, row)));
-                assert_eq!(choose(&mut tree, &menu, label), clicked(operation, path));
+                menu_at(&mut tree, size, center(bounds(&frame, row)));
+                assert_eq!(choose(&mut tree, size, label), clicked(operation, path));
             }
 
             let root = [
                 "Nuevo archivo…",
                 "Nueva carpeta…",
+                "—",
+                "Pegar",
                 "—",
                 "Copiar ruta",
                 "—",
@@ -644,13 +708,27 @@ mod tests {
                 Point::new(center(tree_area).x, tree_area.y + tree_area.height - 8.0),
             ] {
                 let (mut tree, _) = build();
-                let (menu, labels) = menu_at(&mut tree, size, point);
+                let labels = menu_at(&mut tree, size, point);
                 assert_eq!(labels, root, "compact={compact} at {point:?}");
-                assert_eq!(
-                    choose(&mut tree, &menu, "Actualizar"),
-                    clicked("refresh", "")
-                );
+                assert_eq!(choose(&mut tree, size, "Pegar"), clicked("paste", ""));
             }
+            // With nothing cut or copied, Pegar is shown but does nothing.
+            state.file_clipboard = None;
+            let (mut tree, frame) = {
+                let root = if compact {
+                    build_ide(&state, size.width)
+                } else {
+                    super::build(&state, size.width)
+                };
+                let mut tree = UiTree::new(root);
+                tree.set_reduced_motion(true);
+                let frame = tree.layout(size);
+                (tree, frame)
+            };
+            let labels = menu_at(&mut tree, size, center(bounds(&frame, "file_row:0")));
+            assert!(labels.iter().any(|label| label == "Pegar"));
+            assert_eq!(choose(&mut tree, size, "Pegar"), vec![]);
+            state.file_clipboard = Some((vec!["Cargo.toml".into()], false));
         }
     }
 
@@ -1062,8 +1140,8 @@ mod tests {
             ] {
                 let (ctx, mut tree) = native_tree(build(), size);
                 let frame = tree.layout(size);
-                let (frame, _) = menu_at(&mut tree, size, center(bounds(&frame, target)));
-                export(&frame, size, &format!("{name}-{surface}"));
+                menu_at(&mut tree, size, center(bounds(&frame, target)));
+                export(&tree.layout(size), size, &format!("{name}-{surface}"));
                 ctx.end_pass().textures_delta.clear();
             }
         }
