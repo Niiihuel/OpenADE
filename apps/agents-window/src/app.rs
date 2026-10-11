@@ -15704,9 +15704,9 @@ impl AgentsWindow {
                 };
                 if let Some(query) = query {
                     self.view.composer_add_menu_open = false;
-                    self.set_marketplace_tab(crate::marketplace_view::MarketplaceTab::Recommended);
+                    self.set_marketplace_filter(crate::marketplace_view::MarketplaceFilter::All);
+                    self.view.marketplace.category = None;
                     self.set_marketplace_query(query.to_owned());
-                    self.view.marketplace.installed_only = false;
                     self.view.show_settings = false;
                     self.view.main_page = MainPage::Marketplace;
                     self.marketplace_operation(MarketplaceOperation::Load);
@@ -19173,7 +19173,6 @@ impl eframe::App for AgentsWindow {
             || self.view.github_sign_in.is_some()
             || self.view.provider_connect.is_some()
             || self.view.marketplace.add_source_kind.is_some()
-            || self.view.marketplace.selected_item_id.is_some()
             || self.view.marketplace.pending_uninstall_id.is_some()
             || self.view.marketplace.pending_remove_source_id.is_some()
             || self.view.pending_mcp_delete_id.is_some()

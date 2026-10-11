@@ -442,7 +442,7 @@ fn activity_fixture(phase: &str, width: f32) -> ViewState {
     .collect();
     if phase == "activity-extensions" {
         state.ide.extensions_open = true;
-        state.ide.extensions_item = Some("team:review".into());
+        state.marketplace.selected_item_id = Some("team:review".into());
         state.show_terminal_panel = false;
     }
     if phase.starts_with("bottom-") {

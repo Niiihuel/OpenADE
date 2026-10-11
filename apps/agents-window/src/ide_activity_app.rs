@@ -23,7 +23,6 @@ impl AgentsWindow {
             return false;
         }
         self.view.ide.extensions_workspace = Some(self.view.workspace.clone());
-        self.view.ide.extensions_item = None;
         self.reset_marketplace_workspace();
         self.marketplace_operation(MarketplaceOperation::Load);
         true
@@ -191,7 +190,7 @@ impl AgentsWindow {
                 .active_tab(&self.dock_scope())
                 .map(|tab| tab.id.get());
             self.view.ide.extensions_open = true;
-            self.view.ide.extensions_item = None;
+            self.view.marketplace.selected_item_id = None;
             self.view.ide.compact_panel = None;
             return true;
         }
@@ -201,7 +200,8 @@ impl AgentsWindow {
         }
         if let Some(item_id) = id.strip_prefix("ide_extension:") {
             if self.view.marketplace.find_item(item_id).is_some() {
-                self.view.ide.extensions_item = Some(item_id.to_owned());
+                self.view.marketplace.selected_item_id = Some(item_id.to_owned());
+                self.view.marketplace.menu_item = None;
                 self.view.ide.extensions_editor_tab = self
                     .dock
                     .active_tab(&self.dock_scope())

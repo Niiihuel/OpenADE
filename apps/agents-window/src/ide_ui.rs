@@ -690,13 +690,13 @@ pub(super) fn build(state: &ViewState, width: f32, height: f32) -> Element {
     let terminal_height = terminal_panel_height(state, height).min(body_height);
     let editor_height = (body_height - terminal_height).max(0.0);
     let center = if state.ide.extensions_open {
-        let sidebar_controls_visible = state.ide.activity == IdeActivity::Extensions
+        let sidebar_list_visible = state.ide.activity == IdeActivity::Extensions
             && crate::ide_workspace::nominal_layout(state, width).left > 0.0;
         super::ide_activity_ui::extensions_center(
             state,
             layout.center,
             editor_height,
-            sidebar_controls_visible,
+            sidebar_list_visible,
         )
     } else {
         side_pane_sized(state, layout.center, editor_height)

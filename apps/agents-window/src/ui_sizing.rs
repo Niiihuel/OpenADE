@@ -387,16 +387,10 @@ pub const AGENT_LIST: RowSizing = RowSizing {
     ..RowSizing::COMPACT
 };
 
-/// An entry of the extensions sidebar: its name over its state or source.
-pub const EXTENSION: RowSizing = RowSizing {
-    height: Some(42.0),
-    two_line_height: Some(42.0),
-    padding: 5.0,
-    gap: 7.0,
-    leading_height: Some(16.0),
-    subtitle_size: 10.0,
-    ..RowSizing::COMPACT
-};
+/// An entry of the extensions list: three lines of copy beside its mark.
+pub const EXTENSION_ROW_HEIGHT: f32 = 60.0;
+/// The mark of an entry of the extensions list.
+pub const EXTENSION_ICON: f32 = 28.0;
 
 /// A changed file of the repository: its name, its folder and its status
 /// letter on one line, beside the control that stages it.

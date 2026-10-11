@@ -57,7 +57,7 @@ pub(crate) mod document_markdown_ui;
 #[path = "git_panel.rs"]
 mod git_panel;
 #[path = "ide_activity_ui.rs"]
-mod ide_activity_ui;
+pub(crate) mod ide_activity_ui;
 #[path = "ide_search_ui.rs"]
 mod ide_search_ui;
 #[path = "ide_ui.rs"]

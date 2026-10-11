@@ -83,210 +83,113 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
     .render()
 }
 
-/// An entry of the extensions sidebar: its name over its state or source.
-fn extension_row(
-    action: &str,
-    name: &str,
-    subtitle: &str,
-    description: &str,
-    selected: bool,
-    width: f32,
-) -> Element {
-    // The open extension keeps the sidebar's hover over its selected fill.
-    let palette = openide_ui::ComponentPalette {
-        surface: if selected {
-            theme::SELECTED
-        } else {
-            theme::SIDEBAR
-        },
-        ..theme::action_palette(theme::SIDEBAR, theme::FOREGROUND)
-    };
-    Tooltip::new(
-        ListRow::new(action, name, palette)
-            .icon(Icon::Grid)
-            // A catalog entry without a source keeps its second line.
-            .subtitle(if subtitle.is_empty() { " " } else { subtitle })
-            .filled()
-            .sizing(crate::ui_sizing::EXTENSION)
-            .render()
-            .size(Some(width), crate::ui_sizing::EXTENSION.two_line_height),
-        action,
-        name,
-        theme::component_palette(),
-    )
-    .description(description)
-    .placement(TooltipPlacement::Right)
-    .render()
-}
-
-pub(super) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> Element {
+/// The list of the extensions activity. It is the only place the catalog is
+/// enumerated: selecting a row opens that item in the editor area.
+pub(crate) fn extensions_sidebar(state: &ViewState, width: f32, height: f32) -> Element {
     let inventory = &state.marketplace;
     let inner = (width - chrome::INSET * 2.0).max(0.0);
-    let list_width = (inner - 14.0).max(0.0);
-    let (items, total, page) = marketplace_view::catalog_page(inventory);
-    let entries: Vec<_> = items
-        .iter()
-        .map(|item| {
-            let action = format!("ide_extension:{}", item.id);
-            let subtitle =
-                if inventory.updates.contains_key(&item.id) && item.installed_scope.is_some() {
-                    "Actualización disponible"
-                } else if item.installed_scope.is_some() {
-                    if item.enabled {
-                        "Instalada · Activa"
-                    } else {
-                        "Instalada · Inactiva"
-                    }
-                } else {
-                    &item.source_name
-                };
-            extension_row(
-                &action,
-                &item.name,
-                subtitle,
-                &item.description,
-                state.ide.extensions_open
-                    && state.ide.extensions_item.as_deref() == Some(item.id.as_str()),
-                list_width,
+    let mut blocks = vec![PanelHeader::new("Complementos", theme::sidebar_palette())
+        .trailing(vec![
+            UiIconButton::new(
+                "ide_extensions_refresh",
+                Icon::Refresh,
+                theme::sidebar_palette(),
             )
-        })
-        .collect();
-    let list = if entries.is_empty() {
-        let explore = inventory.active_tab() == marketplace_view::MarketplaceTab::Explore;
-        let message = if explore {
-            if inventory.explore.busy {
-                "Buscando en skills.sh…"
-            } else if inventory.explore.error.is_some() {
-                "No se pudo buscar. Volvé a intentarlo con Actualizar."
-            } else if inventory.explore.page.is_some() {
-                "No se encontraron skills para esta búsqueda."
-            } else {
-                "Escribí al menos 2 caracteres y presioná Enter."
-            }
-        } else if inventory.busy {
-            "Cargando complementos…"
-        } else {
-            "No hay skills para mostrar"
-        };
-        let mut content = vec![UiText::new(message, theme::component_palette())
-            .muted()
-            .render()];
-        if !state.ide.extensions_open {
-            content.push(
-                Button::new(
-                    "ide_extensions_catalog",
-                    "Abrir catálogo",
-                    theme::component_palette(),
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Compact)
-                .render(),
-            );
-        }
-        Element::column(content)
-            .gap(10.0)
-            .padding(6.0)
-            .size(Some(list_width), None)
-    } else {
-        Element::column(entries).gap(2.0)
-    };
-    let selected_tab = match inventory.active_tab() {
-        marketplace_view::MarketplaceTab::Recommended => "recommended",
-        marketplace_view::MarketplaceTab::Explore => "explore",
-        marketplace_view::MarketplaceTab::Installed => "installed",
-    };
-    let filters = Element::horizontal_scroll(
-        "ide_marketplace_tabs",
-        marketplace_view::tab_strip(inventory, true),
-    )
-    .reveal_horizontal_item(format!("ide_marketplace_tab:{selected_tab}"))
-    .horizontal_edge_fade(theme::SIDEBAR, 12.0)
-    .size(Some(inner), Some(32.0));
-    SidebarPanel::new(
-        vec![
-            PanelHeader::new("Complementos", theme::sidebar_palette())
-                .trailing(vec![
-                    UiIconButton::new(
-                        "ide_extensions_refresh",
-                        Icon::Refresh,
-                        theme::sidebar_palette(),
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Dense)
-                    .dispatch_as(
-                        if inventory.active_tab() == marketplace_view::MarketplaceTab::Explore {
-                            "marketplace_explore_retry"
-                        } else {
-                            "marketplace_refresh"
-                        },
-                    )
-                    .tooltip_with(
-                        TooltipSpec::new("Actualizar catálogo").placement(TooltipPlacement::Below),
-                    )
-                    .render(),
-                    if state.ide.extensions_open {
-                        Element::spacer().size(Some(0.0), Some(24.0))
-                    } else {
-                        UiIconButton::new(
-                            "ide_extensions_open_catalog",
-                            Icon::Grid,
-                            theme::sidebar_palette(),
-                        )
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Dense)
-                        .dispatch_as("ide_extensions_catalog")
-                        .tooltip_with(
-                            TooltipSpec::new("Abrir catálogo").placement(TooltipPlacement::Below),
-                        )
-                        .render()
-                    },
-                ])
-                .width(inner)
-                .sizing(crate::ui_sizing::SIDEBAR_HEADER)
-                .render(),
-            filters,
-            marketplace_view::search_controls(inventory, inner, true),
-            marketplace_view::pagination_controls(total, page, true),
-            ScrollArea::new("ide_extensions_list", list)
-                .render()
-                .flex(1.0),
-        ],
-        theme::sidebar_palette(),
-    )
-    .size(width, height)
-    .render()
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(!inventory.busy)
+            .loading(inventory.busy && inventory.busy_item.is_none())
+            .dispatch_as("marketplace_refresh")
+            .tooltip_with(
+                TooltipSpec::new("Actualizar orígenes")
+                    .description("Vuelve a leer los orígenes y busca actualizaciones.")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
+            UiIconButton::new(
+                "ide_extensions_open_catalog",
+                Icon::Book,
+                theme::sidebar_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .active(state.ide.extensions_open && inventory.selected_item_id.is_none())
+            .dispatch_as("ide_extensions_catalog")
+            .tooltip_with(
+                TooltipSpec::new("Inicio y orígenes")
+                    .description("Recomendadas, instaladas y de dónde viene el catálogo.")
+                    .placement(TooltipPlacement::Below),
+            )
+            .render(),
+        ])
+        .width(inner)
+        .sizing(crate::ui_sizing::SIDEBAR_HEADER)
+        .render()];
+    blocks.extend(marketplace_view::catalog_list(
+        inventory,
+        inner,
+        "ide_extensions_search",
+        "ide_extension:",
+        theme::SIDEBAR,
+        None,
+    ));
+    SidebarPanel::new(blocks, theme::sidebar_palette())
+        .size(width, height)
+        .render()
 }
 
-/// The existing catalog supplies installation scopes, source management,
-/// confirmations and native forms. Closing it reveals the same editor buffers.
+/// The editor area of the extensions activity: the selected item, or the
+/// landing page. With the sidebar hidden it carries the list as well, so
+/// nothing is out of reach. Closing it reveals the same editor buffers.
 pub(super) fn extensions_center(
     state: &ViewState,
     width: f32,
     height: f32,
-    sidebar_controls_visible: bool,
+    sidebar_list_visible: bool,
 ) -> Element {
+    let body = if sidebar_list_visible {
+        marketplace_view::with_source_modal(
+            &state.marketplace,
+            marketplace_view::detail_or_landing(
+                &state.marketplace,
+                width,
+                "ide_extension:",
+                Some(("Complementos", None)),
+                None,
+            ),
+            width,
+        )
+    } else {
+        marketplace_view::with_list(
+            &state.marketplace,
+            width,
+            "Complementos",
+            None,
+            "ide_extensions_search",
+        )
+    };
     Element::column(vec![
         PanelHeader::new("", theme::sidebar_palette())
             .leading(
-                UiText::new("Complementos", theme::component_palette())
-                    .truncate()
-                    .render(),
+                UiText::new(
+                    state
+                        .marketplace
+                        .selected_item_id
+                        .as_deref()
+                        .and_then(|id| state.marketplace.find_item(id))
+                        .map_or("Complementos".to_owned(), |item| {
+                            format!("Complementos · {}", item.name)
+                        }),
+                    theme::component_palette(),
+                )
+                .truncate()
+                .render(),
             )
             .dismiss("ide_extensions_close", "Volver al editor")
             .width(width)
             .sizing(crate::ui_sizing::PANE_HEADER)
             .render(),
-        match state.ide.extensions_item.as_deref() {
-            Some(item) if state.marketplace.find_item(item).is_some() => {
-                marketplace_view::ide_item_detail(&state.marketplace, item, width)
-            }
-            _ => marketplace_view::ide_catalog_page(
-                &state.marketplace,
-                width,
-                sidebar_controls_visible,
-            ),
-        }
-        .flex(1.0),
+        body.flex(1.0),
     ])
     .background(theme::BACKGROUND)
     .size(Some(width), Some(height))
@@ -326,10 +229,8 @@ mod tests {
             .any(|region| region.id == "review_detail_back"));
     }
 
-    #[test]
-    fn ide_extensions_reuse_real_catalog_install_routes_without_leaving_the_shell() {
-        let mut state = super::super::tests::empty_state();
-        state.marketplace.snapshot.items.push(MarketplaceItem {
+    fn review_skill() -> MarketplaceItem {
+        MarketplaceItem {
             id: "source:review".into(),
             name: "review".into(),
             description: "Review changes".into(),
@@ -339,120 +240,92 @@ mod tests {
             installed_scope: None,
             enabled: false,
             source_available: true,
-        });
+        }
+    }
+
+    fn has(frame: &openide_ui::Frame, id: &str) -> bool {
+        frame.regions.iter().any(|region| region.id == id)
+    }
+
+    #[test]
+    fn the_sidebar_is_the_only_list_and_the_center_shows_the_selection() {
+        let mut state = super::super::tests::empty_state();
+        state.marketplace.snapshot.items.push(review_skill());
+        state.ide.extensions_open = true;
         let mut tree = UiTree::new(extensions_sidebar(&state, 240.0, 600.0));
         let sidebar = tree.layout(Size::new(240.0, 600.0));
-        assert!(sidebar
-            .regions
-            .iter()
-            .any(|region| region.id == "ide_extension:source:review"));
+        assert!(has(&sidebar, "ide_extension:source:review"));
+        assert!(has(&sidebar, "ide_extensions_search"));
+        assert!(has(&sidebar, "marketplace_row_menu:source:review"));
+
+        // Nothing selected: the landing page, which lists sources and no rows.
         tree.set_root(extensions_center(&state, 800.0, 700.0, true));
-        let center = tree.layout(Size::new(800.0, 700.0));
-        assert!(center
-            .regions
-            .iter()
-            .any(|region| region.id == "marketplace_install:source:review"));
-        assert!(center
-            .regions
-            .iter()
-            .any(|region| region.id == "ide_extensions_close"));
+        let landing = tree.layout(Size::new(800.0, 700.0));
+        assert!(has(&landing, "marketplace_add_menu"));
+        assert!(has(&landing, "ide_extensions_close"));
+        assert!(!has(&landing, "ide_extension:source:review"));
+        assert!(!has(&landing, "ide_extensions_search"));
+        assert!(!landing.regions.iter().any(|r| r.id.contains("page_next")));
+
+        state.marketplace.selected_item_id = Some("source:review".into());
+        tree.set_root(extensions_center(&state, 800.0, 700.0, true));
+        let detail = tree.layout(Size::new(800.0, 700.0));
+        assert!(has(&detail, "marketplace_install:source:review"));
+        assert!(has(&detail, "marketplace_detail_menu:source:review"));
+        assert!(!has(&detail, "ide_extensions_search"));
     }
+
     #[test]
-    fn extensions_explore_sidebar_has_one_search_row_and_honest_empty_states() {
-        use openide_ui::{DrawCommand, HitKind};
+    fn a_hidden_sidebar_leaves_the_list_in_the_center() {
         let mut state = super::super::tests::empty_state();
-        state.ide.extensions_open = true;
-        state.marketplace.tab = marketplace_view::MarketplaceTab::Explore;
-        state.marketplace.explore.query = "quality".into();
-        for width in [176.0, 240.0, 320.0] {
+        state.marketplace.snapshot.items.push(review_skill());
+        for width in [420.0, 900.0] {
+            let mut tree = UiTree::new(extensions_center(&state, width, 700.0, false));
+            let frame = tree.layout(Size::new(width, 700.0));
+            assert!(has(&frame, "ide_extensions_search"), "{width}");
+            assert!(has(&frame, "marketplace_details:source:review"), "{width}");
+            assert!(has(&frame, "marketplace_add_menu"), "{width}");
+        }
+    }
+
+    #[test]
+    fn the_sidebar_list_fits_from_240_to_480_without_crossing_its_bounds() {
+        let mut state = super::super::tests::empty_state();
+        let mut item = review_skill();
+        item.name = "a-skill-with-a-very-long-descriptive-name".into();
+        item.description = "A long description that cannot fit in one line of a sidebar".into();
+        state.marketplace.snapshot.items.push(item);
+        for width in [240.0, 320.0, 480.0] {
             let (context, mut tree) = crate::view::ide_visual_tests::native_tree(
                 extensions_sidebar(&state, width, 600.0),
             );
             let frame = tree.layout(Size::new(width, 600.0));
+            for region in frame.regions.iter().filter(|region| {
+                region.id.starts_with("ide_extension")
+                    || region.id.starts_with("marketplace_")
+            }) {
+                assert!(
+                    region.rect.x >= 0.0 && region.rect.x + region.rect.width <= width + 0.01,
+                    "{} at {width}: {:?}",
+                    region.id,
+                    region.rect
+                );
+            }
             let field = frame
                 .regions
                 .iter()
-                .find(|r| r.id == "ide_extensions_search")
+                .find(|region| region.id == "ide_extensions_search")
                 .unwrap()
                 .rect;
-            let submit = frame
+            let filter = frame
                 .regions
                 .iter()
-                .find(|r| r.id == "ide_marketplace_explore_search")
+                .find(|region| region.id == "marketplace_filter_toggle")
                 .unwrap()
                 .rect;
+            assert!(field.x + field.width <= filter.x);
             assert_eq!(field.height, 28.0);
-            assert_eq!(submit.height, 24.0);
-            assert!((field.y + 14.0 - submit.y - 12.0).abs() < 0.01);
-            assert!(field.x + field.width <= submit.x);
-            assert!(submit.x + submit.width <= width);
-            assert!(!frame.regions.iter().any(|r| matches!(
-                r.id.as_str(),
-                "ide_extensions_catalog" | "ide_extensions_open_catalog"
-            )));
-            assert!(!frame.commands.iter().any(|cmd| matches!(cmd, DrawCommand::Text { text, .. } if text == "skills.sh" || text == "Buscar" || text == "No hay skills para mostrar")));
-            assert!(frame
-                .text_layouts()
-                .iter()
-                .any(|block| block.source == "Escribí al menos 2 caracteres y presioná Enter."));
             context.end_pass().textures_delta.clear();
         }
-        state.marketplace.explore.busy = true;
-        let frame =
-            UiTree::new(extensions_sidebar(&state, 240.0, 600.0)).layout(Size::new(240.0, 600.0));
-        assert!(frame
-            .text_layouts()
-            .iter()
-            .any(|block| block.source == "Buscando en skills.sh…"));
-        assert!(!frame
-            .regions
-            .iter()
-            .any(|r| r.id == "ide_marketplace_explore_search" && r.kind == HitKind::Button));
-        state.ide.extensions_open = false;
-        let frame =
-            UiTree::new(extensions_sidebar(&state, 240.0, 600.0)).layout(Size::new(240.0, 600.0));
-        assert!(frame
-            .regions
-            .iter()
-            .any(|r| r.id == "ide_extensions_open_catalog"));
-    }
-
-    #[test]
-    fn narrow_extension_sidebar_reveals_selected_tab_without_crossing_panel_bounds() {
-        let mut state = super::super::tests::empty_state();
-        let width = 176.0;
-        let mut tree = UiTree::new(extensions_sidebar(&state, width, 600.0));
-        tree.set_reduced_motion(true);
-        tree.layout(Size::new(width, 600.0));
-        state.marketplace.tab = marketplace_view::MarketplaceTab::Installed;
-        tree.set_root(extensions_sidebar(&state, width, 600.0));
-        let frame = tree.layout(Size::new(width, 600.0));
-        let selected = frame
-            .regions
-            .iter()
-            .find(|region| {
-                region.id == "ide_marketplace_tab:installed"
-                    && region.kind == openide_ui::HitKind::Button
-            })
-            .unwrap();
-        assert!(selected.rect.x >= 0.0 && selected.rect.x + selected.rect.width <= width);
-        let point = openide_ui::Point::new(
-            selected.rect.x + selected.rect.width / 2.0,
-            selected.rect.y + selected.rect.height / 2.0,
-        );
-        assert_eq!(frame.hit_test(point), Some("ide_marketplace_tab:installed"));
-        tree.handle_event(openide_ui::UiEvent::PointerDown(point));
-        assert_eq!(
-            tree.handle_event(openide_ui::UiEvent::PointerUp(point)),
-            vec![openide_ui::UiAction::Clicked {
-                id: "ide_marketplace_tab:installed".into(),
-            }]
-        );
-        let scroll = frame
-            .regions
-            .iter()
-            .find(|region| region.id == "ide_marketplace_tabs")
-            .unwrap();
-        assert!(scroll.rect.x >= 0.0 && scroll.rect.x + scroll.rect.width <= width);
     }
 }
