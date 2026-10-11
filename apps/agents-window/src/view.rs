@@ -56,6 +56,7 @@ mod dock_visual_tests;
 pub(crate) mod document_markdown_ui;
 #[path = "git_panel.rs"]
 mod git_panel;
+pub(crate) use git_panel::{reveal_key as git_reveal_key, GitConfirmView, GitPanelView};
 #[path = "ide_activity_ui.rs"]
 mod ide_activity_ui;
 #[path = "ide_search_ui.rs"]
@@ -648,6 +649,7 @@ pub struct ViewState {
     pub git_review: Option<Result<Arc<GitReview>, String>>,
     pub git_action_pending: bool,
     pub git_action_error: Option<String>,
+    pub(crate) git_panel: GitPanelView,
     pub(crate) session_changes: crate::session_changes_ui::SessionChangesUiState,
     pub(crate) browser: crate::browser_ui::BrowserUiState,
     pub review_detail: Option<ReviewDetailView>,
@@ -3456,6 +3458,7 @@ fn workspace_modals(state: &ViewState, base: Element, viewport_width: f32) -> El
     let base = crate::composer_permissions_ui::full_access_dialog(state, base, viewport_width);
     let base = crate::code_editor_ui::confirmation(state, base, viewport_width);
     let base = crate::files_panel_ui::delete_dialog(state, base, viewport_width);
+    let base = git_panel::discard_dialog(state, base, viewport_width);
     ide_ui::new_file_modal(state, base, viewport_width)
 }
 
@@ -4010,6 +4013,7 @@ pub(crate) mod tests {
             git_review: None,
             git_action_pending: false,
             git_action_error: None,
+            git_panel: Default::default(),
             session_changes: Default::default(),
             browser: Default::default(),
             review_detail: None,

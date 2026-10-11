@@ -12,3 +12,8 @@ pub(crate) const REPLACE: Icon = Icon::Custom(include_str!("../assets/openide/re
 pub(crate) const REPLACE_ALL: Icon =
     Icon::Custom(include_str!("../assets/openide/replace-all.svg"));
 pub(crate) const LOCK: Icon = Icon::Custom(include_str!("../assets/bootstrap/lock.svg"));
+/// Throw a file's changes away.
+pub(crate) const DISCARD: Icon =
+    Icon::Custom(include_str!("../assets/bootstrap/arrow-counterclockwise.svg"));
+/// Exchange with the remote.
+pub(crate) const SYNC: Icon = Icon::Custom(include_str!("../assets/bootstrap/arrow-repeat.svg"));

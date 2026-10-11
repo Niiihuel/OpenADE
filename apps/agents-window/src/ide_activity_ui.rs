@@ -21,21 +21,57 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
         .background(theme::SIDEBAR)
         .size(Some(width), Some(height));
     }
+    let workflow = &state.environment.workflow;
+    let snapshot = workflow.snapshot.as_ref();
+    let idle = workflow.busy.is_none() && !state.git_action_pending;
+    let locked = state.running || state.composer_branches.switching();
+    // Every entry is an operation the worker has; one it cannot run now is
+    // listed and off.
+    let item = |action: &str, label: &str, icon: Icon, enabled: bool| -> DropdownMenuEntry {
+        DropdownMenuItem::new(action, label)
+            .icon(icon)
+            .enabled(enabled)
+            .into()
+    };
+    let repository = matches!(state.git_review, Some(Ok(_)));
+    let has_remote = snapshot.is_some_and(|snapshot| !snapshot.remotes.is_empty());
+    let can_push = snapshot.is_some_and(|snapshot| {
+        environment_git_ui::push_blocked_reason(workflow, snapshot, locked || !idle).is_none()
+    });
     let more = DropdownMenu::new(
         UiIconButton::new("ide_git_more", Icon::More, theme::sidebar_palette())
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Dense)
             .tooltip_with(
-                TooltipSpec::new("Más acciones de Git").placement(TooltipPlacement::Below),
+                TooltipSpec::new("Más acciones de Git")
+                    .placement(TooltipPlacement::Below)
+                    .suppressed(state.ide.git_actions_open),
             )
             .render(),
         vec![
-            DropdownMenuItem::new("environment_git_open_compare", "Comparar rama")
-                .icon(Icon::GitBranch)
-                .into(),
-            DropdownMenuItem::new("environment_git_open_worktree", "Crear worktree…")
-                .icon(Icon::Folder)
-                .into(),
+            item(
+                "environment_git_fetch",
+                "Buscar cambios (fetch)",
+                crate::icons::SYNC,
+                idle && has_remote,
+            ),
+            item(
+                "environment_git_pull",
+                "Recibir (pull, solo avance rápido)",
+                Icon::ArrowDown,
+                idle && !locked && snapshot.is_some_and(|snapshot| snapshot.upstream.is_some()),
+            ),
+            item("environment_git_push", "Enviar (push)", Icon::ArrowUp, can_push),
+            item(
+                "environment_git_open_commit",
+                "Enviar a otro destino…",
+                Icon::Globe,
+                has_remote,
+            ),
+            DropdownMenuEntry::Separator,
+            item("environment_git_open_branch", "Crear rama…", Icon::Add, repository),
+            item("environment_git_open_compare", "Comparar rama…", Icon::GitBranch, repository),
+            item("environment_git_open_worktree", "Crear worktree…", Icon::Folder, repository),
         ],
         state.ide.git_actions_open,
         "ide_git_more_dismiss",
@@ -53,30 +89,13 @@ pub(super) fn git_sidebar(state: &ViewState, width: f32, height: f32) -> Element
                     TooltipSpec::new("Actualizar cambios").placement(TooltipPlacement::Below),
                 )
                 .render(),
-            UiIconButton::new("ide_git_branch", Icon::GitBranch, theme::sidebar_palette())
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .dispatch_as("environment_git_open_branch")
-                .tooltip_with(TooltipSpec::new("Crear rama").placement(TooltipPlacement::Below))
-                .render(),
             more,
         ])
         .width(inner)
         .sizing(crate::ui_sizing::SIDEBAR_HEADER)
         .render();
-    let commit = Button::new("ide_git_commit", "Commit y publicación", crate::theme::sidebar_palette())
-        .icon(Icon::Check)
-        .variant(ButtonVariant::Outline)
-        .size(ControlSize::Compact)
-        .render()
-        .dispatch_as("environment_git_open_commit")
-        .size(Some(inner), Some(28.0));
     SidebarPanel::new(
-        vec![
-            header,
-            commit,
-            git_panel::navigator_body(state, inner).flex(1.0),
-        ],
+        vec![header, git_panel::navigator_body(state, inner).flex(1.0)],
         theme::sidebar_palette(),
     )
     .size(width, height)

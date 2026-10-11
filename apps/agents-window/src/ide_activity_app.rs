@@ -4,7 +4,7 @@ use super::*;
 use crate::ide_workspace::{IdeActivity, IdePanel};
 
 impl AgentsWindow {
-    fn move_git_form_to_ide_sidebar(&mut self) {
+    pub(super) fn move_git_form_to_ide_sidebar(&mut self) {
         // The sidebar and conversation reuse one controlled Git form. Finish
         // the old presentation immediately so its closing animation cannot
         // duplicate input/action IDs alongside the newly visible sidebar.

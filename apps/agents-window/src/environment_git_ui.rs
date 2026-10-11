@@ -166,7 +166,7 @@ fn commit_blocked_reason(
     }
 }
 
-fn push_blocked_reason(
+pub(crate) fn push_blocked_reason(
     state: &EnvironmentGitUiState,
     snapshot: &GitSnapshot,
     locked: bool,

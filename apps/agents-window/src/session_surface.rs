@@ -4008,6 +4008,7 @@ mod tests {
             git_review: None,
             git_action_pending: false,
             git_action_error: None,
+            git_panel: Default::default(),
             session_changes: Default::default(),
             browser: Default::default(),
             review_detail: None,

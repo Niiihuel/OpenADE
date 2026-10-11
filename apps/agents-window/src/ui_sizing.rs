@@ -181,16 +181,16 @@ pub const USAGE_HEADER: PageHeaderSizing = PageHeaderSizing {
     height: 0.0,
 };
 
-/// A heading in the list of changed files: a cut label hung from the top
-/// inset, as tall as the file rows.
+/// The heading of a group of changed files: a quiet label centered in a
+/// row as tall as the file rows.
 pub const CHANGE_SECTION: SectionSizing = SectionSizing {
-    height: crate::sidebar_chrome::NAV_ROW_HEIGHT,
+    height: 26.0,
     padding: 4.0,
     gap: 6.0,
     title_size: 11.0,
     title_muted: false,
     detail_size: 10.0,
-    align_top: true,
+    align_top: false,
 };
 
 /// The hint over the agent's composer: an icon above two lines of copy.
@@ -401,6 +401,7 @@ pub const EXTENSION: RowSizing = RowSizing {
 /// A changed file of the repository: its name, its folder and its status
 /// letter on one line, beside the control that stages it.
 pub const CHANGE_ROW: RowSizing = RowSizing {
+    height: Some(26.0),
     padding: 2.0,
     gap: 4.0,
     meta_gap: 4.0,

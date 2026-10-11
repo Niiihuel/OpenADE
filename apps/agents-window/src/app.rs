@@ -1351,6 +1351,8 @@ pub struct AgentsWindow {
     git_action_worker: Option<crate::git_actions::GitActionWorker>,
     git_action_request: Option<crate::git_actions::GitActionRequest>,
     git_action_generation: u64,
+    /// A Git action clicked while the repository was being re-read.
+    environment_git_queued: Option<String>,
     project_actions: project_actions_app::ProjectActionsHost,
     environment_git_worker: Option<crate::environment_git::Worker>,
     environment_git_workspace: Option<PathBuf>,
@@ -5471,6 +5473,10 @@ impl AgentsWindow {
                     self.review_in_flight = false;
                     refresh_detail = self.view.review_detail.is_some()
                         && matches!(self.view.git_review, Some(Ok(_)));
+                    // The sidebar commits what its list shows.
+                    if self.git_sidebar_visible() {
+                        self.refresh_environment_git_quietly(ctx);
+                    }
                 }
             }
         }
@@ -6094,6 +6100,7 @@ impl AgentsWindow {
             git_review: None,
             git_action_pending: false,
             git_action_error: None,
+            git_panel: Default::default(),
             session_changes: Default::default(),
             browser: Default::default(),
             review_detail: None,
@@ -6376,6 +6383,7 @@ impl AgentsWindow {
             git_action_worker: None,
             git_action_request: None,
             git_action_generation: 0,
+            environment_git_queued: None,
             project_actions: project_actions_app::ProjectActionsHost::default(),
             environment_git_worker: None,
             environment_git_workspace: None,
@@ -16148,7 +16156,7 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "native_command_terminate_cancel" => {
                 self.view.pending_native_command_termination = None;
             }
-            UiAction::Clicked { ref id } if self.handle_git_action(id) => {}
+            UiAction::Clicked { ref id } if self.handle_git_action(id, ctx) => {}
             UiAction::Clicked { id } if id == "review_page_previous" => {
                 self.view.review_page = self.view.review_page.saturating_sub(1);
             }
@@ -19162,6 +19170,7 @@ impl eframe::App for AgentsWindow {
             || self.view.ide.menu_open.is_some();
         let workflow_modal_open = self.view.ide.new_file.is_some()
             || self.view.file_delete.is_some()
+            || self.view.git_panel.confirm.is_some()
             || self.view.composer_full_access_confirm.is_some()
             || self.view.automations.screen == AutomationScreen::Edit
             || self.view.pending_delete_session_id.is_some()
@@ -19486,6 +19495,7 @@ impl eframe::App for AgentsWindow {
             self.view.composer_effort_hovered = effort_hovered;
             needs_relayout = true;
         }
+        needs_relayout |= self.sync_git_panel_reveal();
         needs_relayout |= self.update_command_search(&ctx);
         needs_relayout |= self.poll_project_actions(&ctx);
         // Disclosures can change during input handling. Start their background

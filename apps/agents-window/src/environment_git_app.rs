@@ -79,10 +79,13 @@ impl AgentsWindow {
         {
             self.environment_git_revision = self.environment_git_revision.wrapping_add(1);
             self.environment_git_workspace = None;
+            self.environment_git_queued = None;
             self.view.environment.workflow = Default::default();
             changed = true;
         }
-        if (self.view.environment.open || self.view.environment.composer_local_open)
+        if (self.view.environment.open
+            || self.view.environment.composer_local_open
+            || self.git_sidebar_visible())
             && self.environment_git_workspace.is_none()
         {
             self.request_environment_git(Operation::Refresh, ctx);
@@ -102,12 +105,14 @@ impl AgentsWindow {
                 return changed;
             }
             Some(Err(error)) => {
+                self.environment_git_queued = None;
                 self.view.environment.workflow.loading = false;
                 self.view.environment.workflow.busy = None;
                 self.view.environment.workflow.error = Some(error);
                 return true;
             }
             None => {
+                self.environment_git_queued = None;
                 self.view.environment.workflow.loading = false;
                 self.view.environment.workflow.busy = None;
                 self.view.environment.workflow.error =
@@ -218,6 +223,12 @@ impl AgentsWindow {
             self.refresh_mcp_settings();
             self.refresh_native_skills();
         }
+        // An action asked for during a plain re-read runs on what it read.
+        if let Some(id) = self.environment_git_queued.take() {
+            if self.view.environment.workflow.snapshot.is_some() {
+                self.submit_environment_git_action(&id, ctx);
+            }
+        }
         true
     }
 
@@ -241,6 +252,11 @@ impl AgentsWindow {
                     return true;
                 }
                 *target = value.chars().take(8192).collect();
+                true
+            }
+            // Ctrl+Enter in the message commits, as its button does.
+            UiAction::Submitted { id, .. } if id == "environment_git_commit_message" => {
+                self.submit_environment_git_action("environment_git_commit", ctx);
                 true
             }
             UiAction::Clicked { id } => {
@@ -372,6 +388,8 @@ impl AgentsWindow {
                     }
                     "environment_git_commit"
                     | "environment_git_push"
+                    | "environment_git_fetch"
+                    | "environment_git_pull"
                     | "environment_git_create_branch"
                     | "environment_git_create_worktree"
                     | "environment_git_compare_refresh" => {
@@ -485,7 +503,11 @@ impl AgentsWindow {
     }
 
     fn submit_environment_git_action(&mut self, id: &str, ctx: &egui::Context) {
-        if self.view.environment.workflow.loading || self.view.environment.workflow.busy.is_some() {
+        if self.view.environment.workflow.busy.is_some() {
+            return;
+        }
+        if self.view.environment.workflow.loading {
+            self.environment_git_queued = Some(id.to_owned());
             return;
         }
         if self.git_action_request.is_some() {
@@ -499,7 +521,7 @@ impl AgentsWindow {
         if self.environment_git_workspace.as_deref() != Some(Path::new(&self.view.workspace)) {
             return;
         }
-        if id != "environment_git_compare_refresh" {
+        if !matches!(id, "environment_git_compare_refresh" | "environment_git_fetch") {
             if let Some(reason) = self.branch_change_blocked_reason() {
                 self.view.environment.workflow.error = Some(reason.into());
                 return;
@@ -520,6 +542,15 @@ impl AgentsWindow {
                     set_upstream,
                 }
             }
+            "environment_git_fetch" => {
+                let Some(remote) = snapshot.default_remote().map(str::to_owned) else {
+                    self.view.environment.workflow.error =
+                        Some("Elegí un remoto: este repositorio tiene varios.".into());
+                    return;
+                };
+                Operation::Fetch { snapshot, remote }
+            }
+            "environment_git_pull" => Operation::Pull { snapshot },
             "environment_git_create_branch" => Operation::CreateBranch {
                 snapshot,
                 name: workflow.branch_name.trim().to_owned(),
@@ -720,6 +751,116 @@ mod tests {
                 .as_deref(),
             Some("origin/main")
         );
+    }
+
+    #[test]
+    fn fetch_and_pull_bring_a_published_branch_up_to_date() {
+        let (directory, mut app, ctx) = fixture();
+        let root = PathBuf::from(&app.view.workspace);
+        let remote = directory.path().join("remote.git");
+        let git = |at: &Path, args: &[&str]| crate::git_branches::git_text(at, args).unwrap();
+        git(&root, &["init", "--bare", "--initial-branch=main", remote.to_str().unwrap()]);
+        git(&root, &["remote", "add", "origin", remote.to_str().unwrap()]);
+        git(&root, &["push", "-q", "--set-upstream", "origin", "main"]);
+        let clone = directory.path().join("clone");
+        git(directory.path(), &["clone", "-q", remote.to_str().unwrap(), clone.to_str().unwrap()]);
+        for (key, value) in [
+            ("user.name", "OpenIDE Test"),
+            ("user.email", "openide-test@example.invalid"),
+            ("commit.gpgsign", "false"),
+        ] {
+            git(&clone, &["config", key, value]);
+        }
+        std::fs::write(clone.join("remote.txt"), "remote\n").unwrap();
+        git(&clone, &["add", "--", "remote.txt"]);
+        git(&clone, &["commit", "-m", "Remote"]);
+        git(&clone, &["push", "-q", "origin", "main"]);
+
+        app.view.environment.workflow.snapshot = Some(load_snapshot(&root).unwrap());
+        // Looking for news is allowed while the agent works; it moves nothing.
+        app.view.running = true;
+        click(&mut app, &ctx, "environment_git_fetch");
+        assert_eq!(
+            app.view.environment.workflow.busy.as_deref(),
+            Some("Buscando cambios en el remoto…")
+        );
+        settle(&mut app, &ctx);
+        let workflow = &app.view.environment.workflow;
+        assert!(workflow.error.is_none(), "{:?}", workflow.error);
+        assert_eq!(workflow.notice.as_deref(), Some("Referencias actualizadas desde origin"));
+        assert_eq!(workflow.snapshot.as_ref().unwrap().behind, 1);
+        assert!(!root.join("remote.txt").exists());
+
+        // Receiving changes the work tree, so it waits for the agent.
+        click(&mut app, &ctx, "environment_git_pull");
+        assert!(!app.view.environment.workflow.loading);
+        assert!(app.view.environment.workflow.error.is_some());
+        app.view.running = false;
+        click(&mut app, &ctx, "environment_git_pull");
+        settle(&mut app, &ctx);
+        let workflow = &app.view.environment.workflow;
+        assert!(workflow.error.is_none(), "{:?}", workflow.error);
+        assert_eq!(workflow.notice.as_deref(), Some("Rama al día con origin/main"));
+        assert_eq!(workflow.snapshot.as_ref().unwrap().behind, 0);
+        assert!(root.join("remote.txt").exists());
+    }
+
+    #[test]
+    fn the_message_field_commits_and_a_click_during_a_reread_is_not_lost() {
+        let (_directory, mut app, ctx) = fixture();
+        let root = PathBuf::from(&app.view.workspace);
+        std::fs::write(root.join("tracked.txt"), "prepared\n").unwrap();
+        crate::git_branches::git_text(&root, &["add", "--", "tracked.txt"]).unwrap();
+        app.view.environment.workflow.commit_message = "From the sidebar".into();
+        // The snapshot in hand predates the staging: re-read it, and ask
+        // for the commit before the answer is back.
+        click(&mut app, &ctx, "environment_git_refresh");
+        assert!(app.view.environment.workflow.loading);
+        assert!(app.apply_environment_git_action(
+            &UiAction::Submitted {
+                id: "environment_git_commit_message".into(),
+                value: "From the sidebar".into(),
+            },
+            &ctx
+        ));
+        assert_eq!(app.environment_git_queued.as_deref(), Some("environment_git_commit"));
+        settle(&mut app, &ctx);
+        // The re-read landed and started the commit; let that finish too.
+        assert!(app.environment_git_queued.is_none());
+        settle(&mut app, &ctx);
+        let workflow = &app.view.environment.workflow;
+        assert!(workflow.error.is_none(), "{:?}", workflow.error);
+        assert!(workflow.commit_message.is_empty());
+        assert_eq!(
+            crate::git_branches::git_text(&root, &["log", "-1", "--format=%s"]).unwrap(),
+            "From the sidebar"
+        );
+    }
+
+    #[test]
+    fn the_visible_git_sidebar_reads_the_repository_without_the_environment_card() {
+        let (_directory, mut app, ctx) = fixture();
+        app.view.environment.open = false;
+        app.view.environment.workflow.snapshot = None;
+        app.environment_git_workspace = None;
+        assert!(!app.poll_environment_git(&ctx), "nothing asks for the repository");
+        app.view.ide.mode = crate::ide_workspace::WindowMode::Ide;
+        app.view.ide.activity = crate::ide_workspace::IdeActivity::Git;
+        app.view.ide.explorer_open = true;
+        assert!(app.git_sidebar_visible());
+        assert!(app.poll_environment_git(&ctx));
+        settle(&mut app, &ctx);
+        assert!(app.view.environment.workflow.snapshot.is_some());
+
+        // A re-read on the list's behalf keeps what the last operation said.
+        app.view.environment.workflow.notice = Some("Commit creado: 0c1d2e3f".into());
+        app.view.environment.workflow.error = Some("previous failure".into());
+        app.refresh_environment_git_quietly(&ctx);
+        assert!(app.view.environment.workflow.loading);
+        settle(&mut app, &ctx);
+        let workflow = &app.view.environment.workflow;
+        assert_eq!(workflow.notice.as_deref(), Some("Commit creado: 0c1d2e3f"));
+        assert_eq!(workflow.error.as_deref(), Some("previous failure"));
     }
 
     #[test]
