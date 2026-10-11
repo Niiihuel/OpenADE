@@ -1270,13 +1270,32 @@ impl Driver {
         format: FrameFormat,
         wake: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Outcome<FrameStream> {
+        self.start_stream_within(format, None, wake)
+    }
+
+    /// The same stream, with every frame scaled down by Chrome to fit `limit`
+    /// device pixels of width and height: a view with a pixel budget asks for
+    /// frames it can show instead of discarding the ones it cannot.
+    pub fn start_stream_within(
+        &mut self,
+        format: FrameFormat,
+        limit: Option<(u32, u32)>,
+        wake: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) -> Outcome<FrameStream> {
+        if limit.is_some_and(|(width, height)| width == 0 || height == 0) {
+            return Err(invalid("Tamaño máximo de cuadro no válido"));
+        }
         self.run(TIMEOUT, |driver| {
             let session = driver.session.clone();
             driver.shared.stream.start(wake);
-            let params = match format {
+            let mut params = match format {
                 FrameFormat::Jpeg { quality } => json!({"format": "jpeg", "quality": quality.min(100), "everyNthFrame": 1}),
                 FrameFormat::Png => json!({"format": "png", "everyNthFrame": 1}),
             };
+            if let Some((width, height)) = limit {
+                params["maxWidth"] = Value::from(width);
+                params["maxHeight"] = Value::from(height);
+            }
             if let Err(error) = driver.call::<Value>(&session, "Page.startScreencast", params) {
                 driver.shared.stream.stop(&driver.client);
                 return Err(error);

@@ -4,11 +4,14 @@
 
 use crate::driver::{failed, invalid, timed_out, tool, Driver, Outcome, Resolved, Target, MAX_INPUT_TEXT_BYTES, TIMEOUT};
 use crate::keys::{self, Key};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MouseButton {
+    #[default]
     Left,
     Middle,
     Right,

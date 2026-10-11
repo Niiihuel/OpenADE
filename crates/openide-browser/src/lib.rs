@@ -31,7 +31,7 @@ pub use observer::{
     ConsoleEntry, ConsoleLevel, NetworkEntry, Report, MAX_CONSOLE_TEXT_BYTES, MAX_EVENTS, MAX_REPORT_BYTES,
     MAX_REQUEST_URL_BYTES,
 };
-pub use snapshot::SnapshotOptions;
+pub use snapshot::{element_of, SnapshotOptions};
 pub use stream::{image_size, Frame, FrameFormat, FrameStream, MAX_FRAME_BYTES};
 
 use std::fmt;
