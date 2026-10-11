@@ -1323,10 +1323,11 @@ pub(crate) fn group_draft_row_index(state: &ViewState) -> Option<usize> {
 
 fn session_list_rows(state: &ViewState) -> Vec<SessionListRow> {
     let mut rows = Vec::new();
+    // The archive lists archived tasks only; a pinned one keeps its mark there.
     let pinned = state
         .sessions
         .iter()
-        .filter(|session| session.pinned && !session.archived);
+        .filter(|session| !state.show_archived && session.pinned && !session.archived);
     let mut has_pinned = false;
     for session in pinned {
         if !has_pinned {
@@ -8712,12 +8713,25 @@ pub(crate) mod tests {
         state.show_archived = true;
         state.session_menu_id = Some("archived".into());
         let archived = UiTree::new(build_view(&state, 900.0)).layout(Size::new(900.0, 620.0));
-        assert_eq!(count(&archived, "session:pinned"), 1);
+        assert_eq!(count(&archived, "session:pinned"), 0);
         assert_eq!(count(&archived, "session:active"), 0);
         assert_eq!(count(&archived, "session:archived"), 1);
         assert_eq!(count(&archived, "session_restore:archived"), 1);
         assert_eq!(count(&archived, "session_delete:archived"), 1);
         assert_eq!(count(&archived, "session_pin:archived"), 0);
+        let sections = |state: &ViewState| -> Vec<&'static str> {
+            session_list_rows(state)
+                .iter()
+                .filter_map(|row| match row {
+                    SessionListRow::Section(title) => Some(*title),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(sections(&state), ["ARCHIVADAS"]);
+        // Leaving the archive brings the pinned section back.
+        state.show_archived = false;
+        assert_eq!(sections(&state), ["FIJADAS", "TAREAS"]);
     }
 
     #[test]

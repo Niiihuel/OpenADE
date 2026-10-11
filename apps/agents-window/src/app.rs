@@ -7521,13 +7521,7 @@ impl AgentsWindow {
                     let mut sessions: Vec<(u64, u64, SessionView)> = listing
                         .sessions
                         .into_iter()
-                        .filter(|record| {
-                            if self.view.show_archived {
-                                record.session.archived || record.session.pinned
-                            } else {
-                                !record.session.archived
-                            }
-                        })
+                        .filter(|record| record.session.archived == self.view.show_archived)
                         .map(|record| {
                             let activity_at_ms = record
                                 .events
@@ -21576,6 +21570,42 @@ mod tests {
         app.restore_pending_prompt();
         assert_eq!(app.view.prompt, "Revisa esto");
         assert_eq!(app.view.composer_attachments, vec![file]);
+    }
+
+    #[test]
+    fn archive_view_lists_only_archived_tasks_and_leaving_it_restores_the_pinned_ones() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.change_workspace(project.to_string_lossy().into_owned());
+        let store = app.store.as_ref().unwrap();
+        let pinned = store.create(&project, "native").unwrap().id;
+        let kept = store.create(&project, "native").unwrap().id;
+        let plain = store.create(&project, "native").unwrap().id;
+        store.set_pinned(&pinned, true).unwrap();
+        store.set_pinned(&kept, true).unwrap();
+        store.set_archived(&kept, true).unwrap();
+        let listed = |app: &AgentsWindow| {
+            let mut ids: Vec<_> = app.view.sessions.iter().map(|s| s.id.clone()).collect();
+            ids.sort();
+            ids
+        };
+        let sorted = |mut ids: Vec<String>| {
+            ids.sort();
+            ids
+        };
+        let ctx = egui::Context::default();
+        app.refresh_sessions();
+        assert_eq!(listed(&app), sorted(vec![pinned.clone(), plain.clone()]));
+
+        app.apply_action(clicked("toggle_archived_view"), &ctx);
+        assert_eq!(listed(&app), vec![kept.clone()]);
+        assert!(app.view.sessions[0].pinned, "an archived task keeps its pin mark");
+
+        app.apply_action(clicked("toggle_archived_view"), &ctx);
+        assert_eq!(listed(&app), sorted(vec![pinned.clone(), plain]));
+        assert!(app.view.sessions.iter().any(|s| s.id == pinned && s.pinned));
     }
 
     #[test]
