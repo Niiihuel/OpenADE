@@ -1091,7 +1091,7 @@ fn session_row_parts(
     let menu_button = UiIconButton::new(
         menu_action_id.clone(),
         Icon::More,
-        theme::in_row(theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE)),
+        theme::over_row(theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND_SUBTLE)),
     )
     .variant(ButtonVariant::Ghost)
     .size(ControlSize::Dense)

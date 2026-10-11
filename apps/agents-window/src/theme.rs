@@ -156,6 +156,16 @@ pub fn action_palette(surface: Color, ink: Color) -> ComponentPalette {
 
 /// A control inside a row that hovers as a whole: it paints no fill of its
 /// own under the pointer or pressed.
+/// A control inside a row that lights as a whole: its own hover is a veil
+/// over whatever the row shows (idle, hovered or selected), one step above.
+pub fn over_row(palette: ComponentPalette) -> ComponentPalette {
+    ComponentPalette {
+        hover: Color::rgba(255, 255, 255, 22),
+        selected: Color::rgba(255, 255, 255, 32),
+        ..palette
+    }
+}
+
 pub fn in_row(palette: ComponentPalette) -> ComponentPalette {
     ComponentPalette {
         hover: Color::TRANSPARENT,
