@@ -85,7 +85,7 @@ fn a_closed_flowchart_is_drawn_and_switches_to_its_source_and_back() {
         let switch = frame
             .regions
             .iter()
-            .find(|region| region.id.starts_with(DIAGRAM_ACTION_PREFIX))
+            .find(|region| region.id.starts_with(DIAGRAM_ACTION_PREFIX) && !region.id.contains("expand:"))
             .expect("the diagram carries its switch")
             .clone();
         assert!(switch.rect.x >= 0.0 && switch.rect.x + switch.rect.width <= viewport.width);
@@ -100,6 +100,34 @@ fn a_closed_flowchart_is_drawn_and_switches_to_its_source_and_back() {
         assert!(toggle_diagram_source(&switch.id));
         assert!(!toggle_diagram_source("chat_link_open:0:0:https://example.test/"));
     }
+}
+
+#[test]
+fn a_flowchart_opens_over_the_window_and_closes_again() {
+    let state = conversation(DOCS, false);
+    let (context, mut tree) = native_tree(root(&state, NARROW));
+    let frame = tree.layout(NARROW);
+    let expand = frame.regions.iter().find(|region| region.id.contains("expand:")).expect("Ampliar").id.clone();
+    context.end_pass().textures_delta.clear();
+    assert!(toggle_diagram_source(&expand));
+    // The window wraps its content in the viewer, as `build_window_view` does.
+    let window = |state| crate::rich_text::diagram_viewer(root(state, NARROW), NARROW.width, NARROW.height);
+    let (context, mut tree) = native_tree(window(&state));
+    let open = tree.layout(NARROW);
+    assert_eq!(lines(&open), 14, "the chart is drawn in the transcript and again over it");
+    let close = open
+        .regions
+        .iter()
+        .rev()
+        .find(|region| region.id == "chat_diagram_source:close" && region.kind == openide_ui::HitKind::Button)
+        .expect("the viewer has a close control")
+        .clone();
+    assert!(close.rect.x + close.rect.width <= NARROW.width && close.rect.y >= 0.0);
+    context.end_pass().textures_delta.clear();
+    assert!(toggle_diagram_source(&close.id));
+    let (context, mut tree) = native_tree(window(&state));
+    assert_eq!(lines(&tree.layout(NARROW)), 7);
+    context.end_pass().textures_delta.clear();
 }
 
 #[test]
@@ -136,6 +164,17 @@ fn export_chat_diagrams_visual_review() {
         let (context, mut tree) = native_tree(root(&state, viewport));
         export(&tree.layout(viewport), directory, "d5-streaming-code", viewport);
         context.end_pass().textures_delta.clear();
+
+        let state = conversation(DOCS, false);
+        let (context, mut tree) = native_tree(root(&state, viewport));
+        let expand = tree.layout(viewport).regions.iter().find(|region| region.id.contains("expand:")).unwrap().id.clone();
+        context.end_pass().textures_delta.clear();
+        toggle_diagram_source(&expand);
+        let (context, mut tree) = native_tree(crate::rich_text::diagram_viewer(root(&state, viewport), viewport.width, viewport.height));
+        tree.set_reduced_motion(true);
+        export(&tree.layout(viewport), directory, "d7-expanded", viewport);
+        context.end_pass().textures_delta.clear();
+        toggle_diagram_source("chat_diagram_source:close");
 
         // The app ships one dark scheme; the same component on a light
         // palette shows that no ink is the diagram's own.

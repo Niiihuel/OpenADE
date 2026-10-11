@@ -3556,6 +3556,7 @@ pub fn build_window_view(state: &ViewState, width: f32, height: f32) -> Element 
         ),
         None => base,
     };
+    let base = crate::rich_text::diagram_viewer(base, width, height);
     let Some(gallery) = &state.composer_image_viewer else {
         return base;
     };

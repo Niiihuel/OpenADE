@@ -29,15 +29,41 @@ thread_local! {
     // The diagrams the reader asked to see as source, by the id in their
     // action. View state of this window only: nothing is persisted.
     static DIAGRAM_SOURCES: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
+    // The source of the diagram shown over the window, if any.
+    static DIAGRAM_VIEWER: RefCell<Option<std::sync::Arc<str>>> = const { RefCell::new(None) };
+}
+
+const DIAGRAM_VIEWER_CLOSE: &str = "chat_diagram_source:close";
+
+/// `base` under the diagram the reader asked to see over the window.
+pub(crate) fn diagram_viewer(base: Element, width: f32, height: f32) -> Element {
+    let palette = theme::panel_card_palette();
+    let chart = DIAGRAM_VIEWER
+        .with_borrow(|source| source.as_deref().and_then(|source| openide_ui::Flowchart::parse(source, palette).ok()));
+    match chart {
+        Some(chart) => openide_ui::DiagramViewer::new(base, "Diagrama", DIAGRAM_VIEWER_CLOSE, palette, chart)
+            .close_title("Cerrar diagrama · Esc")
+            .viewport(openide_ui::Size::new(width, height))
+            .render(),
+        None => base,
+    }
 }
 
 /// Switch one diagram between its drawing and its source. False when
 /// `action` is not a diagram's.
 pub(crate) fn toggle_diagram_source(action: &str) -> bool {
-    let Some(id) = action
-        .strip_prefix(DIAGRAM_ACTION_PREFIX)
-        .and_then(|id| u64::from_str_radix(id, 16).ok())
-    else {
+    if action == DIAGRAM_VIEWER_CLOSE {
+        DIAGRAM_VIEWER.set(None);
+        return true;
+    }
+    let Some(id) = action.strip_prefix(DIAGRAM_ACTION_PREFIX) else {
+        return false;
+    };
+    if let Some(id) = id.strip_prefix("expand:") {
+        DIAGRAM_VIEWER.set(u64::from_str_radix(id, 16).ok().and_then(Markdown::diagram_source));
+        return true;
+    }
+    let Ok(id) = u64::from_str_radix(id, 16) else {
         return false;
     };
     DIAGRAM_SOURCES.with_borrow_mut(|shown| match shown.iter().position(|shown| *shown == id) {
@@ -66,6 +92,7 @@ const LABELS: MarkdownLabels = MarkdownLabels {
     diagram: "DIAGRAMA",
     show_source: "Ver código",
     show_diagram: "Ver diagrama",
+    expand: "Ampliar",
 };
 
 /// Every Markdown surface of the app renders through here, with the same

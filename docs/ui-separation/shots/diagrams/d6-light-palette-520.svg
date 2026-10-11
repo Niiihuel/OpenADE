@@ -2,10 +2,10 @@
 <rect x="0" y="0" width="520" height="1000" rx="0" fill="#ffffff" fill-opacity="1"/>
 <text x="24" y="24" font-family="Ubuntu,sans-serif" font-size="12" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Paleta clara</text>
 <text x="24" y="56.758926" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">El flujo queda así:</text>
-<rect x="24" y="89.82143" width="472" height="586.6518" rx="8" fill="#f6f6f4" fill-opacity="1"/>
-<rect x="24.5" y="90.32143" width="471" height="585.6518" rx="7.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<rect x="24" y="89.82143" width="472" height="594.6518" rx="8" fill="#f6f6f4" fill-opacity="1"/>
+<rect x="24.5" y="90.32143" width="471" height="593.6518" rx="7.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
 <text x="36" y="101.82143" font-family="Hack,monospace" font-size="10" dominant-baseline="text-before-edge" fill="#6e6e68" fill-opacity="1" xml:space="preserve">DIAGRAM</text>
-<defs><clipPath id="clip-6" clipPathUnits="userSpaceOnUse"><rect x="36" y="121.47321" width="448" height="543"/></clipPath></defs><g clip-path="url(#clip-6)">
+<defs><clipPath id="clip-6" clipPathUnits="userSpaceOnUse"><rect x="36" y="121.47321" width="448" height="551"/></clipPath></defs><g clip-path="url(#clip-6)">
 <polygon points="271.5,196.4732 268,189.4732 275,189.4732" fill="#6e6e68" fill-opacity="1"/>
 <polyline points="271.5,156.4732 271.5,192.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
 <polygon points="216.5,300.4732 213,293.4732 220,293.4732" fill="#6e6e68" fill-opacity="1"/>
@@ -54,60 +54,61 @@
 <rect x="222.5" y="550.9732" width="150" height="32" rx="11.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
 <text x="236" y="559" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Registra el resultado</text>
 </g>
-<text x="24" y="693.4107" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Cada paso depende del anterior.</text>
-<defs><clipPath id="clip-56" clipPathUnits="userSpaceOnUse"><rect x="24" y="728.4732" width="472" height="94"/></clipPath></defs><g clip-path="url(#clip-56)">
-<polygon points="263,775.9732 256,779.4732 256,772.4732" fill="#6e6e68" fill-opacity="1"/>
-<polyline points="223,775.9732 259.5,775.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
-<polygon points="520,775.9732 513,779.4732 513,772.4732" fill="#6e6e68" fill-opacity="1"/>
-<polyline points="480,775.9732 516.5,775.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
-<polygon points="720,746.9732 713,750.4732 713,743.4732" fill="#6e6e68" fill-opacity="1"/>
-<polyline points="677,775.9732 689.5,775.9732 692.125,775.5982 694,774.4732 695.125,772.5982 695.5,769.9732 695.5,752.9732 695.875,750.3482 697,748.4732 698.875,747.3482 701.5,746.9732 716.5,746.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
-<polygon points="717,803.9732 710,807.4732 710,800.4732" fill="#6e6e68" fill-opacity="1"/>
-<polyline points="677,775.9732 689.5,775.9732 692.125,776.3482 694,777.4732 695.125,779.3482 695.5,781.9732 695.5,797.9732 695.875,800.5982 697,802.4732 698.875,803.5982 701.5,803.9732 713.5,803.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
-<polygon points="976,775.9732 969,779.4732 969,772.4732" fill="#6e6e68" fill-opacity="1"/>
-<polyline points="933,746.9732 948.5,746.9732 951.125,747.3482 953,748.4732 954.125,750.3482 954.5,752.9732 954.5,769.9732 954.875,772.5982 956,774.4732 957.875,775.5982 960.5,775.9732 972.5,775.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
-<polygon points="976,775.9732 969,779.4732 969,772.4732" fill="#6e6e68" fill-opacity="1"/>
-<polyline points="936,803.9732 948.5,803.9732 951.125,803.5982 953,802.4732 954.125,800.5982 954.5,797.9732 954.5,781.9732 954.875,779.3482 956,777.4732 957.875,776.3482 960.5,775.9732 972.5,775.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
-<polygon points="1171,775.9732 1164,779.4732 1164,772.4732" fill="#6e6e68" fill-opacity="1"/>
-<polyline points="1131,775.9732 1167.5,775.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
-<rect x="26" y="759.4732" width="197" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
-<rect x="26.5" y="759.9732" width="196" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
-<text x="41" y="768" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Contenido en docs/sections/</text>
-<rect x="263" y="751.4732" width="217" height="49" rx="4" fill="#ffffff" fill-opacity="1"/>
-<rect x="263.5" y="751.9732" width="216" height="48" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
-<text x="278" y="761" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">docs/content.js organiza guías y</text>
-<text x="338" y="776" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">navegación</text>
-<rect x="520" y="759.4732" width="157" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
-<rect x="520.5" y="759.9732" width="156" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
-<text x="535" y="768" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">scripts/build-docs.mjs</text>
-<rect x="720" y="730.4732" width="213" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
-<rect x="720.5" y="730.9732" width="212" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
-<text x="735" y="739" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Genera páginas HTML estáticas</text>
-<rect x="717" y="787.4732" width="219" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
-<rect x="717.5" y="787.9732" width="218" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
-<text x="732" y="796" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Genera índice de búsqueda local</text>
-<rect x="976" y="759.4732" width="155" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
-<rect x="976.5" y="759.9732" width="154" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
-<text x="990" y="768" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Salida dentro de dist/</text>
-<rect x="1171" y="751.4732" width="171" height="49" rx="4" fill="#ffffff" fill-opacity="1"/>
-<rect x="1171.5" y="751.9732" width="170" height="48" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
-<text x="1186" y="761" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">El navegador muestra la</text>
-<text x="1211" y="776" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">documentación</text>
-<rect x="480" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.03137255"/>
-<rect x="481" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.09411765"/>
-<rect x="482" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.15686275"/>
-<rect x="483" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.21960784"/>
-<rect x="484" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.28235295"/>
-<rect x="485" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.34509805"/>
-<rect x="486" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.40784314"/>
-<rect x="487" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.47058824"/>
-<rect x="488" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.5294118"/>
-<rect x="489" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.5921569"/>
-<rect x="490" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.654902"/>
-<rect x="491" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.7176471"/>
-<rect x="492" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.78039217"/>
-<rect x="493" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.84313726"/>
-<rect x="494" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.90588236"/>
-<rect x="495" y="728.4732" width="1" height="94" rx="0" fill="#ffffff" fill-opacity="0.96862745"/>
+<text x="24" y="701.4107" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Cada paso depende del anterior.</text>
+<defs><clipPath id="clip-56" clipPathUnits="userSpaceOnUse"><rect x="24" y="736.4732" width="472" height="102"/></clipPath></defs><g clip-path="url(#clip-56)">
+<polygon points="263,783.9732 256,787.4732 256,780.4732" fill="#6e6e68" fill-opacity="1"/>
+<polyline points="223,783.9732 259.5,783.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
+<polygon points="520,783.9732 513,787.4732 513,780.4732" fill="#6e6e68" fill-opacity="1"/>
+<polyline points="480,783.9732 516.5,783.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
+<polygon points="720,754.9732 713,758.4732 713,751.4732" fill="#6e6e68" fill-opacity="1"/>
+<polyline points="677,783.9732 689.5,783.9732 692.125,783.5982 694,782.4732 695.125,780.5982 695.5,777.9732 695.5,760.9732 695.875,758.3482 697,756.4732 698.875,755.3482 701.5,754.9732 716.5,754.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
+<polygon points="717,811.9732 710,815.4732 710,808.4732" fill="#6e6e68" fill-opacity="1"/>
+<polyline points="677,783.9732 689.5,783.9732 692.125,784.3482 694,785.4732 695.125,787.3482 695.5,789.9732 695.5,805.9732 695.875,808.5982 697,810.4732 698.875,811.5982 701.5,811.9732 713.5,811.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
+<polygon points="976,783.9732 969,787.4732 969,780.4732" fill="#6e6e68" fill-opacity="1"/>
+<polyline points="933,754.9732 948.5,754.9732 951.125,755.3482 953,756.4732 954.125,758.3482 954.5,760.9732 954.5,777.9732 954.875,780.5982 956,782.4732 957.875,783.5982 960.5,783.9732 972.5,783.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
+<polygon points="976,783.9732 969,787.4732 969,780.4732" fill="#6e6e68" fill-opacity="1"/>
+<polyline points="936,811.9732 948.5,811.9732 951.125,811.5982 953,810.4732 954.125,808.5982 954.5,805.9732 954.5,789.9732 954.875,787.3482 956,785.4732 957.875,784.3482 960.5,783.9732 972.5,783.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
+<polygon points="1171,783.9732 1164,787.4732 1164,780.4732" fill="#6e6e68" fill-opacity="1"/>
+<polyline points="1131,783.9732 1167.5,783.9732" fill="none" stroke="#6e6e68" stroke-opacity="1" stroke-width="1"/>
+<rect x="26" y="767.4732" width="197" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
+<rect x="26.5" y="767.9732" width="196" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<text x="41" y="776" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Contenido en docs/sections/</text>
+<rect x="263" y="759.4732" width="217" height="49" rx="4" fill="#ffffff" fill-opacity="1"/>
+<rect x="263.5" y="759.9732" width="216" height="48" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<text x="278" y="769" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">docs/content.js organiza guías y</text>
+<text x="338" y="784" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">navegación</text>
+<rect x="520" y="767.4732" width="157" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
+<rect x="520.5" y="767.9732" width="156" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<text x="535" y="776" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">scripts/build-docs.mjs</text>
+<rect x="720" y="738.4732" width="213" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
+<rect x="720.5" y="738.9732" width="212" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<text x="735" y="747" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Genera páginas HTML estáticas</text>
+<rect x="717" y="795.4732" width="219" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
+<rect x="717.5" y="795.9732" width="218" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<text x="732" y="804" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Genera índice de búsqueda local</text>
+<rect x="976" y="767.4732" width="155" height="33" rx="4" fill="#ffffff" fill-opacity="1"/>
+<rect x="976.5" y="767.9732" width="154" height="32" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<text x="990" y="776" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">Salida dentro de dist/</text>
+<rect x="1171" y="759.4732" width="171" height="49" rx="4" fill="#ffffff" fill-opacity="1"/>
+<rect x="1171.5" y="759.9732" width="170" height="48" rx="3.5" fill="none" stroke="#d6d6d1" stroke-opacity="1" stroke-width="1"/>
+<text x="1186" y="769" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">El navegador muestra la</text>
+<text x="1211" y="784" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#1c1c1a" fill-opacity="1" xml:space="preserve">documentación</text>
+<rect x="480" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.03137255"/>
+<rect x="481" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.09411765"/>
+<rect x="482" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.15686275"/>
+<rect x="483" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.21960784"/>
+<rect x="484" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.28235295"/>
+<rect x="485" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.34509805"/>
+<rect x="486" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.40784314"/>
+<rect x="487" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.47058824"/>
+<rect x="488" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.5294118"/>
+<rect x="489" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.5921569"/>
+<rect x="490" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.654902"/>
+<rect x="491" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.7176471"/>
+<rect x="492" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.78039217"/>
+<rect x="493" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.84313726"/>
+<rect x="494" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.90588236"/>
+<rect x="495" y="736.4732" width="1" height="102" rx="0" fill="#ffffff" fill-opacity="0.96862745"/>
+<rect x="24" y="835.4732" width="168.77576" height="3" rx="1.5" fill="#6e6e68" fill-opacity="0.44705883"/>
 </g>
 </svg>

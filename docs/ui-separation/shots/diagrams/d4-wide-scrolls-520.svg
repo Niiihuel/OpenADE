@@ -22,11 +22,12 @@
   <path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/>
 </svg>
 <text x="31" y="140.9375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">El flujo queda así:</text>
-<rect x="31" y="174" width="458" height="81.66965" rx="8" fill="#202020" fill-opacity="1"/>
-<rect x="31.5" y="174.5" width="457" height="80.66965" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<rect x="31" y="174" width="458" height="89.66965" rx="8" fill="#202020" fill-opacity="1"/>
+<rect x="31.5" y="174.5" width="457" height="88.66965" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
 <text x="43" y="186" font-family="Hack,monospace" font-size="10" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">DIAGRAMA</text>
+<text x="370.75" y="186" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Ampliar</text>
 <text x="423.78125" y="186" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Ver código</text>
-<defs><clipPath id="clip-20" clipPathUnits="userSpaceOnUse"><rect x="43" y="206.66965" width="434" height="37"/></clipPath></defs><g clip-path="url(#clip-20)">
+<defs><clipPath id="clip-21" clipPathUnits="userSpaceOnUse"><rect x="43" y="206.66965" width="434" height="45"/></clipPath></defs><g clip-path="url(#clip-21)">
 <polygon points="184,225.16965 177,228.66965 177,221.66965" fill="#888888" fill-opacity="1"/>
 <polyline points="144,225.16965 180.5,225.16965" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
 <polygon points="337,225.16965 330,228.66965 330,221.66965" fill="#888888" fill-opacity="1"/>
@@ -70,26 +71,27 @@
 <rect x="1515" y="208.66965" width="117" height="33" rx="4" fill="#161616" fill-opacity="1"/>
 <rect x="1515.5" y="209.16965" width="116" height="32" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
 <text x="1529" y="218" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Aviso al equipo</text>
-<rect x="461" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.03137255"/>
-<rect x="462" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.09411765"/>
-<rect x="463" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.15686275"/>
-<rect x="464" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.21960784"/>
-<rect x="465" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.28235295"/>
-<rect x="466" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.34509805"/>
-<rect x="467" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.40784314"/>
-<rect x="468" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.47058824"/>
-<rect x="469" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.5294118"/>
-<rect x="470" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.5921569"/>
-<rect x="471" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.654902"/>
-<rect x="472" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.7176471"/>
-<rect x="473" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.78039217"/>
-<rect x="474" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.84313726"/>
-<rect x="475" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.90588236"/>
-<rect x="476" y="206.66965" width="1" height="37" rx="0" fill="#202020" fill-opacity="0.96862745"/>
+<rect x="461" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.03137255"/>
+<rect x="462" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.09411765"/>
+<rect x="463" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.15686275"/>
+<rect x="464" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.21960784"/>
+<rect x="465" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.28235295"/>
+<rect x="466" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.34509805"/>
+<rect x="467" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.40784314"/>
+<rect x="468" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.47058824"/>
+<rect x="469" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.5294118"/>
+<rect x="470" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.5921569"/>
+<rect x="471" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.654902"/>
+<rect x="472" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.7176471"/>
+<rect x="473" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.78039217"/>
+<rect x="474" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.84313726"/>
+<rect x="475" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.90588236"/>
+<rect x="476" y="206.66965" width="1" height="45" rx="0" fill="#202020" fill-opacity="0.96862745"/>
+<rect x="43" y="248.66965" width="118.388435" height="3" rx="1.5" fill="#888888" fill-opacity="0.44705883"/>
 </g>
-<text x="31" y="272.60715" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cada paso depende del anterior.</text>
-<rect x="31" y="299.66965" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
-<svg opacity="1" y="304" x="35" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-copy" viewBox="0 0 16 16">
+<text x="31" y="280.60715" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cada paso depende del anterior.</text>
+<rect x="31" y="307.66965" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="312" x="35" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-copy" viewBox="0 0 16 16">
   <path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/>
 </svg>
 </g>
@@ -120,7 +122,7 @@
 <rect x="16" y="908" width="488" height="76" rx="10" fill="#262626" fill-opacity="1"/>
 <rect x="16.5" y="908.5" width="487" height="75" rx="9.5" fill="none" stroke="#262626" stroke-opacity="1" stroke-width="1"/>
 <rect x="24" y="916" width="472" height="28" rx="6" fill="#262626" fill-opacity="1"/>
-<defs><clipPath id="clip-100" clipPathUnits="userSpaceOnUse"><rect x="30" y="922" width="460" height="16"/></clipPath></defs><g clip-path="url(#clip-100)">
+<defs><clipPath id="clip-102" clipPathUnits="userSpaceOnUse"><rect x="30" y="922" width="460" height="16"/></clipPath></defs><g clip-path="url(#clip-102)">
 <text x="30" y="922" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="0.43137255" xml:space="preserve">Pide al agente que trabaje en este proyecto…</text>
 </g>
 <rect x="24" y="948" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>

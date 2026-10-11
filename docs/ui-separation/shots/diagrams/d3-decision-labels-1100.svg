@@ -15,71 +15,80 @@
 </svg>
 <rect x="0" y="32" width="1100" height="828" rx="0" fill="#161616" fill-opacity="1"/>
 <defs><clipPath id="clip-10" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="1100" height="828"/></clipPath></defs><g clip-path="url(#clip-10)">
-<rect x="160" y="86" width="780" height="44" rx="8" fill="#2b2b2b" fill-opacity="1"/>
-<text x="170" y="98.4375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">¿Cómo fluye esto?</text>
-<rect x="906" y="96" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
-<svg opacity="0" y="100" x="910" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-copy" viewBox="0 0 16 16">
+<rect x="153" y="86" width="780" height="44" rx="8" fill="#2b2b2b" fill-opacity="1"/>
+<text x="163" y="98.4375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">¿Cómo fluye esto?</text>
+<rect x="899" y="96" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="0" y="100" x="903" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-copy" viewBox="0 0 16 16">
   <path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/>
 </svg>
-<text x="160" y="140.9375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">El flujo queda así:</text>
-<rect x="160" y="174" width="780" height="587.6696" rx="8" fill="#202020" fill-opacity="1"/>
-<rect x="160.5" y="174.5" width="779" height="586.6696" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="172" y="186" font-family="Hack,monospace" font-size="10" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">DIAGRAMA</text>
-<text x="874.78125" y="186" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Ver código</text>
-<defs><clipPath id="clip-20" clipPathUnits="userSpaceOnUse"><rect x="172" y="206.66965" width="756" height="543"/></clipPath></defs><g clip-path="url(#clip-20)">
-<polygon points="561.5,281.66965 558,274.66965 565,274.66965" fill="#888888" fill-opacity="1"/>
-<polyline points="561.5,241.66965 561.5,278.16965" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
-<polygon points="506.5,385.66965 503,378.66965 510,378.66965" fill="#888888" fill-opacity="1"/>
-<polyline points="561.5,320.66965 561.5,333.16965 561.125,335.79465 560,337.66965 558.125,338.79465 555.5,339.16965 512.5,339.16965 509.875,339.54465 508,340.66965 506.875,342.54465 506.5,345.16965 506.5,382.16965" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
-<polygon points="587.5,562.6697 584,555.6697 591,555.6697" fill="#888888" fill-opacity="1"/>
-<polyline points="561.5,320.66965 561.5,333.16965 561.875,335.79465 563,337.66965 564.875,338.79465 567.5,339.16965 610.5,339.16965 613.125,339.54465 615,340.66965 616.125,342.54465 616.5,345.16965 616.5,510.16965 616.125,512.7947 615,514.6697 613.125,515.7947 610.5,516.1697 593.5,516.1697 590.875,516.5447 589,517.6697 587.875,519.5447 587.5,522.1697 587.5,559.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
-<polygon points="506.5,458.66965 503,451.66965 510,451.66965" fill="#888888" fill-opacity="1"/>
-<polyline points="506.5,418.66965 506.5,455.16965" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
-<polygon points="587.5,562.6697 584,555.6697 591,555.6697" fill="#888888" fill-opacity="1"/>
-<polyline points="506.5,497.66965 506.5,510.16965 506.875,512.7947 508,514.6697 509.875,515.7947 512.5,516.1697 581.5,516.1697 584.125,516.5447 586,517.6697 587.125,519.5447 587.5,522.1697 587.5,559.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
-<polygon points="533.5,708.6697 530,701.6697 537,701.6697" fill="#888888" fill-opacity="1"/>
-<polyline points="506.5,497.66965 506.5,510.16965 506.125,512.7947 505,514.6697 503.125,515.7947 500.5,516.1697 485.5,516.1697 482.875,516.5447 481,517.6697 479.875,519.5447 479.5,522.1697 479.5,681.1697 479.875,683.7947 481,685.6697 482.875,686.7947 485.5,687.1697 527.5,687.1697 530.125,687.5447 532,688.6697 533.125,690.5447 533.5,693.1697 533.5,705.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
-<polygon points="587.5,635.6697 584,628.6697 591,628.6697" fill="#888888" fill-opacity="1"/>
-<polyline points="587.5,595.6697 587.5,632.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1" stroke-dasharray="3 3"/>
-<polygon points="533.5,708.6697 530,701.6697 537,701.6697" fill="#888888" fill-opacity="1"/>
-<polyline points="587.5,668.6697 587.5,681.1697 587.125,683.7947 586,685.6697 584.125,686.7947 581.5,687.1697 539.5,687.1697 536.875,687.5447 535,688.6697 533.875,690.5447 533.5,693.1697 533.5,705.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="2"/>
-<rect x="496" y="342.66965" width="21" height="17" rx="4" fill="#202020" fill-opacity="1"/>
-<text x="502" y="345" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Sí</text>
-<rect x="603" y="342.66965" width="27" height="17" rx="4" fill="#202020" fill-opacity="1"/>
-<text x="609" y="345" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">No</text>
-<rect x="577" y="519.6697" width="21" height="17" rx="4" fill="#202020" fill-opacity="1"/>
-<text x="583" y="522" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Sí</text>
-<rect x="466" y="519.6697" width="27" height="17" rx="4" fill="#202020" fill-opacity="1"/>
-<text x="472" y="522" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">No</text>
-<rect x="488" y="208.66965" width="147" height="33" rx="16.5" fill="#161616" fill-opacity="1"/>
-<rect x="488.5" y="209.16965" width="146" height="32" rx="16" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="507" y="218" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Llega una solicitud</text>
-<polygon points="561.5,281.66965 676,301.16965 447,301.16965" fill="#161616" fill-opacity="1"/>
-<polygon points="561.5,320.66965 447,301.16965 676,301.16965" fill="#161616" fill-opacity="1"/>
-<polyline points="561.5,281.66965 676,301.16965 561.5,320.66965 447,301.16965 561.5,281.66965" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="495" y="294" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">¿Requiere aprobación?</text>
-<rect x="424" y="385.66965" width="165" height="33" rx="4" fill="#161616" fill-opacity="1"/>
-<rect x="424.5" y="386.16965" width="164" height="32" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="438" y="395" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Pide permiso al usuario</text>
-<rect x="507" y="562.6697" width="161" height="33" rx="4" fill="#161616" fill-opacity="1"/>
-<rect x="507.5" y="563.1697" width="160" height="32" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="521" y="572" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ejecuta la herramienta</text>
-<polygon points="506.5,458.66965 568,478.16965 445,478.16965" fill="#161616" fill-opacity="1"/>
-<polygon points="506.5,497.66965 445,478.16965 568,478.16965" fill="#161616" fill-opacity="1"/>
-<polyline points="506.5,458.66965 568,478.16965 506.5,497.66965 445,478.16965 506.5,458.66965" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="473" y="471" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">¿Aprobada?</text>
-<rect x="513" y="708.6697" width="41" height="39" rx="19.5" fill="#161616" fill-opacity="1"/>
-<rect x="513.5" y="709.1697" width="40" height="38" rx="19" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="525" y="721" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Fin</text>
-<rect x="512" y="635.6697" width="151" height="33" rx="12" fill="#161616" fill-opacity="1"/>
-<rect x="512.5" y="636.1697" width="150" height="32" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
-<text x="526" y="645" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Registra el resultado</text>
+<text x="153" y="140.9375" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">El flujo queda así:</text>
+<rect x="153" y="174" width="780" height="595.6696" rx="8" fill="#202020" fill-opacity="1"/>
+<rect x="153.5" y="174.5" width="779" height="594.6696" rx="7.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="165" y="186" font-family="Hack,monospace" font-size="10" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">DIAGRAMA</text>
+<text x="814.75" y="186" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Ampliar</text>
+<text x="867.78125" y="186" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Ver código</text>
+<defs><clipPath id="clip-21" clipPathUnits="userSpaceOnUse"><rect x="165" y="206.66965" width="756" height="551"/></clipPath></defs><g clip-path="url(#clip-21)">
+<polygon points="554.5,281.66965 551,274.66965 558,274.66965" fill="#888888" fill-opacity="1"/>
+<polyline points="554.5,241.66965 554.5,278.16965" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
+<polygon points="499.5,385.66965 496,378.66965 503,378.66965" fill="#888888" fill-opacity="1"/>
+<polyline points="554.5,320.66965 554.5,333.16965 554.125,335.79465 553,337.66965 551.125,338.79465 548.5,339.16965 505.5,339.16965 502.875,339.54465 501,340.66965 499.875,342.54465 499.5,345.16965 499.5,382.16965" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
+<polygon points="580.5,562.6697 577,555.6697 584,555.6697" fill="#888888" fill-opacity="1"/>
+<polyline points="554.5,320.66965 554.5,333.16965 554.875,335.79465 556,337.66965 557.875,338.79465 560.5,339.16965 603.5,339.16965 606.125,339.54465 608,340.66965 609.125,342.54465 609.5,345.16965 609.5,510.16965 609.125,512.7947 608,514.6697 606.125,515.7947 603.5,516.1697 586.5,516.1697 583.875,516.5447 582,517.6697 580.875,519.5447 580.5,522.1697 580.5,559.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
+<polygon points="499.5,458.66965 496,451.66965 503,451.66965" fill="#888888" fill-opacity="1"/>
+<polyline points="499.5,418.66965 499.5,455.16965" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
+<polygon points="580.5,562.6697 577,555.6697 584,555.6697" fill="#888888" fill-opacity="1"/>
+<polyline points="499.5,497.66965 499.5,510.16965 499.875,512.7947 501,514.6697 502.875,515.7947 505.5,516.1697 574.5,516.1697 577.125,516.5447 579,517.6697 580.125,519.5447 580.5,522.1697 580.5,559.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
+<polygon points="526.5,708.6697 523,701.6697 530,701.6697" fill="#888888" fill-opacity="1"/>
+<polyline points="499.5,497.66965 499.5,510.16965 499.125,512.7947 498,514.6697 496.125,515.7947 493.5,516.1697 478.5,516.1697 475.875,516.5447 474,517.6697 472.875,519.5447 472.5,522.1697 472.5,681.1697 472.875,683.7947 474,685.6697 475.875,686.7947 478.5,687.1697 520.5,687.1697 523.125,687.5447 525,688.6697 526.125,690.5447 526.5,693.1697 526.5,705.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1"/>
+<polygon points="580.5,635.6697 577,628.6697 584,628.6697" fill="#888888" fill-opacity="1"/>
+<polyline points="580.5,595.6697 580.5,632.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="1" stroke-dasharray="3 3"/>
+<polygon points="526.5,708.6697 523,701.6697 530,701.6697" fill="#888888" fill-opacity="1"/>
+<polyline points="580.5,668.6697 580.5,681.1697 580.125,683.7947 579,685.6697 577.125,686.7947 574.5,687.1697 532.5,687.1697 529.875,687.5447 528,688.6697 526.875,690.5447 526.5,693.1697 526.5,705.1697" fill="none" stroke="#888888" stroke-opacity="1" stroke-width="2"/>
+<rect x="489" y="342.66965" width="21" height="17" rx="4" fill="#202020" fill-opacity="1"/>
+<text x="495" y="345" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Sí</text>
+<rect x="596" y="342.66965" width="27" height="17" rx="4" fill="#202020" fill-opacity="1"/>
+<text x="602" y="345" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">No</text>
+<rect x="570" y="519.6697" width="21" height="17" rx="4" fill="#202020" fill-opacity="1"/>
+<text x="576" y="522" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">Sí</text>
+<rect x="459" y="519.6697" width="27" height="17" rx="4" fill="#202020" fill-opacity="1"/>
+<text x="465" y="522" font-family="Ubuntu,sans-serif" font-size="11" dominant-baseline="text-before-edge" fill="#888888" fill-opacity="1" xml:space="preserve">No</text>
+<rect x="481" y="208.66965" width="147" height="33" rx="16.5" fill="#161616" fill-opacity="1"/>
+<rect x="481.5" y="209.16965" width="146" height="32" rx="16" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="500" y="218" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Llega una solicitud</text>
+<polygon points="554.5,281.66965 669,301.16965 440,301.16965" fill="#161616" fill-opacity="1"/>
+<polygon points="554.5,320.66965 440,301.16965 669,301.16965" fill="#161616" fill-opacity="1"/>
+<polyline points="554.5,281.66965 669,301.16965 554.5,320.66965 440,301.16965 554.5,281.66965" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="488" y="294" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">¿Requiere aprobación?</text>
+<rect x="417" y="385.66965" width="165" height="33" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="417.5" y="386.16965" width="164" height="32" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="431" y="395" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Pide permiso al usuario</text>
+<rect x="500" y="562.6697" width="161" height="33" rx="4" fill="#161616" fill-opacity="1"/>
+<rect x="500.5" y="563.1697" width="160" height="32" rx="3.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="514" y="572" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Ejecuta la herramienta</text>
+<polygon points="499.5,458.66965 561,478.16965 438,478.16965" fill="#161616" fill-opacity="1"/>
+<polygon points="499.5,497.66965 438,478.16965 561,478.16965" fill="#161616" fill-opacity="1"/>
+<polyline points="499.5,458.66965 561,478.16965 499.5,497.66965 438,478.16965 499.5,458.66965" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="466" y="471" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">¿Aprobada?</text>
+<rect x="506" y="708.6697" width="41" height="39" rx="19.5" fill="#161616" fill-opacity="1"/>
+<rect x="506.5" y="709.1697" width="40" height="38" rx="19" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="518" y="721" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Fin</text>
+<rect x="505" y="635.6697" width="151" height="33" rx="12" fill="#161616" fill-opacity="1"/>
+<rect x="505.5" y="636.1697" width="150" height="32" rx="11.5" fill="none" stroke="#2e2e2e" stroke-opacity="1" stroke-width="1"/>
+<text x="519" y="645" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Registra el resultado</text>
 </g>
-<text x="160" y="778.6071" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cada paso depende del anterior.</text>
-<rect x="160" y="805.6696" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
-<svg opacity="1" y="810" x="164" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-copy" viewBox="0 0 16 16">
+<text x="153" y="786.6071" font-family="Ubuntu,sans-serif" font-size="14" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="1" xml:space="preserve">Cada paso depende del anterior.</text>
+<rect x="153" y="813.6696" width="24" height="24" rx="4" fill="#000000" fill-opacity="0"/>
+<svg opacity="1" y="818" x="157" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#888888" class="bi bi-copy" viewBox="0 0 16 16">
   <path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/>
 </svg>
+</g>
+<defs><clipPath id="clip-74" clipPathUnits="userSpaceOnUse"><rect x="0" y="32" width="1100" height="828"/></clipPath></defs><g clip-path="url(#clip-74)">
+<rect x="1090.5" y="46" width="5" height="798.3901" rx="2.5" fill="#888888" fill-opacity="0.28235295"/>
+<polygon points="1089.5,41 1096.5,41 1093,37" fill="#888888" fill-opacity="0.09411765"/>
+<polygon points="1089.5,851 1096.5,851 1093,855" fill="#888888" fill-opacity="0.28235295"/>
+</g>
+<defs><clipPath id="clip-79" clipPathUnits="userSpaceOnUse"><rect x="0" y="828" width="1086" height="32"/></clipPath></defs><g clip-path="url(#clip-79)">
+<defs><linearGradient id="gradient-80" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#161616" stop-opacity="0"/><stop offset="1" stop-color="#161616" stop-opacity="1"/></linearGradient></defs><rect x="0" y="828" width="1086" height="32" fill="url(#gradient-80)"/>
 </g>
 <path d="M 178 876 H 922 A 10 10 0 0 1 932 886 V 908 A 0 0 0 0 1 932 908 H 168 A 0 0 0 0 1 168 908 V 886 A 10 10 0 0 1 178 876 Z" fill="#202020" fill-opacity="1"/>
 <svg opacity="1" y="884" x="178" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#757575" class="bi bi-folder" viewBox="0 0 16 16">
@@ -108,7 +117,7 @@
 <rect x="160" y="908" width="780" height="76" rx="10" fill="#262626" fill-opacity="1"/>
 <rect x="160.5" y="908.5" width="779" height="75" rx="9.5" fill="none" stroke="#262626" stroke-opacity="1" stroke-width="1"/>
 <rect x="168" y="916" width="764" height="28" rx="6" fill="#262626" fill-opacity="1"/>
-<defs><clipPath id="clip-88" clipPathUnits="userSpaceOnUse"><rect x="174" y="922" width="752" height="16"/></clipPath></defs><g clip-path="url(#clip-88)">
+<defs><clipPath id="clip-97" clipPathUnits="userSpaceOnUse"><rect x="174" y="922" width="752" height="16"/></clipPath></defs><g clip-path="url(#clip-97)">
 <text x="174" y="922" font-family="Ubuntu,sans-serif" font-size="13" dominant-baseline="text-before-edge" fill="#d4d4d4" fill-opacity="0.43137255" xml:space="preserve">Pide al agente que trabaje en este proyecto…</text>
 </g>
 <rect x="168" y="948" width="28" height="28" rx="4" fill="#000000" fill-opacity="0"/>
