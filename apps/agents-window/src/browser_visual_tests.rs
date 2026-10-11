@@ -2,7 +2,7 @@
 use super::*;
 use base64::Engine;
 use eframe::egui;
-use openide_ui::{Frame, RasterImageFormat, Size, UiTree};
+use openide_ui::{DrawCommand, Frame, RasterImage, RasterImageFormat, Size, UiTree};
 use sha2::{Digest, Sha256};
 use std::{path::Path, sync::Arc};
 
@@ -80,7 +80,20 @@ fn export(frame: &Frame, size: Size, name: &str) {
     let directory = Path::new("/tmp/openide-browser-ui-review");
     std::fs::create_dir_all(directory).unwrap();
     let path = directory.join(format!("{name}.svg"));
-    crate::settings_ui::visual_qa::write_native_frame_svg(frame, &path, size.width, size.height)
+    // A frame only names the live surface. For the review its place is taken
+    // by the fixture, from the same corner and at its own size.
+    let mut frame = frame.clone();
+    for command in &mut frame.commands {
+        if let DrawCommand::Surface { rect, opacity, .. } = command {
+            *command = DrawCommand::RasterImage {
+                rect: openide_ui::Rect::new(rect.x, rect.y, 640.0, 600.0),
+                image: fixture_image(),
+                opacity: *opacity,
+                radius: 0.0,
+            };
+        }
+    }
+    crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, size.width, size.height)
         .unwrap();
     let document = resvg::usvg::Tree::from_str(
         &std::fs::read_to_string(&path).unwrap(),
@@ -103,7 +116,8 @@ fn browser_fixture() -> BrowserUiState {
         url_draft: "http://localhost:3000/".into(),
         can_go_back: true,
         title: "localhost".into(),
-        image: Some(fixture_image()),
+        tab_id: Some(71),
+        live: true,
         ..Default::default()
     }
 }

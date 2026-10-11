@@ -2,7 +2,7 @@ use super::*;
 use crate::browser_runtime::{
     tests::BrowserCommands, BrowserCommand, BrowserScope, BrowserSnapshot,
 };
-use openide_ui::{Element, Key, Point, RasterImage, RasterImageFormat, Size};
+use openide_ui::{Element, Key, Point, Size};
 
 fn fixture() -> (tempfile::TempDir, AgentsWindow, DockTabId) {
     let root = tempfile::tempdir().unwrap();
@@ -48,17 +48,11 @@ fn blank(generation: u64) -> BrowserSnapshot {
 }
 
 fn viewport(app: &mut AgentsWindow) {
-    // The native renderer is not invoked here. This is only the immutable
-    // image identity used to verify focus and event dispatch at the host.
-    let image = RasterImage::new(
-        "a".repeat(64),
-        RasterImageFormat::Png,
-        3,
-        Arc::from("AAAA"),
-        "Fixture viewport",
-    )
-    .unwrap();
-    app.view.browser.image = Some(image.clone());
+    // The native renderer is not invoked here. This is only the surface the
+    // host resolves focus and event dispatch against, as if it held a frame.
+    let tab = app.view.browser.tab_id.unwrap();
+    app.browser_live.insert(tab, true);
+    app.view.browser.live = true;
     app.view.browser.started = true;
     app.view.show_side_pane = true;
     app.view.show_settings = false;
@@ -70,7 +64,8 @@ fn viewport(app: &mut AgentsWindow) {
             .size(Some(320.0), Some(32.0)),
         Element::clickable(
             "browser_viewport",
-            Element::raster_image(image).size(Some(320.0), Some(240.0)),
+            Element::surface(crate::browser_ui::surface_id(tab), "Fixture viewport")
+                .size(Some(320.0), Some(240.0)),
         )
         .size(Some(320.0), Some(240.0)),
     ]));
@@ -79,23 +74,8 @@ fn viewport(app: &mut AgentsWindow) {
 
 #[test]
 fn browser_dimensions_fallback_matches_the_rendered_viewport_in_both_window_modes() {
-    use base64::Engine;
-    use sha2::{Digest, Sha256};
-
-    // A valid in-memory image makes this the real Page surface without a
-    // browser process, server, or terminal actor behind the UI fixture.
-    let bytes = resvg::tiny_skia::Pixmap::new(2, 2)
-        .unwrap()
-        .encode_png()
-        .unwrap();
-    let image = RasterImage::new(
-        format!("{:x}", Sha256::digest(&bytes)),
-        RasterImageFormat::Png,
-        bytes.len() as u32,
-        Arc::from(base64::engine::general_purpose::STANDARD.encode(bytes)),
-        "Browser viewport geometry fixture",
-    )
-    .unwrap();
+    // A surface that holds a frame makes this the real Page surface without
+    // a browser process, server, or terminal actor behind the UI fixture.
     let (_root, mut app, _) = fixture();
 
     for mode in [
@@ -141,7 +121,7 @@ fn browser_dimensions_fallback_matches_the_rendered_viewport_in_both_window_mode
                     .any(|region| region.id == "browser_viewport"));
                 let fallback = app.browser_dimensions();
 
-                app.view.browser.image = Some(image.clone());
+                app.view.browser.live = true;
                 app.tree.set_root(crate::view::build_window_view(
                     &app.view,
                     size.width,
@@ -305,7 +285,7 @@ fn restart_intents_share_protocol_validation_and_exclude_blank_credentials_and_c
 }
 
 #[test]
-fn wheel_trackpad_shift_and_scaled_viewport_preserve_both_axes_and_reject_nonfinite_input() {
+fn wheel_trackpad_and_shift_preserve_both_axes_in_css_pixels_and_reject_nonfinite_input() {
     let point = Point::new(80.0, 60.0);
     assert_eq!(
         browser_scroll_delta(&UiEvent::Scroll {
@@ -354,7 +334,7 @@ fn wheel_trackpad_shift_and_scaled_viewport_preserve_both_axes_and_reject_nonfin
     viewport(&mut app);
     assert!(app.handle_browser_event(&scroll(3.5, -6.0, false)));
     assert!(
-        matches!(commands.finish_next(), Some(BrowserCommand::Scroll { dx, dy }) if dx == -7.0 && dy == 12.0)
+        matches!(commands.finish_next(), Some(BrowserCommand::Scroll { dx, dy }) if dx == -3.5 && dy == 6.0)
     );
     assert!(!app.handle_browser_event(&scroll(f32::NAN, 1.0, false)));
     assert!(commands.finish_next().is_none());
@@ -460,7 +440,7 @@ fn twenty_piece_typing_burst_and_scroll_burst_preserve_every_input_and_barrier()
                 BrowserCommand::Scroll { dx, dy } => (x + dx, y + dy),
                 _ => panic!("scroll barrier changed"),
             });
-    assert_eq!((x, y), (-40.0, 80.0));
+    assert_eq!((x, y), (-20.0, 40.0));
     assert!(
         delivered.len() < 10,
         "adjacent input is batched, not one screenshot per character"
@@ -473,13 +453,6 @@ fn pointer_during_pending_typing_is_an_ordered_barrier_but_navigation_blocks_it(
     let (_root, mut app, id) = fixture();
     let snapshot = BrowserSnapshot {
         loading: true,
-        screenshot: Some(Arc::new(crate::browser_runtime::BrowserScreenshot {
-            base64: Arc::from("AAAA"),
-            sha256: "a".repeat(64),
-            size_bytes: 3,
-            width: 640,
-            height: 480,
-        })),
         ..blank(1)
     };
     let commands = install_runtime(&mut app, id, snapshot.clone());
@@ -515,11 +488,13 @@ fn pointer_during_pending_typing_is_an_ordered_barrier_but_navigation_blocks_it(
             break;
         }
     }
-    assert_eq!(delivered.len(), 7);
+    // The button is no longer down: the page is also told of the release.
+    assert_eq!(delivered.len(), 8);
+    assert!(matches!(delivered[7], BrowserCommand::PointerUp { x, y } if x == 40.0 && y == 30.0));
     for (index, command) in delivered[..5].iter().enumerate() {
         assert!(matches!(command, BrowserCommand::Type { text } if text == &index.to_string()));
     }
-    assert!(matches!(delivered[5], BrowserCommand::Click { x, y } if x == 80.0 && y == 60.0));
+    assert!(matches!(delivered[5], BrowserCommand::PointerDown { x, y } if x == 40.0 && y == 30.0));
     assert!(matches!(&delivered[6], BrowserCommand::Type { text } if text == "después"));
 }
 
@@ -527,7 +502,7 @@ fn pointer_during_pending_typing_is_an_ordered_barrier_but_navigation_blocks_it(
 fn native_copy_and_cut_events_use_scoped_clipboard_and_cut_confirmation_before_following_input() {
     use crate::browser_runtime::BrowserClipboard;
     let (_root, mut app, id) = fixture();
-    // This fixture's native raster is 320×240. Matching the actor avoids a
+    // This fixture's surface is 320×240. Matching the actor avoids a
     // resize command interleaving with the clipboard transaction under test.
     let snapshot = BrowserSnapshot {
         viewport_width: 320,
@@ -645,4 +620,122 @@ fn changing_conversation_before_cut_reply_neither_copies_nor_confirms_deletion()
         commands.finish_next().is_none(),
         "no destructive confirmation crosses conversation scope"
     );
+}
+
+#[test]
+fn hover_reaches_the_page_one_move_at_a_time_and_a_drag_ends_wherever_it_is_released() {
+    let (_root, mut app, id) = fixture();
+    let commands = install_runtime(&mut app, id, blank(1));
+    app.apply_browser_snapshot(id.get(), blank(1));
+    viewport(&mut app);
+    let rect = app.browser_viewport_rect().unwrap();
+    let at = |x: f32, y: f32| Point::new(rect.x + x, rect.y + y);
+    for step in 0..10 {
+        // The tree keeps the move: it owns hover around the page.
+        assert!(!app.handle_browser_event(&UiEvent::PointerMove(at(10.0 + step as f32, 20.0))));
+    }
+    // One move is in flight and only the newest waits. Neither is work the
+    // footer reports, and their replies do not rebuild the window.
+    assert_eq!(app.browser_requests.get(&id.get()).unwrap().len(), 1);
+    assert_eq!(app.browser_inputs.get(&id.get()).unwrap().len(), 1);
+    assert_eq!(app.view.browser.queued_inputs, 0);
+    assert!(!app.view.browser.loading);
+    app.view.show_side_pane = false; // No automatic viewport resize while polling.
+    assert!(
+        matches!(commands.finish_next(), Some(BrowserCommand::PointerMove { x, y }) if x == 10.0 && y == 20.0)
+    );
+    assert!(!app.update_browser(&egui::Context::default()));
+    assert!(
+        matches!(commands.finish_next(), Some(BrowserCommand::PointerMove { x, y }) if x == 19.0 && y == 20.0)
+    );
+    assert!(!app.update_browser(&egui::Context::default()));
+    assert!(commands.finish_next().is_none());
+
+    // A press, a drag that leaves the page and a release outside it: the page
+    // gets the drag on its nearest edge and is always told of the release.
+    app.view.show_side_pane = true;
+    assert!(app.handle_browser_event(&UiEvent::PointerDown(at(5.0, 6.0))));
+    assert!(!app.handle_browser_event(&UiEvent::PointerMove(at(-50.0, 900.0))));
+    assert!(app.handle_browser_event(&UiEvent::PointerUp(at(-50.0, 900.0))));
+    assert!(!app.handle_browser_event(&UiEvent::PointerMove(at(-50.0, 900.0))));
+    app.view.show_side_pane = false;
+    let mut delivered = Vec::new();
+    for _ in 0..8 {
+        while let Some(command) = commands.finish_next() {
+            delivered.push(command);
+        }
+        app.update_browser(&egui::Context::default());
+        if app.browser_requests.is_empty() && app.browser_inputs.is_empty() {
+            break;
+        }
+    }
+    assert!(
+        matches!(delivered.as_slice(), [
+            BrowserCommand::PointerDown { x, y },
+            BrowserCommand::PointerMove { x: move_x, y: move_y },
+            BrowserCommand::PointerUp { x: up_x, y: up_y },
+        ] if (*x, *y, *move_x, *move_y, *up_x, *up_y) == (5.0, 6.0, 0.0, 479.0, 0.0, 479.0)),
+        "{delivered:?}"
+    );
+}
+
+#[test]
+fn a_tab_is_a_page_only_while_its_surface_holds_a_frame_of_a_started_context() {
+    let (_root, mut app, id) = fixture();
+    let _commands = install_runtime(&mut app, id, BrowserSnapshot {
+        url: "http://localhost:3000/".into(),
+        ..blank(1)
+    });
+    // Started, but nothing was presented yet: there is no page to click.
+    assert!(app.update_browser(&egui::Context::default()));
+    assert!(!app.view.browser.live);
+    app.browser_live.insert(id.get(), true);
+    assert!(app.update_browser(&egui::Context::default()));
+    assert!(app.view.browser.live);
+    // A context that is gone takes its last frame with it.
+    app.browsers.remove(&id.get());
+    app.update_browser(&egui::Context::default());
+    assert!(!app.browser_live.contains_key(&id.get()));
+}
+
+#[test]
+fn a_page_shown_again_takes_no_input_until_its_stream_is_back_and_a_press_is_always_released() {
+    let (_root, mut app, id) = fixture();
+    let commands = install_runtime(&mut app, id, blank(1));
+    app.apply_browser_snapshot(id.get(), blank(1));
+    viewport(&mut app);
+    app.sync_browser_tab();
+    let rect = app.browser_viewport_rect().unwrap();
+    let inside = Point::new(rect.x + 30.0, rect.y + 40.0);
+    assert!(app.handle_browser_event(&UiEvent::PointerDown(inside)));
+    assert!(matches!(commands.finish_next(), Some(BrowserCommand::PointerDown { .. })));
+
+    // The window shows something else by the time the button comes up: the
+    // page still hears of it, where the pointer last was on it.
+    app.view.show_settings = true;
+    app.tree.set_root(Element::spacer());
+    app.tree.layout(Size::new(320.0, 272.0));
+    assert!(app.handle_browser_event(&UiEvent::PointerUp(Point::new(-400.0, -400.0))));
+    assert!(
+        matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { x, y }) if x == 30.0 && y == 40.0)
+    );
+    assert!(app.browser_pointer_down.is_none());
+
+    // Hidden, the stream stops. Back, the frame from before still shows but
+    // is not a page to click until a frame of the new stream replaces it.
+    viewport(&mut app);
+    app.sync_browser_tab();
+    app.view.show_side_pane = false;
+    app.sync_browser_tab();
+    app.view.show_side_pane = true;
+    app.sync_browser_tab();
+    assert_eq!(app.browser_live.get(&id.get()), Some(&false));
+    assert!(app.view.browser.live);
+    for event in [UiEvent::PointerDown(inside), UiEvent::PointerMove(inside)] {
+        assert!(!app.handle_browser_event(&event));
+    }
+    assert!(commands.finish_next().is_none());
+    app.browser_live.insert(id.get(), true);
+    assert!(app.handle_browser_event(&UiEvent::PointerDown(inside)));
+    assert!(matches!(commands.finish_next(), Some(BrowserCommand::PointerDown { .. })));
 }

@@ -34,8 +34,25 @@ impl BrowserInputQueue {
     pub(super) fn len(&self) -> usize {
         self.commands.len()
     }
+    /// What the footer counts: pointer moves and wheel input are not work
+    /// the user waits for.
+    fn pending(&self) -> usize {
+        self.commands
+            .iter()
+            .filter(|command| !command.quiet())
+            .count()
+    }
     fn push(&mut self, command: BrowserCommand) -> Result<(), String> {
         command.validate()?;
+        // A move the queue has no room for is skipped, not reported: the next
+        // one says where the pointer is.
+        if matches!(command, BrowserCommand::PointerMove { .. })
+            && !matches!(self.commands.back(), Some(BrowserCommand::PointerMove { .. }))
+            && (self.commands.len() >= MAX_QUEUED_COMMANDS
+                || self.bytes.saturating_add(command_bytes(&command)) > MAX_QUEUED_BYTES)
+        {
+            return Ok(());
+        }
         if self.bytes.saturating_add(command_bytes(&command)) > MAX_QUEUED_BYTES {
             return Err("La cola de entrada está llena. Esperá y volvé a intentar; esta entrada no se envió.".into());
         }
@@ -53,6 +70,16 @@ impl BrowserInputQueue {
             {
                 *x += dx;
                 *y += dy;
+                return Ok(());
+            }
+            // Only where the pointer is now matters: the newest queued move
+            // replaces the one before it, never one across a click or a key.
+            (
+                Some(BrowserCommand::PointerMove { x: last_x, y: last_y }),
+                BrowserCommand::PointerMove { x, y },
+            ) => {
+                *last_x = *x;
+                *last_y = *y;
                 return Ok(());
             }
             _ => {}
@@ -93,13 +120,18 @@ impl AgentsWindow {
             self.view.browser.error = Some("El navegador todavía no está disponible".into());
             return false;
         }
+        // Passing over the page does not dismiss what an input was told.
+        let passing = matches!(command, BrowserCommand::PointerMove { .. });
         match self.browser_inputs.entry(id).or_default().push(command) {
             Ok(()) => {
-                self.view.browser.input_rejection = None;
+                if !passing {
+                    self.view.browser.input_rejection = None;
+                }
                 self.drain_browser_inputs(id);
                 self.update_browser_queue_count();
                 true
             }
+            Err(_) if passing => false,
             Err(error) => {
                 self.view.status = error.clone();
                 self.view.browser.input_rejection = Some(error.clone());
@@ -139,13 +171,27 @@ impl AgentsWindow {
             let Some(command) = queue.commands.front().cloned() else {
                 break;
             };
+            // One move or wheel step in flight: those behind it merge in the
+            // queue, so the page gets where the pointer is, not where it was.
+            if command.quiet()
+                && requests.is_some_and(|requests| requests.iter().any(|request| request.quiet()))
+            {
+                break;
+            }
             let Some(runtime) = self.browsers.get(&id) else {
                 break;
             };
+            let passing = matches!(command, BrowserCommand::PointerMove { .. });
             match runtime.submit_ui(command) {
                 Ok(request) => {
                     queue.pop();
                     self.browser_requests.entry(id).or_default().push(request);
+                }
+                Err(_) if passing => {
+                    // A move the page cannot take (it shrank meanwhile) is
+                    // dropped; it must not hold the input behind it.
+                    queue.pop();
+                    continue;
                 }
                 Err(error) => {
                     // Submit can fail before dispatch (closed scope/full actor
@@ -204,8 +250,10 @@ impl AgentsWindow {
         self.view.browser.queued_inputs = self.active_browser_id().map_or(0, |id| {
             self.browser_inputs
                 .get(&id)
-                .map_or(0, BrowserInputQueue::len)
-                + self.browser_requests.get(&id).map_or(0, Vec::len)
+                .map_or(0, BrowserInputQueue::pending)
+                + self.browser_requests.get(&id).map_or(0, |requests| {
+                    requests.iter().filter(|request| !request.quiet()).count()
+                })
         });
     }
 }
@@ -251,6 +299,49 @@ mod tests {
         assert!(
             matches!(queue.pop(), Some(BrowserCommand::Scroll { dx, dy }) if dx == 30.0 && dy == -40.0)
         );
+    }
+    #[test]
+    fn only_the_newest_pointer_move_waits_and_never_across_a_press_or_a_key() {
+        let mut queue = BrowserInputQueue::default();
+        let moved = |x: f64| BrowserCommand::PointerMove { x, y: x };
+        for command in [
+            moved(1.0),
+            moved(2.0),
+            BrowserCommand::PointerDown { x: 2.0, y: 2.0 },
+            moved(3.0),
+            moved(4.0),
+            BrowserCommand::PointerUp { x: 4.0, y: 4.0 },
+            moved(5.0),
+            BrowserCommand::Press { key: "Tab".into() },
+            moved(6.0),
+            moved(7.0),
+        ] {
+            queue.push(command).unwrap();
+        }
+        // Moves and wheel steps are not work the footer counts.
+        assert_eq!((queue.len(), queue.pending()), (7, 3));
+        let mut order = Vec::new();
+        while let Some(command) = queue.pop() {
+            order.push(match command {
+                BrowserCommand::PointerMove { x, .. } => format!("move {x}"),
+                BrowserCommand::PointerDown { .. } => "down".into(),
+                BrowserCommand::PointerUp { .. } => "up".into(),
+                _ => "key".into(),
+            });
+        }
+        assert_eq!(order, ["move 2", "down", "move 4", "up", "move 5", "key", "move 7"]);
+        assert_eq!(queue.bytes, 0);
+    }
+    #[test]
+    fn a_full_queue_skips_a_pointer_move_without_reporting_it_and_still_rejects_input() {
+        let mut queue = BrowserInputQueue::default();
+        for _ in 0..MAX_QUEUED_COMMANDS {
+            queue.push(BrowserCommand::Press { key: "ArrowLeft".into() }).unwrap();
+        }
+        assert!(queue.push(BrowserCommand::PointerMove { x: 1.0, y: 1.0 }).is_ok());
+        assert_eq!(queue.len(), MAX_QUEUED_COMMANDS);
+        // A press is input the user must be told was not sent.
+        assert!(queue.push(BrowserCommand::PointerDown { x: 1.0, y: 1.0 }).is_err());
     }
     #[test]
     fn full_queue_rejects_before_mutating_accepted_input() {

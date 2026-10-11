@@ -14,9 +14,9 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
@@ -28,6 +28,11 @@ const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ARIA_BYTES: usize = 64 * 1024;
 const MAX_BROKER_CONNECTIONS: usize = 4;
+// The largest frame of the live view: the 1600 × 1200 viewport at scale 2
+// fits whole, and a larger one is scaled down by Chromium before it is sent.
+const MAX_FRAME_PIXELS: u64 = 3840 * 2160;
+const STATE_POLL: Duration = Duration::from_millis(300);
+const STREAM_RETRY: Duration = Duration::from_secs(2);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(35);
 const PLAYWRIGHT_VERSION: &str = "1.63.0";
 const QUEUED: u8 = 0;
@@ -49,6 +54,9 @@ pub(crate) struct BrowserLaunchOptions {
     pub browser_executable: Option<PathBuf>,
     pub viewport_width: u32,
     pub viewport_height: u32,
+    /// The window's pixels per point when the context starts. Chromium keeps
+    /// it for the life of the context.
+    pub device_scale: f32,
 }
 
 impl Default for BrowserLaunchOptions {
@@ -59,6 +67,7 @@ impl Default for BrowserLaunchOptions {
             browser_executable: configured_browser_executable(),
             viewport_width: 900,
             viewport_height: 700,
+            device_scale: 1.0,
         }
     }
 }
@@ -66,8 +75,6 @@ impl Default for BrowserLaunchOptions {
 #[derive(Clone, Debug)]
 pub(crate) struct BrowserScreenshot {
     pub base64: Arc<str>,
-    pub sha256: String,
-    pub size_bytes: u64,
     pub width: u32,
     pub height: u32,
 }
@@ -144,6 +151,19 @@ pub(crate) enum BrowserCommand {
     Forward,
     Reload,
     Click {
+        x: f64,
+        y: f64,
+    },
+    /// Pointer input from the window, in the same CSS pixels as `Click`.
+    PointerMove {
+        x: f64,
+        y: f64,
+    },
+    PointerDown {
+        x: f64,
+        y: f64,
+    },
+    PointerUp {
         x: f64,
         y: f64,
     },
@@ -292,6 +312,11 @@ impl BrowserCommand {
                     || *y < 0.0
                     || *x > 1600.0
                     || *y > 1200.0 =>
+            {
+                return Err("Coordenadas fuera del viewport".into())
+            }
+            Self::PointerMove { x, y } | Self::PointerDown { x, y } | Self::PointerUp { x, y }
+                if !(0.0..=1600.0).contains(x) || !(0.0..=1200.0).contains(y) =>
             {
                 return Err("Coordenadas fuera del viewport".into())
             }
@@ -466,6 +491,14 @@ impl BrowserCommand {
     }
 }
 
+impl BrowserCommand {
+    /// Input the page answers with frames alone: it is not counted as pending
+    /// work, and one of them at a time is in flight so the newest stays fresh.
+    pub(crate) fn quiet(&self) -> bool {
+        matches!(self, Self::PointerMove { .. } | Self::Scroll { .. })
+    }
+}
+
 struct PendingCommand {
     command: BrowserCommand,
     reply: SyncSender<Result<BrowserSnapshot, String>>,
@@ -481,11 +514,15 @@ pub(crate) struct BrowserRequest {
     document_navigation: bool,
     navigation_url: Option<String>,
     clipboard_operation: Option<BrowserClipboardOperation>,
+    quiet: bool,
 }
 
 impl BrowserRequest {
     pub(crate) fn document_navigation(&self) -> bool {
         self.document_navigation
+    }
+    pub(crate) fn quiet(&self) -> bool {
+        self.quiet
     }
     pub(crate) fn navigation_url(&self) -> Option<&str> {
         self.navigation_url.as_deref()
@@ -522,6 +559,7 @@ struct BrowserHandle {
     closed: Arc<AtomicBool>,
     context_lost: Arc<AtomicBool>,
     visible: Arc<AtomicBool>,
+    view: Arc<LiveView>,
     scope: BrowserScope,
     identity_digest: String,
 }
@@ -562,7 +600,12 @@ impl BrowserHandle {
                     .into(),
             );
         }
-        if let BrowserCommand::Click { x, y } = &command {
+        let quiet = command.quiet();
+        if let BrowserCommand::Click { x, y }
+        | BrowserCommand::PointerMove { x, y }
+        | BrowserCommand::PointerDown { x, y }
+        | BrowserCommand::PointerUp { x, y } = &command
+        {
             let state = self
                 .state
                 .lock()
@@ -595,6 +638,7 @@ impl BrowserHandle {
             document_navigation,
             navigation_url,
             clipboard_operation,
+            quiet,
         })
     }
 
@@ -678,6 +722,7 @@ impl BrowserRuntime {
             closed: Arc::new(AtomicBool::new(false)),
             context_lost: Arc::new(AtomicBool::new(false)),
             visible: Arc::new(AtomicBool::new(true)),
+            view: Arc::default(),
             scope,
             identity_digest,
         };
@@ -713,6 +758,14 @@ impl BrowserRuntime {
                 let _ = fs::remove_dir_all(runtime_dir);
             })
             .map_err(|error| format!("Worker de navegador: {error}"))?;
+        let decoder_handle = handle.clone();
+        thread::Builder::new()
+            .name("openide-browser-frames".into())
+            .spawn(move || decode_frames(&decoder_handle))
+            .map_err(|error| {
+                handle.closed.store(true, Ordering::Release);
+                format!("Vista de navegador: {error}")
+            })?;
         let broker_handle = handle.clone();
         let token = broker_token.clone();
         thread::Builder::new()
@@ -741,8 +794,34 @@ impl BrowserRuntime {
     pub(crate) fn snapshot(&self) -> BrowserSnapshot {
         self.handle.snapshot()
     }
-    pub(crate) fn set_visible(&self, visible: bool) {
-        self.handle.visible.store(visible, Ordering::Release);
+    /// Returns whether the surface was visible until now.
+    pub(crate) fn set_visible(&self, visible: bool) -> bool {
+        self.handle.visible.swap(visible, Ordering::AcqRel)
+    }
+    pub(crate) fn visible(&self) -> bool {
+        self.handle.visible.load(Ordering::Acquire)
+    }
+    /// The newest decoded frame of the page, once; older ones were replaced.
+    pub(crate) fn take_frame(&self) -> Option<limn_egui::SurfaceFrame> {
+        self.handle
+            .view
+            .decoded
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
+    }
+    /// Runs on the decoder thread whenever a frame is ready to take.
+    pub(crate) fn on_frame(&self, notify: impl Fn() + Send + 'static) {
+        *self
+            .handle
+            .view
+            .notify
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(Box::new(notify));
+    }
+    /// Asks the bridge for the stream again; it answers with a fresh frame.
+    pub(crate) fn restart_stream(&self) {
+        self.handle.view.restart.store(true, Ordering::Release);
     }
     pub(crate) fn scope(&self) -> &BrowserScope {
         &self.handle.scope
@@ -846,6 +925,7 @@ fn spawn_browser(
     options: &BrowserLaunchOptions,
     bridge: &Path,
     child_slot: &Arc<Mutex<Option<Child>>>,
+    view: &Arc<LiveView>,
 ) -> Result<BrowserProcess, String> {
     // The application may outlive the nix-shell that launched it. Never pass
     // its ephemeral TMPDIR through to Playwright's mkdtemp/profile creation.
@@ -900,13 +980,23 @@ fn spawn_browser(
         .lock()
         .unwrap_or_else(|poison| poison.into_inner()) = Some(child);
     let (sender, replies) = mpsc::sync_channel(1);
+    let view = view.clone();
     thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
+        let mut reader = BufReader::with_capacity(64 * 1024, stdout);
         loop {
             let value = read_bounded_line(&mut reader, MAX_RESPONSE_BYTES).and_then(|line| {
                 serde_json::from_slice(&line)
                     .map_err(|error| format!("Respuesta de navegador no válida: {error}"))
             });
+            // Frames leave this thread at once: a reply behind one is never
+            // held up by how fast the view decodes.
+            let value = match value {
+                Ok(value) => match route_line(value, &view) {
+                    Some(reply) => Ok(reply),
+                    None => continue,
+                },
+                Err(error) => Err(error),
+            };
             let failed = value.is_err();
             if sender.send(value).is_err() || failed {
                 break;
@@ -943,16 +1033,32 @@ fn browser_worker(
         &bridge,
         &module_dir,
     );
+    let mut streaming = false;
+    let mut stream_retry = Instant::now();
+    let mut idle_since = Instant::now();
     while !handle.closed.load(Ordering::Acquire) {
-        let pending = match receiver.recv_timeout(Duration::from_millis(300)) {
+        match process.as_mut() {
+            Some(node) => {
+                if let Err(error) = sync_stream(&handle, node, &mut streaming, &mut stream_retry) {
+                    mark_context_lost(&handle, &error);
+                    stop_child(&child);
+                    process = None;
+                }
+            }
+            None => streaming = false,
+        }
+        let pending = match receiver.recv_timeout(Duration::from_millis(50)) {
             Ok(pending) => Some(pending),
             Err(mpsc::RecvTimeoutError::Timeout) => None,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
         let Some(pending) = pending else {
-            if handle.visible.load(Ordering::Acquire) {
+            // The page's pixels arrive on the stream. Its address, title and
+            // history are still asked for, without an image.
+            if handle.visible.load(Ordering::Acquire) && idle_since.elapsed() >= STATE_POLL {
+                idle_since = Instant::now();
                 if let Some(node) = process.as_mut() {
-                    match node.request(json!({"type":"refresh"}), &handle.closed) {
+                    match node.request(json!({"type":"state"}), &handle.closed) {
                         Ok(response) => {
                             let _ = apply_refresh_response(&handle, &response);
                         }
@@ -966,6 +1072,7 @@ fn browser_worker(
             }
             continue;
         };
+        idle_since = Instant::now();
         if pending
             .lifecycle
             .compare_exchange(QUEUED, PREPARING, Ordering::AcqRel, Ordering::Acquire)
@@ -1019,7 +1126,7 @@ fn browser_worker(
                 continue;
             }
             pending.dispatched.store(true, Ordering::Release);
-            if pending.command.mutating() {
+            if pending.command.mutating() && !pending.command.quiet() {
                 let mut state = handle
                     .state
                     .lock()
@@ -1039,10 +1146,17 @@ fn browser_worker(
                 .map_err(|error| error.to_string())
                 .and_then(|mut command| {
                     if !pending.include_aria {
+                        // Input from the window: its result is on the stream.
                         command["include_aria"] = Value::Bool(false);
+                        command["include_image"] = Value::Bool(false);
                     }
                     node.request(command, &handle.closed)
                 }) {
+                // Passing over the page is not an action: it keeps the
+                // explanation of the last one that failed.
+                Ok(response) if matches!(pending.command, BrowserCommand::PointerMove { .. }) => {
+                    apply_refresh_response(&handle, &response)
+                }
                 Ok(response) => apply_response(&handle, &response),
                 Err(error) => {
                     mark_context_lost(&handle, &error);
@@ -1093,8 +1207,8 @@ fn ensure_started(
         state.dependency_missing = false;
         state.generation = state.generation.saturating_add(1);
     }
-    let result = spawn_browser(options, bridge, child).and_then(|mut node| {
-        let response = node.request(json!({"type":"start", "module_dir":module_dir, "executable_path":options.browser_executable, "width":options.viewport_width, "height":options.viewport_height}), &handle.closed)?;
+    let result = spawn_browser(options, bridge, child, &handle.view).and_then(|mut node| {
+        let response = node.request(json!({"type":"start", "module_dir":module_dir, "executable_path":options.browser_executable, "width":options.viewport_width, "height":options.viewport_height, "scale":device_scale(options.device_scale)}), &handle.closed)?;
         apply_response(handle, &response)?;
         Ok(node)
     });
@@ -1253,7 +1367,12 @@ fn apply_refresh_response(
         .unwrap_or_else(|poison| poison.into_inner());
     // A periodic screenshot is not a successful retry of a failed navigation
     // or input action. Keep its explanation until the next explicit command.
-    if state.error.is_none() && previous.error_code.as_deref() == Some("command_failed") {
+    if state.error.is_none()
+        && matches!(
+            previous.error_code.as_deref(),
+            Some("command_failed" | "stream_lost")
+        )
+    {
         state.error = previous.error;
         state.error_code = previous.error_code;
     }
@@ -1290,8 +1409,6 @@ fn parse_screenshot(value: &Value) -> Result<BrowserScreenshot, String> {
     validate_viewport(width, height)?;
     Ok(BrowserScreenshot {
         base64: Arc::from(encoded),
-        sha256: hex_digest(&bytes),
-        size_bytes: bytes.len() as u64,
         width,
         height,
     })
@@ -1326,6 +1443,251 @@ fn mark_context_lost(handle: &BrowserHandle, error: &str) {
         "context_lost",
         &format!("Se perdió el contexto del navegador. Usá Reintentar para abrir otro. {error}"),
     );
+}
+
+// ---- Live view -------------------------------------------------------------
+// The visible page is a stream of frames the bridge pushes beside its command
+// replies. Every stage holds one frame at most, and a newer one replaces the
+// one nobody took: a view that falls behind skips frames, it never queues.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameFormat {
+    Jpeg,
+    Png,
+}
+
+struct EncodedFrame {
+    format: FrameFormat,
+    /// Device pixels per CSS pixel the frame was rendered at.
+    scale: f32,
+    base64: String,
+}
+
+#[derive(Default)]
+struct LiveView {
+    encoded: Mutex<Option<EncodedFrame>>,
+    arrived: Condvar,
+    decoded: Mutex<Option<limn_egui::SurfaceFrame>>,
+    notify: Mutex<Option<Box<dyn Fn() + Send>>>,
+    /// Why the bridge's stream stopped, until the worker has seen it.
+    lost: Mutex<Option<String>>,
+    restart: AtomicBool,
+    /// Frames replaced before they were decoded.
+    skipped: AtomicU64,
+}
+
+impl LiveView {
+    fn offer(&self, frame: EncodedFrame) {
+        let previous = self
+            .encoded
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .replace(frame);
+        if previous.is_some() {
+            self.skipped.fetch_add(1, Ordering::Relaxed);
+        }
+        self.arrived.notify_one();
+    }
+
+    /// Waits for the newest frame; `None` once the browser is closed.
+    fn next(&self, closed: &AtomicBool) -> Option<EncodedFrame> {
+        let mut slot = self
+            .encoded
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        loop {
+            if closed.load(Ordering::Acquire) {
+                return None;
+            }
+            if let Some(frame) = slot.take() {
+                return Some(frame);
+            }
+            slot = self
+                .arrived
+                .wait_timeout(slot, Duration::from_millis(200))
+                .unwrap_or_else(|poison| poison.into_inner())
+                .0;
+        }
+    }
+
+    fn publish(&self, frame: limn_egui::SurfaceFrame) {
+        *self
+            .decoded
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(frame);
+        if let Some(notify) = self
+            .notify
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .as_ref()
+        {
+            notify();
+        }
+    }
+}
+
+/// The scale a context is launched with: the window's, within what a display
+/// has, as the two decimals that reach Chromium's command line.
+pub(crate) fn device_scale(pixels_per_point: f32) -> f32 {
+    if pixels_per_point.is_finite() {
+        (pixels_per_point.clamp(1.0, 3.0) * 100.0).round() / 100.0
+    } else {
+        1.0
+    }
+}
+
+/// Splits the bridge's output. A reply is returned for the command in flight;
+/// an event goes to the live view and never enters the reply channel.
+fn route_line(mut value: Value, view: &LiveView) -> Option<Value> {
+    let Some(event) = value.get("event").and_then(Value::as_str) else {
+        return Some(value);
+    };
+    match event {
+        "frame" => {
+            if let Some(frame) = parse_frame(&mut value) {
+                view.offer(frame);
+            }
+        }
+        "stream_lost" => {
+            let error = value.get("error").and_then(Value::as_str).unwrap_or("");
+            *view.lost.lock().unwrap_or_else(|poison| poison.into_inner()) =
+                Some(bounded_string(error, 1024));
+        }
+        _ => {}
+    }
+    None
+}
+
+fn parse_frame(value: &mut Value) -> Option<EncodedFrame> {
+    let format = match value.get("format")?.as_str()? {
+        "jpeg" => FrameFormat::Jpeg,
+        "png" => FrameFormat::Png,
+        _ => return None,
+    };
+    let scale = value.get("scale")?.as_f64()? as f32;
+    if !(1.0..=3.0).contains(&scale) {
+        return None;
+    }
+    // The line limit already bounds the payload; it is moved, not copied.
+    let Value::String(base64) = value.get_mut("data")?.take() else {
+        return None;
+    };
+    (!base64.is_empty()).then_some(EncodedFrame {
+        format,
+        scale,
+        base64,
+    })
+}
+
+/// Runs on the decoder thread: the UI thread only uploads the result.
+fn decode_frame(frame: &EncodedFrame) -> Result<limn_egui::SurfaceFrame, String> {
+    let format = match frame.format {
+        FrameFormat::Jpeg => image::ImageFormat::Jpeg,
+        FrameFormat::Png => image::ImageFormat::Png,
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&frame.base64)
+        .map_err(|_| "Cuadro base64 no válido")?;
+    let reader = |bytes| {
+        let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
+        let mut limits = image::Limits::default();
+        limits.max_alloc = Some(MAX_FRAME_PIXELS * 8);
+        reader.limits(limits);
+        reader
+    };
+    // The header is checked before a decoder may allocate the image.
+    let (width, height) = reader(bytes.as_slice())
+        .into_dimensions()
+        .map_err(|error| error.to_string())?;
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_FRAME_PIXELS {
+        return Err("Cuadro fuera del límite de píxeles".into());
+    }
+    let size = [width as usize, height as usize];
+    let decoded = reader(bytes.as_slice())
+        .decode()
+        .map_err(|error| error.to_string())?;
+    match decoded {
+        image::DynamicImage::ImageRgba8(pixels) => {
+            limn_egui::SurfaceFrame::from_rgba(size, pixels.as_raw(), frame.scale)
+        }
+        other => limn_egui::SurfaceFrame::from_rgb(size, other.into_rgb8().as_raw(), frame.scale),
+    }
+    .ok_or_else(|| "Cuadro no válido".into())
+}
+
+fn decode_frames(handle: &BrowserHandle) {
+    while let Some(frame) = handle.view.next(&handle.closed) {
+        // A frame that does not decode is skipped; the next one replaces it.
+        if let Ok(decoded) = decode_frame(&frame) {
+            handle.view.publish(decoded);
+        }
+    }
+}
+
+/// Keeps the bridge's stream subscribed to the surface's visibility. A stream
+/// that stopped is asked for again after a pause, and says so meanwhile. Only
+/// a failure of the process itself is an error here.
+fn sync_stream(
+    handle: &BrowserHandle,
+    node: &mut BrowserProcess,
+    streaming: &mut bool,
+    retry_at: &mut Instant,
+) -> Result<(), String> {
+    let lost = handle
+        .view
+        .lost
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .take();
+    if let Some(error) = lost {
+        *streaming = false;
+        *retry_at = Instant::now() + STREAM_RETRY;
+        mark_stream_lost(handle, &error);
+    }
+    let wanted = handle.visible.load(Ordering::Acquire);
+    if wanted == *streaming && !(wanted && handle.view.restart.load(Ordering::Acquire)) {
+        return Ok(());
+    }
+    if wanted && Instant::now() < *retry_at {
+        return Ok(());
+    }
+    handle.view.restart.store(false, Ordering::Release);
+    let response = node.request(json!({"type":"stream","enabled":wanted}), &handle.closed)?;
+    if response.get("ok").and_then(Value::as_bool) == Some(true) {
+        *streaming = wanted;
+        {
+            let mut state = handle
+                .state
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            if state.error_code.as_deref() == Some("stream_lost") {
+                state.error = None;
+                state.error_code = None;
+            }
+        }
+        let _ = apply_refresh_response(handle, &response);
+    } else {
+        *streaming = false;
+        *retry_at = Instant::now() + STREAM_RETRY;
+        mark_stream_lost(
+            handle,
+            response.get("error").and_then(Value::as_str).unwrap_or(""),
+        );
+    }
+    Ok(())
+}
+
+fn mark_stream_lost(handle: &BrowserHandle, error: &str) {
+    let mut state = handle
+        .state
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    state.error = Some(bounded_string(
+        &format!("La vista en vivo se detuvo; se vuelve a pedir en unos segundos. {error}"),
+        2048,
+    ));
+    state.error_code = Some("stream_lost".into());
+    state.generation = state.generation.saturating_add(1);
 }
 
 fn signal_child(slot: &Arc<Mutex<Option<Child>>>) {
