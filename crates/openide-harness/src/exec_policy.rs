@@ -191,14 +191,16 @@ impl ExecPolicy {
         if !matches!(call.name.as_str(), "run_command" | "start_command") {
             return Err(ExecPolicyError::NotRunCommand);
         }
-        let command = call
-            .arguments
+        // Rules judge the argv that will run, not an unsplit line.
+        let split = crate::split_command_arguments(&call.arguments);
+        let arguments = split.as_ref().unwrap_or(&call.arguments);
+        let command = arguments
             .get("command")
             .and_then(serde_json::Value::as_str)
             .filter(|value| !value.trim().is_empty())
             .ok_or(ExecPolicyError::InvalidCommandArgv)?;
         let mut argv = vec![command.to_owned()];
-        match call.arguments.get("args") {
+        match arguments.get("args") {
             Some(serde_json::Value::Array(args)) => {
                 if args.len() >= MAX_COMMAND_ARGV_TOKENS {
                     return Err(ExecPolicyError::InvalidCommandArgv);

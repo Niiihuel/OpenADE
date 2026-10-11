@@ -420,6 +420,9 @@ pub struct SubagentWorker {
     event_bridge: Option<Arc<SubagentEventBridge>>,
     nested_subagents: Option<SubagentToolLimits>,
     native_goals: bool,
+    /// A child reserved before the command rule and `timeout_ms` keeps the
+    /// catalog it was reserved with.
+    before_command_revision: bool,
     persistent_commands: Option<NativeCommandProfile>,
 }
 
@@ -449,6 +452,7 @@ impl SubagentWorker {
             event_bridge: None,
             nested_subagents: None,
             native_goals: false,
+            before_command_revision: false,
             persistent_commands: None,
         }
     }
@@ -724,6 +728,18 @@ impl SubagentWorker {
                 candidate
             }));
         }
+        if !self.before_command_revision {
+            // Children reserved before the command rule and `timeout_ms` keep
+            // their recorded catalog and ten-minute cap instead of failing as
+            // a conflicting identity.
+            candidates.extend(candidates.clone().into_iter().filter_map(|mut candidate| {
+                candidate.before_command_revision = true;
+                if let Some(profile) = &candidate.persistent_commands {
+                    candidate.persistent_commands = Some(profile.before_command_revision()?);
+                }
+                Some(candidate)
+            }));
+        }
         if let Some(base) = crate::native_goal_base_instructions(&self.instructions) {
             candidates.extend(candidates.clone().into_iter().map(|mut candidate| {
                 candidate.instructions = base.clone();
@@ -827,7 +843,15 @@ impl SubagentWorker {
         {
             definitions.extend(coordination_definitions());
         }
-        let definitions = definitions.into_iter().filter(|definition| {
+        let before_command_revision = self.before_command_revision;
+        let definitions = definitions.into_iter().map(|definition| {
+            if before_command_revision {
+                crate::definition_before_command_revision(definition)
+            } else {
+                definition
+            }
+        });
+        let definitions = definitions.filter(|definition| {
             mode == TurnMode::Build
                 || (trusted_plan_read(&definition.name)
                     && (self.tools.certifies_plan_read(&definition.name)
@@ -852,6 +876,9 @@ impl SubagentWorker {
             .ok_or_else(|| SubagentWorkerError::InvalidChildAdmission(session.id.clone()))?
             .depth;
         let mut tools = self.tools.clone();
+        if self.before_command_revision {
+            tools = Arc::new(crate::command_line::BeforeCommandRevision(tools));
+        }
         if mode == TurnMode::Build {
             if let Some(profile) = &self.persistent_commands {
                 tools = Arc::new(profile.overlay(

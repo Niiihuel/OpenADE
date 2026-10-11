@@ -28,6 +28,12 @@ use uuid::Uuid;
 #[cfg(windows)]
 #[path = "persistent_command_pty.rs"]
 mod windows_pty;
+#[path = "persistent_command_terminal.rs"]
+mod terminal;
+pub use terminal::{PersistentTerminal, PersistentTerminalEvent};
+#[cfg(all(test, unix))]
+#[path = "persistent_command_terminal_tests.rs"]
+mod terminal_tests;
 #[cfg(windows)]
 #[path = "persistent_command_sandbox.rs"]
 mod windows_sandbox;
@@ -62,7 +68,10 @@ const HOST_BOOTSTRAP_ENV_KEYS: &[&str] = &[
 #[derive(Clone, Copy, Debug)]
 pub struct PersistentCommandLimits {
     pub max_sessions: usize,
-    pub max_lifetime: Duration,
+    /// `None` leaves a started command running until it is stopped, revoked
+    /// or the host drops its registry. A cap stays expressible for hosts and
+    /// for reservations made while the default was ten minutes.
+    pub max_lifetime: Option<Duration>,
     pub max_buffered_output_bytes: usize,
     pub max_poll_output_bytes: usize,
     pub max_stdin_bytes: usize,
@@ -72,7 +81,7 @@ impl Default for PersistentCommandLimits {
     fn default() -> Self {
         Self {
             max_sessions: 8,
-            max_lifetime: Duration::from_secs(10 * 60),
+            max_lifetime: None,
             max_buffered_output_bytes: 512 * 1024,
             max_poll_output_bytes: 64 * 1024,
             max_stdin_bytes: 8 * 1024,
@@ -81,10 +90,14 @@ impl Default for PersistentCommandLimits {
 }
 
 impl PersistentCommandLimits {
+    /// The cap every command had before started commands became uncapped.
+    pub const LEGACY_MAX_LIFETIME: Duration = Duration::from_secs(10 * 60);
+
     pub(crate) fn validate(self) -> Result<Self, AgentError> {
         if !(1..=16).contains(&self.max_sessions)
-            || !(Duration::from_millis(100)..=Duration::from_secs(60 * 60))
-                .contains(&self.max_lifetime)
+            || !self.max_lifetime.is_none_or(|lifetime| {
+                (Duration::from_millis(100)..=Duration::from_secs(60 * 60)).contains(&lifetime)
+            })
             || !(4 * 1024..=1024 * 1024).contains(&self.max_buffered_output_bytes)
             || !(1024..=64 * 1024).contains(&self.max_poll_output_bytes)
             || self.max_poll_output_bytes > self.max_buffered_output_bytes
@@ -241,6 +254,8 @@ struct Session {
     poll_lock: AsyncMutex<()>,
     controls: Mutex<CommandControlState>,
     pty: bool,
+    #[cfg(unix)]
+    terminal: Option<Arc<terminal::unix::Master>>,
     #[cfg(windows)]
     pty_console: Option<Arc<Mutex<Option<windows_pty::PseudoConsole>>>>,
     #[cfg(windows)]
@@ -419,6 +434,8 @@ pub struct PersistentCommandManager {
     revoked: CancellationToken,
     pty_tools_enabled: bool,
     pty_resize_tools_enabled: bool,
+    start_wait_tools: bool,
+    host_terminal: bool,
     runtime: OnceLock<Result<CommandRuntime, String>>,
     native_output_store: Option<Arc<NativeCommandOutputStore>>,
 }
@@ -467,6 +484,8 @@ impl PersistentCommandManager {
             revoked: CancellationToken::new(),
             pty_tools_enabled: false,
             pty_resize_tools_enabled: false,
+            start_wait_tools: true,
+            host_terminal: false,
             runtime: OnceLock::new(),
             native_output_store: None,
         })
@@ -610,6 +629,38 @@ impl PersistentCommandManager {
 
     /// Exact pre-PTY definition for selecting the recorded catalog during a
     /// resumed turn. The host must also reject `pty` arguments for that turn.
+    /// Host opt-in: on Unix, host-unrestricted commands run on a
+    /// pseudo-terminal the host can show and type into. The tool schema, the
+    /// cleared environment (plus `TERM`), approvals and the contained profile
+    /// (which keeps pipes) are unchanged. No effect on other platforms.
+    pub fn with_host_terminal(mut self) -> Self {
+        self.host_terminal = true;
+        self
+    }
+
+    /// A host tab's view of one started command: a copy of its output from
+    /// the retained tail onward and, on a terminal, input and resize. Never
+    /// consumes output the agent has not polled.
+    pub fn attach_terminal(&self, id: &str) -> Result<PersistentTerminal, AgentError> {
+        let session = self.session(id)?;
+        Ok(PersistentTerminal {
+            events: session.output.tap.attach(),
+            #[cfg(unix)]
+            master: session.terminal.clone(),
+        })
+    }
+
+    /// Advertise and accept the tools exactly as they were before `timeout_ms`
+    /// existed; used for children reserved under that catalog.
+    pub fn with_tools_before_command_revision(mut self) -> Self {
+        self.start_wait_tools = false;
+        self
+    }
+
+    pub fn start_wait_tools_enabled(&self) -> bool {
+        self.start_wait_tools
+    }
+
     pub fn legacy_start_command_definition() -> crate::ToolDefinition {
         crate::tools::legacy_start_command_definition()
     }
@@ -913,6 +964,8 @@ impl PersistentCommandManager {
                 NativeOutputRegistration { id, capture },
             );
         }
+        #[cfg(unix)]
+        let mut host_master: Option<Arc<terminal::unix::Master>> = None;
         let (mut child, tree) = if self.isolation == CommandIsolation::WorkspaceWriteOffline {
             #[cfg(all(
                 target_os = "linux",
@@ -948,13 +1001,35 @@ impl PersistentCommandManager {
             #[cfg(windows)]
             command.creation_flags(CREATE_NO_WINDOW | crate::process_tree::CREATE_SUSPENDED);
             #[cfg(unix)]
-            command.process_group(0);
+            if self.host_terminal {
+                let io_error = |error: std::io::Error| {
+                    AgentError::Tool(format!("cannot open a terminal for the command: {error}"))
+                };
+                let (master, slave) = terminal::unix::open(120, 30).map_err(io_error)?;
+                command
+                    .stdin(Stdio::from(slave.try_clone().map_err(io_error)?))
+                    .stdout(Stdio::from(slave.try_clone().map_err(io_error)?))
+                    .stderr(Stdio::from(slave))
+                    .env("TERM", "xterm-256color");
+                // SAFETY: the hook only makes async-signal-safe calls.
+                unsafe { command.pre_exec(terminal::unix::become_session_leader) };
+                host_master = Some(master);
+            } else {
+                command.process_group(0);
+            }
             #[cfg(windows)]
             let tree = ProcessTreeGuard::new().map_err(|error| {
                 AgentError::Tool(format!("cannot create persistent command job: {error}"))
             })?;
-            let mut child = command.spawn().map_err(|error| {
-                AgentError::Tool(format!("cannot start persistent command: {error}"))
+            if let Some(error) = crate::command_line::missing_working_directory(&self.workspace) {
+                return Err(error);
+            }
+            let spawned = command.spawn();
+            // The parent's copies of the slave must close, or the master
+            // never sees the end of output.
+            drop(command);
+            let mut child = spawned.map_err(|error| {
+                crate::command_line::spawn_error("cannot start persistent command", program, &error)
             })?;
             #[cfg(windows)]
             if let Err(error) = tree.assign_and_resume(&child) {
@@ -980,28 +1055,56 @@ impl PersistentCommandManager {
                     .into(),
             ));
         }
-        let stdin = child.stdin.take().ok_or_else(|| {
-            AgentError::EffectUncertain(
-                "persistent command stdin is unavailable after spawn".into(),
-            )
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            AgentError::EffectUncertain(
-                "persistent command stdout is unavailable after spawn".into(),
-            )
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            AgentError::EffectUncertain(
-                "persistent command stderr is unavailable after spawn".into(),
-            )
-        })?;
-
         let output = Arc::new(
             OutputBuffer::new(self.limits.max_buffered_output_bytes).with_capture(capture),
         );
-        let stdin = Arc::new(AsyncMutex::new(Some(
-            Box::new(stdin) as Box<dyn AsyncWrite + Send + Unpin>
-        )));
+        type Reader = tokio::task::JoinHandle<std::io::Result<()>>;
+        let piped = |child: &mut Child| -> Result<_, AgentError> {
+            let missing = |name: &str| {
+                AgentError::EffectUncertain(format!(
+                    "persistent command {name} is unavailable after spawn"
+                ))
+            };
+            let stdin = child.stdin.take().ok_or_else(|| missing("stdin"))?;
+            let stdout = child.stdout.take().ok_or_else(|| missing("stdout"))?;
+            let stderr = child.stderr.take().ok_or_else(|| missing("stderr"))?;
+            let readers: (Reader, Reader) = (
+                runtime.spawn(read_pipe(
+                    stdout,
+                    PersistentCommandStream::Stdout,
+                    Arc::clone(&output),
+                )),
+                runtime.spawn(read_pipe(
+                    stderr,
+                    PersistentCommandStream::Stderr,
+                    Arc::clone(&output),
+                )),
+            );
+            Ok((
+                Box::new(stdin) as Box<dyn AsyncWrite + Send + Unpin>,
+                readers,
+            ))
+        };
+        #[cfg(unix)]
+        let (stdin, (stdout_reader, stderr_reader)) = match &host_master {
+            // One merged terminal stream; the second reader has nothing to read.
+            Some(master) => (
+                Box::new(terminal::unix::MasterIo(Arc::clone(master)))
+                    as Box<dyn AsyncWrite + Send + Unpin>,
+                (
+                    runtime.spawn(read_pipe(
+                        terminal::unix::MasterIo(Arc::clone(master)),
+                        PersistentCommandStream::Terminal,
+                        Arc::clone(&output),
+                    )),
+                    runtime.spawn(async { Ok(()) }),
+                ),
+            ),
+            None => piped(&mut child)?,
+        };
+        #[cfg(not(unix))]
+        let (stdin, (stdout_reader, stderr_reader)) = piped(&mut child)?;
+        let stdin = Arc::new(AsyncMutex::new(Some(stdin)));
         let stop = output.stop.clone();
         let tree = Arc::new(Mutex::new(Some(tree)));
         output.attach_tree(Arc::clone(&tree));
@@ -1012,7 +1115,12 @@ impl PersistentCommandManager {
             tree: Arc::clone(&tree),
             poll_lock: AsyncMutex::new(()),
             controls: Mutex::new(CommandControlState::new(program, args, None)),
+            #[cfg(unix)]
+            pty: host_master.is_some(),
+            #[cfg(not(unix))]
             pty: false,
+            #[cfg(unix)]
+            terminal: host_master,
             #[cfg(windows)]
             pty_console: None,
             #[cfg(windows)]
@@ -1020,16 +1128,6 @@ impl PersistentCommandManager {
             #[cfg(windows)]
             sandbox_stdin: None,
         });
-        let stdout_reader = runtime.spawn(read_pipe(
-            stdout,
-            PersistentCommandStream::Stdout,
-            Arc::clone(&output),
-        ));
-        let stderr_reader = runtime.spawn(read_pipe(
-            stderr,
-            PersistentCommandStream::Stderr,
-            Arc::clone(&output),
-        ));
         runtime.spawn(
             Monitor {
                 child,
@@ -1380,6 +1478,14 @@ impl PersistentCommandManager {
             operation.completed = true;
         }
         if close_after {
+            // Dropping a terminal's writer closes nothing: end of input on a
+            // terminal is the EOF character at the start of a line.
+            #[cfg(unix)]
+            if session.terminal.is_some() {
+                if let Some(writer) = stdin.as_mut() {
+                    let _ = timeout(IO_WAIT, writer.write_all(b"\x04")).await;
+                }
+            }
             stdin.take();
         }
         Ok(())
@@ -1582,6 +1688,8 @@ struct OutputBuffer {
     capture_error: Mutex<Option<String>>,
     stop: CancellationToken,
     failure_tree: Mutex<Option<Arc<Mutex<Option<SessionTree>>>>>,
+    /// A copy for the host's tab; independent of retention and of the cursor.
+    tap: terminal::TerminalTap,
 }
 
 impl OutputBuffer {
@@ -1595,6 +1703,7 @@ impl OutputBuffer {
             capture_error: Mutex::new(None),
             stop: CancellationToken::new(),
             failure_tree: Mutex::new(None),
+            tap: terminal::TerminalTap::default(),
         }
     }
 
@@ -1640,6 +1749,7 @@ impl OutputBuffer {
     }
 
     fn push(&self, stream: PersistentCommandStream, bytes: &[u8]) -> std::io::Result<()> {
+        self.tap.push(bytes);
         let mut committed_cursor = match self.capture.as_ref() {
             Some(capture) => Some(capture.cursor.lock().map_err(|_| {
                 self.fail_capture("native output producer cursor is unavailable".into())
@@ -1690,6 +1800,7 @@ impl OutputBuffer {
     }
 
     fn finish(&self, exit: PersistentCommandExit, mut reader_error: Option<String>) {
+        self.tap.finish(&exit);
         if let Some(error) = self
             .capture_error
             .lock()
@@ -1947,13 +2058,20 @@ fn read_pipe_blocking<R: std::io::Read>(
     }
 }
 
+async fn lifetime_elapsed(lifetime: Option<Duration>) {
+    match lifetime {
+        Some(lifetime) => sleep(lifetime).await,
+        None => std::future::pending().await,
+    }
+}
+
 struct Monitor {
     child: Child,
     tree: Arc<Mutex<Option<SessionTree>>>,
     stdin: Arc<AsyncMutex<Option<Box<dyn AsyncWrite + Send + Unpin>>>>,
     output: Arc<OutputBuffer>,
     stop: CancellationToken,
-    lifetime: Duration,
+    lifetime: Option<Duration>,
     stdout_reader: tokio::task::JoinHandle<std::io::Result<()>>,
     stderr_reader: tokio::task::JoinHandle<std::io::Result<()>>,
 }
@@ -1977,7 +2095,7 @@ impl Monitor {
                 Ok(status) => PersistentCommandExit::Exited { code: status.code() },
                 Err(error) => PersistentCommandExit::WaitFailed(error.to_string()),
             },
-            _ = sleep(lifetime) => PersistentCommandExit::TimedOut,
+            _ = lifetime_elapsed(lifetime) => PersistentCommandExit::TimedOut,
         };
         // The job/group is closed on every outcome, including normal parent exit,
         // so descendants cannot hold the pipes or continue without their parent.
@@ -2021,7 +2139,7 @@ struct PtyMonitor {
     stdin: Arc<AsyncMutex<Option<Box<dyn AsyncWrite + Send + Unpin>>>>,
     output: Arc<OutputBuffer>,
     stop: CancellationToken,
-    lifetime: Duration,
+    lifetime: Option<Duration>,
     terminal_reader: std::thread::JoinHandle<std::io::Result<()>>,
 }
 
@@ -2082,7 +2200,7 @@ impl PtyMonitor {
                 Ok(Err(error)) => PersistentCommandExit::WaitFailed(error.to_string()),
                 Err(error) => PersistentCommandExit::WaitFailed(error.to_string()),
             },
-            _ = sleep(lifetime) => PersistentCommandExit::TimedOut,
+            _ = lifetime_elapsed(lifetime) => PersistentCommandExit::TimedOut,
         };
         // Every path closes the job before exposing a terminal snapshot.
         cleanup.close_job();
@@ -2681,7 +2799,7 @@ fn main() {
             PersistentCommandLimits {
                 max_buffered_output_bytes: 4 * 1024,
                 max_poll_output_bytes: 4 * 1024,
-                max_lifetime: Duration::from_secs(20),
+                max_lifetime: Some(Duration::from_secs(20)),
                 ..PersistentCommandLimits::default()
             },
         )
@@ -2716,7 +2834,7 @@ fn main() {
             workspace.path().to_path_buf(),
             CommandIsolation::HostUnrestricted,
             PersistentCommandLimits {
-                max_lifetime: Duration::from_millis(250),
+                max_lifetime: Some(Duration::from_millis(250)),
                 ..PersistentCommandLimits::default()
             },
         )
@@ -3068,7 +3186,7 @@ fn main() {
             workspace,
             CommandIsolation::WorkspaceWriteOffline,
             PersistentCommandLimits {
-                max_lifetime: Duration::from_millis(500),
+                max_lifetime: Some(Duration::from_millis(500)),
                 ..PersistentCommandLimits::default()
             },
         )
@@ -3251,7 +3369,7 @@ fn main() {
         let (_probe_dir, binary) = compile_probe();
         let workspace = tempfile::tempdir().unwrap();
         let limits = PersistentCommandLimits {
-            max_lifetime: Duration::from_millis(250),
+            max_lifetime: Some(Duration::from_millis(250)),
             ..PersistentCommandLimits::default()
         };
         let manager = PersistentCommandManager::new(

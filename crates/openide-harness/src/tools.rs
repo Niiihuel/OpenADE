@@ -376,7 +376,11 @@ impl ToolExecutor for LocalTools {
         if self.permissions.run_command {
             let mut definition = ToolDefinition {
                 name: "run_command".into(),
-                description: self.command_isolation.run_command_description().into(),
+                description: format!(
+                    "{}{}",
+                    self.command_isolation.run_command_description(),
+                    crate::command_line::COMMAND_RULE
+                ),
                 parameters: json!({
                     "type": "object",
                     "properties": {

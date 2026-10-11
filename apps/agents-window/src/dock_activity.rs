@@ -1361,12 +1361,18 @@ fn process(state: &ViewState, command: &PersistentCommandSessionInfo, width: f32
         Some(PersistentCommandExit::TimedOut) => "Tiempo agotado".to_owned(),
         Some(PersistentCommandExit::WaitFailed(_)) => "Estado incierto".to_owned(),
     };
+    // A started command has no lifetime cap: say what does end it.
     let details = format!(
-        "{} · {}{}",
+        "{} · {}{}{}",
         if command.pty { "PTY" } else { "Tuberías" },
         status,
         if command.has_output {
             " · salida pendiente"
+        } else {
+            ""
+        },
+        if command.exit.is_none() {
+            " · Se detiene al cerrar openADE"
         } else {
             ""
         }

@@ -136,7 +136,7 @@ pub(crate) fn modal(state: &ViewState, base: Element, viewport_width: f32) -> El
             })
             .unwrap_or_else(|| "fecha fuera del rango representable".into());
         let status = match &inspected.exit {
-            None => "En ejecución".into(),
+            None => "En ejecución · Se detiene al cerrar openADE".into(),
             Some(PersistentCommandExit::Exited { code }) => format!(
                 "Finalizado · código {}",
                 code.map_or_else(|| "?".into(), |code| code.to_string())

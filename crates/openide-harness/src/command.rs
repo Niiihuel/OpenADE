@@ -130,6 +130,29 @@ pub(crate) async fn run_command_streaming(
     allow_elevated_commands: bool,
     output: Option<crate::ToolOutputSender>,
 ) -> Result<ToolOutput, AgentError> {
+    // Run what the approval was computed on: plain words split, no shell.
+    let Some(split) = crate::command_line::executed_call(call)? else {
+        return run_command_as_written(call, context, isolation, allow_elevated_commands, output)
+            .await;
+    };
+    let mut result =
+        run_command_as_written(&split, context, isolation, allow_elevated_commands, output)
+            .await?;
+    result.content = format!(
+        "executed without a shell: {:?}\n{}",
+        crate::command_line::executed_words(&split),
+        result.content
+    );
+    Ok(result)
+}
+
+async fn run_command_as_written(
+    call: &ToolCall,
+    context: &ToolContext,
+    isolation: CommandIsolation,
+    allow_elevated_commands: bool,
+    output: Option<crate::ToolOutputSender>,
+) -> Result<ToolOutput, AgentError> {
     match call.arguments.get("elevated") {
         None | Some(Value::Bool(false)) => {}
         Some(Value::Bool(true)) => {
@@ -210,9 +233,12 @@ pub(crate) async fn run_command_streaming(
     #[cfg(windows)]
     let tree = ProcessTreeGuard::new()
         .map_err(|error| AgentError::Tool(format!("cannot create command job: {error}")))?;
+    if let Some(error) = crate::command_line::missing_working_directory(&context.workspace) {
+        return Err(error);
+    }
     let mut child = process
         .spawn()
-        .map_err(|error| AgentError::Tool(format!("cannot start command: {error}")))?;
+        .map_err(|error| crate::command_line::spawn_error("cannot start command", program, &error))?;
     #[cfg(windows)]
     tree.assign_and_resume(&child).map_err(|error| {
         AgentError::EffectUncertain(format!("cannot contain command tree after spawn: {error}"))
@@ -508,6 +534,62 @@ mod windows_job {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_plain_line_in_command_runs_split_and_failures_say_what_is_missing() {
+        let root = tempfile::tempdir().unwrap();
+        let context = |workspace: &std::path::Path| ToolContext {
+            workspace: workspace.to_path_buf(),
+            cancel: tokio_util::sync::CancellationToken::new(),
+        };
+        let run = |arguments: Value, workspace: std::path::PathBuf| async move {
+            run_command(
+                &ToolCall {
+                    id: "c".into(),
+                    name: "run_command".into(),
+                    arguments,
+                },
+                &context(&workspace),
+            )
+            .await
+        };
+        let here = root.path().to_path_buf();
+        let split = run(serde_json::json!({"command":"sh -c true"}), here.clone())
+            .await
+            .unwrap();
+        assert!(!split.is_error, "{}", split.content);
+        assert!(
+            split
+                .content
+                .starts_with("executed without a shell: [\"sh\", \"-c\", \"true\"]\nexit code: 0"),
+            "{}",
+            split.content
+        );
+        let explicit = run(serde_json::json!({"command":"sh","args":["-c","true"]}), here.clone())
+            .await
+            .unwrap();
+        assert!(explicit.content.starts_with("exit code: 0"));
+        let quoted = run(serde_json::json!({"command":"sh -c 'touch made'"}), here.clone())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(quoted.contains("pass arguments in `args`"), "{quoted}");
+        assert!(!root.path().join("made").exists());
+        let missing = run(serde_json::json!({"command":"openide-no-such-program"}), here.clone())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            missing.contains("executable not found on PATH: openide-no-such-program"),
+            "{missing}"
+        );
+        let gone = run(serde_json::json!({"command":"sh"}), here.join("gone"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(gone.contains("working directory does not exist"), "{gone}");
+    }
 
     #[tokio::test]
     async fn capture_keeps_both_ends_of_long_output() {

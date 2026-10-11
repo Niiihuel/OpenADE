@@ -48,7 +48,7 @@ fn manager(workspace: &Path, lifetime: Duration) -> Arc<PersistentCommandManager
             workspace.into(),
             CommandIsolation::WorkspaceWriteOffline,
             PersistentCommandLimits {
-                max_lifetime: lifetime,
+                max_lifetime: Some(lifetime),
                 ..PersistentCommandLimits::default()
             },
         )
