@@ -165,6 +165,15 @@ impl ToolActivity {
             ))
             .padding(HEADER_PADDING)
             .size(None, Some(HEADER_HEIGHT));
+        // With an action beside it the header's hover is the shared band
+        // below, so the title part paints none of its own.
+        let header = if self.header_action.is_some() {
+            header
+                .hover_background(Color::TRANSPARENT)
+                .pressed_background(Color::TRANSPARENT)
+        } else {
+            header
+        };
         let header = if let Some(tooltip) = self.tooltip {
             crate::Tooltip::new(header, &self.id, tooltip, self.palette)
                 .placement(crate::TooltipPlacement::Above)
@@ -178,10 +187,7 @@ impl ToolActivity {
             // the card's top, bottom and trailing edge.
             let inset = || Element::spacer().size(Some(2.0), None);
             Element::row(vec![
-                header
-                    .hover_background(Color::TRANSPARENT)
-                    .pressed_background(Color::TRANSPARENT)
-                    .flex(1.0),
+                header.flex(1.0),
                 inset(),
                 centered(action).size(Some(24.0), None),
                 inset(),
@@ -562,4 +568,51 @@ mod tests {
                 .any(|layout| layout.source == "collapsed output"));
         }
     }
+    #[test]
+    fn hovering_either_part_of_the_header_lights_its_whole_width() {
+        use crate::{DrawCommand, Point, Size, UiEvent, UiTree};
+        let palette = ComponentPalette::neutral_dark();
+        let width = 400.0;
+        let lit = |x: f32| {
+            let card = ToolActivity::new("terminal:call", "npm", Element::text("out"), palette)
+                .terminal(true)
+                .tooltip("npm")
+                .icon(Icon::Terminal)
+                .header_action(
+                    "inspect",
+                    crate::IconButton::new("inspect", Icon::More, palette)
+                        .variant(crate::ButtonVariant::Ghost)
+                        .size(crate::ControlSize::Dense)
+                        .render(),
+                )
+                .render();
+            let mut tree = UiTree::new(Element::column(vec![card]));
+            let size = Size::new(width, 180.0);
+            let start = std::time::Instant::now();
+            tree.layout_at(size, start);
+            tree.handle_event_at(UiEvent::PointerMove(Point::new(x, 14.0)), start);
+            tree.layout_at(size, start + std::time::Duration::from_millis(16));
+            // Settled, with the hint open: the state the user looks at.
+            let frame = tree.layout_at(size, start + std::time::Duration::from_secs(3));
+            frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::FillRect { rect, color, .. }
+                        if color.a > 0 && rect.height <= 28.0 && rect.y < 28.0 && rect.width > 40.0 =>
+                    {
+                        Some(rect.width)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        // Over the title or over the action: one band, as wide as the header.
+        for x in [80.0, width - 14.0] {
+            let bands = lit(x);
+            assert_eq!(bands.len(), 1, "{x}: {bands:?}");
+            assert!(bands[0] > width - 8.0, "{x}: {bands:?}");
+        }
+    }
+
 }

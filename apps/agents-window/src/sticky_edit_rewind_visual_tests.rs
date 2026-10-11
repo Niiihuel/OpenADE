@@ -196,7 +196,7 @@ fn editable(mut state: ViewState) -> ViewState {
 
 fn editing(mut state: ViewState, user_row: usize, drops_attachments: bool) -> ViewState {
     state.prompt = "Primer pedido: revisá el proyecto y las pruebas.".into();
-    state.message_edit.editing = Some(EditingMessage { user_row, sequence: 1, drops_attachments });
+    state.message_edit.editing = Some(EditingMessage { user_row, sequence: 1, drops_attachments, original: String::new() });
     state
 }
 
@@ -547,16 +547,24 @@ fn running_turn_message_opens_for_editing_and_its_composer_sends() {
     assert_eq!(frame.hit_test(Point::new(stop.x + 12.0, stop.y + 12.0)), Some("turn_stop"));
     assert_eq!(frame.hit_test(Point::new(bubble.x + 20.0, bubble.y + bubble.height / 2.0)), Some("message_edit:0"));
 
-    // Open: the composer over the message sends, and the stop stays in reach.
-    let state = editing(running_turn(), 0, false);
-    let (_context, mut tree) = native_tree(root(&state, VIEWPORT));
-    let frame = tree.layout(VIEWPORT);
-    assert!(frame.commands.iter().any(|command| matches!(command, DrawCommand::Icon { icon: openide_ui::Icon::ArrowUp, .. })));
-    assert!(frame.regions.iter().any(|region| region.id == "run_toggle" && region.kind == HitKind::Button));
-    // The stop that comes with the editor is above the veil.
-    let stop = frame.regions.iter().rev().find(|region| region.id == "turn_stop" && region.kind == HitKind::Button).unwrap().rect;
-    assert_eq!(frame.hit_test(Point::new(stop.x + 12.0, stop.y + 12.0)), Some("turn_stop"));
-    assert!(text_top(&frame, "El turno sigue en curso").is_some());
+    // Open and untouched: the composer's one button is still the turn's stop.
+    let mut state = editing(running_turn(), 0, false);
+    state.message_edit.editing.as_mut().unwrap().original = state.prompt.clone();
+    let icons = |state: &ViewState| {
+        let (_context, mut tree) = native_tree(root(state, VIEWPORT));
+        let frame = tree.layout(VIEWPORT);
+        assert!(frame.regions.iter().any(|region| region.id == "run_toggle" && region.kind == HitKind::Button));
+        let has = |wanted: openide_ui::Icon| {
+            frame.commands.iter().any(|command| matches!(command, DrawCommand::Icon { icon, .. } if *icon == wanted))
+        };
+        (has(openide_ui::Icon::ArrowUp), text_top(&frame, "El turno sigue en curso").is_some())
+    };
+    assert_eq!(icons(&state), (false, false));
+    assert!(crate::message_edit::edit_untouched(&state));
+    // Changed: the same button sends, and a line says what sending does.
+    state.prompt.push_str(" Y agregá un resumen.");
+    assert_eq!(icons(&state), (true, true));
+    assert!(!crate::message_edit::edit_untouched(&state));
 }
 
 #[test]

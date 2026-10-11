@@ -235,6 +235,7 @@ impl AgentsWindow {
             user_row,
             sequence: turn.sequence,
             drops_attachments: turn.drops_attachments,
+            original: text.clone(),
         });
         self.view.composer_error = None;
         self.view.composer_attachments.clear();
