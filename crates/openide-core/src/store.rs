@@ -15,6 +15,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use uuid::Uuid;
 
+#[path = "store_rewind.rs"]
+mod rewind;
+pub use rewind::{NativeRewind, NativeRewindRefusal};
+
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("invalid session id")]
@@ -151,6 +155,8 @@ pub enum StoreError {
     NativeEventOutOfOrder { previous: u64, incoming: u64 },
     #[error("native event conflicts with saved sequence {0}")]
     ConflictingNativeEvent(u64),
+    #[error("native rewind refused: {0}")]
+    NativeRewindRefused(NativeRewindRefusal),
     #[error("session event log for {session_id} is inconsistent at line {line}: {reason}")]
     InconsistentEventLog {
         session_id: String,
@@ -3066,7 +3072,9 @@ impl SessionStore {
                 .root
                 .join(format!("{session_id}.native-goals.json")),
         )?;
+        let removed_rewind_tails = self.remove_rewind_tails(session_id)?;
         Ok(removed_draft
+            || removed_rewind_tails
             || removed_metadata
             || removed_events
             || removed_permissions
