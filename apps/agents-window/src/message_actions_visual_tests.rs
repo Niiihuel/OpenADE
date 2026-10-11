@@ -225,7 +225,7 @@ fn the_menu_offers_activity_and_a_retry_only_where_they_are_real() {
             state.message_edit.turns[1].drops_attachments = true;
         } else {
             state.pending_permissions = fixture(false).pending_permissions;
-            state.message_edit.editing = Some(EditingMessage { user_row: 0, sequence: 1, drops_attachments: false });
+            state.message_edit.editing = Some(EditingMessage { user_row: 0, sequence: 1, drops_attachments: false, original: String::new() });
         }
         apply_action(&mut state, "turn_actions:7:more");
         let (_context, mut tree) = native_tree(root(&state, WIDE));

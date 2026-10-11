@@ -56,6 +56,21 @@ pub struct EditingMessage {
     pub user_row: usize,
     pub sequence: u64,
     pub drops_attachments: bool,
+    /// The text the edit opened with: until it changes there is nothing to
+    /// send, and the composer keeps the running turn's stop in that place.
+    pub original: String,
+}
+
+/// Whether the composer over a running turn's message still shows its stop:
+/// the text is as it was and nothing was attached.
+pub(crate) fn edit_untouched(state: &ViewState) -> bool {
+    state.running
+        && state.composer_attachments.is_empty()
+        && state
+            .message_edit
+            .editing
+            .as_ref()
+            .is_some_and(|editing| editing.original == state.prompt)
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -164,25 +179,19 @@ pub(crate) fn editor(state: &ViewState, bubble: Element, width: f32) -> Element 
         return bubble;
     }
     let mut props = ComposerProps::from_state(state, width, false, None, "Editá el mensaje…", None);
-    // This composer sends the edit, also while a turn runs. Everything
-    // behind it is veiled, so the stop of that turn comes with it.
-    props.running = false;
+    // One button, one place: while the text is as it was the composer
+    // keeps the running turn's stop; once it changes, that becomes send.
+    props.running = edit_untouched(state);
     let mut rows = vec![build_composer(&props)];
-    if state.running {
+    if state.running && !props.running {
         rows.push(
-            Element::row(vec![
-                Text::new(
-                    "El turno sigue en curso. Enviar el mensaje editado lo detiene.",
-                    theme::component_palette(),
-                )
-                .role(TextRole::Small)
-                .muted()
-                .render()
-                .centered_y()
-                .flex(1.0),
-                crate::composer_ui::stop_button("turn_stop", ControlSize::Dense, "Detener ejecución"),
-            ])
-            .gap(8.0),
+            Text::new(
+                "El turno sigue en curso. Enviar el mensaje editado lo detiene.",
+                theme::component_palette(),
+            )
+            .role(TextRole::Small)
+            .muted()
+            .render(),
         );
     }
     if editing.drops_attachments {

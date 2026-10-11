@@ -16169,7 +16169,11 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "run_toggle" => {
                 // The composer over an edited message sends the edit, even
                 // while a turn runs; `turn_stop` is what stops that turn.
-                if self.view.message_edit.editing.is_some() || !self.cancel_selected_run() {
+                // An edit that changed nothing has nothing to send: its
+                // button is still the stop of the running turn.
+                let sends_edit = self.view.message_edit.editing.is_some()
+                    && !crate::message_edit::edit_untouched(&self.view);
+                if sends_edit || !self.cancel_selected_run() {
                     self.start_run();
                 }
             }

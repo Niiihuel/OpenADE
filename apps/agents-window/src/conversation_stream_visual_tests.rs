@@ -1810,8 +1810,8 @@ fn jump_to_bottom_is_a_white_circle_with_centered_dark_arrow_and_real_pointer_an
             .find(|region| region.id == "jump_to_bottom" && region.kind == HitKind::Button)
             .expect("shared native jump control")
             .rect;
-        assert_eq!(target.width, 36.0);
-        assert_eq!(target.height, 36.0);
+        assert_eq!(target.width, 28.0);
+        assert_eq!(target.height, 28.0);
         assert!(target.x >= 0.0 && target.x + target.width <= width);
         assert!(
             !text(&frame).contains("Volver al final"),
@@ -1819,7 +1819,7 @@ fn jump_to_bottom_is_a_white_circle_with_centered_dark_arrow_and_real_pointer_an
         );
         assert!(frame.commands.iter().any(|command| matches!(command,
             DrawCommand::FillRect { rect, radius, color }
-                if *rect == target && *radius == 18.0 && *color == Color::rgb(246, 246, 246)
+                if *rect == target && *radius == 14.0 && *color == Color::rgb(246, 246, 246)
         )));
         let arrow = frame
             .commands

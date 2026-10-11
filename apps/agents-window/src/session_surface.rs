@@ -2038,11 +2038,11 @@ pub(crate) fn jump_to_bottom_control() -> Element {
             theme::action_palette(theme::INVERSE_SURFACE, theme::INVERSE_INK),
         )
         .variant(ButtonVariant::Subtle)
-        .size(ControlSize::Regular)
+        .size(ControlSize::Compact)
         .render()
-        .size(Some(36.0), Some(36.0))
+        .size(Some(28.0), Some(28.0))
         .center_content()
-        .radius(18.0),
+        .radius(14.0),
         "jump_to_bottom",
         "Volver al final",
         theme::component_palette(),
