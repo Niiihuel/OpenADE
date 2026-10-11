@@ -1308,6 +1308,7 @@ fn terminal_activity(
     .expanded(expanded)
     .running(*activity == ActivityStatus::Running && !failed)
     .header_action(
+        format!("tool:{id}"),
         UiIconButton::new(format!("tool:{id}"), Icon::More, theme::component_palette())
             .variant(ButtonVariant::Ghost)
             .tooltip("Inspeccionar actividad")

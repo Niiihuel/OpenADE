@@ -127,6 +127,15 @@ const MIN_SEGMENT: f32 = 2.0;
 /// Whole pixels, so the rows add up to exactly the height the body is given:
 /// a fraction of rounding would count as overflow and show a scrollbar.
 const ROW_HEIGHT: f32 = 16.0;
+/// A category row's hover extends this far past its text on each side.
+const CONTEXT_ROW_INSET: f32 = 8.0;
+const CATEGORY_ROW_HEIGHT: f32 = 22.0;
+
+/// Lines an element up with the text of the category rows.
+fn inset(element: Element) -> Element {
+    let side = || Element::spacer().size(Some(CONTEXT_ROW_INSET), None);
+    Element::row(vec![side(), element.flex(1.0), side()])
+}
 
 /// One token figure per category, in order: bytes / 4 where a category states
 /// bytes, and for the conversation what is left of the measured context.
@@ -319,20 +328,23 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         .sizing(openide_ui::HeaderSizing::POPOVER)
         .render();
     let mut content = vec![
-        Text::new(total, theme::component_palette())
-            .ink(usage_ink(fraction))
-            .render()
-            .size(None, Some(ROW_HEIGHT)),
-        segmented_bar(
+        inset(
+            Text::new(total, theme::component_palette())
+                .ink(usage_ink(fraction))
+                .render(),
+        )
+        .size(None, Some(ROW_HEIGHT)),
+        inset(segmented_bar(
             categories,
             &segment_widths(&shares, capacity, bar_width(props.width)),
             hovered,
-        ),
+        )),
     ];
     for (category, share) in categories.iter().zip(&shares) {
         let under_pointer = hovered == Some(category.id.as_str());
         let label = Text::new(&category.label, theme::component_palette());
         let row = Element::row(vec![
+            Element::spacer().size(Some(0.0), None),
             Element::spacer()
                 .size(Some(10.0), Some(10.0))
                 .background(segment_ink(&category.id, hovered))
@@ -345,12 +357,15 @@ fn summary(props: &ComposerProps<'_>) -> Element {
                 share.map_or_else(|| "–".into(), tokens),
                 theme::component_palette(),
             )
-            .render(),
+            .render()
+            .centered_y(),
+            Element::spacer().size(Some(0.0), None),
         ])
-        .gap(8.0)
+        // The row's gap is also its inset: zero-width ends leave 8 px each side.
+        .gap(CONTEXT_ROW_INSET)
         .background(if under_pointer { theme::menu_palette().hover } else { Color::TRANSPARENT })
-        .radius(3.0)
-        .size(None, Some(ROW_HEIGHT));
+        .radius(openide_ui::RadiusRole::Control.px())
+        .size(None, Some(CATEGORY_ROW_HEIGHT));
         // The row's hint states what was measured, in the app's own units.
         let mut hint = Tooltip::new(
             row,
@@ -401,7 +416,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     };
     let status = status.or(reason.as_deref());
     if let Some(status) = status {
-        content.push(
+        content.push(inset(
             Text::new(status, theme::component_palette())
                 .role(TextRole::Small)
                 .ink(if fraction.is_some() {
@@ -410,7 +425,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
                     theme::FOREGROUND_SUBTLE
                 })
                 .render(),
-        );
+        ));
     }
     let action = props.context_compaction;
     let mut footer = ButtonGroup::new(vec![Button::new(
@@ -444,11 +459,11 @@ fn summary(props: &ComposerProps<'_>) -> Element {
             .render());
     }
     PopoverPanel::new(theme::component_palette())
-        .header(header)
+        .header(inset(header))
         .body(
             ScrollArea::new(
                 "composer_context_summary",
-                Element::column(content).gap(5.0),
+                Element::column(content).gap(2.0),
             )
             // An overlay keeps the width the bar's segments were sized for.
             .appearance(ScrollbarAppearance::overlay())
@@ -456,7 +471,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         )
         // A safety cap only: the usual seven categories fit without scrolling.
         .body_max_height(280.0)
-        .footer(footer.render().size(None, Some(28.0)))
+        .footer(inset(footer.render()).size(None, Some(28.0)))
         .sizing(crate::ui_sizing::CONTEXT_POPOVER)
         .render()
 }
@@ -466,7 +481,8 @@ fn popover_width(composer: f32) -> f32 {
 }
 /// The bar spans the popover between the insets of its surface (6) and panel.
 fn bar_width(composer: f32) -> f32 {
-    popover_width(composer) - 2.0 * (6.0 + crate::ui_sizing::CONTEXT_POPOVER.padding)
+    popover_width(composer)
+        - 2.0 * (6.0 + crate::ui_sizing::CONTEXT_POPOVER.padding + CONTEXT_ROW_INSET)
 }
 
 pub(crate) fn control_width(props: &ComposerProps<'_>) -> f32 {

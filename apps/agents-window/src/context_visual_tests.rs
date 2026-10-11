@@ -483,7 +483,7 @@ fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
             let (track, segments) = bar(&frame);
             let popup = region(&frame, "popover_surface:composer_context_dismiss");
             // The segments are sized for exactly the track the popover lays out.
-            assert!((track.width - (popup.width - 32.0)).abs() < 0.1, "{track:?}");
+            assert!((track.width - (popup.width - 36.0)).abs() < 0.1, "{track:?}");
             assert_eq!(
                 segments.iter().map(|(_, color)| *color).collect::<Vec<_>>(),
                 inks.iter().map(|id| ink(id)).collect::<Vec<_>>(),
