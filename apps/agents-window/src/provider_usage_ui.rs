@@ -1178,22 +1178,26 @@ pub(crate) fn usage_page(state: &ViewState, content_width: f32) -> Vec<Element> 
     } else {
         content_width
     };
-    let mut accounts = provider_connections::PROVIDERS
+    let accounts = provider_connections::PROVIDERS
         .iter()
         .map(|(id, name, _)| account_card(state, &snapshot(state, id, name), card_width, now))
         .chain(claude_card(state, card_width, now))
-        .map(|card| card.size(Some(card_width), None))
-        .peekable();
-    while accounts.peek().is_some() {
-        let row = accounts
-            .by_ref()
-            .take(if two_columns { 2 } else { 1 })
-            .collect::<Vec<_>>();
-        cards.push(if two_columns {
-            Element::row(row).gap(12.0)
-        } else {
-            Element::column(row)
-        });
+        .map(|card| card.size(Some(card_width), None));
+    if two_columns {
+        // Two independent columns: a tall card does not stretch its neighbour.
+        let (mut left, mut right) = (Vec::new(), Vec::new());
+        for (index, card) in accounts.enumerate() {
+            if index % 2 == 0 { left.push(card) } else { right.push(card) }
+        }
+        cards.push(
+            Element::row(vec![
+                Element::column(left).gap(12.0).size(Some(card_width), None),
+                Element::column(right).gap(12.0).size(Some(card_width), None),
+            ])
+            .gap(12.0),
+        );
+    } else {
+        cards.extend(accounts);
     }
     cards.push(Text::new("Los límites y el saldo pertenecen a cada proveedor. El contexto de una conversación y los precios del catálogo no representan el consumo de tu suscripción.", theme::component_palette()).role(TextRole::Small).ink(theme::SETTINGS_FOREGROUND_SUBTLE).render());
     cards
@@ -2298,12 +2302,6 @@ mod tests {
                 );
             }
             if width >= 700.0 {
-                for pair in actions.chunks(2) {
-                    assert_eq!(
-                        pair[0].rect.y, pair[1].rect.y,
-                        "footer baselines at {width}px"
-                    );
-                }
                 let cards: Vec<_> = frame
                     .commands
                     .iter()
@@ -2326,11 +2324,16 @@ mod tests {
                     })
                     .collect();
                 assert_eq!(cards.len(), provider_connections::PROVIDERS.len());
-                for pair in cards.chunks(2) {
-                    assert_eq!(pair[0].y, pair[1].y);
-                    assert_eq!(pair[0].height, pair[1].height);
-                    assert_eq!(pair[0].width, pair[1].width);
-                }
+                // Two independent columns: equal widths, and a card keeps its
+                // own height instead of stretching to a taller neighbour.
+                assert!(cards.iter().all(|card| card.width == cards[0].width));
+                let mut columns: Vec<f32> = cards.iter().map(|card| card.x).collect();
+                columns.dedup_by(|a, b| a == b);
+                columns.sort_by(f32::total_cmp);
+                columns.dedup();
+                assert_eq!(columns.len(), 2);
+                let shortest = cards.iter().map(|card| card.height).fold(f32::MAX, f32::min);
+                assert!(cards.iter().filter(|card| card.height == shortest).count() >= 2);
             }
             let painted = frame_text(&frame);
             assert!(painted.contains("Abrir cuenta") && painted.contains("Conectar"));
