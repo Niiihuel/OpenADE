@@ -257,6 +257,15 @@ pub(crate) fn duration_label(ms: u64) -> String {
     }
 }
 
+/// A native turn's opening message: which `User` row it is, counting only
+/// `User` rows, and the sequence of its admission, where a rewind cuts.
+/// Steered messages and turns of external CLIs have no entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UserTurn {
+    pub user_row: usize,
+    pub sequence: u64,
+}
+
 /// Replaying the same ordered events produces the same rows as applying them live.
 #[derive(Debug, Default)]
 pub struct TranscriptProjection {
@@ -296,6 +305,8 @@ pub struct TranscriptProjection {
     stdout_text: String,
     pending_web_citations: Vec<(String, String)>,
     pending_admission_images: Vec<TranscriptImage>,
+    pending_admission_sequence: Option<u64>,
+    user_turns: Vec<UserTurn>,
     tool_disclosure_aliases: Vec<(String, String)>,
 }
 
@@ -410,6 +421,11 @@ impl TranscriptProjection {
         &self.items
     }
 
+    /// The native turns of this transcript, oldest first.
+    pub fn user_turns(&self) -> &[UserTurn] {
+        &self.user_turns
+    }
+
     /// Publish changed rows to the host's retained snapshot. Use one target per
     /// projection; replacing the projection establishes a new complete baseline.
     /// This leaves historical strings/images untouched during live deltas.
@@ -520,6 +536,22 @@ impl TranscriptProjection {
             }
         }
         let changed = self.apply_kind(&event.kind);
+        match &event.kind {
+            AgentEventKind::TurnAdmitted { .. } | AgentEventKind::TurnAdmittedWithImages { .. } => {
+                self.pending_admission_sequence = Some(event.sequence);
+            }
+            AgentEventKind::TurnStarted { .. } => {
+                if let Some(sequence) = self.pending_admission_sequence.take() {
+                    let users = self
+                        .items
+                        .iter()
+                        .filter(|item| matches!(item, TranscriptItem::User { .. }))
+                        .count();
+                    self.user_turns.push(UserTurn { user_row: users - 1, sequence });
+                }
+            }
+            _ => {}
+        }
         self.record_times(event, changed);
         if let AgentEventKind::ModelRequestStarted { step, .. } = &event.kind {
             self.active_stream_scope =

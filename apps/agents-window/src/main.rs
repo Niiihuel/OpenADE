@@ -79,6 +79,7 @@ mod ide_workspace;
 mod ide_editor_empty;
 mod ide_search;
 mod keymap;
+mod message_edit;
 mod marketplace;
 mod marketplace_view;
 mod plugins;

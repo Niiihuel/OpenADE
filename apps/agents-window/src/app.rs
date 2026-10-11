@@ -138,6 +138,9 @@ mod native_settings_choice_app_tests;
 #[path = "native_streaming_app_tests.rs"]
 mod native_streaming_app_tests;
 #[cfg(test)]
+#[path = "message_edit_app_tests.rs"]
+mod message_edit_app_tests;
+#[cfg(test)]
 #[path = "native_streaming_queue_tests.rs"]
 mod native_streaming_queue_tests;
 #[cfg(test)]
@@ -165,6 +168,8 @@ mod activity_navigation_app;
 mod approvals_app;
 #[path = "chat_diff_app.rs"]
 mod chat_diff_app;
+#[path = "message_edit_app.rs"]
+mod message_edit_app;
 #[path = "editor_review_app.rs"]
 mod editor_review_app;
 #[path = "code_editor_app.rs"]
@@ -1348,6 +1353,7 @@ pub struct AgentsWindow {
     debugger: debug_host::DebugHost,
     code_snapshots: BTreeMap<u64, crate::code_snapshot_ui::CodeSnapshotView>,
     chat_diffs: chat_diff_app::ChatDiffHost,
+    message_edit: message_edit_app::MessageEditHost,
     editor_review: editor_review_app::EditorReviewHost,
     detail_generation: u64,
     detail_request: Option<DetailRequest>,
@@ -3108,6 +3114,11 @@ impl AgentsWindow {
     }
 
     fn save_draft(&mut self) {
+        // The composer holds an earlier message while it is edited, not the
+        // session's draft: the draft map keeps the draft for the cancel.
+        if self.view.message_edit.editing.is_some() {
+            return;
+        }
         let key = self.draft_key();
         let attachments_changed = self
             .attachment_drafts
@@ -5848,6 +5859,7 @@ impl AgentsWindow {
             composer_attachment_visuals: Default::default(),
             composer_attachment_loading: false,
             composer_image_viewer: None,
+            message_edit: Default::default(),
             composer_add_menu_open: false,
             composer_listening: false,
             composer_expanded: false,
@@ -6348,6 +6360,7 @@ impl AgentsWindow {
             debugger: Default::default(),
             code_snapshots: BTreeMap::new(),
             chat_diffs: chat_diff_app::ChatDiffHost::default(),
+            message_edit: Default::default(),
             editor_review: Default::default(),
             detail_generation: 0,
             detail_request: None,
@@ -10677,6 +10690,12 @@ impl AgentsWindow {
         self.reveal_ide_agent();
         self.view.composer_error = None;
         self.save_draft();
+        // An open edit ends with its session. Its text was not saved above,
+        // so `restore_draft` below brings back the draft it had displaced.
+        self.view.message_edit.editing = None;
+        self.view.message_edit.confirm = None;
+        self.view.message_edit.turns.clear();
+        self.message_edit.allowed = true;
         self.view.composer_expanded = false;
         self.view.composer_branches.open = false;
         self.view.main_page = MainPage::Workspace;
@@ -10953,6 +10972,8 @@ impl AgentsWindow {
         match loaded {
             Ok(Some(stored)) => {
                 self.new_session();
+                self.message_edit.allowed = stored.session.subagent.is_none()
+                    && stored.session.native_automation.is_none();
                 self.view.selected_session_title = Some(
                     stored
                         .session
@@ -11363,6 +11384,10 @@ impl AgentsWindow {
     }
 
     fn start_run(&mut self) {
+        if self.view.message_edit.editing.is_some() {
+            self.request_message_edit_submit();
+            return;
+        }
         // A turn may carry its own model (a review, for one) without touching
         // the user's selection. Taken here so every early return discards it
         // and it can never reach a later turn.
@@ -11647,6 +11672,9 @@ impl AgentsWindow {
             },
         };
         self.bind_session_start_context(&id);
+        if prompt != visible_prompt {
+            self.record_typed_prompt(&id, &prompt, &visible_prompt);
+        }
         if submitted_draft_key.1.is_none() {
             if let Err(error) = self.transfer_draft_goal_to_session(&submitted_draft_key, &id) {
                 self.view.status = error;
@@ -12414,6 +12442,7 @@ impl AgentsWindow {
         }
         self.projection.sync_into(&mut self.view.transcript);
         self.projection.sync_times_into(&mut self.view.item_times);
+        self.sync_message_edit_turns();
     }
 
     /// Animation changes only the rendered prefix. Persisted/live transcript
@@ -15219,6 +15248,9 @@ impl AgentsWindow {
 
     fn apply_action(&mut self, action: UiAction, ctx: &egui::Context) {
         let mut action = action;
+        if matches!(&action, UiAction::Clicked { id } if self.message_edit_action(id)) {
+            return;
+        }
         if matches!(&action, UiAction::Clicked { id } if id == "editor_menu")
             && !self.view.ide.is_active()
         {
@@ -17123,6 +17155,10 @@ impl AgentsWindow {
                                                     &self.data_root,
                                                     &removed.id,
                                                 );
+                                                crate::message_edit::remove_typed(
+                                                    &self.data_root,
+                                                    &removed.id,
+                                                );
                                                 selected_deleted |=
                                                     self.view.selected_session.as_deref()
                                                         == Some(removed.id.as_str());
@@ -17149,6 +17185,7 @@ impl AgentsWindow {
                                             .retain(|(_, id), _| id.as_deref() != Some(session_id));
                                         let _ =
                                             remove_native_steer_draft(&self.data_root, session_id);
+                                        crate::message_edit::remove_typed(&self.data_root, session_id);
                                         selected_deleted |= self.view.selected_session.as_deref()
                                             == Some(session_id);
                                         self.close_session_menu();

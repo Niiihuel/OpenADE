@@ -498,6 +498,65 @@ pub(super) fn load_transition(
     }))
 }
 
+/// Take the captures of calls a rewind removed from the journal: their
+/// files leave the store and come back as bytes, for an undo. A capture left
+/// behind would refuse a later call that reuses its identifier.
+pub(super) fn take_calls(
+    storage: &Path,
+    session: &str,
+    calls: &[&str],
+) -> io::Result<Vec<(String, Vec<u8>)>> {
+    let Some(directory) = Directory::open_named(storage, DIRECTORY, false)? else {
+        return Ok(Vec::new());
+    };
+    let mut taken = Vec::new();
+    for call in calls {
+        for after in [false, true] {
+            let name = snapshot_name(session, call, after)?;
+            let file = match directory.read(&name) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let mut bytes = Vec::new();
+            file.take((MAX_ENCODED_BYTES + 1) as u64).read_to_end(&mut bytes)?;
+            if bytes.len() > MAX_ENCODED_BYTES {
+                return Err(invalid("Captura de edición demasiado grande"));
+            }
+            taken.push((name, bytes));
+        }
+    }
+    for (name, _) in &taken {
+        directory.remove(name)?;
+    }
+    directory.sync()?;
+    Ok(taken)
+}
+
+/// Put back what [`take_calls`] took. A name that exists again is kept.
+pub(super) fn restore_calls(storage: &Path, files: &[(String, Vec<u8>)]) -> io::Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    let directory = Directory::open_named(storage, DIRECTORY, true)?
+        .ok_or_else(|| invalid("No existe el registro de ediciones"))?;
+    for (name, bytes) in files {
+        let temporary = format!(".{}.tmp", uuid::Uuid::new_v4());
+        let result = (|| {
+            let mut file = directory.create(&temporary)?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            match directory.publish(&temporary, name) {
+                Err(error) if error.kind() != io::ErrorKind::AlreadyExists => Err(error),
+                _ => Ok(()),
+            }
+        })();
+        let _ = directory.remove(&temporary);
+        result?;
+    }
+    directory.sync()
+}
+
 pub(super) fn remove_session(storage: &Path, session: &str) -> io::Result<()> {
     baseline_path(storage, session)?;
     let Some(directory) = Directory::open_named(storage, DIRECTORY, false)? else {
@@ -666,6 +725,28 @@ mod tests {
                 },
             )
         }
+    }
+
+    #[test]
+    fn captures_of_removed_calls_leave_the_store_and_return_unchanged() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = temp.path();
+        let files: Vec<_> = [("kept", false), ("gone", false), ("gone", true)]
+            .into_iter()
+            .map(|(call, after)| (snapshot_name("session", call, after).unwrap(), call.as_bytes().to_vec()))
+            .collect();
+        restore_calls(storage, &files).unwrap();
+        let taken = take_calls(storage, "session", &["gone", "never-captured"]).unwrap();
+        assert_eq!(taken, files[1..]);
+        let left: Vec<_> = fs::read_dir(storage.join(DIRECTORY))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, [files[0].0.clone()]);
+        // Returned, they are byte for byte what was taken; a second return is a no-op.
+        restore_calls(storage, &taken).unwrap();
+        restore_calls(storage, &taken).unwrap();
+        assert_eq!(take_calls(storage, "session", &["gone"]).unwrap(), taken);
     }
 
     #[test]
