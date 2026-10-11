@@ -1916,13 +1916,23 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
     // The words are plain text; what the call opens is a link, underlined
     // under the pointer, instead of a band across the transcript.
     let ink = |normal| if failed { theme::DESTRUCTIVE } else { normal };
+    // The link names the file; its whole path is a hint on the link itself,
+    // so it opens over the name and not over the middle of the row.
+    let shortened = target.len() < presentation.target.len();
     let link = |action: &String, label: &str, color| {
-        openide_ui::Link::new(action, label, theme::component_palette())
+        let link = openide_ui::Link::new(action, label, theme::component_palette())
             .color(color)
             .font_size(13.0)
             .render()
             .size(None, Some(STREAM_LINE_HEIGHT))
-            .shrink_to_fit()
+            .shrink_to_fit();
+        if shortened {
+            Tooltip::new(link, action, &presentation.target, theme::component_palette())
+                .render()
+                .shrink_to_fit()
+        } else {
+            link
+        }
     };
     let parts = match &action {
         // Nothing to name: the verb itself opens the recorded activity.
@@ -1938,17 +1948,7 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
     };
     let line = stream_line(parts, None, None);
     let line = flashed(state, id, line);
-    // The line names the file; its whole path stays one hover away.
-    let mut lines = vec![match action {
-        Some(action) if target.len() < presentation.target.len() => Tooltip::new(
-            line,
-            action,
-            &presentation.target,
-            theme::component_palette(),
-        )
-        .render(),
-        _ => line,
-    }];
+    let mut lines = vec![line];
     if let Some(note) = presentation
         .note
         .filter(|_| !approval_card_shown(state, name, arguments, activity))
