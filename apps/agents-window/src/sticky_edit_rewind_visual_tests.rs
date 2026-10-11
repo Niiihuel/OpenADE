@@ -644,9 +644,12 @@ fn export_composer_polish_visual_review() {
         shot(&state, "p3-composer-dictation-starting", viewport, &none);
         state.composer_dictation = openide_ui::DictationState::Listening;
         state.composer_transcript = "y después corré la suite completa antes de".into();
+        state.composer_transcript_at = state.prompt.chars().count() + 1;
+        state.prompt = format!("{} {}", state.prompt, state.composer_transcript);
         shot(&state, "p3-composer-recording", viewport, &none);
         state.composer_dictation = openide_ui::DictationState::Idle;
         state.composer_transcript.clear();
+        state.prompt = "Revisá también las pruebas".into();
         state.running = true;
         shot(&state, "p3-composer-running", viewport, &none);
 

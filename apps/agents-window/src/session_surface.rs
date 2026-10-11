@@ -219,20 +219,13 @@ pub(crate) fn header(
                 .size(Some(16.0), Some(HEADER_ACTION_SIZE)),
         );
     }
-    top.push(
-        Element::faded_text(session_name(state), 24.0)
-            .foreground(theme::FOREGROUND)
-            .font_family(FontFamily::Sans)
-            .font_size(13.0)
-            .flex(1.0)
-            .size(None, Some(HEADER_ACTION_SIZE)),
-    );
-    // What stands before the title shares its row; the tools follow it.
-    let leading = if top.len() == 1 {
-        top.remove(0)
-    } else {
-        Element::row(top).gap(HEADER_GAP).flex(1.0)
-    };
+    let before = std::mem::take(&mut top);
+    let title = Element::faded_text(session_name(state), 24.0)
+        .foreground(theme::FOREGROUND)
+        .font_family(FontFamily::Sans)
+        .font_size(13.0)
+        .shrink_to_fit()
+        .size(None, Some(HEADER_ACTION_SIZE));
     let mut top = Vec::new();
     if cli.is_some() {
         top.push(header_action(
@@ -259,8 +252,20 @@ pub(crate) fn header(
             "Abrir configuración de OpenIDE",
         ));
     }
+    // The title sits in the middle of the header: what stands on one side
+    // is matched by empty room on the other, as far as the width allows.
+    let slot = HEADER_ACTION_SIZE + HEADER_GAP;
+    let (left, right) = (before.len() as f32 * slot, top.len() as f32 * slot);
+    let mut leading = before;
+    leading.extend([
+        Element::spacer().size(Some((right - left).max(0.0)), None).shrink_to_fit(),
+        Element::spacer().flex(1.0),
+        title,
+        Element::spacer().flex(1.0),
+        Element::spacer().size(Some((left - right).max(0.0)), None).shrink_to_fit(),
+    ]);
     openide_ui::PanelHeader::new("", theme::component_palette())
-        .leading(leading)
+        .leading(Element::row(leading).gap(HEADER_GAP))
         .trailing(top)
         .sizing(crate::ui_sizing::PANE_HEADER)
         .render()
@@ -1975,6 +1980,12 @@ pub(crate) fn exploration_words<'a>(
     let target = match glob {
         Some(glob) => glob.into(),
         None if slot == 0 => file_name(&presentation.target).into(),
+        // The project's own folder has no name worth reading as "." .
+        None if name == "list_files"
+            && matches!(presentation.target.trim_end_matches('/'), "" | ".") =>
+        {
+            "la carpeta del proyecto".into()
+        }
         None => presentation.target.as_str().into(),
     };
     (verb, target)
