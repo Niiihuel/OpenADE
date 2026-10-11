@@ -4622,12 +4622,12 @@ mod tests {
                         && rect.x + rect.width <= trigger.rect.x + trigger.rect.width
                         && rect.y + rect.height <= trigger.rect.y + trigger.rect.height)));
             // The narrow trigger retains its measured ring without a label.
-            assert_eq!(visible_text(&initial).contains("15%"), width >= 490.0);
+            assert!(!visible_text(&initial).contains("15%"));
             click_visible_control(&mut tree, viewport, "composer_context_toggle");
             state.composer_context_open = true;
             tree.set_root(build_session_surface(&state, width, false, false));
             let summary = tree.layout(viewport);
-            for value in ["15% · 300 / 2K tokens", "Herramientas"] {
+            for value in ["300 / 2K tokens", "Herramientas"] {
                 assert!(
                     visible_text(&summary).contains(value),
                     "missing {value} at {width}"

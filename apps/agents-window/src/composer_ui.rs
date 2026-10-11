@@ -3111,7 +3111,8 @@ pub(crate) mod tests {
             .regions
             .iter()
             .any(|region| region.id == "composer_attachment_remove:0"));
-        assert!(frame.commands.iter().any(|command| matches!(
+        // The meter is the ring alone: its figure is in the hint and the popover.
+        assert!(!frame.commands.iter().any(|command| matches!(
             command, DrawCommand::Text { text, .. } if text == "57%"
         )));
     }
@@ -3252,9 +3253,9 @@ pub(crate) mod tests {
             let frame = tree.layout(viewport);
             for label in [
                 "Uso de contexto",
-                "15% · 300 / 2K tokens",
+                "300 / 2K tokens",
                 "Skills",
-                "~100",
+                "100",
             ] {
                 assert!(
                     frame.commands.iter().any(|command| matches!(command,

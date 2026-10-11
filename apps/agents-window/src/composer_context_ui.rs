@@ -201,7 +201,21 @@ pub(crate) fn segment_widths(tokens: &[Option<u64>], window: Option<u64>, track:
     widths
 }
 
-fn segmented_bar(categories: &[NativeContextCategory], widths: &[f32]) -> Element {
+/// A segment's colour; with a category under the pointer the others recede.
+fn segment_ink(id: &str, hovered: Option<&str>) -> Color {
+    let ink = theme::context_category_ink(id);
+    if hovered.is_some_and(|hovered| hovered != id) {
+        Color::rgba(ink.r, ink.g, ink.b, 70)
+    } else {
+        ink
+    }
+}
+
+fn segmented_bar(
+    categories: &[NativeContextCategory],
+    widths: &[f32],
+    hovered: Option<&str>,
+) -> Element {
     let mut pieces: Vec<_> = categories
         .iter()
         .zip(widths)
@@ -209,7 +223,7 @@ fn segmented_bar(categories: &[NativeContextCategory], widths: &[f32]) -> Elemen
         .map(|(category, width)| {
             Element::spacer()
                 .size(Some(*width), Some(BAR_HEIGHT))
-                .background(theme::context_category_ink(&category.id))
+                .background(segment_ink(&category.id, hovered))
         })
         .collect();
     pieces.push(Element::spacer().flex(1.0));
@@ -266,9 +280,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     });
     let total = match (occupancy, used) {
         (Some(occupancy), _) => format!(
-            "{} · {}{} / {} tokens",
-            occupancy.label(),
-            if estimated { "~" } else { "" },
+            "{} / {} tokens",
             tokens(occupancy.used),
             tokens(occupancy.capacity)
         ),
@@ -276,6 +288,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         _ => "Ventana desconocida".into(),
     };
     let categories = usage.map_or(&[][..], |usage| &usage.breakdown);
+    let hovered = usage.and_then(|usage| usage.hovered_category.as_deref());
     let shares = category_tokens(categories, used);
     let header = openide_ui::PanelHeader::new("", theme::menu_palette())
         .leading(
@@ -313,30 +326,43 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         segmented_bar(
             categories,
             &segment_widths(&shares, capacity, bar_width(props.width)),
+            hovered,
         ),
     ];
     for (category, share) in categories.iter().zip(&shares) {
-        content.push(
-            Element::row(vec![
-                Element::spacer()
-                    .size(Some(10.0), Some(10.0))
-                    .background(theme::context_category_ink(&category.id))
-                    .radius(2.0)
-                    .centered_y(),
-                Text::new(&category.label, theme::component_palette())
-                    .muted()
-                    .render(),
-                Element::spacer().flex(1.0),
-                // A category without a figure only says that nothing was measured.
-                Text::new(
-                    share.map_or_else(|| "–".into(), |share| format!("~{}", tokens(share))),
-                    theme::component_palette(),
-                )
-                .render(),
-            ])
-            .gap(8.0)
-            .size(None, Some(ROW_HEIGHT)),
-        );
+        let under_pointer = hovered == Some(category.id.as_str());
+        let label = Text::new(&category.label, theme::component_palette());
+        let row = Element::row(vec![
+            Element::spacer()
+                .size(Some(10.0), Some(10.0))
+                .background(segment_ink(&category.id, hovered))
+                .radius(2.0)
+                .centered_y(),
+            if under_pointer { label } else { label.muted() }.render(),
+            Element::spacer().flex(1.0),
+            // A category without a figure only says that nothing was measured.
+            Text::new(
+                share.map_or_else(|| "–".into(), tokens),
+                theme::component_palette(),
+            )
+            .render(),
+        ])
+        .gap(8.0)
+        .background(if under_pointer { theme::menu_palette().hover } else { Color::TRANSPARENT })
+        .radius(3.0)
+        .size(None, Some(ROW_HEIGHT));
+        // The row's hint states what was measured, in the app's own units.
+        let mut hint = Tooltip::new(
+            row,
+            format!("composer_context_row:{}", category.id),
+            &category.label,
+            theme::component_palette(),
+        )
+        .placement(TooltipPlacement::Left);
+        if !category.value.trim().is_empty() {
+            hint = hint.description(&category.value);
+        }
+        content.push(hint.render());
     }
     // One status line at most; a normal measurement needs none.
     let failure = usage
@@ -444,11 +470,8 @@ fn bar_width(composer: f32) -> f32 {
 }
 
 pub(crate) fn control_width(props: &ComposerProps<'_>) -> f32 {
-    if props.width < 490.0 {
-        28.0
-    } else {
-        96.0
-    }
+    let _ = props;
+    28.0
 }
 pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
     let occupancy = props.native_context.and_then(|usage| usage.occupancy());
@@ -457,8 +480,7 @@ pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
         || "El uso se informa al recibir una respuesta del modelo.".into(),
         |usage| match occupancy {
             Some(occupancy) => format!(
-                "{}{} de {} tokens · {}{}. Abrir contexto y compactación.",
-                if occupancy.estimated { "~" } else { "" },
+                "{} de {} tokens · {}{}. Abrir contexto y compactación.",
                 tokens(occupancy.used),
                 tokens(occupancy.capacity),
                 if occupancy.estimated { "estimación" } else { "última respuesta" },
@@ -479,7 +501,7 @@ pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
             .fraction(fraction)
             .estimated(occupancy.is_some_and(|occupancy| occupancy.estimated))
             .usage_inks(theme::CONTEXT_WARNING, theme::CONTEXT_FULL)
-            .compact(props.width < 490.0)
+            .compact(true)
             .render()
             .size(Some(control_width(props)), Some(28.0)),
         "composer_context_toggle",
@@ -588,6 +610,16 @@ mod tests {
         assert_eq!(category_tokens(&grown, None), [Some(0), Some(1_024)]);
         // Without an observed project or skills the copy is all system.
         assert_eq!(category_tokens(&categories(&[("system", Some(8_192))]), None), [Some(2_048)]);
+    }
+
+    #[test]
+    fn a_hovered_category_keeps_its_ink_and_the_others_recede() {
+        let full = theme::context_category_ink("system");
+        assert_eq!(segment_ink("system", None), full);
+        assert_eq!(segment_ink("system", Some("system")), full);
+        let dimmed = segment_ink("system", Some("conversation"));
+        assert_eq!((dimmed.r, dimmed.g, dimmed.b), (full.r, full.g, full.b));
+        assert!(dimmed.a < full.a);
     }
 
     #[test]

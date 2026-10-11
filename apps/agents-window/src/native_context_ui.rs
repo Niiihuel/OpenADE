@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativeContextUiState {
+    /// The category row under the pointer in the context popover; the bar
+    /// brings its segment forward. Presentation only.
+    pub hovered_category: Option<String>,
     pub owner: Option<String>,
     pub workspace: Option<PathBuf>,
     /// An unsuccessful lookup belongs only to this literal requested path.

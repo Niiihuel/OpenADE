@@ -388,7 +388,7 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
             }
             assert!(text
                 .iter()
-                .any(|text| text == "30% · 30K / 100K tokens"));
+                .any(|text| text == "30K / 100K tokens"));
             assert!(text.iter().any(|text| text == "Copiar diagnóstico"));
             assert!(
                 !text.iter().any(|text| text == "Detalles"),
@@ -401,7 +401,7 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
                 // The 8192-byte system copy holds the project's 4096 and the
                 // skills' 2048: 2048, 4096 and 2048 bytes at four a token, and
                 // the rest of the 30 000 measured is conversation.
-                for (figure, times) in [("~512", 2), ("~1K", 1), ("~28K", 1)] {
+                for (figure, times) in [("512", 2), ("1K", 1), ("28K", 1)] {
                     let shown = text.iter().filter(|text| *text == figure).count();
                     assert_eq!(shown, times, "{figure}: {text:?}");
                 }
@@ -501,7 +501,7 @@ fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
             let text = visible_text(&frame, size);
             let has = |value: &str| text.iter().any(|text| text == value);
             match name {
-                "near-full-95" => assert!(has("95% · 95K / 100K tokens")),
+                "near-full-95" => assert!(has("95K / 100K tokens")),
                 "unknown-window" => {
                     assert!(has("30K tokens · ventana desconocida")
                             && has(UNKNOWN_WINDOW));
@@ -509,7 +509,7 @@ fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
                 }
                 // Nothing measured yet: the sized instructions alone, as an estimate.
                 "unknown" => assert!(
-                    has("~2% · ~2K / 100K tokens") && has("Estimado: aún no hay una respuesta medida.")
+                    has("2K / 100K tokens") && has("Estimado: aún no hay una respuesta medida.")
                 ),
                 _ => {}
             }

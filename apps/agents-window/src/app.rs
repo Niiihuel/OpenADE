@@ -19533,6 +19533,15 @@ impl eframe::App for AgentsWindow {
             self.view.composer_effort_hovered = effort_hovered;
             needs_relayout = true;
         }
+        let context_hovered = self
+            .tree
+            .hovered_id()
+            .and_then(|id| id.strip_prefix("composer_context_row:"))
+            .map(str::to_owned);
+        if self.view.native_context.hovered_category != context_hovered {
+            self.view.native_context.hovered_category = context_hovered;
+            needs_relayout = true;
+        }
         needs_relayout |= self.sync_git_panel_reveal();
         needs_relayout |= self.update_command_search(&ctx);
         needs_relayout |= self.poll_project_actions(&ctx);
