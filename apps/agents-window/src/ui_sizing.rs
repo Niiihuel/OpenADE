@@ -435,6 +435,17 @@ pub const DOCK_TOOL: RowSizing = RowSizing {
     ..RowSizing::COMPACT
 };
 
+/// A turn's heading in the Activity log, at the pitch of its rows.
+pub const DOCK_TURN: SectionSizing = SectionSizing {
+    height: 40.0,
+    padding: 6.0,
+    gap: 6.0,
+    title_size: 12.0,
+    title_muted: false,
+    detail_size: 11.0,
+    align_top: false,
+};
+
 /// The heading of a workspace sidebar. Its tools hang from the top of the
 /// 26 px row, a pixel above its center.
 pub const SIDEBAR_HEADER: HeaderSizing = HeaderSizing {

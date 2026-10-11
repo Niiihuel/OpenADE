@@ -15291,6 +15291,10 @@ impl AgentsWindow {
                 return;
             }
         }
+        // The Activity menu's process entries close it on their way out.
+        if matches!(&action, UiAction::Clicked { id } if id.starts_with("native_command_")) {
+            self.view.activity.menu_open = false;
+        }
         if self.apply_native_command_control_action(&action) {
             return;
         }

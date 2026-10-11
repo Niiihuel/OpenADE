@@ -3688,6 +3688,16 @@ pub(crate) mod tests {
             tool_name: "run_command".into(),
             key_digest: digest.clone(),
         }];
+        let closed = UiTree::new(activity_content(&state)).layout(Size::new(360.0, 700.0));
+        assert!(closed
+            .regions
+            .iter()
+            .any(|region| region.id == "dock_activity:grants"));
+        assert!(!closed
+            .regions
+            .iter()
+            .any(|region| region.id.starts_with("session_approval_revoke:")));
+        dock_activity::apply_action(&mut state, "grants");
         let frame = UiTree::new(activity_content(&state)).layout(Size::new(360.0, 700.0));
         assert!(frame
             .regions
@@ -4840,8 +4850,9 @@ pub(crate) mod tests {
         for index in 0..20 {
             state.transcript.push(TranscriptItem::Tool {
                 id: format!("call-{index}"),
-                name: "read_file".into(),
-                arguments: json!({"path": format!("src/file-{index}.rs")}),
+                // Commands: a run of reads would fold into one line of the log.
+                name: "run_command".into(),
+                arguments: json!({"command": format!("rustfmt src/file-{index}.rs")}),
                 output: Some(format!("result-{index}")),
                 is_error: false,
                 activity: crate::transcript::ActivityStatus::Completed,
@@ -9078,7 +9089,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn native_command_activity_shows_state_and_one_control_and_recovery_entry() {
+    fn native_command_activity_pins_live_processes_and_keeps_history_in_the_menu() {
         let mut state = empty_state();
         state.selected_session = Some("native-1".into());
         state.selected_backend = "native".into();
@@ -9097,33 +9108,24 @@ pub(crate) mod tests {
                 has_output: false,
             },
         ];
+        let control = |command: &str| {
+            format!(
+                "native_command_control_open:{}",
+                serde_json::to_string(&("native-1", command)).unwrap()
+            )
+        };
+        let count = |frame: &openide_ui::Frame, id: &str| {
+            frame.regions.iter().filter(|region| region.id == id).count()
+        };
         let frame = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
         assert!(!frame
             .regions
             .iter()
-            .any(|region| region.id == "native_command_terminate:running-1"));
-        assert!(!frame
-            .regions
-            .iter()
-            .any(|region| region.id == "native_command_terminate:finished-1"));
-        for command in ["running-1", "finished-1"] {
-            let id = format!(
-                "native_command_control_open:{}",
-                serde_json::to_string(&("native-1", command)).unwrap()
-            );
-            assert_eq!(
-                frame
-                    .regions
-                    .iter()
-                    .filter(|region| region.id == id)
-                    .count(),
-                1
-            );
-        }
-        assert!(frame
-            .regions
-            .iter()
-            .any(|region| region.id == "native_command_operation_history"));
+            .any(|region| region.id.starts_with("native_command_terminate")));
+        // Only what is alive is pinned; what finished lives in the history.
+        assert_eq!(count(&frame, &control("running-1")), 1);
+        assert_eq!(count(&frame, &control("finished-1")), 0);
+        assert_eq!(count(&frame, "native_command_operation_history"), 0);
         let text = frame
             .commands
             .iter()
@@ -9137,24 +9139,18 @@ pub(crate) mod tests {
             text.contains("PTY · En ejecución · salida pendiente"),
             "{text}"
         );
-        assert!(text.contains("Tuberías · Finalizado · código 0"), "{text}");
+        assert!(!text.contains("Procesos"), "{text}");
 
-        state.pending_native_command_termination = Some("running-1".into());
-        let confirm = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
-        assert!(!confirm
-            .regions
-            .iter()
-            .any(|region| region.id == "native_command_terminate_confirm:running-1"));
-        assert!(!confirm
-            .regions
-            .iter()
-            .any(|region| region.id == "native_command_terminate_cancel"));
-        state.native_commands.clear();
-        let no_manager = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
-        assert!(no_manager
-            .regions
-            .iter()
-            .any(|region| region.id == "native_command_operation_history"));
+        // History and operations are one menu away, with or without processes.
+        for commands in [state.native_commands.clone(), Vec::new()] {
+            state.native_commands = commands;
+            assert_eq!(dock_activity::apply_action(&mut state, "menu"), None);
+            let menu = UiTree::new(build_view(&state, 1200.0)).layout(Size::new(1200.0, 720.0));
+            for id in ["native_command_history_open", "native_command_operation_history"] {
+                assert_eq!(count(&menu, id), 1, "{id}");
+            }
+            dock_activity::apply_action(&mut state, "menu_dismiss");
+        }
     }
 
     #[test]

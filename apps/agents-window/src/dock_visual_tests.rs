@@ -490,9 +490,10 @@ pub(super) fn scrolling_dock_fixture(kind: SideTab) -> ViewState {
     state.transcript = (0..30)
         .map(|index| TranscriptItem::Tool {
             id: format!("tool-{index}"),
-            name: "read_file".into(),
-            arguments: serde_json::json!({"path": format!("src/file-{index:03}.rs")}),
-            output: Some("Contenido leído".into()),
+            // Commands: a run of reads would fold into one line of the log.
+            name: "run_command".into(),
+            arguments: serde_json::json!({"command": format!("rustfmt src/file-{index:03}.rs")}),
+            output: Some("Formateado".into()),
             is_error: false,
             activity: crate::transcript::ActivityStatus::Completed,
         })
