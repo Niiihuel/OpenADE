@@ -21,6 +21,9 @@ pub(crate) struct AgentCliDefinition {
     pub accept_all_args: Vec<String>,
     /// How OpenIDE hands this CLI its tools. `None` starts it unconnected.
     pub bridge: Option<BridgeKind>,
+    /// What is typed into the CLI's prompt for a selection of a file:
+    /// `{path}` is relative to the project and `{lines}` is `12` or `12-30`.
+    pub selection_reference: String,
 }
 
 #[derive(Deserialize)]

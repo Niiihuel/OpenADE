@@ -1969,6 +1969,13 @@ fn attachment_rows(props: &ComposerProps<'_>) -> Vec<Element> {
             if visual.is_image != images {
                 continue;
             }
+            // A selection says which lines it is, where a file says its type.
+            let description = attachment.selection.as_ref().map_or_else(
+                || visual.description.clone(),
+                |selection| {
+                    format!("L{}", selection.lines().replace('-', "–L"))
+                },
+            );
             let width = inner_width.min(if images {
                 Attachment::PREVIEW_SIZE
             } else {
@@ -1987,8 +1994,8 @@ fn attachment_rows(props: &ComposerProps<'_>) -> Vec<Element> {
                 &attachment.label,
                 palette,
             )
-            .description(&visual.description)
-            .help(format!("{}\n{}", attachment.path, visual.description))
+            .description(&description)
+            .help(format!("{}\n{description}", attachment.path))
             .icon(visual.icon)
             .orientation(if images {
                 AttachmentOrientation::Vertical
@@ -3081,6 +3088,7 @@ pub(crate) mod tests {
             path: "src/main.rs".into(),
             label: "main.rs".into(),
             is_dir: false,
+            selection: None,
         }];
         let mut state = props("", 780.0);
         state.attachments = &attachments;

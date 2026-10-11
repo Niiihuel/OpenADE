@@ -6,21 +6,24 @@
       "label": "Claude Code",
       "executables": ["claude"],
       "accept_all_args": ["--dangerously-skip-permissions"],
-      "bridge": "claude_mcp_config"
+      "bridge": "claude_mcp_config",
+      "selection_reference": "@{path}#L{lines}"
     },
     {
       "id": "codex",
       "label": "Codex",
       "executables": ["codex"],
       "accept_all_args": ["--dangerously-bypass-approvals-and-sandbox"],
-      "bridge": "codex_config"
+      "bridge": "codex_config",
+      "selection_reference": "{path}:{lines}"
     },
     {
       "id": "opencode",
       "label": "opencode",
       "executables": ["opencode"],
       "accept_all_args": ["--auto"],
-      "bridge": null
+      "bridge": null,
+      "selection_reference": "@{path}#L{lines}"
     }
   ]
 }
