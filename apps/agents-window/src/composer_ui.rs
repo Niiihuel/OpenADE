@@ -12,7 +12,7 @@ use std::{
 use openide_core::TurnMode;
 use openide_ui::{
     Attachment, AttachmentOrientation, Button, ButtonVariant, Color, Component, Composer,
-    ControlSize, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownMenuSection, Element,
+    ControlSize, DictationButton, DictationState, DropdownMenu, DropdownMenuEntry, DropdownMenuItem, DropdownMenuSection, Element,
     FontFamily, Icon, IconButton, MenuHeader, MenuItem, MenuMotion, PopoverPlacement,
     SelectorSizing, Skeleton, Tooltip, TooltipItem, TooltipPlacement,
 };
@@ -63,7 +63,8 @@ pub(crate) struct ComposerProps<'a> {
         Option<&'a BTreeMap<String, crate::composer_attachments::AttachmentVisual>>,
     pub attachment_loading: bool,
     pub add_menu_open: bool,
-    pub listening: bool,
+    pub dictation: DictationState,
+    pub transcript: &'a str,
     pub placeholder: &'a str,
     pub selected_backend: &'a str,
     pub native_provider_id: &'a str,
@@ -178,7 +179,8 @@ impl<'a> ComposerProps<'a> {
             attachment_visuals: Some(&state.composer_attachment_visuals),
             attachment_loading: state.composer_attachment_loading,
             add_menu_open: state.composer_add_menu_open,
-            listening: state.composer_listening,
+            dictation: state.composer_dictation,
+            transcript: &state.composer_transcript,
             placeholder,
             selected_backend: &state.selected_backend,
             native_provider_id: pending_model.map_or(state.native_provider_id.as_str(), |model| {
@@ -1892,37 +1894,21 @@ fn send_control(props: &ComposerProps<'_>) -> Element {
 
 fn microphone_control(props: &ComposerProps<'_>) -> Element {
     Tooltip::new(
-        // A plain glyph at rest; while it listens the accent fills it.
-        IconButton::new(
+        // A plain glyph at rest; while a session is live the accent fills it.
+        DictationButton::new(
             "composer_microphone",
-            Icon::Microphone,
-            theme::action_palette(
-                if props.listening {
-                    SEND_BLUE
-                } else {
-                    Color::TRANSPARENT
-                },
-                if props.listening {
-                    Color::WHITE
-                } else {
-                    MUTED_INK
-                },
-            ),
+            props.dictation,
+            theme::action_palette(Color::TRANSPARENT, MUTED_INK),
         )
-        .variant(if props.listening {
-            ButtonVariant::Subtle
-        } else {
-            ButtonVariant::Ghost
-        })
+        .live_palette(theme::action_palette(SEND_BLUE, Color::WHITE))
         .hover_ink(Color::rgb(246, 246, 246))
         .size(ControlSize::Compact)
-        .round()
         .render(),
         "composer_microphone",
-        if props.listening {
-            "Detener dictado"
-        } else {
-            "Dictar mensaje"
+        match props.dictation {
+            DictationState::Idle => "Dictar mensaje",
+            DictationState::Starting | DictationState::Transcribing => "Cancelar dictado",
+            DictationState::Listening => "Detener dictado",
         },
         theme::component_palette(),
     )
@@ -1937,11 +1923,39 @@ fn trailing_actions(props: &ComposerProps<'_>) -> Element {
             row.push(model);
         }
     }
-    if props.width >= 380.0 {
+    // A live session keeps its stop control at any width.
+    if props.width >= 380.0 || props.dictation != DictationState::Idle {
         row.push(microphone_control(props));
     }
     row.push(send_control(props));
     Element::row(row).gap(4.0).size(None, Some(CONTROL_HEIGHT))
+}
+
+/// The phrase being dictated, above the editor until it is written there.
+fn transcript_row(props: &ComposerProps<'_>) -> Option<Element> {
+    if props.transcript.is_empty() {
+        return None;
+    }
+    // The newest words matter most: keep the tail that fits the one line.
+    let room = (((props.width - 32.0) / 7.0) as usize).max(8);
+    let length = props.transcript.chars().count();
+    let shown = if length > room {
+        let tail: String = props.transcript.chars().skip(length + 1 - room).collect();
+        format!("…{tail}")
+    } else {
+        props.transcript.to_owned()
+    };
+    Some(
+        Element::row(vec![
+            Element::spacer().size(Some(6.0), None),
+            Element::truncated_text(shown)
+                .foreground(MUTED_INK)
+                .font_family(FontFamily::Sans)
+                .font_size(13.0)
+                .flex(1.0),
+        ])
+        .size(None, Some(20.0)),
+    )
 }
 
 fn attachment_rows(props: &ComposerProps<'_>) -> Vec<Element> {
@@ -2141,7 +2155,8 @@ pub(crate) fn build_composer_with_height(
     ]).gap(8.0).size(Some(props.width), None);
     }
     let compact = props.width < COMPACT_CONTEXT_WIDTH;
-    let attachments = attachment_rows(props);
+    let mut attachments = attachment_rows(props);
+    attachments.extend(transcript_row(props));
     let (link_highlights, link_preview) =
         crate::rich_text::composer_links(props.prompt, (props.width - 16.0).max(0.0));
     let requested_minimum = if props.expanded {
@@ -2409,7 +2424,8 @@ pub(crate) mod tests {
             attachment_visuals: None,
             attachment_loading: false,
             add_menu_open: false,
-            listening: false,
+            dictation: DictationState::Idle,
+            transcript: "",
             placeholder: "Ask me anything",
             selected_backend: "native",
             native_provider_id: "openai",

@@ -1,3 +1,9 @@
 # limn is a private repository: fetch it with the git CLI and its credentials.
 [net]
 git-fetch-with-cli = true
+
+# whisper.cpp (dictation) is many times slower without the CPU's vector
+# instructions, and its build leaves them off under Cargo. This ties a binary
+# to the kind of CPU that built it.
+[env]
+GGML_NATIVE = "ON"

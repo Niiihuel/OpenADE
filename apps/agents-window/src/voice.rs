@@ -1,28 +1,49 @@
-//! Windows dictation for the composer. SAPI owns the microphone and the COM
-//! interfaces on one worker thread; the UI receives completed phrases only.
+//! Dictation for the composer. One worker thread owns the microphone and the
+//! recognizer: SAPI on Windows, whisper.cpp everywhere else. The UI receives
+//! events only.
 
-#[cfg(windows)]
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::path::Path;
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 
-// The event contract is shared; only the Windows SAPI worker produces it.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(not(windows))]
+#[path = "voice_whisper.rs"]
+mod whisper_dictation;
+
+// SAPI reports completed phrases alone, with nothing to prepare.
+#[cfg_attr(windows, allow(dead_code))]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum VoiceEvent {
+    /// What the session is doing before it listens, or after.
+    Status(String),
     Listening,
+    /// The phrase being spoken, so far. The next one replaces it.
+    Interim(String),
+    /// A completed phrase, which also ends the preview of it.
     Final(String),
     Error(String),
     Stopped,
 }
 
+pub(crate) enum Stop {
+    /// Close the microphone and report what was said up to here.
+    Finish,
+    /// End now and discard what was not reported yet.
+    Cancel,
+}
+
 pub(crate) struct VoiceHandle {
-    stop: Sender<()>,
+    stop: Sender<Stop>,
     events: Receiver<VoiceEvent>,
 }
 
 impl VoiceHandle {
+    /// `Stopped` follows once the last phrase has been reported.
+    pub(crate) fn finish(&self) {
+        let _ = self.stop.send(Stop::Finish);
+    }
+
     pub(crate) fn cancel(&self) {
-        let _ = self.stop.send(());
+        let _ = self.stop.send(Stop::Cancel);
     }
 
     pub(crate) fn try_recv(&self) -> Result<VoiceEvent, TryRecvError> {
@@ -38,15 +59,23 @@ impl Drop for VoiceHandle {
 
 /// Starts continuous dictation. Each finalized phrase arrives as `Final`;
 /// the caller can insert it at the editor's retained caret. `Stopped` closes
-/// the session after cancellation or an error. Starting does not submit a turn.
-#[cfg(windows)]
-pub(crate) fn start() -> Result<VoiceHandle, String> {
+/// the session after it finishes, is cancelled or fails. Starting does not
+/// submit a turn. `models` is where a recognizer that needs one keeps it.
+pub(crate) fn start(models: &Path) -> Result<VoiceHandle, String> {
     let (stop_tx, stop_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
+    let models = models.to_owned();
     std::thread::Builder::new()
         .name("openide-dictation".to_owned())
         .spawn(move || {
-            if let Err(error) = windows_dictation::run(&stop_rx, &event_tx) {
+            #[cfg(windows)]
+            let result = {
+                let _ = &models;
+                windows_dictation::run(&stop_rx, &event_tx)
+            };
+            #[cfg(not(windows))]
+            let result = whisper_dictation::run(&models, &stop_rx, &event_tx);
+            if let Err(error) = result {
                 let _ = event_tx.send(VoiceEvent::Error(error));
             }
             let _ = event_tx.send(VoiceEvent::Stopped);
@@ -58,14 +87,9 @@ pub(crate) fn start() -> Result<VoiceHandle, String> {
     })
 }
 
-#[cfg(not(windows))]
-pub(crate) fn start() -> Result<VoiceHandle, String> {
-    Err("El dictado de Windows no está disponible en este sistema".to_owned())
-}
-
 #[cfg(windows)]
 mod windows_dictation {
-    use super::{Receiver, Sender, TryRecvError, VoiceEvent};
+    use super::{Receiver, Sender, Stop, TryRecvError, VoiceEvent};
     use std::ffi::c_void;
     use windows::core::{IUnknown, Interface, PCWSTR, PWSTR};
     use windows::Win32::Media::Speech::{
@@ -80,7 +104,7 @@ mod windows_dictation {
 
     const NOTIFY_POLL_MS: u32 = 150;
 
-    pub(super) fn run(stop: &Receiver<()>, events: &Sender<VoiceEvent>) -> Result<(), String> {
+    pub(super) fn run(stop: &Receiver<Stop>, events: &Sender<VoiceEvent>) -> Result<(), String> {
         // No COM interface leaves this worker. MTA fits the event based wait
         // without requiring an STA message pump on the egui thread.
         unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }
@@ -91,7 +115,7 @@ mod windows_dictation {
         result
     }
 
-    fn run_initialized(stop: &Receiver<()>, events: &Sender<VoiceEvent>) -> Result<(), String> {
+    fn run_initialized(stop: &Receiver<Stop>, events: &Sender<VoiceEvent>) -> Result<(), String> {
         let context: ISpRecoContext =
             unsafe { CoCreateInstance(&SpSharedRecoContext, None, CLSCTX_ALL) }.map_err(
                 |error| format!("El reconocedor de voz de Windows no está disponible: {error}"),
@@ -118,19 +142,19 @@ mod windows_dictation {
 
     fn receive_phrases(
         context: &ISpRecoContext,
-        stop: &Receiver<()>,
+        stop: &Receiver<Stop>,
         events: &Sender<VoiceEvent>,
     ) -> Result<(), String> {
         loop {
             match stop.try_recv() {
-                Ok(()) | Err(TryRecvError::Disconnected) => return Ok(()),
+                Ok(_) | Err(TryRecvError::Disconnected) => return Ok(()),
                 Err(TryRecvError::Empty) => {}
             }
             unsafe { context.WaitForNotifyEvent(NOTIFY_POLL_MS) }
                 .map_err(|error| format!("Falló la espera del micrófono: {error}"))?;
             loop {
                 match stop.try_recv() {
-                    Ok(()) | Err(TryRecvError::Disconnected) => return Ok(()),
+                    Ok(_) | Err(TryRecvError::Disconnected) => return Ok(()),
                     Err(TryRecvError::Empty) => {}
                 }
                 let mut event = SPEVENT::default();

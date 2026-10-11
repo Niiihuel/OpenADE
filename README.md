@@ -43,8 +43,17 @@ python3 scripts/build.py --run
 En NixOS, si el compilador C o `pkg-config` no están en el entorno:
 
 ```sh
-nix-shell -p stdenv.cc pkg-config wayland libxkbcommon --run 'python3 scripts/build.py'
+nix-shell -p stdenv.cc pkg-config cmake rustPlatform.bindgenHook wayland libxkbcommon alsa-lib \
+  --run 'python3 scripts/build.py'
 ```
+
+El dictado del compositor usa SAPI en Windows. En Linux y macOS transcribe en la
+propia máquina con whisper.cpp: compilarlo requiere `cmake`, `libclang` y, en
+Linux, las cabeceras de ALSA (`libasound2-dev` o `alsa-lib`). La primera vez que
+se pulsa el micrófono descarga el modelo `ggml-small-q5_1.bin` (181 MB) a
+`models/` dentro del directorio de datos; el audio no sale del equipo. En NixOS
+el ejecutable necesita además `alsa-lib` y `stdenv.cc.cc.lib` en
+`LD_LIBRARY_PATH`.
 
 El script utiliza por defecto el perfil optimizado `desktop`, con ejecutable en
 `target/desktop/agents-window`. Evita ejecutar la interfaz sin optimización: el

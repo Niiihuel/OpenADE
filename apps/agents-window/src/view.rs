@@ -409,7 +409,9 @@ pub struct ViewState {
     pub composer_attachment_loading: bool,
     pub(crate) composer_image_viewer: Option<crate::composer_attachments::ImageGalleryView>,
     pub composer_add_menu_open: bool,
-    pub composer_listening: bool,
+    pub composer_dictation: openide_ui::DictationState,
+    /// The phrase being dictated, until it is written into the prompt.
+    pub composer_transcript: String,
     /// Temporary editor presentation; the draft itself remains unchanged.
     pub composer_expanded: bool,
     /// Persistent objective for the selected project and session draft.
@@ -3780,7 +3782,8 @@ pub(crate) mod tests {
             composer_image_viewer: None,
             message_edit: Default::default(),
             composer_add_menu_open: false,
-            composer_listening: false,
+            composer_dictation: openide_ui::DictationState::Idle,
+            composer_transcript: String::new(),
             composer_expanded: false,
             composer_goal: None,
             composer_goal_editor_open: false,

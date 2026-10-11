@@ -5879,7 +5879,8 @@ impl AgentsWindow {
             composer_image_viewer: None,
             message_edit: Default::default(),
             composer_add_menu_open: false,
-            composer_listening: false,
+            composer_dictation: openide_ui::DictationState::Idle,
+            composer_transcript: String::new(),
             composer_expanded: false,
             composer_goal: None,
             composer_goal_editor_open: false,
@@ -11162,28 +11163,37 @@ impl AgentsWindow {
         }
     }
 
+    /// Ends the session now. What was said and not yet written is dropped.
     fn stop_dictation(&mut self) {
         if let Some(handle) = self.dictation.take() {
             handle.cancel();
         }
         self.dictation_key = None;
-        self.view.composer_listening = false;
+        self.view.composer_dictation = openide_ui::DictationState::Idle;
+        self.view.composer_transcript.clear();
     }
 
     fn toggle_dictation(&mut self, ctx: &egui::Context) {
-        if self.dictation.is_some() {
-            self.stop_dictation();
-            self.view.status = "Dictado detenido".to_owned();
+        if let Some(handle) = &self.dictation {
+            if self.view.composer_dictation == openide_ui::DictationState::Listening {
+                // The last phrase is still to be written; `Stopped` ends it.
+                handle.finish();
+                self.view.composer_dictation = openide_ui::DictationState::Transcribing;
+                self.view.status = "Terminando el dictado…".to_owned();
+            } else {
+                self.stop_dictation();
+                self.view.status = "Dictado cancelado".to_owned();
+            }
             return;
         }
         if self.view.running || self.view.background_run_selected {
             return;
         }
-        match voice::start() {
+        match voice::start(&data_root().join("models")) {
             Ok(handle) => {
                 self.dictation_key = Some(self.draft_key());
                 self.dictation = Some(handle);
-                self.view.composer_listening = true;
+                self.view.composer_dictation = openide_ui::DictationState::Starting;
                 self.view.status = "Iniciando dictado…".to_owned();
                 ctx.request_repaint_after(Duration::from_millis(120));
             }
@@ -11215,22 +11225,29 @@ impl AgentsWindow {
         let changed = !events.is_empty();
         for event in events {
             match event {
+                VoiceEvent::Status(status) => self.view.status = status,
                 VoiceEvent::Listening => {
+                    self.view.composer_dictation = openide_ui::DictationState::Listening;
                     self.view.status = "Escuchando… Pulsa el micrófono para terminar".to_owned();
                 }
+                VoiceEvent::Interim(text) => self.view.composer_transcript = text,
                 VoiceEvent::Final(text) => {
-                    if self.tree.focus("prompt") {
+                    self.view.composer_transcript.clear();
+                    if !text.is_empty() && self.tree.focus("prompt") {
                         for action in self.tree.handle_event(UiEvent::Text(format!("{text} "))) {
                             self.apply_action(action, ctx);
                         }
                     }
                 }
                 VoiceEvent::Error(error) => {
-                    self.view.status = error;
                     self.stop_dictation();
+                    self.view.status = error;
                 }
                 VoiceEvent::Stopped => {
-                    self.stop_dictation();
+                    if self.dictation.is_some() {
+                        self.stop_dictation();
+                        self.view.status = "Dictado terminado".to_owned();
+                    }
                 }
             }
         }
