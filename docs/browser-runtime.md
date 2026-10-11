@@ -304,26 +304,26 @@ pedido.
 (trabajador, driver, decodificador), sin la ventana, con la prueba
 `real_chrome_measurements` compilada con el perfil `desktop`: Google Chrome
 150.0.7871.46 a escala 2 y un viewport de 1280 × 800 (cuadros de 2560 × 1600),
-carga de un minuto por debajo de 1 y ningún `rustc` en curso. Los tiempos
-hasta un cuadro son hasta el cuadro **ya decodificado y listo para la
-ventana**, así que incluyen la decodificación; las cifras anteriores del
-bridge se tomaban al llegar el cuadro codificado.
+carga de un minuto por debajo de 1 y ningún `rustc` en curso. Cada cifra es el
+rango de cuatro corridas. Los tiempos hasta un cuadro son hasta el cuadro **ya
+decodificado y listo para la ventana**, así que incluyen la decodificación;
+las cifras anteriores del bridge se tomaban al llegar el cuadro codificado.
 
 | Medida | Resultado | Cómo se tomó |
 | --- | --- | --- |
-| Lo que el navegador agrega al proceso de la aplicación, sin Chrome | 2,7 MB | PSS de `/proc/self/smaps_rollup` antes de iniciar el contexto y después de abrir una página y leer su árbol, con la vista oculta desde el arranque. Antes era un proceso Node de unos 107 MB. |
-| Procesos de Chrome | 325 MB en 11 procesos | Suma del PSS del grupo de procesos de Chrome en ese mismo momento. |
+| Lo que el navegador agrega al proceso de la aplicación, sin Chrome | 2,7 a 3,2 MB | PSS de `/proc/self/smaps_rollup` antes de iniciar el contexto y después de abrir una página y leer su árbol, con la vista oculta desde el arranque. Antes era un proceso Node de unos 107 MB. |
+| Procesos de Chrome | 319 a 325 MB en 11 procesos | Suma del PSS del grupo de procesos de Chrome en ese mismo momento. |
 | El proceso con la vista mostrando una página quieta, y animada | +61 MB y +65 MB | El mismo PSS con el flujo activo. Son los cuadros decodificados (16 MiB cada uno) y lo que el asignador retiene; esa parte de la vista ya existía con el bridge y no se midió entonces. |
-| Arranque hasta tener el contexto listo | 368 ms; 3,0 s la primera vez | Desde `BrowserRuntime::start` hasta `started`. La primera vez después de que otro entorno usó Chrome tarda unos 3 s, como ya se había medido con el driver solo. |
-| Arranque hasta el primer cuadro | 419 ms | Desde `start`, con la vista visible, hasta el primer cuadro decodificado. Con el contexto ya iniciado y oculto, mostrarlo da su primer cuadro a los 94 ms. |
-| Cuadros por segundo, página animando | 36,0 | Cuadros decodificados contados durante 4 s en la página fixture con una animación CSS. |
-| Cuadros por segundo, desplazamiento continuo | 31,9 | Un paso de rueda cada 16 ms como los envía la ventana, de a uno en vuelo, durante 4 s. |
-| De la rueda al siguiente cuadro, desplazando | mediana 31 ms, p90 60 ms | Desde que se envía cada paso hasta el primer cuadro decodificado posterior. |
-| Respuesta a la rueda de la ventana, desplazando | mediana 30 ms | Chrome contesta un paso de rueda cuando lo procesó, al ritmo de sus cuadros; por eso van de a uno y los siguientes se suman en la cola. En reposo contesta en unos 2 ms. |
-| De la rueda al primer cuadro, página quieta | mediana 64 ms, p90 65 ms | 20 pasos separados por 450 ms de quietud. |
-| Decodificación, fuera del hilo de la interfaz | JPEG de 192 KiB: mediana 8,1 ms; PNG de 224 KiB: 4,4 ms | 40 repeticiones de `decode_frame` sobre un cuadro de esa misma página. |
+| Arranque hasta tener el contexto listo | 350 a 371 ms; 3,0 a 3,6 s la primera vez | Desde `BrowserRuntime::start` hasta `started`. La primera vez después de que otro entorno usó Chrome tarda unos 3 s, como ya se había medido con el driver solo. |
+| Arranque hasta el primer cuadro | 415 a 431 ms | Desde `start`, con la vista visible, hasta el primer cuadro decodificado. Con el contexto ya iniciado y oculto, mostrarlo da su primer cuadro a los 91–108 ms. |
+| Cuadros por segundo, página animando | 33,7 a 36,0 | Cuadros decodificados contados durante 4 s en la página fixture con una animación CSS. |
+| Cuadros por segundo, desplazamiento continuo | 31,2 a 32,1 | Un paso de rueda cada 16 ms como los envía la ventana, de a uno en vuelo, durante 4 s. El driver solo, con la misma página y el mismo desplazamiento y sin decodificar, da 32,7 a 33,2. |
+| De la rueda al siguiente cuadro, desplazando | mediana 31 ms, p90 59–61 ms | Desde que se envía cada paso hasta el primer cuadro decodificado posterior. |
+| Respuesta a la rueda de la ventana, desplazando | mediana 30–31 ms | Chrome contesta un paso de rueda cuando lo procesó, al ritmo de sus cuadros (29 ms con el driver solo); por eso van de a uno y los siguientes se suman en la cola. En reposo contesta en unos 2 ms. |
+| De la rueda al primer cuadro, página quieta | mediana 63–64 ms, p90 64–65 ms | 20 pasos separados por 450 ms de quietud. |
+| Decodificación, fuera del hilo de la interfaz | JPEG de 192 KiB: mediana 8,1 ms; PNG de 224–262 KiB: 4,4 ms | 40 repeticiones de `decode_frame` sobre un cuadro de esa misma página. |
 | Entrega a la textura en el hilo de la interfaz | unos 3 µs por cuadro | `present_surface` sobre un contexto egui sin GPU. |
-| Cierre | 17 ms, ningún proceso del grupo de Chrome | Desde soltar el runtime hasta que vuelve. |
+| Cierre | 12 a 17 ms, ningún proceso del grupo de Chrome | Desde soltar el runtime hasta que vuelve. |
 
 Con la página quieta el límite es de Chrome: rasterizar y codificar 4
 megapíxeles después de estar en reposo lleva unos 55 ms a esta escala, medido
