@@ -11,13 +11,13 @@ use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
     Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, Collapse,
     Component, ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
-    MarkerVariant, PageColumn, ScrollArea, Separator, Text, TextArea, TextRole, Ticker,
+    MarkerVariant, PageColumn, ScrollArea, Separator, Skeleton, Text, TextArea, TextRole, Ticker,
     ToolActivity, Tooltip, TooltipPlacement,
 };
 
 use crate::{
     composer_ui::{build_composer_with_height, build_native_context_control, ComposerProps},
-    rich_text, theme,
+    rich_text, theme, tool_card_skeleton,
     tool_presentation::{self, ToolKind},
     transcript::{
         duration_label, ActivityStatus, ModelStreamStatus, TranscriptActivity, TranscriptImage,
@@ -75,6 +75,10 @@ mod stream_visual_tests;
 #[cfg(test)]
 #[path = "conversation_plan_visual_tests.rs"]
 mod plan_visual_tests;
+
+#[cfg(test)]
+#[path = "tool_card_skeleton_tests.rs"]
+mod tool_card_skeleton_tests;
 
 #[cfg(test)]
 #[path = "file_activity_visual_tests.rs"]
@@ -545,6 +549,11 @@ pub(crate) fn model_stream_item(
                 ModelStreamStatus::Cancelled => "Cancelada",
                 ModelStreamStatus::Discarded => "Descartada · sin ejecutar",
             };
+            if let Some(card) = pending_call_card(item, state) {
+                return card;
+            }
+            // Until the call's name arrives there is no title to show.
+            let unnamed = name.is_none() && tool_card_skeleton::pending_call(item);
             let name = name.as_deref().unwrap_or("Herramienta");
             let disclosure = call_id.as_ref().map(|id| format!("tool:{id}"));
             let disclosure = disclosure.as_deref().unwrap_or(id);
@@ -595,6 +604,7 @@ pub(crate) fn model_stream_item(
             .target(preview.target)
             .command(preview.kind == ToolKind::Command)
             .running(*status == ModelStreamStatus::Receiving)
+            .title_skeleton(unnamed)
             .expanded(expanded)
             .render();
             let explanation = match status {
@@ -628,6 +638,163 @@ pub(crate) fn model_stream_item(
         }
         _ => Element::spacer(),
     }
+}
+
+/// A call the model is still writing, drawn as the card it becomes: the
+/// terminal for a command and the plan card for a plan update. Skeleton bars
+/// hold the place of the text that has not arrived, in rows as tall as the
+/// real ones, so the confirmed call replaces them without a change of shape.
+/// Every other tool stays the flat row it will be once it runs.
+fn pending_call_card(item: &TranscriptItem, state: &ViewState) -> Option<Element> {
+    let TranscriptItem::ToolPreview {
+        id,
+        call_id,
+        name: Some(name),
+        arguments,
+        status,
+        ..
+    } = item
+    else {
+        return None;
+    };
+    if !tool_card_skeleton::pending_call(item) {
+        return None;
+    }
+    let owner = state.selected_session.as_deref().unwrap_or("draft");
+    let scope = tool_card_skeleton::scope(owner, id, call_id.as_deref());
+    let arguments = tool_presentation::preview_arguments(arguments);
+    let receiving = *status == ModelStreamStatus::Receiving;
+    if tool_presentation::kind(name) == ToolKind::Command {
+        let disclosure = call_id.as_ref().map(|id| format!("tool:{id}"));
+        let command = ["command", "cmd"]
+            .into_iter()
+            .find_map(|key| arguments.get(key).and_then(serde_json::Value::as_str))
+            .filter(|value| !value.trim().is_empty());
+        let prompt = match command {
+            Some(command) => Element::truncated_text(format!("$ {command}").replace(['\r', '\n'], " "))
+                .font_family(FontFamily::Monospace)
+                .font_size(12.0)
+                .foreground(theme::FOREGROUND),
+            // The prompt is real text, so the row is as tall as the command
+            // line that replaces the bar.
+            None => Element::row(vec![
+                Element::truncated_text("$")
+                    .font_family(FontFamily::Monospace)
+                    .font_size(12.0)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .shrink_to_fit(),
+                tool_card_skeleton::bar(
+                    format!("tool-skeleton:{scope}:0"),
+                    0.48,
+                    theme::component_palette(),
+                )
+                .flex(1.0),
+            ])
+            .gap(7.0),
+        };
+        let body = Element::column(vec![
+            Separator::horizontal(theme::component_palette()).render(),
+            Element::column(vec![prompt]).gap(4.0).padding(8.0),
+        ]);
+        return Some(
+            ToolActivity::new(
+                detail_action(state, disclosure.as_deref().unwrap_or(id)),
+                command.map_or_else(String::new, terminal_command_title),
+                body,
+                theme::code_palette(),
+            )
+            .terminal(true)
+            .icon(Icon::Terminal)
+            .title_skeleton(command.is_none())
+            .status(if receiving { "Preparando" } else { "Pendiente" })
+            .running(receiving)
+            .render(),
+        );
+    }
+    if name == "update_plan" {
+        return Some(pending_plan_card(owner, &scope, &arguments));
+    }
+    None
+}
+
+/// The plan card while its steps are still being written.
+fn pending_plan_card(owner: &str, scope: &str, arguments: &serde_json::Value) -> Element {
+    if let Some(snapshot) = serde_json::from_value::<openide_core::PlanSnapshot>(arguments.clone())
+        .ok()
+        .filter(openide_core::PlanSnapshot::is_valid)
+    {
+        // The whole list has arrived: the card the snapshot will draw.
+        return session_plan_card(
+            owner,
+            &SessionPlanView {
+                snapshot,
+                can_build: false,
+            },
+            "Plan actualizado",
+        );
+    }
+    let header = Element::row(vec![
+        Element::panel(
+            Element::icon(Icon::Plan)
+                .foreground(theme::FOREGROUND_SUBTLE)
+                .size(Some(14.0), Some(14.0)),
+        )
+        .size(Some(14.0), Some(18.0))
+        .center_content(),
+        Text::new("Plan actualizado", theme::component_palette())
+            .render()
+            .centered_y()
+            .flex(1.0),
+        Skeleton::line(
+            format!("tool-skeleton:{scope}:count"),
+            tool_card_skeleton::on_card(),
+            34.0,
+        )
+        .height(tool_card_skeleton::BAR)
+        .radius(tool_card_skeleton::BAR / 2.0)
+        .render()
+        .centered_y(),
+    ])
+    .min_size(0.0, 18.0)
+    .gap(8.0);
+    let steps = [0.62, 0.78, 0.46]
+        .into_iter()
+        .enumerate()
+        .map(|(index, fraction)| {
+            Element::row(vec![
+                Element::panel(Element::spacer())
+                    .size(Some(14.0), Some(14.0))
+                    .border(theme::FOREGROUND_SUBTLE, 1.0)
+                    .radius(7.0),
+                // The step's number is real text, so the row is as tall as
+                // the step that replaces the bar.
+                Text::new(format!("{}.", index + 1), theme::component_palette())
+                    .muted()
+                    .render(),
+                tool_card_skeleton::bar(
+                    format!("tool-skeleton:{scope}:{index}"),
+                    fraction,
+                    tool_card_skeleton::on_card(),
+                )
+                .flex(1.0),
+            ])
+            .gap(8.0)
+        })
+        .collect::<Vec<_>>();
+    let mut content = vec![header];
+    if let Some(explanation) = arguments
+        .get("explanation")
+        .and_then(serde_json::Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+    {
+        content.push(
+            Text::new(explanation, theme::component_palette())
+                .muted()
+                .render(),
+        );
+    }
+    content.push(Element::column(steps).gap(8.0));
+    Card::new(Element::column(content).gap(7.0), theme::card_palette()).render()
 }
 
 /// A cited page in the transcript: its title over its address.

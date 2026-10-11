@@ -142,6 +142,7 @@ mod dock_tab_ui;
 mod sidebar_chrome;
 mod files_panel_ui;
 mod theme;
+mod tool_card_skeleton;
 mod tool_presentation;
 mod tool_result_media;
 mod transcript;

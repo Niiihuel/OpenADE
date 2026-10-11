@@ -728,7 +728,9 @@ fn confirmed_plan_tools_do_not_duplicate_snapshots_but_failures_and_pending_tool
     }
     for (status, should_remain) in [
         (ModelStreamStatus::Committed, false),
-        (ModelStreamStatus::Receiving, true),
+        // Still being written: it remains as the plan card it becomes,
+        // checked below, instead of a disclosure row.
+        (ModelStreamStatus::Receiving, false),
         (ModelStreamStatus::Failed, true),
     ] {
         let mut state = fixture(false);
@@ -756,6 +758,15 @@ fn confirmed_plan_tools_do_not_duplicate_snapshots_but_failures_and_pending_tool
                 .iter()
                 .any(|region| region.id == format!("conversation_detail:{OWNER}:tool:plan-call")),
             should_remain,
+            "preview state {status:?}"
+        );
+        assert_eq!(
+            frame
+                .text_layouts()
+                .iter()
+                .filter(|block| block.source == "Plan actualizado")
+                .count(),
+            if status == ModelStreamStatus::Receiving { 2 } else { 1 },
             "preview state {status:?}"
         );
         context.end_pass().textures_delta.clear();
