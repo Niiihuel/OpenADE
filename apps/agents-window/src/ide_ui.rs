@@ -246,8 +246,8 @@ fn activity_bar(state: &ViewState, width: f32, height: f32) -> Element {
         (IdeActivity::Files, Icon::Folder),
         (IdeActivity::Search, Icon::Search),
         (IdeActivity::Git, Icon::GitBranch),
-        (IdeActivity::Debug, Icon::Play),
-        (IdeActivity::Extensions, Icon::Grid),
+        (IdeActivity::Debug, crate::icons::BUG),
+        (IdeActivity::Extensions, Icon::Puzzle),
     ] {
         let id = format!("ide_activity:{}", activity.key());
         let shown = state.ide.activity == activity
@@ -261,7 +261,15 @@ fn activity_bar(state: &ViewState, width: f32, height: f32) -> Element {
             IdeActivity::Extensions => ("Complementos", ShortcutAction::Extensions),
         };
         items.push(
-            UiIconButton::new(&id, if shown { icon.filled() } else { icon }, palette)
+            UiIconButton::new(
+                &id,
+                match (shown, activity) {
+                    (true, IdeActivity::Debug) => crate::icons::BUG_FILL,
+                    (true, _) => icon.filled(),
+                    (false, _) => icon,
+                },
+                palette,
+            )
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Regular)
                 .active(shown)

@@ -354,7 +354,7 @@ fn start_row(state: &DebugView, width: f32) -> Element {
         crate::composer_ui::round_action_palette(state.controls.start && !state.scope.is_empty()),
     )
     .variant(ButtonVariant::Subtle)
-    .size(ControlSize::Compact)
+    .size(ControlSize::Dense)
     .round()
     .enabled(state.controls.start && !state.scope.is_empty())
     .tooltip_with(
@@ -1318,7 +1318,7 @@ mod tests {
             let gear = button(&tree, &action(&state.scope, "configure")).unwrap();
             assert_eq!((select.y, start.y, gear.y), (select.y, select.y, select.y));
             assert!(select.x < start.x && start.x < gear.x);
-            assert_eq!((start.width, start.height), (28.0, 28.0));
+            assert_eq!((start.width, start.height), (24.0, 24.0));
             assert!(gear.x + gear.width <= width - 6.0 + 0.5);
             let copy = copy(&tree);
             assert!(copy.contains("Listo · debugpy"), "{copy}");

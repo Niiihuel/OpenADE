@@ -2758,7 +2758,8 @@ mod tests {
                         .iter()
                         .find(|region| region.id == *id)
                         .unwrap();
-                    assert!((row.rect.height - SelectorSizing::COMPACT.row_height).abs() < 0.01);
+                    // The standard menu's compact row.
+                    assert!((row.rect.height - 26.0).abs() < 0.01);
                     assert!(paints_label(&frame, label));
                 }
                 let other_prefix = if choice == "organization" {
