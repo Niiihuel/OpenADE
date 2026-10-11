@@ -77,6 +77,17 @@ impl AgentsWindow {
         }
     }
 
+    /// A session's tab shows its close button under the pointer or the focus.
+    pub(super) fn sync_terminal_session_reveal(&mut self) -> bool {
+        let revealed = [self.tree.hovered_id(), self.tree.focused_id()]
+            .into_iter()
+            .flatten()
+            .find_map(crate::terminal_dock_ui::session_of);
+        let changed = self.view.terminal_controls.revealed != revealed;
+        self.view.terminal_controls.revealed = revealed;
+        changed
+    }
+
     pub(super) fn sync_terminal_controls_view(&mut self) {
         self.terminal_controls_host
             .profiles

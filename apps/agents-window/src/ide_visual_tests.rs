@@ -188,6 +188,31 @@ pub(crate) fn fixture() -> ViewState {
     state
 }
 
+/// Writes `frame` as `docs/ui-separation/shots/<folder>/<name>.png` at 2x.
+pub(crate) fn export_shot(frame: &Frame, size: Size, folder: &str, name: &str) {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/ui-separation/shots")
+        .join(folder);
+    std::fs::create_dir_all(&directory).unwrap();
+    let svg = std::env::temp_dir().join(format!("openade-shot-{folder}-{name}.svg"));
+    crate::settings_ui::visual_qa::write_native_frame_svg(frame, &svg, size.width, size.height)
+        .unwrap();
+    let parsed = resvg::usvg::Tree::from_str(
+        &std::fs::read_to_string(&svg).unwrap(),
+        &crate::settings_ui::visual_qa::native_svg_options(),
+    )
+    .unwrap();
+    let mut pixels =
+        resvg::tiny_skia::Pixmap::new(size.width as u32 * 2, size.height as u32 * 2).unwrap();
+    resvg::render(
+        &parsed,
+        resvg::tiny_skia::Transform::from_scale(2.0, 2.0),
+        &mut pixels.as_mut(),
+    );
+    pixels.save_png(directory.join(format!("{name}.png"))).unwrap();
+    std::fs::remove_file(svg).unwrap();
+}
+
 pub(crate) fn native_tree(root: Element) -> (egui::Context, UiTree) {
     let context = egui::Context::default();
     crate::fonts::install(&context);

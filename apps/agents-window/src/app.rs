@@ -19543,6 +19543,7 @@ impl eframe::App for AgentsWindow {
             needs_relayout = true;
         }
         needs_relayout |= self.sync_git_panel_reveal();
+        needs_relayout |= self.sync_terminal_session_reveal();
         needs_relayout |= self.update_command_search(&ctx);
         needs_relayout |= self.poll_project_actions(&ctx);
         // Disclosures can change during input handling. Start their background

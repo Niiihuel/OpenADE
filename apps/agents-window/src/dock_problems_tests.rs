@@ -70,7 +70,7 @@ fn agents_problems_dock_preserves_editor_origin_and_reserves_only_the_bottom_pan
 }
 
 #[test]
-fn agents_shared_bottom_header_retains_session_tabs_and_all_terminal_actions() {
+fn agents_shared_bottom_header_retains_its_sessions_and_all_terminal_actions() {
     for width in [320.0, 700.0, 1100.0] {
         let mut state = fixture();
         state.show_terminal_panel = true;
@@ -91,16 +91,12 @@ fn agents_shared_bottom_header_retains_session_tabs_and_all_terminal_actions() {
             );
             assert!(rect.y + rect.height <= crate::dock_tab_ui::HEADER_HEIGHT);
         }
-        if width >= 700.0 {
-            assert!(region(&frame, "terminal_tab:81").width >= 72.0);
-        } else {
-            assert!(
-                !frame
-                    .regions
-                    .iter()
-                    .any(|r| r.id.starts_with("terminal_tab:"))
-            );
-        }
+        // The sessions are flat tabs where they fit, and a named list otherwise.
+        assert_eq!(
+            frame.regions.iter().any(|r| r.id.starts_with("terminal_tab:")),
+            width >= 700.0
+        );
+        assert!(!frame.regions.iter().any(|r| r.id.starts_with("terminal_tab_extent:")));
         assert!(region(&frame, "terminal_screen").y >= crate::dock_tab_ui::HEADER_HEIGHT);
         ctx.end_pass().textures_delta.clear();
     }

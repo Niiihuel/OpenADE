@@ -957,4 +957,219 @@ mod tests {
             }
         }
     }
+
+    fn sessions_fixture(count: u64, ide: bool) -> ViewState {
+        let mut state = crate::view::ide_visual_tests::fixture();
+        if !ide {
+            state.ide.mode = crate::ide_workspace::WindowMode::Agents;
+        }
+        state.ide.bottom_open = true;
+        state.ide.bottom_panel = IdeBottomPanel::Terminal;
+        state.show_terminal_panel = true;
+        state.terminal_tabs = (1..=count)
+            .map(|id| DockTabView {
+                id,
+                title: if count == 1 { "Terminal".into() } else { format!("Terminal {id}") },
+                full_path: Some(state.workspace.clone()),
+                active: id == 1,
+                kind: SideTab::Terminal,
+                closable: true,
+            })
+            .collect();
+        state
+    }
+
+    fn header_frame(state: &ViewState, width: f32) -> (UiTree, Frame) {
+        let size = Size::new(width, 240.0);
+        let mut tree = UiTree::new(build(state, width, size.height));
+        tree.set_reduced_motion(true);
+        let frame = tree.layout(size);
+        (tree, frame)
+    }
+
+    fn has(frame: &Frame, prefix: &str) -> bool {
+        frame.regions.iter().any(|region| region.id.starts_with(prefix))
+    }
+
+    fn click(tree: &mut UiTree, id: &str) -> Vec<UiAction> {
+        let rect = region(tree.frame(), id);
+        let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+        assert_eq!(tree.frame().hit_test(point), Some(id));
+        tree.handle_event(UiEvent::PointerDown(point));
+        tree.handle_event(UiEvent::PointerUp(point))
+    }
+
+    fn clicked(actions: &[UiAction], expected: &str) -> bool {
+        actions
+            .iter()
+            .any(|action| matches!(action, UiAction::Clicked { id } if id == expected))
+    }
+
+    /// Surfaces shaped like a folder tab: rounded above, square below.
+    fn folder_tabs(frame: &Frame) -> usize {
+        frame
+            .commands
+            .iter()
+            .filter(|command| {
+                matches!(
+                    command,
+                    DrawCommand::FillCornerRect { rect, radii, color }
+                        if rect.y < HEADER
+                            && *color == theme::tab_strip_palette().surface
+                            && *radii == openide_ui::CornerRadii::top(openide_ui::RadiusRole::Card.px())
+                )
+            })
+            .count()
+    }
+
+    #[test]
+    fn the_sections_are_the_only_folder_tabs_and_sessions_are_flat_beside_the_tools() {
+        for ide in [false, true] {
+            for width in [420.0, 760.0, 1200.0] {
+                for count in [1, 2, 6] {
+                    let case = format!("ide={ide} width={width} count={count}");
+                    let state = sessions_fixture(count, ide);
+                    let (mut tree, frame) = header_frame(&state, width);
+                    assert_eq!(folder_tabs(&frame), 1, "{case}");
+                    assert!(!has(&frame, "terminal_tab_extent:"), "{case}");
+                    let sections_end = {
+                        let last = region(&frame, "ide_bottom:console");
+                        last.x + last.width
+                    };
+                    let tools = region(&frame, "terminal_new").x;
+                    let chips = count > 1 && (width == 1200.0 || (width == 760.0 && count == 2));
+                    assert_eq!(has(&frame, "terminal_tab:"), chips, "{case}");
+                    assert_eq!(has(&frame, "terminal_session_label"), count == 1, "{case}");
+                    let toggle = region(&frame, "terminal_sessions_toggle");
+                    // The list button is a tool; the selector is a name.
+                    assert_eq!(toggle.width > 24.0, count > 1 && !chips, "{case}");
+                    if !chips {
+                        if count > 1 {
+                            assert!(toggle.x >= sections_end && toggle.x + toggle.width <= tools);
+                            assert!(clicked(
+                                &click(&mut tree, "terminal_sessions_toggle"),
+                                "terminal_sessions_toggle"
+                            ));
+                            let mut open = sessions_fixture(count, ide);
+                            open.terminal_controls.sessions_open = true;
+                            let (mut tree, _) = header_frame(&open, width);
+                            assert!(
+                                clicked(&click(&mut tree, "terminal_tab_menu:2"), "terminal_tab_menu:2"),
+                                "{case}"
+                            );
+                        }
+                        continue;
+                    }
+                    for id in 1..=count {
+                        let chip = region(&frame, &format!("terminal_tab:{id}"));
+                        assert!(chip.x >= sections_end && chip.x + chip.width <= tools, "{case}");
+                        assert!(chip.y >= 0.0 && chip.y + chip.height <= HEADER, "{case}");
+                    }
+                    // The close button is the active session's and the pointed one's.
+                    assert!(has(&frame, "terminal_close:1") && !has(&frame, "terminal_close:2"));
+                    assert!(clicked(&click(&mut tree, "terminal_tab:2"), "terminal_tab:2"), "{case}");
+                    let mut revealed = sessions_fixture(count, ide);
+                    revealed.terminal_controls.revealed = Some(2);
+                    let (mut tree, pointed) = header_frame(&revealed, width);
+                    // Showing it moves nothing.
+                    assert_eq!(
+                        region(&pointed, "terminal_tab:2"),
+                        region(&frame, "terminal_tab:2"),
+                        "{case}"
+                    );
+                    let actions = click(&mut tree, "terminal_close:2");
+                    assert!(clicked(&actions, "terminal_close:2"), "{case}");
+                    assert!(!clicked(&actions, "terminal_tab:2"), "{case}");
+                }
+                // Another section has no session of its own to name.
+                let mut problems = sessions_fixture(2, ide);
+                problems.show_terminal_panel = false;
+                problems.ide.bottom_panel = IdeBottomPanel::Problems;
+                let (_, frame) = header_frame(&problems, width);
+                assert_eq!(folder_tabs(&frame), 1);
+                assert!(!has(&frame, "terminal_"), "ide={ide} width={width}");
+                assert!(has(&frame, "ide_bottom_hide"));
+            }
+        }
+    }
+
+    #[test]
+    fn every_terminal_tool_still_dispatches_beside_the_sessions() {
+        for ide in [false, true] {
+            for (width, wide) in [(420.0, false), (760.0, true), (1200.0, true)] {
+                let state = sessions_fixture(2, ide);
+                let mut tools = vec![
+                    ("terminal_new", "terminal_new"),
+                    ("terminal_profiles_toggle", "terminal_profiles_toggle"),
+                    ("terminal_menu_toggle", "terminal_menu_toggle"),
+                    ("terminal_sessions_toggle", "terminal_sessions_toggle"),
+                    ("terminal_panel_hide", "terminal_panel_hide"),
+                ];
+                if wide {
+                    tools.push(("terminal_split", "terminal_split"));
+                    tools.push(("terminal_panel_maximize_button", "terminal_panel_maximize"));
+                }
+                for (id, action) in tools {
+                    let (mut tree, _) = header_frame(&state, width);
+                    assert!(clicked(&click(&mut tree, id), action), "{id} at {width} ide={ide}");
+                }
+            }
+        }
+    }
+
+    /// `SHOT_PREFIX=before` names the captures of the header being replaced.
+    #[test]
+    #[ignore = "exports the bottom panel's header as PNG under docs/ui-separation/shots/terminal-header"]
+    fn export_terminal_header_visual_review() {
+        let prefix = std::env::var("SHOT_PREFIX").unwrap_or_else(|_| "after".into());
+        for ide in [false, true] {
+            let window = if ide { "ide" } else { "agents" };
+            for width in [420.0, 760.0, 1200.0] {
+                let mut states: Vec<(String, ViewState, Option<&str>)> = [1, 2, 6]
+                    .into_iter()
+                    .map(|count| (format!("{count}-sessions"), sessions_fixture(count, ide), None))
+                    .collect();
+                states.push((
+                    "2-sessions-hover".into(),
+                    sessions_fixture(2, ide),
+                    Some("terminal_tab:2"),
+                ));
+                let mut problems = sessions_fixture(2, ide);
+                problems.show_terminal_panel = false;
+                problems.ide.bottom_panel = IdeBottomPanel::Problems;
+                states.push(("problems".into(), problems, None));
+                for (name, mut state, hover) in states {
+                    let size = Size::new(width, 120.0);
+                    let root = |state: &ViewState| {
+                        Element::column(vec![build(state, width, size.height)])
+                            .background(theme::BACKGROUND)
+                    };
+                    let (context, mut tree) =
+                        crate::view::ide_visual_tests::native_tree(root(&state));
+                    let mut frame = tree.layout(size);
+                    if let Some(target) =
+                        hover.and_then(|id| frame.regions.iter().find(|region| region.id == id))
+                    {
+                        let rect = target.rect;
+                        tree.handle_event(UiEvent::PointerMove(Point::new(
+                            rect.x + 12.0,
+                            rect.y + rect.height / 2.0,
+                        )));
+                        state.terminal_controls.revealed = tree
+                            .hovered_id()
+                            .and_then(crate::terminal_dock_ui::session_of);
+                        tree.set_root(root(&state));
+                        frame = tree.layout(size);
+                    }
+                    crate::view::ide_visual_tests::export_shot(
+                        &frame,
+                        size,
+                        "terminal-header",
+                        &format!("{prefix}-{window}-{width:.0}-{name}"),
+                    );
+                    context.end_pass().textures_delta.clear();
+                }
+            }
+        }
+    }
 }

@@ -25,6 +25,16 @@ pub(crate) struct TerminalControlsView {
     pub rename: Option<TerminalRenameView>,
     /// Exactly two panes when split; empty for the single-session presentation.
     pub panes: Vec<TerminalPaneView>,
+    /// The session whose tab is under the pointer or holds the focus.
+    pub revealed: Option<u64>,
+}
+
+/// The session a tab or its close button belongs to, from either one's ID.
+pub(crate) fn session_of(id: &str) -> Option<u64> {
+    id.strip_prefix("terminal_tab:")
+        .or_else(|| id.strip_prefix("terminal_close:"))?
+        .parse()
+        .ok()
 }
 
 #[derive(Clone, Debug)]
@@ -116,18 +126,63 @@ fn session_menu_row(state: &ViewState, tab: &DockTabView) -> Element {
     row.render().size(None, Some(26.0))
 }
 
-fn session_selector(state: &ViewState, panel_width: f32) -> Element {
-    let trigger = IconButton::new(
-        "terminal_sessions_toggle",
-        Icon::Menu,
+/// The trigger of the session list when the sessions do not fit as tabs: the
+/// active session's name, where the tabs would be.
+fn session_selector_label(state: &ViewState, width: f32) -> Element {
+    let title = state
+        .terminal_tabs
+        .iter()
+        .find(|tab| tab.active)
+        .or(state.terminal_tabs.first())
+        .map(|tab| tab_label(state, tab))
+        .unwrap_or_default();
+    let id = "terminal_sessions_toggle";
+    let content = Element::row(vec![
+        Element::spacer().size(Some(0.0), None),
+        Element::icon(Icon::Terminal)
+            .foreground(theme::FOREGROUND)
+            .size(Some(16.0), Some(TOOL_SIZE)),
+        Element::faded_text(title, 12.0)
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(theme::FOREGROUND)
+            .flex(1.0)
+            .size(None, Some(TOOL_SIZE)),
+        Element::icon(Icon::ChevronDown)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .size(Some(14.0), Some(TOOL_SIZE)),
+        Element::spacer().size(Some(0.0), None),
+    ])
+    .gap(6.0);
+    openide_ui::Tooltip::new(
+        Element::clickable(id, content)
+            .hover_background(theme::HOVER)
+            .radius(6.0)
+            .size(Some(width), Some(TOOL_SIZE)),
+        id,
+        format!("Todas las terminales · {}", state.terminal_tabs.len()),
         theme::component_palette(),
     )
-    .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Dense)
-    .tooltip_with(
-        TooltipSpec::new("Todas las terminales").placement(header_tooltip_placement(state)),
-    )
-    .render();
+    .placement(header_tooltip_placement(state))
+    .render()
+    .size(Some(width), Some(TOOL_SIZE))
+}
+
+fn session_selector(state: &ViewState, panel_width: f32, label: Option<f32>) -> Element {
+    let trigger = match label {
+        Some(width) => session_selector_label(state, width),
+        None => IconButton::new(
+            "terminal_sessions_toggle",
+            Icon::Menu,
+            theme::component_palette(),
+        )
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Dense)
+        .tooltip_with(
+            TooltipSpec::new("Todas las terminales").placement(header_tooltip_placement(state)),
+        )
+        .render(),
+    };
     if let Some(rename) = &state.terminal_controls.rename {
         let field = format!("terminal_rename_input:{}", rename.id);
         let mut rows = vec![
@@ -399,14 +454,13 @@ fn actions_menu(state: &ViewState, width: f32) -> Element {
     .popover_return_focus("terminal_menu_toggle")
 }
 
-fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> TabItem {
-    let title = tab_label(state, tab);
+fn session_help(state: &ViewState, tab: &DockTabView, title: &str) -> String {
     let visible_in_split = state
         .terminal_controls
         .panes
         .iter()
         .any(|pane| pane.id == tab.id);
-    let help = format!(
+    format!(
         "{title}{}\nDirectorio inicial: {}",
         if visible_in_split {
             " · Visible en la división"
@@ -414,16 +468,27 @@ fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> TabItem {
             ""
         },
         tab.full_path.as_deref().unwrap_or(&state.workspace)
-    );
-    let close_id = format!("terminal_close:{}", tab.id);
-    let close = IconButton::new(close_id, Icon::Close, theme::component_palette())
-        .variant(ButtonVariant::Ghost)
-        .sizing(crate::ui_sizing::TAB_CLOSE)
-        .tooltip_with(
-            TooltipSpec::new(format!("Terminar {title}"))
-                .placement(header_tooltip_placement(state)),
-        )
-        .render();
+    )
+}
+
+fn session_close(state: &ViewState, tab: &DockTabView, title: &str) -> Element {
+    IconButton::new(
+        format!("terminal_close:{}", tab.id),
+        Icon::Close,
+        theme::component_palette(),
+    )
+    .variant(ButtonVariant::Ghost)
+    .sizing(crate::ui_sizing::TAB_CLOSE)
+    .tooltip_with(
+        TooltipSpec::new(format!("Terminar {title}")).placement(header_tooltip_placement(state)),
+    )
+    .render()
+}
+
+fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> TabItem {
+    let title = tab_label(state, tab);
+    let help = session_help(state, tab, &title);
+    let close = session_close(state, tab, &title);
     TabItem::new(
         format!("terminal_tab:{}", tab.id),
         format!("terminal_tab_extent:{}", tab.id),
@@ -435,6 +500,157 @@ fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> TabItem {
     .tooltip_placement(header_tooltip_placement(state))
     .active(tab.active)
     .close(close)
+}
+
+const CHIP_CLOSE: f32 = crate::ui_sizing::TAB_CLOSE.height;
+
+/// Icon, name and the close slot of a session beside the panel's sections.
+fn chip_width(title: &str) -> f32 {
+    (38.0 + title.chars().count() as f32 * 6.2 + CHIP_CLOSE).min(168.0)
+}
+
+/// A session beside the panel's sections: flat, so the sections stay the
+/// header's only folder tabs. Ink and a rule mark the one on screen; the
+/// close button shows on that one and under the pointer or the focus.
+fn session_chip(state: &ViewState, tab: &DockTabView) -> Element {
+    let title = tab_label(state, tab);
+    let width = chip_width(&title);
+    let id = format!("terminal_tab:{}", tab.id);
+    let ink = if tab.active {
+        theme::FOREGROUND
+    } else {
+        theme::FOREGROUND_SUBTLE
+    };
+    let select = Element::clickable(
+        &id,
+        Element::row(vec![
+            Element::spacer().size(Some(0.0), None),
+            Element::icon(Icon::Terminal)
+                .foreground(ink)
+                .size(Some(16.0), Some(TOOL_SIZE)),
+            Element::faded_text(&title, 12.0)
+                .font_family(FontFamily::Sans)
+                .font_size(12.0)
+                .foreground(ink)
+                .flex(1.0)
+                .size(None, Some(TOOL_SIZE)),
+        ])
+        .gap(6.0),
+    )
+    .size(Some(width - CHIP_CLOSE - 2.0), Some(TOOL_SIZE));
+    let select = openide_ui::Tooltip::new(
+        select,
+        &id,
+        session_help(state, tab, &title),
+        theme::component_palette(),
+    )
+    .placement(header_tooltip_placement(state))
+    .render();
+    let close = if tab.active || state.terminal_controls.revealed == Some(tab.id) {
+        session_close(state, tab, &title).centered()
+    } else {
+        Element::spacer()
+    }
+    .size(Some(CHIP_CLOSE), Some(TOOL_SIZE));
+    let chip = Element::row(vec![select, close, Element::spacer().size(Some(2.0), None)])
+        .gap(0.0)
+        .hover_background(theme::HOVER)
+        .hover_surface(
+            format!("terminal_tab_surface:{}", tab.id),
+            [id.clone(), format!("terminal_close:{}", tab.id)],
+        )
+        .radius(6.0)
+        .size(Some(width), Some(TOOL_SIZE));
+    if !tab.active {
+        return chip;
+    }
+    Element::overlay(
+        chip,
+        Element::column(vec![
+            Element::spacer().flex(1.0),
+            Element::row(vec![
+                Element::spacer().size(Some(6.0), None),
+                Element::spacer()
+                    .background(ACTIVE_PANE_INDICATOR)
+                    .flex(1.0)
+                    .size(None, Some(2.0)),
+                Element::spacer().size(Some(6.0), None),
+            ])
+            .size(None, Some(2.0)),
+        ])
+        .size(Some(width), Some(TOOL_SIZE)),
+    )
+    .size(Some(width), Some(TOOL_SIZE))
+}
+
+/// What names the sessions beside the sections, by the room there is.
+enum Sessions {
+    /// Not enough room: the list button among the tools is all there is.
+    ListOnly,
+    /// One session: its name, without the chrome of a tab.
+    Label(Element, f32),
+    /// Every session as a flat tab.
+    Chips(Element, f32),
+    /// The active session's name opens the list; this many px wide.
+    Selector(f32),
+}
+
+/// `room` is what the sections and the tools leave, the list button included.
+fn sessions_control(state: &ViewState, room: f32) -> Sessions {
+    const LIST: f32 = TOOL_SIZE + 2.0;
+    let tabs = &state.terminal_tabs;
+    if let [tab] = tabs.as_slice() {
+        let title = tab_label(state, tab);
+        let width = (34.0 + title.chars().count() as f32 * 7.0).min(room - LIST);
+        if width < 56.0 {
+            return Sessions::ListOnly;
+        }
+        let label = openide_ui::Tooltip::new(
+            Element::row(vec![
+                Element::icon(Icon::Terminal)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .size(Some(16.0), Some(TOOL_SIZE)),
+                Element::faded_text(&title, 12.0)
+                    .font_family(FontFamily::Sans)
+                    .font_size(12.0)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .flex(1.0)
+                    .size(None, Some(TOOL_SIZE)),
+            ])
+            .gap(6.0),
+            "terminal_session_label",
+            session_help(state, tab, &title),
+            theme::component_palette(),
+        )
+        .placement(header_tooltip_placement(state))
+        .render()
+        .size(Some(width), Some(TOOL_SIZE));
+        return Sessions::Label(label, width);
+    }
+    if tabs.len() < 2 {
+        return Sessions::ListOnly;
+    }
+    let total = tabs
+        .iter()
+        .map(|tab| chip_width(&tab_label(state, tab)))
+        .sum::<f32>()
+        + 2.0 * (tabs.len() - 1) as f32;
+    if total <= room - LIST {
+        let chips = Element::tab_strip(
+            tabs.iter().map(|tab| session_chip(state, tab)).collect(),
+            tabs.iter().map(|tab| format!("terminal_tab:{}", tab.id)).collect(),
+        )
+        .gap(2.0)
+        .size(Some(total), Some(TOOL_SIZE));
+        return Sessions::Chips(chips, total);
+    }
+    // The label takes the list button's place as well as the free room.
+    if room >= 88.0 {
+        let title = tabs.iter().find(|tab| tab.active).unwrap_or(&tabs[0]);
+        let fitted = 60.0 + tab_label(state, title).chars().count() as f32 * 6.2;
+        return Sessions::Selector(fitted.clamp(88.0, room.min(168.0)));
+    }
+    Sessions::ListOnly
 }
 
 pub(crate) fn header(state: &ViewState, width: f32) -> Element {
@@ -501,7 +717,7 @@ fn header_with_sections(
         );
     }
     actions.push(actions_menu(state, width));
-    actions.push(session_selector(state, width));
+    let list_at = actions.len();
     if wide {
         actions.push(
             IconButton::new(
@@ -541,31 +757,63 @@ fn header_with_sections(
         )
         .render(),
     );
-    let actions_width = TOOL_SIZE * 2.0 + (actions.len() - 1) as f32 * (TOOL_SIZE + 2.0);
-    let available = (width - HEADER_SIDE_INSET * 2.0 - 8.0 - actions_width).max(0.0);
-    let leading = if let Some((sections, sections_width)) = sections {
-        let sections_width = sections_width.min(available);
-        let mut leading = vec![sections.size(Some(sections_width), Some(HEADER_HEIGHT))];
-        if !crate::ide_workspace::active(state) && available - sections_width - 9.0 >= 72.0 {
-            // Keep Agents' direct session tabs and their close/drag/scroll
-            // interactions beside the shared bottom-panel navigation.
-            leading.push(Element::panel(
-                Separator::vertical(theme::component_palette()).length(16.0).render(),
-            ).center_content().size(Some(9.0), Some(HEADER_HEIGHT)));
-            leading.push(session_tabs(state, (available - sections_width - 9.0).max(0.0)).flex(1.0));
-        } else {
-            leading.push(Element::spacer().flex(1.0));
+    // Every tool but the first pair, and the list button with them.
+    let tools_width = |count: usize| TOOL_SIZE * 2.0 + (count - 1) as f32 * (TOOL_SIZE + 2.0);
+    let free = |actions_width: f32| (width - HEADER_SIDE_INSET * 2.0 - 8.0 - actions_width).max(0.0);
+    let Some((sections, sections_width)) = sections else {
+        actions.insert(list_at, session_selector(state, width, None));
+        let actions_width = tools_width(actions.len());
+        let actions = Element::row(actions)
+            .gap(2.0)
+            .size(Some(actions_width), Some(TOOL_SIZE));
+        return framed(
+            session_tabs(state, free(actions_width)),
+            actions,
+            width,
+        );
+    };
+    // The sections are the header's only folder tabs. The sessions are a
+    // second level: flat, at the far side, beside the tools that act on them.
+    let room = free(tools_width(actions.len())) - sections_width - 8.0;
+    let control = sessions_control(state, room);
+    let (control, control_width) = match control {
+        Sessions::ListOnly => {
+            actions.insert(list_at, session_selector(state, width, None));
+            (None, 0.0)
         }
-        Element::row(leading)
+        Sessions::Label(element, control_width) | Sessions::Chips(element, control_width) => {
+            actions.insert(list_at, session_selector(state, width, None));
+            (Some(element), control_width)
+        }
+        Sessions::Selector(control_width) => (
+            Some(session_selector(state, width, Some(control_width))),
+            control_width,
+        ),
+    };
+    let actions_width = tools_width(actions.len());
+    let sections_width = sections_width.min(free(actions_width));
+    let mut leading = vec![
+        sections.size(Some(sections_width), Some(HEADER_HEIGHT)),
+        Element::spacer().flex(1.0),
+    ];
+    if let Some(control) = control {
+        leading.push(
+            control
+                .centered_y()
+                .size(Some(control_width), Some(HEADER_HEIGHT)),
+        );
+    }
+    let leading = Element::row(leading)
         .gap(0.0)
         .size(None, Some(HEADER_HEIGHT))
-        .flex(1.0)
-    } else {
-        session_tabs(state, available)
-    };
+        .flex(1.0);
     let actions = Element::row(actions)
         .gap(2.0)
         .size(Some(actions_width), Some(TOOL_SIZE));
+    framed(leading, actions, width)
+}
+
+fn framed(leading: Element, actions: Element, width: f32) -> Element {
     let header = TabStrip::header(leading, actions, width, theme::tab_strip_palette()).render();
     Element::overlay(
         header,
@@ -610,8 +858,8 @@ fn clipped_panel(state: &ViewState, header: Element, width: f32, height: f32) ->
     .clip_children()
 }
 
-/// Shared section navigation and terminal controls stay in one compact header.
-/// Agents additionally retains its scrollable session tabs in the leading slot.
+/// Shared section navigation and terminal controls stay in one compact header,
+/// the same in the Agents window and in the IDE.
 pub(crate) fn build_ide(
     state: &ViewState,
     width: f32,
