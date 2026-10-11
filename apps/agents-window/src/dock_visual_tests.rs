@@ -1092,6 +1092,26 @@ fn export_environment_visual_review() {
 }
 
 #[test]
+#[ignore = "opt-in export of the sidebar's organization selector"]
+fn export_session_organization_visual_review() {
+    for (name, organization) in [
+        ("group", SessionOrganization::Group),
+        ("project", SessionOrganization::Project),
+        ("recent", SessionOrganization::Recent),
+    ] {
+        let mut state = super::tests::empty_state();
+        state.session_organization = organization;
+        export_with_pointer(
+            sidebar(&state, 264.0),
+            264.0,
+            200.0,
+            &format!("sidebar-organization-{name}"),
+            None,
+        );
+    }
+}
+
+#[test]
 #[ignore = "opt-in session rows inspection with native fonts"]
 fn export_session_rows_visual_review() {
     let mut state = super::tests::empty_state();

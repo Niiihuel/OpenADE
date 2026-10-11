@@ -1780,9 +1780,10 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
                 Tab::new("session_organize:group", "Grupo", 70.0)
                     .icon(Icon::Hash)
                     .active(state.session_organization == SessionOrganization::Group),
+                // The chronological list is flat: neither segment describes it.
                 Tab::new("session_organize:project", "Proyecto", 78.0)
                     .icon(Icon::Folder)
-                    .active(state.session_organization != SessionOrganization::Group),
+                    .active(state.session_organization == SessionOrganization::Project),
             ],
             theme::segmented_palette(),
         )
@@ -7911,6 +7912,37 @@ pub(crate) mod tests {
         assert!(!session_list_rows(&state)
             .iter()
             .any(|row| matches!(row, SessionListRow::Session(session) if session.id == "a")));
+    }
+
+    #[test]
+    fn organization_selector_marks_no_segment_in_the_chronological_list() {
+        for (organization, active) in [
+            (SessionOrganization::Group, Some("session_organize:group")),
+            (SessionOrganization::Project, Some("session_organize:project")),
+            (SessionOrganization::Recent, None),
+        ] {
+            let mut state = empty_state();
+            state.session_organization = organization;
+            let mut tree = UiTree::new(sidebar(&state, 264.0));
+            let frame = tree.layout(Size::new(264.0, 640.0));
+            let marked = |id: &str| {
+                let segment = frame.regions.iter().find(|region| region.id == id).unwrap().rect;
+                frame.commands.iter().any(|command| matches!(command,
+                    DrawCommand::FillRect { rect, color, .. }
+                        if *color == theme::segmented_palette().selected && *rect == segment))
+            };
+            for id in ["session_organize:group", "session_organize:project"] {
+                assert_eq!(marked(id), active == Some(id), "{id} in {organization:?}");
+                // Either segment still switches to its organization.
+                let segment = frame.regions.iter().find(|region| region.id == id).unwrap().rect;
+                let point = Point::new(segment.x + 4.0, segment.y + 4.0);
+                tree.handle_event(UiEvent::PointerDown(point));
+                assert_eq!(
+                    tree.handle_event(UiEvent::PointerUp(point)),
+                    vec![UiAction::Clicked { id: id.into() }]
+                );
+            }
+        }
     }
 
     #[test]
