@@ -542,3 +542,83 @@ fn ctrl_s_in_markdown_preview_saves_draft_without_revealing_or_focusing_source()
     assert!(app.editor_services.focus_next.is_none());
     assert_eq!(app.tree.focused_id(), Some(focus.as_str()));
 }
+
+#[test]
+fn ide_switch_previews_the_same_tab_and_returns_to_the_untouched_source() {
+    let disk = (0..200).map(|line| format!("Línea {line}\n")).collect::<String>();
+    let (_root, mut app) = fixture(&disk);
+    app.view.ide.mode = crate::ide_workspace::WindowMode::Ide;
+    let tab = open(&mut app, "README.md");
+    append(&mut app, "\n## Sin guardar\n");
+    let editor_id = crate::code_editor_ui::view_id(tab.get());
+    let shared = app
+        .view
+        .code_editor
+        .as_ref()
+        .unwrap()
+        .controller
+        .as_ref()
+        .unwrap()
+        .shared_buffer();
+    shared.lock().unwrap().set_selection(Selection::caret(40)).unwrap();
+    let rect = frame(&mut app)
+        .regions
+        .iter()
+        .find(|region| region.id == editor_id)
+        .unwrap()
+        .rect;
+    app.tree.handle_event(UiEvent::ScrollDirect {
+        position: Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0),
+        delta_y: -900.0,
+    });
+    let lines = |app: &mut AgentsWindow| {
+        frame(app)
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { text, position, .. } if text.starts_with("Línea") => {
+                    Some((text.clone(), position.y.round() as i32))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let source_lines = lines(&mut app);
+    assert!(
+        !source_lines.is_empty() && !source_lines.iter().any(|(text, _)| text == "Línea 0"),
+        "the source is scrolled"
+    );
+    let before = snapshot(&app);
+
+    let switch = |key: &str| format!("document_preview_view:{}:{key}", tab.get());
+    click(&mut app, &switch("preview"));
+    wait_preview(&mut app);
+    let view = app.view.document_preview.as_ref().unwrap();
+    assert_eq!(view.mode, PreviewMode::Preview);
+    let Some(Document::Markdown(document)) = view.document.as_deref() else {
+        panic!("Markdown model missing");
+    };
+    assert!(document.blocks.iter().any(|block| matches!(block,
+        openide_preview::markdown::MarkdownBlock::Heading { id, .. } if id == "sin-guardar")));
+    let previewed = frame(&mut app);
+    for id in [switch("preview"), switch("source"), "editor_copy_relative".into()] {
+        assert!(previewed.regions.iter().any(|region| region.id == id), "{id}");
+    }
+    assert!(!previewed.regions.iter().any(|region| region.id == editor_id
+        || region.id.ends_with(":split")
+        || region.id.ends_with(":reload")));
+    assert_eq!(app.dock.active_tab(&app.dock_scope()).unwrap().id, tab);
+    assert!(app.view.markdown_preview.is_none());
+
+    click(&mut app, &switch("source"));
+    assert_eq!(app.view.document_preview.as_ref().unwrap().mode, PreviewMode::Source);
+    assert_eq!(app.editor_services.focus_next.as_deref(), Some(editor_id.as_str()));
+    assert_eq!(lines(&mut app), source_lines);
+    let after = snapshot(&app);
+    assert_eq!(
+        (after.document_id(), after.revision(), after.selection()),
+        (before.document_id(), before.revision(), before.selection())
+    );
+    assert!(after.is_dirty() && buffer_text(&app).contains("## Sin guardar"));
+    assert_eq!(std::fs::read_to_string(Path::new(&app.view.workspace).join("README.md")).unwrap(), disk);
+}

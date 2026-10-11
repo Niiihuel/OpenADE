@@ -22,3 +22,6 @@ pub(crate) const DISCARD: Icon =
     Icon::Custom(include_str!("../assets/bootstrap/arrow-counterclockwise.svg"));
 /// Exchange with the remote.
 pub(crate) const SYNC: Icon = Icon::Custom(include_str!("../assets/bootstrap/arrow-repeat.svg"));
+/// A Markdown preview in a group beside its source.
+pub(crate) const PREVIEW_BESIDE: Icon =
+    Icon::Custom(include_str!("../assets/bootstrap/layout-text-sidebar-reverse.svg"));
