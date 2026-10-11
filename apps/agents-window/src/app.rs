@@ -6425,6 +6425,7 @@ impl AgentsWindow {
             sessions: Vec::new(),
             session_plans: Default::default(),
             session_recovery: Default::default(),
+            session_recovery_error: None,
             session_approval_grants: Vec::new(),
             sessions_status: None,
             selected_session: None,
@@ -13757,9 +13758,9 @@ impl AgentsWindow {
             self.start_native_automation_resume(&stored.session, frozen);
             return;
         }
-        // A paused turn continues on the route it was admitted on, whatever
-        // the composer shows now: the selection is for the next turn.
-        let resume_settings = match replay.pause.as_ref().and(replay.active_model_route.as_ref()) {
+        // An interrupted turn continues on the route it was admitted on,
+        // whatever the composer shows now: the selection is for the next turn.
+        let resume_settings = match replay.active_model_route.as_ref() {
             Some(route) => NativeProviderSettings {
                 provider_id: route.provider_id.clone(),
                 model_id: route.model_id.clone(),
@@ -18025,7 +18026,19 @@ impl AgentsWindow {
                     self.close_session_menu();
                     self.open_session(session_id);
                     if self.view.selected_session.as_deref() == Some(session_id) {
+                        self.view.session_recovery_error = None;
                         self.start_resume();
+                        // A refusal only reaches the status line, which this
+                        // surface does not show: say it on the card.
+                        let started = self.view.running
+                            || self.active_resume.is_some()
+                            || self.view.pending_batch_discard.is_some()
+                            || self.view.pending_tool_verification.is_some()
+                            || !self.view.session_recovery.contains_key(session_id);
+                        if !started {
+                            self.view.session_recovery_error =
+                                Some((session_id.to_owned(), self.view.status.trim_end_matches('.').to_owned()));
+                        }
                     }
                 }
             }

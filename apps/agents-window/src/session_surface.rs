@@ -2520,7 +2520,12 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             } else if let Some(card) = state.model_switch.unfinished_card(session_id) {
                 rows.push(card);
             } else if !child_card_already_visible {
-                rows.push(native_recovery_card(session_id, recovery));
+                let error = state
+                    .session_recovery_error
+                    .as_ref()
+                    .filter(|(failed, _)| failed == session_id)
+                    .map(|(_, error)| error.as_str());
+                rows.push(native_recovery_card(session_id, recovery, error));
             }
         }
     }
@@ -2720,7 +2725,8 @@ fn recoverable_subagent_card(run: &SubagentRunView) -> Element {
     .render()
 }
 
-fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView) -> Element {
+/// `error` is why the last press of its action started nothing.
+fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView, error: Option<&str>) -> Element {
     let message = match recovery {
         SessionRecoveryView::StartAutomation => {
             "La sesión se registró antes de iniciar el agente. Se usará el perfil original de sólo lectura y la ruta guardada, sin ampliar permisos desde Settings."
@@ -2742,11 +2748,14 @@ fn native_recovery_card(session_id: &str, recovery: &SessionRecoveryView) -> Ele
     };
     let mut alert = Alert::new(
         "Recuperación del turno",
-        format!("{}\n{message}", recovery.label()),
+        match error {
+            Some(error) => format!("No se pudo reanudar: {error}.\n{message}"),
+            None => format!("{}\n{message}", recovery.label()),
+        },
         theme::component_palette(),
     )
     .tone(
-        if matches!(recovery, SessionRecoveryView::InvalidJournal(_)) {
+        if error.is_some() || matches!(recovery, SessionRecoveryView::InvalidJournal(_)) {
             AlertTone::Error
         } else {
             AlertTone::Warning
@@ -4155,6 +4164,7 @@ mod tests {
             sessions: vec![],
             session_plans: Default::default(),
             session_recovery: Default::default(),
+            session_recovery_error: None,
             sessions_status: None,
             selected_session: Some("s1".into()),
             selected_session_title: Some("Revisar la aplicación".into()),
@@ -5588,10 +5598,31 @@ mod tests {
     }
 
     #[test]
+    fn a_resume_that_started_nothing_says_why_on_its_card() {
+        let texts = |error| {
+            let frame = UiTree::new(native_recovery_card("s1", &SessionRecoveryView::Resume, error))
+                .layout(Size::new(600.0, 300.0));
+            frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::Text { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert!(!texts(None).contains("No se pudo reanudar"));
+        let failed = texts(Some("Falta la clave API del proveedor nativo"));
+        assert!(failed.contains("No se pudo reanudar: Falta la clave API"), "{failed}");
+        assert!(failed.contains("Reanudar turno"), "the action stays: {failed}");
+    }
+
+    #[test]
     fn recovery_alert_keeps_its_action_reachable_on_narrow_surfaces() {
         for width in [260.0, 520.0] {
             let mut tree =
-                UiTree::new(native_recovery_card("s1", &SessionRecoveryView::VerifyTool));
+                UiTree::new(native_recovery_card("s1", &SessionRecoveryView::VerifyTool, None));
             let frame = tree.layout(Size::new(width, 360.0));
             let control = frame
                 .regions

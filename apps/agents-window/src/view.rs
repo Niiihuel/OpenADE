@@ -527,6 +527,8 @@ pub struct ViewState {
     pub sessions: Vec<SessionView>,
     pub session_plans: BTreeMap<String, SessionPlanView>,
     pub session_recovery: BTreeMap<String, SessionRecoveryView>,
+    /// Why the last attempt to resume a session did nothing, by session.
+    pub session_recovery_error: Option<(String, String)>,
     pub sessions_status: Option<String>,
     pub selected_session: Option<String>,
     pub selected_session_title: Option<String>,
@@ -3850,6 +3852,7 @@ pub(crate) mod tests {
             sessions_status: None,
             session_plans: BTreeMap::new(),
             session_recovery: BTreeMap::new(),
+            session_recovery_error: None,
             pending_permissions: Vec::new(),
             question_drafts: Default::default(),
             composer_pending: None,

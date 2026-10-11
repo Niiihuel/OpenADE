@@ -2476,11 +2476,11 @@ fn save_manual_review_model(app: &mut AgentsWindow, model: &str) {
     app.view.show_settings = false;
 }
 
-/// Situation 1: an interrupted review can only be resumed with the model it
-/// ran on selected, and resuming then really asks that model.
+/// Situation 1: an interrupted review resumes on the model it ran on, with
+/// the working model still selected, and really asks that model.
 #[cfg(unix)]
 #[test]
-fn review_situation_resuming_an_interrupted_review_needs_its_own_model_selected() {
+fn review_situation_resuming_an_interrupted_review_asks_its_own_model_whatever_is_selected() {
     const REVIEW_MODEL: &str = "streaming/model:reviewer";
     let root = tempfile::tempdir().unwrap();
     let fixture = StreamingHttpFixture::new(FIRST_VISIBLE.into(), SECOND_VISIBLE.into());
@@ -2518,24 +2518,13 @@ fn review_situation_resuming_an_interrupted_review_needs_its_own_model_selected(
     assert_eq!(reopened.view.model, MODEL, "the working model is still the selection after reopening");
     reopened.open_session(&review_session);
 
-    // With the working model selected the resume is refused and nothing is sent.
-    reopened.start_resume();
-    assert!(reopened.active_resume.is_none(), "{}", reopened.view.status);
-    assert!(
-        reopened.view.status.contains("modelo del turno interrumpido")
-            || reopened.view.status.contains("otro proveedor o modelo"),
-        "{}",
-        reopened.view.status
-    );
-    assert_eq!(fixture.requests.lock().unwrap().len(), 1);
-
-    // With the review's model selected it goes through and asks that model.
-    reopened.view.model = REVIEW_MODEL.into();
-    assert!(reopened.persist_native_settings());
+    // The working model stays selected, and the resume still asks the model
+    // the interrupted turn was admitted on: the selection is for the next turn.
     reopened.start_resume();
     assert!(reopened.active_resume.is_some(), "{}", reopened.view.status);
     wait_observation(|| fixture.requests.lock().unwrap().len() == 2);
     assert_eq!(fixture.requests.lock().unwrap()[1].1["model"], REVIEW_MODEL);
+    assert_eq!(reopened.view.model, MODEL);
 }
 
 /// Situation 3: the saved manual model belongs to a provider that is not

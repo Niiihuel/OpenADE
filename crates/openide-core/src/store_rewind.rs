@@ -169,9 +169,8 @@ impl SessionStore {
             .position(|event| event.sequence == before_sequence)
             .filter(|index| native_admission_fields(&events[*index]).is_some())
             .ok_or_else(|| refused(NativeRewindRefusal::NotATurnStart))?;
-        if active_native_turn_id(&events).is_some() {
-            return Err(refused(NativeRewindRefusal::UnfinishedTurn));
-        }
+        // A turn left unfinished is the last one, so the cut removes it whole.
+        // The lease above already rules out a worker still running it.
         let mut open_permissions = HashSet::new();
         for event in &events {
             match &event.kind {
@@ -519,13 +518,11 @@ mod tests {
         let admitted = store
             .admit_native_turn(&id, "open", "open", "model-a", TurnMode::Build)
             .unwrap();
-        assert_eq!(refusal(store.rewind_native(&id, cuts[1])), NativeRewindRefusal::UnfinishedTurn);
-        store
-            .append_native_event(&AgentEvent::new(&id, admitted.sequence + 1, AgentEventKind::TurnCancelled))
-            .unwrap();
-        let settled = fs::read(&journal).unwrap();
-        assert_ne!(settled, before);
+        // An interrupted turn is rewound with the rest: nothing else settles it.
+        let _ = admitted;
+        assert_ne!(fs::read(&journal).unwrap(), before);
         assert!(store.rewind_native(&id, cuts[0]).is_ok());
+        assert_eq!(store.active_native_turn_id(&id).unwrap(), None);
 
         // A subagent's own journal is never rewound.
         let (_dir, store, id, cuts) = fixture();
