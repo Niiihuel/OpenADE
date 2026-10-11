@@ -331,17 +331,6 @@ impl AgentsWindow {
                 is_default: id == "default",
             })
         })
-        .chain(
-            crate::agent_cli_definitions::definitions()
-                .iter()
-                .filter(|agent| self.resolve_agent_cli(agent).is_some())
-                .flat_map(|agent| agent.profiles())
-                .map(|(id, label)| TerminalProfileView {
-                    id,
-                    label,
-                    is_default: false,
-                }),
-        )
         .collect()
     }
 
