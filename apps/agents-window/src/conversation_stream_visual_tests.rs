@@ -348,9 +348,12 @@ fn exploration_group_identity_survives_preview_execution_completion_and_new_call
     let waiting = surface(&state, width, true).layout(viewport);
     assert!(text(&waiting).contains("Explorando"));
     assert_eq!(text(&waiting).matches(WAITING_LABEL).count(), 1);
-    // The turn ends: the same group settles and nothing keeps moving.
+    // The turn ends: the ticker closes, then the same group is settled and
+    // nothing keeps moving.
     state.running = false;
     tree.set_root(build_session_surface(&state, width, false, false));
+    tree.layout(viewport);
+    assert!(tree.is_animating(), "the ticker is closing");
     let completed = tree.layout_at(viewport, Instant::now() + Duration::from_secs(1));
     assert!(completed.regions.iter().any(|r| r.id == action("work:a")));
     assert!(text(&completed).contains("Exploró"));
@@ -361,6 +364,113 @@ fn exploration_group_identity_survives_preview_execution_completion_and_new_call
         !tree.is_animating(),
         "completed historical work has nothing in motion"
     );
+}
+
+/// Where a text is painted, if it is.
+fn text_y(frame: &openide_ui::Frame, wanted: &str) -> Option<f32> {
+    frame.commands.iter().find_map(|command| match command {
+        DrawCommand::Text { position, text, .. } if text.contains(wanted) => Some(position.y),
+        _ => None,
+    })
+}
+
+#[test]
+fn what_follows_a_group_glides_when_its_ticker_closes_and_its_lines_toggle() {
+    let motion = openide_ui::tokens().motion;
+    let (exit, enter) = (
+        Duration::from_millis(u64::from(motion.exit_ms)),
+        Duration::from_millis(u64::from(motion.enter_ms)),
+    );
+    let mut state = state();
+    state.running = true;
+    state.transcript.extend([
+        exploration_fixture("a", "read_file", ActivityStatus::Completed),
+        exploration_fixture("b", "search_files", ActivityStatus::Running),
+        assistant("TEXTO_DESPUES"),
+    ]);
+    let width = 900.0;
+    let viewport = Size::new(width, 900.0);
+    // In the past, so the wall clock `is_animating` reads is after each end.
+    let mut clock = Instant::now() - Duration::from_secs(60);
+    let mut tree = surface(&state, width, false);
+    let below = |tree: &mut UiTree, clock: Instant| {
+        text_y(&tree.layout_at(viewport, clock), "TEXTO_DESPUES").unwrap()
+    };
+    let live = below(&mut tree, clock);
+
+    // The group settles: its two-line ticker closes over the exit time.
+    state.transcript[2] = exploration_fixture("b", "search_files", ActivityStatus::Completed);
+    tree.set_root(build_session_surface(&state, width, false, false));
+    assert_eq!(below(&mut tree, clock), live, "nothing has moved in the frame it settles");
+    let half = tree.layout_at(viewport, clock + exit / 2);
+    let y = text_y(&half, "TEXTO_DESPUES").unwrap();
+    assert!(y < live && y > live - STREAM_LINE_HEIGHT * 2.0, "{y} of {live}");
+    assert!(text(&half).contains("Buscando"), "the last step fades in what is left");
+    clock += exit * 2;
+    let settled = tree.layout_at(viewport, clock);
+    assert_eq!(text_y(&settled, "TEXTO_DESPUES"), Some(live - STREAM_LINE_HEIGHT * 2.0));
+    assert!(!text(&settled).contains("Buscando"));
+    assert!(!tree.is_animating());
+    let closed = live - STREAM_LINE_HEIGHT * 2.0;
+
+    // Opened: one line per call arrives over the enter time.
+    state.conversation_details.set_expanded("work:a", true);
+    tree.set_root(build_session_surface(&state, width, false, false));
+    assert_eq!(below(&mut tree, clock), closed);
+    let y = below(&mut tree, clock + enter / 2);
+    assert!(y > closed && y < closed + STREAM_LINE_HEIGHT * 2.0, "{y} of {closed}");
+    clock += enter * 2;
+    assert_eq!(below(&mut tree, clock), closed + STREAM_LINE_HEIGHT * 2.0);
+    assert!(!tree.is_animating());
+
+    // Closed again: the lines leave over the exit time and take no clicks.
+    state.conversation_details.set_expanded("work:a", false);
+    tree.set_root(build_session_surface(&state, width, false, false));
+    below(&mut tree, clock);
+    let half = tree.layout_at(viewport, clock + exit / 2);
+    let y = text_y(&half, "TEXTO_DESPUES").unwrap();
+    assert!(y > closed && y < closed + STREAM_LINE_HEIGHT * 2.0, "{y} of {closed}");
+    assert!(half.regions.iter().all(|region| region.id != open_file("a")));
+    assert_eq!(below(&mut tree, clock + exit * 2), closed);
+    assert!(!tree.is_animating());
+
+    // A group already open when the transcript is first shown does not open.
+    state.conversation_details.set_expanded("work:a", true);
+    let mut fresh = surface(&state, width, false);
+    assert_eq!(below(&mut fresh, clock), closed + STREAM_LINE_HEIGHT * 2.0);
+
+    // With reduced motion everything is where it ends at once.
+    let mut still = surface(&state, width, true);
+    let open = text_y(&still.layout(viewport), "TEXTO_DESPUES").unwrap();
+    state.conversation_details.set_expanded("work:a", false);
+    still.set_root(build_session_surface(&state, width, false, false));
+    assert_eq!(
+        text_y(&still.layout(viewport), "TEXTO_DESPUES"),
+        Some(open - STREAM_LINE_HEIGHT * 2.0)
+    );
+}
+
+#[test]
+fn the_waiting_line_closes_when_content_arrives() {
+    let exit = Duration::from_millis(u64::from(openide_ui::tokens().motion.exit_ms));
+    let mut state = state();
+    state.running = true;
+    let width = 900.0;
+    let viewport = Size::new(width, 900.0);
+    let clock = Instant::now() - Duration::from_secs(60);
+    let mut tree = UiTree::new(timeline(&state, width));
+    let waiting = tree.layout_at(viewport, clock);
+    let line = text_y(&waiting, "Pensando").expect("the waiting line");
+
+    state.transcript.push(tool(ActivityStatus::Running));
+    tree.set_root(timeline(&state, width));
+    tree.layout_at(viewport, clock);
+    let half = tree.layout_at(viewport, clock + exit / 2);
+    assert!(text(&half).contains("Pensando"), "still fading");
+    assert!(text_y(&half, "Pensando").unwrap() > line, "under what arrived");
+    let after = tree.layout_at(viewport, clock + exit * 2);
+    assert!(!text(&after).contains("Pensando"));
+    assert!(!tree.is_animating());
 }
 
 #[test]
@@ -1527,7 +1637,11 @@ fn waiting_remains_visible_until_first_painted_prose_and_restarts_for_a_new_requ
                 "the first received fragment is painted immediately"
             );
             tree.set_root(timeline(&state, width));
-            let responding = tree.layout(viewport);
+            // The waiting line closes under the prose that replaced it.
+            let closing = tree.layout(viewport);
+            assert!(text(&closing).contains(&"PRIMER_TEXTO_VISIBLE"[..visible_bytes]));
+            assert!(tree.is_animating());
+            let responding = tree.layout_at(viewport, Instant::now() + Duration::from_secs(1));
             assert!(text(&responding).contains(&"PRIMER_TEXTO_VISIBLE"[..visible_bytes]));
             assert!(!text(&responding).contains("Pensando"));
             assert!(!text(&responding).contains("Respondiendo"));
@@ -2259,7 +2373,7 @@ fn export_streaming_lines_visual_review() {
                 state.transcript.push(assistant(prose));
                 state.transcript.extend(explored(4));
             }
-            "exploration-live-between-steps" => {
+            "exploration-live-between-steps" | "exploration-settling-mid" => {
                 state.transcript.push(assistant(prose));
                 state.transcript.extend(explored(6));
             }
@@ -2317,6 +2431,7 @@ fn export_streaming_lines_visual_review() {
         "exploration-live-step-mid",
         "exploration-live-step-b",
         "exploration-live-between-steps",
+        "exploration-settling-mid",
         "exploration-done",
         "exploration-done-open",
         "exploration-failed",
@@ -2339,6 +2454,19 @@ fn export_streaming_lines_visual_review() {
                 tree.layout_at(
                     viewport,
                     clock + Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) / 4),
+                )
+            } else if phase == "exploration-settling-mid" {
+                // The same tree sees the group settle and is caught early in
+                // the close, which eases out and is nearly done by half-way.
+                tree.set_reduced_motion(false);
+                let clock = Instant::now();
+                tree.layout_at(viewport, clock);
+                let next = build("exploration-done");
+                tree.set_root(build_session_surface(&next, width, false, false));
+                tree.layout_at(viewport, clock);
+                tree.layout_at(
+                    viewport,
+                    clock + Duration::from_millis(u64::from(openide_ui::tokens().motion.exit_ms) / 6),
                 )
             } else {
                 tree.set_reduced_motion(true);

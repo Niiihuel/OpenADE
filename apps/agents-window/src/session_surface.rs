@@ -9,8 +9,8 @@ use std::collections::HashSet;
 use chrono::{Local, TimeZone};
 use openide_core::{OutputStream, PlanStepStatus};
 use openide_ui::{
-    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, Component,
-    ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
+    Alert, AlertTone, Button, ButtonGroup, ButtonVariant, Card, CardDensity, Collapse,
+    Component, ControlSize, Element, FontFamily, Icon, IconButton as UiIconButton, ListRow, Marker,
     MarkerVariant, PageColumn, ScrollArea, Separator, Text, TextArea, TextRole, Ticker,
     ToolActivity, Tooltip, TooltipPlacement,
 };
@@ -46,6 +46,8 @@ const HEADER_ACTION_SIZE: f32 = crate::sidebar_chrome::TOOL_SIZE;
 const HEADER_GAP: f32 = 4.0;
 /// Thinking, exploration and waiting are flat text lines of this height.
 const STREAM_LINE_HEIGHT: f32 = 22.0;
+/// Between the rows of the transcript.
+const TRANSCRIPT_GAP: f32 = 8.0;
 const WAITING_LABEL: &str = "Pensando el siguiente paso";
 
 /// Humanize known provider failures only at presentation time. The original
@@ -2003,11 +2005,22 @@ fn work_group(items: &[TranscriptItem], state: &ViewState, live_tail: bool) -> E
         (!live || expanded).then_some(expanded),
     )];
     for item in items {
-        if exploration_call(item).is_some() && (expanded || exploration_needs_attention(item)) {
+        let Some(line) = exploration_call(item) else {
+            continue;
+        };
+        if exploration_needs_attention(item) {
             rows.extend(exploration_lines(item, state, false));
+        } else {
+            // Opens and closes with the group instead of jumping.
+            let lines = expanded.then(|| Element::column(exploration_lines(item, state, false)));
+            rows.push(
+                Collapse::new(format!("exploration-line:{owner}:{line}"), lines)
+                    .expand()
+                    .render(),
+            );
         }
     }
-    if live {
+    let ticker = live.then(|| {
         // Two lines tall whatever it shows, so the transcript below holds
         // still while steps come and go.
         let (key, line) = match current {
@@ -2020,12 +2033,12 @@ fn work_group(items: &[TranscriptItem], state: &ViewState, live_tail: bool) -> E
                 stream_shimmer(format!("exploration-waiting:{owner}:{call}"), WAITING_LABEL, false),
             ),
         };
-        rows.push(
-            Ticker::new(format!("exploration-step:{owner}:{call}"), key, line)
-                .height(STREAM_LINE_HEIGHT * 2.0)
-                .render(),
-        );
-    }
+        Ticker::new(format!("exploration-step:{owner}:{call}"), key, line)
+            .height(STREAM_LINE_HEIGHT * 2.0)
+            .render()
+    });
+    // Once the group settles the ticker closes, and what follows glides up.
+    rows.push(Collapse::new(format!("exploration-ticker:{owner}:{call}"), ticker).render());
     Element::column(rows)
 }
 
@@ -2058,7 +2071,7 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         .max_width(READING_WIDTH)
         .min_width(120.0)
         .gutter(16.0, 24.0, COMPACT_BREAKPOINT)
-        .gap(8.0)
+        .gap(TRANSCRIPT_GAP)
         .reserve_rail(true);
     let reading_width = page.content_width();
     let _markdown_frame =
@@ -2343,20 +2356,28 @@ fn timeline(state: &ViewState, width: f32) -> Element {
         },
         _ => false,
     };
-    if more_coming && !in_flight && !live_group_tail && state.pending_permissions.is_empty() {
-        rows.push(stream_line(
-            vec![stream_shimmer(
-                format!(
-                    "reply-stream:{}",
-                    state.selected_session.as_deref().unwrap_or("draft")
-                ),
-                WAITING_LABEL,
-                false,
-            )],
-            None,
-            None,
-        ));
-    }
+    let session = state.selected_session.as_deref().unwrap_or("draft");
+    let waiting = (more_coming
+        && !in_flight
+        && !live_group_tail
+        && state.pending_permissions.is_empty())
+    .then(|| {
+        Element::column(vec![
+            Element::spacer().size(None, Some(TRANSCRIPT_GAP)),
+            stream_line(
+                vec![stream_shimmer(format!("reply-stream:{session}"), WAITING_LABEL, false)],
+                None,
+                None,
+            ),
+        ])
+    });
+    // The line closes when content arrives. Its slot hangs under the row
+    // before it and carries the column's gap, so an empty slot takes no room.
+    let last = rows.pop().unwrap_or_else(Element::spacer);
+    rows.push(Element::column(vec![
+        last,
+        Collapse::new(format!("reply-waiting:{session}"), waiting).render(),
+    ]));
     rows.extend(host_activity_markers(state));
     page.children(rows)
         .render()

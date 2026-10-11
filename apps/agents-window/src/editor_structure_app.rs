@@ -256,6 +256,27 @@ impl AgentsWindow {
         self.sync_editor_structure();
     }
 
+    /// Markers follow a file that moved to `new` and go with one that is gone.
+    pub(in crate::app) fn retarget_breakpoints(&mut self, old: &Path, new: Option<&Path>) {
+        let workspace = &self.view.workspace;
+        let host = &mut self.editor_services.structure;
+        let before: Vec<_> = host.breakpoints.iter().map(|entry| entry.path.clone()).collect();
+        host.breakpoints.retain_mut(|entry| {
+            if entry.workspace != *workspace {
+                return true;
+            }
+            match crate::file_ops::moved(Path::new(&entry.path), old, new) {
+                Some(Some(path)) => entry.path = path.to_string_lossy().into_owned(),
+                Some(None) => return false,
+                None => {}
+            }
+            true
+        });
+        if !host.breakpoints.iter().map(|entry| &entry.path).eq(&before) {
+            host.breakpoint_generation = host.breakpoint_generation.wrapping_add(1);
+        }
+    }
+
     pub(in crate::app) fn debug_breakpoint_generation(&self) -> u64 {
         self.editor_services.structure.breakpoint_generation
     }

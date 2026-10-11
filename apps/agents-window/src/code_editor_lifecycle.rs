@@ -56,6 +56,76 @@ impl CodeEditorHost {
         }
     }
 
+    /// The file or folder `old` of `workspace` moved to `new`, or is gone
+    /// when `new` is `None`. A document with text follows it and keeps its
+    /// buffer and tab; one that is gone, has no text yet, or whose new path
+    /// already has a document is dropped. The caller refuses unsaved ones.
+    pub(in crate::app) fn retarget(&mut self, workspace: &Path, old: &Path, new: Option<&Path>) {
+        let moved = |key: &DocumentKey| {
+            (key.0 == workspace)
+                .then(|| crate::file_ops::moved(&key.1, old, new))
+                .flatten()
+                .map(|path| path.map(|path| (key.0.clone(), path)))
+        };
+        let keys: Vec<_> = self
+            .documents
+            .keys()
+            .filter_map(|key| Some((key.clone(), moved(key)?)))
+            .collect();
+        for (key, next) in keys {
+            let mut d = self.documents.remove(&key).expect("listed document");
+            // A draft is stored by path: the old one is discarded, a new one starts.
+            if self.recovery_available {
+                self.recovery_cleanup.push_back(d.scope.clone());
+            }
+            let active = self.active.as_ref() == Some(&key);
+            let next = next
+                .filter(|next| d.controller.is_some() && !self.documents.contains_key(next));
+            let Some(next) = next else {
+                if let Some(worker) = &self.worker {
+                    worker.cancel_loads(d.scope.tab_id);
+                }
+                let identity = d
+                    .controller
+                    .and_then(|controller| controller.snapshot().ok())
+                    .map(|snapshot| snapshot.document_id());
+                self.retired_documents.extend(identity);
+                if active {
+                    self.active = None;
+                }
+                continue;
+            };
+            // Answers still on their way to the old path no longer match.
+            self.generation = self.generation.saturating_add(1);
+            d.scope.generation = self.generation;
+            d.scope.relative_path = next.1.clone();
+            d.canonical_location = d
+                .canonical_location
+                .take()
+                .map(|(root, _)| (root.clone(), root.join(&next.1)));
+            d.loading = false;
+            d.saving = None;
+            d.missing = false;
+            d.disk_version = None;
+            d.disk_digest = None;
+            d.inspecting = false;
+            d.inspected_at = None;
+            d.draft = DraftTracking::default();
+            if active {
+                self.active = Some(next.clone());
+            }
+            self.documents.insert(next, d);
+        }
+        self.recovered_keys = std::mem::take(&mut self.recovered_keys)
+            .into_iter()
+            .filter_map(|key| moved(&key).unwrap_or(Some(key)))
+            .collect();
+        self.opened_documents = std::mem::take(&mut self.opened_documents)
+            .into_iter()
+            .filter_map(|(key, tab, owner)| Some((moved(&key).unwrap_or(Some(key))?, tab, owner)))
+            .collect();
+    }
+
     pub(super) fn tick_lifecycle(&mut self, now: Instant) {
         let Some(worker) = self.worker.as_ref() else {
             return;
