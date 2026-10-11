@@ -115,16 +115,29 @@ pub(crate) fn carries_attachments(composed: &str, images: usize) -> bool {
     images > 0 || APPENDED_BLOCKS[..2].iter().any(|block| composed.contains(block))
 }
 
-/// The turn a click on this row may edit. A running turn of the session
-/// does not prevent it: sending the edit stops that turn first. Nothing is
-/// offered while an automation runs it, a permission waits, or another edit
-/// is open.
+/// Why a click on this turn's message cannot open it for editing, or
+/// `None` when it can. A running turn of the session does not prevent it:
+/// sending the edit stops that turn first. Nothing is offered while an
+/// automation runs it, a permission waits, or another edit is open.
+pub(crate) fn blocked_reason(state: &ViewState, turn: &EditableTurn) -> Option<&'static str> {
+    if turn.text.is_none() {
+        Some("Este mensaje lleva contexto agregado que no se puede separar de lo que escribiste.")
+    } else if state.selected_backend != "native" {
+        Some("Sólo las tareas nativas permiten editar un mensaje.")
+    } else if state.background_run_selected {
+        Some("Una automatización está ejecutando esta tarea.")
+    } else if !state.pending_permissions.is_empty() {
+        Some("Respondé el permiso pendiente antes de editar un mensaje anterior.")
+    } else if state.message_edit.editing.is_some() {
+        Some("Ya hay un mensaje en edición.")
+    } else {
+        None
+    }
+}
+
+/// The turn a click on this row may edit.
 pub(crate) fn offered(state: &ViewState, turn: &EditableTurn) -> bool {
-    turn.text.is_some()
-        && state.selected_backend == "native"
-        && !state.background_run_selected
-        && state.pending_permissions.is_empty()
-        && state.message_edit.editing.is_none()
+    blocked_reason(state, turn).is_none()
 }
 
 pub(crate) fn action_id(user_row: usize) -> String {

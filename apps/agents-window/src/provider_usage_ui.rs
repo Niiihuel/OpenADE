@@ -39,14 +39,14 @@ fn plan_badge(value: &str) -> Element {
     .render()
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
 }
 
-fn elapsed_label(timestamp: u64, now: u64) -> String {
+pub(crate) fn elapsed_label(timestamp: u64, now: u64) -> String {
     let seconds = now.saturating_sub(timestamp) / 1_000;
     match seconds {
         0..=59 => "ahora".into(),

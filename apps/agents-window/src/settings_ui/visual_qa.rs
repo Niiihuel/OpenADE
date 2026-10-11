@@ -617,6 +617,7 @@ fn icon_svg(icon: Icon) -> &'static str {
         Icon::ArchiveUp => include_str!("../../assets/bootstrap/box-arrow-up.svg"),
         Icon::Trash => include_str!("../../assets/bootstrap/trash3.svg"),
         Icon::Edit => include_str!("../../assets/bootstrap/pencil.svg"),
+        Icon::Copy => include_str!("../../assets/bootstrap/copy.svg"),
         Icon::Unread => include_str!("../../assets/bootstrap/chat-left-dots.svg"),
         Icon::Filter => include_str!("../../assets/bootstrap/funnel.svg"),
         Icon::Sort => include_str!("../../assets/bootstrap/sort-down.svg"),

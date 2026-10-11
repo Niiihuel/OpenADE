@@ -5878,6 +5878,7 @@ impl AgentsWindow {
             composer_attachment_loading: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
+            message_actions: Default::default(),
             composer_add_menu_open: false,
             composer_listening: false,
             composer_expanded: false,
@@ -8156,6 +8157,37 @@ impl AgentsWindow {
     fn set_settings_notice(&mut self, message: impl Into<String>, is_error: bool) {
         self.view.settings_notice = Some(message.into());
         self.view.settings_notice_error = is_error;
+    }
+
+    /// Open Activity on one tool call. A row of the list `toggles` its own
+    /// selection off again in a narrow window.
+    fn show_tool_activity(&mut self, tool_id: &str, toggles: bool) {
+        self.view.selected_tool_id = if toggles
+            && self.viewport_width < 800.0
+            && self.view.selected_tool_id.as_deref() == Some(tool_id)
+        {
+            None
+        } else {
+            Some(tool_id.to_owned())
+        };
+        self.view.show_side_pane = true;
+        self.view.side_tab = SideTab::Activity;
+        let scope = self.dock_scope();
+        self.dock.open(&scope, DockTabKind::Activity);
+        self.sync_dock_view();
+    }
+
+    /// The check on a copy button leaves by itself.
+    fn expire_message_copy(&mut self, ctx: &egui::Context) -> bool {
+        let Some(copied) = &self.view.message_actions.copied else {
+            return false;
+        };
+        if let Some(left) = copied.repaint_after(Instant::now()) {
+            ctx.request_repaint_after(left);
+            return false;
+        }
+        self.view.message_actions.copied = None;
+        true
     }
 
     /// The highlight of a call jumped to from Activity lasts a few motion
@@ -15346,6 +15378,21 @@ impl AgentsWindow {
         if matches!(&action, UiAction::Clicked { id } if self.message_edit_action(id)) {
             return;
         }
+        if let UiAction::Clicked { id } = &action {
+            use crate::message_actions::Effect;
+            match crate::message_actions::apply_action(&mut self.view, id) {
+                None => {}
+                Some(effect) => {
+                    match effect {
+                        Effect::None => {}
+                        Effect::Copy(text) => ctx.copy_text(text),
+                        Effect::Activity(call) => self.show_tool_activity(&call, false),
+                        Effect::Retry(user_row) => self.retry_message(user_row),
+                    }
+                    return;
+                }
+            }
+        }
         if matches!(&action, UiAction::Clicked { id } if id == "editor_menu")
             && !self.view.ide.is_active()
         {
@@ -18323,19 +18370,7 @@ impl AgentsWindow {
                 }
             }
             UiAction::Clicked { id } if id.starts_with("tool:") => {
-                let tool_id = id.trim_start_matches("tool:");
-                self.view.selected_tool_id = if self.viewport_width < 800.0
-                    && self.view.selected_tool_id.as_deref() == Some(tool_id)
-                {
-                    None
-                } else {
-                    Some(tool_id.to_owned())
-                };
-                self.view.show_side_pane = true;
-                self.view.side_tab = SideTab::Activity;
-                let scope = self.dock_scope();
-                self.dock.open(&scope, DockTabKind::Activity);
-                self.sync_dock_view();
+                self.show_tool_activity(id.trim_start_matches("tool:"), true);
             }
             UiAction::Clicked { id } if id.starts_with("agent_tool:") => {
                 if let Some(tool) = AgentToolSettings::tool_from_action_id(&id) {
@@ -19165,6 +19200,7 @@ impl eframe::App for AgentsWindow {
         early_changed |= std::mem::replace(&mut self.toast_shown, toast.is_some()) != toast.is_some();
         early_changed |= self.expire_settings_notice(&ctx);
         early_changed |= self.expire_reveal_flash(&ctx);
+        early_changed |= self.expire_message_copy(&ctx);
         early_changed |= self.poll_turn_check();
         // These updates are already included in the first tree below. Only
         // mutations after that hit-test layout require rebuilding it again.

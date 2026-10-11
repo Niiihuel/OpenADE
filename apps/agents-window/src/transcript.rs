@@ -225,9 +225,10 @@ pub enum TranscriptItem {
     },
 }
 
-/// Start and end event times of reasoning rows (keyed by row id) and tool
-/// calls (keyed by call id). They come from `AgentEvent::timestamp_ms`, never
-/// the wall clock, so a restored session shows the durations it recorded.
+/// Start and end event times of reasoning rows (keyed by row id), tool
+/// calls (keyed by call id) and finished turns (keyed by [`turn_time_id`]).
+/// They come from `AgentEvent::timestamp_ms`, never the wall clock, so a
+/// restored session shows the times it recorded.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ItemTimes(HashMap<String, (u64, Option<u64>)>);
 
@@ -240,10 +241,22 @@ impl ItemTimes {
         Some((*end)?.saturating_sub(*start))
     }
 
+    /// When an item ended, in milliseconds since the Unix epoch.
+    pub(crate) fn ended_ms(&self, id: &str) -> Option<u64> {
+        self.0.get(id)?.1
+    }
+
     #[cfg(test)]
     pub(crate) fn record(&mut self, id: &str, start: u64, end: Option<u64>) {
         self.0.insert(id.into(), (start, end));
     }
+}
+
+/// The [`ItemTimes`] key of the turn whose last `User` row is this one,
+/// counting only `User` rows. A turn still open, or cut short without an
+/// end event, has no entry.
+pub(crate) fn turn_time_id(user_row: usize) -> String {
+    format!("turn:{user_row}")
 }
 
 /// A duration for a transcript line: "un momento" under a second, then
@@ -274,6 +287,7 @@ pub struct TranscriptProjection {
     times_dirty: Vec<String>,
     times_published: bool,
     previous_event_ms: Option<u64>,
+    turn_started_ms: Option<u64>,
     plan_events: HashSet<(String, u64)>,
     next_local_plan_id: u64,
     tool_rows: HashMap<String, usize>,
@@ -460,6 +474,24 @@ impl TranscriptProjection {
     /// think, to its last delta.
     fn record_times(&mut self, event: &AgentEvent, changed: bool) {
         let now = event.timestamp_ms;
+        match &event.kind {
+            AgentEventKind::TurnStarted { .. } => self.turn_started_ms = Some(now),
+            AgentEventKind::TurnCompleted { .. }
+            | AgentEventKind::TurnFailed { .. }
+            | AgentEventKind::TurnCancelled => {
+                let users = self
+                    .items
+                    .iter()
+                    .filter(|item| matches!(item, TranscriptItem::User { .. }))
+                    .count();
+                if let (Some(start), Some(row)) = (self.turn_started_ms.take(), users.checked_sub(1)) {
+                    let id = turn_time_id(row);
+                    self.times.0.insert(id.clone(), (start, Some(now)));
+                    self.times_dirty.push(id);
+                }
+            }
+            _ => {}
+        }
         let id = match &event.kind {
             AgentEventKind::ToolStarted { tool_call } => {
                 self.times.0.insert(tool_call.id.clone(), (now, None));
