@@ -260,6 +260,30 @@ pub struct ComposerAttachmentView {
     pub path: String,
     pub label: String,
     pub is_dir: bool,
+    /// Set when the attachment is a range of the file, not the whole file.
+    pub selection: Option<AttachedSelection>,
+}
+
+/// A range of a file as it was when it was attached. Path, lines and text
+/// together identify it: a later edit of the file does not change what is sent.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttachedSelection {
+    /// 1-based, inclusive.
+    pub start_line: u32,
+    pub end_line: u32,
+    pub text: String,
+}
+
+impl AttachedSelection {
+    /// `12` for one line, `12-30` for several.
+    pub fn lines(&self) -> String {
+        if self.start_line == self.end_line {
+            self.start_line.to_string()
+        } else {
+            format!("{}-{}", self.start_line, self.end_line)
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3521,6 +3545,7 @@ fn dialogs(state: &ViewState, base: Element, viewport_width: f32) -> Element {
 
 pub fn build_window_view(state: &ViewState, width: f32, height: f32) -> Element {
     let base = build_view_sized(state, width, height);
+    let base = crate::selection_chat::layer(state, base);
     let base = match &state.chat_link_menu {
         Some(menu) => menu.attach(
             base,

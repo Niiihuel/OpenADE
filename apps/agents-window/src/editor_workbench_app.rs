@@ -122,6 +122,8 @@ pub(super) struct EditorServices {
     pub(super) language: super::editor_language_app::EditorLanguageHost,
     pub(super) pending_navigation: Option<(PathBuf, openide_language::Position)>,
     pub(super) focus_next: Option<String>,
+    /// The selection the floating control waits on, and since when.
+    pub(super) selection_seen: Option<((u64, openide_editor::Selection), Instant)>,
     structure: editor_structure_app::EditorStructureHost,
 }
 impl Default for EditorServices {
@@ -138,6 +140,7 @@ impl Default for EditorServices {
             language: Default::default(),
             pending_navigation: None,
             focus_next: None,
+            selection_seen: None,
             structure: Default::default(),
         }
     }
@@ -663,6 +666,10 @@ impl AgentsWindow {
         let Some(command) = id.strip_prefix("editor_") else {
             return false;
         };
+        if command == "add_selection" {
+            self.add_editor_selection_to_chat();
+            return true;
+        }
         self.view.editor_workbench.error = None;
         if command != "menu" {
             self.view.editor_workbench.menu_open = false;
@@ -1139,6 +1146,7 @@ impl AgentsWindow {
             (Key::G, _, true) => "goto",
             (Key::D, false, true) => "select_next",
             (Key::L, true, true) => "select_all_matches",
+            (Key::L, false, true) => "add_selection",
             (Key::K, true, true) => "delete_lines",
             (Key::Space, _, true) => "completion",
             (Key::Escape, _, _) if search_control => "search_close",

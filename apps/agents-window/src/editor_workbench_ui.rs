@@ -26,6 +26,8 @@ pub(crate) struct LanguageResult {
 }
 #[derive(Clone, Debug)]
 pub(crate) struct EditorWorkbenchView {
+    /// Where the control over the selection is painted, when it shows.
+    pub selection_control: Option<openide_ui::Point>,
     pub document_id: Option<u64>,
     pub review: Option<crate::editor_review_ui::EditorReviewView>,
     pub search_open: bool,
@@ -77,6 +79,7 @@ pub(crate) struct EditorWorkbenchView {
 impl Default for EditorWorkbenchView {
     fn default() -> Self {
         Self {
+            selection_control: None,
             document_id: None,
             review: None,
             search_open: false,
@@ -156,6 +159,8 @@ pub(crate) fn context_actions(ready: bool) -> Vec<ContextMenuEntry> {
     // focused on common editing and symbol navigation; the full grouped menu
     // remains one explicit click away and preserves every action ID.
     vec![
+        item("add_selection", "Añadir al chat", crate::selection_chat::SHORTCUT, true),
+        ContextMenuEntry::Separator,
         item("undo", "Deshacer", "Ctrl+Z", true),
         item("redo", "Rehacer", "Ctrl+Shift+Z", true),
         ContextMenuEntry::Separator,
@@ -897,7 +902,7 @@ mod compact_menu_tests {
                 .iter()
                 .filter(|region| region.id.starts_with("__context_menu:item:"))
                 .count(),
-            10
+            11
         );
         assert!(!frame.commands.iter().any(|command| matches!(command,
             DrawCommand::Text { text, .. } if text.contains("Marcador pendiente"))));
@@ -906,6 +911,7 @@ mod compact_menu_tests {
             "Copiar",
             "Pegar",
             "Seleccionar todo",
+            "Añadir al chat",
             "Deshacer",
             "Rehacer",
             "Comentar / descomentar",

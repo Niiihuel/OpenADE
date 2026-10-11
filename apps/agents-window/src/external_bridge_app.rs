@@ -244,6 +244,10 @@ impl AgentsWindow {
         }
     }
 
+    pub(super) fn terminal_agent(&self, id: u64) -> Option<&'static AgentCliDefinition> {
+        self.external_bridge.agents.get(&id).map(|(agent, _)| *agent)
+    }
+
     pub(super) fn mark_agent_terminal(&mut self, id: u64, agent: (&'static AgentCliDefinition, bool)) {
         self.external_bridge.agents.insert(id, agent);
     }

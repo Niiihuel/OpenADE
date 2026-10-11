@@ -194,6 +194,8 @@ mod code_snapshot_app;
 mod editor_language_app;
 #[path = "editor_workbench_app.rs"]
 mod editor_workbench_app;
+#[path = "selection_chat_app.rs"]
+mod selection_chat_app;
 #[path = "debug_host.rs"]
 mod debug_host;
 #[cfg(test)]
@@ -1481,6 +1483,8 @@ struct NativeSteerDraftAttachment {
     path: String,
     label: String,
     is_dir: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selection: Option<crate::view::AttachedSelection>,
 }
 
 impl From<&ComposerAttachmentView> for NativeSteerDraftAttachment {
@@ -1489,6 +1493,7 @@ impl From<&ComposerAttachmentView> for NativeSteerDraftAttachment {
             path: attachment.path.clone(),
             label: attachment.label.clone(),
             is_dir: attachment.is_dir,
+            selection: attachment.selection.clone(),
         }
     }
 }
@@ -1499,6 +1504,7 @@ impl From<NativeSteerDraftAttachment> for ComposerAttachmentView {
             path: attachment.path,
             label: attachment.label,
             is_dir: attachment.is_dir,
+            selection: attachment.selection,
         }
     }
 }
@@ -2106,6 +2112,7 @@ fn composer_attachment_for_path(
         path,
         label,
         is_dir,
+        selection: None,
     })
 }
 
@@ -2118,11 +2125,16 @@ fn composer_prompt_with_attachments(
     }
     let paths: Vec<_> = attachments
         .iter()
-        .map(|entry| {
-            serde_json::json!({
+        .map(|entry| match &entry.selection {
+            Some(selection) => serde_json::json!({
+                "path": entry.path,
+                "type": "selection",
+                "lines": selection.lines(),
+            }),
+            None => serde_json::json!({
                 "path": entry.path,
                 "type": if entry.is_dir { "folder" } else { "file" },
-            })
+            }),
         })
         .collect();
     let listed = serde_json::to_string(&paths).expect("attachment paths serialize as JSON");
@@ -2131,9 +2143,30 @@ fn composer_prompt_with_attachments(
     } else {
         visible_prompt
     };
-    format!(
+    let mut prompt = format!(
         "{introduction}\n\nAdjuntos de este proyecto (rutas relativas): {listed}\nAbre los archivos y explora las carpetas pertinentes; úsalos como contexto para esta tarea."
-    )
+    );
+    for entry in attachments {
+        let Some(selection) = &entry.selection else {
+            continue;
+        };
+        // One backtick more than the longest run in the text, so the text
+        // cannot close its own block.
+        let longest = selection
+            .text
+            .split(|ch| ch != '`')
+            .map(str::len)
+            .max()
+            .unwrap_or(0);
+        let fence = "`".repeat(longest.max(2) + 1);
+        prompt.push_str(&format!(
+            "\n\nSelección de {} (líneas {}), tal como estaba al adjuntarla:\n{fence}\n{}\n{fence}",
+            entry.path,
+            selection.lines(),
+            selection.text.trim_end_matches('\n'),
+        ));
+    }
+    prompt
 }
 
 fn native_image_mime(path: &str) -> Option<UserImageMime> {
@@ -20033,6 +20066,7 @@ impl eframe::App for AgentsWindow {
         }
         needs_relayout |= self.sync_git_panel_reveal();
         needs_relayout |= self.sync_tab_reveal();
+        needs_relayout |= self.sync_selection_control(&ctx);
         needs_relayout |= self.update_command_search(&ctx);
         needs_relayout |= self.poll_project_actions(&ctx);
         // Disclosures can change during input handling. Start their background
@@ -20081,6 +20115,10 @@ impl eframe::App for AgentsWindow {
             || crate::view::build_window_view(&self.view, area.width(), area.height()),
         );
         frame = self.settle_tour(frame, Size::new(area.width(), area.height()), &ctx);
+        // This layout may have moved the selection: place the control again.
+        if self.selection_control_target(&ctx) != self.view.editor_workbench.selection_control {
+            ctx.request_repaint();
+        }
         self.record_transcript_layout_session();
         if self.focus_ide_activity_if_pending() {
             ctx.request_repaint();
@@ -21972,6 +22010,7 @@ mod tests {
             path: "src/main.rs".into(),
             label: "main.rs".into(),
             is_dir: false,
+            selection: None,
         };
         let prompt = native_prompt_with_images("Revisa ambos", &[other], &[image_attachment]);
         assert!(prompt.contains("src/main.rs"));
@@ -22087,6 +22126,7 @@ mod tests {
             path: "src/main.rs".into(),
             label: "main.rs".into(),
             is_dir: false,
+            selection: None,
         }];
         let prompt = composer_prompt_with_attachments("Mejora la UI", &attachments);
         assert!(prompt.starts_with("Mejora la UI\n\n"));
@@ -22104,6 +22144,7 @@ mod tests {
             path: "src/main.rs".into(),
             label: "main.rs".into(),
             is_dir: false,
+            selection: None,
         };
         app.view.composer_attachments.push(file.clone());
         app.save_draft();
@@ -26464,6 +26505,7 @@ mod tests {
             path: "image.png".into(),
             label: "image.png".into(),
             is_dir: false,
+            selection: None,
         };
         let image_a = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfirst").unwrap();
         let image_b =

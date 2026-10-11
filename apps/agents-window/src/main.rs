@@ -26,6 +26,7 @@ mod claude_limits;
 mod code_editor_component_visual_tests;
 mod code_editor_files;
 mod code_editor_ui;
+mod selection_chat;
 mod document_preview;
 mod document_preview_ui;
 mod ide_status_ui;
