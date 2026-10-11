@@ -83,11 +83,24 @@ pub(crate) fn scope_web_links(mut element: Element, scope: &str) -> Element {
             }
             ElementKind::Panel(child) => visit(child, scope, ordinal),
             ElementKind::FormattedText(spans) => {
+                let mut links = Vec::new();
                 for span in spans {
                     if let Some(url) = span.action.as_deref().and_then(web_link_url_from_action) {
-                        span.action = Some(link_action_with_hash(scope, *ordinal, &url));
+                        let action = link_action_with_hash(scope, *ordinal, &url);
+                        span.action = Some(action.clone());
+                        links.push((action, url));
                         *ordinal += 1;
                     }
+                }
+                // The hint is the destination itself, normalized: a link's
+                // words can name another site. It is keyed by the span's own
+                // action, so it opens for that link only.
+                // shortcut: it is anchored to the paragraph, not the span;
+                // upgrade when limn anchors a tooltip to an inline action.
+                for (action, url) in links {
+                    let paragraph = std::mem::replace(element, Element::spacer());
+                    *element =
+                        Tooltip::new(paragraph, action, url, theme::component_palette()).render();
                 }
             }
             _ => {}

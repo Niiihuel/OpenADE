@@ -122,6 +122,7 @@ mod provider_usage_ui;
 mod render;
 mod resume_worker;
 mod review_worker;
+mod chat_links;
 mod rich_text;
 mod search_activity_ui;
 mod search_worker;

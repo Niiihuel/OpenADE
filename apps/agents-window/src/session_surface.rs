@@ -93,6 +93,10 @@ mod sticky_edit_rewind_visual_tests;
 #[path = "message_actions_visual_tests.rs"]
 mod message_actions_visual_tests;
 
+#[cfg(test)]
+#[path = "chat_links_visual_tests.rs"]
+mod chat_links_visual_tests;
+
 pub(crate) fn user_image(image: &TranscriptImage) -> Element {
     let preview = image.raster.as_ref().map_or_else(
         || {
@@ -3960,6 +3964,8 @@ mod tests {
             settings_terminal_shell_draft: String::new(),
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
+            chat_link_opening: Default::default(),
+            chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),
             mcp_selected_id: None,
