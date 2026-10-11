@@ -1738,6 +1738,73 @@ pub(crate) fn exploration_words<'a>(
     (verb, target)
 }
 
+/// A call that ran opens its file or page, or else its recorded activity.
+fn exploration_action(
+    owner: Option<&str>,
+    id: &str,
+    name: &str,
+    arguments: &serde_json::Value,
+) -> String {
+    match (tool_presentation::navigation_target(name, arguments), owner) {
+        (Some(_), Some(owner)) => tool_presentation::navigation_action(owner, id),
+        _ => format!("tool:{id}"),
+    }
+}
+
+/// Room kept around a call brought into view: clear of the header's fade
+/// above, and enough under a card's header to show what it holds.
+pub(crate) const REVEAL_MARGIN: f32 = 96.0;
+
+/// The control that stands for a call in the transcript, for the host to
+/// bring into view: its flat line, after opening the exploration group that
+/// folds it, or the header of its card.
+pub(crate) fn reveal_target(state: &mut ViewState, call: &str) -> Option<String> {
+    let position = state
+        .transcript
+        .iter()
+        .position(|item| matches!(item, TranscriptItem::Tool { id, .. } if id == call))?;
+    let TranscriptItem::Tool {
+        name, arguments, ..
+    } = &state.transcript[position]
+    else {
+        return None;
+    };
+    if exploration_call(&state.transcript[position]).is_none() {
+        return Some(detail_action(state, &format!("tool:{call}")));
+    }
+    let target = exploration_action(state.selected_session.as_deref(), call, name, arguments);
+    // Walk the runs as the timeline does to find the one holding the call.
+    let mut index = 0;
+    while index <= position {
+        let Some(first) = exploration_call(&state.transcript[index]).map(str::to_owned) else {
+            index += 1;
+            continue;
+        };
+        let (end, count) = exploration_run(&state.transcript, index);
+        if position < end {
+            if count >= 2 {
+                state
+                    .conversation_details
+                    .set_expanded(&format!("work:{first}"), true);
+            }
+            break;
+        }
+        index = end;
+    }
+    Some(target)
+}
+
+/// Mark the call the user just jumped to from Activity, for a moment.
+fn flashed(state: &ViewState, call: &str, row: Element) -> Element {
+    match &state.activity.revealed {
+        Some((revealed, _)) if revealed == call => Element::panel(row)
+            .background(theme::SELECTED)
+            .border(theme::FOREGROUND, 1.0)
+            .radius(6.0),
+        _ => row,
+    }
+}
+
 /// One call as flat text: its verb and its target, and under them the reason
 /// when it did not simply complete. `live` words it as the step under way.
 fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Vec<Element> {
@@ -1792,12 +1859,8 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
     }
     let failed = is_error || activity == ActivityStatus::Failed;
     // A call that ran opens its file or page, or else its recorded activity.
-    let action = matches!(item, TranscriptItem::Tool { .. }).then(|| {
-        match (tool_presentation::navigation_target(name, arguments), owner) {
-            (Some(_), Some(owner)) => tool_presentation::navigation_action(owner, id),
-            _ => format!("tool:{id}"),
-        }
-    });
+    let action = matches!(item, TranscriptItem::Tool { .. })
+        .then(|| exploration_action(owner, id, name, arguments));
     let line = stream_line(
         vec![
             stream_text(
@@ -1821,6 +1884,7 @@ fn exploration_lines(item: &TranscriptItem, state: &ViewState, live: bool) -> Ve
         action.clone(),
         None,
     );
+    let line = flashed(state, id, line);
     // The line names the file; its whole path stays one hover away.
     let mut lines = vec![match action {
         Some(action) if target.len() < presentation.target.len() => Tooltip::new(
@@ -2075,13 +2139,14 @@ fn timeline(state: &ViewState, width: f32) -> Element {
             continue;
         }
         if let TranscriptItem::Tool { id, .. } = item {
-            rows.push(tool_line_with_output(
+            let row = tool_line_with_output(
                 item,
                 state,
                 width < COMPACT_BREAKPOINT,
                 tool_partial_output(state, index, id),
                 tool_media(state, index, id),
-            ));
+            );
+            rows.push(flashed(state, id, row));
             index += 1;
             continue;
         }

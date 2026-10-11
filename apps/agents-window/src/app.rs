@@ -8111,6 +8111,22 @@ impl AgentsWindow {
         self.view.settings_notice_error = is_error;
     }
 
+    /// The highlight of a call jumped to from Activity lasts a few motion
+    /// beats, so it follows the app's motion scale.
+    fn expire_reveal_flash(&mut self, ctx: &egui::Context) -> bool {
+        let Some((_, since)) = &self.view.activity.revealed else {
+            return false;
+        };
+        let hold = Duration::from_millis(6 * u64::from(openide_ui::tokens().motion.move_ms));
+        let shown = since.elapsed();
+        if shown < hold {
+            ctx.request_repaint_after(hold - shown);
+            return false;
+        }
+        self.view.activity.revealed = None;
+        true
+    }
+
     /// A confirmation leaves by itself after a few seconds. An error stays
     /// until it is dismissed or replaced.
     fn expire_settings_notice(&mut self, ctx: &egui::Context) -> bool {
@@ -18145,6 +18161,20 @@ impl AgentsWindow {
                 self.dock.open(&scope, DockTabKind::Activity);
                 self.sync_dock_view();
             }
+            UiAction::Clicked { id } if id.starts_with("tool_reveal:") => {
+                let call = id.trim_start_matches("tool_reveal:");
+                self.view.main_page = MainPage::Workspace;
+                self.view
+                    .conversation_details
+                    .sync(self.view.selected_session.as_deref());
+                self.view.conversation_details.close_source();
+                if let Some(target) = crate::session_surface::reveal_target(&mut self.view, call) {
+                    // Resolved at the next layout, once the opened group is laid out.
+                    self.tree.reveal_with_margin(&target, crate::session_surface::REVEAL_MARGIN);
+                    self.view.activity.revealed =
+                        (!self.reduced_motion).then(|| (call.to_owned(), Instant::now()));
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("dock_activity:") => {
                 if let Some(text) = crate::view::dock_activity::apply_action(
                     &mut self.view,
@@ -18994,6 +19024,7 @@ impl eframe::App for AgentsWindow {
         }
         early_changed |= std::mem::replace(&mut self.toast_shown, toast.is_some()) != toast.is_some();
         early_changed |= self.expire_settings_notice(&ctx);
+        early_changed |= self.expire_reveal_flash(&ctx);
         early_changed |= self.poll_turn_check();
         // These updates are already included in the first tree below. Only
         // mutations after that hit-test layout require rebuilding it again.
@@ -21304,6 +21335,41 @@ mod tests {
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("Imágenes enviadas al modelo"));
         assert!(!prompt.contains("\"path\":\"screen.png\""));
+    }
+
+    #[test]
+    fn tool_reveal_opens_the_folded_group_and_marks_the_call_unless_motion_is_reduced() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        let read = |id: &str| TranscriptItem::Tool {
+            id: id.into(),
+            name: "read_file".into(),
+            arguments: serde_json::json!({"path": format!("src/{id}.rs")}),
+            output: Some("ok".into()),
+            is_error: false,
+            activity: crate::transcript::ActivityStatus::Completed,
+        };
+        app.view.transcript = vec![read("a"), read("b")];
+        let ctx = egui::Context::default();
+        app.reduced_motion = true;
+        app.apply_action(clicked("tool_reveal:b"), &ctx);
+        assert!(app.view.conversation_details.is_expanded("work:a", false));
+        assert!(app.view.activity.revealed.is_none());
+
+        app.reduced_motion = false;
+        app.apply_action(clicked("tool_reveal:missing"), &ctx);
+        assert!(app.view.activity.revealed.is_none());
+        app.apply_action(clicked("tool_reveal:b"), &ctx);
+        assert_eq!(
+            app.view.activity.revealed.as_ref().map(|(call, _)| call.as_str()),
+            Some("b")
+        );
+        // The mark holds for a moment, then leaves by itself.
+        assert!(!app.expire_reveal_flash(&ctx));
+        let long_ago = Instant::now().checked_sub(Duration::from_secs(30)).unwrap();
+        app.view.activity.revealed = Some(("b".into(), long_ago));
+        assert!(app.expire_reveal_flash(&ctx));
+        assert!(app.view.activity.revealed.is_none());
     }
 
     #[test]

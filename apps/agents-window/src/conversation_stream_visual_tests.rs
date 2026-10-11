@@ -2364,3 +2364,141 @@ fn export_streaming_lines_visual_review() {
         }
     }
 }
+
+/// A long conversation whose calls are far apart: a folded run of
+/// exploration at the start, prose in between, a command at the end.
+fn reveal_fixture() -> ViewState {
+    let mut state = state();
+    state.transcript.extend([
+        exploration_fixture("reveal-a", "read_file", ActivityStatus::Completed),
+        exploration_fixture("reveal-b", "read_file", ActivityStatus::Completed),
+        exploration_fixture("reveal-c", "search_text", ActivityStatus::Completed),
+    ]);
+    for index in 0..30 {
+        state.transcript.push(assistant(&format!(
+            "Párrafo {index}: sigo revisando la estructura y anoto lo que encuentro en cada módulo."
+        )));
+    }
+    state.transcript.push(TranscriptItem::Tool {
+        id: "reveal-shell".into(),
+        name: "run_command".into(),
+        arguments: json!({"command":"cargo test"}),
+        output: Some("ok".into()),
+        is_error: false,
+        activity: ActivityStatus::Completed,
+    });
+    for index in 0..30 {
+        state
+            .transcript
+            .push(assistant(&format!("Cierre {index}: queda documentado el resultado.")));
+    }
+    state
+}
+
+fn region_rect(frame: &openide_ui::Frame, id: &str) -> Option<openide_ui::Rect> {
+    frame
+        .regions
+        .iter()
+        .find(|region| region.id == id && region.kind == HitKind::Button)
+        .map(|region| region.rect)
+}
+
+#[test]
+fn reveal_opens_the_folded_group_and_brings_the_call_into_view() {
+    let viewport = Size::new(900.0, 600.0);
+    let mut state = reveal_fixture();
+    let mut tree = surface(&state, viewport.width, true);
+    tree.layout(viewport);
+    tree.scroll_to_end("transcript");
+    tree.layout(viewport);
+    let end = tree.scroll_offset("transcript");
+    assert!(end > 600.0);
+
+    // A call inside a folded run: its group opens and its own line shows.
+    let line = open_file("reveal-b");
+    assert!(region_rect(&tree.layout(viewport), &line).is_none());
+    assert_eq!(reveal_target(&mut state, "reveal-b"), Some(line.clone()));
+    assert!(state.conversation_details.is_expanded("work:reveal-a", false));
+    tree.reveal_with_margin(&line, REVEAL_MARGIN);
+    tree.set_root(build_session_surface(&state, viewport.width, false, false));
+    let shown = region_rect(&tree.layout(viewport), &line).expect("the line is laid out");
+    // Clear of the header and its fade.
+    assert!(shown.y >= HEADER_HEIGHT + HEADER_FADE_HEIGHT, "{shown:?}");
+    assert!(shown.y + shown.height <= viewport.height, "{shown:?}");
+    assert!(tree.scroll_offset("transcript") < end);
+
+    // A card is found by its header, from wherever the transcript stands.
+    let card = action("tool:reveal-shell");
+    assert_eq!(reveal_target(&mut state, "reveal-shell"), Some(card.clone()));
+    tree.scroll_to_start("transcript");
+    tree.layout(viewport);
+    tree.reveal_with_margin(&card, REVEAL_MARGIN);
+    let shown = region_rect(&tree.layout(viewport), &card).expect("the card is laid out");
+    assert!(shown.y >= 0.0 && shown.y + shown.height <= viewport.height, "{shown:?}");
+    assert_eq!(reveal_target(&mut state, "missing"), None);
+
+    // The call just jumped to is marked, and only that one.
+    let marked = |state: &ViewState| {
+        UiTree::new(build_session_surface(state, viewport.width, false, false))
+            .layout(viewport)
+            .commands
+            .iter()
+            .filter(|command| {
+                matches!(command, DrawCommand::StrokeRect { color, .. } if *color == theme::FOREGROUND)
+            })
+            .count()
+    };
+    let before = marked(&state);
+    state.activity.revealed = Some(("reveal-b".into(), Instant::now()));
+    assert_eq!(marked(&state), before + 1);
+}
+
+#[test]
+#[ignore = "exports the transcript before and after a reveal as PNG under docs/ui-separation/shots/activity"]
+fn export_transcript_reveal_visual_review() {
+    let directory = std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/ui-separation/shots/activity"
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    for width in [420.0, 900.0] {
+        let viewport = Size::new(width, 600.0);
+        let mut state = reveal_fixture();
+        let (context, mut tree) = super::file_activity_visual_tests::native_tree(
+            build_session_surface(&state, width, false, false),
+        );
+        tree.set_reduced_motion(true);
+        tree.layout(viewport);
+        tree.scroll_to_end("transcript");
+        let mut save = |tree: &mut UiTree, name: &str| {
+            let frame = tree.layout(viewport);
+            let path = directory.join(format!("{name}-{width:.0}.svg"));
+            crate::settings_ui::visual_qa::write_native_frame_svg(&frame, &path, width, 600.0)
+                .unwrap();
+            let options = crate::settings_ui::visual_qa::native_svg_options();
+            let svg = std::fs::read_to_string(&path).unwrap();
+            let svg_tree = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
+            let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, 600).unwrap();
+            resvg::render(
+                &svg_tree,
+                resvg::tiny_skia::Transform::identity(),
+                &mut pixmap.as_mut(),
+            );
+            pixmap.save_png(path.with_extension("png")).unwrap();
+            std::fs::remove_file(&path).unwrap();
+        };
+        save(&mut tree, "transcript-before-reveal");
+        for (call, name) in [
+            ("reveal-b", "transcript-after-reveal-line"),
+            ("reveal-shell", "transcript-after-reveal-card"),
+        ] {
+            let target = reveal_target(&mut state, call).unwrap();
+            state.activity.revealed = Some((call.into(), Instant::now()));
+            tree.set_root(build_session_surface(&state, width, false, false));
+            tree.reveal_with_margin(&target, REVEAL_MARGIN);
+            save(&mut tree, name);
+        }
+        let mut output = context.end_pass();
+        output.textures_delta.clear();
+    }
+}

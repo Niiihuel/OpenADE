@@ -127,6 +127,8 @@ pub(crate) struct ActivityUi {
     /// Whether the selected call shows its raw arguments and result.
     pub data_open: bool,
     pub grants_open: bool,
+    /// The call just jumped to in the transcript, highlighted for a moment.
+    pub revealed: Option<(String, std::time::Instant)>,
 }
 
 /// Apply the part of a `dock_activity:` action after its prefix. Returns
@@ -370,6 +372,7 @@ fn tool_row(row: &CallRow, width: f32) -> Element {
     if !trailing.is_empty() {
         list_row = list_row.trailing(Element::row(trailing).gap(8.0).centered_y());
     }
+
     if !row.hint.is_empty() || row.note.is_some() {
         let mut hint = TooltipSpec::new(if row.hint.is_empty() {
             &row.title
@@ -381,9 +384,26 @@ fn tool_row(row: &CallRow, width: f32) -> Element {
         }
         list_row = list_row.tooltip_with(hint);
     }
-    list_row
-        .render()
-        .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT))
+    // The pinned copy keeps the menu's ID unique in the window.
+    openide_ui::ContextMenu::new(
+        format!(
+            "activity_row:{}:{}",
+            if row.pinned { "strip" } else { "log" },
+            row.id
+        ),
+        list_row
+            .render()
+            .size(Some((width - 8.0).max(140.0)), Some(ROW_HEIGHT)),
+        vec![openide_ui::ContextMenuEntry::Item(
+            openide_ui::ContextMenuItem::new(
+                format!("tool_reveal:{}", row.id),
+                "Ver en la conversación",
+            )
+            .icon(Icon::Chat),
+        )],
+        theme::menu_palette(),
+    )
+    .render()
 }
 
 /// A turn's heading or an exploration group, at the pitch of a call.
@@ -1147,14 +1167,21 @@ fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) ->
         ToolKind::Mcp => {
             // Top-level arguments as a short table; nested values stay data.
             for (key, value) in arguments.as_object().into_iter().flatten().take(12) {
-                let value = match value {
-                    Value::String(text) => tool_presentation::clip_text(text, 200).0,
-                    other => tool_presentation::json_preview(other, 200)
-                        .0
-                        .split_whitespace()
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                let plain = |value: &Value| match value {
+                    Value::String(text) => Some(text.clone()),
+                    Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+                    _ => None,
                 };
+                let value = plain(value)
+                    .or_else(|| {
+                        let items: Option<Vec<_>> =
+                            value.as_array()?.iter().take(12).map(plain).collect();
+                        Some(items?.join(", "))
+                    })
+                    .map_or_else(
+                        || "Datos anidados · en Ver datos".to_owned(),
+                        |text| tool_presentation::clip_text(&text, 200).0,
+                    );
                 detail.push(
                     Element::row(vec![
                         Element::truncated_text(key)
@@ -1239,6 +1266,18 @@ fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) ->
             detail.push(small(*notice, theme::FOREGROUND_SUBTLE));
         }
     }
+    detail.push(Element::row(vec![
+        Button::new(
+            format!("tool_reveal:{id}"),
+            "Ver en la conversación",
+            theme::component_palette(),
+        )
+        .icon(Icon::Chat)
+        .variant(ButtonVariant::Subtle)
+        .size(ControlSize::Compact)
+        .render(),
+        Element::spacer().flex(1.0),
+    ]));
     detail.extend(state.transcript.iter().filter_map(|item| match item {
         TranscriptItem::Hook(hook) if hook.tool_call_id == *id => {
             Some(crate::session_surface::hook_activity_card(hook))
