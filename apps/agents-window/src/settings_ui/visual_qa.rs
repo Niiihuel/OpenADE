@@ -325,6 +325,21 @@ fn write_frame_svg_with_families(
                 )
                 .unwrap();
             }
+            DrawCommand::Polyline { points, color, width, dashed } => {
+                let path = points
+                    .iter()
+                    .map(|point| format!("{},{}", point.x, point.y))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                writeln!(
+                    svg,
+                    "<polyline points=\"{path}\" fill=\"none\" stroke=\"{}\" stroke-opacity=\"{}\" stroke-width=\"{width}\"{}/>",
+                    css_color(*color),
+                    alpha(*color),
+                    if *dashed { " stroke-dasharray=\"3 3\"" } else { "" }
+                )
+                .unwrap();
+            }
             DrawCommand::Shadow {
                 rect,
                 shadow,
