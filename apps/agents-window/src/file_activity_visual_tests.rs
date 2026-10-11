@@ -991,54 +991,32 @@ fn expanded_read_waiting_failed_empty_and_partial_states_keep_their_evidence() {
 }
 
 #[test]
-fn read_preview_virtualizes_lines_and_nested_scroll_does_not_move_the_composer() {
+fn lone_read_is_one_flat_line_that_opens_its_file() {
     for viewport in VIEWPORTS {
         let mut state = fixture();
         state.transcript = vec![TranscriptItem::Tool {
             id: "read-config".into(),
             name: "read_file".into(),
             arguments: json!({"path":"config/settings.txt", "start_line":41}),
-            output: Some(
-                (0..160)
-                    .map(|index| format!("CAPTURED_LINE_{index:03}\n"))
-                    .collect(),
-            ),
+            output: Some("CAPTURED_LINE_000\n".into()),
             is_error: false,
             activity: ActivityStatus::Completed,
         }];
-        state.conversation_details.toggle("tool:read-config", false);
         let (context, mut tree) = native_tree(root(&state, viewport));
-        let first = tree.layout(viewport);
-        let code = code_regions(&first);
-        assert_eq!(code.len(), 1);
-        assert!(code[0].height <= 240.0);
-        assert!(code[0].x >= 0.0 && code[0].x + code[0].width <= viewport.width + 0.1);
-        let visible = text(&first);
-        assert!(visible.contains("CAPTURED_LINE_000"));
-        assert!(!visible.contains("CAPTURED_LINE_159"));
-        assert!(visible.lines().any(|line| line == "41"));
-        let outer_offset = tree.scroll_offset("transcript");
-        tree.handle_event(UiEvent::ScrollDirect {
-            position: center(code[0]),
-            delta_y: -400.0,
-        });
-        let middle = tree.layout(viewport);
-        assert!(!text(&middle).contains("CAPTURED_LINE_000"));
-        assert!(!text(&middle).contains("CAPTURED_LINE_159"));
-        assert_eq!(tree.scroll_offset("transcript"), outer_offset);
-        assert_stable_composer(&first, &middle);
-
-        // Reach the last captured row at every responsive preview height.
-        // Surplus scroll at the inner boundary may correctly reach the parent;
-        // only the fully consumed gesture above must leave its offset untouched.
-        tree.handle_event(UiEvent::ScrollDirect {
-            position: center(code_regions(&middle)[0]),
-            delta_y: -10_000.0,
-        });
-        let last = tree.layout(viewport);
-        assert!(text(&last).contains("CAPTURED_LINE_159"));
-        assert!(!text(&last).contains("CAPTURED_LINE_000"));
-        assert_stable_composer(&first, &last);
+        let frame = tree.layout(viewport);
+        let visible = text(&frame);
+        assert!(visible.contains("Leyó") && visible.contains("settings.txt L41"));
+        assert!(!visible.contains("CAPTURED_LINE_000"));
+        assert!(code_regions(&frame).is_empty());
+        let navigate = crate::tool_presentation::navigation_action(OWNER, "read-config");
+        assert!(frame
+            .regions
+            .iter()
+            .any(|region| region.id == navigate && region.kind == HitKind::Button));
+        assert!(!frame
+            .regions
+            .iter()
+            .any(|region| region.id == disclosure("read-config")));
         context.end_pass().textures_delta.clear();
     }
 }

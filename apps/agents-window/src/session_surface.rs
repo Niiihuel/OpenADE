@@ -2051,6 +2051,10 @@ fn timeline(state: &ViewState, width: f32) -> Element {
                 index = end;
                 continue;
             }
+            // A lone call reads as the same flat line a group opens to.
+            rows.push(Element::column(exploration_lines(item, state, false)));
+            index += 1;
+            continue;
         }
         if let TranscriptItem::Tool { id, .. } = item {
             rows.push(tool_line_with_output(

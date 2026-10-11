@@ -137,7 +137,7 @@ fn click_detail(tree: &mut UiTree, state: &mut ViewState, viewport: Size, detail
 }
 
 #[test]
-fn tool_errors_and_pending_work_stay_visible_and_details_open_only_by_click() {
+fn lone_exploration_call_is_one_flat_line_and_keeps_errors_and_pending_work_visible() {
     for width in [360.0, 900.0] {
         for status in [
             ActivityStatus::Running,
@@ -150,34 +150,34 @@ fn tool_errors_and_pending_work_stay_visible_and_details_open_only_by_click() {
         ] {
             let mut state = state();
             state.transcript.push(tool(status));
-            let inspect = crate::file_activity_ui::directory_action(OWNER, TOOL_ID);
-            // Inspector selection never takes over the inline disclosure.
+            // Inspector selection never takes over the inline line.
             state.selected_tool_id = Some(TOOL_ID.into());
             let viewport = Size::new(width, 900.0);
             let mut tree = surface(&state, width, true);
             let frame = tree.layout(viewport);
-            // Search/file activity owns one stable disclosure in every state;
-            // the independent inspector action remains available when closed.
+            // A lone exploration call is one flat line, as inside a group: no
+            // card, no disclosure; clicking it opens its recorded activity.
             assert!(text(&frame).contains("src"));
+            for disclosure in ["tool:call-alpha", "work:call-alpha"] {
+                assert!(!frame
+                    .regions
+                    .iter()
+                    .any(|region| region.id == action(disclosure)));
+            }
             assert_eq!(
                 frame
                     .regions
                     .iter()
                     .filter(|region| {
-                        region.id == action("tool:call-alpha") && region.kind == HitKind::Button
+                        region.id == "tool:call-alpha" && region.kind == HitKind::Button
                     })
                     .count(),
                 1
             );
-            assert!(!frame
-                .regions
-                .iter()
-                .any(|region| region.id == action("work:call-alpha")));
-            assert!(frame
-                .regions
-                .iter()
-                .any(|region| region.id == inspect && region.kind == HitKind::Button));
             assert!(!text(&frame).contains("SALIDA_DE_PRUEBA"));
+            if status == ActivityStatus::Completed {
+                assert!(text(&frame).contains("Listó"));
+            }
             if status == ActivityStatus::Failed {
                 assert!(text(&frame).contains("ERROR_DE_PRUEBA"));
             }
@@ -191,37 +191,7 @@ fn tool_errors_and_pending_work_stay_visible_and_details_open_only_by_click() {
                 assert!(text(&frame).contains("Resultado incierto"));
             }
             assert!(!tree.is_animating());
-            click_detail(&mut tree, &mut state, viewport, "tool:call-alpha");
-            let opened = tree.layout(viewport);
-            assert!(opened.regions.iter().any(|region| region.id == inspect));
-            assert!(state
-                .conversation_details
-                .is_expanded("tool:call-alpha", false));
-            assert!(
-                !text(&opened).contains("Entrada"),
-                "structured activity has no repeated JSON input panel"
-            );
-            if matches!(status, ActivityStatus::Completed | ActivityStatus::Failed) {
-                assert!(text(&opened).contains("DE_PRUEBA"));
-            }
             assert!(!state.show_side_pane);
-            click_detail(&mut tree, &mut state, viewport, "tool:call-alpha");
-            let closed = tree.layout(viewport);
-            assert!(!state
-                .conversation_details
-                .is_expanded("tool:call-alpha", false));
-            assert!(closed
-                .regions
-                .iter()
-                .any(|region| region.id == inspect && region.kind == HitKind::Button));
-            assert!(!text(&closed).contains("SALIDA_DE_PRUEBA"));
-            assert!(!text(&closed).contains("Esperando resultados"));
-            if status == ActivityStatus::Failed {
-                assert!(
-                    text(&closed).contains("ERROR_DE_PRUEBA"),
-                    "closing results never hides the failure note"
-                );
-            }
         }
     }
 }
