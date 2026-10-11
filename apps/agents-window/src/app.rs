@@ -2664,19 +2664,38 @@ fn recovery_status(recovery: &ReplayRecovery) -> &'static str {
 fn native_session_views(
     data_root: &Path,
     stored: &StoredSession,
-) -> (Option<SessionRecoveryView>, Option<SessionPlanView>) {
+) -> (
+    Option<SessionRecoveryView>,
+    Option<SessionPlanView>,
+    Option<crate::pause::PausedTurn>,
+) {
+    let (recovery, plan, pause) = native_session_views_inner(data_root, stored);
+    // A pause is a mark on a turn that can simply be resumed, nothing else.
+    let pause = pause.filter(|_| recovery == Some(SessionRecoveryView::Resume));
+    (recovery, plan, pause)
+}
+
+fn native_session_views_inner(
+    data_root: &Path,
+    stored: &StoredSession,
+) -> (
+    Option<SessionRecoveryView>,
+    Option<SessionPlanView>,
+    Option<crate::pause::PausedTurn>,
+) {
     if stored.session.backend != "native" {
-        return (None, None);
+        return (None, None, None);
     }
     let automation = match crate::native_automation::FrozenNativeAutomationAuthorityV1::from_session(
         &stored.session,
     ) {
         Ok(automation) => automation,
-        Err(error) => return (Some(SessionRecoveryView::InvalidJournal(error)), None),
+        Err(error) => return (Some(SessionRecoveryView::InvalidJournal(error)), None, None),
     };
     if stored.events.is_empty() {
         return (
             automation.map(|_| SessionRecoveryView::StartAutomation),
+            None,
             None,
         );
     }
@@ -2711,16 +2730,18 @@ fn native_session_views(
                             )
                     })
             });
+            let pause = crate::pause::PausedTurn::from_replay(&replay, &stored.session);
             let plan = replay.latest_plan.map(|snapshot| SessionPlanView {
                 snapshot,
                 can_build,
             });
-            (recovery, plan)
+            (recovery, plan, pause)
         }
         Err(error) => (
             Some(SessionRecoveryView::InvalidJournal(
                 error.chars().take(160).collect(),
             )),
+            None,
             None,
         ),
     }
@@ -3524,6 +3545,101 @@ impl AgentsWindow {
         });
     }
 
+    /// The actions of a pause card. Each names its session.
+    fn apply_pause_action(&mut self, id: &str, ctx: &egui::Context) {
+        let Some((action, session_id)) = id.split_once(':') else {
+            return;
+        };
+        let Some(pause) = self.view.pause.sessions.get(session_id).cloned() else {
+            self.view.status = "El turno ya no está en pausa".to_owned();
+            return;
+        };
+        match action {
+            "pause_continue" => {
+                // A person decided not to wait: let this limit's requests through.
+                openide_harness::limit_gate_clear(&pause.limit_key);
+                self.open_session(session_id);
+                if self.view.selected_session.as_deref() == Some(session_id) {
+                    self.start_resume();
+                }
+            }
+            "pause_cancel" => self.cancel_paused_tree(session_id),
+            "pause_account" => {
+                if let Some(url) = pause.account_url() {
+                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
+            "pause_detail" => {
+                let open = self.view.pause.detail_open.as_deref() == Some(session_id);
+                self.view.pause.detail_open = (!open).then(|| session_id.to_owned());
+            }
+            "pause_model" => {
+                // Switching the model of an open turn is refused by resume
+                // (its route must match): open the picker and say so.
+                self.view.pause.model_note = Some(session_id.to_owned());
+                self.view.composer_model_menu_open = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// Cancel a paused turn and every paused descendant. Each is at a model
+    /// boundary, so the terminal event is the whole effect.
+    fn cancel_paused_tree(&mut self, session_id: &str) {
+        if self.view.running || self.active_run.is_some() || self.active_resume.is_some() {
+            self.view.status = "Espera a que termine la operación activa".to_owned();
+            return;
+        }
+        let result = (|| -> Result<Vec<String>, String> {
+            let store = self.store.clone().ok_or("El historial no está disponible")?;
+            let checkpoints = CheckpointFileStore::new(self.data_root.join("sessions"))
+                .map_err(|error| format!("No se pudo abrir checkpoints: {error}"))?;
+            let coordinator = SubagentCoordinator::new(store.clone(), SubagentLimits::default())
+                .map_err(|error| error.to_string())?;
+            let lease = store
+                .try_acquire_native_lease(session_id)
+                .map_err(|error| format!("La sesión está en uso: {error}"))?;
+            let mut affected = Vec::new();
+            let children = self
+                .view
+                .pause
+                .sessions
+                .iter()
+                .filter(|(_, pause)| pause.parent.as_deref() == Some(session_id))
+                .map(|(child, _)| child.clone())
+                .collect::<Vec<_>>();
+            for child in children {
+                let (_, cancelled) = coordinator
+                    .request_cancel_from_ui_with_affected(&lease, &child)
+                    .map_err(|error| error.to_string())?;
+                affected.extend(cancelled);
+            }
+            openide_harness::cancel_paused_turn(&store, &checkpoints, &lease)
+                .map_err(|error| error.to_string())?;
+            Ok(affected)
+        })();
+        match result {
+            Ok(affected) => {
+                for owner in affected {
+                    self.native_command_sessions.revoke_session(&owner);
+                }
+                if self.view.selected_session.as_deref() == Some(session_id) {
+                    if let Some(Ok(Some(stored))) =
+                        self.store.as_ref().map(|store| store.load(session_id))
+                    {
+                        self.last_sequence = stored.events.last().map_or(0, |event| event.sequence);
+                        self.projection = TranscriptProjection::from_events(&stored.events);
+                        self.publish_transcript();
+                    }
+                    self.rebuild_history();
+                }
+                self.view.status = "Turno cancelado".to_owned();
+            }
+            Err(error) => self.view.status = format!("No se pudo cancelar la pausa: {error}"),
+        }
+        self.refresh_sessions();
+    }
+
     fn cancel_subagent(&mut self, child_id: &str) {
         // A stale or forged UI action must not cancel an unrelated lineage.
         let Some(child) = self
@@ -3562,7 +3678,10 @@ impl AgentsWindow {
                 return;
             }
         }
-        if child.status == SubagentStatus::Interrupted {
+        // A child paused on a limit stopped at a clean boundary and can go.
+        if child.status == SubagentStatus::Interrupted
+            && !self.view.pause.sessions.contains_key(child_id)
+        {
             self.view.status =
                 "Revisá la recuperación del subagente interrumpido antes de cancelarlo".into();
             return;
@@ -7368,8 +7487,10 @@ impl AgentsWindow {
                     });
                     let mut recoveries = BTreeMap::new();
                     let mut plans = BTreeMap::new();
+                    let mut pauses = BTreeMap::new();
                     for record in &listing.sessions {
-                        let (recovery, plan) = native_session_views(&self.data_root, record);
+                        let (recovery, plan, pause) =
+                            native_session_views(&self.data_root, record);
                         if let Some(recovery) = recovery {
                             let selected_running = self.view.running
                                 && self.view.selected_session.as_deref()
@@ -7382,6 +7503,9 @@ impl AgentsWindow {
                                 && live_children.contains(&record.session.id);
                             if !selected_running && !background_running && !child_running {
                                 recoveries.insert(record.session.id.clone(), recovery);
+                                if let Some(pause) = pause {
+                                    pauses.insert(record.session.id.clone(), pause);
+                                }
                             }
                         }
                         if let Some(plan) = plan {
@@ -7389,6 +7513,10 @@ impl AgentsWindow {
                         }
                     }
                     self.view.session_recovery = recoveries;
+                    self.view.pause.sessions = pauses;
+                    if self.view.pause.counting() {
+                        self.view.pause.clock_ms = crate::pause::wall_clock_ms();
+                    }
                     self.view.session_plans = plans;
                     if listing.diagnostics.is_empty() {
                         let previous = self.view.session_groups.clone();
@@ -12558,6 +12686,19 @@ impl AgentsWindow {
                 self.view.status = "Turno cancelado".to_owned();
                 self.restore_pending_prompt();
             }
+            AgentEventKind::TurnPaused { .. } => {
+                // The turn stays open with its message admitted: nothing is
+                // handed back to the composer.
+                self.notify_session(
+                    crate::notifications::Event::Approval,
+                    "Turno en pausa",
+                    &event.session_id,
+                );
+                self.view.running = false;
+                self.view.status = "Turno en pausa".to_owned();
+                self.pending_prompt = None;
+                self.pending_attachments.clear();
+            }
             _ => {}
         }
         self.show_persistence_error();
@@ -13762,6 +13903,7 @@ impl AgentsWindow {
             Ok(ResumeDisposition::AbortedToolBatch { .. }) => {
                 "Turno abortado con herramientas pendientes; requiere resolución".to_owned()
             }
+            Ok(ResumeDisposition::Paused) => "Turno en pausa".to_owned(),
             Ok(other) => format!("Recuperación pausada: {other:?}"),
             Err(error) => format!("No se pudo recuperar el turno: {error}"),
         };
@@ -13856,6 +13998,12 @@ impl AgentsWindow {
                 ..
             }) => {
                 self.view.status = "El permiso del subagente sigue pendiente".to_owned();
+            }
+            Ok(SubagentRecoveryState::Paused {
+                reason: SubagentRecoveryPause::ProviderPaused,
+                ..
+            }) => {
+                self.view.status = "El subagente quedó en pausa".to_owned();
             }
             Err(error) => {
                 self.view.status = format!("No se pudo recuperar el subagente: {error}");
@@ -16092,6 +16240,9 @@ impl AgentsWindow {
                 }) {
                     self.open_session(session_id);
                 }
+            }
+            UiAction::Clicked { id } if id.starts_with("pause_") => {
+                self.apply_pause_action(&id, &ctx);
             }
             UiAction::Clicked { id } if id.starts_with("subagent_cancel:") => {
                 self.cancel_subagent(id.trim_start_matches("subagent_cancel:"));

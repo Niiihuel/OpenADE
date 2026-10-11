@@ -756,6 +756,9 @@ impl TranscriptProjection {
                 self.pending_admission_images.clear();
                 false
             }
+            // The turn stays open exactly as an interrupted one. Its cause is
+            // shown by the pause card, from replay, not by a transcript row.
+            AgentEventKind::TurnPaused { .. } => false,
             AgentEventKind::TurnAdmittedWithImages { images, .. } => {
                 self.pending_admission_images = transcript_images(images);
                 false

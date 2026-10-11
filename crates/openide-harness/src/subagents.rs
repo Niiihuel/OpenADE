@@ -1112,7 +1112,16 @@ impl SubagentCoordinator {
         if require_recoverable_journals {
             for id in &affected {
                 let state = registry.state(id);
-                if state.status == SubagentStatus::Interrupted
+                // A child paused on a provider limit stopped at a model
+                // boundary: nothing of it is uncertain, so it can be cancelled.
+                let paused = state.status == SubagentStatus::Interrupted
+                    && self.sessions.load(id)?.is_some_and(|stored| {
+                        matches!(
+                            stored.events.last().map(|event| &event.kind),
+                            Some(openide_core::AgentEventKind::TurnPaused { .. })
+                        )
+                    });
+                if (state.status == SubagentStatus::Interrupted && !paused)
                     || (state.status == SubagentStatus::Ready
                         && self
                             .sessions

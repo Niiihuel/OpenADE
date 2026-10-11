@@ -617,6 +617,11 @@ impl ModelBackend for ResponsesBackend {
         &self.model
     }
 
+    fn limit_key(&self) -> Option<String> {
+        // A subscription token rotates; its endpoint names the account limit.
+        crate::backend::limit_key_for(&self.endpoint, self.api_key.as_deref())
+    }
+
     fn supports_user_images(&self) -> bool {
         true
     }
@@ -3251,7 +3256,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, AgentError::Provider(_)));
+        assert!(matches!(error, AgentError::Model(_)));
         assert!(receiver.try_recv().is_err());
         server.await.unwrap();
     }

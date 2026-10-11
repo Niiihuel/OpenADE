@@ -451,6 +451,10 @@ impl ModelBackend for AnthropicMessagesBackend {
     fn model_id(&self) -> &str {
         &self.model
     }
+
+    fn limit_key(&self) -> Option<String> {
+        crate::backend::limit_key_for(&self.endpoint, self.api_key.as_deref())
+    }
     fn supports_user_images(&self) -> bool {
         self.image_input_enabled
     }

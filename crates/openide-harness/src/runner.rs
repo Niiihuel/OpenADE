@@ -516,7 +516,8 @@ impl AgentRunner {
                 &mut initial_validation,
             ));
             let failure = match result {
-                Ok(()) => None,
+                // `TurnPaused` is already journaled; the turn stays open.
+                Ok(()) | Err(AgentError::Paused) => None,
                 Err(AgentError::Cancelled) => {
                     Some(("run cancelled".to_owned(), AgentEventKind::TurnCancelled))
                 }
@@ -1075,6 +1076,14 @@ impl AgentRunner {
             if cancel.is_cancelled() {
                 return Err(AgentError::Cancelled);
             }
+            // Every tool of the earlier steps has its committed result here,
+            // so stopping now leaves nothing to repeat.
+            if let Some(pause) =
+                crate::limit_gate::pause_before_request(self.model.as_ref(), &messages, step, false)
+            {
+                sink.emit(pause)?;
+                return Err(AgentError::Paused);
+            }
             if let Some(steering) = &steering {
                 if steering.drain(sink, &mut messages)? > 0 {
                     current_prompt_index = messages.len() - 1;
@@ -1223,7 +1232,7 @@ impl AgentRunner {
                 },
             )
             .await?;
-            let completion = self
+            let completion = match self
                 .model_step(
                     &model_messages,
                     catalog.definitions(),
@@ -1232,7 +1241,21 @@ impl AgentRunner {
                     step,
                     native.lease,
                 )
-                .await?;
+                .await
+            {
+                // The request was never committed and tools only run after a
+                // commit: the turn pauses in ModelInFlight and can be resent.
+                Err(AgentError::Provider(failure)) => {
+                    let Some(pause) =
+                        crate::limit_gate::pause_for_failure(self.model.as_ref(), &failure, step)
+                    else {
+                        return Err(AgentError::Provider(failure));
+                    };
+                    sink.emit(pause)?;
+                    return Err(AgentError::Paused);
+                }
+                result => result?,
+            };
             if cancel.is_cancelled() {
                 return Err(AgentError::Cancelled);
             }
@@ -2898,6 +2921,176 @@ mod tests {
                 call.arguments["text"].as_str().unwrap(),
             ))
         }
+    }
+
+    struct LimitedModel {
+        script: Mutex<Vec<Result<ModelOutput, crate::ProviderFailure>>>,
+        calls: AtomicUsize,
+        key: &'static str,
+    }
+
+    #[async_trait]
+    impl ModelBackend for LimitedModel {
+        fn model_id(&self) -> &str {
+            "scripted"
+        }
+        fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
+            Some([7; 32])
+        }
+        fn limit_key(&self) -> Option<String> {
+            Some(self.key.into())
+        }
+        async fn complete(
+            &self,
+            _messages: &[AgentMessage],
+            _tools: &[ToolDefinition],
+            _cancel: CancellationToken,
+        ) -> Result<ModelOutput, AgentError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.script.lock().unwrap().remove(0).map_err(AgentError::Provider)
+        }
+    }
+
+    #[test]
+    fn a_reached_limit_pauses_the_live_turn_at_its_model_boundary_and_holds_the_next_agent() {
+        const KEY: &str = "runner-test-shared-limit";
+        let run = |script| {
+            let workspace = tempfile::tempdir().unwrap();
+            let store = Arc::new(SessionStore::open(workspace.path().join("sessions")).unwrap());
+            let request = journaled_request(&store, workspace.path());
+            let session_id = request.session_id.clone().unwrap();
+            let lease = store.try_acquire_native_lease(&session_id).unwrap();
+            let model = Arc::new(LimitedModel { script: Mutex::new(script), calls: AtomicUsize::new(0), key: KEY });
+            let tools = Arc::new(CountingTool { executions: AtomicUsize::new(0) });
+            let runner = AgentRunner::new(model.clone(), tools.clone())
+                .with_permission_policy(
+                    crate::PermissionPolicy::new().with_default_mode(crate::PermissionMode::Allow),
+                )
+                .with_native_runtime_identity("test", "https://test.example/v1")
+                .with_event_journal(store.clone());
+            let handle = runner.start_with_lease(request, lease);
+            // A paused run closes its channel without a terminal event.
+            let mut events = Vec::new();
+            while let Ok(event) = handle.events.recv_timeout(Duration::from_secs(5)) {
+                events.push(event);
+            }
+            assert!(handle.journal_error().is_none());
+            let saved = store.load(&session_id).unwrap().unwrap().events;
+            assert_eq!(saved.last(), events.last());
+            let replay = replay_native(
+                &session_id,
+                &saved,
+                None,
+                &CheckpointCompatibility {
+                    provider: "test".into(),
+                    model: "scripted".into(),
+                    context_format_key: "responses-v1".into(),
+                },
+            )
+            .unwrap();
+            (saved, replay, model, tools, workspace)
+        };
+        let mut limit = crate::ProviderFailure::new(crate::FailureClass::LimitReached, "HTTP 429: usage_limit_reached");
+        limit.resets_at_ms = Some(4_000_000_000_000);
+        let (saved, replay, model, tools, _keep) = run(vec![
+            Ok(ModelOutput {
+                content: String::new(),
+                tool_calls: vec![ToolCall { id: "call-1".into(), name: "echo".into(), arguments: json!({"text":"hello"}) }],
+            }),
+            Err(limit),
+        ]);
+        assert!(matches!(
+            &saved.last().unwrap().kind,
+            AgentEventKind::TurnPaused { class: openide_core::TurnPauseClass::LimitReached, limit_key, resets_at_ms: Some(4_000_000_000_000), step: 2, .. }
+                if limit_key == KEY
+        ));
+        assert!(!saved.iter().any(|event| matches!(event.kind, AgentEventKind::TurnFailed { .. } | AgentEventKind::TurnCancelled)));
+        // Every tool of the earlier step is committed: nothing is uncertain.
+        assert!(matches!(replay.recovery, ReplayRecovery::ModelInFlight { step: 2, .. }));
+        assert!(replay.pause.is_some() && !replay.can_start_new_turn);
+        assert_eq!((model.calls.load(Ordering::SeqCst), tools.executions.load(Ordering::SeqCst)), (2, 1));
+        assert_eq!(saved.iter().filter(|event| matches!(event.kind, AgentEventKind::ToolFinished { .. })).count(), 1);
+
+        // Another agent on the same limit pauses before sending anything.
+        let (saved, replay, model, _, _keep) = run(vec![]);
+        assert_eq!(model.calls.load(Ordering::SeqCst), 0);
+        assert!(matches!(
+            &saved.last().unwrap().kind,
+            AgentEventKind::TurnPaused { class: openide_core::TurnPauseClass::LimitReached, step: 1, resets_at_ms: Some(4_000_000_000_000), .. }
+        ));
+        assert!(!saved.iter().any(|event| matches!(event.kind, AgentEventKind::ModelRequestStarted { .. })));
+        assert_eq!(replay.recovery, ReplayRecovery::ReadyForModel { next_step: 1 });
+        crate::limit_gate_clear(KEY);
+    }
+
+    struct PausedChildTool;
+
+    #[async_trait]
+    impl ToolExecutor for PausedChildTool {
+        fn definitions(&self) -> Vec<ToolDefinition> {
+            vec![ToolDefinition {
+                name: "wait_agent".into(),
+                description: "Wait for a subagent".into(),
+                parameters: json!({"type":"object"}),
+            }]
+        }
+        async fn execute(&self, _call: &ToolCall, _context: &ToolContext) -> Result<ToolOutput, AgentError> {
+            Ok(ToolOutput::success(
+                json!({"agent_id":"child-1","status":"paused","reason":"limit_reached","resets_at":4_000_000_000_000u64}).to_string(),
+            ))
+        }
+    }
+
+    #[test]
+    fn a_parent_whose_wait_returns_a_paused_child_pauses_at_its_next_model_boundary() {
+        let workspace = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::open(workspace.path().join("sessions")).unwrap());
+        let request = journaled_request(&store, workspace.path());
+        let session_id = request.session_id.clone().unwrap();
+        let lease = store.try_acquire_native_lease(&session_id).unwrap();
+        let model = Arc::new(ScriptedModel {
+            outputs: Mutex::new(vec![ModelOutput {
+                content: String::new(),
+                tool_calls: vec![ToolCall { id: "wait-1".into(), name: "wait_agent".into(), arguments: json!({}) }],
+            }]),
+            seen: Mutex::new(vec![]),
+        });
+        let runner = AgentRunner::new(model.clone(), Arc::new(PausedChildTool))
+            .with_permission_policy(
+                crate::PermissionPolicy::new().with_default_mode(crate::PermissionMode::Allow),
+            )
+            .with_native_runtime_identity("test", "https://test.example/v1")
+            .with_event_journal(store.clone());
+        let handle = runner.start_with_lease(request, lease);
+        while handle.events.recv_timeout(Duration::from_secs(5)).is_ok() {}
+        let saved = store.load(&session_id).unwrap().unwrap().events;
+        // The wait is a committed result, so no tool is left open.
+        assert!(matches!(
+            &saved[saved.len() - 2].kind,
+            AgentEventKind::ToolFinished { tool_call_id, is_error: false, .. } if tool_call_id == "wait-1"
+        ));
+        assert!(matches!(
+            &saved.last().unwrap().kind,
+            AgentEventKind::TurnPaused { class: openide_core::TurnPauseClass::WaitingOnChild, step: 2, resets_at_ms: Some(4_000_000_000_000), detail, .. }
+                if detail.contains("child-1")
+        ));
+        assert_eq!(model.seen.lock().unwrap().len(), 1, "the model was not asked while the child is paused");
+        let replay = replay_native(
+            &session_id,
+            &saved,
+            None,
+            &CheckpointCompatibility {
+                provider: "test".into(),
+                model: "scripted".into(),
+                context_format_key: "responses-v1".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(replay.recovery, ReplayRecovery::ReadyForModel { next_step: 2 });
+        // The same tail is what a resumed engine reads: it asks again only
+        // when the pause being continued is this one.
+        assert!(crate::subagent_tools::paused_child_in_last_batch(&replay.history).is_some());
+        assert_eq!(replay.pause.map(|pause| (pause.class, pause.step)), Some((openide_core::TurnPauseClass::WaitingOnChild, 2)));
     }
 
     fn model_with_tool_call() -> Arc<ScriptedModel> {

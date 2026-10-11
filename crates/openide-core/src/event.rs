@@ -368,6 +368,31 @@ pub enum AgentEventKind {
         error: String,
     },
     TurnCancelled,
+    /// The turn stopped at a model boundary and did not end: no request of
+    /// `step` was committed and no tool is open, so it can be continued
+    /// without repeating anything. Not terminal; replay keeps the turn's
+    /// recovery state and only records the cause.
+    TurnPaused {
+        class: TurnPauseClass,
+        /// Provider limit shared by every agent that pauses on it; may be empty.
+        limit_key: String,
+        resets_at_ms: Option<u64>,
+        step: usize,
+        detail: String,
+    },
+}
+
+/// Why a turn is paused at a model boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnPauseClass {
+    /// The provider kept failing after every retry.
+    Transient,
+    LimitReached,
+    OutOfCredits,
+    Auth,
+    /// A subagent this turn waits for is itself paused.
+    WaitingOnChild,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

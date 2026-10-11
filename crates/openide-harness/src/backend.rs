@@ -324,6 +324,13 @@ pub trait ModelBackend: Send + Sync {
         None
     }
 
+    /// The provider limit this backend draws from: endpoint plus credential,
+    /// never the credential itself. Agents sharing a key pause together when
+    /// that limit closes. None opts out of the shared gate.
+    fn limit_key(&self) -> Option<String> {
+        None
+    }
+
     async fn complete(
         &self,
         messages: &[AgentMessage],
@@ -457,6 +464,16 @@ fn checked_legacy_stream_bytes(current: usize, additional: usize) -> Result<usiz
         .ok_or_else(|| AgentError::Limit("legacy model stream exceeds 8 MiB".into()))
 }
 
+pub(crate) fn limit_key_for(endpoint: &str, credential: Option<&str>) -> Option<String> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"openide-limit-key\0");
+    hasher.update(endpoint.as_bytes());
+    hasher.update([0]);
+    hasher.update(credential.unwrap_or_default().as_bytes());
+    let digest = hasher.finalize();
+    Some(digest[..8].iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
 pub(crate) fn stable_request_profile_fingerprint(fields: &[&str]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"openide-model-request-profile\0");
@@ -515,10 +532,16 @@ impl ModelAttemptError {
         }
     }
 
+    /// A lost connection is transient only while nothing of the attempt was
+    /// published. After that it ends the turn as it always did: the visible
+    /// prefix stays and nothing is sent again on its own.
     fn transport(message: String, published: bool) -> Self {
+        if published {
+            return Self::Terminal(AgentError::Model(message));
+        }
         Self::classified(
             AgentError::Provider(ProviderFailure::new(FailureClass::Transient, message)),
-            published,
+            false,
         )
     }
 
@@ -530,8 +553,6 @@ impl ModelAttemptError {
         }
     }
 
-    /// A connection lost after output was published is not repeated here, but
-    /// it stays a transient failure: the host may resume the turn.
     pub(crate) fn stream(error: reqwest::Error, published_delta: bool) -> Self {
         if error.is_connect() || error.is_timeout() || error.is_body() || error.is_decode() {
             Self::transport(error.to_string(), published_delta)
@@ -940,6 +961,10 @@ fn validate_reasoning_effort(
 impl ModelBackend for OpenAiCompatibleBackend {
     fn model_id(&self) -> &str {
         &self.model
+    }
+
+    fn limit_key(&self) -> Option<String> {
+        limit_key_for(&self.endpoint, self.api_key.as_deref())
     }
 
     fn request_profile_fingerprint(&self) -> Option<[u8; 32]> {
@@ -2875,7 +2900,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, AgentError::Provider(failure) if failure.class == FailureClass::Transient));
+        assert!(matches!(error, AgentError::Model(_)));
         assert_eq!(receiver.try_recv().unwrap(), "partial");
         server.await.unwrap();
     }
@@ -2941,7 +2966,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, AgentError::Provider(failure) if failure.class == FailureClass::Transient));
+        assert!(matches!(error, AgentError::Model(_)));
         assert_eq!(receiver.try_recv().unwrap(), "partial");
         server.await.unwrap();
     }
