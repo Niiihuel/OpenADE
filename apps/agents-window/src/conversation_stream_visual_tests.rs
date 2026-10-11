@@ -259,6 +259,8 @@ fn consecutive_exploration_is_one_flat_line_that_opens_to_one_navigable_line_per
             .commands
             .iter()
             .filter_map(|command| match command {
+                // The message action rows are not part of the line.
+                DrawCommand::Icon { icon: Icon::Copy | Icon::Edit | Icon::More, .. } => None,
                 DrawCommand::Icon { icon, .. } => Some(*icon),
                 DrawCommand::Spinner { .. } => Some(Icon::Refresh),
                 _ => None,

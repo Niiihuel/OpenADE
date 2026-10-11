@@ -242,6 +242,26 @@ impl AgentsWindow {
         self.tree.set_input_value("prompt", text);
     }
 
+    /// Send a turn's opening message again as it was. It is the edit of
+    /// that message, opened and submitted in one step, so it asks the same
+    /// confirmation and obeys the same refusals. A message that carried
+    /// attachments is left to the edit, where their loss is shown.
+    pub(super) fn retry_message(&mut self, user_row: usize) {
+        let resendable = self
+            .view
+            .message_edit
+            .turns
+            .iter()
+            .any(|turn| turn.user_row == user_row && !turn.drops_attachments);
+        if !resendable || self.view.message_edit.editing.is_some() {
+            return;
+        }
+        self.begin_message_edit(user_row);
+        if self.view.message_edit.editing.is_some() {
+            self.request_message_edit_submit();
+        }
+    }
+
     /// Leave the edit and bring the bottom draft back exactly.
     pub(super) fn cancel_message_edit(&mut self) {
         if self.view.message_edit.editing.take().is_none() {

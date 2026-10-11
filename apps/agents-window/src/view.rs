@@ -396,6 +396,8 @@ pub struct ViewState {
     pub(crate) tour: crate::tour::TourView,
     /// Editing an earlier message, its confirmation and the rewind's undo.
     pub(crate) message_edit: crate::message_edit::MessageEditView,
+    /// The copy just made and the open menu of the transcript's action rows.
+    pub(crate) message_actions: crate::message_actions::MessageActionsView,
     pub(crate) ide: crate::ide_workspace::IdeWorkspaceState,
     pub(crate) ide_search: crate::ide_search::IdeSearchState,
     pub(crate) document_preview: Option<crate::document_preview::PreviewView>,
@@ -3798,6 +3800,7 @@ pub(crate) mod tests {
             composer_attachment_loading: false,
             composer_image_viewer: None,
             message_edit: Default::default(),
+            message_actions: Default::default(),
             composer_add_menu_open: false,
             composer_listening: false,
             composer_expanded: false,
