@@ -814,8 +814,9 @@ fn messages_components_present_real_factory_journal_and_save_exact_policy_at_bot
         tree.layout_at(viewport, start + Duration::from_millis(1));
         let shown = tree.layout_at(viewport, start + Duration::from_millis(700));
         let text = frame_text(&shown);
-        assert!(text.contains("Entrada máxima: 100"), "{text}");
-        assert!(text.contains("Salida máxima: 8"), "{text}");
+        for shown in ["Entrada máx.", "100K", "Salida máx.", "8K"] {
+            assert!(text.contains(shown), "{shown}: {text}");
+        }
     }
 
     // Saving a different output policy changes the exact request profile and
