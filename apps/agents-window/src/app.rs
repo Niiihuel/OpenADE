@@ -1424,6 +1424,8 @@ pub struct AgentsWindow {
     // the page's pixel the pointer was last on and the clicks the press counted.
     browser_pointer_down: Option<(u64, f64, f64, u8)>,
     browser_wheel: browser_input_app::WheelGlide,
+    // The modifier keys held this frame, as the page's pointer events carry them.
+    browser_modifiers: u8,
     // The last left press a tab's page took: when, where and which click of a
     // run it was. The next one close to it in both is a double or triple click.
     browser_click: Option<(u64, Instant, f64, f64, u8)>,
@@ -1532,6 +1534,15 @@ fn browser_scroll_delta(event: &UiEvent) -> Option<(openide_ui::Point, f32, f32,
         _ => return None,
     };
     (x.is_finite() && y.is_finite()).then_some((position, x, y, direct))
+}
+
+/// The modifier keys as a page's pointer events carry them.
+fn browser_modifiers(held: egui::Modifiers) -> u8 {
+    use openide_browser::modifiers::{ALT, CONTROL, SHIFT};
+    [(held.alt, ALT), (held.ctrl, CONTROL), (held.shift, SHIFT)]
+        .into_iter()
+        .filter_map(|(down, bit)| down.then_some(bit))
+        .sum()
 }
 
 fn browser_restart_url(value: &str) -> Option<String> {
@@ -4941,6 +4952,9 @@ impl AgentsWindow {
                 self.submit_browser_command(crate::browser_runtime::BrowserCommand::Scroll {
                     dx: f64::from(dx),
                     dy: f64::from(dy),
+                    // Control pressed while a notch still glides does not
+                    // turn what is left of it into a zoom.
+                    modifiers: self.browser_modifiers & !openide_browser::modifiers::CONTROL,
                 });
             }
             ctx.request_repaint();
@@ -5275,6 +5289,7 @@ impl AgentsWindow {
                     y,
                     button: openide_browser::MouseButton::Left,
                     clicks,
+                    modifiers: self.browser_modifiers,
                 },
             );
         }
@@ -5324,9 +5339,9 @@ impl AgentsWindow {
             .filter(|_| !self.browser_navigating())
         {
             self.tree.focus("browser_viewport");
-            let clicks = 1;
-            if self.try_submit_browser_command(BrowserCommand::PointerDown { x, y, button, clicks }) {
-                self.submit_browser_command(BrowserCommand::PointerUp { x, y, button, clicks });
+            let (clicks, modifiers) = (1, self.browser_modifiers);
+            if self.try_submit_browser_command(BrowserCommand::PointerDown { x, y, button, clicks, modifiers }) {
+                self.submit_browser_command(BrowserCommand::PointerUp { x, y, button, clicks, modifiers });
             }
         }
         true
@@ -5412,8 +5427,8 @@ impl AgentsWindow {
                 };
                 // The press and its release are separate, so the page sees a
                 // drag between them: a text selection, a slider.
-                let button = MouseButton::Left;
-                if !self.try_submit_browser_command(BrowserCommand::PointerDown { x, y, button, clicks }) {
+                let (button, modifiers) = (MouseButton::Left, self.browser_modifiers);
+                if !self.try_submit_browser_command(BrowserCommand::PointerDown { x, y, button, clicks, modifiers }) {
                     return false;
                 }
                 self.browser_click = Some((tab, Instant::now(), x, y, clicks));
@@ -5438,7 +5453,7 @@ impl AgentsWindow {
                     if let Some((id, _, _, clicks)) = pressed {
                         self.browser_pointer_down = Some((id, x, y, clicks));
                     }
-                    self.submit_browser_command(BrowserCommand::PointerMove { x, y });
+                    self.submit_browser_command(BrowserCommand::PointerMove { x, y, modifiers: self.browser_modifiers });
                 }
             }
             return false;
@@ -5449,6 +5464,11 @@ impl AgentsWindow {
                     return true;
                 }
                 if self.browser_page_point(position, false).is_none() {
+                    return true;
+                }
+                // Control with the wheel zooms a browser, which this page
+                // cannot do; it does not scroll it either.
+                if self.browser_modifiers & openide_browser::modifiers::CONTROL != 0 {
                     return true;
                 }
                 if !direct && !self.reduced_motion {
@@ -5465,6 +5485,7 @@ impl AgentsWindow {
                 return self.try_submit_browser_command(BrowserCommand::Scroll {
                     dx: (-delta_x).clamp(-100_000.0, 100_000.0),
                     dy: (-delta_y).clamp(-100_000.0, 100_000.0),
+                    modifiers: self.browser_modifiers,
                 });
             }
         }
@@ -5478,6 +5499,13 @@ impl AgentsWindow {
             );
         }
         match event {
+            // A character the keyboard types is a key the page hears go down
+            // and up: its shortcuts, a list's type-ahead, Space on a button.
+            // What is not on the driver's layout (ñ, á, €) is inserted, as
+            // pasted and composed text are.
+            UiEvent::Text(text) if matches!(text.as_bytes(), [b' '..=b'~']) => {
+                self.try_submit_browser_command(BrowserCommand::Press { key: text.clone() })
+            }
             UiEvent::Text(text) | UiEvent::Paste(text) | UiEvent::ImeCommit(text) => {
                 self.try_submit_browser_command(BrowserCommand::Type { text: text.clone() })
             }
@@ -5508,8 +5536,11 @@ impl AgentsWindow {
                     Key::Space if *ctrl => Some("Space"),
                     _ => None,
                 };
+                // A letter is named by what its key types: `Control+z`, and
+                // `Z` once Shift is among the keys before it.
                 let letter = if *ctrl && basic.is_none() {
-                    Some(format!("{key:?}"))
+                    let name = format!("{key:?}");
+                    Some(if name.len() == 1 { name.to_lowercase() } else { name })
                 } else {
                     None
                 };
@@ -6984,6 +7015,7 @@ impl AgentsWindow {
             browser_scale: 0.0,
             browser_pointer_down: None,
             browser_wheel: Default::default(),
+            browser_modifiers: 0,
             browser_click: None,
             session_changes_worker: crate::session_changes::SessionChangesWorker::spawn().ok(),
             environment_dirty: true,
@@ -20660,6 +20692,7 @@ impl eframe::App for AgentsWindow {
                 }
             }
         } else {
+            self.browser_modifiers = browser_modifiers(ctx.input(|input| input.modifiers));
             if !workflow_modal_open && !self.tree.context_menu_open() {
                 needs_relayout |= self.handle_dock_middle_click(&ctx, area.min);
                 needs_relayout |= self.handle_browser_middle_click(&ctx, area.min);

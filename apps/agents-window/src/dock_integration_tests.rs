@@ -543,7 +543,7 @@ fn browser_pointer_and_scroll_follow_the_page_at_its_corner_during_transient_res
             shift: false,
         }));
         assert!(
-            matches!(commands.finish_next(), Some(BrowserCommand::Scroll { dx, dy })
+            matches!(commands.finish_next(), Some(BrowserCommand::Scroll { dx, dy, .. })
             if (dx + 3.0).abs() < 0.01 && (dy - 6.0).abs() < 0.01)
         );
         assert!(commands.finish_next().is_none());

@@ -157,9 +157,13 @@ pub(crate) enum BrowserCommand {
         y: f64,
     },
     /// Pointer input from the window, in the same CSS pixels as `Click`.
+    /// `modifiers` are the keys held with it (`openide_browser::modifiers`):
+    /// only the window says them, never a tool call.
     PointerMove {
         x: f64,
         y: f64,
+        #[serde(skip)]
+        modifiers: u8,
     },
     /// `clicks` is 2 for the second press of a double click, 3 for the third.
     PointerDown {
@@ -167,12 +171,16 @@ pub(crate) enum BrowserCommand {
         y: f64,
         button: MouseButton,
         clicks: u8,
+        #[serde(skip)]
+        modifiers: u8,
     },
     PointerUp {
         x: f64,
         y: f64,
         button: MouseButton,
         clicks: u8,
+        #[serde(skip)]
+        modifiers: u8,
     },
     ClickLocator {
         selector: Option<String>,
@@ -203,6 +211,8 @@ pub(crate) enum BrowserCommand {
     Scroll {
         dx: f64,
         dy: f64,
+        #[serde(skip)]
+        modifiers: u8,
     },
     /// The whole accessible tree by default. The options shrink it for a
     /// reader with a small budget.
@@ -329,7 +339,7 @@ impl BrowserCommand {
             {
                 return Err("Coordenadas fuera del viewport".into())
             }
-            Self::PointerMove { x, y }
+            Self::PointerMove { x, y, .. }
             | Self::PointerDown { x, y, .. }
             | Self::PointerUp { x, y, .. }
                 if !(0.0..=1600.0).contains(x) || !(0.0..=1200.0).contains(y) =>
@@ -354,7 +364,7 @@ impl BrowserCommand {
                     "Indicá una profundidad de 0 a 64 y un selector de hasta 1024 bytes".into(),
                 )
             }
-            Self::Scroll { dx, dy }
+            Self::Scroll { dx, dy, .. }
                 if !dx.is_finite()
                     || !dy.is_finite()
                     || dx.abs() > 100_000.0
@@ -642,7 +652,7 @@ impl BrowserHandle {
         }
         let quiet = command.quiet();
         if let BrowserCommand::Click { x, y }
-        | BrowserCommand::PointerMove { x, y }
+        | BrowserCommand::PointerMove { x, y, .. }
         | BrowserCommand::PointerDown { x, y, .. }
         | BrowserCommand::PointerUp { x, y, .. } = &command
         {
@@ -1567,6 +1577,17 @@ fn execute(
     fn end(end: &BrowserTarget) -> Result<Target<'_>, DriverError> {
         target(&end.selector, &end.role, &end.name, &end.reference)
     }
+    /// The window's pointer input, with the modifier keys it came with.
+    fn held<T>(
+        driver: &mut Driver,
+        modifiers: u8,
+        input: impl FnOnce(&mut Driver) -> Result<T, DriverError>,
+    ) -> Result<T, DriverError> {
+        driver.hold_modifiers(modifiers);
+        let outcome = input(driver);
+        driver.hold_modifiers(0);
+        outcome
+    }
     let agent = pending.include_aria;
     let mut reply = PageReply::default();
     let mut options = SnapshotOptions::default();
@@ -1577,8 +1598,8 @@ fn execute(
         Reload => driver.reload()?,
         Click { x, y } => driver.click_at(*x, *y)?,
         // A move answers without page state: only its frames matter.
-        PointerMove { x, y } => {
-            driver.pointer_move(*x, *y)?;
+        PointerMove { x, y, modifiers } => {
+            held(driver, *modifiers, |driver| driver.pointer_move(*x, *y))?;
             return Ok(reply);
         }
         PointerDown {
@@ -1586,9 +1607,12 @@ fn execute(
             y,
             button,
             clicks,
+            modifiers,
         } => {
-            driver.pointer_move(*x, *y)?;
-            driver.pointer_down(*x, *y, *button, *clicks)?;
+            held(driver, *modifiers, |driver| {
+                driver.pointer_move(*x, *y)?;
+                driver.pointer_down(*x, *y, *button, *clicks)
+            })?;
             return Ok(reply);
         }
         PointerUp {
@@ -1596,10 +1620,11 @@ fn execute(
             y,
             button,
             clicks,
-        } => {
+            modifiers,
+        } => held(driver, *modifiers, |driver| {
             driver.pointer_move(*x, *y)?;
-            driver.pointer_up(*x, *y, *button, *clicks)?;
-        }
+            driver.pointer_up(*x, *y, *button, *clicks)
+        })?,
         ClickLocator {
             selector,
             role,
@@ -1629,8 +1654,8 @@ fn execute(
             });
         }
         ConfirmCut { token } => driver.confirm_cut(token)?,
-        Scroll { dx, dy } => {
-            driver.scroll(*dx, *dy)?;
+        Scroll { dx, dy, modifiers } => {
+            held(driver, *modifiers, |driver| driver.scroll(*dx, *dy))?;
             // The window's wheel does not wait for page state either: reading
             // it after every step would pace the wheel.
             if !agent {

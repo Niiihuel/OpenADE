@@ -334,7 +334,7 @@ fn wheel_trackpad_and_shift_preserve_both_axes_in_css_pixels_and_reject_nonfinit
     viewport(&mut app);
     assert!(app.handle_browser_event(&scroll(3.5, -6.0, false)));
     assert!(
-        matches!(commands.finish_next(), Some(BrowserCommand::Scroll { dx, dy }) if dx == -3.5 && dy == 6.0)
+        matches!(commands.finish_next(), Some(BrowserCommand::Scroll { dx, dy, .. }) if dx == -3.5 && dy == 6.0)
     );
     assert!(!app.handle_browser_event(&scroll(f32::NAN, 1.0, false)));
     assert!(commands.finish_next().is_none());
@@ -437,7 +437,7 @@ fn twenty_piece_typing_burst_and_scroll_burst_preserve_every_input_and_barrier()
         delivered[barrier + 1..]
             .iter()
             .fold((0.0, 0.0), |(x, y), command| match command {
-                BrowserCommand::Scroll { dx, dy } => (x + dx, y + dy),
+                BrowserCommand::Scroll { dx, dy, .. } => (x + dx, y + dy),
                 _ => panic!("scroll barrier changed"),
             });
     assert_eq!((x, y), (-20.0, 40.0));
@@ -492,7 +492,7 @@ fn pointer_during_pending_typing_is_an_ordered_barrier_but_navigation_blocks_it(
     assert_eq!(delivered.len(), 8);
     assert!(matches!(delivered[7], BrowserCommand::PointerUp { x, y, .. } if x == 40.0 && y == 30.0));
     for (index, command) in delivered[..5].iter().enumerate() {
-        assert!(matches!(command, BrowserCommand::Type { text } if text == &index.to_string()));
+        assert!(matches!(command, BrowserCommand::Press { key } if key == &index.to_string()));
     }
     assert!(matches!(delivered[5], BrowserCommand::PointerDown { x, y, .. } if x == 40.0 && y == 30.0));
     assert!(matches!(&delivered[6], BrowserCommand::Type { text } if text == "después"));
@@ -642,11 +642,11 @@ fn hover_reaches_the_page_one_move_at_a_time_and_a_drag_ends_wherever_it_is_rele
     assert!(!app.view.browser.loading);
     app.view.show_side_pane = false; // No automatic viewport resize while polling.
     assert!(
-        matches!(commands.finish_next(), Some(BrowserCommand::PointerMove { x, y }) if x == 10.0 && y == 20.0)
+        matches!(commands.finish_next(), Some(BrowserCommand::PointerMove { x, y, .. }) if x == 10.0 && y == 20.0)
     );
     assert!(!app.update_browser(&egui::Context::default()));
     assert!(
-        matches!(commands.finish_next(), Some(BrowserCommand::PointerMove { x, y }) if x == 19.0 && y == 20.0)
+        matches!(commands.finish_next(), Some(BrowserCommand::PointerMove { x, y, .. }) if x == 19.0 && y == 20.0)
     );
     assert!(!app.update_browser(&egui::Context::default()));
     assert!(commands.finish_next().is_none());
@@ -672,7 +672,7 @@ fn hover_reaches_the_page_one_move_at_a_time_and_a_drag_ends_wherever_it_is_rele
     assert!(
         matches!(delivered.as_slice(), [
             BrowserCommand::PointerDown { x, y, .. },
-            BrowserCommand::PointerMove { x: move_x, y: move_y },
+            BrowserCommand::PointerMove { x: move_x, y: move_y, .. },
             BrowserCommand::PointerUp { x: up_x, y: up_y, .. },
         ] if (*x, *y, *move_x, *move_y, *up_x, *up_y) == (5.0, 6.0, 0.0, 479.0, 0.0, 479.0)),
         "{delivered:?}"
@@ -819,11 +819,11 @@ fn presses_close_in_time_and_place_are_one_run_of_clicks_and_other_buttons_click
     assert!(app.handle_browser_event(&UiEvent::ContextMenu { position: spot }));
     assert!(matches!(
         commands.finish_next(),
-        Some(BrowserCommand::PointerDown { x, y, button: MouseButton::Right, clicks: 1 }) if (x, y) == (30.0, 40.0)
+        Some(BrowserCommand::PointerDown { x, y, button: MouseButton::Right, clicks: 1, .. }) if (x, y) == (30.0, 40.0)
     ));
     assert!(matches!(
         commands.finish_next(),
-        Some(BrowserCommand::PointerUp { x, y, button: MouseButton::Right, clicks: 1 }) if (x, y) == (30.0, 40.0)
+        Some(BrowserCommand::PointerUp { x, y, button: MouseButton::Right, clicks: 1, .. }) if (x, y) == (30.0, 40.0)
     ));
     assert!(app.browser_pointer_down.is_none());
     app.update_browser(&ctx);
@@ -844,7 +844,7 @@ fn presses_close_in_time_and_place_are_one_run_of_clicks_and_other_buttons_click
     ctx.end_pass().textures_delta.clear();
     assert!(matches!(
         commands.finish_next(),
-        Some(BrowserCommand::PointerDown { x, y, button: MouseButton::Middle, clicks: 1 }) if (x, y) == (30.0, 40.0)
+        Some(BrowserCommand::PointerDown { x, y, button: MouseButton::Middle, clicks: 1, .. }) if (x, y) == (30.0, 40.0)
     ));
     assert!(matches!(commands.finish_next(), Some(BrowserCommand::PointerUp { button: MouseButton::Middle, .. })));
     app.update_browser(&ctx);
@@ -861,5 +861,151 @@ fn presses_close_in_time_and_place_are_one_run_of_clicks_and_other_buttons_click
     ctx.begin_pass(middle(spot));
     assert!(app.handle_browser_middle_click(&ctx, origin));
     ctx.end_pass().textures_delta.clear();
+    assert!(commands.finish_next().is_none());
+}
+
+#[test]
+fn held_modifier_keys_travel_with_the_pointer_and_the_wheel_and_control_with_the_wheel_moves_nothing() {
+    use openide_browser::modifiers::{ALT, CONTROL, SHIFT};
+    use openide_browser::MouseButton;
+    let held = |shift, ctrl, alt| browser_modifiers(egui::Modifiers { shift, ctrl, alt, ..Default::default() });
+    assert_eq!(held(false, false, false), 0);
+    assert_eq!((held(true, false, false), held(false, true, false), held(false, false, true)), (SHIFT, CONTROL, ALT));
+    assert_eq!(held(true, true, true), SHIFT | CONTROL | ALT);
+
+    let (_root, mut app, id) = fixture();
+    let commands = install_runtime(&mut app, id, blank(1));
+    app.apply_browser_snapshot(id.get(), blank(1));
+    viewport(&mut app);
+    app.view.show_side_pane = true;
+    let ctx = egui::Context::default();
+    let rect = app.browser_viewport_rect().unwrap();
+    let at = |x: f32, y: f32| Point::new(rect.x + x, rect.y + y);
+    let delivered = |app: &mut AgentsWindow| {
+        app.view.show_side_pane = false; // No automatic viewport resize while polling.
+        let mut delivered = Vec::new();
+        for _ in 0..8 {
+            while let Some(command) = commands.finish_next() {
+                delivered.push(command);
+            }
+            app.update_browser(&ctx);
+        }
+        app.view.show_side_pane = true;
+        delivered
+    };
+
+    // Shift + click extends a selection: the press, the drag and the release
+    // all say which keys were held.
+    app.browser_modifiers = SHIFT;
+    assert!(app.handle_browser_event(&UiEvent::PointerDownModified { position: at(30.0, 40.0), shift: true }));
+    assert!(!app.handle_browser_event(&UiEvent::PointerMove(at(50.0, 40.0))));
+    assert!(app.handle_browser_event(&UiEvent::PointerUp(at(50.0, 40.0))));
+    assert!(
+        matches!(delivered(&mut app).as_slice(), [
+            BrowserCommand::PointerDown { modifiers: SHIFT, .. },
+            BrowserCommand::PointerMove { modifiers: SHIFT, .. },
+            BrowserCommand::PointerUp { modifiers: SHIFT, .. },
+        ])
+    );
+    // Control + click, which the window reports as an editor gesture, and
+    // the right button.
+    app.browser_modifiers = CONTROL | ALT;
+    let editor = UiEvent::PointerDownEditor { position: at(30.0, 40.0), shift: false, alt: true, ctrl: true, click_count: 1 };
+    assert!(app.handle_browser_event(&editor));
+    assert!(app.handle_browser_event(&UiEvent::PointerUp(at(30.0, 40.0))));
+    assert!(app.handle_browser_event(&UiEvent::ContextMenu { position: at(30.0, 40.0) }));
+    let both = CONTROL | ALT;
+    assert!(
+        matches!(delivered(&mut app).as_slice(), [
+            BrowserCommand::PointerDown { button: MouseButton::Left, modifiers: left_down, .. },
+            BrowserCommand::PointerUp { button: MouseButton::Left, modifiers: left_up, .. },
+            BrowserCommand::PointerDown { button: MouseButton::Right, modifiers: right_down, .. },
+            BrowserCommand::PointerUp { button: MouseButton::Right, modifiers: right_up, .. },
+        ] if [*left_down, *left_up, *right_down, *right_up] == [both; 4])
+    );
+
+    // Shift turns the wheel sideways and the page is told Shift was held.
+    app.browser_modifiers = SHIFT;
+    let wheel = |delta_y: f32, direct: bool| UiEvent::Scroll2D { position: at(30.0, 40.0), delta_x: 0.0, delta_y, direct, shift: true };
+    assert!(app.handle_browser_event(&wheel(-9.0, true)));
+    assert!(
+        matches!(delivered(&mut app).as_slice(), [BrowserCommand::Scroll { dx, dy, modifiers: SHIFT }] if (*dx, *dy) == (9.0, 0.0))
+    );
+
+    // Control with the wheel zooms a browser. This page cannot be zoomed, and
+    // is not scrolled instead: neither a touchpad's deltas nor a wheel notch
+    // reach it, and no notch is left gliding.
+    app.browser_modifiers = CONTROL;
+    for event in [
+        UiEvent::ScrollDirect { position: at(30.0, 40.0), delta_y: -12.0 },
+        UiEvent::Scroll { position: at(30.0, 40.0), delta_y: -30.0 },
+    ] {
+        assert!(app.handle_browser_event(&event), "taken, so nothing behind the page scrolls either");
+    }
+    assert!(delivered(&mut app).is_empty());
+    // Control pressed while a notch still glides: what is left of it scrolls.
+    app.browser_modifiers = 0;
+    assert!(app.handle_browser_event(&UiEvent::Scroll { position: at(30.0, 40.0), delta_y: -30.0 }));
+    app.browser_modifiers = CONTROL;
+    std::thread::sleep(Duration::from_millis(30));
+    let glided = delivered(&mut app);
+    assert!(!glided.is_empty() && glided.iter().all(|command| matches!(command, BrowserCommand::Scroll { modifiers: 0, .. })), "{glided:?}");
+}
+
+#[test]
+fn a_typed_character_is_a_key_the_page_hears_and_other_text_is_inserted() {
+    let (_root, mut app, id) = fixture();
+    let commands = install_runtime(&mut app, id, blank(1));
+    app.apply_browser_snapshot(id.get(), blank(1));
+    viewport(&mut app);
+    assert!(app.tree.focus("browser_viewport"));
+    let ctx = egui::Context::default();
+    let sent = |app: &mut AgentsWindow, event: UiEvent| {
+        assert!(app.handle_browser_event(&event), "{event:?}");
+        let command = commands.finish_next().unwrap_or_else(|| panic!("{event:?} sent nothing"));
+        app.view.show_side_pane = false; // No automatic viewport resize while polling.
+        app.update_browser(&ctx);
+        app.view.show_side_pane = true;
+        command
+    };
+    let key = |key, shift, ctrl| UiEvent::Key { key, shift, ctrl };
+    // What the US layout types goes down and up as its key: a page's own
+    // shortcuts, a list's type-ahead and Space on a button all need that.
+    for typed in ["a", "Z", "7", " ", "/", "?", "+", "~"] {
+        let command = sent(&mut app, UiEvent::Text(typed.into()));
+        assert!(matches!(&command, BrowserCommand::Press { key } if key == typed), "{typed:?}: {command:?}");
+        assert!(command.validate().is_ok());
+    }
+    // What it does not is inserted, as an accent's dead key, an input method
+    // and the clipboard deliver theirs.
+    for event in [
+        UiEvent::Text("ñ".into()),
+        UiEvent::Text("€".into()),
+        UiEvent::Text("🧠".into()),
+        UiEvent::Text("ab".into()),
+        UiEvent::ImeCommit("á".into()),
+        UiEvent::ImeCommit("a".into()),
+        UiEvent::Paste("a".into()),
+    ] {
+        let command = sent(&mut app, event.clone());
+        assert!(matches!(command, BrowserCommand::Type { .. }), "{event:?}: {command:?}");
+    }
+    // A shortcut names its letter as the keyboard types it, so a page that
+    // listens for Control + z hears `z`.
+    for (event, expected) in [
+        (key(Key::Z, false, true), "Control+z"),
+        (key(Key::Z, true, true), "Control+Shift+z"),
+        (key(Key::A, false, true), "Control+a"),
+        (key(Key::F5, false, true), "Control+F5"),
+        (key(Key::ArrowLeft, true, false), "Shift+ArrowLeft"),
+        (key(Key::Home, true, true), "Control+Shift+Home"),
+        (key(Key::Delete, false, false), "Delete"),
+        (key(Key::Tab, true, false), "Shift+Tab"),
+    ] {
+        let command = sent(&mut app, event);
+        assert!(matches!(&command, BrowserCommand::Press { key } if key == expected), "{expected}: {command:?}");
+    }
+    // The key of a character arrives with its text and is not sent twice.
+    assert!(app.handle_browser_event(&key(Key::A, false, false)));
     assert!(commands.finish_next().is_none());
 }
