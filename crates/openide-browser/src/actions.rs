@@ -349,7 +349,8 @@ impl Driver {
     }
 
     /// If the action made the page start a navigation, waits until the new
-    /// document is committed, so what is read next is not the page being left.
+    /// document is committed and parsed, so what is read next is neither the
+    /// page being left nor one that has yet to say what it holds.
     fn settle_navigation(&mut self, before: (u64, u64, u64)) {
         // One round trip through the page: its request to navigate, if any,
         // is reported before this answer.
@@ -357,7 +358,8 @@ impl Driver {
         let _: Outcome<Value> = self.call(&session, "Runtime.evaluate", json!({"expression": "0"}));
         self.shared.wait(self.deadline, |state| {
             let pending = state.requested > before.0 && state.commits == before.1 && state.stopped == before.2;
-            (!pending).then_some(())
+            let parsing = state.commits > before.1 && state.dom_content_loader != state.loader;
+            (!pending && !parsing).then_some(())
         });
     }
 

@@ -123,6 +123,8 @@ Lo que con Chrome resuelve el driver por el protocolo del navegador, acá lo
 resuelve quien embebe, sin mostrar nunca una ventana:
 
 - Una ventana emergente no llega a crearse; `window.open` devuelve `null`.
+  Lo que un clic pidió ver en otra pestaña se abre en la misma página: ver
+  **Enlaces que piden otra pestaña**, más abajo.
 - Un diálogo JavaScript no se muestra. El driver lo contesta por DevTools
   como siempre; CEF sólo lo deja abierto hasta entonces.
 - El selector de archivos se cancela, el menú contextual queda vacío y las
@@ -229,6 +231,31 @@ lista de un `<select>`**.
 - **Vista oculta.** Al ocultarse la vista suelta los píxeles de la lista junto
   con los de la página; al volver se piden otra vez los dos.
 
+**Enlaces que piden otra pestaña.** Un panel tiene una sola página, y nunca
+se crea otra ventana ni otra pestaña. Lo que un clic pidió ver en una se abre
+en esa misma página, y **Atrás** vuelve a la anterior:
+
+| Lo que hace la página o el usuario | Qué pasa |
+| --- | --- |
+| Clic en un enlace con `target="_blank"` o con el nombre de otra ventana | El driver abre esa dirección en la misma página. |
+| Clic en algo cuyo script llama a `window.open(dirección)` | Lo mismo. El script recibe `null`, como con una ventana bloqueada. |
+| Control + clic, Shift + clic o botón del medio sobre un enlace | Chromium lo abre en la misma página. |
+| `window.open`, un clic hecho por script o un Control + clic hecho por script, sin un clic del usuario detrás | No abre nada. |
+| Un destino que no es `http` ni `https` (`data:`, `about:blank`, `javascript:`, `file:`) | No abre nada. |
+| Un formulario que envía a otra pestaña (`target="_blank"`) | Se abre su dirección, pero **sin lo que el formulario enviaba**: es una carga nueva por GET. |
+
+Los dos primeros casos los resuelve el [driver](browser-driver.md): la página
+anuncia por el protocolo que va a abrir una ventana, con la dirección y con
+si hubo un clic del usuario (`Page.windowOpen`), CEF rechaza la ventana y el
+driver navega la página a esa dirección. Las herramientas del agente siguen
+la misma regla, porque su clic es un clic: `browser_click` sobre un enlace
+así espera la página nueva y responde con su dirección, su título y su
+árbol, igual que con un enlace común. La dirección se pide una sola vez
+(contado en la prueba). La página que se abre no conoce a la que la abrió
+(`window.opener`), y el driver no le pasa `Referer` (leído en el código, no
+medido). Una ventana que se abre vacía para que el script la llene después
+(`window.open()` y más tarde `ventana.location = …`) no abre nada.
+
 **Cursor.** Chromium avisa qué cursor pide la página bajo el puntero
 (`OnCursorChange`) y la ventana lo muestra mientras el puntero está sobre la
 página y ésta recibe entrada: mano sobre un enlace, barra de texto sobre un
@@ -334,9 +361,9 @@ Chrome de reemplazo.
   nunca pierde el foco; **no se miró en la ventana**).
 - La página no se amplía: Control + rueda no hace nada
   ([por qué](browser-runtime.md#interacción-errores-y-límites)).
-- Control + clic, el botón del medio y Shift + clic sobre un enlace lo abren
-  en la misma página, porque CEF pregunta antes de crear otra y acá no hay
-  dónde. Un enlace con `target="_blank"` y `window.open` no abren nada.
+- Un formulario que envía a otra pestaña abre su dirección sin los datos, y
+  una ventana que un script abre vacía para llenarla después no abre nada:
+  ver **Enlaces que piden otra pestaña**.
 - El proceso enlaza `libcef.so` al arrancar: unos 50 MB más de PSS aunque no
   se abra ningún navegador, también en cada proceso `--browser-mcp`.
 - Los auxiliares de CEF heredan el entorno de la aplicación; Chrome recibía
@@ -550,9 +577,8 @@ al lado (`browser_subprocess_path`), por eso el comando no lleva `--bin`.
   diálogos descartados y aceptados, `window.open` rechazado, el idioma
   anunciado y un marco de otro sitio leído y accionado por referencia.
 - Vista en vivo a escala 2 y 1, entrada de la ventana, teclas modificadoras
-  y teclado español: los mismos pasos. Un enlace pedido en otra pestaña se
-  abre en la misma página. De la página que anima una esquina la vista recibe
-  esa esquina y no cuadros enteros.
+  y teclado español: los mismos pasos. De la página que anima una esquina la
+  vista recibe esa esquina y no cuadros enteros.
 - Partes de cuadro, a escala 2, 1 y 1,5: después de escribir, de que el
   cursor parpadee (cada parpadeo es una parte de menos del 2 % del cuadro),
   de desplazar, de abrir una lista, pasar el puntero por sus filas y
@@ -564,6 +590,12 @@ al lado (`browser_subprocess_path`), por eso el comando no lleva `--bin`.
 - En todas estas pruebas, después de cada pintura parcial se compara el
   lienzo completo con el búfer de Chromium: el rectángulo que Chromium dice
   haber pintado fue siempre todo lo que cambió.
+- Enlaces que piden otra pestaña: `target="_blank"`, `window.open` desde un
+  clic, una ventana con nombre, un formulario hacia otra pestaña, Control +
+  clic, Shift + clic y botón del medio se abren en la misma página y
+  **Atrás** vuelve; el clic del agente recibe la página nueva; lo que la
+  página intenta sola, y lo que no es una dirección web, no abre nada; cada
+  dirección se pidió una sola vez.
 - Lista de un `<select>`, a escala 2 y 1: está donde abre y mide lo que el
   control a esa escala, el cuadro que recibe la vista la muestra, las flechas,
   Enter y Escape actúan sobre ella, la fila bajo el puntero se resalta, un
@@ -599,8 +631,8 @@ vista en vivo y la de lo que cuesta un cambio según cuánto ocupa, que pide
 120 cuadros por segundo además de 60 sin cambiar lo que usa la aplicación.
 
 Validado el 12 de octubre de 2026 con CEF 154.0.34 (Chromium 154.0.8037.98) en
-NixOS, sandbox activo: las trece pruebas (once en el arnés, con las
-mediciones, y las dos de `tests/browser_cef.rs`) pasaron en tres corridas
+NixOS, sandbox activo: las dieciséis pruebas (catorce en el arnés, con las dos
+de mediciones, y las dos de `tests/browser_cef.rs`) pasaron en tres corridas
 seguidas y después de cada una no quedó ningún proceso de CEF ni directorio.
 
 ## Lo que queda para el paso de GPU

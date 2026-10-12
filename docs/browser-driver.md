@@ -62,7 +62,33 @@ navegadores.
   tocan.
 - **Un contexto, una página.** Un contexto de navegador aislado, sin
   descargas, con una única página. Cualquier otra ventana que la página abra
-  se cierra.
+  se cierra, y lo que un clic pidió ver en ella se abre en la página:
+  - La página anuncia que va a abrir una ventana (`Page.windowOpen`) antes de
+    pedírsela al navegador, con la dirección y con si hubo un clic del
+    usuario. Si lo hubo y la dirección es `http` o `https`, el driver navega
+    la página ahí (`Page.navigate`). Es lo que cubre `target="_blank"`, una
+    ventana con nombre y `window.open`, también desde un marco, y vale para
+    cualquier extremo, el Chromium embebido incluido.
+  - Una pestaña que el propio navegador crea para un enlace con Control,
+    Shift o el botón del medio se anuncia con su dirección
+    (`Target.targetCreated`): el driver la cierra y navega la página ahí.
+  - El bloqueo de ventanas emergentes de Chrome queda activo (no se pasa
+    `--disable-popup-blocking`): lo que una página intenta abrir sin un clic
+    detrás lo rechaza Chrome, y no llega a ser una pestaña.
+  - La acción que provocó la navegación la espera como a la de un enlace
+    común: `click` vuelve con el documento nuevo ya leído.
+  - «Un clic del usuario» es lo que Chromium entiende por eso: lo que el
+    script de la página hace mientras dura la activación que deja un clic
+    cuenta como pedido por él. Visto en las pruebas: un `window.open`
+    evaluado un segundo después de un clic en otra parte de la página se
+    abrió. Cuánto dura esa activación no se midió.
+  - Medido con Chrome 150: en los dos casos la pestaña que Chrome crea
+    alcanza a pedir su dirección antes de cerrarse, así que la dirección se
+    pide dos veces. `--block-new-web-contents` no impide que se cree.
+    Adjuntarse a las pestañas nuevas con `waitForDebuggerOnStart` evita ese
+    pedido para una ventana de script, pero deja detenida a la página que la
+    abrió, que comparte proceso con ella; para una pestaña que crea el
+    navegador el pedido sale antes de que haya a qué adjuntarse.
 
 No se usa `PR_SET_PDEATHSIG`: esa señal depende del hilo que creó el proceso y
 mataría al navegador si ese hilo terminara antes que el driver.
@@ -256,8 +282,11 @@ faltaba, por ejemplo «Timeout 10000ms exceeded. Todavía `<div id="cover">`
 recibe los eventos del puntero en su lugar.»
 
 - `click`, `click_at` y `press` esperan a que se confirme la navegación que
-  hayan iniciado, para que lo que se lea después no sea la página que se está
-  abandonando.
+  hayan iniciado y a que el documento nuevo termine de leerse
+  (`DOMContentLoaded`), para que lo que se lea después no sea la página que se
+  está abandonando ni un documento que todavía no tiene título ni contenido.
+  Antes esperaban sólo la confirmación: en una de seis corridas de la prueba
+  de enlaces, el clic respondió con la dirección nueva y el título vacío.
 - `fill` selecciona el contenido y lo reemplaza con los mismos eventos de
   entrada que el teclado; los tipos `date`, `time`, `color`, `range` y
   similares reciben su valor directamente.

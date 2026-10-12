@@ -51,7 +51,8 @@ const SWITCHES: &[&str] = &[
     "--disable-sync",
     "--disable-breakpad",
     "--disable-hang-monitor",
-    "--disable-popup-blocking",
+    // Popup blocking stays on: a window a page opens with no click behind it
+    // is refused by Chrome itself.
     "--disable-prompt-on-repost",
     "--metrics-recording-only",
     "--mute-audio",

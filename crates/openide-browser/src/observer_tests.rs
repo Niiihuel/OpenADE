@@ -394,6 +394,51 @@ fn another_window_is_closed_and_the_drivers_own_page_is_not() {
 }
 
 #[test]
+fn what_a_click_asked_to_see_in_another_tab_opens_in_the_page_itself() {
+    let (mut observer, client, written) = observer();
+    let here = |url: &str| ("PAGE".to_owned(), "Page.navigate".to_owned(), json!({"url": url}));
+    let opened = |observer: &mut Observer, session: &str, url: &str, gesture: bool| {
+        observer.event(&client, session, "Page.windowOpen", json!({"url": url, "windowName": "_blank", "windowFeatures": [], "userGesture": gesture}));
+    };
+    // A link for another tab or a script's window.open, behind a click: the
+    // page navigates there, and whoever clicked waits for that document.
+    opened(&mut observer, "PAGE", "https://fixture/next?a=1#top", true);
+    assert_eq!(posted(&written), [here("https://fixture/next?a=1#top")]);
+    assert_eq!(observer.shared.state().requested, 1);
+    // From a frame of another site, the page is still the one that opens it.
+    opened(&mut observer, "CHILD", "http://other/", true);
+    assert_eq!(posted(&written), [here("http://other/")]);
+    // With no click behind it, a popup opens nothing.
+    opened(&mut observer, "PAGE", "https://fixture/advert", false);
+    // Nor does anything a link could not make the browser itself load.
+    for url in ["", "about:blank", "file:///etc/passwd", "javascript:alert(1)", "data:text/html,x", "chrome://settings", "HTTPS://fixture/"] {
+        opened(&mut observer, "PAGE", url, true);
+    }
+    assert!(posted(&written).is_empty());
+    assert_eq!(observer.shared.state().requested, 2);
+
+    // A tab the browser made for a link clicked with Control, Shift or the
+    // middle button is closed, and says where the page goes instead.
+    let created = |observer: &mut Observer, id: &str, url: &str| {
+        observer.event(&client, "", "Target.targetCreated", json!({"targetInfo": {"targetId": id, "type": "page", "url": url}}));
+    };
+    created(&mut observer, "TAB", "http://fixture/linked");
+    assert_eq!(
+        posted(&written),
+        [(String::new(), "Target.closeTarget".to_owned(), json!({"targetId": "TAB"})), here("http://fixture/linked")]
+    );
+    // The window of a script has no address yet, and one that is not of the
+    // web is only closed.
+    created(&mut observer, "WINDOW", "");
+    created(&mut observer, "OTHER", "chrome://newtab/");
+    assert_eq!(posted(&written).len(), 2);
+    // The driver's own page is not another tab.
+    created(&mut observer, "MAIN", "http://fixture/");
+    assert!(posted(&written).is_empty());
+    assert_eq!(observer.shared.state().requested, 3);
+}
+
+#[test]
 fn frames_of_other_processes_are_set_up_and_everything_else_attached_is_let_go() {
     let (mut observer, client, written) = observer();
     let attached = |observer: &mut Observer, on: &str, session: &str, target: &str, kind: &str| {

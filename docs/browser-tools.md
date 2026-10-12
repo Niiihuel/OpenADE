@@ -321,7 +321,7 @@ del modelo con la que se verifican y reanudan turnos guardados.
 
 | De la skill de Codex | Motivo |
 | --- | --- |
-| Pestañas (`tab-new`, `tab-select`…) | Hay una única página autoritativa por contexto, compartida con el usuario; las ventanas emergentes se cierran. |
+| Pestañas (`tab-new`, `tab-select`…) | Hay una única página autoritativa por contexto, compartida con el usuario. Un clic sobre un enlace que pide otra pestaña la abre en esa misma página, y la respuesta del clic ya es la página nueva; lo que una página intenta abrir sola no abre nada. |
 | `resize` | El viewport pertenece al panel visible. |
 | `upload` | Requiere dar a la página acceso a archivos del usuario; necesita su propia política. |
 | `pdf` | Produce un archivo en disco; no hay destino acotado para artefactos. |

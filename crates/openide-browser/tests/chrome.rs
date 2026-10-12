@@ -768,19 +768,24 @@ fn snapshots_cover_frames_custom_controls_and_can_be_narrowed() {
 
 #[test]
 #[ignore = "needs Chrome"]
-fn a_frame_of_another_site_is_read_and_acted_on_and_popups_are_closed() {
+fn a_frame_of_another_site_is_read_and_acted_on_and_another_window_opens_in_the_page() {
     let server = Server::fixtures();
     // The same loopback server under another host name is another site, which
     // Chrome renders in another process.
     let outer = format!(
         "<!doctype html><title>Sitios</title><h1>Dos sitios</h1><iframe src=\"{}/frame.html\" title=\"Otro sitio\" style=\"width:300px;height:80px;margin-left:120px\"></iframe>\
-         <button onclick=\"const w=window.open('/form.html');setTimeout(()=>{{this.textContent=w?('cerrada '+w.closed):'bloqueada'}},800)\">Abrir ventana</button>",
+         <button onclick=\"window.open('/form.html')\">Abrir ventana</button>",
         server.origin_as("localhost")
     );
     let pages = Server::start(move |_, _| Response::html(outer.clone()));
     let mut driver = launch(640, 480, 1.0);
     driver.navigate(&pages.origin).unwrap();
     driver.wait_seconds(0.5).unwrap();
+    // One panel has one page. A window the page opens by itself, with no
+    // click behind it, is refused: Chrome's own popup blocking stays on.
+    assert_eq!(evaluate(&mut driver, "String(window.open('/form.html'))"), "\"null\"");
+    driver.wait_seconds(0.3).unwrap();
+    assert_eq!(driver.info().unwrap().url, format!("{}/", pages.origin), "the page did not move by itself");
     let tree = snapshot(&mut driver);
     assert!(tree.contains("iframe \"Otro sitio\" [ref=e"), "{tree}");
     let inner = ref_of(&tree, "button \"Dentro\"");
@@ -792,10 +797,11 @@ fn a_frame_of_another_site_is_read_and_acted_on_and_popups_are_closed() {
     assert!(document.text.starts_with("\"localhost:"), "{}", document.text);
     assert!(driver.network_requests().entries.iter().any(|entry| entry.url.contains("localhost") && entry.status == Some(200)));
 
-    // One panel has one page: a window the page opens is closed.
+    // A window a click asked for opens in the page itself: the click's own
+    // answer is already that document.
     driver.click(&Target::Role { role: "button", name: "Abrir ventana" }).unwrap();
-    driver.wait_for_text("cerrada true").unwrap();
-    assert_eq!(driver.info().unwrap().url, format!("{}/", pages.origin), "the authoritative page did not move");
+    assert_eq!(driver.info().unwrap().url, format!("{}/form.html", pages.origin));
+    assert!(snapshot(&mut driver).contains("Dos sitios"), "the document that opened is read like any other");
 }
 
 // ---- The live view: frame stream and raw input ----

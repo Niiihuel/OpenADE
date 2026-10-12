@@ -259,7 +259,8 @@ wrap_life_span_handler! {
             _extra_info: Option<&mut Option<DictionaryValue>>,
             _no_javascript_access: Option<&mut c_int>,
         ) -> c_int {
-            // One panel has one page: no other window is ever created.
+            // One panel has one page: no other window is ever created. What
+            // a click asked to see in one, the driver opens in this page.
             1
         }
 
@@ -405,11 +406,33 @@ wrap_download_handler! {
     }
 }
 
+wrap_request_handler! {
+    struct Requests;
+    impl RequestHandler {
+        fn on_open_urlfrom_tab(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _target_url: Option<&CefString>,
+            target_disposition: WindowOpenDisposition,
+            user_gesture: c_int,
+        ) -> c_int {
+            // A link clicked with Control, Shift or the middle button asks
+            // for another tab. Let through, Chromium opens it in the page
+            // itself, where there is no other. What asks for one with no
+            // click of the user's behind it is refused, as a popup is.
+            let here = target_disposition == sys::cef_window_open_disposition_t::CEF_WOD_CURRENT_TAB.into();
+            (!here && user_gesture == 0).into()
+        }
+    }
+}
+
 wrap_client! {
     struct PageClient {
         render: RenderHandler,
         display: DisplayHandler,
         life: LifeSpanHandler,
+        requests: RequestHandler,
         dialogs: JsdialogHandler,
         files: DialogHandler,
         menus: ContextMenuHandler,
@@ -424,6 +447,9 @@ wrap_client! {
         }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(self.life.clone())
+        }
+        fn request_handler(&self) -> Option<RequestHandler> {
+            Some(self.requests.clone())
         }
         fn jsdialog_handler(&self) -> Option<JsdialogHandler> {
             Some(self.dialogs.clone())
@@ -516,6 +542,7 @@ impl Page {
             Render::new(core.clone()),
             Display::new(core.clone()),
             Life::new(core.clone()),
+            Requests::new(),
             Dialogs::new(core.clone()),
             Files::new(),
             Menus::new(),

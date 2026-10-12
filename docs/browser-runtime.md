@@ -138,13 +138,44 @@ La ventana envía además el puntero, en los mismos píxeles CSS:
   extiende la selección y los manejadores de la página ven `shiftKey`,
   `ctrlKey` y `altKey`. Sólo la ventana los envía: una herramienta del agente
   no puede nombrarlos.
-- **Un enlace pedido en otra pestaña.** Control + clic, el botón del medio y
+- **Un enlace pedido en otra pestaña.** Un enlace con `target="_blank"`, un
+  script que llama a `window.open` y Control + clic, el botón del medio o
   Shift + clic sobre un enlace piden otra pestaña u otra ventana, y acá hay
-  una sola página. Con el Chrome lanzado la pestaña llega a crearse, el driver
-  la cierra y la página queda donde estaba. Con el Chromium embebido, que
-  pregunta antes, el enlace se abre en la misma página. En ninguno de los dos
-  se abre una ventana, y `window.open` y `target="_blank"` siguen sin abrir
-  nada.
+  una sola página. Cuando lo pidió un clic, se abre en esa misma página, en
+  los dos motores, y **Atrás** vuelve a la anterior. Nunca se abre una
+  ventana. El detalle está en **Enlaces que piden otra pestaña**, más abajo.
+
+**Enlaces que piden otra pestaña.** La regla es la misma para el usuario y
+para las herramientas del agente, cuyo clic es un clic:
+
+| Pedido | Con el Chrome lanzado | Con el Chromium embebido |
+| --- | --- | --- |
+| Clic en un enlace con `target="_blank"` o con el nombre de otra ventana | Se abre en la misma página. Chrome llega a crear la pestaña, que el driver cierra. | Se abre en la misma página. La pestaña no llega a crearse. |
+| Clic en algo cuyo script llama a `window.open(dirección)` | Lo mismo. El script recibe una ventana, que el driver cierra enseguida. | Lo mismo. El script recibe `null`. |
+| Control + clic, Shift + clic o botón del medio sobre un enlace | Lo mismo: Chrome crea la pestaña, el driver la cierra y abre su dirección en la página. | Chromium lo abre directamente en la misma página. |
+| `window.open` o un clic hecho por script, sin un clic del usuario detrás | No abre nada: Chrome lo bloquea y el script recibe `null`. | No abre nada: el script recibe `null`. |
+| Un destino que no es `http` ni `https` | No abre nada. | No abre nada. |
+| Un formulario que envía a otra pestaña | Se abre su dirección por GET, **sin los datos**; la pestaña que Chrome crea sí llega a enviarlos antes de cerrarse. | Se abre su dirección por GET, **sin los datos**, que no se envían. |
+
+`browser_click` sobre uno de esos enlaces espera la página nueva y responde
+con su dirección, su título y su árbol, como con un enlace común; el modelo
+no tiene que saber que el enlace pedía otra pestaña. «Pedido por un clic» es
+lo que Chromium entiende por eso: también lo que el script de la página hace
+poco después de un clic (un `window.open` evaluado un segundo después de uno
+se abrió).
+
+Con el Chrome lanzado **la dirección se pide dos veces**: una la pestaña que
+Chrome crea, que alcanza a empezar a cargar antes de que el driver la cierre,
+y otra la página. Un enlace de un solo uso (un acceso por correo, una
+confirmación) puede quedar gastado por la primera. El protocolo no deja
+impedir que esa pestaña se cree (se probó `--block-new-web-contents`, sin
+efecto en este Chrome) y detenerla antes de cargar dejó trabada a la página
+que la abre; con el Chromium embebido no pasa, porque se le pregunta antes.
+
+Lo que no llega: la página abierta no conoce a la que la abrió
+(`window.opener`) y el driver no le pasa `Referer`; una ventana que un script
+abre vacía para llenarla después (`window.open()` y más tarde
+`ventana.location = …`) no abre nada.
 
 **Control + rueda no hace nada.** En un navegador amplía la página. Acá no se
 envía: ni desplaza ni amplía, y tampoco se mueve lo que haya detrás de la
@@ -549,7 +580,13 @@ OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
 - Teclas modificadoras: Shift + clic que extiende una selección, lo que ven
   los manejadores de la página con cada botón y con la rueda, y un enlace
   pedido en otra pestaña con Control + clic, el botón del medio y Shift +
-  clic, tras lo cual la página sigue siendo una y sigue dibujándose.
+  clic, que se abre en la misma página, tras lo cual la página sigue siendo
+  una y sigue dibujándose.
+- Enlaces que piden otra pestaña: `target="_blank"`, `window.open` desde un
+  clic, una ventana con nombre, un formulario hacia otra pestaña y los tres
+  clics con modificador se abren en la misma página y **Atrás** vuelve; el
+  clic del agente recibe la página nueva; lo que la página intenta sola, y
+  lo que no es una dirección web, no abre nada.
 - Teclado español, en un `<input>` y un `<textarea>`: `á é í ó ú ñ ü ¿ ¡ €`,
   emoji, Home, End, Delete, Backspace, flechas, Shift con flechas y con Home y
   End, cortar y pegar, deshacer y rehacer por sus dos atajos, caracteres como
@@ -571,8 +608,9 @@ OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" nix-shell --run 
 ```
 
 Validado el 11 de octubre de 2026 con Google Chrome 150.0.7871.46 empaquetado
-por NixOS, con sandbox habilitado; las teclas modificadoras, el teclado y la
-lista de un `<select>`, el 12 de octubre con el mismo Chrome. Las pruebas del
+por NixOS, con sandbox habilitado; las teclas modificadoras, el teclado, la
+lista de un `<select>` y los enlaces que piden otra pestaña, el 12 de octubre
+con el mismo Chrome. Las pruebas del
 driver solo, también contra Chrome real, están en
 [Driver del navegador](browser-driver.md#validación).
 
@@ -605,11 +643,10 @@ python3 scripts/browser-desktop-e2e.py --binary target/desktop/agents-window \
 
 - **Zoom de página.** Control + rueda y el gesto de pellizco no amplían la
   página: ver *Control + rueda no hace nada*.
-- **Enlaces que abren otra pestaña.** Un clic simple sobre un enlace con
-  `target="_blank"`, o sobre algo que llama a `window.open`, no abre nada: es
-  la misma regla de una sola página. Se vio con el Chromium embebido; con el
-  Chrome lanzado se sigue de que el driver cierra toda otra página. Abrirlos
-  en la misma página no está hecho.
+- **Varias pestañas.** Lo que pide otra pestaña se abre en la misma página;
+  no hay una segunda. Una ventana que un script abre vacía para llenarla
+  después no abre nada, y un formulario que envía a otra pestaña pierde sus
+  datos: ver **Enlaces que piden otra pestaña**.
 - **Elegir con el puntero en una lista desplegable, con el Chrome lanzado.**
   El protocolo no entrega eventos del puntero a ese widget.
 - **Forma del cursor, con el Chrome lanzado.** El protocolo no avisa cuando la

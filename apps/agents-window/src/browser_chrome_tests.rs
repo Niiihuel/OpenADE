@@ -83,9 +83,23 @@ const FULL: &str = r#"<!doctype html><html lang="es"><head><meta charset="utf-8"
 html{animation:hue 2s linear infinite alternate}@keyframes hue{from{background:#024}to{background:#fc8}}
 </style></head><body></body></html>"#;
 
+/// Ways a page asks for another tab or another window.
+const LINKS: &str = r#"<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Enlaces</title><style>
+html{background:#fff}body{font:16px/1.5 sans-serif;margin:0}a,button{position:absolute;left:20px;font:inherit}
+</style></head><body>
+<a id="blank" style="top:20px" target="_blank" href="/landing?blank">Otra pestaña</a>
+<button id="open" style="top:60px" onclick="window.opened = window.open('/landing?open')">Otra ventana</button>
+<a id="plain" style="top:100px" href="/landing?plain">Enlace</a>
+<a id="named" style="top:140px" target="ayuda" href="/landing?named">Ventana con nombre</a>
+<a id="data" style="top:180px" target="_blank" href="data:text/html,<title>No</title>">Datos</a>
+<form method="post" action="/landing?post" target="_blank"><button id="post" style="top:220px">Enviar</button></form>
+<button id="empty" style="top:260px" onclick="window.opened = window.open()">Ventana vacía</button>
+</body></html>"#;
+
 /// The fixture pages on a free loopback port: `/` holds still, `/animated`
-/// never does, `/form` is the one above, `/full` changes whole. Only this
-/// machine can reach them.
+/// never does, `/form` is the one above, `/full` changes whole, `/links` asks
+/// for other tabs, each of which is a `/landing?…` that `/landed` lists as
+/// they were asked for. Only this machine can reach them.
 fn site() -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -93,15 +107,26 @@ fn site() -> String {
         let rows: String = (0..40)
             .map(|row| format!(r#"<div class="row"><b>Fila {row}</b> — Lorem ipsum dolor sit amet, consectetur adipiscing elit.</div>"#))
             .collect();
+        let mut landed = Vec::new();
         for mut stream in listener.incoming().flatten() {
             let mut request = [0u8; 2048];
             let read = stream.read(&mut request).unwrap_or(0);
             let animated = request[..read].starts_with(b"GET /animated");
+            let asked = String::from_utf8_lossy(&request[..read]);
+            let mut asked = asked.split_whitespace();
+            let (method, path) = (asked.next().unwrap_or(""), asked.next().unwrap_or(""));
             let body = if request[..read].starts_with(b"GET /form") {
                 let options: String = (0..30).map(|option| format!("<option>Opción {option}</option>")).collect();
                 FORM.replace("OPTIONS", &options)
             } else if request[..read].starts_with(b"GET /full") {
                 FULL.to_owned()
+            } else if path == "/links" {
+                LINKS.to_owned()
+            } else if let Some(which) = path.strip_prefix("/landing?") {
+                landed.push(format!("{method} {which}"));
+                format!(r#"<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Destino {which}</title></head><body><p>Llegaste por {which}</p></body></html>"#)
+            } else if path == "/landed" {
+                landed.join(",")
             } else {
                 PAGE.replace("ROWS", &rows)
                     .replace("SPIN", if animated { r#"<div id="spin"></div>"# } else { "" })
@@ -1202,28 +1227,120 @@ fn modifier_keys_with_the_pointer_and_the_wheel(engine: Chromium) {
     value(&session, "(link => link.onclick = link.onauxclick = null)(document.querySelector('#link')); 0");
     for (button, modifiers) in [(left, CONTROL), (middle, 0), (left, SHIFT)] {
         click(320.0, 30.0, button, modifiers);
-        match engine {
-            // The launched Chrome makes the tab, which the driver closes:
-            // the page stays where it was.
-            Chromium::Launched => {
-                thread::sleep(Duration::from_millis(600));
-                assert_eq!(value(&session, "location.href"), form.as_str());
-            }
-            // The embedded Chromium is asked first, has nowhere else to open
-            // it and opens it in the page itself.
-            #[cfg(feature = "cef")]
-            Chromium::Embedded => {
-                session.until("the link to open in the page itself", || session.runtime.snapshot().url == format!("{origin}/"));
-                session.open(form.clone());
-                session.settle(Duration::from_millis(300));
-            }
-        }
+        // The embedded Chromium is asked first, has nowhere else to open it
+        // and opens it in the page itself. The launched Chrome makes the
+        // tab; the driver closes it and opens its address in the page.
+        session.until("the link to open in the page itself", || session.runtime.snapshot().url == format!("{origin}/"));
+        session.open(form.clone());
+        session.settle(Duration::from_millis(300));
     }
     // The one page is still there and still drawn.
     session.settle(Duration::from_millis(700));
     let _ = session.runtime.take_frame();
     value(&session, "document.body.style.background = '#fde'; 0");
     session.next_frame("a frame of the page after those clicks");
+    assert!(session.runtime.snapshot().error.is_none());
+    every_paint_left_the_canvas_as_chromium_painted_it();
+}
+
+#[test]
+#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
+fn real_chrome_opens_in_the_view_what_a_click_asked_to_see_in_another_tab() {
+    what_a_click_asked_to_see_in_another_tab(Chromium::Launched);
+}
+
+/// One panel has one page. A link for another tab, a script that opens a
+/// window and a link clicked with Control, Shift or the middle button open in
+/// that page when a click asked for them, the user's or the agent's alike. A
+/// window the page opens by itself opens nothing.
+fn what_a_click_asked_to_see_in_another_tab(engine: Chromium) {
+    use openide_browser::modifiers::{CONTROL, SHIFT};
+    let origin = site();
+    let session = launch(engine, (640, 480), 2.0);
+    let links = format!("{origin}/links");
+    let landing = |which: &str| format!("{origin}/landing?{which}");
+    let (left, middle) = (MouseButton::Left, MouseButton::Middle);
+    let click = |y: f64, button, modifiers| {
+        session.window(BrowserCommand::PointerDown { x: 40.0, y, button, clicks: 1, modifiers }).unwrap();
+        session.window(BrowserCommand::PointerUp { x: 40.0, y, button, clicks: 1, modifiers }).unwrap();
+    };
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
+    let reopen = || {
+        session.open(links.clone());
+        session.settle(Duration::from_millis(300));
+    };
+    let arrives = |which: &str| {
+        session.until(&format!("the view to open what {which} asked for"), || session.runtime.snapshot().url == landing(which));
+    };
+    let stays = |what: &str| {
+        thread::sleep(Duration::from_millis(700));
+        assert_eq!(value(&session, "location.href"), links.as_str(), "{what}");
+    };
+
+    // The user's click on a link for another tab, on a button whose script
+    // opens a window, on a link for a window with a name and on a form that
+    // sends to another tab. Each opens here, and Back returns from it.
+    reopen();
+    for (which, y) in [("blank", 32.0), ("open", 72.0), ("named", 152.0), ("post", 232.0)] {
+        click(y, left, 0);
+        arrives(which);
+        assert_eq!(session.runtime.snapshot().title, format!("Destino {which}"));
+        let back = session.window(BrowserCommand::Back).unwrap();
+        assert_eq!((back.url.as_str(), back.can_go_forward), (links.as_str(), true), "{which}");
+        session.settle(Duration::from_millis(300));
+    }
+    // A link clicked for another tab or another window.
+    for (button, modifiers) in [(left, CONTROL), (middle, 0), (left, SHIFT)] {
+        click(112.0, button, modifiers);
+        arrives("plain");
+        reopen();
+    }
+    // The agent's click is the same click, and what it is answered is the
+    // page that opened: its address, its title and its tree.
+    for (target, which) in [(json!({"selector": "#blank"}), "blank"), (json!({"role": "button", "name": "Otra ventana"}), "open")] {
+        let clicked = session.agent("browser_click", target);
+        assert!(!clicked.is_error, "{:?}", clicked.content);
+        let state = page(&clicked);
+        assert_eq!((state["url"].as_str(), state["title"].as_str()), (Some(landing(which).as_str()), Some(format!("Destino {which}").as_str())));
+        assert!(state["aria_snapshot"].as_str().unwrap().contains(&format!("Llegaste por {which}")), "{state}");
+        assert_eq!(state["can_go_back"], true);
+        reopen();
+    }
+
+    // What the page does by itself, with no click behind it, opens nothing:
+    // a script's window, a click of its own on the link, one with Control.
+    assert_eq!(value(&session, "String(window.open('/landing?script'))"), "null");
+    value(&session, "document.querySelector('#blank').click(); 0");
+    value(&session, "document.querySelector('#plain').dispatchEvent(new MouseEvent('click', {ctrlKey: true, bubbles: true})); 0");
+    stays("a page opens nothing by itself");
+    // Nor does a click open what is not an address of the web: the page of a
+    // data: link, or a window with no address for a script to fill.
+    click(192.0, left, 0);
+    click(272.0, left, 0);
+    stays("only an address of the web opens in the view");
+
+    // Every address was asked for by the view that opened it. The embedded
+    // Chromium never makes the other tab, so that is the only time.
+    let landed = value(&session, "() => fetch('/landed').then(reply => reply.text())");
+    let landed: Vec<&str> = landed.as_str().unwrap().split(',').collect();
+    let asked = |what: &str| landed.iter().filter(|one| **one == what).count();
+    assert_eq!(asked("GET script"), 0, "{landed:?}");
+    for (what, times) in [("GET blank", 2), ("GET open", 2), ("GET named", 1), ("GET plain", 3)] {
+        match engine {
+            // The launched Chrome makes the tab, which asks for the address
+            // too before the driver closes it.
+            Chromium::Launched => assert!((times..=times * 2).contains(&asked(what)), "{what}: {landed:?}"),
+            #[cfg(feature = "cef")]
+            Chromium::Embedded => assert_eq!(asked(what), times, "{landed:?}"),
+        }
+    }
+    // The view opens the address a form sends to, without what it sent.
+    assert_eq!(asked("GET post"), 1, "{landed:?}");
+    #[cfg(feature = "cef")]
+    if engine == Chromium::Embedded {
+        assert_eq!(asked("POST post"), 0, "{landed:?}");
+    }
     assert!(session.runtime.snapshot().error.is_none());
     every_paint_left_the_canvas_as_chromium_painted_it();
 }
@@ -1729,6 +1846,13 @@ fn real_cef_takes_modifier_keys_with_the_pointer_and_the_wheel() {
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
     what_a_spanish_keyboard_types(Chromium::Embedded);
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_opens_in_the_view_what_a_click_asked_to_see_in_another_tab() {
+    what_a_click_asked_to_see_in_another_tab(Chromium::Embedded);
 }
 
 #[cfg(feature = "cef")]
