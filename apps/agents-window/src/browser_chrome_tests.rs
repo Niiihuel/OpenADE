@@ -281,6 +281,20 @@ impl Session {
     }
 }
 
+/// The size of the frame the view was handed, or of the one it was handed a
+/// part of: an embedded page hands over what changed.
+fn extent(frame: &limn_egui::SurfaceFrame) -> [usize; 2] {
+    frame.part().map_or(frame.size(), |(whole, _)| whole)
+}
+
+/// The canvas an embedded page is copied to was, after every paint, pixel
+/// for pixel what Chromium had painted: the rectangle it names as changed is
+/// all that did.
+fn every_paint_left_the_canvas_as_chromium_painted_it() {
+    #[cfg(feature = "cef")]
+    assert_eq!(cef::STRAY_PAINTS.load(Ordering::Relaxed), 0, "paints after which the canvas was not what Chromium holds");
+}
+
 fn page(result: &McpCallResult) -> Value {
     serde_json::from_str(result.content[0]["text"].as_str().unwrap()).unwrap()
 }
@@ -511,12 +525,14 @@ fn frames_at(engine: Chromium, scale: f32) {
 
     // Visible and animating: frames arrive decoded, at device pixels.
     let first = session.next_frame("a first frame");
-    assert_eq!(first.size(), device);
+    assert_eq!((first.size(), first.part()), (device, None), "the first is a whole frame");
     assert!(format!("{first:?}").contains(&format!("pixels_per_point: {scale:?}")), "{first:?}");
-    let (started, mut frames) = (Instant::now(), 0);
+    let (started, mut frames, mut corners) = (Instant::now(), 0, 0);
     while started.elapsed() < Duration::from_secs(3) {
         if let Some(frame) = session.runtime.take_frame() {
-            assert_eq!(frame.size(), device);
+            assert_eq!(extent(&frame), device);
+            let [width, height] = frame.size();
+            corners += usize::from(frame.part().is_some() && width * height * 20 < device[0] * device[1]);
             frames += 1;
         }
         thread::sleep(Duration::from_millis(1));
@@ -524,6 +540,13 @@ fn frames_at(engine: Chromium, scale: f32) {
     // The development profile decodes slowly; the rate itself is measured
     // with the optimised one.
     assert!(frames >= 3, "only {frames} frames in three seconds");
+    // The launched Chrome sends whole frames. The embedded one hands over
+    // the corner where the page animates, and little else once it loaded.
+    #[cfg(feature = "cef")]
+    if engine == Chromium::Embedded {
+        assert!(corners * 10 >= frames * 9, "{corners} of {frames} frames were the corner that animates");
+    }
+    let _ = corners;
     assert!(session.runtime.snapshot().error.is_none());
     // Replies are not starved by the stream.
     for _ in 0..10 {
@@ -543,7 +566,8 @@ fn frames_at(engine: Chromium, scale: f32) {
     assert!(page(&read)["aria_snapshot"].as_str().unwrap().contains("Texto para arrastrar"));
     // Shown again: the stream is back.
     session.runtime.set_visible(true);
-    assert_eq!(session.next_frame("a frame of the new stream").size(), device);
+    let shown = session.next_frame("a frame of the new stream");
+    assert_eq!((shown.size(), shown.part()), (device, None), "shown again, the view is owed a whole frame");
 
     // A page that holds still gets its frames and then nothing: the last is
     // the lossless one, and it is not a loop.
@@ -567,7 +591,7 @@ fn frames_at(engine: Chromium, scale: f32) {
     assert!(session.runtime.take_frame().is_none());
     // It does show what the agent changed, and then holds still again.
     assert!(!session.agent("browser_click", json!({"selector": "#paint"})).is_error);
-    assert_eq!(session.next_frame("a frame of what the agent changed").size(), device);
+    assert_eq!(extent(&session.next_frame("a frame of what the agent changed")), device);
     session.settle(Duration::from_millis(900));
     let painted = session.frames.load(Ordering::Relaxed);
     thread::sleep(Duration::from_millis(1200));
@@ -577,10 +601,11 @@ fn frames_at(engine: Chromium, scale: f32) {
     let resized = session.window(BrowserCommand::Resize { width: 800, height: 600 }).unwrap();
     assert_eq!((resized.viewport_width, resized.viewport_height), (800, 600));
     session.until("a frame at the new size", || {
-        session.runtime.take_frame().is_some_and(|frame| frame.size() == wider)
+        session.runtime.take_frame().is_some_and(|frame| frame.size() == wider && frame.part().is_none())
     });
     session.settle(Duration::from_millis(900));
     assert!(session.runtime.snapshot().error.is_none(), "the stream was never lost");
+    every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
 #[test]
@@ -688,6 +713,9 @@ fn real_chrome_measurements_of_the_live_view_and_of_what_the_browser_adds() {
 fn measurements(engine: Chromium) {
     let origin = site();
     let own = std::process::id();
+    // The tests compare every paint with the canvas. The application does not.
+    #[cfg(feature = "cef")]
+    cef::COMPARE_PAINTS.store(false, Ordering::Relaxed);
     #[cfg(feature = "cef")]
     let untouched = pss(own);
     // Chrome starts slower the first time after another environment used it.
@@ -745,6 +773,9 @@ fn measurements(engine: Chromium) {
     eprintln!("animated page: {animated:.1} decoded frames per second at 2560 × 1600");
     eprintln!("processor while it animates on screen: {}", share(&session, used, elapsed));
     eprintln!("memory (PSS): this process grew {:.1} MB while streaming it", pss(own) - before);
+    // Frames that are no longer in use may still be held by the allocator.
+    unsafe { libc::malloc_trim(0) };
+    eprintln!("memory (PSS): this process grew {:.1} MB, counted after the allocator gave back what it held free", pss(own) - before);
     let processes = session.browser_processes();
     eprintln!("memory (PSS): the browser's {} processes hold {:.0} MB while it animates on screen", processes.len(), processes.iter().copied().map(pss).sum::<f64>());
 
@@ -941,6 +972,8 @@ fn measurements(engine: Chromium) {
             eprintln!("close: {:.0} ms; {} processes of the embedded Chromium stay for the next context", closing.elapsed().as_secs_f64() * 1000.0, descendants(own).len());
         }
     }
+    #[cfg(feature = "cef")]
+    cef::COMPARE_PAINTS.store(true, Ordering::Relaxed);
 }
 
 // ---- What a person does with the mouse and the keyboard -----------------------
@@ -952,24 +985,58 @@ fn value(session: &Session, expression: &str) -> Value {
     serde_json::from_str(read.content[1]["text"].as_str().unwrap()).unwrap()
 }
 
-/// The pixels of a frame the view was handed, as its texture gets them.
-fn pixels(frame: limn_egui::SurfaceFrame) -> Arc<eframe::egui::ColorImage> {
-    let size = frame.size();
-    let ctx = eframe::egui::Context::default();
-    let input = eframe::egui::RawInput {
-        max_texture_side: Some(8192),
-        ..Default::default()
-    };
-    ctx.run_ui(input, |_| {}).textures_delta.clear();
-    assert!(limn_egui::present_surface(&ctx, "pixels", frame));
-    let mut delta = ctx.run_ui(Default::default(), |_| {}).textures_delta;
-    limn_egui::forget_surface("pixels");
-    let found = delta.set.values().flatten().find_map(|delta| match &delta.image {
-        eframe::egui::ImageData::Color(image) if image.size == size => Some(image.clone()),
-        _ => None,
-    });
-    delta.clear();
-    found.expect("the frame reached its texture")
+/// What the window's texture of the page holds: every frame, and every part
+/// of one, that the runtime handed over, presented as the window presents
+/// them and written where egui tells a renderer to write them.
+struct Texture {
+    ctx: eframe::egui::Context,
+    image: eframe::egui::ColorImage,
+}
+
+impl Texture {
+    fn new() -> Self {
+        let ctx = eframe::egui::Context::default();
+        let input = eframe::egui::RawInput {
+            max_texture_side: Some(8192),
+            ..Default::default()
+        };
+        ctx.run_ui(input, |_| {}).textures_delta.clear();
+        Self {
+            ctx,
+            image: Default::default(),
+        }
+    }
+
+    /// Takes what the runtime has for the view, if anything, and says how
+    /// many pixels it carried as a part of a frame: none when it was a whole
+    /// one.
+    fn take(&mut self, session: &Session) -> Option<usize> {
+        let frame = session.runtime.take_frame()?;
+        let part = frame.part().map_or(0, |_| frame.size()[0] * frame.size()[1]);
+        assert!(limn_egui::present_surface(&self.ctx, "texture", frame), "a part of the frame the view shows");
+        let mut delta = self.ctx.run_ui(Default::default(), |_| {}).textures_delta;
+        for write in delta.set.values().flatten() {
+            let eframe::egui::ImageData::Color(image) = &write.image;
+            match write.pos {
+                None => self.image = (**image).clone(),
+                Some([left, top]) => {
+                    for (row, pixels) in image.pixels.chunks_exact(image.size[0]).enumerate() {
+                        let start = (top + row) * self.image.size[0] + left;
+                        self.image.pixels[start..start + pixels.len()].copy_from_slice(pixels);
+                    }
+                }
+            }
+        }
+        delta.clear();
+        Some(part)
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        limn_egui::forget_surface("texture");
+        self.ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+    }
 }
 
 #[test]
@@ -1000,16 +1067,16 @@ fn the_list_of_a_select(engine: Chromium, scale: f32) {
     // The select is 200 × 30 at (20, 20) and its list opens under it, in rows
     // of 26.5 CSS pixels. The chosen row of an open list is blue.
     let row = |index: f64| 50.0 + 26.5 * (index + 0.5);
-    let shown = std::cell::RefCell::new(None);
+    let shown = std::cell::RefCell::new(Texture::new());
     let blue = |what: &str, index: f64, wanted: bool| {
         session.until(what, || {
-            if let Some(frame) = session.runtime.take_frame() {
-                *shown.borrow_mut() = Some(pixels(frame));
+            let mut shown = shown.borrow_mut();
+            while shown.take(&session).is_some() {}
+            if shown.image.size == [0, 0] {
+                return false;
             }
-            shown.borrow().as_ref().is_some_and(|image: &Arc<eframe::egui::ColorImage>| {
-                let colour = image[((150.0 * scale) as usize, (row(index) as f32 * scale) as usize)];
-                (colour.b() > colour.r().saturating_add(60)) == wanted
-            })
+            let colour = shown.image[((150.0 * scale) as usize, (row(index) as f32 * scale) as usize)];
+            (colour.b() > colour.r().saturating_add(60)) == wanted
         });
     };
 
@@ -1086,6 +1153,7 @@ fn the_list_of_a_select(engine: Chromium, scale: f32) {
             session.until("the list of the view shown again", || embedded.popup_box().is_some());
         }
     }
+    every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
 #[test]
@@ -1157,6 +1225,7 @@ fn modifier_keys_with_the_pointer_and_the_wheel(engine: Chromium) {
     value(&session, "document.body.style.background = '#fde'; 0");
     session.next_frame("a frame of the page after those clicks");
     assert!(session.runtime.snapshot().error.is_none());
+    every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
 #[test]
@@ -1576,13 +1645,15 @@ fn real_cef_measurements_of_the_live_view_and_of_what_the_browser_adds() {
 fn real_cef_measurements_of_what_a_change_costs_by_how_much_of_the_view_it_is() {
     let origin = site();
     let own = std::process::id();
+    // The tests compare every paint with the canvas. The application does not.
+    cef::COMPARE_PAINTS.store(false, Ordering::Relaxed);
     let session = launch(Chromium::Embedded, (1280, 800), 2.0);
     // The window takes every frame it is told of. Here it is taken and dropped.
     let (taken, view) = (session.frames.clone(), Arc::downgrade(&session.runtime.handle.view));
     session.runtime.on_frame(move || {
         taken.fetch_add(1, Ordering::Relaxed);
         if let Some(view) = view.upgrade() {
-            drop(view.decoded.lock().unwrap().take());
+            view.decoded.lock().unwrap().clear();
         }
     });
     let load = || fs::read_to_string("/proc/loadavg").unwrap_or_default().trim().to_owned();
@@ -1633,6 +1704,7 @@ fn real_cef_measurements_of_what_a_change_costs_by_how_much_of_the_view_it_is() 
         });
     }
     cef::set_display_rate(60);
+    cef::COMPARE_PAINTS.store(true, Ordering::Relaxed);
     eprintln!("load average after: {}", load());
 }
 
@@ -1657,6 +1729,167 @@ fn real_cef_takes_modifier_keys_with_the_pointer_and_the_wheel() {
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
     what_a_spanish_keyboard_types(Chromium::Embedded);
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_parts_of_frames_leave_the_view_pixel_for_pixel_what_a_whole_frame_would() {
+    for scale in [2.0, 1.0, 1.5] {
+        parts_of_frames_leave_the_view_what_a_whole_frame_would(scale);
+    }
+}
+
+/// The view is handed the parts of the page that changed, one after another.
+/// After each thing a person or the agent does, its texture is pixel for
+/// pixel the page as Chromium last painted it, and at the end what a view
+/// that had none of those parts is handed whole.
+#[cfg(feature = "cef")]
+fn parts_of_frames_leave_the_view_what_a_whole_frame_would(scale: f32) {
+    let origin = site();
+    let session = launch(Chromium::Embedded, (640, 480), scale);
+    let embedded = &session.runtime.handle.view.embedded;
+    let mut texture = Texture::new();
+    // Takes what the view is handed until its texture is the page as it was
+    // last painted, with what is painted over it.
+    let agree = |texture: &mut Texture, what: &str| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            while texture.take(&session).is_some() {}
+            let (size, rgb) = embedded.whole();
+            let differing = if size == texture.image.size {
+                let page = rgb.chunks_exact(3);
+                texture.image.pixels.iter().zip(page).filter(|(pixel, page)| [pixel.r(), pixel.g(), pixel.b()] != **page).count()
+            } else {
+                usize::MAX
+            };
+            if differing == 0 && size != [0, 0] {
+                return;
+            }
+            assert!(Instant::now() < deadline, "{what}, at scale {scale}: {differing} pixels of the view are not the page's");
+            thread::sleep(Duration::from_millis(5));
+        }
+    };
+    // The parts the view is handed for a while, by the pixels of each.
+    let watch = |texture: &mut Texture, time: Duration| -> Vec<usize> {
+        let (started, mut parts) = (Instant::now(), Vec::new());
+        while started.elapsed() < time {
+            parts.extend(texture.take(&session).filter(|pixels| *pixels > 0));
+            thread::sleep(Duration::from_millis(1));
+        }
+        parts
+    };
+    let click = |x: f64, y: f64| {
+        let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+        session.window(BrowserCommand::PointerDown { x, y, button, clicks, modifiers }).unwrap();
+        session.window(BrowserCommand::PointerUp { x, y, button, clicks, modifiers }).unwrap();
+    };
+    let insert = |text: &str| {
+        session.window(BrowserCommand::Type { text: text.into() }).unwrap();
+    };
+    // Hides the view, with all it was handed until then in its texture.
+    let hide = |texture: &mut Texture| {
+        session.runtime.set_visible(false);
+        session.until("the hidden view to let go of the page", || embedded.whole().0 == [0, 0]);
+        // A part that was being built when the view hid is handed over too.
+        thread::sleep(Duration::from_millis(100));
+        while texture.take(&session).is_some() {}
+    };
+    let device = |width: f32, height: f32| [(width * scale) as usize, (height * scale) as usize];
+
+    session.open(format!("{origin}/form"));
+    session.settle(Duration::from_millis(300));
+    agree(&mut texture, "the page once it loaded");
+    assert_eq!(texture.image.size, device(640.0, 480.0));
+
+    // Typing in a field, and the caret that blinks in it afterwards: each
+    // blink is a part of a few pixels, not a frame.
+    click(60.0, 150.0);
+    insert("hola ñandú");
+    session.settle(Duration::from_millis(250));
+    agree(&mut texture, "what was typed");
+    let (blinks, frame) = (watch(&mut texture, Duration::from_millis(1800)), texture.image.pixels.len());
+    assert!(blinks.len() >= 2, "the caret blinked {} times", blinks.len());
+    assert!(blinks.iter().all(|pixels| pixels * 50 < frame), "each blink of the caret is a small part of {frame} pixels: {blinks:?}");
+    agree(&mut texture, "the caret");
+
+    // The page scrolled under the pointer, there and back.
+    session.window(BrowserCommand::PointerMove { x: 400.0, y: 300.0, modifiers: 0 }).unwrap();
+    for dy in [300.0, 250.0, -120.0, -430.0] {
+        session.window(BrowserCommand::Scroll { dx: 0.0, dy, modifiers: 0 }).unwrap();
+        session.settle(Duration::from_millis(250));
+        agree(&mut texture, "the page scrolled");
+    }
+
+    // A list that opens over the page, the row under the pointer, and the
+    // page that shows again where the list was.
+    click(100.0, 35.0);
+    session.until("the list to open", || embedded.popup_box().is_some());
+    agree(&mut texture, "the list open over the page");
+    session.window(BrowserCommand::PointerMove { x: 100.0, y: 50.0 + 26.5 * 3.5, modifiers: 0 }).unwrap();
+    session.settle(Duration::from_millis(250));
+    agree(&mut texture, "the row under the pointer");
+    session.window(BrowserCommand::Press { key: "Escape".into() }).unwrap();
+    session.until("the list to close", || embedded.popup_box().is_none());
+    agree(&mut texture, "the page where the list was");
+
+    // An agent capture in the middle of what changes, whose own paints are
+    // held back, and one of a page that did not change.
+    click(60.0, 150.0);
+    insert(" uno");
+    assert!(!session.agent("browser_take_screenshot", json!({"full_page": true})).is_error);
+    insert(" dos");
+    agree(&mut texture, "what changed around an agent capture");
+    assert!(!session.agent("browser_take_screenshot", json!({})).is_error);
+    agree(&mut texture, "the page after a capture that changed nothing");
+
+    // Hidden and shown again, the view is handed a whole frame.
+    hide(&mut texture);
+    session.runtime.set_visible(true);
+    let mut shown = None;
+    session.until("a frame of the view shown again", || {
+        shown = texture.take(&session);
+        shown.is_some()
+    });
+    assert_eq!(shown, Some(0), "shown again, the view is handed a whole frame");
+    agree(&mut texture, "the view shown again");
+
+    // A page of another size, and what changes in it.
+    session.window(BrowserCommand::Resize { width: 800, height: 600 }).unwrap();
+    session.until("a frame at the new size", || {
+        texture.take(&session);
+        texture.image.size == device(800.0, 600.0)
+    });
+    agree(&mut texture, "the page at its new size");
+    insert(" tres");
+    agree(&mut texture, "what was typed after the resize");
+
+    // A corner that animates, part after part, and where it stopped.
+    session.open(format!("{origin}/animated"));
+    let turns = watch(&mut texture, Duration::from_millis(900));
+    assert!(turns.len() >= 5, "{} parts of the animation", turns.len());
+    value(&session, "document.getAnimations().forEach(animation => animation.pause()); 0");
+    agree(&mut texture, "the animation where it stopped");
+
+    // The same page as a view that had none of those parts gets it: whole,
+    // from Chromium's own pixels.
+    session.settle(Duration::from_millis(300));
+    hide(&mut texture);
+    let held = &texture.image;
+    session.runtime.set_visible(true);
+    let mut fresh = Texture::new();
+    let mut whole = None;
+    session.until("a whole frame of the same page", || {
+        whole = fresh.take(&session);
+        whole.is_some()
+    });
+    assert_eq!(whole, Some(0));
+    session.settle(Duration::from_millis(300));
+    while fresh.take(&session).is_some() {}
+    assert_eq!(fresh.image.size, held.size);
+    let differing = fresh.image.pixels.iter().zip(&held.pixels).filter(|(fresh, held)| fresh != held).count();
+    assert_eq!(differing, 0, "pixels of what the view held, part by part, that a whole frame of the page has otherwise, at scale {scale}");
+    every_paint_left_the_canvas_as_chromium_painted_it();
 }
 
 #[cfg(feature = "cef")]

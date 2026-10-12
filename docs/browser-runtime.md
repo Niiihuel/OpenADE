@@ -319,7 +319,9 @@ más nuevo reemplaza al que nadie tomó. Las respuestas a comandos no comparten
 canal con los cuadros. El hilo decodificador convierte JPEG o PNG en píxeles
 (crate `image`) y el hilo de la interfaz sólo entrega el resultado a
 `limn_egui::present_surface`, que escribe en la misma textura mientras el
-tamaño no cambie.
+tamaño no cambie. El Chromium embebido no entrega cuadros enteros sino la
+parte que cambió, que se escribe sobre el cuadro que la textura ya tiene:
+ver [Chromium embebido](browser-cef.md).
 
 **Nítido en reposo.** 200 ms después del último cuadro que mostró algo nuevo,
 el trabajador pide una captura PNG a escala de dispositivo

@@ -926,13 +926,17 @@ impl BrowserRuntime {
         self.handle.view.embedded.cursor()
     }
     /// The newest decoded frame of the page, once; older ones were replaced.
+    /// An embedded page hands over the part of its frame that changed since
+    /// the last one taken, to be presented over that one: after a whole
+    /// frame there may be such a part to take as well.
     pub(crate) fn take_frame(&self) -> Option<limn_egui::SurfaceFrame> {
-        self.handle
+        let mut decoded = self
+            .handle
             .view
             .decoded
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .take()
+            .unwrap_or_else(|poison| poison.into_inner());
+        (!decoded.is_empty()).then(|| decoded.remove(0))
     }
     /// Runs on the decoder thread whenever a frame is ready to take.
     pub(crate) fn on_frame(&self, notify: impl Fn() + Send + 'static) {
@@ -943,7 +947,7 @@ impl BrowserRuntime {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner()) = Some(Box::new(notify));
     }
-    /// Starts the stream again; it answers with a fresh frame.
+    /// Starts the stream again; it answers with a fresh frame, a whole one.
     pub(crate) fn restart_stream(&self) {
         self.handle.view.restart.store(true, Ordering::Release);
     }
@@ -1880,7 +1884,9 @@ struct Feed {
 struct LiveView {
     feed: Mutex<Feed>,
     arrived: Condvar,
-    decoded: Mutex<Option<limn_egui::SurfaceFrame>>,
+    /// What the window has yet to take: the newest whole frame, the part of
+    /// it that changed since, or one after the other.
+    decoded: Mutex<Vec<limn_egui::SurfaceFrame>>,
     notify: Mutex<Option<Box<dyn Fn() + Send>>>,
     restart: AtomicBool,
     /// The page itself, when an embedded Chromium paints it: frames then
@@ -1925,11 +1931,21 @@ impl LiveView {
         taken
     }
 
+    /// Hands a frame to the window. A whole frame replaces all that waits
+    /// to be taken. A part goes after a whole frame, and replaces a part:
+    /// whoever built it made it carry what that one did.
     fn publish(&self, frame: limn_egui::SurfaceFrame) {
-        *self
+        let mut decoded = self
             .decoded
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner()) = Some(frame);
+            .unwrap_or_else(|poison| poison.into_inner());
+        if frame.part().is_none() {
+            decoded.clear();
+        } else if decoded.last().is_some_and(|waiting| waiting.part().is_some()) {
+            decoded.pop();
+        }
+        decoded.push(frame);
+        drop(decoded);
         if let Some(notify) = self
             .notify
             .lock()

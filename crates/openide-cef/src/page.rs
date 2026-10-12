@@ -30,6 +30,10 @@ pub struct Paint<'a> {
     pub height: u32,
     /// Rows of premultiplied BGRA, top to bottom.
     pub bgra: &'a [u8],
+    /// What Chromium painted again: the columns `dirty[0]..dirty[2]` of the
+    /// rows `dirty[1]..dirty[3]`. The other pixels are as its last paint of
+    /// the same thing at the same size left them.
+    pub dirty: [usize; 4],
     /// `None` when the pixels are the whole view. A widget Chromium paints
     /// apart, such as the list of a `<select>`, says where its top-left
     /// corner goes in the view, in device pixels; without pixels, it closed.
@@ -170,7 +174,7 @@ wrap_render_handler! {
             &self,
             _browser: Option<&mut Browser>,
             type_: PaintElementType,
-            _dirty_rects: Option<&[Rect]>,
+            dirty_rects: Option<&[Rect]>,
             buffer: *const u8,
             width: c_int,
             height: c_int,
@@ -181,15 +185,27 @@ wrap_render_handler! {
             let (width, height) = (width as u32, height as u32);
             // The page, or the list of a <select> that goes over it.
             let popup = (type_ != PaintElementType::default()).then(|| *lock(&self.core.popup));
-            // Always the whole of it. The dirty rectangles are not passed on:
-            // the embedder shows whole frames.
+            // The buffer is always the whole of it; what changed in it is one
+            // rectangle around those Chromium names, or all when it names none.
+            let whole = [0, 0, width as usize, height as usize];
+            let within = |value: c_int, limit: u32| (value.max(0) as usize).min(limit as usize);
+            let dirty = dirty_rects.filter(|rects| !rects.is_empty()).map_or(whole, |rects| {
+                rects.iter().fold([usize::MAX, usize::MAX, 0, 0], |all, rect| {
+                    [
+                        all[0].min(within(rect.x, width)),
+                        all[1].min(within(rect.y, height)),
+                        all[2].max(within(rect.x.saturating_add(rect.width), width)),
+                        all[3].max(within(rect.y.saturating_add(rect.height), height)),
+                    ]
+                })
+            });
             let bgra = unsafe { std::slice::from_raw_parts(buffer, width as usize * height as usize * 4) };
-            (self.core.paint)(&Paint { width, height, bgra, popup });
+            (self.core.paint)(&Paint { width, height, bgra, dirty, popup });
         }
 
         fn on_popup_show(&self, _browser: Option<&mut Browser>, show: c_int) {
             if show == 0 {
-                (self.core.paint)(&Paint { width: 0, height: 0, bgra: &[], popup: Some((0, 0)) });
+                (self.core.paint)(&Paint { width: 0, height: 0, bgra: &[], dirty: [0; 4], popup: Some((0, 0)) });
             }
         }
 

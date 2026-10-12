@@ -2,15 +2,26 @@
 //! Chromium composites on the CPU, driven by the same `Driver` through the
 //! DevTools protocol inside this process.
 //!
-//! Chromium hands over each frame uncompressed. The paint callback, on CEF's
-//! UI thread, copies it into the one canvas below, and the runtime's frame
-//! thread turns that canvas into the frame the view takes. Nothing queues: a
-//! paint the view has not taken is painted over by the next.
+//! Chromium hands over each frame uncompressed and says which rectangle of
+//! it changed. The paint callback, on CEF's UI thread, copies that rectangle
+//! into the one canvas below, and the runtime's frame thread turns what was
+//! painted since its last turn into the part of a frame the view takes: a
+//! change costs what it covers. Nothing queues: a paint the view has not
+//! taken is painted over by the next, which then carries its rectangle too.
 
 use super::*;
 use eframe::egui;
 use std::hash::Hasher;
 use std::sync::atomic::AtomicU32;
+
+/// Counts the paints after which the canvas was not, pixel for pixel, what
+/// Chromium had just painted: that the rectangle it names is all that
+/// changed is what every part of a frame rests on. A measurement turns the
+/// comparison off.
+#[cfg(test)]
+pub(super) static STRAY_PAINTS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+pub(super) static COMPARE_PAINTS: AtomicBool = AtomicBool::new(true);
 
 /// How often Chromium composites a page that is on screen, or that a command
 /// is waiting on: as often as the window itself is presented, which under
@@ -82,8 +93,12 @@ struct Canvas {
     size: [usize; 2],
     /// Device pixels per CSS pixel of those rows.
     scale: f32,
-    /// Painted since the view was last given a frame.
-    dirty: bool,
+    /// What was painted since the view was last given a frame, as one
+    /// rectangle: the columns `[0]..[2]` of the rows `[1]..[3]`.
+    // shortcut: one rectangle, as Chromium itself reports a paint; two small
+    // changes far apart cost the box around both. A list of rectangles is the
+    // upgrade, if a page of that kind ever shows in a measurement.
+    damage: Option<[usize; 4]>,
     /// The surface is on screen. A paint of a hidden one is not taken.
     visible: bool,
     /// The worker is running a command on the page.
@@ -105,12 +120,41 @@ struct Popup {
     at: (i32, i32),
 }
 
-/// Draws the rows of `popup` that fall inside a view of `size` over it.
-fn overlay(rgb: &mut [u8], size: [usize; 2], popup: &Popup) {
-    let (left, top) = (popup.at.0.max(0) as usize, popup.at.1.max(0) as usize);
-    // What of the popup lies left of or above the view is not drawn.
-    let (skip_x, skip_y) = ((-popup.at.0).max(0) as usize, (-popup.at.1).max(0) as usize);
+impl Popup {
+    /// The rectangle of the view it is drawn over, which may reach past it.
+    fn covers(&self) -> [usize; 4] {
+        let edge = |from: i32, length: usize| (i64::from(from) + length as i64).max(0) as usize;
+        [edge(self.at.0, 0), edge(self.at.1, 0), edge(self.at.0, self.size[0]), edge(self.at.1, self.size[1])]
+    }
+}
+
+impl Canvas {
+    /// What of `rect` lies on the page has been painted.
+    fn damaged(&mut self, rect: [usize; 4]) {
+        let rect = [rect[0], rect[1], rect[2].min(self.size[0]), rect[3].min(self.size[1])];
+        if rect[0] < rect[2] && rect[1] < rect[3] {
+            self.damage = Some(self.damage.map_or(rect, |damage| around(damage, rect)));
+        }
+    }
+}
+
+/// The smallest rectangle that holds both.
+fn around(one: [usize; 4], other: [usize; 4]) -> [usize; 4] {
+    [one[0].min(other[0]), one[1].min(other[1]), one[2].max(other[2]), one[3].max(other[3])]
+}
+
+/// Draws the rows of `popup` that fall inside the rectangle of the view that
+/// starts at `corner` and measures `size`, over the pixels of that rectangle.
+fn overlay(rgb: &mut [u8], size: [usize; 2], corner: [usize; 2], popup: &Popup) {
+    let at = (popup.at.0 - corner[0] as i32, popup.at.1 - corner[1] as i32);
+    let (left, top) = (at.0.max(0) as usize, at.1.max(0) as usize);
+    // What of the popup lies left of or above the rectangle is not drawn.
+    let (skip_x, skip_y) = ((-at.0).max(0) as usize, (-at.1).max(0) as usize);
     let width = popup.size[0].saturating_sub(skip_x).min(size[0].saturating_sub(left));
+    // Beside the rectangle there is no row of it to draw on.
+    if width == 0 {
+        return;
+    }
     for row in skip_y..popup.size[1].min(skip_y + size[1].saturating_sub(top)) {
         let from = (row * popup.size[0] + skip_x) * 4;
         let to = ((top + row - skip_y) * size[0] + left) * 3;
@@ -253,7 +297,7 @@ impl Embedded {
     }
 
     /// One paint of the page, on CEF's UI thread, which also carries the
-    /// driver's requests: one copy, and a signal.
+    /// driver's requests: a copy of what Chromium painted again, and a signal.
     fn paint(&self, view: &LiveView, paint: &openide_cef::Paint) {
         let mut canvas = self.canvas();
         if !canvas.visible {
@@ -261,28 +305,64 @@ impl Embedded {
         }
         let size = [paint.width as usize, paint.height as usize];
         if let Some(at) = paint.popup {
+            // Where it was, the page shows again; where it is, it is drawn.
+            if let Some(gone) = canvas.popup.take() {
+                canvas.damaged(gone.covers());
+            }
             let bgra = paint.bgra.to_vec();
-            canvas.popup = (!bgra.is_empty()).then_some(Popup { bgra, size, at });
+            if !bgra.is_empty() {
+                let shown = Popup { bgra, size, at };
+                canvas.damaged(shown.covers());
+                canvas.popup = Some(shown);
+            }
             // News whatever the page under it looks like: an agent capture
             // that left the page as it was does not hold this back.
             canvas.before_capture = None;
-            // Drawn over a page: one that was never painted has none to show.
-            if canvas.bgra.is_empty() {
-                return;
-            }
-        } else {
+        } else if size != canvas.size {
+            // A page of another size, or the first paint since the view let
+            // go of the last: all of it.
             canvas.size = size;
             canvas.bgra.clear();
             canvas.bgra.extend_from_slice(paint.bgra);
+            canvas.damage = Some([0, 0, size[0], size[1]]);
+        } else {
+            // The rest of the canvas already is what Chromium holds. Row by
+            // row also when it is all of them: measured, with wide changes
+            // copied in one stretch a change of the whole view costs this
+            // process a tenth more.
+            let [left, top, right, bottom] = paint.dirty;
+            let (from, to) = (left.min(size[0]) * 4, right.min(size[0]) * 4);
+            for row in (top..bottom.min(size[1])).filter(|_| from < to) {
+                let start = row * size[0] * 4;
+                canvas.bgra[start + from..start + to].copy_from_slice(&paint.bgra[start + from..start + to]);
+            }
+            canvas.damaged(paint.dirty);
         }
-        canvas.dirty = true;
+        // Only a paint of a part rests on the rest being as it was. One of
+        // the whole view may also be read while Chromium composites the next
+        // frame into the same pixels, whose own paint then follows.
+        #[cfg(test)]
+        if paint.popup.is_none()
+            && paint.dirty != [0, 0, size[0], size[1]]
+            && COMPARE_PAINTS.load(Ordering::Relaxed)
+            && canvas.bgra != paint.bgra
+        {
+            STRAY_PAINTS.fetch_add(1, Ordering::Relaxed);
+        }
+        // A paint of nothing, or of a list over a page never painted, is
+        // nothing to show.
+        if canvas.damage.is_none() {
+            return;
+        }
         drop(canvas);
         view.feed().woken = true;
         view.arrived.notify_one();
     }
 
-    /// The page as last painted, once per paint: the frame thread asks, and
-    /// hands what it gets to the view. An agent capture makes Chromium draw
+    /// What was painted since the last call, once: the frame thread asks, and
+    /// hands what it gets to the view. It is the whole page when all of it
+    /// was painted, and otherwise the one rectangle that was, as a part of
+    /// the frame the view already holds. An agent capture makes Chromium draw
     /// the page another way for a moment, as with the stream; the paints of
     /// that moment are held back, and what is left after it is news only if
     /// it differs from what the view already shows.
@@ -299,13 +379,12 @@ impl Embedded {
         if redrawing {
             return None;
         }
-        if !canvas.dirty || !canvas.visible {
+        let Some(mut damage) = canvas.damage.take().filter(|_| canvas.visible) else {
             // The capture came and went without a paint: a later one is
             // news whatever it shows.
             canvas.before_capture = None;
             return None;
-        }
-        canvas.dirty = false;
+        };
         if canvas
             .before_capture
             .take()
@@ -313,16 +392,53 @@ impl Embedded {
         {
             return None;
         }
-        let mut rgb = self.rgb.lock().unwrap_or_else(|poison| poison.into_inner());
-        rgb.resize(canvas.bgra.len() / 4 * 3, 0);
-        bgra_to_rgb(&canvas.bgra, &mut rgb);
         let (size, scale) = (canvas.size, canvas.scale);
+        let whole = [0, 0, size[0], size[1]];
+        // A part the view has yet to take is replaced by this one, which
+        // therefore carries its pixels too: the view may skip a frame, and
+        // loses nothing that was painted.
+        let untaken = view.decoded.lock().unwrap_or_else(|poison| poison.into_inner());
+        if let Some((frame, [left, top])) = untaken.last().and_then(|waiting| waiting.part()) {
+            let [width, height] = untaken.last().map_or([0; 2], |waiting| waiting.size());
+            damage = if frame == size {
+                around(damage, [left, top, left + width, top + height])
+            } else {
+                whole
+            };
+        }
+        drop(untaken);
+        let [left, top, right, bottom] = damage;
+        let part = [right - left, bottom - top];
+        let mut rgb = self.rgb.lock().unwrap_or_else(|poison| poison.into_inner());
+        rgb.resize(part[0] * part[1] * 3, 0);
+        for (row, rgb) in (top..bottom).zip(rgb.chunks_exact_mut(part[0] * 3)) {
+            let start = (row * size[0] + left) * 4;
+            bgra_to_rgb(&canvas.bgra[start..start + part[0] * 4], rgb);
+        }
         if let Some(popup) = &canvas.popup {
-            overlay(&mut rgb, size, popup);
+            overlay(&mut rgb, part, [left, top], popup);
         }
         // CEF may paint again while the frame is built.
         drop(canvas);
-        limn_egui::SurfaceFrame::from_rgb(size, &rgb, scale)
+        let frame = limn_egui::SurfaceFrame::from_rgb(part, &rgb, scale)?;
+        if damage == whole {
+            Some(frame)
+        } else {
+            frame.within(size, [left, top])
+        }
+    }
+
+    /// The page with what is painted over it, all of it, as a whole frame
+    /// would carry it now: its size and its rows of RGB.
+    #[cfg(test)]
+    pub(super) fn whole(&self) -> ([usize; 2], Vec<u8>) {
+        let canvas = self.canvas();
+        let mut rgb = vec![0; canvas.bgra.len() / 4 * 3];
+        bgra_to_rgb(&canvas.bgra, &mut rgb);
+        if let Some(popup) = &canvas.popup {
+            overlay(&mut rgb, canvas.size, [0, 0], popup);
+        }
+        (canvas.size, rgb)
     }
 
     /// An agent capture is about to redraw the page, and the view already
@@ -331,7 +447,7 @@ impl Embedded {
         let mut canvas = self.canvas();
         // Kept from a capture just before this one, whose paints are still
         // held back. A paint the view was never given is owed to it.
-        if canvas.before_capture.is_none() && !canvas.dirty && canvas.visible {
+        if canvas.before_capture.is_none() && canvas.damage.is_none() && canvas.visible {
             canvas.before_capture = Some(fingerprint(&canvas.bgra));
         }
     }
@@ -347,8 +463,9 @@ impl Embedded {
             // A hidden page takes no paint, and keeps none: shown again it
             // is painted whole.
             canvas.bgra = Vec::new();
+            canvas.size = [0, 0];
             canvas.popup = None;
-            canvas.dirty = false;
+            canvas.damage = None;
         }
         drop(canvas);
         if !visible {
@@ -599,8 +716,8 @@ mod tests {
         embedded.canvas().scale = 1.0;
         embedded.show(true);
         let white = [255u8; 2 * 2 * 4];
-        let page = Paint { width: 2, height: 2, bgra: &white, popup: None };
-        let list = |bgra: &'static [u8]| Paint { width: 1, height: 1, bgra, popup: Some((1, 1)) };
+        let page = Paint { width: 2, height: 2, bgra: &white, dirty: [0, 0, 2, 2], popup: None };
+        let list = |bgra: &'static [u8]| Paint { width: 1, height: 1, bgra, dirty: [0, 0, 1, 1], popup: Some((1, 1)) };
         // A list alone, before the page was ever painted, is nothing to show.
         embedded.paint(&view, &list(&[0, 0, 255, 255]));
         assert!(embedded.frame(&view).is_none());
@@ -638,7 +755,7 @@ mod tests {
         };
         let pixel = |rgb: &[u8], x: usize, y: usize| [rgb[(y * 4 + x) * 3], rgb[(y * 4 + x) * 3 + 1], rgb[(y * 4 + x) * 3 + 2]];
         let mut rgb = page();
-        overlay(&mut rgb, [4, 3], &popup((1, 1)));
+        overlay(&mut rgb, [4, 3], [0, 0], &popup((1, 1)));
         assert_eq!([pixel(&rgb, 1, 1), pixel(&rgb, 2, 1)], [[255, 0, 0]; 2]);
         // The page shows through what is not opaque.
         assert_eq!(pixel(&rgb, 1, 2), [49, 49, 177]);
@@ -647,18 +764,146 @@ mod tests {
         }
         // Past an edge only what is inside is drawn, and nothing wraps.
         let mut rgb = page();
-        overlay(&mut rgb, [4, 3], &popup((3, 2)));
+        overlay(&mut rgb, [4, 3], [0, 0], &popup((3, 2)));
         assert_eq!(pixel(&rgb, 3, 2), [255, 0, 0]);
         assert_eq!(rgb.iter().filter(|channel| **channel != 100).count(), 3);
         let mut rgb = page();
-        overlay(&mut rgb, [4, 3], &popup((-1, -1)));
+        overlay(&mut rgb, [4, 3], [0, 0], &popup((-1, -1)));
         assert_eq!(pixel(&rgb, 0, 0), [49, 49, 177]);
         assert_eq!(rgb.iter().filter(|channel| **channel != 100).count(), 3);
-        for outside in [(4, 0), (0, 3), (-2, 0), (0, -2), (-9, -9), (9, 9)] {
+        for outside in [(4, 0), (0, 3), (-2, 0), (0, -2), (-9, -9), (9, 9), (9, 0), (5, 2), (-7, 1)] {
             let mut rgb = page();
-            overlay(&mut rgb, [4, 3], &popup(outside));
+            overlay(&mut rgb, [4, 3], [0, 0], &popup(outside));
             assert_eq!(rgb, page(), "{outside:?}");
         }
+        // Over one rectangle of the view, it is drawn where it falls in it:
+        // the columns 2..4 of the rows 1..3 hold its right column alone.
+        let mut part = vec![100u8; 2 * 2 * 3];
+        overlay(&mut part, [2, 2], [2, 1], &popup((1, 1)));
+        assert_eq!(part, [255, 0, 0, 100, 100, 100, 49, 49, 177, 100, 100, 100]);
+    }
+
+    #[test]
+    fn what_was_painted_reaches_the_view_as_one_part_of_the_frame_and_none_of_it_is_lost() {
+        let view = LiveView::default();
+        let embedded = &view.embedded;
+        embedded.canvas().scale = 1.0;
+        embedded.show(true);
+        // A page of 4 × 3 pixels, each of them its own grey.
+        let mut page: Vec<u8> = (0..12u8).flat_map(|pixel| [pixel, pixel, pixel, 255]).collect();
+        let paint = |page: &[u8], width: u32, dirty: [usize; 4]| {
+            embedded.paint(&view, &Paint { width, height: page.len() as u32 / 4 / width, bgra: page, dirty, popup: None });
+        };
+        // The greys the frame thread last built a frame or a part from.
+        let built = || embedded.rgb.lock().unwrap().iter().step_by(3).copied().collect::<Vec<u8>>();
+        let change = |page: &mut Vec<u8>, x: usize, y: usize| {
+            let pixel = (y * 4 + x) * 4;
+            let lighter = page[pixel] + 100;
+            page[pixel..pixel + 3].fill(lighter);
+            paint(page, 4, [x, y, x + 1, y + 1]);
+        };
+        let strays = super::STRAY_PAINTS.load(std::sync::atomic::Ordering::Relaxed);
+
+        // The first paint is the whole page, whatever Chromium says changed.
+        paint(&page, 4, [1, 1, 2, 2]);
+        let first = embedded.frame(&view).unwrap();
+        assert_eq!((first.size(), first.part()), ([4, 3], None));
+        assert_eq!(built(), (0..12).collect::<Vec<u8>>());
+        assert!(embedded.frame(&view).is_none(), "once per paint");
+        // One pixel changes: that pixel is all that is built and handed over.
+        change(&mut page, 2, 1);
+        let part = embedded.frame(&view).unwrap();
+        assert_eq!((part.size(), part.part()), ([1, 1], Some(([4, 3], [2, 1]))));
+        assert_eq!(built(), [106]);
+        // Paints the frame thread did not get to in between come as one part.
+        change(&mut page, 0, 0);
+        change(&mut page, 1, 1);
+        let both = embedded.frame(&view).unwrap();
+        assert_eq!((both.size(), both.part()), ([2, 2], Some(([4, 3], [0, 0]))));
+        assert_eq!(built(), [100, 1, 4, 105]);
+        // A part the view never took is replaced by the next, which carries
+        // what it carried: the view skips a frame and loses no pixel of it.
+        view.publish(both);
+        change(&mut page, 2, 0);
+        let carried = embedded.frame(&view).unwrap();
+        assert_eq!((carried.size(), carried.part()), ([3, 2], Some(([4, 3], [0, 0]))));
+        assert_eq!(built(), [100, 1, 102, 4, 105, 106]);
+        view.publish(carried);
+        assert_eq!(view.decoded.lock().unwrap().len(), 1, "the part it never took was replaced");
+        // After a whole frame it has yet to take, what changes is still a
+        // part: both wait, the frame first.
+        let whole = limn_egui::SurfaceFrame::from_rgb([4, 3], &[0; 36], 1.0).unwrap();
+        view.publish(whole);
+        change(&mut page, 3, 0);
+        let after = embedded.frame(&view).unwrap();
+        assert_eq!((after.size(), after.part()), ([1, 1], Some(([4, 3], [3, 0]))));
+        view.publish(after);
+        change(&mut page, 3, 1);
+        let again = embedded.frame(&view).unwrap();
+        assert_eq!((again.size(), again.part()), ([1, 2], Some(([4, 3], [3, 0]))));
+        view.publish(again);
+        let waiting: Vec<_> = view.decoded.lock().unwrap().drain(..).map(|frame| (frame.size(), frame.part().is_some())).collect();
+        assert_eq!(waiting, [([4, 3], false), ([1, 2], true)]);
+        // What Chromium says it did not paint is not read again.
+        let mut elsewhere = page.clone();
+        elsewhere[..4].fill(77);
+        paint(&elsewhere, 4, [2, 2, 4, 3]);
+        assert_eq!(embedded.frame(&view).unwrap().part(), Some(([4, 3], [2, 2])));
+        assert_eq!(embedded.whole().1[..3], [100, 100, 100]);
+        // A paint of nothing is no frame.
+        paint(&page, 4, [2, 2, 2, 2]);
+        paint(&page, 4, [9, 9, 12, 12]);
+        assert!(embedded.frame(&view).is_none());
+
+        // While an agent capture redraws the page its paints are held back,
+        // and afterwards the view gets what they left changed, in one part.
+        embedded.before_capture();
+        view.feed().rerendering = true;
+        change(&mut page, 1, 2);
+        change(&mut page, 2, 2);
+        assert!(embedded.frame(&view).is_none());
+        view.feed().rerendering = false;
+        let after = embedded.frame(&view).unwrap();
+        assert_eq!((after.size(), after.part()), ([2, 1], Some(([4, 3], [1, 2]))));
+        // A capture that left the page as it was is no news, part or whole.
+        embedded.before_capture();
+        paint(&page, 4, [0, 0, 4, 3]);
+        paint(&page, 4, [1, 1, 3, 2]);
+        assert!(embedded.frame(&view).is_none());
+
+        // A list over the page is drawn into the part it falls in, and the
+        // page shows again where it was once it moves or closes.
+        let list = |at| Paint { width: 1, height: 1, bgra: &[200, 200, 200, 255], dirty: [0, 0, 1, 1], popup: Some(at) };
+        embedded.paint(&view, &list((3, 0)));
+        let opened = embedded.frame(&view).unwrap();
+        assert_eq!((opened.size(), opened.part(), built()), ([1, 1], Some(([4, 3], [3, 0])), vec![200]));
+        embedded.paint(&view, &list((1, 0)));
+        assert_eq!(embedded.frame(&view).unwrap().part(), Some(([4, 3], [1, 0])));
+        assert_eq!(built(), [200, 102, 103]);
+        change(&mut page, 2, 0);
+        assert_eq!(built(), [200, 102, 103], "nothing is built before the frame thread asks");
+        embedded.paint(&view, &Paint { width: 0, height: 0, bgra: &[], dirty: [0; 4], popup: Some((0, 0)) });
+        assert_eq!(embedded.frame(&view).unwrap().part(), Some(([4, 3], [1, 0])));
+        assert_eq!(built(), [1, 202]);
+
+        // A page of another size is a whole frame, and so is the first paint
+        // of a view shown again: its last frame may be gone with it.
+        let wider: Vec<u8> = (0..15u8).flat_map(|pixel| [pixel, pixel, pixel, 255]).collect();
+        paint(&wider, 5, [0, 0, 1, 1]);
+        let resized = embedded.frame(&view).unwrap();
+        assert_eq!((resized.size(), resized.part()), ([5, 3], None));
+        embedded.show(false);
+        paint(&wider, 5, [0, 0, 5, 3]);
+        assert!(embedded.frame(&view).is_none(), "a hidden page takes no paint");
+        embedded.show(true);
+        embedded.paint(&view, &list((0, 0)));
+        assert!(embedded.frame(&view).is_none(), "a list has no page to go over yet");
+        paint(&wider, 5, [4, 2, 5, 3]);
+        let shown = embedded.frame(&view).unwrap();
+        assert_eq!((shown.size(), shown.part(), built()[0]), ([5, 3], None, 200));
+        // Only the paint that did not say all it painted; it is not left
+        // for a scenario on the real engine to find.
+        assert_eq!(super::STRAY_PAINTS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) - strays, 1);
     }
 
     #[test]
