@@ -20869,7 +20869,9 @@ impl eframe::App for AgentsWindow {
         let context_hovered = self
             .tree
             .hovered_id()
-            .and_then(|id| id.strip_prefix("composer_context_row:"))
+            .and_then(|id| {
+                openide_ui::ContextWindow::share_under(crate::composer_context_ui::CONTEXT_CARD, id)
+            })
             .map(str::to_owned);
         if self.view.native_context.hovered_category != context_hovered {
             self.view.native_context.hovered_category = context_hovered;

@@ -84,9 +84,9 @@ pub const EFFORT_ULTRA: Color = Color::rgb(190, 126, 255);
 pub const WARNING: Color = Color::rgb(224, 179, 106);
 /// The context meter nearing its limit; a second amber kept as it is.
 pub const CONTEXT_WARNING: Color = Color::rgb(225, 169, 65);
-/// The ring of a full context meter; its text beside the bar is `DESTRUCTIVE`.
+/// The ring of a full context meter; the percentage in its card is `DESTRUCTIVE`.
 pub const CONTEXT_FULL: Color = Color::rgb(235, 115, 119);
-/// One hue per category of the context bar and its legend, told apart on the
+/// One hue per category of the context card's cells and rows, told apart on the
 /// menu surface. Existing accents are reused; teal and pink exist only here.
 const CONTEXT_CATEGORY_INKS: [(&str, Color); 7] = [
     ("system", LINK),

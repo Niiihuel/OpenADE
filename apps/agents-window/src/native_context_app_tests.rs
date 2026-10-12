@@ -255,6 +255,85 @@ fn native_context_automation_load_error_keeps_recorded_route_and_visible_cause()
     );
 }
 
+#[test]
+fn native_context_card_compacts_through_the_scoped_guarded_action() {
+    const CONTROL: &str = "composer_context:action:conversation";
+    let root = tempfile::tempdir().unwrap();
+    let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+    let store = app.store.clone().unwrap();
+    let session = store.create(root.path(), "native").unwrap();
+    app.view.workspace = root.path().display().to_string();
+    app.view.selected_backend = "native".into();
+    app.view.selected_session = Some(session.id.clone());
+    app.view.sessions = vec![crate::view::SessionView {
+        id: session.id.clone(),
+        title: "Conversación".into(),
+        project: app.view.workspace.clone(),
+        backend: "native".into(),
+        pinned: false,
+        archived: false,
+        unread: false,
+        native_automation: None,
+    }];
+    app.view.native_context = crate::native_context_ui::NativeContextUiState {
+        owner: Some(session.id.clone()),
+        workspace: Some(root.path().canonicalize().unwrap()),
+        provider: app.view.native_provider_id.clone(),
+        model: app.view.model.clone(),
+        unreported_responses: 1,
+        breakdown: vec![crate::native_context_ui::NativeContextCategory::new(
+            "conversation",
+            "Conversación",
+            "Sin uso",
+            "",
+        )],
+        ..Default::default()
+    };
+    app.view.composer_context_open = true;
+    let size = Size::new(620.0, 760.0);
+    let ctx = egui::Context::default();
+    let mut tree = error_context_tree(&app, false);
+    tree.layout(size);
+    assert!(tree.focus(CONTROL));
+    let actions = tree.handle_event(UiEvent::Key {
+        key: openide_ui::Key::Enter,
+        shift: false,
+        ctrl: false,
+    });
+    assert_eq!(
+        actions,
+        vec![UiAction::Clicked {
+            id: format!("composer_context_compact:{}", session.id)
+        }]
+    );
+    // A response in flight withdraws the control, and a click already on its
+    // way still meets the host's guard.
+    app.view.running = true;
+    app.view.status = "unchanged".into();
+    let mut running = error_context_tree(&app, false);
+    running.layout(size);
+    assert!(!running.focus(CONTROL));
+    for action in actions.clone() {
+        app.apply_action(action, &ctx);
+    }
+    // A row has nothing to open, so its click changes nothing either.
+    app.apply_action(
+        UiAction::Clicked {
+            id: "composer_context:share:conversation".into(),
+        },
+        &ctx,
+    );
+    assert!(app.view.composer_context_open);
+    assert_eq!(app.view.status, "unchanged");
+    app.view.running = false;
+    for action in actions {
+        app.apply_action(action, &ctx);
+    }
+    // The host reaches the real journal guard, not a provider request.
+    assert_eq!(app.view.status, "No hay historial nuevo para compactar");
+    assert!(app.active_compact.is_none());
+}
+
 fn context_category<'a>(
     app: &'a AgentsWindow,
     id: &str,
