@@ -152,8 +152,8 @@ copia y esperan a lo sumo una.
 
 **Entrada.** Sigue pasando por los eventos del protocolo del driver. Medido
 contra la llamada nativa de CEF para la rueda: con la página quieta, del
-evento al primer cuadro pasan 15,4–16,6 ms de mediana por el driver y
-16,1–16,8 ms por CEF. Desplazando, la llamada nativa da 8,2–8,6 ms hasta el
+evento al primer cuadro pasan 15,4–17,6 ms de mediana por el driver y
+15,3–17,1 ms por CEF. Desplazando, la llamada nativa da 8,0–9,0 ms hasta el
 cuadro siguiente contra 16,6–16,7 ms, pero mide otra cosa: Chromium anima el
 desplazamiento de la rueda nativa, así que siempre hay un cuadro en camino,
 muestre o no ese evento. No hay una ventaja medida que justifique dos caminos
@@ -250,31 +250,31 @@ Tomadas el 11 de octubre de 2026 a través del runtime real, sin ventana, con
 las pruebas `real_cef_measurements` y `real_chrome_measurements` compiladas
 con el perfil `desktop`: viewport de 1280 × 800 a escala 2 (cuadros de
 2560 × 1600), carga de un minuto por debajo de 1 y ningún `rustc` en curso.
-Cada cifra es el rango de cuatro corridas con CEF y de tres con Chrome
+Cada cifra es el rango de ocho corridas con CEF y de tres con Chrome
 150.0.7871.46, cada una en un proceso nuevo. Los tiempos hasta un cuadro son
 hasta el cuadro listo para la ventana.
 
 | Medida | CEF, por software | Chrome headless |
 | --- | --- | --- |
-| Cuadros por segundo, página animando | 60,0 a 60,1 | 35,6 a 35,9 |
-| Cuadros por segundo, desplazamiento continuo | 59,7 | 30,5 a 31,5 |
+| Cuadros por segundo, página animando | 59,8 a 60,1 | 35,6 a 35,9 |
+| Cuadros por segundo, desplazamiento continuo | 59,6 a 59,7 | 30,5 a 31,5 |
 | De la rueda al siguiente cuadro, desplazando | mediana 16,6–16,7 ms, p90 17,0–17,1 | mediana 31,0–31,7 ms, p90 48–62 |
-| De la rueda al primer cuadro, página quieta | mediana 15,4–16,6 ms, p90 16,1–17,7 | mediana 63,0–63,7 ms, p90 64,6–65,6 |
-| Procesador mientras anima: la aplicación | 37 a 42 % de un núcleo | 37 a 38 % |
-| Procesador mientras anima: procesos del navegador | 10 % | 240 a 241 % |
-| Procesador desplazando: aplicación y navegador | 40–46 % y 51–52 % | 36–37 % y 234–238 % |
-| Procesador animando fuera de pantalla | 1 % y 1–2 % | 1 % y 8 % |
-| Memoria que suma la aplicación, vista oculta | 83,0 a 86,3 MB | 2,8 a 3,2 MB |
-| Memoria que suma la aplicación, página quieta a la vista | 149,7 a 153,1 MB | 61,3 a 61,5 MB |
+| De la rueda al primer cuadro, página quieta | mediana 15,4–17,6 ms, p90 16,1–19,0 | mediana 63,0–63,7 ms, p90 64,6–65,6 |
+| Procesador mientras anima: la aplicación | 37 a 48 % de un núcleo | 37 a 38 % |
+| Procesador mientras anima: procesos del navegador | 10 a 11 % | 240 a 241 % |
+| Procesador desplazando: aplicación y navegador | 40–52 % y 51–52 % | 36–37 % y 234–238 % |
+| Procesador animando fuera de pantalla | 1–2 % y 1–2 % | 1 % y 8 % |
+| Memoria que suma la aplicación, vista oculta | 82,6 a 86,3 MB | 2,8 a 3,2 MB |
+| Memoria que suma la aplicación, página quieta a la vista | 149,4 a 153,1 MB | 61,3 a 61,5 MB |
 | Memoria de los procesos del navegador, vista oculta | 220 a 222 MB en 9 | 318 a 327 MB en 11 |
 | Memoria de los procesos del navegador, animando | 214 a 215 MB | 400 a 413 MB |
 | Total con la vista oculta | 303 a 308 MB | 321 a 330 MB |
-| Total animando a la vista | 366 a 370 MB | 466 a 479 MB |
-| Primer contexto del proceso, hasta estar listo | 133 a 178 ms; 686 ms la primera vez | 383 a 392 ms; 3,5 s la primera vez |
+| Total animando a la vista | 365 a 370 MB | 466 a 479 MB |
+| Primer contexto del proceso, hasta estar listo | 133 a 178 ms; 388 y 686 ms recién compilado | 383 a 392 ms; 3,5 s la primera vez |
 | Primer uso hasta el primer cuadro | 156 a 170 ms; 664 ms la primera vez | — |
 | Contextos siguientes, hasta estar listos | 24 a 26 ms | 356 a 373 ms |
-| Contextos siguientes, hasta el primer cuadro | 44 a 47 ms | 417 a 503 ms |
-| Clic del agente, a la vista y fuera de pantalla | 33–45 ms y 44 ms | 55 ms y 33–44 ms |
+| Contextos siguientes, hasta el primer cuadro | 44 a 61 ms | 417 a 503 ms |
+| Clic del agente, a la vista y fuera de pantalla | 33–45 ms y 44–45 ms | 55 ms y 33–44 ms |
 | Captura del agente, a la vista y fuera de pantalla | 66 ms y 66–155 ms | 88 ms y 55–66 ms |
 | Cierre de un contexto | 2 a 3 ms | 15 a 20 ms |
 
@@ -289,7 +289,9 @@ Cómo se tomó cada una:
   durante esas ventanas, como porcentaje de un núcleo: el proceso de la
   prueba, que hace lo que haría la aplicación, y aparte los procesos del
   navegador. Con CEF la parte de navegador de Chromium corre dentro de la
-  aplicación y cuenta ahí.
+  aplicación y cuenta ahí. El de la aplicación con CEF salió en dos niveles:
+  37–42 % animando en seis corridas y 48 % en dos, con la máquina en uso; no
+  se buscó la causa.
 - **Memoria.** PSS de `/proc/<pid>/smaps_rollup`. Lo que suma la aplicación
   se cuenta desde antes de iniciar CEF, así que incluye a Chromium dentro del
   proceso; a la vista se agregan el lienzo (16 MiB), su copia RGB (12 MiB) y
@@ -304,8 +306,9 @@ Cómo se tomó cada una:
 
 Un cuadro de 2560 × 1600 le cuesta a la aplicación 2,8–3,0 ms en el hilo de
 CEF (la copia) y 3,4 ms en el hilo de cuadros (conversión y armado); con
-Chrome eran 8,0–8,1 ms de decodificar el JPEG. De ahí sale casi todo el 37 %
-de un núcleo: a 60 cuadros por segundo son 6,3 ms por cuadro.
+Chrome eran 8,0–8,1 ms de decodificar el JPEG. De ahí sale casi todo lo que
+gasta la aplicación: a 60 cuadros por segundo son 6,3 ms por cuadro, 38 % de
+un núcleo.
 
 Tamaño:
 
