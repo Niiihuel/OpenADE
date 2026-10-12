@@ -613,9 +613,10 @@ macro_rules! chat_model {
 // Its Chat Completions reference documents streamed function tool calls:
 // https://api-docs.deepseek.com/api/create-chat-completion/
 // DeepSeek runs with thinking disabled in our backend; its effort controls
-// therefore are intentionally not advertised here. The provider may list
-// image input for a model, but this Chat Completions adapter does not send
-// image parts yet, so image_input remains false for the native route.
+// therefore are intentionally not advertised here. The Chat Completions
+// adapter sends image parts to a model whose provider listing declares image
+// input; these reviewed rows declare none, so image_input stays false here
+// until a row's image input is checked against its provider.
 const MODEL_CAPABILITIES: &[NativeModelCapabilities] = &[
     // Reviewed 2026-10-06. MiniMax's M3 API ceiling is explicit; for M2.x
     // the published API ceiling equals the whole context. Leave the output

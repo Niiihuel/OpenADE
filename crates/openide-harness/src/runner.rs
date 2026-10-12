@@ -1275,13 +1275,22 @@ impl AgentRunner {
                             &mut messages,
                             KEEP_RECENT_TOOL_RESULTS,
                             |messages| {
-                                policy
-                                    .assess_request(
+                                // What the target is sent, as the assessment
+                                // above measured: an image it is not given
+                                // takes no room.
+                                crate::history_adapter::adapt_for(
+                                    self.model.as_ref(),
+                                    messages,
+                                    catalog.definitions(),
+                                )
+                                .and_then(|sent| {
+                                    policy.assess_request(
                                         &mut budget_state.clone(),
-                                        messages,
-                                        catalog.definitions(),
+                                        &sent.messages,
+                                        &sent.tools,
                                     )
-                                    .is_ok_and(|fit| fit.decision == TokenBudgetDecision::Continue)
+                                })
+                                .is_ok_and(|fit| fit.decision == TokenBudgetDecision::Continue)
                             },
                         );
                         if stubbed == 0 {
@@ -1395,7 +1404,15 @@ impl AgentRunner {
                     let stubbed = crate::context::stub_largest_tool_results(
                         &mut messages,
                         KEEP_RECENT_TOOL_RESULTS,
-                        |messages| size(messages) <= target,
+                        // Measured as `before` was: on what the target is sent.
+                        |messages| {
+                            crate::history_adapter::adapt_for(
+                                self.model.as_ref(),
+                                messages,
+                                catalog.definitions(),
+                            )
+                            .is_ok_and(|sent| size(&sent.messages) <= target)
+                        },
                     );
                     let mut retry_messages = messages.clone();
                     if model_messages.len() == messages.len() + 1 {
@@ -1738,21 +1755,23 @@ impl AgentRunner {
                         })?;
                     }
                 }
-                if let Some(media) =
-                    crate::tool_media::extract_tool_result_media(call, &result.content)
-                {
-                    sink.emit(media)?;
-                }
+                let media = crate::tool_media::extract_tool_result_media(call, &result.content);
                 let content = truncate_chars(
-                    &crate::tool_media::without_image_data(call, &result.content),
+                    &crate::tool_media::without_image_data(call, &result.content, media.as_ref()),
                     self.limits.max_tool_output_chars,
                 );
+                let mut message = AgentMessage::tool(call.id.clone(), content.clone());
+                if let Some(media) = media {
+                    // The same images a replay of this journal gives the result.
+                    message.images = media.model_images();
+                    sink.emit(media.event)?;
+                }
                 sink.emit(AgentEventKind::ToolFinished {
                     tool_call_id: call.id.clone(),
-                    output: content.clone(),
+                    output: content,
                     is_error: result.is_error,
                 })?;
-                messages.push(AgentMessage::tool(call.id.clone(), content));
+                messages.push(message);
             }
         }
         Err(AgentError::Limit(format!(
@@ -6331,6 +6350,64 @@ mod tests {
         assert_eq!(seen.len(), 1);
         assert!(!seen[0].iter().any(|message| message.content.len() >= 20_000));
         assert!(seen[0].iter().any(|message| message.content.len() == 300));
+    }
+
+    #[test]
+    fn an_image_the_model_is_not_sent_takes_no_room_when_the_conversation_is_trimmed() {
+        /// Reads no images: every tool image reaches it as a line of text.
+        struct Blind(SmallWindow);
+        #[async_trait]
+        impl ModelBackend for Blind {
+            fn model_id(&self) -> &str {
+                "small-window"
+            }
+            fn target_caps(&self) -> crate::TargetCaps {
+                crate::TargetCaps { vision: false, ..crate::TargetCaps::PERMISSIVE }
+            }
+            async fn complete(
+                &self,
+                messages: &[AgentMessage],
+                tools: &[ToolDefinition],
+                cancel: CancellationToken,
+            ) -> Result<ModelOutput, AgentError> {
+                self.0.complete(messages, tools, cancel).await
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let model = Arc::new(Blind(SmallWindow { limit: usize::MAX, seen: Mutex::new(Vec::new()) }));
+        let mut request = request(dir.path().to_path_buf());
+        // One output too large for the window, then eight captures and
+        // three recent results: only the large one has to go.
+        request.history = history_with_tool_outputs(&[30_000, 90, 91, 92, 93, 94, 95, 96, 97, 300, 200, 100]);
+        let png = crate::tool_media::test_png(1280, 800, 0);
+        let image = openide_core::UserImage::from_bytes(openide_core::UserImageMime::Png, &png).unwrap();
+        for capture in request.history.iter_mut().filter(|message| (90..98).contains(&message.content.len())) {
+            capture.images = vec![image.clone()];
+        }
+        let events: Vec<_> = AgentRunner::new(model.clone(), Arc::new(EchoTool))
+            .with_token_budget_policy(TokenBudgetPolicy {
+                input_limit_tokens: None,
+                context_window_tokens: 8_000,
+                output_reserve_tokens: 500,
+                tool_schema_reserve_tokens: 100,
+                auto_compact_token_limit: None,
+            })
+            .start(request)
+            .events
+            .into_iter()
+            .collect();
+        assert!(matches!(events.last().unwrap().kind, AgentEventKind::TurnCompleted { .. }), "{:?}", events.last());
+        let seen = model.0.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(!seen[0].iter().any(|message| message.content.len() >= 30_000));
+        // Charged as if sent, eight images would not fit either and the
+        // captures would have been cut with their text.
+        let captures: Vec<&AgentMessage> = seen[0]
+            .iter()
+            .filter(|message| message.content.contains("this model cannot receive images"))
+            .collect();
+        assert_eq!(captures.len(), 8, "every capture kept its text");
+        assert!(seen[0].iter().all(|message| message.images.is_empty()));
     }
 
     #[test]

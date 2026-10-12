@@ -33,7 +33,8 @@ pub const DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS: u64 = 4096;
 const MAX_RETAINED_BYTES: usize = 8 * 1024 * 1024;
 const MAX_BLOCKS: usize = 256;
 const MAX_STREAM_EVENTS: usize = 100_000;
-const MAX_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+/// What the Messages endpoints accept for one request.
+const MAX_REQUEST_BYTES: usize = 32_000_000;
 
 pub struct AnthropicMessagesBackend {
     endpoint: String,
@@ -182,11 +183,22 @@ impl AnthropicMessagesBackend {
         let mut pending_calls = BTreeSet::<String>::new();
         let mut all_call_ids = BTreeSet::<String>::new();
         for message in messages {
-            if message.role != MessageRole::User && !message.images.is_empty() {
+            if !matches!(message.role, MessageRole::User | MessageRole::Tool)
+                && !message.images.is_empty()
+            {
                 return Err(AgentError::InvalidRequest(
-                    "only user messages may contain Anthropic images".into(),
+                    "only user messages and tool results may contain Anthropic images".into(),
                 ));
             }
+            if !message.images.is_empty() {
+                if !self.image_input_enabled {
+                    return Err(AgentError::InvalidRequest("Anthropic image input is disabled by the exact model capability contract".into()));
+                }
+                openide_core::validate_user_images(&message.images).map_err(|error| {
+                    AgentError::InvalidRequest(format!("invalid images: {error}"))
+                })?;
+            }
+            let images = message.images.iter().map(|image| json!({"type":"image","source":{"type":"base64","media_type":image.mime_type.as_str(),"data":image.data_base64}}));
             if message.role != MessageRole::Assistant
                 && (!message.tool_calls.is_empty() || !message.provider_output_items.is_empty())
             {
@@ -212,19 +224,11 @@ impl AnthropicMessagesBackend {
                     }
                 }
                 MessageRole::User => {
-                    if !self.image_input_enabled && !message.images.is_empty() {
-                        return Err(AgentError::InvalidRequest("Anthropic image input is disabled by the exact model capability contract".into()));
-                    }
-                    openide_core::validate_user_images(&message.images).map_err(|error| {
-                        AgentError::InvalidRequest(format!("invalid user images: {error}"))
-                    })?;
                     let mut blocks = Vec::new();
                     if !message.content.is_empty() {
                         blocks.push(json!({"type":"text","text":message.content}));
                     }
-                    for image in &message.images {
-                        blocks.push(json!({"type":"image","source":{"type":"base64","media_type":image.mime_type.as_str(),"data":image.data_base64}}));
-                    }
+                    blocks.extend(images);
                     if blocks.is_empty() {
                         return Err(AgentError::InvalidRequest(
                             "empty Anthropic user message".into(),
@@ -281,12 +285,20 @@ impl AnthropicMessagesBackend {
                             "orphan or repeated Anthropic tool result".into(),
                         ));
                     }
+                    // A result without images keeps its plain string form.
+                    // With images, `content` is the list of blocks Messages
+                    // accepts inside a tool_result: its text, then each image.
+                    let content = if message.images.is_empty() {
+                        json!(message.content)
+                    } else {
+                        let text = (!message.content.is_empty())
+                            .then(|| json!({"type":"text","text":message.content}));
+                        json!(text.into_iter().chain(images).collect::<Vec<_>>())
+                    };
                     push_message(
                         &mut history,
                         "user",
-                        vec![
-                            json!({"type":"tool_result","tool_use_id":id,"content":message.content}),
-                        ],
+                        vec![json!({"type":"tool_result","tool_use_id":id,"content":content})],
                     );
                 }
             }
@@ -327,7 +339,7 @@ impl AnthropicMessagesBackend {
             .len()
             > MAX_REQUEST_BYTES
         {
-            return Err(AgentError::Limit("Anthropic request exceeds 64 MiB".into()));
+            return Err(AgentError::Limit("Anthropic request exceeds 32 MB".into()));
         }
         Ok(body)
     }

@@ -49,6 +49,57 @@ impl UserImageMime {
     }
 }
 
+/// Pixel size as the format's own header states it, without decoding the
+/// picture. None for a header that is cut short, malformed or states zero.
+pub fn image_dimensions(mime: UserImageMime, bytes: &[u8]) -> Option<(u32, u32)> {
+    let byte = |at: usize| bytes.get(at).copied().map(u32::from);
+    let be16 = |at: usize| Some(byte(at)? << 8 | byte(at + 1)?);
+    let le16 = |at: usize| Some(byte(at + 1)? << 8 | byte(at)?);
+    let be32 = |at: usize| Some(be16(at)? << 16 | be16(at + 2)?);
+    let le24 = |at: usize| Some(byte(at + 2)? << 16 | le16(at)?);
+    let (width, height) = match mime {
+        UserImageMime::Png if bytes.get(12..16)? == b"IHDR" => (be32(16)?, be32(20)?),
+        UserImageMime::Gif => (le16(6)?, le16(8)?),
+        UserImageMime::Jpeg => {
+            // Segments follow the two-byte start marker; the first
+            // start-of-frame states the size.
+            let mut at = 2;
+            loop {
+                if byte(at)? != 0xff {
+                    return None;
+                }
+                let marker = byte(at + 1)?;
+                at += 2;
+                match marker {
+                    // A fill byte: the marker is the next one.
+                    0xff => at -= 1,
+                    // Markers that carry no length.
+                    0x01 | 0xd0..=0xd8 => {}
+                    0xc0..=0xcf if !matches!(marker, 0xc4 | 0xc8 | 0xcc) => {
+                        break (be16(at + 5)?, be16(at + 3)?);
+                    }
+                    // The picture's data or its end, with no frame before.
+                    0xd9 | 0xda => return None,
+                    _ => at += be16(at)? as usize,
+                }
+            }
+        }
+        UserImageMime::Webp => match bytes.get(12..16)? {
+            b"VP8 " if bytes.get(23..26)? == b"\x9d\x01\x2a" => {
+                (le16(26)? & 0x3fff, le16(28)? & 0x3fff)
+            }
+            b"VP8L" if byte(20)? == 0x2f => {
+                let bits = le16(23)? << 16 | le16(21)?;
+                ((bits & 0x3fff) + 1, (bits >> 14 & 0x3fff) + 1)
+            }
+            b"VP8X" => (le24(24)? + 1, le24(27)? + 1),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    (width > 0 && height > 0).then_some((width, height))
+}
+
 /// Walk GIF blocks rather than searching for image markers in compressed
 /// bytes. The Responses image input accepts only a single-frame GIF.
 fn verify_static_gif(bytes: &[u8]) -> Result<(), UserImageError> {
@@ -235,6 +286,45 @@ mod tests {
             tampered.verified_bytes(),
             Err(UserImageError::InvalidBase64)
         );
+    }
+
+    #[test]
+    fn dimensions_come_from_each_format_header_and_never_from_a_cut_one() {
+        let png = [
+            b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".as_slice(),
+            &640u32.to_be_bytes(),
+            &480u32.to_be_bytes(),
+        ]
+        .concat();
+        assert_eq!(image_dimensions(UserImageMime::Png, &png), Some((640, 480)));
+        assert_eq!(image_dimensions(UserImageMime::Png, &png[..23]), None);
+        let gif = b"GIF89a\x40\x01\xf0\x00";
+        assert_eq!(image_dimensions(UserImageMime::Gif, gif), Some((320, 240)));
+        // An application segment, a fill byte and a quantization table come
+        // before the frame header, as in a camera or a screenshot JPEG.
+        let jpeg = [
+            b"\xff\xd8\xff\xe0\x00\x04JF\xff\xff\xdb\x00\x03\x00".as_slice(),
+            b"\xff\xc2\x00\x11\x08\x03\x20\x05\x00\x03",
+        ]
+        .concat();
+        assert_eq!(image_dimensions(UserImageMime::Jpeg, &jpeg), Some((1280, 800)));
+        assert_eq!(image_dimensions(UserImageMime::Jpeg, &jpeg[..jpeg.len() - 4]), None);
+        assert_eq!(image_dimensions(UserImageMime::Jpeg, b"\xff\xd8\xff\xda\x00\x02"), None);
+        // A zero segment length cannot loop: the next byte is not a marker.
+        assert_eq!(image_dimensions(UserImageMime::Jpeg, b"\xff\xd8\xff\xe0\x00\x00\x00"), None);
+        let webp = |chunk: &[u8]| [b"RIFF\0\0\0\0WEBP".as_slice(), chunk].concat();
+        // Lossy: 3-byte frame tag, start code, then 14-bit width and height.
+        let lossy = webp(b"VP8 \0\0\0\0\0\0\0\x9d\x01\x2a\x00\x05\x20\x03");
+        assert_eq!(image_dimensions(UserImageMime::Webp, &lossy), Some((1280, 800)));
+        // Lossless: 14 bits of width-1 then 14 bits of height-1, little endian.
+        let bits = (1280u32 - 1) | (800u32 - 1) << 14;
+        let lossless = webp(&[b"VP8L\0\0\0\0\x2f".as_slice(), &bits.to_le_bytes()].concat());
+        assert_eq!(image_dimensions(UserImageMime::Webp, &lossless), Some((1280, 800)));
+        // Extended: flags, three reserved bytes, 24-bit canvas width-1 and height-1.
+        let extended = webp(b"VP8X\0\0\0\0\0\0\0\0\xff\x04\x00\x1f\x03\x00");
+        assert_eq!(image_dimensions(UserImageMime::Webp, &extended), Some((1280, 800)));
+        assert_eq!(image_dimensions(UserImageMime::Webp, &extended[..29]), None);
+        assert_eq!(image_dimensions(UserImageMime::Png, &lossy), None);
     }
 
     #[test]

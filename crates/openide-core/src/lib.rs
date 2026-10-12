@@ -15,8 +15,9 @@ mod store;
 mod tool_media;
 
 pub use tool_media::{
-    validate_tool_result_media, ToolResultMediaError, MAX_TOOL_MEDIA_BYTES, MAX_TOOL_MEDIA_IMAGES,
-    MAX_TOOL_MEDIA_NOTICES, MAX_TOOL_MEDIA_NOTICE_BYTES, MAX_TOOL_MEDIA_TEXT_BYTES,
+    model_tool_images, tool_image_for_model, validate_tool_result_media, ToolResultMediaError, MAX_TOOL_MEDIA_BYTES,
+    MAX_TOOL_MEDIA_IMAGES, MAX_TOOL_MEDIA_NOTICES, MAX_TOOL_MEDIA_NOTICE_BYTES,
+    MAX_TOOL_MEDIA_TEXT_BYTES, MAX_TOOL_MODEL_IMAGE_BYTES, MAX_TOOL_MODEL_IMAGE_SIDE,
 };
 
 pub use checkpoint::{
@@ -33,7 +34,7 @@ pub use event::{
     SYSTEM_INSTRUCTIONS_VERSION,
 };
 pub use image::{
-    validate_user_images, UserImage, UserImageError, UserImageMime, MAX_USER_IMAGES_PER_MESSAGE,
+    image_dimensions, validate_user_images, UserImage, UserImageError, UserImageMime, MAX_USER_IMAGES_PER_MESSAGE,
     MAX_USER_IMAGE_BYTES, MAX_USER_IMAGE_MESSAGE_BYTES,
 };
 pub use message::{AgentMessage, AgentRunRequest, MessageRole, ToolCall, TurnMode};

@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::{AnthropicMessagesBackend, ModelBackend, OpenAiCompatibleBackend, ResponsesBackend};
-use openide_core::{reconcile_model_history_route, ModelRouteSnapshot, ToolCall};
+use openide_core::{reconcile_model_history_route, ModelRouteSnapshot, ToolCall, UserImageMime};
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -77,6 +77,15 @@ fn violation(api: Api, body: &Value) -> Option<String> {
                             if let Some(error) = close(&mut open, block["tool_use_id"].as_str()?) {
                                 return Some(error);
                             }
+                            // A string, or text and image blocks.
+                            for inner in block["content"].as_array().into_iter().flatten() {
+                                if !matches!(inner["type"].as_str()?, "text" | "image") {
+                                    return Some(format!("tool_result block: {inner}"));
+                                }
+                            }
+                            if !block["content"].is_string() && !block["content"].is_array() {
+                                return Some("tool_result content".into());
+                            }
                         }
                         other => return Some(format!("block type: {other}")),
                     }
@@ -85,7 +94,13 @@ fn violation(api: Api, body: &Value) -> Option<String> {
         }
         Api::Chat => {
             for message in body["messages"].as_array()? {
-                if !message["content"].is_string() && !message["content"].is_null() {
+                let parts = message["content"].as_array().filter(|_| message["role"] == "user");
+                for part in parts.into_iter().flatten() {
+                    if !matches!(part["type"].as_str()?, "text" | "image_url") {
+                        return Some(format!("user content part: {part}"));
+                    }
+                }
+                if parts.is_none() && !message["content"].is_string() && !message["content"].is_null() {
                     return Some("content is not text".into());
                 }
                 if message["role"] != "tool" && !open.is_empty() {
@@ -118,6 +133,14 @@ fn violation(api: Api, body: &Value) -> Option<String> {
                     Some("function_call_output") => {
                         if let Some(error) = close(&mut open, item["call_id"].as_str()?) {
                             return Some(error);
+                        }
+                        for inner in item["output"].as_array().into_iter().flatten() {
+                            if !matches!(inner["type"].as_str()?, "input_text" | "input_image") {
+                                return Some(format!("function_call_output item: {inner}"));
+                            }
+                        }
+                        if !item["output"].is_string() && !item["output"].is_array() {
+                            return Some("function_call_output output".into());
                         }
                     }
                     None if item["role"].is_string() => {}
@@ -189,8 +212,9 @@ fn route(api: Api) -> ModelRouteSnapshot {
 }
 
 /// What the journal of a turn on `source` replays: its own identifiers, its
-/// own reasoning and hosted-search items, an image, an old tool whose name no
-/// catalog would accept today, and a call that never got its result.
+/// own reasoning and hosted-search items, an image from the user and one from
+/// a tool, an old tool whose name no catalog would accept today, and a call
+/// that never got its result.
 fn history(source: Api) -> Vec<AgentMessage> {
     let (first, second, items) = match source {
         Api::Anthropic => (
@@ -230,16 +254,22 @@ fn history(source: Api) -> Vec<AgentMessage> {
     reasoned.provider_output_items = items.clone();
     let mut searched = AgentMessage::assistant("", vec![]);
     searched.provider_output_items = items;
+    let mut captured = AgentMessage::tool(first, "uno");
+    captured.images = vec![tool_image()];
     vec![
         AgentMessage::system("system"),
         AgentMessage::user_with_images("mira esto", vec![image]).unwrap(),
         reasoned,
-        AgentMessage::tool(first, "uno"),
+        captured,
         AgentMessage::tool(second, "dos"),
         searched,
         AgentMessage::assistant("sigo", vec![call("dangling id", "read_file")]),
         AgentMessage::user("continúa"),
     ]
+}
+
+fn tool_image() -> UserImage {
+    UserImage::from_bytes(UserImageMime::Png, &crate::tool_media::test_png(1280, 800, 0)).unwrap()
 }
 
 fn backend(api: Api, address: &str, vision: bool) -> Box<dyn ModelBackend> {
@@ -259,7 +289,8 @@ fn backend(api: Api, address: &str, vision: bool) -> Box<dyn ModelBackend> {
                     tool_calls: true,
                     ..Default::default()
                 })
-                .unwrap(),
+                .unwrap()
+                .with_image_input_enabled(vision),
         ),
     }
 }
@@ -296,8 +327,60 @@ async fn send(source: Api, target: Api, vision: bool, adapt: bool) -> Result<(),
     let sent = body.to_string();
     assert!(sent.contains("continúa") && sent.contains("uno") && sent.contains("dos"));
     assert!(sent.contains(INTERRUPTED_TOOL_RESULT), "{target:?} <- {source:?}");
-    if !vision || target == Api::Chat {
+    let tool_image = tool_image();
+    let url = tool_image.verified_data_url().unwrap();
+    if !vision {
         assert!(sent.contains("[Imagen adjunta: image/png, 8x6"), "{target:?} <- {source:?}");
+        // A model that reads no images is told one existed, and gets no bytes.
+        assert!(sent.contains("uno\\n[image 1 omitted (image/png): it is shown to the user, this model cannot receive images]"), "{sent}");
+        assert!(!sent.contains(&tool_image.data_base64), "{target:?} <- {source:?}");
+        return Ok(());
+    }
+    // Each API takes the tool's image where it documents one.
+    match target {
+        Api::Anthropic => {
+            let result = &body["messages"][2]["content"][0];
+            assert_eq!(result["type"], "tool_result");
+            assert_eq!(
+                result["content"],
+                json!([
+                    {"type":"text","text":"uno"},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":tool_image.data_base64}},
+                ])
+            );
+            assert_eq!(body["messages"][2]["content"][1]["content"], "dos");
+        }
+        Api::Responses => {
+            let outputs: Vec<&Value> = body["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|item| item["type"] == "function_call_output")
+                .collect();
+            assert_eq!(
+                outputs[0]["output"],
+                json!([{"type":"input_text","text":"uno"}, {"type":"input_image","image_url":url}])
+            );
+            assert_eq!(outputs[1]["output"], "dos");
+        }
+        Api::Chat => {
+            // Text-only tool messages, then the image in a user message
+            // after the last result of the batch.
+            let messages = body["messages"].as_array().unwrap();
+            let at = messages.iter().position(|message| message["role"] == "tool").unwrap();
+            assert_eq!(messages[at]["content"], "uno");
+            assert_eq!(messages[at + 1]["content"], "dos");
+            assert_eq!(
+                messages[at + 2],
+                json!({"role":"user","content":[
+                    {"type":"text","text":format!("[Images returned by tool call {}]", messages[at]["tool_call_id"].as_str().unwrap())},
+                    {"type":"image_url","image_url":{"url":url}},
+                ]})
+            );
+            // The user's own image, in the same message as its text.
+            assert_eq!(messages[1]["content"][0], json!({"type":"text","text":"mira esto"}));
+            assert_eq!(messages[1]["content"][1]["type"], "image_url");
+        }
     }
     Ok(())
 }

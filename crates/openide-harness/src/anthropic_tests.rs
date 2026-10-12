@@ -633,6 +633,48 @@ async fn real_http_messages_headers_and_json_completion() {
     assert_eq!(request.body["stream"], false);
 }
 
+#[test]
+fn a_tool_result_carries_its_images_as_blocks_and_only_to_a_model_that_reads_them() {
+    let image = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfixture").unwrap();
+    let call = ToolCall { id: "shot".into(), name: "read_file".into(), arguments: json!({"path":"a"}) };
+    let mut result = AgentMessage::tool("shot", "captured");
+    result.images = vec![image.clone(), image.clone()];
+    let mut history =
+        vec![AgentMessage::user("look"), AgentMessage::assistant("", vec![call]), result];
+    let adapter = backend("http://localhost/v1");
+    let block = json!({"type":"image","source":{"type":"base64","media_type":"image/png","data":image.data_base64}});
+    let body = adapter.request_body(&history, &[tool()], true, false).unwrap();
+    assert_eq!(
+        body["messages"][2],
+        json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"shot","content":[
+            {"type":"text","text":"captured"}, block, block,
+        ]}]})
+    );
+    // The count that budgets the request is of this same body.
+    let counted = adapter.request_body(&history, &[tool()], false, true).unwrap();
+    assert_eq!(counted["messages"], body["messages"]);
+    // A result that is only an image sends no empty text block.
+    history[2].content.clear();
+    let body = adapter.request_body(&history, &[tool()], true, false).unwrap();
+    assert_eq!(body["messages"][2]["content"][0]["content"], json!([block, block]));
+    // A result without images keeps the string it always was.
+    history[2].images.clear();
+    let body = adapter.request_body(&history, &[tool()], true, false).unwrap();
+    assert_eq!(body["messages"][2]["content"][0]["content"], "");
+    // Unadapted, a model that reads no images, a corrupt image and an image
+    // on an assistant message are refused before any request.
+    history[2].images = vec![image.clone()];
+    assert!(backend("http://localhost/v1")
+        .with_image_input_enabled(false)
+        .request_body(&history, &[tool()], true, false)
+        .is_err());
+    history[2].images[0].sha256 = "0".repeat(64);
+    assert!(adapter.request_body(&history, &[tool()], true, false).is_err());
+    history[2].images.clear();
+    history[1].images = vec![image];
+    assert!(adapter.request_body(&history, &[tool()], true, false).is_err());
+}
+
 #[tokio::test]
 async fn real_http_count_tokens_includes_text_images_system_tools_and_options() {
     let image = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfixture").unwrap();

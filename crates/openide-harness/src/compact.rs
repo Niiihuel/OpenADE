@@ -156,13 +156,38 @@ impl CompactService {
             request.prior_checkpoint.as_ref(),
             &request.committed_messages,
         )?;
+        // The summary is written from text: an image is a line saying one
+        // was there, never its base64, which would fill the input limit.
+        let history = request
+            .committed_messages
+            .iter()
+            .map(|entry| {
+                let source = &entry.message;
+                let mut message = AgentMessage {
+                    role: source.role,
+                    content: source.content.clone(),
+                    tool_calls: source.tool_calls.clone(),
+                    tool_call_id: source.tool_call_id.clone(),
+                    provider_output_items: source.provider_output_items.clone(),
+                    images: Vec::new(),
+                };
+                for image in &source.images {
+                    message.content.push_str(&format!(
+                        "\n[image: {}, {} bytes, not included in this summary input]",
+                        image.mime_type.as_str(),
+                        image.size_bytes
+                    ));
+                }
+                CommittedMessage { event_sequence: entry.event_sequence, message }
+            })
+            .collect::<Vec<_>>();
         let input = CompactInput {
             covered_event_sequence: request.covered_event_sequence,
             prior_committed_summary_json: request
                 .prior_checkpoint
                 .as_ref()
                 .map(|checkpoint| checkpoint.summary.as_str()),
-            committed_history_json: &request.committed_messages,
+            committed_history_json: &history,
         };
         let overhead = COMPACT_SYSTEM.len().saturating_add(COMPACT_PREFIX.len());
         let mut writer = LimitedWriter {
@@ -668,6 +693,44 @@ mod tests {
         assert_eq!(calls[0].1, 0);
         assert_eq!(calls[0].0[0].role, MessageRole::System);
         assert!(calls[0].0[1].content.contains("committed_history_json"));
+    }
+
+    #[tokio::test]
+    async fn the_summary_is_written_from_text_with_a_line_for_each_image() {
+        let backend = mock(ModelOutput { content: summary_json(), tool_calls: vec![] });
+        let image = openide_core::UserImage::from_bytes(
+            openide_core::UserImageMime::Png,
+            &crate::tool_media::test_png(1280, 800, 3 * 1024 * 1024),
+        )
+        .unwrap();
+        let call = openide_core::ToolCall {
+            id: "shot".into(),
+            name: "mcp__browser__take_screenshot".into(),
+            arguments: json!({}),
+        };
+        let mut capture = AgentMessage::tool("shot", "captured");
+        capture.images = vec![image.clone()];
+        let mut request = request();
+        request.committed_messages = vec![
+            CommittedMessage {
+                event_sequence: 1,
+                message: AgentMessage::user_with_images("Look at this", vec![image.clone()]).unwrap(),
+            },
+            CommittedMessage { event_sequence: 4, message: AgentMessage::assistant("", vec![call]) },
+            CommittedMessage { event_sequence: 7, message: capture },
+            CommittedMessage { event_sequence: 9, message: AgentMessage::assistant("Seen", vec![]) },
+        ];
+        // 8 MiB of base64 would not pass the 2 MiB input limit, nor mean anything to a summarizer.
+        let checkpoint =
+            CompactService::new(backend.clone()).compact(request, CancellationToken::new()).await.unwrap();
+        let calls = backend.calls.lock().unwrap();
+        let prompt = &calls[0].0[1].content;
+        assert!(calls[0].0.iter().all(|message| message.images.is_empty()));
+        assert!(!prompt.contains(&image.data_base64[..64]) && prompt.len() < 4_096, "{}", prompt.len());
+        assert_eq!(prompt.matches("[image: image/png, 3145728 bytes, not included in this summary input]").count(), 2);
+        assert!(prompt.contains("captured") && prompt.contains("Look at this"));
+        // The user's message is retained by its event, where its image still is.
+        assert_eq!(checkpoint.retained_user_messages[0].content, "Look at this");
     }
 
     #[tokio::test]

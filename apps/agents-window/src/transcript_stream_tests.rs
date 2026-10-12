@@ -1041,6 +1041,7 @@ fn media_event(id: &str, image: &UserImage) -> AgentEventKind {
         images: vec![image.clone()],
         text: "Captura recibida 🦀".into(),
         notices: vec!["Observación de prueba".into()],
+        model_images: vec![],
     }
 }
 
@@ -1235,24 +1236,28 @@ fn typed_media_rejects_orphan_late_duplicate_and_over_budget_payloads_before_ret
             images: vec![image.clone(); 5],
             text: String::new(),
             notices: vec![],
+            model_images: vec![],
         },
         AgentEventKind::ToolResultMedia {
             tool_call_id: "capture".into(),
             images: vec![image.clone()],
             text: "🦀".repeat(1025),
             notices: vec![],
+            model_images: vec![],
         },
         AgentEventKind::ToolResultMedia {
             tool_call_id: "capture".into(),
             images: vec![image.clone()],
             text: String::new(),
             notices: vec!["notice".into(); 9],
+            model_images: vec![],
         },
         AgentEventKind::ToolResultMedia {
             tool_call_id: "capture".into(),
             images: vec![image.clone()],
             text: String::new(),
             notices: vec!["x".repeat(257)],
+            model_images: vec![],
         },
     ] {
         assert!(!projection.apply_kind(&invalid));

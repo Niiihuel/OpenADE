@@ -79,11 +79,13 @@ fn mcp_tool_media_survives_result_truncation_restart_and_interrupted_replay() {
         images,
         text,
         notices,
+        model_images,
     } = &saved[at].kind
     else {
         unreachable!()
     };
     assert_eq!(tool_call_id, "image-call");
+    assert_eq!(*model_images, [0]);
     assert_eq!(
         images[0].verified_bytes().unwrap(),
         crate::tool_media::test_mcp_image_result().1
@@ -101,9 +103,10 @@ fn mcp_tool_media_survives_result_truncation_restart_and_interrupted_replay() {
     let AgentEventKind::ToolFinished { output, .. } = &saved[at + 1].kind else {
         panic!("media must precede ToolFinished")
     };
-    // The image went to the user in the event before; the model reads a
-    // note in its place, and nothing is cut off.
-    assert!(output.contains("[image omitted (image/png") && !output.contains("[tool output truncated]"));
+    // The image is in the event before, for the user and for the model; the
+    // text names it where its block was, and nothing is cut off.
+    assert!(output.contains("[image 1: image/png, 1280x800 px]") && !output.contains("[tool output truncated]"));
+    assert!(output.contains("}\nHook context:\n") && output.ends_with("Image hook context"), "{output}");
     let compatibility = CheckpointCompatibility {
         provider: "test".into(),
         model: "scripted".into(),
@@ -117,10 +120,29 @@ fn mcp_tool_media_survives_result_truncation_restart_and_interrupted_replay() {
         .collect::<Vec<_>>();
     assert_eq!(tool_messages.len(), 1);
     assert_eq!(&tool_messages[0].content, output);
-    assert!(tool_messages[0].images.is_empty());
-    assert!(model.seen.lock().unwrap()[1]
-        .iter()
-        .all(|message| message.images.is_empty()));
+    // The model was given the image with the result, and a replay of the
+    // journal gives the next request the same message.
+    assert_eq!(tool_messages[0].images, *images);
+    let seen = model.seen.lock().unwrap()[1].clone();
+    assert_eq!(
+        seen.iter().filter(|message| message.role == MessageRole::Tool).collect::<Vec<_>>(),
+        tool_messages
+    );
+    // The journal holds the image once: in the event the user's view reads.
+    let journal = serde_json::to_string(&saved).unwrap();
+    assert_eq!(journal.matches(images[0].data_base64.as_str()).count(), 1);
+    // A journal written before tool images reached a model has no mark: its
+    // result replays as the text it was.
+    let mut old = saved.clone();
+    if let AgentEventKind::ToolResultMedia { model_images, .. } = &mut old[at].kind {
+        model_images.clear();
+    }
+    let old = serde_json::to_string(&old).unwrap();
+    assert!(!old.contains("model_images"));
+    let old: Vec<AgentEvent> = serde_json::from_str(&old).unwrap();
+    let replay_old = replay_native(&session_id, &old, None, &compatibility).unwrap();
+    assert!(replay_old.history.iter().all(|message| message.images.is_empty()));
+    assert_eq!(replay_old.history.len(), replay.history.len());
 
     // A crash/cancel after persisting media must keep the effect uncertain,
     // without promoting the observation into a model-facing tool result.
@@ -164,12 +186,21 @@ fn mcp_tool_media_survives_result_truncation_restart_and_interrupted_replay() {
             images: images.clone(),
             text: text.clone(),
             notices: vec![],
+            model_images: vec![],
         },
         AgentEventKind::ToolResultMedia {
             tool_call_id: tool_call_id.clone(),
             images: images.clone(),
             text: "x".repeat(4097),
             notices: vec![],
+            model_images: vec![],
+        },
+        AgentEventKind::ToolResultMedia {
+            tool_call_id: tool_call_id.clone(),
+            images: images.clone(),
+            text: text.clone(),
+            notices: vec![],
+            model_images: vec![1],
         },
         {
             let mut images = images.clone();
@@ -179,6 +210,7 @@ fn mcp_tool_media_survives_result_truncation_restart_and_interrupted_replay() {
                 images,
                 text: String::new(),
                 notices: vec![],
+                model_images: vec![],
             }
         },
     ] {

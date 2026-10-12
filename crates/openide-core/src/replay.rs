@@ -4,8 +4,8 @@
 use crate::{
     system_instructions_digest, validate_user_images, AgentEvent, AgentEventKind, AgentMessage,
     Checkpoint, CheckpointCompatibility, CheckpointError, CheckpointFileStore, CheckpointReference,
-    MessageRole, ModelTokenUsage, PlanSnapshot, ToolCall, TurnMode, EXEC_POLICY_IDENTITY_VERSION,
-    HOOK_CONFIG_IDENTITY_VERSION, MCP_RUNTIME_IDENTITY_VERSION, MODEL_CONTEXT_VERSION,
+    MessageRole, ModelTokenUsage, PlanSnapshot, ToolCall, TurnMode, UserImage,
+    EXEC_POLICY_IDENTITY_VERSION, HOOK_CONFIG_IDENTITY_VERSION, MCP_RUNTIME_IDENTITY_VERSION, MODEL_CONTEXT_VERSION,
     SYSTEM_INSTRUCTIONS_VERSION,
 };
 use std::collections::{HashSet, VecDeque};
@@ -214,7 +214,9 @@ struct ReplayBuilder {
     /// Consecutive synced starts in one read-only wave. Results are committed
     /// in this order; an interrupted suffix remains uncertain by call ID.
     started_tools: VecDeque<ToolCall>,
-    media_seen_for_started_tool: bool,
+    /// The images the started tool's result gives the model, once its media
+    /// was seen; its ToolFinished takes them.
+    media_for_started_tool: Option<Vec<UserImage>>,
     pending_hook: Option<PendingHook>,
     seen_hook_ids_for_call: HashSet<String>,
     read_wave_result_seen: bool,
@@ -331,7 +333,7 @@ pub fn replay_native(
         pending_batch: None,
         pending_permission: None,
         started_tools: VecDeque::new(),
-        media_seen_for_started_tool: false,
+        media_for_started_tool: None,
         pending_hook: None,
         seen_hook_ids_for_call: HashSet::new(),
         read_wave_result_seen: false,
@@ -1087,7 +1089,7 @@ impl ReplayBuilder {
                 if queued == 0 {
                     self.seen_hook_ids_for_call.clear();
                     self.plan_updated_for_started_tool = false;
-                    self.media_seen_for_started_tool = false;
+                    self.media_for_started_tool = None;
                 }
                 self.started_tools.push_back(tool_call.clone());
             }
@@ -1189,23 +1191,27 @@ impl ReplayBuilder {
                 images,
                 text,
                 notices,
+                model_images,
             } => {
+                let for_model = crate::model_tool_images(images, model_images);
                 if self.active_turn.as_ref().is_none_or(|turn| turn.terminated)
                     || self.pending_hook.is_some()
-                    || self.media_seen_for_started_tool
+                    || self.media_for_started_tool.is_some()
                     || !self
                         .started_tools
                         .iter()
                         .any(|call| call.id == *tool_call_id && call.name.starts_with("mcp__"))
                     || crate::validate_tool_result_media(images, text, notices).is_err()
+                    || for_model.is_none()
                 {
                     return Err(Self::conflict(
                         event,
                         "tool media is invalid or has no matching started MCP call",
                     ));
                 }
-                self.media_seen_for_started_tool = true;
-                // Media is presentation-only: no history, completion, or authority.
+                // Media completes nothing and grants no authority; the images
+                // it marks for the model join the result ToolFinished commits.
+                self.media_for_started_tool = for_model;
             }
             AgentEventKind::ToolFinished {
                 tool_call_id,
@@ -1234,9 +1240,9 @@ impl ReplayBuilder {
                     .pending_batch
                     .as_mut()
                     .ok_or_else(|| Self::conflict(event, "tool result has no assistant call"))?;
-                batch
-                    .completed_results
-                    .push(AgentMessage::tool(tool_call_id.clone(), output.clone()));
+                let mut result = AgentMessage::tool(tool_call_id.clone(), output.clone());
+                result.images = self.media_for_started_tool.take().unwrap_or_default();
+                batch.completed_results.push(result);
                 batch.completed_result_sequences.push(event.sequence);
                 batch.next_call_index += 1;
                 if batch.next_call_index == batch.assistant.tool_calls.len() {
@@ -3540,6 +3546,93 @@ mod tests {
             replay_native("session-1", &invalid, None, &compatibility()),
             Err(ReplayError::Conflict { sequence: 8, .. })
         ));
+    }
+
+    #[test]
+    fn a_tool_result_replays_with_the_images_its_media_marked_for_the_model() {
+        let image =
+            crate::UserImage::from_bytes(crate::UserImageMime::Png, b"\x89PNG\r\n\x1a\nshot")
+                .unwrap();
+        let shot = ToolCall {
+            id: "shot".into(),
+            name: "mcp__browser__take_screenshot".into(),
+            arguments: serde_json::json!({}),
+        };
+        let journal = |model_images: Vec<u8>| {
+            vec![
+                event(1, admitted()),
+                event(2, AgentEventKind::TurnStarted { prompt: "Build this".into() }),
+                event(3, AgentEventKind::ModelRequestStarted { step: 1, model: "gpt-example".into() }),
+                event(4, response(1, AgentMessage::assistant("", vec![shot.clone()]))),
+                event(5, AgentEventKind::ToolStarted { tool_call: shot.clone() }),
+                event(
+                    6,
+                    AgentEventKind::ToolResultMedia {
+                        tool_call_id: "shot".into(),
+                        images: vec![image.clone(), image.clone()],
+                        text: String::new(),
+                        notices: vec![],
+                        model_images,
+                    },
+                ),
+                event(
+                    7,
+                    AgentEventKind::ToolFinished {
+                        tool_call_id: "shot".into(),
+                        output: "captured".into(),
+                        is_error: false,
+                    },
+                ),
+            ]
+        };
+        let replay = |events: &[AgentEvent]| replay_native("session-1", events, None, &compatibility());
+        let sent = replay(&journal(vec![1])).unwrap();
+        assert_eq!(sent.history.last().unwrap().content, "captured");
+        assert_eq!(sent.history.last().unwrap().images, vec![image.clone()]);
+        assert_eq!(sent.committed_messages.last().unwrap().message.images, vec![image.clone()]);
+        // A journal written before tool images reached a model has no such
+        // mark: it loads, and its result is the text the model read then.
+        let old = serde_json::to_value(journal(vec![])).unwrap();
+        assert!(old[5]["kind"].get("model_images").is_none(), "{}", old[5]["kind"]["type"]);
+        let old: Vec<AgentEvent> = serde_json::from_value(old).unwrap();
+        assert!(replay(&old).unwrap().history.last().unwrap().images.is_empty());
+        // A mark that names no image of the event is a corrupt journal.
+        for bad in [vec![2], vec![1, 0], vec![0, 0]] {
+            assert!(matches!(replay(&journal(bad)), Err(ReplayError::Conflict { sequence: 6, .. })));
+        }
+
+        // A checkpoint that covers the result summarises it: its image leaves
+        // the model's history with it, and stays in the journal for the view.
+        let dir = tempfile::tempdir().unwrap();
+        let checkpoint_store = CheckpointFileStore::new(dir.path()).unwrap();
+        let checkpoint = Checkpoint {
+            session_id: "session-1".into(),
+            checkpoint_id: "after-capture".into(),
+            covered_event_sequence: 11,
+            compatibility: compatibility(),
+            summary: "A screenshot was taken and described".into(),
+            retained_user_messages: vec![RetainedUserMessage {
+                event_sequence: 1,
+                content: "Build this".into(),
+            }],
+            budget: CheckpointBudgetSnapshot::unverified(100, None),
+        };
+        let reference = checkpoint_store.write_candidate(&checkpoint).unwrap();
+        let mut events = journal(vec![0, 1]);
+        events.extend([
+            event(8, AgentEventKind::ModelRequestStarted { step: 2, model: "gpt-example".into() }),
+            event(9, response(2, AgentMessage::assistant("It shows a form", vec![]))),
+            event(10, AgentEventKind::AssistantMessage { content: "It shows a form".into() }),
+            event(11, AgentEventKind::TurnCompleted { response: "It shows a form".into(), steps: 2 }),
+        ]);
+        let whole = replay(&events).unwrap();
+        assert_eq!(whole.history[2].images.len(), 2);
+        events.push(event(12, AgentEventKind::CheckpointCommitted { reference }));
+        let compacted =
+            replay_native("session-1", &events, Some(&checkpoint_store), &compatibility()).unwrap();
+        assert_eq!(compacted.history.len(), 2, "the retained prompt and the summary");
+        assert!(compacted.history.iter().all(|message| message.images.is_empty()));
+        assert!(compacted.committed_messages.is_empty());
     }
 
     #[test]

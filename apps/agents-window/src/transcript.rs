@@ -1147,11 +1147,14 @@ impl TranscriptProjection {
             AgentEventKind::ToolOutputDelta {
                 tool_call_id, text, ..
             } => self.tool_output_delta(tool_call_id, text),
+            // What the user is shown; which images the model was given is
+            // the journal's concern, not the view's.
             AgentEventKind::ToolResultMedia {
                 tool_call_id,
                 images,
                 text,
                 notices,
+                ..
             } => self.tool_result_media(tool_call_id, images, text, notices),
             AgentEventKind::TurnCompleted { response, .. } => {
                 let model_changed = self.finish_model(ActivityStatus::Completed);
