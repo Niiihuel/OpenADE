@@ -313,6 +313,11 @@ pub enum AgentEventKind {
         images: Vec<UserImage>,
         text: String,
         notices: Vec<String>,
+        /// Which of `images`, by position, the model-facing result carries.
+        /// Absent in journals written before tool images reached a model:
+        /// those results replay as the text they were.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        model_images: Vec<u8>,
     },
     /// Synced after ToolStarted and before launching one configured hook.
     HookStarted {

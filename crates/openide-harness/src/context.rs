@@ -356,6 +356,7 @@ impl ContextPolicy {
                     continue;
                 }
                 messages[index].content = CLEARED_TOOL_RESULT.to_owned();
+                messages[index].images.clear();
                 let replacement = message_chars(&messages[index]);
                 used = used.saturating_sub(previous).saturating_add(replacement);
             }
@@ -380,13 +381,17 @@ pub(crate) fn stub_largest_tool_results(
     keep_recent: usize,
     mut fits: impl FnMut(&[AgentMessage]) -> bool,
 ) -> usize {
+    // An image weighs what the estimate charges for it, in bytes of text.
+    let size = |message: &AgentMessage| {
+        message.content.len() + message.images.len() * (IMAGE_TOKENS * 40 / 13) as usize
+    };
     let mut candidates = messages
         .iter()
         .enumerate()
         .filter(|(_, message)| {
-            message.role == MessageRole::Tool && message.content.len() > CLEARED_TOOL_RESULT.len()
+            message.role == MessageRole::Tool && size(message) > CLEARED_TOOL_RESULT.len()
         })
-        .map(|(index, message)| (index, message.content.len()))
+        .map(|(index, message)| (index, size(message)))
         .collect::<Vec<_>>();
     candidates.truncate(candidates.len().saturating_sub(keep_recent));
     candidates.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
@@ -396,6 +401,7 @@ pub(crate) fn stub_largest_tool_results(
             break;
         }
         messages[index].content = CLEARED_TOOL_RESULT.to_owned();
+        messages[index].images.clear();
         stubbed += 1;
     }
     stubbed
@@ -672,6 +678,46 @@ mod tests {
         for (after, original) in messages.iter().zip(&before) {
             assert_eq!((after.role, &after.tool_call_id, &after.tool_calls), (original.role, &original.tool_call_id, &original.tool_calls));
         }
+    }
+
+    #[test]
+    fn a_tool_image_is_budgeted_like_any_image_and_leaves_with_its_stubbed_result() {
+        let call = |id: &str| ToolCall { id: id.into(), name: "mcp__browser__shot".into(), arguments: json!({}) };
+        let mut capture = AgentMessage::tool("a", "shot");
+        capture.images = image_message().images;
+        let mut messages = vec![
+            AgentMessage::user("pinned task"),
+            AgentMessage::assistant("", vec![call("a")]),
+            capture,
+            AgentMessage::assistant("", vec![call("b")]),
+            AgentMessage::tool("b", "t".repeat(3_000)),
+            AgentMessage::assistant("", vec![call("c")]),
+            AgentMessage::tool("c", "latest"),
+        ];
+        let with_image = estimate_input_tokens(&messages, &[]);
+        // The capture with four characters of text is the largest result.
+        assert_eq!(stub_largest_tool_results(&mut messages, 1, |messages| {
+            estimate_input_tokens(messages, &[]) < with_image
+        }), 1);
+        assert_eq!(messages[2].content, CLEARED_TOOL_RESULT);
+        assert!(messages[2].images.is_empty());
+        assert!(with_image - estimate_input_tokens(&messages, &[]) >= IMAGE_TOKENS - 20);
+        assert_eq!(messages[4].content.len(), 3_000);
+
+        // The character policy clears the image with the text it replaces.
+        let mut capture = AgentMessage::tool("a", "x".repeat(600));
+        capture.images = image_message().images;
+        let mut messages = vec![
+            AgentMessage::user("pinned task"),
+            AgentMessage::assistant("", vec![call("a"), call("b")]),
+            capture,
+            AgentMessage::tool("b", "recent"),
+        ];
+        ContextPolicy { max_request_chars: 400, keep_recent_tool_results: 1 }
+            .compact(&mut messages, &mut 0)
+            .unwrap();
+        assert_eq!(messages[2].content, CLEARED_TOOL_RESULT);
+        assert!(messages[2].images.is_empty());
     }
 
     #[tokio::test]

@@ -764,10 +764,18 @@ pub struct OpenAiCompatibleBackend {
     reasoning_effort: Option<String>,
     request_fields: BTreeMap<String, Value>,
     tool_call_id_rule: crate::ToolIdRule,
+    image_input_enabled: bool,
     client: Client,
 }
 
 impl OpenAiCompatibleBackend {
+    /// Send images to a model that declares it reads them. Off, as a new
+    /// backend is, every image is a line of text and none is sent.
+    pub fn with_image_input_enabled(mut self, enabled: bool) -> Self {
+        self.image_input_enabled = enabled;
+        self
+    }
+
     /// Providers on this wire differ in the tool call identifiers they take.
     pub fn with_tool_call_id_rule(mut self, rule: crate::ToolIdRule) -> Self {
         self.tool_call_id_rule = rule;
@@ -794,6 +802,7 @@ impl OpenAiCompatibleBackend {
             request_fields: BTreeMap::new(),
             // OpenAI caps the identifier of a tool call at 40 characters.
             tool_call_id_rule: crate::ToolIdRule::Token { max_len: 40 },
+            image_input_enabled: false,
             client: model_http_client_builder()
                 .build()
                 .expect("reqwest client configuration is valid"),
@@ -884,7 +893,7 @@ impl OpenAiCompatibleBackend {
         tools: &[ToolDefinition],
         stream: bool,
     ) -> Result<Value, AgentError> {
-        if messages.iter().any(|message| !message.images.is_empty()) {
+        if !self.image_input_enabled && messages.iter().any(|message| !message.images.is_empty()) {
             return Err(AgentError::InvalidRequest(
                 "native Chat Completions transport does not accept user images; use Responses with an image-capable model".into(),
             ));
@@ -916,7 +925,52 @@ impl OpenAiCompatibleBackend {
                 self.model
             )));
         }
-        let wire_messages: Vec<Value> = messages.iter().map(message_to_wire).collect();
+        let mut wire_messages = Vec::with_capacity(messages.len());
+        // A Chat Completions tool message is text only. The images of a batch
+        // of results follow its last result in one user message, the only
+        // place this wire takes an image.
+        let mut tool_images = Vec::new();
+        for (index, message) in messages.iter().enumerate() {
+            let mut wire = message_to_wire(message);
+            if !message.images.is_empty() {
+                openide_core::validate_user_images(&message.images).map_err(|error| {
+                    AgentError::InvalidRequest(format!("invalid images: {error}"))
+                })?;
+                let text = match message.role {
+                    MessageRole::User => message.content.clone(),
+                    MessageRole::Tool => format!(
+                        "[Images returned by tool call {}]",
+                        message.tool_call_id.as_deref().unwrap_or_default()
+                    ),
+                    _ => {
+                        return Err(AgentError::InvalidRequest(
+                            "only user messages and tool results may contain images".into(),
+                        ))
+                    }
+                };
+                let mut parts = Vec::with_capacity(message.images.len() + 1);
+                if !text.is_empty() {
+                    parts.push(json!({"type": "text", "text": text}));
+                }
+                for image in &message.images {
+                    let url = image.verified_data_url().map_err(|error| {
+                        AgentError::InvalidRequest(format!("invalid image: {error}"))
+                    })?;
+                    parts.push(json!({"type": "image_url", "image_url": {"url": url}}));
+                }
+                if message.role == MessageRole::User {
+                    wire["content"] = json!(parts);
+                } else {
+                    tool_images.extend(parts);
+                }
+            }
+            wire_messages.push(wire);
+            if !tool_images.is_empty()
+                && messages.get(index + 1).is_none_or(|next| next.role != MessageRole::Tool)
+            {
+                wire_messages.push(json!({"role": "user", "content": std::mem::take(&mut tool_images)}));
+            }
+        }
         let wire_tools: Vec<Value> = tools
             .iter()
             .map(|tool| {
@@ -995,10 +1049,13 @@ impl ModelBackend for OpenAiCompatibleBackend {
         limit_key_for(&self.endpoint, self.api_key.as_deref())
     }
 
+    fn supports_user_images(&self) -> bool {
+        self.image_input_enabled
+    }
+
     fn target_caps(&self) -> crate::TargetCaps {
         crate::TargetCaps {
-            // This transport sends text parts only.
-            vision: false,
+            vision: self.image_input_enabled,
             tools: self.capabilities.tool_calls,
             tool_call_id: self.tool_call_id_rule,
             tool_name_max: Some(64),
@@ -1970,6 +2027,59 @@ mod tests {
         assert!(
             matches!(error, AgentError::InvalidRequest(detail) if detail.contains("does not accept user images"))
         );
+    }
+
+    #[test]
+    fn chat_sends_tool_images_in_a_user_message_after_the_whole_batch_of_results() {
+        let image = UserImage::from_bytes(UserImageMime::Png, b"\x89PNG\r\n\x1a\nfixture").unwrap();
+        let url = image.verified_data_url().unwrap();
+        let call = |id: &str| ToolCall { id: id.into(), name: "shot".into(), arguments: json!({}) };
+        let mut first = AgentMessage::tool("a", "one");
+        first.images = vec![image.clone()];
+        let mut second = AgentMessage::tool("b", "two");
+        second.images = vec![image.clone(), image.clone()];
+        let history = vec![
+            AgentMessage::user_with_images("look", vec![image.clone()]).unwrap(),
+            AgentMessage::assistant("", vec![call("a"), call("b")]),
+            first,
+            second,
+            AgentMessage::user("and now?"),
+        ];
+        let chat = OpenAiCompatibleBackend::new("http://127.0.0.1:1/v1", None, "mock")
+            .with_image_input_enabled(true);
+        assert!(chat.supports_user_images() && chat.target_caps().vision);
+        let part = json!({"type":"image_url","image_url":{"url":url}});
+        let body = chat.request_body(&history, &[], true).unwrap();
+        assert_eq!(
+            body["messages"],
+            json!([
+                {"role":"user","content":[{"type":"text","text":"look"}, part]},
+                {"role":"assistant","content":"","tool_calls":[
+                    {"id":"a","type":"function","function":{"name":"shot","arguments":"{}"}},
+                    {"id":"b","type":"function","function":{"name":"shot","arguments":"{}"}},
+                ]},
+                // Every result first, as text: nothing may come between them.
+                {"role":"tool","content":"one","tool_call_id":"a"},
+                {"role":"tool","content":"two","tool_call_id":"b"},
+                {"role":"user","content":[
+                    {"type":"text","text":"[Images returned by tool call a]"}, part,
+                    {"type":"text","text":"[Images returned by tool call b]"}, part, part,
+                ]},
+                {"role":"user","content":"and now?"},
+            ])
+        );
+        // The capability does not change the identity of a text conversation.
+        assert_eq!(
+            chat.request_profile_fingerprint(),
+            OpenAiCompatibleBackend::new("http://127.0.0.1:1/v1", None, "mock")
+                .request_profile_fingerprint()
+        );
+        let mut corrupt = history.clone();
+        corrupt[2].images[0].sha256 = "0".repeat(64);
+        assert!(chat.request_body(&corrupt, &[], true).is_err());
+        let mut misplaced = history;
+        misplaced[1].images = vec![image];
+        assert!(chat.request_body(&misplaced, &[], true).is_err());
     }
 
     #[test]

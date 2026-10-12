@@ -274,6 +274,30 @@ mod tests {
     }
 
     #[test]
+    fn the_size_a_model_limit_is_checked_against_is_the_size_a_real_encoder_wrote() {
+        // The harness reads the header without a decoder; this is the decoder's word.
+        for (mime, format) in [
+            (UserImageMime::Png, image::ImageFormat::Png),
+            (UserImageMime::Jpeg, image::ImageFormat::Jpeg),
+            (UserImageMime::Webp, image::ImageFormat::WebP),
+            (UserImageMime::Gif, image::ImageFormat::Gif),
+        ] {
+            for (width, height) in [(1, 1), (37, 53), (1280, 800), (640, 4001)] {
+                let mut bytes = std::io::Cursor::new(Vec::new());
+                image::DynamicImage::new_rgb8(width, height).write_to(&mut bytes, format).unwrap();
+                let bytes = bytes.into_inner();
+                assert_eq!(
+                    openide_core::image_dimensions(mime, &bytes),
+                    Some((width, height)),
+                    "{format:?}"
+                );
+                assert!(UserImage::from_bytes(mime, &bytes).is_ok());
+                assert_eq!(openide_core::tool_image_for_model(mime, &bytes), Ok((width, height)));
+            }
+        }
+    }
+
+    #[test]
     fn typed_mcp_images_reuse_raster_identity_and_keep_accompanying_text() {
         let output = json!({"content":[{"type":"text", "text":"Captura recibida"},
             {"type":"image", "mimeType":"image/png", "data":image_data()}],"isError":false})

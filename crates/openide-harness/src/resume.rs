@@ -1964,13 +1964,15 @@ impl ResumeEngine {
                 },
             )?;
         }
-        if let Some(media) = crate::tool_media::extract_tool_result_media(call, &result.content) {
-            self.append(lease, replay.last_sequence, events, media)?;
-        }
-        let content = crate::tool_media::without_image_data(call, &result.content)
+        let media = crate::tool_media::extract_tool_result_media(call, &result.content);
+        let content = crate::tool_media::without_image_data(call, &result.content, media.as_ref())
             .chars()
             .take(self.limits.max_tool_output_chars)
             .collect();
+        // Replay gives the result the images this event marks for the model.
+        if let Some(media) = media {
+            self.append(lease, replay.last_sequence, events, media.event)?;
+        }
         self.append(
             lease,
             replay.last_sequence,

@@ -8,13 +8,26 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use openide_core::{AgentMessage, MessageRole, UserImage, UserImageMime};
+use openide_core::{AgentMessage, MessageRole, UserImage};
 use sha2::{Digest, Sha256};
 
 use crate::{ModelCompletion, ToolDefinition};
 
 pub const INTERRUPTED_TOOL_RESULT: &str =
     "[Herramienta interrumpida antes de completarse: no hay resultado]";
+
+/// Anthropic holds every image of a request with more than 20 images to
+/// 2000 px a side and rejects the request otherwise. Staying at 20 keeps a
+/// tall screenshot sendable.
+const MAX_REQUEST_IMAGES: usize = 20;
+/// The newest tool images a request carries, whatever else it holds.
+const MAX_REQUEST_TOOL_IMAGES: usize = 16;
+/// The images of one request, before base64: 20 MB encoded, which leaves
+/// room for the text under the 32 MB the strictest provider accepts.
+const MAX_REQUEST_IMAGE_BYTES: usize = 15_000_000;
+/// Older tool images leave a request this many at a time: what a provider
+/// cached of the conversation then changes once per group, not per image.
+const TOOL_IMAGE_GROUP: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolIdRule {
@@ -190,9 +203,15 @@ pub fn adapt_request(
         .collect();
     let mut ids = BTreeMap::<String, String>::new();
 
+    let mut without_images = without_unsent_tool_images(messages, caps);
     let mut adapted = Vec::with_capacity(messages.len());
     let mut index = 0;
     while index < messages.len() {
+        // A result is cloned where it is paired with its call, below.
+        if messages[index].role == MessageRole::Tool {
+            index += 1;
+            continue;
+        }
         let mut message = messages[index].clone();
         index += 1;
         if !caps.vision && !message.images.is_empty() {
@@ -204,8 +223,6 @@ pub fn adapt_request(
             }
         }
         match message.role {
-            // A result is only kept next to the call it answers, below.
-            MessageRole::Tool => continue,
             MessageRole::Assistant if !message.tool_calls.is_empty() => {
                 // Provider items repeat these identifiers: such a message is
                 // native to the target and its identifiers already valid.
@@ -217,7 +234,9 @@ pub fn adapt_request(
                 {
                     index += 1;
                     if let Some(id) = &result.tool_call_id {
-                        results.entry(id.clone()).or_insert_with(|| result.clone());
+                        results.entry(id.clone()).or_insert_with(|| {
+                            without_images.remove(&(index - 1)).unwrap_or_else(|| result.clone())
+                        });
                     }
                 }
                 let mut paired = Vec::with_capacity(message.tool_calls.len());
@@ -262,6 +281,70 @@ pub fn adapt_request(
         tools,
         names: names.real,
     })
+}
+
+/// The tool results whose images this request does not carry, by position,
+/// each with a line of text where an image was. A target that cannot take
+/// images in a tool exchange carries none; any other carries the newest that
+/// fit the request, so the model always sees the latest capture.
+fn without_unsent_tool_images(
+    messages: &[AgentMessage],
+    caps: &TargetCaps,
+) -> BTreeMap<usize, AgentMessage> {
+    let tool_images: Vec<(usize, usize)> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message.role == MessageRole::Tool)
+        .flat_map(|(at, message)| message.images.iter().map(move |image| (at, image.size_bytes as usize)))
+        .collect();
+    let (kept, why) = if caps.vision && caps.tools {
+        let (mut count, mut bytes) = (0, 0);
+        for message in messages.iter().filter(|message| message.role != MessageRole::Tool) {
+            count += message.images.len();
+            bytes += message.images.iter().map(|image| image.size_bytes as usize).sum::<usize>();
+        }
+        let max = MAX_REQUEST_IMAGES.saturating_sub(count).min(MAX_REQUEST_TOOL_IMAGES);
+        let mut kept = 0;
+        for (_, size) in tool_images.iter().rev().take(max) {
+            bytes += size;
+            if bytes > MAX_REQUEST_IMAGE_BYTES {
+                break;
+            }
+            kept += 1;
+        }
+        let left_out = (tool_images.len() - kept).next_multiple_of(TOOL_IMAGE_GROUP);
+        // Never the newest images for the sake of a whole group.
+        if kept < tool_images.len() && left_out < tool_images.len() {
+            kept = tool_images.len() - left_out;
+        }
+        (kept, "an older tool image, no longer sent to the model; the user was shown it")
+    } else {
+        (0, "it is shown to the user, this model cannot receive images")
+    };
+    // How many of its images each result loses, oldest first.
+    let mut unsent = BTreeMap::<usize, usize>::new();
+    for (at, _) in &tool_images[..tool_images.len() - kept] {
+        *unsent.entry(*at).or_default() += 1;
+    }
+    unsent
+        .into_iter()
+        .map(|(at, count)| {
+            let source = &messages[at];
+            // Built rather than cloned: the images left out are not copied.
+            let mut message = AgentMessage::tool("", source.content.as_str());
+            message.tool_call_id = source.tool_call_id.clone();
+            // The numbers the result's own text gave its images, in order.
+            for (index, image) in source.images[..count].iter().enumerate() {
+                message.content.push_str(&format!(
+                    "\n[image {} omitted ({}): {why}]",
+                    index + 1,
+                    image.mime_type.as_str()
+                ));
+            }
+            message.images = source.images[count..].to_vec();
+            (at, message)
+        })
+        .collect()
 }
 
 /// The request `model` accepts for this conversation. The newest user message
@@ -367,7 +450,10 @@ impl NameMap {
 }
 
 pub fn image_placeholder(image: &UserImage) -> String {
-    let size = image_dimensions(image)
+    let size = image
+        .verified_bytes()
+        .ok()
+        .and_then(|bytes| openide_core::image_dimensions(image.mime_type, &bytes))
         .map(|(width, height)| format!(", {width}x{height}"))
         .unwrap_or_default();
     format!(
@@ -376,27 +462,10 @@ pub fn image_placeholder(image: &UserImage) -> String {
     )
 }
 
-// shortcut: only PNG and GIF state their size in a fixed header; add JPEG and
-// WebP parsing if the placeholder needs their dimensions.
-fn image_dimensions(image: &UserImage) -> Option<(u32, u32)> {
-    let bytes = image.verified_bytes().ok()?;
-    match image.mime_type {
-        UserImageMime::Png if bytes.len() >= 24 => Some((
-            u32::from_be_bytes(bytes[16..20].try_into().ok()?),
-            u32::from_be_bytes(bytes[20..24].try_into().ok()?),
-        )),
-        UserImageMime::Gif if bytes.len() >= 10 => Some((
-            u32::from(u16::from_le_bytes(bytes[6..8].try_into().ok()?)),
-            u32::from(u16::from_le_bytes(bytes[8..10].try_into().ok()?)),
-        )),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_core::ToolCall;
+    use openide_core::{ToolCall, UserImageMime};
     use serde_json::json;
 
     const ANTHROPIC: TargetCaps = TargetCaps {
@@ -532,6 +601,104 @@ mod tests {
             Err(vec![Blocker::PendingImages { count: 1 }])
         );
         assert_eq!(adapt_history(&messages, &ANTHROPIC).unwrap(), messages);
+    }
+
+    /// One call and its result with `sizes.len()` images of those byte sizes.
+    fn capture(id: &str, sizes: &[usize]) -> [AgentMessage; 2] {
+        let mut result = AgentMessage::tool(id, format!("shot {id}"));
+        result.images = sizes
+            .iter()
+            .map(|size| {
+                let png = crate::tool_media::test_png(800, 600, *size);
+                UserImage::from_bytes(UserImageMime::Png, &png).unwrap()
+            })
+            .collect();
+        [AgentMessage::assistant("", vec![call(id, "mcp__browser__shot")]), result]
+    }
+
+    fn tool_images(messages: &[AgentMessage]) -> Vec<usize> {
+        messages
+            .iter()
+            .filter(|message| message.role == MessageRole::Tool)
+            .map(|message| message.images.len())
+            .collect()
+    }
+
+    #[test]
+    fn a_request_carries_the_newest_tool_images_that_fit_and_a_line_for_the_rest() {
+        let mut messages = vec![AgentMessage::user("go")];
+        for index in 0..16 {
+            messages.extend(capture(&format!("c{index}"), &[100]));
+        }
+        // Sixteen fit: the request is the history.
+        assert_eq!(adapt_history(&messages, &ANTHROPIC).unwrap(), messages);
+        // One more, and the oldest group of four leaves together.
+        messages.extend(capture("c16", &[100]));
+        let adapted = adapt_history(&messages, &ANTHROPIC).unwrap();
+        assert_eq!(tool_images(&adapted), [vec![0; 4], vec![1; 13]].concat());
+        assert_eq!(
+            adapted[2].content,
+            "shot c0\n[image 1 omitted (image/png): an older tool image, no longer sent to the model; the user was shown it]"
+        );
+        assert_eq!(adapted[10], messages[10], "a result that keeps its images is untouched");
+        assert_eq!(messages[2].images.len(), 1, "the source is untouched");
+        // The same four stay out until a whole new group has to leave.
+        for index in 17..20 {
+            messages.extend(capture(&format!("c{index}"), &[100]));
+            assert_eq!(tool_images(&adapt_history(&messages, &ANTHROPIC).unwrap())[..5], [0, 0, 0, 0, 1]);
+        }
+        messages.extend(capture("c20", &[100]));
+        assert_eq!(tool_images(&adapt_history(&messages, &ANTHROPIC).unwrap())[..9], [0, 0, 0, 0, 0, 0, 0, 0, 1]);
+
+        // The user's own images count toward the 20 of a request and are never the ones left out.
+        let png = crate::tool_media::test_png(8, 6, 0);
+        let mine = UserImage::from_bytes(UserImageMime::Png, &png).unwrap();
+        let mut messages = vec![AgentMessage::user_with_images("mira", vec![mine; 6]).unwrap()];
+        for index in 0..16 {
+            messages.extend(capture(&format!("c{index}"), &[100]));
+        }
+        let adapted = adapt_history(&messages, &ANTHROPIC).unwrap();
+        assert_eq!(adapted[0].images.len(), 6);
+        assert_eq!(tool_images(&adapted), [vec![0; 4], vec![1; 12]].concat());
+
+        // Bytes bound the request too, and the newest capture is always sent.
+        let big = MAX_REQUEST_IMAGE_BYTES / 4;
+        let mut messages = vec![AgentMessage::user("go")];
+        messages.extend(capture("a", &[big, big]));
+        messages.extend(capture("b", &[big, big]));
+        messages.extend(capture("c", &[big]));
+        let adapted = adapt_history(&messages, &ANTHROPIC).unwrap();
+        // Four of the five fit; the one that does not leaves with its group.
+        assert_eq!(tool_images(&adapted), [0, 0, 1]);
+        assert!(adapted[2].content.contains("[image 1 omitted") && adapted[2].content.contains("[image 2 omitted"));
+        // Exactly the limit is sent whole.
+        assert_eq!(tool_images(&adapt_history(&messages[..5], &ANTHROPIC).unwrap()), [2, 2]);
+        let sent = |messages: &[AgentMessage]| -> usize {
+            messages.iter().flat_map(|message| &message.images).map(|image| image.size_bytes as usize).sum()
+        };
+        assert_eq!(sent(&messages[..5]), MAX_REQUEST_IMAGE_BYTES);
+        assert!(sent(&adapted) <= MAX_REQUEST_IMAGE_BYTES);
+
+        // A group may end inside a result: it keeps its newer images, in order.
+        let mut messages = vec![AgentMessage::user("go")];
+        messages.extend(capture("a", &[100, 101]));
+        messages.extend(capture("b", &[102, 103, 104, 105]));
+        for index in 0..12 {
+            messages.extend(capture(&format!("c{index}"), &[100]));
+        }
+        let adapted = adapt_history(&messages, &ANTHROPIC).unwrap();
+        assert_eq!(tool_images(&adapted)[..3], [0, 2, 1]);
+        // The model can tell which of the result's numbered images it still has.
+        assert_eq!(adapted[4].images, messages[4].images[2..]);
+        assert!(adapted[4].content.ends_with(
+            "shot b\n[image 1 omitted (image/png): an older tool image, no longer sent to the model; the user was shown it]\n[image 2 omitted (image/png): an older tool image, no longer sent to the model; the user was shown it]"
+        ), "{}", adapted[4].content);
+
+        // A target without tools reads results as text, so their images are lines too.
+        let plain = TargetCaps { tools: false, ..ANTHROPIC };
+        let adapted = adapt_history(&messages, &plain).unwrap();
+        assert!(adapted.iter().all(|message| message.images.is_empty()));
+        assert!(adapted[2].content.contains("shot a\n[image 1 omitted (image/png): it is shown to the user, this model cannot receive images]"), "{}", adapted[2].content);
     }
 
     #[test]

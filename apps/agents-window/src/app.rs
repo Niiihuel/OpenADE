@@ -478,6 +478,7 @@ pub(crate) fn native_model_backend(
             Ok(Arc::new(model))
         }
         NativeWireApi::ChatCompletions => {
+            let model_id_for_caps = connection.model_id.clone();
             let mut model = OpenAiCompatibleBackend::new(
                 connection.endpoint,
                 connection.api_key,
@@ -489,6 +490,16 @@ pub(crate) fn native_model_backend(
                 // Mistral refuses a tool call identifier that is not nine
                 // alphanumerics, which no other provider's identifiers are.
                 model = model.with_tool_call_id_rule(openide_harness::ToolIdRule::Alnum9);
+            } else {
+                // On this wire a tool's image follows its results in a user
+                // message, an order Mistral refuses: there it stays a line of
+                // text, as every image does for a model that reads none.
+                model = model.with_image_input_enabled(native_image_input_supported(
+                    &adapter,
+                    &model_id_for_caps,
+                    catalog,
+                    discoveries,
+                ));
             }
             if let Some(limit) = &output_limit {
                 if adapter
@@ -20998,6 +21009,50 @@ mod tests {
     use openide_ui::{DrawCommand, Key, Point};
     use serde_json::json;
     use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn a_chat_route_sends_images_only_to_a_model_that_declares_them_and_never_to_mistral() {
+        let root = tempfile::tempdir().unwrap();
+        let caps = |provider: &str, image_input: bool| {
+            let connection = RuntimeConnection {
+                auth: Default::default(),
+                headers: Default::default(),
+                endpoint: "http://127.0.0.1:1/v1".into(),
+                api_key: Some("local-test-key".into()),
+                model_id: "vendor/model".into(),
+                wire_api: NativeWireApi::ChatCompletions,
+            };
+            let discovery = native_provider::ProviderModelDiscovery {
+                provider_id: provider.into(),
+                models: BTreeMap::from([(
+                    "vendor/model".to_owned(),
+                    native_provider::DiscoveredModel {
+                        listing_index: None,
+                        limits_declared: false,
+                        efforts_declared: false,
+                        capabilities_declared: false,
+                        max_input_tokens: None,
+                        declared_capabilities: BTreeMap::from([("image_input".to_owned(), image_input)]),
+                        id: "vendor/model".into(),
+                        name: "vendor/model".into(),
+                        provider_reports_tools: true,
+                        tool_call_declared: Some(true),
+                        text_input_output: true,
+                        supported_efforts: Vec::new(),
+                        context_window_tokens: None,
+                        max_output_tokens: None,
+                    },
+                )]),
+            };
+            native_model_backend(connection, provider, None, None, root.path(), None, &[discovery])
+                .unwrap_or_else(|error| panic!("{provider}: {error}"))
+                .target_caps()
+        };
+        assert!(caps("openrouter", true).vision);
+        assert!(!caps("openrouter", false).vision);
+        // A tool's image follows its results in a user message, which Mistral refuses.
+        assert!(!caps("mistral", true).vision);
+    }
 
     #[test]
     fn native_backend_account_text_and_missing_model_denials_override_reviewed_routes() {

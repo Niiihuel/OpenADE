@@ -216,11 +216,30 @@ impl ResponsesBackend {
             .map_err(|_| AgentError::Runtime("Responses replay state is unavailable".into()))?;
         let mut input = Vec::<Value>::new();
         for message in messages {
-            if !message.images.is_empty() && message.role != MessageRole::User {
+            if !message.images.is_empty()
+                && !matches!(message.role, MessageRole::User | MessageRole::Tool)
+            {
                 return Err(AgentError::InvalidRequest(
-                    "only user messages may contain image inputs".into(),
+                    "only user messages and tool results may contain image inputs".into(),
                 ));
             }
+            // The text of a message with images, then each image as a data URL.
+            let with_images = || -> Result<Vec<Value>, AgentError> {
+                openide_core::validate_user_images(&message.images).map_err(|error| {
+                    AgentError::InvalidRequest(format!("invalid user images: {error}"))
+                })?;
+                let mut content = Vec::with_capacity(message.images.len() + 1);
+                if !message.content.is_empty() {
+                    content.push(json!({"type": "input_text", "text": message.content}));
+                }
+                for image in &message.images {
+                    let data_url = image.verified_data_url().map_err(|error| {
+                        AgentError::InvalidRequest(format!("invalid user image: {error}"))
+                    })?;
+                    content.push(json!({"type": "input_image", "image_url": data_url}));
+                }
+                Ok(content)
+            };
             match message.role {
                 MessageRole::System => {
                     input.push(json!({"role": if self.chatgpt_plan { "developer" } else { "system" }, "content": message.content}));
@@ -229,20 +248,7 @@ impl ResponsesBackend {
                     input.push(json!({"role": "user", "content": message.content}));
                 }
                 MessageRole::User => {
-                    openide_core::validate_user_images(&message.images).map_err(|error| {
-                        AgentError::InvalidRequest(format!("invalid user images: {error}"))
-                    })?;
-                    let mut content = Vec::with_capacity(message.images.len() + 1);
-                    if !message.content.is_empty() {
-                        content.push(json!({"type": "input_text", "text": message.content}));
-                    }
-                    for image in &message.images {
-                        let data_url = image.verified_data_url().map_err(|error| {
-                            AgentError::InvalidRequest(format!("invalid user image: {error}"))
-                        })?;
-                        content.push(json!({"type": "input_image", "image_url": data_url}));
-                    }
-                    input.push(json!({"role": "user", "content": content}));
+                    input.push(json!({"role": "user", "content": with_images()?}));
                 }
                 MessageRole::Assistant => {
                     if !message.provider_output_items.is_empty() {
@@ -289,10 +295,18 @@ impl ResponsesBackend {
                     let call_id = message.tool_call_id.as_deref().ok_or_else(|| {
                         AgentError::InvalidRequest("tool result has no call ID".into())
                     })?;
+                    // A result without images keeps its plain string form.
+                    // With images, `output` is the list of content items
+                    // Responses accepts there: input_text, then input_image.
+                    let output = if message.images.is_empty() {
+                        json!(message.content)
+                    } else {
+                        json!(with_images()?)
+                    };
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": message.content,
+                        "output": output,
                     }));
                 }
             }
@@ -2855,6 +2869,49 @@ mod tests {
             parse_response(&response).unwrap().output_items,
             vec![opaque]
         );
+    }
+
+    #[test]
+    fn a_function_call_output_carries_its_images_as_content_items() {
+        let image = tiny_png();
+        let call = ToolCall { id: "call_shot".into(), name: "shot".into(), arguments: json!({}) };
+        let mut result = AgentMessage::tool("call_shot", "captured");
+        result.images = vec![image.clone()];
+        let mut history =
+            vec![AgentMessage::user("look"), AgentMessage::assistant("", vec![call]), result];
+        let item = json!({"type":"input_image","image_url":image.verified_data_url().unwrap()});
+        // The API-key route and the ChatGPT plan route send the same item.
+        for backend in [
+            ResponsesBackend::new("https://api.openai.com/v1", None, "mock"),
+            ResponsesBackend::new("https://chatgpt.example/backend-api/codex", None, "mock")
+                .with_chatgpt_plan(),
+        ] {
+            let body = backend.request_body(&history, &[], true).unwrap();
+            assert_eq!(
+                body["input"][2],
+                json!({"type":"function_call_output","call_id":"call_shot","output":[
+                    {"type":"input_text","text":"captured"}, item,
+                ]})
+            );
+            // The input-token count is asked for this same input.
+            assert_eq!(backend.input_token_count_body(&history, &[]).unwrap()["input"], body["input"]);
+        }
+        let backend = ResponsesBackend::new("https://api.openai.com/v1", None, "mock");
+        // A result that is only an image sends no empty text item.
+        history[2].content.clear();
+        let body = backend.request_body(&history, &[], true).unwrap();
+        assert_eq!(body["input"][2]["output"], json!([item]));
+        // A result without images keeps the string it always was.
+        history[2].images.clear();
+        let body = backend.request_body(&history, &[], true).unwrap();
+        assert_eq!(body["input"][2]["output"], "");
+        // A corrupt image and an image on an assistant message are refused.
+        history[2].images = vec![image.clone()];
+        history[2].images[0].sha256 = "0".repeat(64);
+        assert!(backend.request_body(&history, &[], true).is_err());
+        history[2].images.clear();
+        history[1].images = vec![image];
+        assert!(backend.request_body(&history, &[], true).is_err());
     }
 
     #[test]

@@ -160,9 +160,9 @@ async fn resumed_mcp_tool_media_is_durable_before_truncation_and_observer_failur
                 panic!("media must precede ToolFinished")
             };
             assert_eq!(*is_error, outcome == "error");
-            // The image went to the user in the event before; the model
-            // reads a note in its place, and nothing is cut off.
-            assert!(output.contains("Captura recibida") && output.contains("[image omitted (image/png"));
+            // The image is in the event before, for the user and for the
+            // model; the text names it where its block was, uncut.
+            assert!(output.contains("Captura recibida") && output.contains("[image 1: image/png, 1280x800 px]"));
             assert!(output.chars().count() < full_output.chars().count().min(16_000));
             let results = replay
                 .history
@@ -171,7 +171,13 @@ async fn resumed_mcp_tool_media_is_durable_before_truncation_and_observer_failur
                 .collect::<Vec<_>>();
             assert_eq!(results.len(), 1);
             assert_eq!(&results[0].content, output);
-            assert!(results[0].images.is_empty());
+            // The resumed result carries the image, and the request that
+            // follows gives the model that same message.
+            assert_eq!(results[0].images, *images);
+            let result = results[0].clone();
+            engine.resume_step(&lease, CancellationToken::new()).await.unwrap();
+            let requests = fixture.model.seen_histories.lock().unwrap();
+            assert!(requests.last().unwrap().contains(&result), "{outcome}");
         }
         assert_eq!(fixture.tools.calls.lock().unwrap().len(), 1);
     }
