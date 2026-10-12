@@ -18,6 +18,8 @@ Se contrastó la apertura lateral con VS Code, revisión local `00cc2df8db2d5c4a
 
 Markdown usa `pulldown-cmark` para producir un modelo de bloques e inlines. La fuente preferida es un snapshot del controlador del editor, nunca una copia guardada automáticamente. La aplicación dibuja encabezados, párrafos, listas, tareas, citas, tablas, código y recursos locales mediante `openide-ui`. El renderer reutiliza los colores de sintaxis existentes; énfasis y texto fuerte se distinguen con tonos del tema, sin introducir otra familia tipográfica. El HTML se muestra como texto inerte. Los enlaces inline conservan sus áreas reales de clic al envolver líneas y reciben foco con Tab; Enter y Espacio los activan. Los encabezados tienen destinos nativos para enlaces `#fragment`.
 
+Un bloque `mermaid` que sea un diagrama de flujo o de secuencia se dibuja con el mismo componente que en el chat: `document_markdown_ui` le pasa la fuente del bloque a `rich_text::render_diagram`, que usa `Markdown::diagram` de limn. La tarjeta es la misma, con **Ver código** para alternar entre el dibujo y la fuente, arrastre para desplazarlo cuando no entra a lo ancho y **Ampliar**, que lo abre sobre toda la ventana y se cierra con su botón, con Esc o con un clic afuera. El dibujo sigue al buffer con el mismo debounce que el resto de la vista previa. Un bloque que la app no sabe dibujar (otro tipo de Mermaid, o una fuente con un error) queda como bloque de código.
+
 Las imágenes locales pasan por `image`; SVG por `resvg`. Los enlaces HTTP/HTTPS sólo abren el navegador cuando el usuario los activa. La preview no descarga imágenes remotas ni referencias externas de SVG. Las rutas de archivos y recursos permanecen dentro del proyecto; en Unix se recorren mediante descriptores con `openat`, `O_NOFOLLOW` y `O_NONBLOCK` para evitar seguir enlaces o bloquearse con un FIFO sustituido durante la lectura.
 
 Hayro está fijado a `0.7.1`. El worker conserva un PDF analizado, identificado por ruta, tamaño, fecha de modificación y dispositivo/inodo en Unix, y rasteriza únicamente la página pedida. Las imágenes PNG resultantes pasan al componente raster existente. Los botones de zoom actúan sobre la escala visible, incluyendo cuando el punto de partida es Ajustar al panel.
@@ -29,6 +31,7 @@ La acción **Abrir vista previa al costado** vive junto a Buscar y Más en la fi
 ## Límites actuales
 
 - Archivos de hasta 32 MiB; Markdown de hasta 2 MiB, con límites de bloques, eventos y anidación.
+- De Mermaid se dibujan `flowchart`/`graph` y `sequenceDiagram`, en el subconjunto que documenta limn; un bloque de más de 64 KiB no se dibuja. El estado de **Ver código** y el diagrama ampliado son de la ventana, compartidos con el chat y no se guardan.
 - Imágenes de entrada de hasta 4096 px por lado y 16 megapíxeles; salida de hasta 4 megapíxeles y 8 MiB de PNG. Markdown admite 16 imágenes y 32 MiB de PNG acumulados.
 - PNG, JPEG, WebP, SVG y el primer frame de GIF. Las imágenes enlazadas por symlink, incluso dentro del proyecto, se rechazan.
 - PDF se presenta como página rasterizada, sin selección de texto, edición de formularios/anotaciones ni interfaz de contraseña. Hayro sigue en desarrollo y puede no representar correctamente documentos complejos.

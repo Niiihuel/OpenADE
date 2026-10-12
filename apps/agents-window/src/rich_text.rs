@@ -12,8 +12,8 @@ use std::{
 };
 
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, Element, ElementKind, Markdown,
-    MarkdownColors, MarkdownLabels, MarkdownPreview, RadiusRole, TextHighlight, Tooltip,
+    Button, ButtonVariant, Component, ControlSize, Diagram, DiagramViewer, Element, ElementKind,
+    Markdown, MarkdownColors, MarkdownLabels, MarkdownPreview, RadiusRole, TextHighlight, Tooltip,
 };
 
 use crate::theme;
@@ -29,19 +29,16 @@ thread_local! {
     // The diagrams the reader asked to see as source, by the id in their
     // action. View state of this window only: nothing is persisted.
     static DIAGRAM_SOURCES: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
-    // The source of the diagram shown over the window, if any.
-    static DIAGRAM_VIEWER: RefCell<Option<std::sync::Arc<str>>> = const { RefCell::new(None) };
+    // The diagram shown over the window, if any: parsed once, when it opens.
+    static DIAGRAM_VIEWER: RefCell<Option<Diagram>> = const { RefCell::new(None) };
 }
 
 const DIAGRAM_VIEWER_CLOSE: &str = "chat_diagram_source:close";
 
 /// `base` under the diagram the reader asked to see over the window.
 pub(crate) fn diagram_viewer(base: Element, width: f32, height: f32) -> Element {
-    let palette = theme::panel_card_palette();
-    let chart = DIAGRAM_VIEWER
-        .with_borrow(|source| source.as_deref().and_then(|source| openide_ui::Flowchart::parse(source, palette).ok()));
-    match chart {
-        Some(chart) => openide_ui::DiagramViewer::new(base, "Diagrama", DIAGRAM_VIEWER_CLOSE, palette, chart)
+    match DIAGRAM_VIEWER.with_borrow(Clone::clone) {
+        Some(chart) => DiagramViewer::new(base, "Diagrama", DIAGRAM_VIEWER_CLOSE, theme::panel_card_palette(), chart)
             .close_title("Cerrar diagrama · Esc")
             .viewport(openide_ui::Size::new(width, height))
             .render(),
@@ -60,7 +57,8 @@ pub(crate) fn toggle_diagram_source(action: &str) -> bool {
         return false;
     };
     if let Some(id) = id.strip_prefix("expand:") {
-        DIAGRAM_VIEWER.set(u64::from_str_radix(id, 16).ok().and_then(Markdown::diagram_source));
+        let source = u64::from_str_radix(id, 16).ok().and_then(Markdown::diagram_source);
+        DIAGRAM_VIEWER.set(source.and_then(|source| Diagram::parse(&source, theme::panel_card_palette()).ok()));
         return true;
     }
     let Ok(id) = u64::from_str_radix(id, 16) else {
@@ -98,8 +96,12 @@ const LABELS: MarkdownLabels = MarkdownLabels {
 /// Every Markdown surface of the app renders through here, with the same
 /// inks, strings, link route and diagram switch.
 fn rendered(source: &str, configure: impl FnOnce(Markdown<'_>) -> Markdown<'_>) -> MarkdownPreview {
+    configured(source, |markdown| configure(markdown).render())
+}
+
+fn configured<R>(source: &str, build: impl FnOnce(Markdown<'_>) -> R) -> R {
     DIAGRAM_SOURCES.with_borrow(|shown| {
-        configure(
+        build(
             Markdown::new(source, theme::panel_card_palette())
                 .colors(COLORS)
                 .labels(LABELS)
@@ -107,8 +109,14 @@ fn rendered(source: &str, configure: impl FnOnce(Markdown<'_>) -> Markdown<'_>) 
                 .diagram_action_prefix(DIAGRAM_ACTION_PREFIX)
                 .diagram_sources(shown),
         )
-        .render()
     })
+}
+
+/// What a `mermaid` fence holds, drawn as in an answer: the same card,
+/// switch to its source and expand action. `None` when it is not a diagram
+/// the app draws, for a renderer of its own to show it as code.
+pub(crate) fn render_diagram(source: &str) -> Option<Element> {
+    configured(source, |markdown| markdown.diagram())
 }
 
 fn source_hash(source: &str) -> u64 {
