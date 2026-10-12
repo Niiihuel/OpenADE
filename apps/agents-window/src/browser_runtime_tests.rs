@@ -571,7 +571,8 @@ fn command_validation_preserves_viewport_protocol_and_input_bounds() {
     .is_ok());
     assert!(BrowserCommand::Scroll {
         dx: f64::NAN,
-        dy: 1.0
+        dy: 1.0,
+        modifiers: 0,
     }
     .validate()
     .is_err());
@@ -1285,8 +1286,8 @@ fn the_window_s_input_reaches_the_page_as_pointer_keys_and_text_without_reading_
     let pointer = |endpoint: &Endpoint| endpoint.asked("Input.dispatchMouseEvent");
 
     // A move and a wheel step answer with frames alone.
-    finish(runtime.submit_ui(BrowserCommand::PointerMove { x: 10.0, y: 20.0 }).unwrap()).unwrap();
-    finish(runtime.submit_ui(BrowserCommand::Scroll { dx: 0.0, dy: 120.0 }).unwrap()).unwrap();
+    finish(runtime.submit_ui(BrowserCommand::PointerMove { x: 10.0, y: 20.0, modifiers: 0 }).unwrap()).unwrap();
+    finish(runtime.submit_ui(BrowserCommand::Scroll { dx: 0.0, dy: 120.0, modifiers: 0 }).unwrap()).unwrap();
     assert_eq!(read(&endpoint), before);
     let events = pointer(&endpoint);
     assert_eq!((&events[0]["type"], &events[0]["x"], &events[0]["y"]), (&json!("mouseMoved"), &json!(10.0), &json!(20.0)));
@@ -1297,9 +1298,9 @@ fn the_window_s_input_reaches_the_page_as_pointer_keys_and_text_without_reading_
     // state is read when the button comes up.
     let press = |button, clicks| {
         let read_before = read(&endpoint);
-        finish(runtime.submit_ui(BrowserCommand::PointerDown { x: 30.0, y: 40.0, button, clicks }).unwrap()).unwrap();
+        finish(runtime.submit_ui(BrowserCommand::PointerDown { x: 30.0, y: 40.0, button, clicks, modifiers: 0 }).unwrap()).unwrap();
         assert_eq!(read(&endpoint), read_before);
-        finish(runtime.submit_ui(BrowserCommand::PointerUp { x: 31.0, y: 41.0, button, clicks }).unwrap()).unwrap();
+        finish(runtime.submit_ui(BrowserCommand::PointerUp { x: 31.0, y: 41.0, button, clicks, modifiers: 0 }).unwrap()).unwrap();
         assert_eq!(read(&endpoint), read_before + 1);
     };
     press(MouseButton::Left, 2);
@@ -1340,8 +1341,52 @@ fn the_window_s_input_reaches_the_page_as_pointer_keys_and_text_without_reading_
     assert!(unknown.starts_with("Tecla desconocida"));
     assert_eq!(runtime.snapshot().error.as_deref(), Some(unknown.as_str()));
     // The agent's own scroll does read the page it leaves.
-    let scrolled = finish(runtime.handle.submit(BrowserCommand::Scroll { dx: 0.0, dy: 400.0 }).unwrap()).unwrap();
+    let scrolled = finish(runtime.handle.submit(BrowserCommand::Scroll { dx: 0.0, dy: 400.0, modifiers: 0 }).unwrap()).unwrap();
     assert!(scrolled.aria_snapshot.contains("[ref=e4]") && scrolled.error.is_none());
+}
+
+#[test]
+fn modifier_keys_reach_the_page_with_the_window_s_pointer_and_wheel_and_with_nothing_after_them() {
+    use openide_browser::modifiers::{ALT, CONTROL, SHIFT};
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 2.0, |method, _, _| match method {
+        "Accessibility.getFullAXTree" => tree(),
+        _ => None,
+    });
+    runtime.set_visible(false);
+    let (button, clicks) = (MouseButton::Left, 1);
+    for command in [
+        BrowserCommand::PointerDown { x: 30.0, y: 40.0, button, clicks, modifiers: SHIFT },
+        BrowserCommand::PointerUp { x: 30.0, y: 40.0, button, clicks, modifiers: SHIFT },
+        BrowserCommand::PointerMove { x: 50.0, y: 60.0, modifiers: CONTROL | ALT },
+        BrowserCommand::Scroll { dx: 120.0, dy: 0.0, modifiers: SHIFT },
+    ] {
+        finish(runtime.submit_ui(command).unwrap()).unwrap();
+    }
+    // What the agent does next holds none of them.
+    finish(runtime.handle.submit(BrowserCommand::Click { x: 1.0, y: 2.0 }).unwrap()).unwrap();
+    let held: Vec<_> = endpoint
+        .asked("Input.dispatchMouseEvent")
+        .iter()
+        .map(|event| (event["type"].as_str().unwrap().to_owned(), event["modifiers"].as_u64().unwrap()))
+        .collect();
+    let event = |kind: &str, modifiers| (kind.to_owned(), modifiers);
+    assert_eq!(
+        held,
+        [
+            event("mouseMoved", 8),
+            event("mousePressed", 8),
+            event("mouseMoved", 8),
+            event("mouseReleased", 8),
+            event("mouseMoved", 3),
+            event("mouseWheel", 8),
+            event("mouseMoved", 0),
+            event("mousePressed", 0),
+            event("mouseReleased", 0),
+        ]
+    );
+    // Only the window says them: a tool call cannot.
+    let refused = browser_tool_command("browser_scroll", json!({"dx": 0, "dy": 120, "modifiers": 2})).unwrap_err();
+    assert!(refused.contains("modifiers"), "{refused}");
 }
 
 #[test]
@@ -1747,9 +1792,9 @@ fn pointer_input_is_bounded_like_a_click_and_the_launch_scale_like_a_display() {
         (f64::INFINITY, 10.0, false),
     ] {
         for command in [
-            BrowserCommand::PointerMove { x, y },
-            BrowserCommand::PointerDown { x, y, button, clicks },
-            BrowserCommand::PointerUp { x, y, button, clicks },
+            BrowserCommand::PointerMove { x, y, modifiers: 0 },
+            BrowserCommand::PointerDown { x, y, button, clicks, modifiers: 0 },
+            BrowserCommand::PointerUp { x, y, button, clicks, modifiers: 0 },
         ] {
             assert_eq!(command.validate().is_ok(), valid, "{command:?}");
         }
@@ -1758,14 +1803,14 @@ fn pointer_input_is_bounded_like_a_click_and_the_launch_scale_like_a_display() {
     for (clicks, valid) in [(0, false), (1, true), (2, true), (3, true), (4, false)] {
         for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
             let (x, y) = (1.0, 1.0);
-            assert_eq!(BrowserCommand::PointerDown { x, y, button, clicks }.validate().is_ok(), valid);
-            assert_eq!(BrowserCommand::PointerUp { x, y, button, clicks }.validate().is_ok(), valid);
+            assert_eq!(BrowserCommand::PointerDown { x, y, button, clicks, modifiers: 0 }.validate().is_ok(), valid);
+            assert_eq!(BrowserCommand::PointerUp { x, y, button, clicks, modifiers: 0 }.validate().is_ok(), valid);
         }
     }
     // Only input the page answers with frames alone skips the footer.
-    assert!(BrowserCommand::PointerMove { x: 1.0, y: 1.0 }.quiet());
-    assert!(BrowserCommand::Scroll { dx: 0.0, dy: 1.0 }.quiet());
-    assert!(!BrowserCommand::PointerDown { x: 1.0, y: 1.0, button, clicks }.quiet());
+    assert!(BrowserCommand::PointerMove { x: 1.0, y: 1.0, modifiers: 0 }.quiet());
+    assert!(BrowserCommand::Scroll { dx: 0.0, dy: 1.0, modifiers: 0 }.quiet());
+    assert!(!BrowserCommand::PointerDown { x: 1.0, y: 1.0, button, clicks, modifiers: 0 }.quiet());
     assert!(!BrowserCommand::Click { x: 1.0, y: 1.0 }.quiet());
     // The agent's catalog does not reach the window's pointer.
     assert!(browser_tool_command("browser_pointer_move", json!({"x":1,"y":1})).is_err());

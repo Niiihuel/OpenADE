@@ -105,9 +105,10 @@ impl BrowserInputQueue {
                 self.bytes += text.len();
                 return Ok(());
             }
-            (Some(BrowserCommand::Scroll { dx: x, dy: y }), BrowserCommand::Scroll { dx, dy })
-                if (*x + dx).abs() <= 100_000.0 && (*y + dy).abs() <= 100_000.0 =>
-            {
+            (
+                Some(BrowserCommand::Scroll { dx: x, dy: y, modifiers: held }),
+                BrowserCommand::Scroll { dx, dy, modifiers },
+            ) if held == modifiers && (*x + dx).abs() <= 100_000.0 && (*y + dy).abs() <= 100_000.0 => {
                 *x += dx;
                 *y += dy;
                 return Ok(());
@@ -115,11 +116,10 @@ impl BrowserInputQueue {
             // Only where the pointer is now matters: the newest queued move
             // replaces the one before it, never one across a click or a key.
             (
-                Some(BrowserCommand::PointerMove { x: last_x, y: last_y }),
-                BrowserCommand::PointerMove { x, y },
+                Some(BrowserCommand::PointerMove { x: last_x, y: last_y, modifiers: held }),
+                BrowserCommand::PointerMove { x, y, modifiers },
             ) => {
-                *last_x = *x;
-                *last_y = *y;
+                (*last_x, *last_y, *held) = (*x, *y, *modifiers);
                 return Ok(());
             }
             _ => {}
@@ -352,14 +352,14 @@ mod tests {
             .unwrap();
         for _ in 0..20 {
             queue
-                .push(BrowserCommand::Scroll { dx: 1.5, dy: -2.0 })
+                .push(BrowserCommand::Scroll { dx: 1.5, dy: -2.0, modifiers: 0 })
                 .unwrap();
         }
         queue
             .push(BrowserCommand::Click { x: 2.0, y: 3.0 })
             .unwrap();
         queue
-            .push(BrowserCommand::Scroll { dx: 4.0, dy: 5.0 })
+            .push(BrowserCommand::Scroll { dx: 4.0, dy: 5.0, modifiers: 0 })
             .unwrap();
         assert_eq!(queue.len(), 6);
         assert!(
@@ -368,21 +368,21 @@ mod tests {
         assert!(matches!(queue.pop(), Some(BrowserCommand::Press { .. })));
         assert!(matches!(queue.pop(), Some(BrowserCommand::Type { text }) if text == "fin"));
         assert!(
-            matches!(queue.pop(), Some(BrowserCommand::Scroll { dx, dy }) if dx == 30.0 && dy == -40.0)
+            matches!(queue.pop(), Some(BrowserCommand::Scroll { dx, dy, .. }) if dx == 30.0 && dy == -40.0)
         );
     }
     #[test]
     fn only_the_newest_pointer_move_waits_and_never_across_a_press_or_a_key() {
         let mut queue = BrowserInputQueue::default();
-        let moved = |x: f64| BrowserCommand::PointerMove { x, y: x };
+        let moved = |x: f64| BrowserCommand::PointerMove { x, y: x, modifiers: 0 };
         let (button, clicks) = (openide_browser::MouseButton::Left, 1);
         for command in [
             moved(1.0),
             moved(2.0),
-            BrowserCommand::PointerDown { x: 2.0, y: 2.0, button, clicks },
+            BrowserCommand::PointerDown { x: 2.0, y: 2.0, button, clicks, modifiers: 0 },
             moved(3.0),
             moved(4.0),
-            BrowserCommand::PointerUp { x: 4.0, y: 4.0, button, clicks },
+            BrowserCommand::PointerUp { x: 4.0, y: 4.0, button, clicks, modifiers: 0 },
             moved(5.0),
             BrowserCommand::Press { key: "Tab".into() },
             moved(6.0),
@@ -410,11 +410,11 @@ mod tests {
         for _ in 0..MAX_QUEUED_COMMANDS {
             queue.push(BrowserCommand::Press { key: "ArrowLeft".into() }).unwrap();
         }
-        assert!(queue.push(BrowserCommand::PointerMove { x: 1.0, y: 1.0 }).is_ok());
+        assert!(queue.push(BrowserCommand::PointerMove { x: 1.0, y: 1.0, modifiers: 0 }).is_ok());
         assert_eq!(queue.len(), MAX_QUEUED_COMMANDS);
         // A press is input the user must be told was not sent.
         let (button, clicks) = (openide_browser::MouseButton::Left, 1);
-        assert!(queue.push(BrowserCommand::PointerDown { x: 1.0, y: 1.0, button, clicks }).is_err());
+        assert!(queue.push(BrowserCommand::PointerDown { x: 1.0, y: 1.0, button, clicks, modifiers: 0 }).is_err());
     }
     #[test]
     fn full_queue_rejects_before_mutating_accepted_input() {

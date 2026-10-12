@@ -23,6 +23,10 @@ mod testing;
 pub mod transport;
 
 pub use actions::MouseButton;
+/// Bits of the modifier keys held with a pointer or wheel event.
+pub mod modifiers {
+    pub use crate::keys::{ALT, CONTROL, META, SHIFT};
+}
 #[cfg(unix)]
 pub use chrome::PrivateDirectory;
 pub use driver::{

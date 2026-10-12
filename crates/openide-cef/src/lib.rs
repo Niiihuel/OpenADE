@@ -10,7 +10,7 @@
 
 mod page;
 
-pub use page::{Page, Paint};
+pub use page::{Cursor, Page, Paint};
 
 use cef::*;
 use openide_browser::PrivateDirectory;

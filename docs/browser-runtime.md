@@ -133,14 +133,58 @@ La ventana envía además el puntero, en los mismos píxeles CSS:
 - **Botón derecho y botón del medio.** Llegan como un clic completo en el
   lugar del puntero: la página recibe `contextmenu` o `auxclick`. No se abre
   un menú del sistema; una página con menú propio muestra el suyo.
+- **Teclas modificadoras.** Shift, Control y Alt viajan con cada evento del
+  puntero y de la rueda, como los tenía la ventana en ese cuadro. Shift + clic
+  extiende la selección y los manejadores de la página ven `shiftKey`,
+  `ctrlKey` y `altKey`. Sólo la ventana los envía: una herramienta del agente
+  no puede nombrarlos.
+- **Un enlace pedido en otra pestaña.** Control + clic, el botón del medio y
+  Shift + clic sobre un enlace piden otra pestaña u otra ventana, y acá hay
+  una sola página. Con el Chrome lanzado la pestaña llega a crearse, el driver
+  la cierra y la página queda donde estaba. Con el Chromium embebido, que
+  pregunta antes, el enlace se abre en la misma página. En ninguno de los dos
+  se abre una ventana, y `window.open` y `target="_blank"` siguen sin abrir
+  nada.
 
-Las teclas modificadoras junto con un clic (Shift + clic para extender una
-selección, Ctrl + clic) no se transmiten, y la forma del cursor no cambia
-sobre la página: ver *Lo que no se incluye*. El host envía ambos ejes del
-trackpad y convierte Shift + rueda vertical en desplazamiento horizontal.
-Pegar y confirmar texto de un método de entrada requieren que el viewport
-visible tenga foco; durante una navegación no se envían al documento nuevo.
-PageUp y PageDown llegan a la página.
+**Control + rueda no hace nada.** En un navegador amplía la página. Acá no se
+envía: ni desplaza ni amplía, y tampoco se mueve lo que haya detrás de la
+página. Enviada por el protocolo desplazaba la página en los dos motores
+(medido), y un zoom verdadero cambia cuántos píxeles CSS mide el viewport, que
+es de lo que dependen las coordenadas del driver y la vista uno a uno. Control
+apretado mientras un paso de rueda todavía se desliza no lo interrumpe. El
+host envía ambos ejes del trackpad y convierte Shift + rueda vertical en
+desplazamiento horizontal.
+
+**Teclado.** Un carácter que escribe el teclado y que está en la distribución
+estadounidense del driver (las letras sin acento, los dígitos, el espacio y la
+puntuación ASCII) llega como una tecla que baja y sube, con su texto: la
+página recibe `keydown` y `keyup`, que es lo que esperan sus propios atajos,
+la búsqueda por letra de una lista y Espacio sobre un botón. Se comprobó que
+la página oye esas teclas y que Espacio la baja; lo demás se sigue de eso.
+Todo otro texto se inserta sin eventos de tecla (`Input.insertText`):
+`ñ`, las vocales con acento que arma una tecla muerta, `ü`, `¿`, `¡`, `€`
+(AltGr), un emoji, lo que confirma un método de entrada y lo que se pega.
+Enter, Tab, Backspace, Delete, las flechas, Home, End, PageUp y PageDown van
+como teclas, solas o con Shift y Control; un atajo nombra su letra como la
+escribe el teclado (`Control+z`, y `Z` cuando también va Shift). Copiar y
+cortar van por el portapapeles en dos pasos descrito más abajo, y pegar llega
+como texto. Pegar y confirmar texto de un método de entrada requieren que el
+viewport visible tenga foco; durante una navegación no se envían al documento
+nuevo.
+
+Lo que no llega: el texto todavía en composición no se muestra dentro de la
+página, sólo lo confirmado; pegar no dispara el evento `paste` de la página; y
+las teclas de función sin Control no se envían.
+
+**Listas desplegables.** La lista de un `<select>` es un widget aparte de la
+página. Con el Chrome lanzado viene dibujada en el flujo y se maneja con el
+teclado (flechas, Enter, Escape), pero los eventos del puntero del protocolo
+sólo llegan a la página: un clic sobre la lista la cierra sin elegir. Con el
+Chromium embebido se dibuja y también se elige con el puntero y se recorre
+con la rueda: ver [Chromium embebido](browser-cef.md).
+
+**Cursor.** Con el Chrome lanzado la forma del cursor no cambia sobre la
+página, porque el protocolo no la informa. Con el Chromium embebido sí.
 
 **Rueda y touchpad.** Los deltas propios de un touchpad llegan a la página tal
 cual, pegados a los dedos. Un paso de rueda no salta: recorre unos 80 píxeles
@@ -211,8 +255,8 @@ página por contexto, sin descargas ni ventanas emergentes. La cola Rust admite
 16 comandos. El broker acepta cuatro conexiones a la vez, una solicitud de
 hasta 64 KiB por conexión y responde hasta 4 MiB. La vista es un flujo de
 cuadros de Chromium, descrito en **Vista en vivo**; no es un WebView: no
-promete audio ni reproducción de video, formas del cursor ni la latencia de un
-navegador de escritorio.
+promete audio ni reproducción de video, ni la latencia de un navegador de
+escritorio.
 
 La consulta periódica de estado no borra el error de una navegación o de una
 entrada que falló, ni el aviso de un flujo detenido: los conserva hasta la
@@ -470,7 +514,9 @@ nix-shell --run "cargo test -p agents-window -- browser_ approval_ui"
   el entorno vacío: sirve MCP, sale con código 1 sin su configuración y no
   crea ningún archivo.
 - `browser_host_tests.rs` verifica el foco, las entradas, la serie de clics,
-  los botones derecho y del medio, el destino de reintento entre
+  los botones derecho y del medio, las teclas modificadoras con el puntero y
+  la rueda, Control + rueda, qué texto va como tecla y cuál se inserta, el
+  aviso de un navegador embebido que no arrancó, el destino de reintento entre
   conversaciones, la conservación de ráfagas de entrada y el portapapeles con
   un actor de prueba sin navegador ni sockets. `browser_input_app.rs` contiene
   las regresiones de orden, agrupación y rechazo antes de modificar una cola
@@ -498,6 +544,18 @@ OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
 - Entrada de la ventana: `:hover`, selección por arrastre, doble y triple
   clic, botones derecho y del medio, rueda, texto, teclas y portapapeles en
   dos pasos.
+- Teclas modificadoras: Shift + clic que extiende una selección, lo que ven
+  los manejadores de la página con cada botón y con la rueda, y un enlace
+  pedido en otra pestaña con Control + clic, el botón del medio y Shift +
+  clic, tras lo cual la página sigue siendo una y sigue dibujándose.
+- Teclado español, en un `<input>` y un `<textarea>`: `á é í ó ú ñ ü ¿ ¡ €`,
+  emoji, Home, End, Delete, Backspace, flechas, Shift con flechas y con Home y
+  End, cortar y pegar, deshacer y rehacer por sus dos atajos, caracteres como
+  teclas que la página oye, Enter, Tab y Shift + Tab, PageUp y PageDown en el
+  área y, sin campo enfocado, PageDown, Espacio y Home sobre la página.
+- Lista de un `<select>` a escala 2 y 1: se dibuja debajo del control, las
+  flechas, Enter y Escape actúan sobre ella y un clic encima la cierra sin
+  elegir.
 
 Los mismos escenarios corren sobre el Chromium embebido, compilando con la
 opción `cef`: ver [Chromium embebido](browser-cef.md#validación).
@@ -511,12 +569,15 @@ OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" nix-shell --run 
 ```
 
 Validado el 11 de octubre de 2026 con Google Chrome 150.0.7871.46 empaquetado
-por NixOS, con sandbox habilitado. Las pruebas del driver solo, también contra
-Chrome real, están en [Driver del navegador](browser-driver.md#validación).
+por NixOS, con sandbox habilitado; las teclas modificadoras, el teclado y la
+lista de un `<select>`, el 12 de octubre con el mismo Chrome. Las pruebas del
+driver solo, también contra Chrome real, están en
+[Driver del navegador](browser-driver.md#validación).
 
 La revisión visual opt-in con fuentes nativas exporta vacío, carga, conexión
-rechazada, página, menú, fallo de arranque y falta de navegador a 240, 320 y
-640 px, sin lanzar procesos ni servidores:
+rechazada, página, menú, fallo de arranque, falta de navegador y el aviso de
+un navegador embebido que no arrancó a 240, 320 y 640 px, sin lanzar procesos
+ni servidores:
 
 ```sh
 nix-shell --run "cargo test -p agents-window browser_ui::visual_tests::export_browser_ui_visual_review -- --ignored"
@@ -540,13 +601,22 @@ python3 scripts/browser-desktop-e2e.py --binary target/desktop/agents-window \
 
 ## Lo que no se incluye
 
-- **Modificadores con el clic.** Shift + clic y Ctrl + clic llegan a la página
-  como un clic simple. El driver toma los modificadores de las teclas que tiene
-  apretadas, y la ventana envía combinaciones completas (`Control+A`), no
-  teclas sueltas: transmitirlos exige que el driver acepte modificadores por
-  evento o que la ventana le envíe la tecla al bajar y al subir.
-- **Forma del cursor.** El protocolo no avisa cuando la página cambia el
-  cursor; habría que consultarlo en cada movimiento.
+- **Zoom de página.** Control + rueda y el gesto de pellizco no amplían la
+  página: ver *Control + rueda no hace nada*.
+- **Enlaces que abren otra pestaña.** Un clic simple sobre un enlace con
+  `target="_blank"`, o sobre algo que llama a `window.open`, no abre nada: es
+  la misma regla de una sola página. Se vio con el Chromium embebido; con el
+  Chrome lanzado se sigue de que el driver cierra toda otra página. Abrirlos
+  en la misma página no está hecho.
+- **Elegir con el puntero en una lista desplegable, con el Chrome lanzado.**
+  El protocolo no entrega eventos del puntero a ese widget.
+- **Forma del cursor, con el Chrome lanzado.** El protocolo no avisa cuando la
+  página cambia el cursor; habría que consultarlo en cada movimiento.
+- **Teclas para todo el texto.** Lo que no está en la distribución
+  estadounidense del driver (`ñ`, acentos) se inserta sin `keydown`, y una
+  tecla lleva el código físico de esa distribución, no el del teclado real.
+  Hacerlo exacto pide que la ventana entregue la tecla física de cada
+  pulsación, que hoy limn no pasa.
 - **Descarga de un navegador.** Sin un Chrome, Chromium o Edge instalado el
   panel lo dice y no hace nada más. Con la opción `cef` el motor va embebido.
 - **Windows.** Falta el transporte de tubería del driver; ver

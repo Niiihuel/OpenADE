@@ -86,7 +86,9 @@ fn real_cef_that_cannot_start_leaves_the_system_browser_and_a_running_applicatio
         said.contains("el navegador embebido (CEF) no pudo iniciarse y se usa el navegador del sistema. Falta icudtl.dat junto a "),
         "{said}"
     );
-    // With a Chrome or Chromium installed, the context then started on it.
-    let on_the_system_browser = said.contains("CEF no se inició; la aplicación usa el navegador del sistema.");
+    // With a Chrome or Chromium installed, the context then started on it,
+    // and holds the reason for its panel to say.
+    let on_the_system_browser =
+        said.contains("CEF no se inició; la aplicación usa el navegador del sistema. El panel avisa: Falta icudtl.dat junto a ");
     assert!(on_the_system_browser || said.contains("No se encontró Google Chrome"), "{said}");
 }

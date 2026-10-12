@@ -16,7 +16,10 @@ compartidos por GPU a la frecuencia de la pantalla, no está hecha.
 
 **Nadie vio todavía un cuadro de esto en la ventana real.** Todo lo que sigue
 se comprobó sin ventana: con pruebas, con mediciones a través del runtime y
-mirando volcados PNG de los cuadros que recibiría la vista.
+mirando volcados PNG de los cuadros que recibiría la vista. Eso incluye las
+listas desplegables, el cursor y el aviso del pie: que la ventana ponga de
+verdad el cursor que la página pide, y que la lista se vea bien compuesta en
+pantalla, falta mirarlo.
 
 ## Compilar y abrir
 
@@ -150,14 +153,50 @@ copia y esperan a lo sumo una.
 - **Cambio de tamaño.** Primero cambia la vista y después la página; puede
   verse un cuadro intermedio.
 
-**Entrada.** Sigue pasando por los eventos del protocolo del driver. Medido
-contra la llamada nativa de CEF para la rueda: con la página quieta, del
-evento al primer cuadro pasan 15,4–17,6 ms de mediana por el driver y
+**Entrada.** Sigue pasando por los eventos del protocolo del driver, con una
+excepción: el puntero sobre una lista desplegable, que se describe abajo.
+Medido contra la llamada nativa de CEF para la rueda: con la página quieta,
+del evento al primer cuadro pasan 15,4–17,6 ms de mediana por el driver y
 15,3–17,1 ms por CEF. Desplazando, la llamada nativa da 8,0–9,0 ms hasta el
 cuadro siguiente contra 16,6–16,7 ms, pero mide otra cosa: Chromium anima el
 desplazamiento de la rueda nativa, así que siempre hay un cuadro en camino,
-muestre o no ese evento. No hay una ventaja medida que justifique dos caminos
-de entrada.
+muestre o no ese evento. No hay una ventaja medida que justifique mover toda
+la entrada a las llamadas nativas. Un clic enviado en el mismo instante en
+que termina una carga se pierde, y 20 ms después ya llega (medido). Se
+atribuye a que Chromium descarta la entrada sobre un documento que todavía no
+pintó nada; eso no se comprobó.
+
+**Listas desplegables.** La lista de un `<select>` no es parte de la página:
+Chromium la pinta aparte y la entrega por otros avisos (se muestra o se
+oculta, dónde va en la vista, sus píxeles). `openide-cef` los pasa a la misma
+función que recibe los cuadros, con la esquina de la lista ya en píxeles de
+dispositivo, y `browser_cef.rs` guarda esos píxeles al lado del lienzo de la
+página y los dibuja encima al armar cada cuadro, respetando su
+transparencia. Una lista que cambia (la fila bajo el puntero) no vuelve a
+copiar la página. El selector de fecha y los demás widgets que Chromium abre
+así pasan por el mismo camino; **sólo se probó la lista de un `<select>`**.
+
+- **Teclado.** Flechas, Enter y Escape van por el driver como siempre: la
+  página se los pasa a su lista.
+- **Puntero y rueda.** Los eventos del puntero del protocolo sólo llegan a la
+  página, que cierra la lista al recibir un clic. Mientras hay una lista
+  abierta y el puntero de la ventana está sobre ella, el movimiento, el botón
+  izquierdo y la rueda van por las llamadas de CEF
+  (`SendMouseMoveEvent`, `SendMouseClickEvent`, `SendMouseWheelEvent`), que sí
+  la alcanzan: la fila bajo el puntero se resalta, un clic la elige y la rueda
+  recorre la lista sin mover la página. Fuera de la lista todo sigue por el
+  driver. Cuando el botón se suelta sobre la lista también se le avisa a la
+  página, que pudo haberlo visto bajar sobre el `<select>`.
+- **Vista oculta.** Al ocultarse la vista suelta los píxeles de la lista junto
+  con los de la página; al volver se piden otra vez los dos.
+
+**Cursor.** Chromium avisa qué cursor pide la página bajo el puntero
+(`OnCursorChange`) y la ventana lo muestra mientras el puntero está sobre la
+página y ésta recibe entrada: mano sobre un enlace, barra de texto sobre un
+texto o un campo, flechas de redimensionar, prohibido, mover, agarrar, ayuda,
+espera, zoom y los demás cursores de CSS que egui tiene. Al salir de la página
+vuelve la flecha. Un cursor con imagen propia (`cursor: url(…)`) se muestra
+como flecha.
 
 **Salida.** Al terminar el proceso por cualquier salida normal se cierran las
 páginas que queden, se cierra CEF y se borra su directorio. Si el proceso
@@ -167,11 +206,16 @@ Las señales terminan la aplicación igual que sin CEF.
 
 ## Si CEF no arranca
 
-El contexto se inicia con el Chrome del sistema, igual que sin la opción. La
-ventana no avisa nada; el motivo queda una vez en la salida de error:
-«OpenIDE: el navegador embebido (CEF) no pudo iniciarse y se usa el navegador
-del sistema. …». Si tampoco hay un Chrome instalado se ve el panel de siempre,
-«No se encontró un navegador».
+El contexto se inicia con el Chrome del sistema, igual que sin la opción. El
+pie del panel lo dice en su propia línea, «El navegador embebido no pudo
+iniciarse; se usa el del sistema.», con el motivo al pasar el puntero y
+**Descartar** a la derecha. Aparece cuando el pie no tiene otra cosa que decir
+(un error, entradas pendientes o una carga van primero) y no cambia el tamaño
+de la página. Descartado, no vuelve a aparecer mientras la aplicación siga
+abierta, tampoco en otra pestaña de navegador. El motivo queda además una vez
+en la salida de error: «OpenIDE: el navegador embebido (CEF) no pudo iniciarse
+y se usa el navegador del sistema. …». Si tampoco hay un Chrome instalado se
+ve el panel de siempre, «No se encontró un navegador».
 
 Probado con el binario de la aplicación: recursos de CEF ausentes junto a
 `libcef.so`. Se comprueba antes de iniciarlo, porque CEF aborta el proceso
@@ -238,8 +282,16 @@ Chrome de reemplazo.
   cuadros de Chromium.
 - Cada cuadro se copia y se convierte entero aunque cambie un píxel: una
   animación chica cuesta lo mismo que una de pantalla completa.
-- La lista de un `<select>` abierta desde la ventana no se dibuja (CEF la
-  pinta aparte). `browser_select_option` funciona.
+- Una lista desplegable abierta no sale en las capturas del agente ni en su
+  árbol: sólo la ve quien mira la ventana. `browser_select_option` funciona.
+  Queda abierta si se clica en otra parte de la aplicación, fuera de la
+  página, hasta el próximo clic dentro de ella (leído en el código: la página
+  nunca pierde el foco; **no se miró en la ventana**).
+- La página no se amplía: Control + rueda no hace nada
+  ([por qué](browser-runtime.md#interacción-errores-y-límites)).
+- Control + clic, el botón del medio y Shift + clic sobre un enlace lo abren
+  en la misma página, porque CEF pregunta antes de crear otra y acá no hay
+  dónde. Un enlace con `target="_blank"` y `window.open` no abren nada.
 - El proceso enlaza `libcef.so` al arrancar: unos 50 MB más de PSS aunque no
   se abra ningún navegador, también en cada proceso `--browser-mcp`.
 - Los auxiliares de CEF heredan el entorno de la aplicación; Chrome recibía
@@ -335,8 +387,13 @@ distribuir ese subconjunto.**
 
 ## Validación
 
-Las pruebas rápidas no cambian y no inician CEF, con la opción o sin ella.
-Con la opción se agrega una, la del idioma que se anuncia a las páginas.
+Las pruebas rápidas no inician CEF, con la opción o sin ella. Con la opción
+se agregan las de `browser_cef.rs`: el idioma que se anuncia a las páginas, la
+frecuencia de la pantalla, cómo se dibuja una lista sobre la página, también
+cuando asoma por un borde, y que una lista que se abre, cambia o se cierra
+llega a la vista aunque una captura del agente acabe de repintar la página
+sin cambios. El aviso del pie y su descarte se prueban sin la opción, en
+`browser_ui_tests.rs` y `browser_host_tests.rs`.
 
 Las pruebas contra el Chromium embebido están ignoradas por defecto. Son los
 mismos escenarios que corren contra Chrome real en `browser_chrome_tests.rs`,
@@ -355,7 +412,17 @@ al lado (`browser_subprocess_path`), por eso el comando no lleva `--bin`.
 - Agente y cliente externo: los pasos de la prueba de Chrome y, además,
   diálogos descartados y aceptados, `window.open` rechazado, el idioma
   anunciado y un marco de otro sitio leído y accionado por referencia.
-- Vista en vivo a escala 2 y 1, entrada de la ventana: los mismos pasos.
+- Vista en vivo a escala 2 y 1, entrada de la ventana, teclas modificadoras
+  y teclado español: los mismos pasos. Un enlace pedido en otra pestaña se
+  abre en la misma página.
+- Lista de un `<select>`, a escala 2 y 1: está donde abre y mide lo que el
+  control a esa escala, el cuadro que recibe la vista la muestra, las flechas,
+  Enter y Escape actúan sobre ella, la fila bajo el puntero se resalta, un
+  clic la elige, la rueda la recorre sin mover la página, apretar sobre el
+  control y soltar sobre una fila la elige y la página sabe que el botón
+  subió, y una vista ocultada con la lista abierta la recupera al volver.
+- Cursor: mano sobre un enlace, barra de texto sobre un texto y un campo,
+  prohibido, redimensionar columna y flecha sobre el fondo.
 - Aislamiento: dos contextos iniciados a la vez en el mismo sitio no
   comparten cookies, `localStorage`, `sessionStorage`, IndexedDB ni caché
   HTTP; un contexto nuevo después de cerrar otro empieza vacío; ningún archivo
@@ -366,7 +433,8 @@ al lado (`browser_subprocess_path`), por eso el comando no lleva `--bin`.
 - `tests/browser_cef.rs` ejecuta el binario construido con `--cef-probe`: el
   propio ejecutable atiende a los auxiliares, se llega al primer cuadro y al
   salir no queda ningún proceso ni directorio. Y lo ejecuta con los recursos
-  de CEF ausentes: no muere, lo dice y sigue con el navegador del sistema.
+  de CEF ausentes: no muere, lo dice, sigue con el navegador del sistema y el
+  contexto lleva el motivo que muestra el pie del panel.
 
 Las mediciones se repiten con el perfil optimizado, sin otra compilación en
 curso:
@@ -379,9 +447,10 @@ nix-shell nix/shell-cef.nix --run \
 Ese comando no recompila el ejecutable de la aplicación; tiene que existir de
 antes, compilado con la opción y el mismo perfil.
 
-Validado el 11 de octubre de 2026 con CEF 154.0.34 (Chromium 154.0.8037.98) en
-NixOS, sandbox activo: las nueve pruebas pasaron en tres corridas seguidas y
-después de cada una no quedó ningún proceso de CEF ni directorio.
+Validado el 12 de octubre de 2026 con CEF 154.0.34 (Chromium 154.0.8037.98) en
+NixOS, sandbox activo: las trece pruebas (once en el arnés, con las
+mediciones, y las dos de `tests/browser_cef.rs`) pasaron en tres corridas
+seguidas y después de cada una no quedó ningún proceso de CEF ni directorio.
 
 ## Lo que queda para el paso de GPU
 

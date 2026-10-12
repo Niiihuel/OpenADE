@@ -86,6 +86,9 @@ pub(crate) struct BrowserSnapshot {
     pub navigating: bool,
     /// No Chrome, Chromium or Edge was found to start a context with.
     pub browser_missing: bool,
+    /// Why the context runs on the system's browser when the application
+    /// embeds one that could not start.
+    pub engine_notice: Option<Arc<str>>,
     pub url: String,
     pub title: String,
     pub error: Option<String>,
@@ -127,6 +130,7 @@ impl Default for BrowserSnapshot {
             loading: false,
             navigating: false,
             browser_missing: false,
+            engine_notice: None,
             url: "about:blank".into(),
             title: String::new(),
             error: None,
@@ -157,9 +161,13 @@ pub(crate) enum BrowserCommand {
         y: f64,
     },
     /// Pointer input from the window, in the same CSS pixels as `Click`.
+    /// `modifiers` are the keys held with it (`openide_browser::modifiers`):
+    /// only the window says them, never a tool call.
     PointerMove {
         x: f64,
         y: f64,
+        #[serde(skip)]
+        modifiers: u8,
     },
     /// `clicks` is 2 for the second press of a double click, 3 for the third.
     PointerDown {
@@ -167,12 +175,16 @@ pub(crate) enum BrowserCommand {
         y: f64,
         button: MouseButton,
         clicks: u8,
+        #[serde(skip)]
+        modifiers: u8,
     },
     PointerUp {
         x: f64,
         y: f64,
         button: MouseButton,
         clicks: u8,
+        #[serde(skip)]
+        modifiers: u8,
     },
     ClickLocator {
         selector: Option<String>,
@@ -203,6 +215,8 @@ pub(crate) enum BrowserCommand {
     Scroll {
         dx: f64,
         dy: f64,
+        #[serde(skip)]
+        modifiers: u8,
     },
     /// The whole accessible tree by default. The options shrink it for a
     /// reader with a small budget.
@@ -329,7 +343,7 @@ impl BrowserCommand {
             {
                 return Err("Coordenadas fuera del viewport".into())
             }
-            Self::PointerMove { x, y }
+            Self::PointerMove { x, y, .. }
             | Self::PointerDown { x, y, .. }
             | Self::PointerUp { x, y, .. }
                 if !(0.0..=1600.0).contains(x) || !(0.0..=1200.0).contains(y) =>
@@ -354,7 +368,7 @@ impl BrowserCommand {
                     "Indicá una profundidad de 0 a 64 y un selector de hasta 1024 bytes".into(),
                 )
             }
-            Self::Scroll { dx, dy }
+            Self::Scroll { dx, dy, .. }
                 if !dx.is_finite()
                     || !dy.is_finite()
                     || dx.abs() > 100_000.0
@@ -642,7 +656,7 @@ impl BrowserHandle {
         }
         let quiet = command.quiet();
         if let BrowserCommand::Click { x, y }
-        | BrowserCommand::PointerMove { x, y }
+        | BrowserCommand::PointerMove { x, y, .. }
         | BrowserCommand::PointerDown { x, y, .. }
         | BrowserCommand::PointerUp { x, y, .. } = &command
         {
@@ -738,7 +752,7 @@ impl BrowserRuntime {
                     let scale = device_scale(launch.device_scale);
                     match cef::Embedded::start(&embedded_view, &base_dir, viewport, scale) {
                         Ok(driver) => return Ok(driver),
-                        Err(reason) => cef::report_fallback(&reason),
+                        Err(reason) => cef::report_fallback(&embedded_view, &reason),
                     }
                 }
                 let missing = |message| StartFailure {
@@ -905,6 +919,11 @@ impl BrowserRuntime {
     }
     pub(crate) fn visible(&self) -> bool {
         self.handle.visible.load(Ordering::Acquire)
+    }
+    /// The pointer an embedded page asks for where the window's last was.
+    #[cfg(feature = "cef")]
+    pub(crate) fn cursor(&self) -> Option<eframe::egui::CursorIcon> {
+        self.handle.view.embedded.cursor()
     }
     /// The newest decoded frame of the page, once; older ones were replaced.
     pub(crate) fn take_frame(&self) -> Option<limn_egui::SurfaceFrame> {
@@ -1287,6 +1306,11 @@ impl Worker {
                     .lock()
                     .unwrap_or_else(|poison| poison.into_inner()) = driver.process_id();
                 self.driver = Some(driver);
+                #[cfg(feature = "cef")]
+                {
+                    let notice = self.handle.view.embedded.fallback();
+                    self.handle.state.lock().unwrap_or_else(|poison| poison.into_inner()).engine_notice = notice;
+                }
                 let _ = apply_reply(
                     &self.handle,
                     PageReply {
@@ -1567,9 +1591,27 @@ fn execute(
     fn end(end: &BrowserTarget) -> Result<Target<'_>, DriverError> {
         target(&end.selector, &end.role, &end.name, &end.reference)
     }
+    /// The window's pointer input, with the modifier keys it came with.
+    fn held<T>(
+        driver: &mut Driver,
+        modifiers: u8,
+        input: impl FnOnce(&mut Driver) -> Result<T, DriverError>,
+    ) -> Result<T, DriverError> {
+        driver.hold_modifiers(modifiers);
+        let outcome = input(driver);
+        driver.hold_modifiers(0);
+        outcome
+    }
     let agent = pending.include_aria;
     let mut reply = PageReply::default();
     let mut options = SnapshotOptions::default();
+    // The list of a <select> on an embedded page is Chromium's to click.
+    // The page is still told of a button that comes up over it: it may have
+    // seen it go down.
+    #[cfg(feature = "cef")]
+    if !agent && view.embedded.takes_pointer(&pending.command) && !matches!(pending.command, PointerUp { .. }) {
+        return Ok(reply);
+    }
     match &pending.command {
         Navigate { url } => driver.navigate(url)?,
         Back => driver.back()?,
@@ -1577,8 +1619,8 @@ fn execute(
         Reload => driver.reload()?,
         Click { x, y } => driver.click_at(*x, *y)?,
         // A move answers without page state: only its frames matter.
-        PointerMove { x, y } => {
-            driver.pointer_move(*x, *y)?;
+        PointerMove { x, y, modifiers } => {
+            held(driver, *modifiers, |driver| driver.pointer_move(*x, *y))?;
             return Ok(reply);
         }
         PointerDown {
@@ -1586,9 +1628,12 @@ fn execute(
             y,
             button,
             clicks,
+            modifiers,
         } => {
-            driver.pointer_move(*x, *y)?;
-            driver.pointer_down(*x, *y, *button, *clicks)?;
+            held(driver, *modifiers, |driver| {
+                driver.pointer_move(*x, *y)?;
+                driver.pointer_down(*x, *y, *button, *clicks)
+            })?;
             return Ok(reply);
         }
         PointerUp {
@@ -1596,10 +1641,11 @@ fn execute(
             y,
             button,
             clicks,
-        } => {
+            modifiers,
+        } => held(driver, *modifiers, |driver| {
             driver.pointer_move(*x, *y)?;
-            driver.pointer_up(*x, *y, *button, *clicks)?;
-        }
+            driver.pointer_up(*x, *y, *button, *clicks)
+        })?,
         ClickLocator {
             selector,
             role,
@@ -1629,8 +1675,8 @@ fn execute(
             });
         }
         ConfirmCut { token } => driver.confirm_cut(token)?,
-        Scroll { dx, dy } => {
-            driver.scroll(*dx, *dy)?;
+        Scroll { dx, dy, modifiers } => {
+            held(driver, *modifiers, |driver| driver.scroll(*dx, *dy))?;
             // The window's wheel does not wait for page state either: reading
             // it after every step would pace the wheel.
             if !agent {

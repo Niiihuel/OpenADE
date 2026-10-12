@@ -50,8 +50,36 @@ addEventListener('dblclick', () => { document.title = 'Doble: ' + getSelection()
 addEventListener('scroll', () => { document.title = 'Scroll ' + Math.round(scrollY); });
 </script></body></html>"#;
 
+/// What a person uses with the mouse and the keyboard: a list to choose
+/// from, a link, a line of text, a field and a text area.
+const FORM: &str = r#"<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Formulario</title><style>
+html{background:#fff}body{font:16px/1.5 sans-serif;margin:0;min-height:2400px;color:#111}
+#pick{position:absolute;left:20px;top:20px;width:200px;height:30px;font:16px sans-serif}
+#link{position:absolute;left:300px;top:20px}
+#line{position:absolute;left:20px;top:80px;margin:0;font:20px/30px monospace;white-space:nowrap}
+#field{position:absolute;left:20px;top:140px;width:300px;font:16px monospace}
+#area{position:absolute;left:20px;top:200px;width:300px;height:120px;font:16px monospace}
+#no{position:absolute;left:400px;top:80px;width:100px;height:30px;cursor:not-allowed;background:#eee}
+#split{position:absolute;left:400px;top:140px;width:100px;height:30px;cursor:col-resize;background:#eee}
+</style></head><body>
+<select id="pick" aria-label="Fruta">OPTIONS</select>
+<a id="link" href="/">Otra página</a>
+<p id="line">Uno dos tres cuatro cinco</p>
+<input id="field" aria-label="Campo">
+<textarea id="area" aria-label="Área"></textarea>
+<div id="no"></div><div id="split"></div>
+<script>
+const held = event => ['alt', 'ctrl', 'meta', 'shift'].filter(key => event[key + 'Key']).join('+');
+const note = (...parts) => seen.push(parts.filter(part => part !== '').join(' '));
+window.seen = [];
+for (const kind of ['click', 'auxclick']) addEventListener(kind, event => note(kind, held(event), event.target.id), true);
+addEventListener('wheel', event => note('wheel', held(event), Math.round(event.deltaX) + ',' + Math.round(event.deltaY)), true);
+addEventListener('keydown', event => note('key', held(event), event.key), true);
+addEventListener('mousemove', event => { window.buttons = event.buttons; }, true);
+</script></body></html>"#;
+
 /// The fixture pages on a free loopback port: `/` holds still, `/animated`
-/// never does. Only this machine can reach them.
+/// never does, `/form` is the one above. Only this machine can reach them.
 fn site() -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -63,9 +91,13 @@ fn site() -> String {
             let mut request = [0u8; 2048];
             let read = stream.read(&mut request).unwrap_or(0);
             let animated = request[..read].starts_with(b"GET /animated");
-            let body = PAGE
-                .replace("ROWS", &rows)
-                .replace("SPIN", if animated { r#"<div id="spin"></div>"# } else { "" });
+            let body = if request[..read].starts_with(b"GET /form") {
+                let options: String = (0..30).map(|option| format!("<option>Opción {option}</option>")).collect();
+                FORM.replace("OPTIONS", &options)
+            } else {
+                PAGE.replace("ROWS", &rows)
+                    .replace("SPIN", if animated { r#"<div id="spin"></div>"# } else { "" })
+            };
             let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         }
     });
@@ -555,23 +587,23 @@ fn takes_the_windows_input(engine: Chromium) {
     session.open(format!("{origin}/"));
     let left = MouseButton::Left;
     let press = |x: f64, y: f64, button, clicks| {
-        session.window(BrowserCommand::PointerDown { x, y, button, clicks }).unwrap();
-        session.window(BrowserCommand::PointerUp { x, y, button, clicks }).unwrap()
+        session.window(BrowserCommand::PointerDown { x, y, button, clicks, modifiers: 0 }).unwrap();
+        session.window(BrowserCommand::PointerUp { x, y, button, clicks, modifiers: 0 }).unwrap()
     };
     let copied = || session.window(BrowserCommand::CopySelection).unwrap().clipboard.unwrap().text;
 
     // Hover: a move alone changes the page.
-    session.window(BrowserCommand::PointerMove { x: 60.0, y: 40.0 }).unwrap();
+    session.window(BrowserCommand::PointerMove { x: 60.0, y: 40.0, modifiers: 0 }).unwrap();
     session.title("Encima");
-    session.window(BrowserCommand::PointerMove { x: 400.0, y: 400.0 }).unwrap();
+    session.window(BrowserCommand::PointerMove { x: 400.0, y: 400.0, modifiers: 0 }).unwrap();
     session.title("Fuera");
 
     // Press, drag and release select text like a real pointer.
-    session.window(BrowserCommand::PointerDown { x: 21.0, y: 175.0, button: left, clicks: 1 }).unwrap();
+    session.window(BrowserCommand::PointerDown { x: 21.0, y: 175.0, button: left, clicks: 1, modifiers: 0 }).unwrap();
     for x in [60.0, 120.0, 200.0] {
-        session.window(BrowserCommand::PointerMove { x, y: 175.0 }).unwrap();
+        session.window(BrowserCommand::PointerMove { x, y: 175.0, modifiers: 0 }).unwrap();
     }
-    session.window(BrowserCommand::PointerUp { x: 258.0, y: 175.0, button: left, clicks: 1 }).unwrap();
+    session.window(BrowserCommand::PointerUp { x: 258.0, y: 175.0, button: left, clicks: 1, modifiers: 0 }).unwrap();
     assert_eq!(copied(), "Texto para arrastrar");
 
     // The second press of a run selects a word and is the page's double
@@ -587,9 +619,9 @@ fn takes_the_windows_input(engine: Chromium) {
     assert_eq!(press(400.0, 300.0, MouseButton::Middle, 1).title, "Medio");
 
     // The wheel turns where the pointer is.
-    session.window(BrowserCommand::Scroll { dx: 0.0, dy: 400.0 }).unwrap();
+    session.window(BrowserCommand::Scroll { dx: 0.0, dy: 400.0, modifiers: 0 }).unwrap();
     session.title("Scroll ");
-    session.window(BrowserCommand::Scroll { dx: 0.0, dy: -400.0 }).unwrap();
+    session.window(BrowserCommand::Scroll { dx: 0.0, dy: -400.0, modifiers: 0 }).unwrap();
     session.title("Scroll 0");
 
     // Typing, a chord, and the clipboard in its two steps: nothing is cut
@@ -736,7 +768,7 @@ fn measurements(engine: Chromium) {
     // answered, watching for frames meanwhile.
     let wheel = |session: &Session, dy: f64| -> Duration {
         let sent = Instant::now();
-        let mut request = session.runtime.submit_ui(BrowserCommand::Scroll { dx: 0.0, dy }).unwrap();
+        let mut request = session.runtime.submit_ui(BrowserCommand::Scroll { dx: 0.0, dy, modifiers: 0 }).unwrap();
         while request.poll().is_none() {
             assert!(sent.elapsed() < Duration::from_secs(10), "the wheel was never answered");
             thread::sleep(Duration::from_micros(100));
@@ -748,7 +780,7 @@ fn measurements(engine: Chromium) {
     // as the window sends them, and from each step to the next decoded frame.
     session.open(format!("{origin}/"));
     session.settle(Duration::from_millis(600));
-    session.window(BrowserCommand::PointerMove { x: 640.0, y: 400.0 }).unwrap();
+    session.window(BrowserCommand::PointerMove { x: 640.0, y: 400.0, modifiers: 0 }).unwrap();
     let (mut moving, mut replies, mut waiting) = (Vec::new(), Vec::new(), Vec::<Instant>::new());
     let (mut direction, mut travelled) = (30.0, 0.0);
     let (from, started, used) = (session.frames.load(Ordering::Relaxed), Instant::now(), busy(&session));
@@ -901,6 +933,350 @@ fn measurements(engine: Chromium) {
             eprintln!("close: {:.0} ms; {} processes of the embedded Chromium stay for the next context", closing.elapsed().as_secs_f64() * 1000.0, descendants(own).len());
         }
     }
+}
+
+// ---- What a person does with the mouse and the keyboard -----------------------
+
+/// What an expression is in the page.
+fn value(session: &Session, expression: &str) -> Value {
+    let read = session.agent("browser_evaluate", json!({"expression": expression}));
+    assert!(!read.is_error, "{expression}: {:?}", read.content);
+    serde_json::from_str(read.content[1]["text"].as_str().unwrap()).unwrap()
+}
+
+/// The pixels of a frame the view was handed, as its texture gets them.
+fn pixels(frame: limn_egui::SurfaceFrame) -> Arc<eframe::egui::ColorImage> {
+    let size = frame.size();
+    let ctx = eframe::egui::Context::default();
+    let input = eframe::egui::RawInput {
+        max_texture_side: Some(8192),
+        ..Default::default()
+    };
+    ctx.run_ui(input, |_| {}).textures_delta.clear();
+    assert!(limn_egui::present_surface(&ctx, "pixels", frame));
+    let mut delta = ctx.run_ui(Default::default(), |_| {}).textures_delta;
+    limn_egui::forget_surface("pixels");
+    let found = delta.set.values().flatten().find_map(|delta| match &delta.image {
+        eframe::egui::ImageData::Color(image) if image.size == size => Some(image.clone()),
+        _ => None,
+    });
+    delta.clear();
+    found.expect("the frame reached its texture")
+}
+
+#[test]
+#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
+fn real_chrome_draws_the_list_of_a_select_and_takes_keys_on_it() {
+    for scale in [2.0, 1.0] {
+        the_list_of_a_select(Chromium::Launched, scale);
+    }
+}
+
+/// The list of a `<select>` is a widget of its own, which Chromium paints
+/// apart from the page: the view shows it where it opens, at the page's
+/// scale, and what is done on it chooses.
+fn the_list_of_a_select(engine: Chromium, scale: f32) {
+    let origin = site();
+    let session = launch(engine, (640, 480), scale);
+    session.open(format!("{origin}/form"));
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
+    session.settle(Duration::from_millis(300));
+    let click = |x: f64, y: f64| {
+        let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+        session.window(BrowserCommand::PointerDown { x, y, button, clicks, modifiers }).unwrap();
+        session.window(BrowserCommand::PointerUp { x, y, button, clicks, modifiers }).unwrap();
+    };
+    let press = |key: &str| session.window(BrowserCommand::Press { key: key.into() }).unwrap();
+    let chosen = || value(&session, "document.querySelector('#pick').value");
+    // The select is 200 × 30 at (20, 20) and its list opens under it, in rows
+    // of 26.5 CSS pixels. The chosen row of an open list is blue.
+    let row = |index: f64| 50.0 + 26.5 * (index + 0.5);
+    let shown = std::cell::RefCell::new(None);
+    let blue = |what: &str, index: f64, wanted: bool| {
+        session.until(what, || {
+            if let Some(frame) = session.runtime.take_frame() {
+                *shown.borrow_mut() = Some(pixels(frame));
+            }
+            shown.borrow().as_ref().is_some_and(|image: &Arc<eframe::egui::ColorImage>| {
+                let colour = image[((150.0 * scale) as usize, (row(index) as f32 * scale) as usize)];
+                (colour.b() > colour.r().saturating_add(60)) == wanted
+            })
+        });
+    };
+
+    // Opened with the pointer, it is drawn under the select.
+    click(100.0, 35.0);
+    blue("the list under the select, its first row chosen", 0.0, true);
+    #[cfg(feature = "cef")]
+    if engine == Chromium::Embedded {
+        let (at, size) = session.runtime.handle.view.embedded.popup_box().expect("the list is open");
+        assert_eq!((at, size[0]), (((20.0 * scale) as i32, (50.0 * scale) as i32), (200.0 * scale) as usize), "{size:?}");
+    }
+    // The keyboard moves along it and chooses, and it is gone.
+    press("ArrowDown");
+    press("ArrowDown");
+    blue("the third row chosen", 2.0, true);
+    press("Enter");
+    assert_eq!(chosen(), "Opción 2");
+    blue("the page again where the list was", 2.0, false);
+    // Escape closes it with nothing else chosen.
+    click(100.0, 35.0);
+    blue("the list again", 2.0, true);
+    press("Escape");
+    blue("the page again", 2.0, false);
+    assert_eq!(chosen(), "Opción 2");
+
+    click(100.0, 35.0);
+    blue("the list once more", 2.0, true);
+    match engine {
+        // The launched Chrome draws the list but its protocol's clicks only
+        // ever reach the page under it: one there closes the list.
+        Chromium::Launched => {
+            click(100.0, row(4.0));
+            blue("the page again", 2.0, false);
+            assert_eq!(chosen(), "Opción 2");
+        }
+        #[cfg(feature = "cef")]
+        Chromium::Embedded => {
+            let embedded = &session.runtime.handle.view.embedded;
+            // The pointer over a row, and a click on it.
+            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
+            blue("the row under the pointer", 4.0, true);
+            click(100.0, row(4.0));
+            session.until("the list to close", || embedded.popup_box().is_none());
+            assert_eq!(chosen(), "Opción 4");
+            blue("the page again", 4.0, false);
+            // The wheel turns the list, not the page under it.
+            click(100.0, 35.0);
+            session.until("the list to open", || embedded.popup_box().is_some());
+            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
+            session.window(BrowserCommand::Scroll { dx: 0.0, dy: 265.0, modifiers: 0 }).unwrap();
+            session.settle(Duration::from_millis(500));
+            click(100.0, row(4.0));
+            session.until("the list to close", || embedded.popup_box().is_none());
+            let further: u32 = chosen().as_str().unwrap().trim_start_matches("Opción ").parse().unwrap();
+            assert!(further >= 10, "the row under the pointer is now Opción {further}");
+            assert_eq!(value(&session, "scrollY"), 0);
+            // Pressed on the select, dragged to a row and released there: the
+            // row is chosen, and the page knows the button came up.
+            let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+            session.window(BrowserCommand::PointerDown { x: 100.0, y: 35.0, button, clicks, modifiers }).unwrap();
+            session.until("the list to open", || embedded.popup_box().is_some());
+            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(1.0), modifiers }).unwrap();
+            session.window(BrowserCommand::PointerUp { x: 100.0, y: row(1.0), button, clicks, modifiers }).unwrap();
+            session.until("the list to close", || embedded.popup_box().is_none());
+            assert_eq!(chosen(), "Opción 1");
+            session.window(BrowserCommand::PointerMove { x: 500.0, y: 400.0, modifiers }).unwrap();
+            session.until("the page to hear the pointer move", || value(&session, "window.buttons") == 0);
+            // A list left open goes with the view, and comes back with it.
+            click(100.0, 35.0);
+            session.until("the list to open", || embedded.popup_box().is_some());
+            session.runtime.set_visible(false);
+            session.until("the hidden view to let go of it", || embedded.popup_box().is_none());
+            session.runtime.set_visible(true);
+            session.until("the list of the view shown again", || embedded.popup_box().is_some());
+        }
+    }
+}
+
+#[test]
+#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
+fn real_chrome_takes_modifier_keys_with_the_pointer_and_the_wheel() {
+    modifier_keys_with_the_pointer_and_the_wheel(Chromium::Launched);
+}
+
+fn modifier_keys_with_the_pointer_and_the_wheel(engine: Chromium) {
+    use openide_browser::modifiers::{ALT, CONTROL, SHIFT};
+    let origin = site();
+    let session = launch(engine, (640, 480), 2.0);
+    let form = format!("{origin}/form");
+    session.open(form.clone());
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
+    session.settle(Duration::from_millis(300));
+    let (left, middle) = (MouseButton::Left, MouseButton::Middle);
+    let click = |x: f64, y: f64, button, modifiers| {
+        session.window(BrowserCommand::PointerDown { x, y, button, clicks: 1, modifiers }).unwrap();
+        session.window(BrowserCommand::PointerUp { x, y, button, clicks: 1, modifiers }).unwrap();
+    };
+    // What the page heard since it was last asked.
+    let seen = || value(&session, "seen.splice(0).join(' | ')");
+
+    // Shift + click extends the selection from where the last click left it.
+    click(22.0, 95.0, left, 0);
+    click(120.0, 95.0, left, SHIFT);
+    assert_eq!(value(&session, "getSelection().toString()"), "Uno dos ");
+    assert_eq!(seen(), "click line | click shift line");
+    // The page's own handlers are told which keys were held, with any button
+    // and with the wheel, which Shift turns sideways before it gets here.
+    value(&session, "(link => link.onclick = link.onauxclick = event => event.preventDefault())(document.querySelector('#link')); 0");
+    click(320.0, 30.0, left, CONTROL);
+    click(320.0, 30.0, middle, SHIFT);
+    click(450.0, 95.0, left, ALT);
+    click(450.0, 95.0, left, CONTROL | SHIFT);
+    assert_eq!(seen(), "click ctrl link | auxclick shift link | click alt no | click ctrl+shift no");
+    session.window(BrowserCommand::Scroll { dx: 120.0, dy: 0.0, modifiers: SHIFT }).unwrap();
+    session.until("the wheel to reach the page", || value(&session, "seen.length") == 1);
+    assert_eq!(seen(), "wheel shift 120,0");
+    assert_eq!(value(&session, "scrollY"), 0);
+
+    // A link clicked for another tab or another window, where there is one
+    // page and no other is ever made.
+    value(&session, "(link => link.onclick = link.onauxclick = null)(document.querySelector('#link')); 0");
+    for (button, modifiers) in [(left, CONTROL), (middle, 0), (left, SHIFT)] {
+        click(320.0, 30.0, button, modifiers);
+        match engine {
+            // The launched Chrome makes the tab, which the driver closes:
+            // the page stays where it was.
+            Chromium::Launched => {
+                thread::sleep(Duration::from_millis(600));
+                assert_eq!(value(&session, "location.href"), form.as_str());
+            }
+            // The embedded Chromium is asked first, has nowhere else to open
+            // it and opens it in the page itself.
+            #[cfg(feature = "cef")]
+            Chromium::Embedded => {
+                session.until("the link to open in the page itself", || session.runtime.snapshot().url == format!("{origin}/"));
+                session.open(form.clone());
+                session.settle(Duration::from_millis(300));
+            }
+        }
+    }
+    // The one page is still there and still drawn.
+    session.settle(Duration::from_millis(700));
+    let _ = session.runtime.take_frame();
+    value(&session, "document.body.style.background = '#fde'; 0");
+    session.next_frame("a frame of the page after those clicks");
+    assert!(session.runtime.snapshot().error.is_none());
+}
+
+#[test]
+#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
+fn real_chrome_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
+    what_a_spanish_keyboard_types(Chromium::Launched);
+}
+
+/// Text and keys as the window sends them: a character of the US layout is a
+/// key that goes down and up, any other text is inserted, and editing keys
+/// and shortcuts are chords by name.
+fn what_a_spanish_keyboard_types(engine: Chromium) {
+    let origin = site();
+    let session = launch(engine, (640, 480), 2.0);
+    session.open(format!("{origin}/form"));
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
+    session.settle(Duration::from_millis(300));
+    let click = |x: f64, y: f64| {
+        let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+        session.window(BrowserCommand::PointerDown { x, y, button, clicks, modifiers }).unwrap();
+        session.window(BrowserCommand::PointerUp { x, y, button, clicks, modifiers }).unwrap();
+    };
+    let press = |key: &str| {
+        session.window(BrowserCommand::Press { key: key.into() }).unwrap();
+    };
+    let insert = |text: &str| {
+        session.window(BrowserCommand::Type { text: text.into() }).unwrap();
+    };
+    let copied = || session.window(BrowserCommand::CopySelection).unwrap().clipboard.unwrap().text;
+    // The focused field: which, what it holds and where its selection is.
+    let field = || value(&session, "(field => [field.id, field.value, field.selectionStart, field.selectionEnd])(document.activeElement)");
+
+    // An <input>. Accents, ñ, ü, the opening marks and the euro sign, which
+    // a Spanish keyboard types with dead keys and AltGr and the window gets
+    // as text, like an emoji and what an input method commits.
+    click(60.0, 150.0);
+    insert("á é í ó ú ñ ü ¿ ¡ €");
+    assert_eq!(field(), json!(["field", "á é í ó ú ñ ü ¿ ¡ €", 19, 19]));
+    press("Control+a");
+    insert("hola ñandú 🧠👍🏽");
+    assert_eq!(field(), json!(["field", "hola ñandú 🧠👍🏽", 17, 17]));
+    // Home, End, Delete, Backspace and the arrows.
+    press("Home");
+    press("Delete");
+    assert_eq!(field(), json!(["field", "ola ñandú 🧠👍🏽", 0, 0]));
+    press("End");
+    press("Backspace");
+    assert_eq!(field(), json!(["field", "ola ñandú 🧠", 12, 12]), "a whole emoji at once");
+    press("ArrowLeft");
+    press("ArrowLeft");
+    insert("¿");
+    assert_eq!(field(), json!(["field", "ola ñandú¿ 🧠", 10, 10]));
+    // Shift with the arrows and with Home selects.
+    for _ in 0..3 {
+        press("Shift+ArrowLeft");
+    }
+    assert_eq!(field(), json!(["field", "ola ñandú¿ 🧠", 7, 10]));
+    assert_eq!(copied(), "dú¿");
+    press("Shift+Home");
+    assert_eq!(field(), json!(["field", "ola ñandú¿ 🧠", 0, 10]));
+    // Cut in its two steps, and paste, which arrives as text.
+    let cut = session.window(BrowserCommand::PrepareCut).unwrap().clipboard.unwrap();
+    assert_eq!(cut.text, "ola ñandú¿");
+    session.window(BrowserCommand::ConfirmCut { token: cut.cut_token.unwrap() }).unwrap();
+    assert_eq!(field(), json!(["field", " 🧠", 0, 0]));
+    insert("pegado ");
+    insert("€");
+    assert_eq!(field(), json!(["field", "pegado € 🧠", 8, 8]));
+    // Undo and redo, by both of its shortcuts.
+    press("Control+z");
+    let undone = field()[1].as_str().unwrap().to_owned();
+    assert!(undone.len() < "pegado € 🧠".len() && undone.ends_with(" 🧠"), "{undone:?}");
+    press("Control+Shift+z");
+    assert_eq!(field()[1], "pegado € 🧠");
+    press("Control+z");
+    assert_eq!(field()[1], undone.as_str());
+    press("Control+y");
+    assert_eq!(field()[1], "pegado € 🧠");
+    // A character of the layout is a key the page hears, and types itself.
+    value(&session, "seen.length = 0");
+    for key in ["a", "B", "?", " ", "+"] {
+        press(key);
+    }
+    assert_eq!(field()[1], "pegado €aB? + 🧠");
+    assert_eq!(value(&session, "seen.splice(0).join('|')"), "key a|key B|key ?|key  |key +");
+    press("Control+a");
+    assert_eq!(value(&session, "seen.splice(0).join('|')"), "key ctrl Control|key ctrl a", "a shortcut names its letter as it is typed");
+    // Enter does not type into a field of one line, and Tab leaves it.
+    press("Enter");
+    assert_eq!(field()[1], "pegado €aB? + 🧠");
+    press("Tab");
+
+    // A <textarea>: Enter breaks the line.
+    insert("línea ñ");
+    press("Enter");
+    insert("línea ü");
+    assert_eq!(field(), json!(["area", "línea ñ\nlínea ü", 15, 15]));
+    press("ArrowUp");
+    press("Home");
+    press("Shift+End");
+    assert_eq!(field(), json!(["area", "línea ñ\nlínea ü", 0, 7]));
+    assert_eq!(copied(), "línea ñ");
+    press("Shift+ArrowDown");
+    assert_eq!(field(), json!(["area", "línea ñ\nlínea ü", 0, 15]));
+    // PageUp and PageDown move the caret by what the area shows.
+    press("Control+End");
+    for _ in 0..40 {
+        press("Enter");
+    }
+    insert("fin");
+    assert_eq!(field()[2], 58);
+    press("PageUp");
+    let up = field()[2].as_u64().unwrap();
+    assert!(up < 58, "{up}");
+    press("PageDown");
+    assert_eq!(field()[2], 58);
+    press("Shift+Tab");
+    assert_eq!(field()[0], "field");
+
+    // With no field focused, the same keys move the page.
+    value(&session, "document.activeElement.blur(); 0");
+    press("PageDown");
+    session.until("PageDown to scroll the page", || value(&session, "scrollY").as_f64().unwrap() > 200.0);
+    press(" ");
+    session.until("Space to scroll it further", || value(&session, "scrollY").as_f64().unwrap() > 600.0);
+    press("Home");
+    session.until("Home to go back to its start", || value(&session, "scrollY") == 0);
 }
 
 // ---- The embedded Chromium ---------------------------------------------------
@@ -1180,4 +1556,51 @@ fn native_wheel(session: &Session) {
 #[ignore = "opt-in timing: starts the embedded Chromium and prints measurements"]
 fn real_cef_measurements_of_the_live_view_and_of_what_the_browser_adds() {
     measurements(Chromium::Embedded);
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_draws_the_list_of_a_select_and_takes_keys_the_pointer_and_the_wheel_on_it() {
+    for scale in [2.0, 1.0] {
+        the_list_of_a_select(Chromium::Embedded, scale);
+    }
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_takes_modifier_keys_with_the_pointer_and_the_wheel() {
+    modifier_keys_with_the_pointer_and_the_wheel(Chromium::Embedded);
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
+    what_a_spanish_keyboard_types(Chromium::Embedded);
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_says_which_pointer_the_page_asks_for_under_the_windows() {
+    use eframe::egui::CursorIcon;
+    let origin = site();
+    let session = launch(Chromium::Embedded, (640, 480), 2.0);
+    session.open(format!("{origin}/form"));
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
+    session.settle(Duration::from_millis(300));
+    for (what, x, y, icon) in [
+        ("a link", 320.0, 30.0, CursorIcon::PointingHand),
+        ("a line of text", 60.0, 95.0, CursorIcon::Text),
+        ("what is not allowed", 450.0, 95.0, CursorIcon::NotAllowed),
+        ("a column divider", 450.0, 155.0, CursorIcon::ResizeColumn),
+        ("a field", 60.0, 150.0, CursorIcon::Text),
+        ("the page itself", 600.0, 440.0, CursorIcon::Default),
+    ] {
+        session.window(BrowserCommand::PointerMove { x, y, modifiers: 0 }).unwrap();
+        session.until(&format!("the pointer of {what}"), || session.runtime.cursor() == Some(icon));
+    }
 }

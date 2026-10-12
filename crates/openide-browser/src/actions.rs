@@ -382,6 +382,14 @@ impl Driver {
 
     // ---- Raw input for a live view ----
 
+    /// The modifier keys held (`modifiers::SHIFT | …`) with the pointer and
+    /// wheel events that follow, without key events of their own: a host
+    /// that learns of them with each pointer event sets them before it and
+    /// clears them after.
+    pub fn hold_modifiers(&mut self, modifiers: u8) {
+        self.modifiers = modifiers & (keys::ALT | keys::CONTROL | keys::META | keys::SHIFT);
+    }
+
     /// Moves the pointer. Buttons already down stay down, so a move between
     /// `pointer_down` and `pointer_up` is a drag.
     pub fn pointer_move(&mut self, x: f64, y: f64) -> Outcome<()> {
