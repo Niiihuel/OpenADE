@@ -979,7 +979,8 @@ fn the_list_of_a_select(engine: Chromium, scale: f32) {
     let origin = site();
     let session = launch(engine, (640, 480), scale);
     session.open(format!("{origin}/form"));
-    // Chromium drops what is clicked on a document it has not painted yet.
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
     session.settle(Duration::from_millis(300));
     let click = |x: f64, y: f64| {
         let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
@@ -1091,7 +1092,8 @@ fn modifier_keys_with_the_pointer_and_the_wheel(engine: Chromium) {
     let session = launch(engine, (640, 480), 2.0);
     let form = format!("{origin}/form");
     session.open(form.clone());
-    // Chromium drops what is clicked on a document it has not painted yet.
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
     session.settle(Duration::from_millis(300));
     let (left, middle) = (MouseButton::Left, MouseButton::Middle);
     let click = |x: f64, y: f64, button, modifiers| {
@@ -1162,7 +1164,8 @@ fn what_a_spanish_keyboard_types(engine: Chromium) {
     let origin = site();
     let session = launch(engine, (640, 480), 2.0);
     session.open(format!("{origin}/form"));
-    // Chromium drops what is clicked on a document it has not painted yet.
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
     session.settle(Duration::from_millis(300));
     let click = |x: f64, y: f64| {
         let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
@@ -1586,7 +1589,8 @@ fn real_cef_says_which_pointer_the_page_asks_for_under_the_windows() {
     let origin = site();
     let session = launch(Chromium::Embedded, (640, 480), 2.0);
     session.open(format!("{origin}/form"));
-    // Chromium drops what is clicked on a document it has not painted yet.
+    // A click sent the instant a load ends can be lost on the embedded
+    // Chromium: the page is clicked once it holds still.
     session.settle(Duration::from_millis(300));
     for (what, x, y, icon) in [
         ("a link", 320.0, 30.0, CursorIcon::PointingHand),

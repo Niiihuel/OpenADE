@@ -148,7 +148,7 @@ let png = driver.screenshot(Capture::Viewport)?;
 | Esperas | `wait_for_text`, `wait_for_text_gone`, `wait_seconds` |
 | Diálogos | `handle_dialog` |
 | Portapapeles | `copy_selection`, `prepare_cut`, `confirm_cut` |
-| Entrada cruda | `pointer_move`, `pointer_down`, `pointer_up`, `wheel`, `key_down`, `key_up`, `insert_text` |
+| Entrada cruda | `pointer_move`, `pointer_down`, `pointer_up`, `wheel`, `hold_modifiers`, `key_down`, `key_up`, `insert_text` |
 | Flujo | `start_stream`, `start_stream_within`, `stop_stream`, `capture_frame` |
 
 Todo error es un `DriverError` con una clase, que dice más que el texto:
@@ -336,6 +336,14 @@ solicitud que el driver esté esperando.
   movimiento entre `pointer_down` y `pointer_up` es un arrastre. `MouseButton`
   se serializa como lo nombra el protocolo (`left`, `middle`, `right`), para
   que un host lo lleve en sus propios comandos.
+- **Modificadores por evento.** Un host que conoce las teclas modificadoras
+  junto con cada evento del puntero, y no cuando bajan y suben, las fija con
+  `hold_modifiers(modifiers::SHIFT | modifiers::CONTROL)` antes del evento y
+  las quita después con `hold_modifiers(0)`. No genera eventos de tecla: sólo
+  cambia el campo `modifiers` de los eventos de puntero y de rueda que siguen.
+  Chromium lee de ahí lo que hace con ellos: con Shift un clic extiende la
+  selección y, si la rueda no trae movimiento horizontal, la gira de costado;
+  con Control la rueda enviada por el protocolo desplaza igual, no amplía.
 
 `screenshot` es otra cosa: la captura para las herramientas, PNG a un píxel de
 imagen por píxel CSS cualquiera sea la escala, de hasta 2 MiB.
@@ -487,8 +495,12 @@ modo.
 
 Buscar un navegador (lo decide el host), varias pestañas, descargas, subida
 de archivos, PDF, trazas, grabación, otros motores, un transporte TCP o
-WebSocket, modificadores por evento del puntero y la forma del cursor. El
-transporte de CEF vive en `crates/openide-cef`, no acá.
+WebSocket y la forma del cursor, que el protocolo no informa. El transporte de
+CEF vive en `crates/openide-cef`, no acá.
+
+Los eventos del puntero del protocolo sólo llegan a la página y a sus marcos.
+La lista abierta de un `<select>` es un widget aparte: las teclas actúan sobre
+ella, porque la página se las pasa, y un clic encima la cierra.
 
 Atajos conocidos:
 
