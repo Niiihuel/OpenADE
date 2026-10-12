@@ -3270,14 +3270,17 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
                     .clip_children(),
             );
         }
+        // While it grows, the dock keeps to the right edge it started from,
+        // over the room the conversation left.
         let mut workspace = vec![Element::row(vec![
+            Element::spacer().size(Some(layout.center), None),
             side_pane_sized(state, right, workspace_height).clip_children(),
         ])
         .flex(1.0)
         .clip_children()];
         if terminal_height > 0.0 {
             workspace.push(
-                ide_ui::bottom::build(state, right, terminal_height)
+                ide_ui::bottom::build(state, layout.center + right, terminal_height)
                     .size(None, Some(terminal_height)),
             );
         }
@@ -3648,6 +3651,12 @@ pub fn build_window_view(state: &ViewState, width: f32, height: f32) -> Element 
     .gallery(gallery.selected, gallery.image_count())
     .previous_action("composer_image_previous")
     .next_action("composer_image_next")
+    .zoom(gallery.zoom)
+    .zoom_actions(
+        "composer_image_zoom_out",
+        "composer_image_zoom_fit",
+        "composer_image_zoom_in",
+    )
     .return_focus("prompt");
     if let Some(image) = &gallery.image {
         viewer = viewer.image(image.clone());

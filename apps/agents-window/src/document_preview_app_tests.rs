@@ -465,6 +465,36 @@ fn an_image_opens_in_the_window_viewer_by_pointer_and_keyboard_and_returns_to_it
             assert!(open.commands.iter().any(|command| matches!(command,
                 DrawCommand::RasterImage { image, .. }
                     if image.sha256() == raster.sha256() && image.is_full_resolution())));
+            // The viewer zooms past its fit and back; the panel's preview does not.
+            let shown = |app: &mut AgentsWindow| {
+                window_frame(app)
+                    .commands
+                    .iter()
+                    // The viewer paints over the panel's own preview.
+                    .filter_map(|command| match command {
+                        DrawCommand::RasterImage { rect, image, .. }
+                            if image.is_full_resolution() => Some(rect.width),
+                        _ => None,
+                    })
+                    .last()
+                    .unwrap()
+            };
+            let zoom = |app: &AgentsWindow| app.view.composer_image_viewer.as_ref().unwrap().zoom;
+            let fitted = shown(&mut app);
+            press(&mut app, &open, "composer_image_zoom_in");
+            assert_eq!(zoom(&app), 1.5);
+            assert_eq!(shown(&mut app), fitted * 1.5);
+            for _ in 0..8 {
+                app.apply_action(UiAction::Clicked { id: "composer_image_zoom_in".into() }, &egui::Context::default());
+            }
+            assert_eq!(zoom(&app), openide_ui::ImageViewer::MAX_ZOOM);
+            app.apply_action(UiAction::Clicked { id: "composer_image_zoom_out".into() }, &egui::Context::default());
+            assert!(zoom(&app) < openide_ui::ImageViewer::MAX_ZOOM);
+            app.apply_action(UiAction::Clicked { id: "composer_image_zoom_fit".into() }, &egui::Context::default());
+            assert_eq!((zoom(&app), shown(&mut app)), (1.0, fitted));
+            app.apply_action(UiAction::Clicked { id: "composer_image_zoom_out".into() }, &egui::Context::default());
+            assert_eq!(zoom(&app), 1.0, "never smaller than its fit");
+            assert_eq!(app.view.document_preview.as_ref().unwrap().zoom, None);
             if keyboard {
                 key(&mut app, Key::Escape);
             } else {

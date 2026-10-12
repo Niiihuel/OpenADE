@@ -28,6 +28,8 @@ pub(crate) struct ImageGalleryView {
     pub image: Option<RasterImage>,
     pub error: Option<String>,
     pub loading: bool,
+    /// How many times its fit to the window the picture is shown.
+    pub zoom: f32,
     /// Confirmed journal images already held by the transcript. They never
     /// enter the attachment worker or acquire a machine-local file path.
     pub tool_source: Option<ToolImageGallery>,

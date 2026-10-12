@@ -977,6 +977,8 @@ fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_b
     let tabs = |app: &AgentsWindow| -> Vec<(u64, bool)> {
         app.view.dock_tabs.iter().map(|tab| (tab.id, tab.active)).collect()
     };
+    // One clock for every change: a frame never comes before the last one.
+    let mut clock = Instant::now();
     for narrow in [false, true] {
         // In the narrow window the sidebar leaves the dock no room beside
         // the conversation; maximized it needs none.
@@ -994,6 +996,12 @@ fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_b
         assert_eq!(restored.3.len(), 2);
         assert!(restored.4 > 0.0);
         for shortcut in [narrow, true] {
+            // At rest, as the window leaves it once its panels have settled.
+            app.update_dock_motion(app.viewport_width, clock);
+            clock += Duration::from_secs(2);
+            app.update_dock_motion(app.viewport_width, clock);
+            assert_eq!(app.view.right_presentation_width, None);
+            present_workspace(&mut app);
             if shortcut {
                 assert!(app.tree.focus("prompt"), "the composer has the keyboard");
                 maximize_shortcut(&mut app);
@@ -1029,10 +1037,29 @@ fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_b
             }
             assert!(!app.dismiss_environment_level(&ctx));
             assert!(app.view.dock_maximized);
-            // Neither width is in transit: the change is whole on its frame.
-            app.update_dock_motion(app.viewport_width, Instant::now());
+            // The dock grows to its room as every dock toggle moves, from the
+            // right edge it stood on, and the terminal leaves with it.
+            let (from, room) = (restored.0.right.unwrap_or(0.0), layout.right.unwrap());
+            assert!(app.update_dock_motion(app.viewport_width, clock));
+            assert_eq!(app.view.right_presentation_width, Some(from));
+            clock += super::DockMotion::DURATION / 2;
+            assert!(app.update_dock_motion(app.viewport_width, clock));
+            let growing = app.view.right_presentation_width.expect("the width is in transit");
+            assert!(from < growing && growing < room, "{from} {growing} {room}");
+            assert!(app.view.bottom_presentation_height.is_some_and(|height| height < restored.4));
+            present_workspace(&mut app);
+            let edge = |app: &AgentsWindow| {
+                let rect = region_rect(app, "toggle_side_pane");
+                rect.x + rect.width
+            };
+            let midway = edge(&app);
+            assert!(!shown(&app, "prompt"), "the conversation is not laid out in what is left");
+            clock += super::DockMotion::DURATION;
+            app.update_dock_motion(app.viewport_width, clock);
             assert_eq!(app.view.right_presentation_width, None);
             assert_eq!(app.view.bottom_presentation_height, None);
+            present_workspace(&mut app);
+            assert_eq!(edge(&app), midway, "it grows leftwards");
 
             if shortcut {
                 maximize_shortcut(&mut app);
@@ -1041,7 +1068,16 @@ fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_b
             }
             assert!(!app.view.dock_maximized && !app.dock.is_maximized(&scope));
             assert!(app.prompt_focus_pending, "the keyboard goes back to the composer");
-            app.update_dock_motion(app.viewport_width, Instant::now());
+            // It comes back the same way, and the conversation with it.
+            assert!(app.update_dock_motion(app.viewport_width, clock));
+            clock += super::DockMotion::DURATION / 2;
+            assert!(app.update_dock_motion(app.viewport_width, clock));
+            let shrinking = app.view.right_presentation_width.expect("the width is in transit");
+            assert!(from < shrinking && shrinking < room, "{from} {shrinking} {room}");
+            present_workspace(&mut app);
+            assert!(shown(&app, "prompt"));
+            clock += super::DockMotion::DURATION;
+            app.update_dock_motion(app.viewport_width, clock);
             present_workspace(&mut app);
             app.focus_prompt_if_pending();
             assert_eq!(app.tree.focused_id(), Some("prompt"));
@@ -1297,4 +1333,21 @@ fn export_dock_maximize_visual_review() {
     app.view.sidebar_collapsed = false;
     click(&mut app, MAXIMIZE);
     export(&mut app, "file-maximized-beside-the-sidebar", true);
+}
+
+#[test]
+fn a_maximized_dock_keeps_the_way_back_to_a_folded_sidebar() {
+    let (_root, mut app, _browser) = maximize_fixture();
+    app.viewport_width = 1280.0;
+    app.view.sidebar_collapsed = true;
+    app.sync_dock_view();
+    present_workspace(&mut app);
+    maximize_shortcut(&mut app);
+    present_workspace(&mut app);
+    // The header that offered it is under the dock, so the dock offers it.
+    assert!(app.view.dock_maximized && shown(&app, "toggle_sidebar_reopen"));
+    press(&mut app, "toggle_sidebar_reopen");
+    assert!(!app.view.sidebar_collapsed && app.view.dock_maximized);
+    present_workspace(&mut app);
+    assert!(!shown(&app, "toggle_sidebar_reopen"));
 }

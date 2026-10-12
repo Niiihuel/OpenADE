@@ -84,7 +84,8 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
         actions.push(
             IconButton::new(
                 format!("{}:fullscreen", view.chrome_action_prefix()),
-                Icon::Expand,
+                // Four corners: the diagonal arrows are the panel's own maximize.
+                Icon::Fullscreen,
                 theme::component_palette(),
             )
             .variant(ButtonVariant::Ghost)
@@ -218,13 +219,24 @@ fn document_body(
     };
     let content = match document {
         Document::Markdown(document) => {
-            let content_width = (width - 40.0).max(0.0);
-            let content = Element::panel(crate::view::document_markdown_ui::build(
-                document,
-                content_width,
-                action_prefix,
-            ))
-            .padding(16.0);
+            // A document keeps to the reading width of an answer, centered in
+            // a wider pane, with a page's margins around it.
+            let content_width =
+                (width - 48.0).clamp(0.0, crate::session_surface::READING_WIDTH);
+            let side = || Element::spacer().size(Some((width - content_width) / 2.0), None);
+            let content = Element::column(vec![
+                Element::spacer().size(None, Some(24.0)),
+                Element::row(vec![
+                    side(),
+                    crate::view::document_markdown_ui::build(
+                        document,
+                        content_width,
+                        action_prefix,
+                    ),
+                    side(),
+                ]),
+                Element::spacer().size(None, Some(48.0)),
+            ]);
             ScrollArea::new(scroll_id, content)
                 .render()
                 .size(Some(width), Some(height))

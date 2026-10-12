@@ -455,6 +455,7 @@ impl AgentsWindow {
                             image: Some(image),
                             error: None,
                             loading: false,
+                            zoom: 1.0,
                             tool_source: None,
                         });
                     self.prompt_focus_pending = false;

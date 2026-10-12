@@ -31,7 +31,7 @@ use crate::{
     },
 };
 
-const READING_WIDTH: f32 = 780.0;
+pub(crate) const READING_WIDTH: f32 = 780.0;
 const COMPACT_BREAKPOINT: f32 = 470.0;
 // The inset of `ui_sizing::PANE_HEADER`, which the header is built with.
 #[cfg(test)]
