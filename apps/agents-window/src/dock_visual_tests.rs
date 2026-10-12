@@ -1015,6 +1015,20 @@ fn export_environment_visual_review() {
         .into()));
         shot(&state, 344.0, "overview-day", None);
         shot(&state, 344.0, "changes-hover", Some("dock_open:review"));
+        // What the conversation has going: its subagents, the commands its
+        // agent started and the preview one of them serves.
+        crate::environment_ui::tests::going(&mut state);
+        shot(&state, 440.0, "going", None);
+        state.environment.subagents_expanded = true;
+        state.environment.terminals_expanded = true;
+        shot(&state, 700.0, "going-open", None);
+        shot(&state, 700.0, "going-hover", Some("agent_terminal_show:cmd-7"));
+        shot(&state, 344.0, "going-short", None);
+        state.environment.subagents_expanded = false;
+        state.environment.terminals_expanded = false;
+        state.subagent_sessions.clear();
+        state.terminal_tabs.clear();
+        state.terminal_controls.agents.clear();
         state.environment.details_expanded = true;
         shot(&state, 760.0, "details", None);
         shot(&state, 760.0, "details-hover", Some("environment_source_file:0"));

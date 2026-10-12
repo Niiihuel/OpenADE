@@ -25100,6 +25100,47 @@ mod tests {
     }
 
     #[test]
+    fn the_environment_stops_every_subagent_still_going_and_no_other_conversations() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let app = AgentsWindow::with_data_root(root.path().join("data"));
+        let store = app.store.clone().unwrap();
+        let coordinator =
+            SubagentCoordinator::new(store.clone(), SubagentLimits::default()).unwrap();
+        let spec = openide_harness::SubagentSpec {
+            prompt: "Inspect".into(),
+            model: "fixture".into(),
+            mode: TurnMode::Build,
+            context_digest: "a".repeat(64),
+        };
+        let (parent, other) = (
+            store.create(&workspace, "native").unwrap(),
+            store.create(&workspace, "native").unwrap(),
+        );
+        for (owner, keys) in [(&parent, &["one", "two"][..]), (&other, &["three"][..])] {
+            let lease = store.try_acquire_native_lease(&owner.id).unwrap();
+            for key in keys {
+                coordinator.create_child(&lease, key, &spec).unwrap();
+            }
+        }
+        drop(app);
+        let mut app = AgentsWindow::with_data_root(root.path().join("data"));
+        app.open_session(&parent.id);
+        app.apply_action(clicked("environment_subagents_stop"), &egui::Context::default());
+        let asked = |owner: &str| -> Vec<bool> {
+            coordinator
+                .list_children_for_ui(owner)
+                .unwrap()
+                .iter()
+                .map(|child| child.cancellation_requested)
+                .collect()
+        };
+        assert_eq!(asked(&parent.id), [true, true]);
+        assert_eq!(asked(&other.id), [false]);
+    }
+
+    #[test]
     fn desktop_cancels_persisted_child_without_bridge_and_reopens_flags() {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");

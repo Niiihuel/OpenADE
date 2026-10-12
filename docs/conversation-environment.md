@@ -32,6 +32,26 @@ bloque con lo que listan: las acciones guardadas, las sugeridas, su editor y
 **Nueva acción**; y los cambios del chat, las fuentes y las herramientas. La
 fila de un bloque abierto lo cierra, igual que Escape con las acciones.
 
+Entre las acciones y las fuentes, la tarjeta lista lo que la conversación
+tiene en marcha, y sólo mientras hay algo que listar:
+
+- **Subagentes**: los que inició esta conversación, cada uno con su tarea y
+  su estado (Pendiente, En ejecución, En pausa, Interrumpido, Completado,
+  Fallido, Cancelado). La fila abre su conversación. Mientras quede alguno que
+  se pueda cancelar, el bloque termina en **Detener todos**, que cancela cada
+  uno con la misma acción y las mismas comprobaciones que **Cancelar** en su
+  tarjeta; no pide confirmación, igual que esa acción.
+- **Terminales**: los comandos que el agente inició aquí, con **En ejecución**
+  o la forma en que terminaron. La fila muestra su pestaña (**Ver en
+  terminal**). Uno en ejecución tiene **Detener**, que pide la misma
+  confirmación que cerrar su pestaña, detiene el proceso y cierra la pestaña.
+- **Vista previa**: la dirección local del servidor más reciente que sigue
+  respondiendo; abre la pestaña Navegador. No aparece si la preferencia de
+  vista previa es Nunca.
+
+La fila de cada bloque dice cuántos siguen en curso y, cuando no queda
+ninguno, cuántos lista. Cerrada, la tarjeta pide la altura de esas filas.
+
 El pie resume los cambios del repositorio (archivos y sumas `+ / −`) y abre
 Repositorio; a la derecha, **Commit y push** abre su formulario. Si las sumas
 no entran junto a la acción quedan en el tooltip, nunca cortadas. Mientras se
