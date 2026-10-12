@@ -289,28 +289,13 @@ pub const NOTIFICATION: RowSizing = RowSizing {
     ..RowSizing::COMPACT
 };
 
-/// The project selector of the environment card: two lines of 18 between
-/// its icon and its chevron.
-pub const ENVIRONMENT_SELECTOR: RowSizing = RowSizing {
-    height: Some(44.0),
-    two_line_height: Some(44.0),
-    gap: 6.0,
-    icon_size: 18.0,
-    leading_height: Some(36.0),
-    title_size: 13.0,
-    copy_gap: 0.0,
-    title_height: Some(18.0),
-    subtitle_height: Some(18.0),
-    ..RowSizing::COMPACT
-};
-
-/// A tool of the environment card: its name, a status beside it and an
-/// optional second line, before a small chevron.
+/// What "Fuentes y herramientas" lists in the environment card: a name, a
+/// status beside it and an optional second line, before a small chevron.
 pub const ENVIRONMENT_ACTION: RowSizing = RowSizing {
     height: Some(32.0),
     two_line_height: Some(48.0),
     padding: 6.0,
-    gap: 4.0,
+    gap: 8.0,
     trailing_icon_size: 12.0,
     title_size: 12.5,
     subtitle_size: 10.5,

@@ -4660,7 +4660,11 @@ pub(crate) mod tests {
                 "environment-360".into(),
                 360.0,
                 420.0,
-                crate::environment_ui::panel(&state, 360.0, 420.0),
+                // At its own height, as beside the chat.
+                Element::column(vec![
+                    crate::environment_ui::panel(&state, 360.0, 420.0),
+                    Element::spacer().flex(1.0),
+                ]),
             ));
             state.selected_session = None;
             state.selected_backend = "native".into();

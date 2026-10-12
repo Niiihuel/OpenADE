@@ -103,7 +103,6 @@ impl AgentsWindow {
         let changed = self.scope_project_actions();
         self.open_environment();
         self.view.environment.menu = EnvironmentMenu::None;
-        self.view.environment.details_expanded = true;
         self.view.environment.workflow.panel = EnvironmentGitPanel::Actions;
         if !self.view.project_actions.saving
             && (changed
@@ -298,7 +297,6 @@ impl AgentsWindow {
                 } else if let Some(id) = id.strip_prefix("project_action_edit:") {
                     if self.view.project_actions.begin_edit(id) {
                         self.view.environment.workflow.panel = EnvironmentGitPanel::Actions;
-                        self.view.environment.details_expanded = true;
                         self.sync_project_action_drafts();
                     }
                 } else if let Some(id) = id.strip_prefix("project_action_run:") {

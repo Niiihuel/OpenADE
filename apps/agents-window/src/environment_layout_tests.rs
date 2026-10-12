@@ -212,9 +212,13 @@ fn export_environment_visual_review() {
             );
         }
         if session {
+            // At its own height, as beside the chat.
+            let card = |state: &ViewState, width: f32, height: f32| {
+                Element::column(vec![panel(state, width, height), Element::spacer().flex(1.0)])
+            };
             for width in [280.0, 380.0] {
                 render(
-                    panel(&state, width, 344.0),
+                    card(&state, width, 344.0),
                     Size::new(width, 344.0),
                     &format!("card-{width}"),
                 );
@@ -222,9 +226,15 @@ fn export_environment_visual_review() {
             state.environment.workflow.panel =
                 crate::environment_git_ui::EnvironmentGitPanel::Actions;
             render(
-                panel(&state, 380.0, 520.0),
+                card(&state, 380.0, 520.0),
                 Size::new(380.0, 520.0),
                 "actions-380",
+            );
+            state.environment.details_expanded = true;
+            render(
+                crate::view::build_window_view(&state, 1200.0, 900.0),
+                Size::new(1200.0, 900.0),
+                "session-sections-1200",
             );
         }
     }
