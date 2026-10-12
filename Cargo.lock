@@ -2965,7 +2965,7 @@ dependencies = [
 [[package]]
 name = "limn"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.15#86ae8e66b8e679c95b8f07c13bcb742233499c70"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.16#fcd2e8877ebfc33b9dffdeab60a67ed56ddae050"
 dependencies = [
  "limn-editor",
  "limn-language",
@@ -2978,7 +2978,7 @@ dependencies = [
 [[package]]
 name = "limn-editor"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.15#86ae8e66b8e679c95b8f07c13bcb742233499c70"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.16#fcd2e8877ebfc33b9dffdeab60a67ed56ddae050"
 dependencies = [
  "regex",
  "ropey",
@@ -2989,7 +2989,7 @@ dependencies = [
 [[package]]
 name = "limn-egui"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.15#86ae8e66b8e679c95b8f07c13bcb742233499c70"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.16#fcd2e8877ebfc33b9dffdeab60a67ed56ddae050"
 dependencies = [
  "base64 0.22.1",
  "eframe",
@@ -3002,7 +3002,7 @@ dependencies = [
 [[package]]
 name = "limn-language"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.15#86ae8e66b8e679c95b8f07c13bcb742233499c70"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.16#fcd2e8877ebfc33b9dffdeab60a67ed56ddae050"
 dependencies = [
  "limn-editor",
  "pulldown-cmark",
@@ -4112,7 +4112,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
