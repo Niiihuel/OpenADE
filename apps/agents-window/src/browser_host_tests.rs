@@ -292,14 +292,14 @@ fn wheel_trackpad_and_shift_preserve_both_axes_in_css_pixels_and_reject_nonfinit
             position: point,
             delta_y: 10.0
         }),
-        Some((point, 0.0, 10.0))
+        Some((point, 0.0, 10.0, false))
     );
     assert_eq!(
         browser_scroll_delta(&UiEvent::ScrollDirect {
             position: point,
             delta_y: -2.5
         }),
-        Some((point, 0.0, -2.5))
+        Some((point, 0.0, -2.5, true))
     );
     let scroll = |x, y, shift| UiEvent::Scroll2D {
         position: point,
@@ -310,15 +310,15 @@ fn wheel_trackpad_and_shift_preserve_both_axes_in_css_pixels_and_reject_nonfinit
     };
     assert_eq!(
         browser_scroll_delta(&scroll(3.5, -6.0, false)),
-        Some((point, 3.5, -6.0))
+        Some((point, 3.5, -6.0, true))
     );
     assert_eq!(
         browser_scroll_delta(&scroll(0.0, 9.0, true)),
-        Some((point, 9.0, 0.0))
+        Some((point, 9.0, 0.0, true))
     );
     assert_eq!(
         browser_scroll_delta(&scroll(3.0, 9.0, true)),
-        Some((point, 3.0, 9.0))
+        Some((point, 3.0, 9.0, true))
     );
     assert!(browser_scroll_delta(&scroll(f32::NAN, 1.0, false)).is_none());
     assert!(browser_scroll_delta(&scroll(0.0, f32::INFINITY, false)).is_none());
