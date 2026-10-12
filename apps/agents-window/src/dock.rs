@@ -326,6 +326,14 @@ impl DockState {
             .any(|workspace| workspace.tabs.iter().any(|tab| tab.id.get() == raw_id))
     }
 
+    /// An open tab of any workspace and owner, by its raw ID.
+    pub fn tab(&self, raw_id: u64) -> Option<&DockTab> {
+        self.workspaces
+            .values()
+            .flat_map(|workspace| &workspace.tabs)
+            .find(|tab| tab.id.get() == raw_id)
+    }
+
     /// A durably deleted task must release its private resources even when its
     /// tabs are currently hidden by another task. Shared workspace tabs survive.
     pub fn forget_task(&mut self, workspace_id: &str, task_id: &str) {

@@ -3,17 +3,63 @@
 use openide_core::SessionStore;
 use openide_harness::{
     CommandIsolation, NativeCommandProfile, NativeCommandProfileOptions, NativeCommandRegistry,
-    NativeManualCommandPolicySource, PersistentCommandLimits, PersistentCommandManager,
+    NativeManualCommandPolicySource, PersistentCommandLaunch, PersistentCommandLimits,
+    PersistentCommandManager,
 };
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
+
+/// A command an agent just started, with the screen that already follows it.
+pub(crate) struct StartedCommand {
+    /// The native session whose agent, parent or child worker, started it.
+    pub owner: String,
+    /// The manager that runs it; another one later means it was revoked.
+    pub generation: String,
+    pub id: String,
+    pub argv: Vec<String>,
+    /// A pipe-backed command (the contained profile): a mirror without keys.
+    pub read_only: bool,
+    pub session: std::io::Result<crate::terminal::TerminalSession>,
+}
+
+impl StartedCommand {
+    /// Attached at once, on the thread that started the command: the screen
+    /// drains the output copy from its first byte into a bounded grid, even
+    /// while the window is hidden and paints no frame.
+    pub(crate) fn attach(launch: PersistentCommandLaunch) -> Option<Self> {
+        let label = launch
+            .argv
+            .first()
+            .and_then(|program| Path::new(program).file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Some(Self {
+            owner: launch.owner_session_id?,
+            generation: launch.generation,
+            id: launch.id,
+            argv: launch.argv,
+            read_only: !launch.terminal.interactive(),
+            // A contained command cannot serve the host: whatever answers at
+            // an address it prints is another program's, and is not opened.
+            session: crate::terminal::TerminalSession::attach(
+                launch.terminal,
+                &label,
+                launch.isolation == CommandIsolation::HostUnrestricted,
+            ),
+        })
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct NativeCommandSessions {
     managers: HashMap<String, Arc<PersistentCommandManager>>,
     registry: Option<Arc<NativeCommandRegistry>>,
     durable_required: bool,
+    /// Each command a manager of the registry starts, for its terminal tab.
+    started: Option<mpsc::Receiver<StartedCommand>>,
+    /// Only tests set it; see `keep_pipes`.
+    pipes_only: bool,
 }
 
 impl NativeCommandSessions {
@@ -21,15 +67,40 @@ impl NativeCommandSessions {
         sessions: Option<Arc<SessionStore>>,
         manual_policy: Arc<NativeManualCommandPolicySource>,
     ) -> Self {
+        let (sender, started) = mpsc::channel();
         Self {
             managers: HashMap::new(),
             registry: sessions.map(|sessions| {
                 Arc::new(
-                    NativeCommandRegistry::new(sessions).with_manual_policy_source(manual_policy),
+                    NativeCommandRegistry::new(sessions)
+                        .with_manual_policy_source(manual_policy)
+                        .with_start_observer(Arc::new(move |launch| {
+                            if let Some(started) = StartedCommand::attach(launch) {
+                                let _ = sender.send(started);
+                            }
+                        })),
                 )
             }),
             durable_required: true,
+            started: Some(started),
+            pipes_only: false,
         }
+    }
+
+    /// For tests of the pipe contract (separate stdout and stderr, exact
+    /// bytes both ways), which the contained profile and Windows still have:
+    /// host commands of this app stay on pipes instead of a terminal.
+    #[cfg(test)]
+    pub(crate) fn keep_pipes(&mut self) {
+        self.pipes_only = true;
+    }
+
+    /// Commands started since the last call, by a parent or a child worker.
+    pub(crate) fn take_started(&self) -> Vec<StartedCommand> {
+        self.started
+            .as_ref()
+            .map(|started| started.try_iter().collect())
+            .unwrap_or_default()
     }
 
     pub(crate) fn shared_registry(&self) -> Option<Arc<NativeCommandRegistry>> {
@@ -54,6 +125,9 @@ impl NativeCommandSessions {
                 limits: PersistentCommandLimits::default(),
                 pty: cfg!(windows) && isolation == CommandIsolation::HostUnrestricted,
                 resize: cfg!(windows) && isolation == CommandIsolation::HostUnrestricted,
+                // On Linux and macOS a host command runs on a terminal the
+                // user sees and types into; the contained profile keeps pipes.
+                host_terminal: cfg!(unix) && !self.pipes_only,
                 ..NativeCommandProfileOptions::default()
             })
             .map(Some)

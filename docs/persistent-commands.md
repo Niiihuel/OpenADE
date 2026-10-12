@@ -182,6 +182,164 @@ calls while their manager lives, not across app restarts. The desktop's
 output after polling and reopening; it does not restore the process. There is
 no implicit shell emulation.
 
+## Terminal tabs for started commands
+
+On Linux and macOS the desktop's command profile sets `host_terminal`
+(`native_command_sessions.rs`), for parent sessions and child workers alike. A
+`HostUnrestricted` command then runs on a pseudo-terminal instead of three
+pipes. What that changes for the process: it has a controlling terminal and is
+its session leader (its process group is still the one the tree guard kills);
+stdin, stdout and stderr are that terminal, so `isatty` is true, programs
+colour and line-buffer their output and may prompt; it sees
+`TERM=xterm-256color` and an initial size of 120 by 30; stdout and stderr
+arrive merged as one `terminal` stream, with the terminal's echo of whatever
+is typed; `close_after` is end of input. The cleared bootstrap environment,
+the working directory, the approval of `start_command`, the exec rules, the
+hooks and the tool schema are the same as before. The contained profile
+(`WorkspaceWriteOffline`) keeps pipes. Windows is unchanged.
+
+**Not byte-exact any more.** A terminal's line discipline sits between the
+writer and the program, in canonical mode unless the program changes it: input
+reaches the program line by line, a carriage return becomes a line feed,
+control characters act (Ctrl+C interrupts, Ctrl+D ends input, Ctrl+Z
+suspends), what is typed is echoed into the output, and the kernel cuts a line
+longer than 4095 bytes. This holds for the agent's `write_stdin` and for the
+confirmed input of **Controlar comando** as much as for the tab, so their
+"exact bytes" contract now describes pipe-backed commands only: the contained
+profile, Windows, and `run_command`, which never uses a terminal. Output is
+altered too (the terminal's `\r\n`, then the plain-text filter below), so a
+started command is not a way to move binary data on Linux and macOS. The
+desktop tests of that contract (`native_command_output_app_tests`,
+`native_command_history_app_tests`, `native_command_control_app_tests`,
+`native_child_commands_app_tests`) keep their commands on pipes with the
+test-only `NativeCommandSessions::keep_pipes`.
+
+**Older sessions.** `host_terminal` is a transport. It is in neither the tool
+schema nor `NativeCommandProfile::identity_digest` (current or frozen v1), so
+nothing a session recorded mentions it: a turn interrupted before the desktop
+turned it on selects the same catalog on resume, and a child reserved earlier
+matches its reservation, including under `before_command_revision()`, which
+carries the option along. `same_as` does compare it, but only between a
+manager and a profile of one running app, which all come from one builder.
+A process never outlives the app, so no pipe-backed command meets a
+terminal-backed profile.
+
+**Plain text for everything but the tab.** A terminal emits escape sequences
+and `\r\n` line ends. `OutputBuffer::push` is the one place where they are
+removed (`PlainText`, over the condenser's `AnsiStripper`; a sequence split
+across reads is still removed): the poll buffer, the pending-output copy and
+the durable capture, and with them `poll_command`, "Ver salida pendiente",
+"Historial de salida" and the transcript's cards, read text without CSI/OSC
+sequences and with `\n` line ends. The tab's copy is taken before the filter
+and keeps every byte. The capture of such a command is registered as a
+terminal stream; registering it as pipes made the store refuse its first
+append and stop the command.
+
+**The tab.** `NativeCommandRegistry::with_start_observer` hands the host each
+started command, with its argv and a `PersistentTerminal`, before
+`start_command` returns the ID, so the tab is attached before any poll can
+retire the command. The desktop attaches a screen on that thread (its reader
+drains the copy into a bounded grid even while the window is hidden) and, on
+the next frame, opens a terminal tab owned by the conversation whose agent
+started it, titled with the command and carrying the agent's mark ("Iniciada
+por el agente · <tarea>"). Tabs belong to their conversation like the user's
+own terminals: selecting another conversation lists that one's tabs, never
+these; a child worker's commands show in the child's conversation.
+
+What the user types in the tab (keys, paste, Ctrl+C) and the tab's size go
+straight to the process through `PersistentTerminalInput`. This is the user's
+own terminal: it does not pass the manual-input policy of "Operaciones", the
+command hooks or the controls ledger, and leaves no receipt. The agent's
+`write_stdin`, `terminate_command` and the confirmed controls of
+**Controlar comando** are exactly as guarded as before. A pipe-backed command
+(the contained profile, or any command on Windows) is a read-only mirror: its
+tab says so and drops keys and paste.
+
+Starting a command opens the Terminal section on its tab without moving the
+keyboard focus. It does not do so while the focus is in a terminal or another
+section of the IDE's bottom panel is open: the tab is then only listed. An
+agent's tab takes the keyboard when the user clicks it or uses "Ver en
+terminal" on the command's card or in Activity, never by itself.
+
+Closing the tab of a running command asks first ("Detener <comando>") and then
+stops its process tree with `PersistentCommandManager::stop`, directly: like
+the keys, it is the user's act on their tab, not an "Operaciones" control. The
+agent then finds the command terminated on its next poll. When the agent stops
+the command or it exits, the tab stays with its status until the user closes
+it; it is never restarted from the tab. Revoking the manager (command access
+restricted, isolation changed, session archived) stops the process and the tab
+says so; deleting the session removes its tabs with it.
+
+Acceptance (Linux, 2026-10-12): `agent_terminals_app_tests` start `/bin/sh` in
+a temp workspace through the app's registry and check the screen, typed input,
+exit, the agent's escape-free final poll, the confirmed stop of a descendant,
+the read-only mirror, the focus rule and revocation;
+`host_terminal_keeps_every_recorded_identity_and_shows_started_commands_to_the_host`
+checks the digests, the observer and the durable capture, and
+`resume_of_a_turn_recorded_before_the_host_terminal_keeps_its_catalog` the
+resumed catalog. The contained profile was not run here (no Bubblewrap helper
+in the test shell): its mirror is exercised with a pipe-backed manager. No
+macOS or Windows run; nothing here drives the real window.
+
+## Live preview of a started server
+
+A started command that turns out to be a server gets a live preview in the
+conversation's browser tab (`apps/agents-window/src/preview.rs`).
+
+**Detection.** The screen attached to the command reads the start of its
+output: the first 8 KiB, for at most a minute, with escape sequences removed
+(Vite colours the middle of its address). The first address matching
+`http(s)://localhost|127.x.y.z|[::1]|0.0.0.0` with an optional port and path
+counts, once something follows it in the output, so an address still being
+printed is not cut short. Addresses of other machines, names that merely look
+local (`localhost.example`), other schemes and addresses with credentials are
+skipped. `0.0.0.0` becomes `localhost`.
+
+Only a `HostUnrestricted` command is watched. A contained command has no
+network of the host's, so whatever answers at an address it prints is another
+program on this machine: it is neither recorded nor opened. The address comes
+from the command's output, so a host command decides which loopback address
+opens; it runs with the user's network already.
+
+**Check.** A thread then connects to that port on loopback, up to 20 times
+250 ms apart, and hangs up: no request is sent and no name is resolved
+(`localhost` is tried as `127.0.0.1` and `::1`). Only an address that
+answered is recorded on the command as its preview URL; a server that printed
+an address and never listened gets none.
+
+**Opening.** Settings › Navegador › "Abrir la vista previa de los servidores
+que inicia el agente" is saved with the other preferences as
+`preview_opening`:
+
+- *Automáticamente* (default): the first time the port answers, the
+  conversation's "Navegador" tab is opened, or reused, on that address, and a
+  notice says "Vista previa abierta: <url>". The keyboard stays where it is.
+  The tab comes to the front unless the user is typing in a field or editor
+  other than the composer, which that tab might cover; then it waits among
+  the tabs. A server of a conversation that is not on screen gets its tab
+  there, for when the conversation is opened.
+- *Preguntar*: nothing opens; the command's card and its Activity detail
+  offer "Abrir vista previa" while the server runs.
+- *Nunca*: nothing opens and nothing is offered.
+
+Each command reports its address once, so it never opens twice by itself. An
+address that is not loopback is never opened by any of this: the function that
+opens the tab checks it again. The agent's `open_preview` tool
+([browser tools](browser-tools.md)) uses the recorded address as its default.
+A browser context only starts when its tab is shown, as before.
+
+A preview whose server stopped reads "No se pudo conectar con localhost:5173
+— ¿sigue corriendo el servidor?" with "Reintentar" in the browser tab.
+
+Acceptance (Linux, 2026-10-12): `preview::tests` cover the address on typical
+dev-server lines, what is skipped, the 8 KiB bound, a coloured address split
+across reads, the connection against a listener of the test and a closed
+port, and that the check sends nothing; `agent_terminals_app_tests` cover the
+three settings with a shell that prints the address of such a listener, one
+automatic opening per command, the reused tab, the keyboard and the recorded
+default of `open_preview`. No browser starts in these tests and no real dev
+server was run.
+
 ## Runtime lifetime across turns
 
 The manager starts a private current-thread Tokio reactor lazily, before its
@@ -289,7 +447,9 @@ native session before sharing it.
 `NativeCommandOperationStore`. The user prepares and confirms exact UTF-8 bytes
 without an added newline; EOF and termination are separate actions. The input
 editor opts into `TextArea::preserve_line_endings(true)`, retaining CRLF, CR,
-Unicode and NUL through paste, copy, cut and confirmation. Other textareas retain
+Unicode and NUL through paste, copy, cut and confirmation. Those bytes reach
+a pipe-backed command unchanged; a command on a host terminal receives them
+through the terminal's line discipline (see *Terminal tabs*). Other textareas retain
 their prior normalization. Permission/hook digests and the manager generation
 are captured when preparing, checked on confirmation and checked by the lease
 owner before external effects. Saved interactive deny rules remain authoritative.

@@ -98,13 +98,30 @@ fn connection_refused_uses_one_native_error_and_never_exposes_the_chrome_error_r
             .iter()
             .any(|region| region.id == "browser_viewport"));
         assert_eq!(surface(&state.browser), Surface::Error);
+        // A server of this machine that is not there: the question a
+        // stopped dev server needs, with the retry below.
         assert_eq!(
             error_copy(&state.browser).0,
-            "No se pudo conectar con localhost:3000"
+            "No se pudo conectar con localhost:3000 — ¿sigue corriendo el servidor?"
         );
         assert!(error_copy(&state.browser)
             .1
-            .contains("servidor del proyecto esté iniciado"));
+            .contains("Iniciá el servidor del proyecto"));
+        for (address, local) in [
+            ("http://0.0.0.0:5173/", true),
+            ("http://127.0.0.1:5173/", true),
+            ("http://[::1]:5173/", true),
+            ("http://127.example.test:5173/", false),
+            ("https://example.test/", false),
+        ] {
+            let mut other = state.browser.clone();
+            other.url_draft = address.into();
+            assert_eq!(
+                error_copy(&other).0.contains("¿sigue corriendo el servidor?"),
+                local,
+                "{address}"
+            );
+        }
         assert!(frame
             .regions
             .iter()

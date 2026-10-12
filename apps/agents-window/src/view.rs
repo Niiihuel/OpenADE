@@ -613,6 +613,7 @@ pub struct ViewState {
     pub settings_terminal_shell_menu_open: bool,
     pub(crate) settings_choice_menu_open: Option<String>,
     pub(crate) chat_link_opening: crate::chat_links::ChatLinkOpening,
+    pub(crate) preview_opening: crate::preview::PreviewOpening,
     /// The link whose context menu is open.
     pub(crate) chat_link_menu: Option<crate::chat_links::ChatLinkMenu>,
     pub settings_terminal_shell_editing: bool,
@@ -3659,7 +3660,20 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
             .render();
         }
     }
-    let dialog = if let Some(id) = state.pending_mcp_delete_id.as_deref() {
+    let closing = state.terminal_controls.closing.and_then(|id| {
+        crate::terminal_dock_ui::agent_terminal(state, id)?;
+        state.terminal_tabs.iter().find(|tab| tab.id == id)
+    });
+    let dialog = if let Some(tab) = closing {
+        Some((
+            format!("Detener {}", tab.title),
+            "El agente inició este proceso. Se detendrá junto con los procesos que haya lanzado y su pestaña se cerrará. El agente lo verá como detenido.".to_owned(),
+            format!("agent_terminal_stop:{}", tab.id),
+            "agent_terminal_stop_cancel".to_owned(),
+            "Detener".to_owned(),
+            true,
+        ))
+    } else if let Some(id) = state.pending_mcp_delete_id.as_deref() {
         state.mcp_servers.iter().find(|server| server.id == id).map(|server| {
             let mut description = "Se quitará de la configuración de este proyecto. Podrás volver a agregarlo más adelante.".to_owned();
             if state.settings_notice_error {
@@ -4032,6 +4046,7 @@ pub(crate) mod tests {
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
             chat_link_opening: Default::default(),
+            preview_opening: Default::default(),
             chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),

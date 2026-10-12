@@ -1121,6 +1121,9 @@ fn detail(state: &ViewState, index: usize, item: &TranscriptItem, width: f32) ->
                 note = Some(status.clone());
             }
             detail.extend(note.take().map(|note| small(note, note_ink)));
+            detail.extend(crate::terminal_dock_ui::command_actions(
+                state, "activity", id, name, output,
+            ));
             command_output(
                 &mut detail,
                 state,

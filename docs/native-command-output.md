@@ -25,6 +25,14 @@ bytes or exact omission before notifying a live observer or adding that output
 to the agent's pending buffer. Polling remains a separate consumer. Its final
 drain may remove the live ID, but does not remove the durable capture.
 
+A command on a host terminal (Linux and macOS, see
+[Terminal tabs](persistent-commands.md#terminal-tabs-for-started-commands)) is
+registered in PTY mode with one `terminal` stream. What the capture stores of
+it is the same plain text the agent polls: escape sequences are removed and
+`\r\n` becomes `\n` before the chunk reaches the capture, so the cursor
+counts those bytes, not the terminal's. The raw bytes exist only in the
+command's tab.
+
 The cursor counts published observations, including omitted bytes. Each raw record has
 its stream and an absolute half-open range `[start, end)`. These are capture
 order, not a reconstruction of simultaneous writes or a timestamp order across

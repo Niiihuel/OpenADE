@@ -2472,6 +2472,19 @@ fn additional_page(state: &ViewState, page: SettingsPage, compact: bool) -> Vec<
                     compact,
                 ),
             ]));
+            content.push(settings_parts::settings_group("Vista previa", vec![
+                settings_parts::settings_row(
+                    "Abrir la vista previa de los servidores que inicia el agente",
+                    "Cuando un comando del agente publica una dirección de este equipo, como localhost:5173, y ese puerto responde. Preguntar la ofrece en la tarjeta del comando. Nunca se abre sola una dirección de otro equipo.",
+                    settings_choice_selector(
+                        state,
+                        "preview_opening",
+                        state.preview_opening.label(),
+                        state.preview_opening.options(),
+                    ),
+                    compact,
+                ),
+            ]));
             content
         }
         SettingsPage::ComputerUse => capability_page(

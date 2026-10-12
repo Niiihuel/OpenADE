@@ -18,6 +18,12 @@ digests SHA-256 exactos de la política y de hooks aprobados. La acción es una 
   las dimensiones actuales del proceso.
 - `Terminate`: control del mismo comando y generación, sin permiso implícito.
 
+Estas operaciones son las de **Controlar comando**. Lo que el usuario escribe en
+la pestaña de terminal de un comando del agente (teclas, pegado, Ctrl+C, el
+tamaño de la pestaña) y el cierre confirmado de esa pestaña no son operaciones:
+van directo al proceso, sin política de entrada manual, hooks ni recibo en este
+ledger. Ver [Terminal tabs](persistent-commands.md#terminal-tabs-for-started-commands).
+
 `enqueue_requested` puede guardar sólo la intención mientras otro actor posee
 `NativeSessionLease`. Su transacción usa el mismo orden que admisión y eliminación:
 mutex del store, lock del journal y lock del ledger. Valida metadata nativa,

@@ -40,6 +40,7 @@ o `selector` (un selector que identifique un único elemento).
 | `browser_network_requests` | — | Lectura |
 | `browser_take_screenshot` | `full_page` o destino, ambos opcionales | Lectura |
 | `browser_handle_dialog` | `accept`, `prompt_text` opcional | Modifica |
+| `open_preview` | `url` opcional (sólo de este equipo) | Modifica |
 
 «Modifica» es la clasificación de `BrowserCommand::mutating()`: la vista marca
 la página como ocupada mientras se ejecuta y, si la respuesta se pierde después
@@ -54,6 +55,9 @@ con URL y título, sin el árbol accesible, para que el dato no quede detrás de
 un árbol extenso. Ninguna respuesta lleva una imagen del viewport, salvo
 `browser_take_screenshot` y el `browser_snapshot` de un cliente MCP externo;
 `screenshot_available` dice si la respuesta trae una.
+
+`open_preview` es del agente nativo solamente: no está en el catálogo que
+recibe un cliente MCP externo. Ver *Vista previa de un servidor local*.
 
 ## Flujo principal
 
@@ -99,6 +103,36 @@ la cuarta parte del texto.
 
 Sólo `browser_snapshot` toma estos argumentos: la captura que acompaña a cada
 acción sigue siendo la completa.
+
+## Vista previa de un servidor local
+
+`open_preview {"url": "http://localhost:5173/"}` muestra en el navegador
+compartido la vista previa de un servidor de este equipo y trae su pestaña al
+frente. Sólo acepta direcciones HTTP(S) sin credenciales cuyo host sea
+`localhost`, el bloque IPv4 de loopback o `[::1]`; `0.0.0.0`, que es donde un
+servidor escucha y no donde está su página, se abre como `localhost`. Cualquier
+otra dirección se rechaza antes de tocar la página, con un error de herramienta
+que nombra `browser_navigate`: «open_preview sólo abre direcciones de este
+equipo (localhost, 127.0.0.1 o [::1]). Para otro sitio usá browser_navigate.»
+
+Sin `url` abre la dirección del servidor que el agente inició en esta
+conversación: la primera dirección local que el comando publicó y que
+respondió a una conexión (ver *Vista previa en vivo* en
+[Comandos persistentes](persistent-commands.md#live-preview-of-a-started-server)).
+Si ninguno la publicó todavía, la respuesta lo dice y pide la dirección.
+
+```text
+start_command {"command":"npm","args":["run","dev"],"timeout_ms":8000}
+open_preview {}
+browser_snapshot {"interactive_only":true}
+```
+
+Pasa por el mismo camino de permisos que las demás: pide aprobación en cada
+llamada, y navega con el mismo `BrowserCommand::Navigate` validado que
+`browser_navigate`. Como todas las herramientas del navegador, sólo se anuncia
+con una pestaña Navegador abierta e iniciada en la conversación; la apertura
+automática de la vista previa la abre cuando el servidor responde, así que en
+el turno siguiente ya está. El catálogo de un turno no cambia mientras corre.
 
 ## Cuándo volver a capturar
 
@@ -343,7 +377,9 @@ OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
 ```
 
 La primera línea no necesita un navegador: maneja el runtime real contra un
-extremo DevTools guionado y cubre el catálogo anunciado a ambos clientes, los
+extremo DevTools guionado y cubre el catálogo anunciado a ambos clientes
+(`open_preview` sólo al propio, con cada dirección que rechaza, la que abre por
+omisión y `0.0.0.0` abierto como `localhost`), los
 límites de cada esquema, la clasificación de `mutating()`, cada clase de fallo
 (respuesta de herramienta, efecto incierto, página que no carga, contexto
 perdido), las capturas reducidas, el camino de aprobación con la descripción

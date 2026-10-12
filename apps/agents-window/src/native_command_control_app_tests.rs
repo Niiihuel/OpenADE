@@ -104,6 +104,8 @@ fn fixture(
     let data = root.join("data");
     let settings = enabled_settings(&data);
     let mut app = AgentsWindow::with_data_root(data);
+    // This test is about the pipe contract; see `keep_pipes`.
+    app.native_command_sessions.keep_pipes();
     app.view.native_tool_permissions = settings.permissions();
     let owner = app
         .store

@@ -15,6 +15,9 @@ use std::{
     thread,
 };
 
+use openide_harness::{
+    PersistentCommandExit, PersistentTerminal, PersistentTerminalEvent, PersistentTerminalInput,
+};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 
 /// Limits terminal history even if a command writes indefinitely.
@@ -312,7 +315,79 @@ enum SessionStatus {
     Running,
     Exited(u32),
     Failed(String),
+    /// An agent's command that ended without an exit code.
+    Stopped,
     Closed,
+}
+
+/// What ties a session to a command the agent started instead of a shell.
+/// The process belongs to the agent's command manager, never to the tab.
+struct AgentLink {
+    /// `None`: a pipe-backed command, shown as a read-only mirror.
+    input: Option<PersistentTerminalInput>,
+    exit: Arc<Mutex<Option<PersistentCommandExit>>>,
+    /// The address its server printed, once something answers there.
+    preview: Arc<Mutex<Option<String>>>,
+}
+
+/// The reader's view of the command's output copy.
+struct AgentOutput {
+    terminal: PersistentTerminal,
+    pending: Vec<u8>,
+    mirror: bool,
+    exit: Arc<Mutex<Option<PersistentCommandExit>>>,
+    /// Reads the start of the output for the address of a server.
+    watch: Option<crate::preview::OutputWatch>,
+}
+
+impl Read for AgentOutput {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        while self.pending.is_empty() {
+            let event = self.terminal.next_event();
+            if let Some(PersistentTerminalEvent::Output(bytes)) = &event {
+                if self.watch.as_mut().is_some_and(|watch| !watch.feed(bytes)) {
+                    self.watch = None;
+                }
+            }
+            match event {
+                Some(PersistentTerminalEvent::Output(bytes)) if self.mirror => {
+                    // Pipes carry bare line feeds; a screen needs the return too.
+                    for byte in bytes {
+                        if byte == b'\n' {
+                            self.pending.push(b'\r');
+                        }
+                        self.pending.push(byte);
+                    }
+                }
+                Some(PersistentTerminalEvent::Output(bytes)) => self.pending = bytes,
+                ended => {
+                    // No exit event: the manager is gone, and its trees with it.
+                    let exit = match ended {
+                        Some(PersistentTerminalEvent::Exited(exit)) => exit,
+                        _ => PersistentCommandExit::Terminated,
+                    };
+                    *self.exit.lock().unwrap_or_else(|e| e.into_inner()) = Some(exit);
+                    return Ok(0);
+                }
+            }
+        }
+        let count = buffer.len().min(self.pending.len());
+        buffer[..count].copy_from_slice(&self.pending[..count]);
+        self.pending.drain(..count);
+        Ok(count)
+    }
+}
+
+struct AgentInput(PersistentTerminalInput);
+
+impl Write for AgentInput {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.write(bytes).map(|()| bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// One interactive shell. Dropping the session terminates its child process.
@@ -328,9 +403,89 @@ pub struct TerminalSession {
     shell: String,
     selection: Option<Selection>,
     scroll_remainder: f32,
+    agent: Option<AgentLink>,
 }
 
 impl TerminalSession {
+    /// Show a command the agent started: a copy of its output and, when it
+    /// runs on a terminal, the user's keys, paste and size. Closing or
+    /// dropping the session never stops the process. With `watch_preview`
+    /// the start of the output is read for the address of a server.
+    pub fn attach(
+        terminal: PersistentTerminal,
+        label: &str,
+        watch_preview: bool,
+    ) -> io::Result<Self> {
+        // The size the harness opens a host terminal with, so the retained
+        // tail lays out as printed; the dock resizes both when it shows them.
+        let size = Dimensions::new(120, 30);
+        let handle = terminal.input();
+        let input = handle.as_ref().map(|_| Arc::new(InputQueue::default()));
+        let shared = Arc::new(SharedScreen::new(size, input.as_ref().map(Arc::downgrade)));
+        let exit = Arc::new(Mutex::new(None));
+        let preview = Arc::new(Mutex::new(None));
+        let woken = Arc::clone(&shared);
+        start_reader(
+            Box::new(AgentOutput {
+                terminal,
+                pending: Vec::new(),
+                mirror: handle.is_none(),
+                exit: Arc::clone(&exit),
+                watch: watch_preview.then(|| {
+                    crate::preview::OutputWatch::new(
+                        Arc::clone(&preview),
+                        Arc::new(move || woken.changed()),
+                    )
+                }),
+            }),
+            Arc::clone(&shared),
+        )?;
+        if let (Some(handle), Some(input)) = (&handle, &input) {
+            start_writer(
+                Box::new(AgentInput(handle.clone())),
+                Arc::clone(input),
+                Arc::clone(&shared),
+            )?;
+        }
+        Ok(Self {
+            master: None,
+            child: None,
+            input,
+            shared,
+            observed_revision: 0,
+            status: SessionStatus::Running,
+            size,
+            shell: label.to_owned(),
+            selection: None,
+            scroll_remainder: 0.0,
+            agent: Some(AgentLink {
+                input: handle,
+                exit,
+                preview,
+            }),
+        })
+    }
+
+    /// Where the agent's command serves, once that address answered.
+    pub fn agent_preview(&self) -> Option<String> {
+        self.agent
+            .as_ref()?
+            .preview
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// How the agent's command ended, once it has. `None` for a shell.
+    pub fn agent_exit(&self) -> Option<PersistentCommandExit> {
+        self.agent
+            .as_ref()?
+            .exit
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     /// Cached process identity; reading the selector never snapshots the PTY.
     pub fn shell_label(&self) -> &str { &self.shell }
 
@@ -453,12 +608,17 @@ impl TerminalSession {
                 .to_owned(),
             selection: None,
             scroll_remainder: 0.0,
+            agent: None,
         })
     }
 
     /// Queue raw PTY input without waiting for the shell to consume it. Enter
     /// is `b"\r"`; special keys use their standard terminal escape sequences.
     pub fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
+        // A read-only mirror takes no keys; its notice says so.
+        if self.agent.as_ref().is_some_and(|agent| agent.input.is_none()) {
+            return Ok(());
+        }
         if !matches!(&self.status, SessionStatus::Running) {
             return Err(io::Error::new(io::ErrorKind::BrokenPipe, "terminal closed"));
         }
@@ -615,13 +775,21 @@ impl TerminalSession {
         if next == self.size {
             return Ok(false);
         }
-        let master = self
-            .master
-            .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "terminal closed"))?;
-        master
-            .resize(next.pty_size())
-            .map_err(|error| io::Error::other(error.to_string()))?;
+        if let Some(agent) = &self.agent {
+            // shortcut: a refused resize leaves the process with its previous
+            // size while the screen follows the pane; surface it if it matters.
+            if let (Some(input), SessionStatus::Running) = (&agent.input, &self.status) {
+                let _ = input.resize(next.cols, next.rows);
+            }
+        } else {
+            let master = self
+                .master
+                .as_ref()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "terminal closed"))?;
+            master
+                .resize(next.pty_size())
+                .map_err(|error| io::Error::other(error.to_string()))?;
+        }
         if let Ok(mut parser) = self.shared.parser.lock() {
             parser.screen_mut().set_size(next.rows, next.cols);
             self.size = next;
@@ -658,7 +826,15 @@ impl TerminalSession {
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
         if matches!(&self.status, SessionStatus::Running) {
-            if let Some(child) = self.child.as_mut() {
+            if let Some(exit) = self.agent_exit() {
+                self.status = match exit {
+                    PersistentCommandExit::Exited { code: Some(code) } if code >= 0 => {
+                        SessionStatus::Exited(code as u32)
+                    }
+                    _ => SessionStatus::Stopped,
+                };
+                changed = true;
+            } else if let Some(child) = self.child.as_mut() {
                 match child.try_wait() {
                     Ok(Some(status)) => {
                         self.status = SessionStatus::Exited(status.exit_code());
@@ -705,6 +881,8 @@ impl TerminalSession {
         ));
         let error = match &self.status {
             SessionStatus::Failed(reason) => Some(reason.clone()),
+            // A key sent as the agent's command ended is not an error to keep.
+            SessionStatus::Exited(_) | SessionStatus::Stopped if self.agent.is_some() => None,
             _ => self
                 .shared
                 .error
@@ -745,6 +923,12 @@ impl TerminalSession {
         self.shared.closed.store(true, Ordering::Release);
         if let Some(input) = self.input.take() {
             input.close();
+        }
+        if self.agent.is_some() {
+            // Nothing to reap: the process belongs to the agent's manager.
+            self.status = SessionStatus::Closed;
+            self.shared.changed();
+            return;
         }
         let resources = Arc::new(Mutex::new((self.child.take(), self.master.take())));
         let worker_resources = Arc::clone(&resources);
@@ -1000,6 +1184,8 @@ fn start_reader(mut reader: Box<dyn Read + Send>, shared: Arc<SharedScreen>) -> 
                     }
                 }
             }
+            // An agent's command reports its exit here; a shell's is polled.
+            shared.changed();
         })
         .map(|_| ())
 }
@@ -1109,6 +1295,7 @@ mod tests {
             shell: "test".into(),
             selection: None,
             scroll_remainder: 0.0,
+            agent: None,
         };
         let snapshot = session.snapshot();
         assert!(snapshot.styled_lines[0]
@@ -1131,6 +1318,7 @@ mod tests {
             shell: "test".into(),
             selection: None,
             scroll_remainder: 0.0,
+            agent: None,
         };
         assert!(!session.poll());
         shared.parser.lock().unwrap().process(b"hello");
@@ -1321,6 +1509,7 @@ mod tests {
             shell: "test".into(),
             selection: None,
             scroll_remainder: 0.0,
+            agent: None,
         }
     }
 

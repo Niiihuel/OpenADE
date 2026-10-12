@@ -1494,6 +1494,11 @@ fn terminal_activity(
             .center_content(),
         );
     }
+    if let Some(actions) =
+        crate::terminal_dock_ui::command_actions(state, "card", id, name, output.as_deref())
+    {
+        body.push(actions.padding(8.0));
+    }
     let failed = *is_error || *activity == ActivityStatus::Failed;
     let mut terminal = ToolActivity::new(
         &disclosure,
@@ -4237,6 +4242,7 @@ mod tests {
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
             chat_link_opening: Default::default(),
+            preview_opening: Default::default(),
             chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),

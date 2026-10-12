@@ -5,7 +5,7 @@
 use crate::{
     tools::persistent_command_tools, AgentError, CommandIsolation, NativeManualCommandActor,
     NativeManualCommandPolicySource, PersistentCommandLimits, PersistentCommandManager,
-    ToolContext, ToolDefinition, ToolExecutor, ToolOutput,
+    PersistentCommandStartObserver, ToolContext, ToolDefinition, ToolExecutor, ToolOutput,
 };
 use async_trait::async_trait;
 use openide_core::{NativeCommandOutputStore, NativeSessionLease, SessionStore, ToolCall};
@@ -26,7 +26,8 @@ pub struct NativeCommandProfileOptions {
     pub resize: bool,
     /// Host opt-in: on Unix, host-unrestricted commands run on a terminal the
     /// host can show and type into. A transport, not an advertised capability:
-    /// it is checked when sharing a manager but is not part of the identity.
+    /// it is checked when sharing a manager but is not part of the identity,
+    /// so a child reserved before a host enabled it resumes under it.
     pub host_terminal: bool,
     /// Hosts leave this false; `NativeCommandProfile::before_command_revision` sets
     /// it: the tool schema and identity a child was reserved with before
@@ -110,6 +111,7 @@ pub struct NativeCommandRegistry {
     sessions: Arc<SessionStore>,
     output: Arc<NativeCommandOutputStore>,
     manual_policy: Option<Arc<NativeManualCommandPolicySource>>,
+    start_observer: Option<PersistentCommandStartObserver>,
     state: Mutex<RegistryState>,
 }
 
@@ -123,8 +125,16 @@ impl NativeCommandRegistry {
             output: Arc::new(NativeCommandOutputStore::new(sessions.clone())),
             sessions,
             manual_policy: None,
+            start_observer: None,
             state: Mutex::new(RegistryState::default()),
         }
+    }
+
+    /// Every manager this registry creates reports the commands it starts,
+    /// parent and child owners alike, so the host can show each one.
+    pub fn with_start_observer(mut self, observer: PersistentCommandStartObserver) -> Self {
+        self.start_observer = Some(observer);
+        self
     }
 
     /// Trusted host policy, freshly read by the shared actor at each boundary.
@@ -340,6 +350,9 @@ impl NativeCommandRegistry {
         }
         if options.host_terminal {
             manager = manager.with_host_terminal();
+        }
+        if let Some(observer) = &self.start_observer {
+            manager = manager.with_start_observer(observer.clone());
         }
         let manager = Arc::new(manager);
         state.managers.insert(

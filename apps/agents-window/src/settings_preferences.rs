@@ -143,6 +143,8 @@ pub(crate) struct SettingsPreferences {
     pub tours: std::collections::BTreeMap<String, TourRecord>,
     /// Where a click on a link of the conversation opens.
     pub chat_links: crate::chat_links::ChatLinkOpening,
+    /// When the preview of a server the agent starts opens.
+    pub preview_opening: crate::preview::PreviewOpening,
     /// The model and quality `generate_image` uses, as the user chose them.
     /// `image_runtime::image_choice` says what a call sends for the pair.
     pub image_model: String,
@@ -172,6 +174,7 @@ impl Default for SettingsPreferences {
             github_account: GithubAccountPreference::Automatic,
             tours: Default::default(),
             chat_links: Default::default(),
+            preview_opening: Default::default(),
             image_model: IMAGE_MODELS[0].id.to_owned(),
             image_quality: DEFAULT_QUALITY.to_owned(),
         }
@@ -296,6 +299,12 @@ impl SettingsPreferences {
         {
             preferences.chat_links = opening;
         }
+        if let Some(opening) = value
+            .get("preview_opening")
+            .and_then(|opening| serde_json::from_value(opening.clone()).ok())
+        {
+            preferences.preview_opening = opening;
+        }
         // A model or level this build does not list keeps the default.
         let known = |key: &str, listed: &dyn Fn(&str) -> bool| {
             value.get(key)?.as_str().filter(|id| listed(id)).map(str::to_owned)
@@ -393,6 +402,7 @@ impl SettingsPreferences {
             "github_account": self.github_account,
             "tours": self.tours,
             "chat_links": self.chat_links,
+            "preview_opening": self.preview_opening,
             "image_model": self.image_model,
             "image_quality": self.image_quality,
         }))

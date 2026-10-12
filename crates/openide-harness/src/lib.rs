@@ -125,16 +125,18 @@ pub use native_command_registry::{
 pub use native_context::{
     native_model_context_digest, native_model_context_digest_for_recorded_workspace,
 };
+pub use output_condense::strip_ansi;
 pub use permission::{
     PermissionChoice, PermissionMode, PermissionPolicy, SessionApprovalError, SessionApprovalGrant,
     SESSION_APPROVAL_GRANT_VERSION,
 };
 pub use persistent_command::{
     PersistentCommandControlInspection, PersistentCommandDimensions, PersistentCommandEvent,
-    PersistentCommandExit, PersistentCommandInspection, PersistentCommandLimits,
-    PersistentTerminal, PersistentTerminalEvent,
-    PersistentCommandManager, PersistentCommandSessionInfo, PersistentCommandSnapshot,
-    PersistentCommandStarted, PersistentCommandStdinState, PersistentCommandStream,
+    PersistentCommandExit, PersistentCommandInspection, PersistentCommandLaunch,
+    PersistentCommandLimits, PersistentCommandManager, PersistentCommandSessionInfo,
+    PersistentCommandSnapshot, PersistentCommandStartObserver, PersistentCommandStarted,
+    PersistentCommandStdinState, PersistentCommandStream, PersistentTerminal,
+    PersistentTerminalEvent, PersistentTerminalInput,
 };
 pub use plan_tool::update_plan_tool_definition;
 pub use user_interaction::{

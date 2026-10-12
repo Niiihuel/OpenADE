@@ -615,6 +615,11 @@ struct BrowserHandle {
     process: Arc<Mutex<Option<u32>>>,
     scope: BrowserScope,
     identity_digest: String,
+    /// The address the server this conversation's agent started answers on:
+    /// what `open_preview` opens when it is given none.
+    preview: Arc<Mutex<Option<String>>>,
+    /// `open_preview` asked for this context's tab to be shown.
+    reveal: Arc<AtomicBool>,
 }
 
 impl BrowserHandle {
@@ -849,6 +854,8 @@ impl BrowserRuntime {
             process: Arc::default(),
             scope,
             identity_digest,
+            preview: Arc::default(),
+            reveal: Arc::default(),
         };
         let worker = Worker {
             handle: handle.clone(),
@@ -953,6 +960,18 @@ impl BrowserRuntime {
     }
     pub(crate) fn scope(&self) -> &BrowserScope {
         &self.handle.scope
+    }
+    /// The address `open_preview` opens when the agent names none.
+    pub(crate) fn set_preview_url(&self, url: Option<String>) {
+        *self
+            .handle
+            .preview
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = url;
+    }
+    /// Whether `open_preview` asked, since the last call, to show the tab.
+    pub(crate) fn take_reveal(&self) -> bool {
+        self.handle.reveal.swap(false, Ordering::AcqRel)
     }
     pub(crate) fn mcp_client(&self) -> BrowserMcpClient {
         BrowserMcpClient {
@@ -2324,9 +2343,51 @@ pub(crate) struct BrowserMcpClient {
     handle: BrowserHandle,
 }
 
+/// The native agent's own tool beside the browser's: only this window can
+/// tell which server the conversation started.
+pub(crate) const OPEN_PREVIEW: &str = "open_preview";
+
+fn open_preview_tool() -> McpTool {
+    McpTool {
+        name: OPEN_PREVIEW.into(),
+        description: Some("Show the user the preview of a local server in the shared OpenIDE browser. Opens `url`, or without it the address the server started in this conversation printed once it answered (for example http://localhost:5173). Only addresses of this machine are accepted: localhost, 127.0.0.1 and [::1], and 0.0.0.0 is opened as localhost. For any other site use browser_navigate.".into()),
+        input_schema: json!({"type":"object","properties":{"url":{"type":"string","minLength":1,"maxLength":4096}},"required":[],"additionalProperties":false}),
+        extra: BTreeMap::new(),
+    }
+}
+
 impl BrowserMcpClient {
     pub(crate) fn identity_digest(&self) -> &str {
         &self.handle.identity_digest
+    }
+
+    /// What `open_preview` navigates to, or why it will not: an address of
+    /// this machine, the given one or the conversation's server's.
+    fn preview_command(&self, arguments: &Value) -> Result<BrowserCommand, String> {
+        let arguments = arguments
+            .as_object()
+            .ok_or("Los argumentos de navegador deben ser un objeto")?;
+        if arguments.keys().any(|key| key != "url") {
+            return Err("open_preview sólo acepta el argumento url".into());
+        }
+        let url = match arguments.get("url") {
+            Some(Value::String(url)) => crate::preview::loopback_url(url).ok_or(
+                "open_preview sólo abre direcciones de este equipo (localhost, 127.0.0.1 o [::1]). Para otro sitio usá browser_navigate.",
+            )?,
+            Some(_) => return Err("url debe ser un texto".into()),
+            None => self
+                .handle
+                .preview
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .clone()
+                .ok_or(
+                    "Ningún comando de esta conversación publicó todavía una dirección local que responda. Indicá url, por ejemplo http://localhost:5173.",
+                )?,
+        };
+        let command = BrowserCommand::Navigate { url };
+        command.validate()?;
+        Ok(command)
     }
     /// The accessible tree the agent last read: what its refs name.
     pub(crate) fn last_snapshot(&self) -> Arc<str> {
@@ -2352,7 +2413,9 @@ impl McpToolClient for BrowserMcpClient {
         if self.catalog_changed() {
             return Err(McpError::Closed);
         }
-        Ok(browser_mcp_tools())
+        let mut tools = browser_mcp_tools();
+        tools.push(open_preview_tool());
+        Ok(tools)
     }
     async fn call_tool(
         &self,
@@ -2366,9 +2429,28 @@ impl McpToolClient for BrowserMcpClient {
         if self.catalog_changed() {
             return Err(McpError::Closed);
         }
-        let command = browser_tool_command(name, arguments).map_err(McpError::Protocol)?;
+        let command = if name == OPEN_PREVIEW {
+            match self.preview_command(&arguments) {
+                Ok(command) => command,
+                // An answer the model reads and corrects, not a broken call.
+                Err(refusal) => {
+                    return Ok(McpCallResult {
+                        content: vec![json!({"type":"text","text":refusal})],
+                        is_error: true,
+                        structured_content: None,
+                        extra: BTreeMap::new(),
+                    })
+                }
+            }
+        } else {
+            browser_tool_command(name, arguments).map_err(McpError::Protocol)?
+        };
         let mutating = command.mutating();
         let mut request = self.handle.submit(command).map_err(McpError::Protocol)?;
+        if name == OPEN_PREVIEW {
+            // Opening is also showing: the window brings the tab forward.
+            self.handle.reveal.store(true, Ordering::Release);
+        }
         let deadline = Instant::now() + ACTION_TIMEOUT + ACTION_TIMEOUT;
         loop {
             if let Some(result) = request.poll() {

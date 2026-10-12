@@ -134,6 +134,8 @@ async fn child_commands_share_host_controls_across_model_wait_followup_cancel_an
     settings.set_command_isolation(CommandIsolation::HostUnrestricted);
     settings.save(&data_root).unwrap();
     let mut app = AgentsWindow::with_data_root(data_root.clone());
+    // This test is about the pipe contract; see `keep_pipes`.
+    app.native_command_sessions.keep_pipes();
     app.view.native_provider_id = "custom".into();
     app.view.model = "fixture-child-commands".into();
     app.view.endpoint = endpoint;
