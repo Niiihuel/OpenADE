@@ -234,7 +234,16 @@ impl Embedded {
         let mut canvas = self.canvas();
         canvas.visible = visible;
         canvas.before_capture = None;
+        if !visible {
+            // A hidden page takes no paint, and keeps none: shown again it
+            // is painted whole.
+            canvas.bgra = Vec::new();
+            canvas.dirty = false;
+        }
         drop(canvas);
+        if !visible {
+            *self.rgb.lock().unwrap_or_else(|poison| poison.into_inner()) = Vec::new();
+        }
         self.pace();
         if let (true, Some(page)) = (visible, &*self.page()) {
             page.invalidate();

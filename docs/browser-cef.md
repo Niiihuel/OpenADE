@@ -136,9 +136,10 @@ siguiente, y nada se encola. Las respuestas al agente comparten hilo con la
 copia y esperan a lo sumo una.
 
 - **Oculta.** La página no se oculta para CEF: una página oculta deja de
-  animar y de avanzar para el agente. Se descartan sus cuadros y Chromium
-  compone a 10 cuadros por segundo en lugar de 60. Mientras corre un comando
-  vuelve a 60, porque un clic o una captura esperan uno o dos cuadros.
+  animar y de avanzar para el agente. Se descartan sus cuadros, se suelta el
+  lienzo y Chromium compone a 10 cuadros por segundo en lugar de 60. Mientras
+  corre un comando vuelve a 60, porque un clic o una captura esperan uno o
+  dos cuadros.
 - **Al mostrarse** se pide un pintado completo: la vista recibe un cuadro
   aunque la página esté quieta.
 - **Capturas del agente.** Chromium vuelve a pintar la página en cada captura
