@@ -334,14 +334,14 @@ impl ToolExecutor for LocalTools {
             },
             ToolDefinition {
                 name: "search_files".into(),
-                description: "Search UTF-8 workspace files with a regular expression.".into(),
+                description: "Search UTF-8 workspace files. Give `pattern` to list every line that matches a regular expression, or `query` to get the passages that best match a few words.".into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "pattern": {"type": "string", "maxLength": 16384},
+                        "pattern": {"type": "string", "maxLength": 16384, "description": "Regular expression matched against each line. Use it when you know the exact text or name."},
+                        "query": {"type": "string", "maxLength": 16384, "description": "A few words for the code you are looking for, for example \"retry backoff after rate limit\". Returns up to ten passages ranked by the words they share with it, best first, each with its line range and its most relevant lines. Identifiers are split at underscores and camelCase. It matches words, not meaning: use the words the code would use."},
                         "path": {"type": "string", "default": ".", "description": "File or directory inside the active workspace. Omit path or use . to search the workspace root; an empty string also means the root. Relative paths are preferred; absolute paths must stay inside the workspace."}
                     },
-                    "required": ["pattern"],
                     "additionalProperties": false
                 }),
             },
