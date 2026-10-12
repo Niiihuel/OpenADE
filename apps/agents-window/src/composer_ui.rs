@@ -3225,13 +3225,18 @@ pub(crate) mod tests {
                 cached_input_tokens: Some(40),
                 reasoning_tokens: Some(20),
             }),
-            breakdown: vec![NativeContextCategory {
-                id: "skills".into(),
-                label: "Skills".into(),
-                value: "2 · 400 bytes".into(),
-                detail: "Diagnostic SHA-256 must be optional".into(),
-                bytes: Some(400),
-            }],
+            breakdown: vec![
+                NativeContextCategory {
+                    id: "skills".into(),
+                    label: "Skills".into(),
+                    value: "2 · 400 bytes".into(),
+                    detail: "Diagnostic SHA-256 must be optional".into(),
+                    bytes: Some(400),
+                },
+                // The card's figure is the sum of its rows: as in the real
+                // projection, the conversation takes the rest of the measure.
+                NativeContextCategory::new("conversation", "Conversación", "240 entrada · 60 salida", "Uso medido"),
+            ],
             sections: vec![NativeContextSection {
                 title: "Detalles".into(),
                 rows: vec![NativeContextRow::new(
@@ -3252,9 +3257,13 @@ pub(crate) mod tests {
             let frame = tree.layout(viewport);
             for label in [
                 "Uso de contexto",
-                "300 / 2K tokens",
+                "300",
+                "de 2K tokens",
+                "15%",
+                "1.7K libres",
                 "Skills",
                 "100",
+                "200",
             ] {
                 assert!(
                     frame.commands.iter().any(|command| matches!(command,
@@ -3271,19 +3280,18 @@ pub(crate) mod tests {
                     "{copied} is not part of the popover"
                 );
             }
-            let free_track = frame
+            // 300 of 2000 tokens take 33 of the card's 216 cells; the free
+            // part of the window stays visible as the empty ones.
+            let free = frame
                 .commands
                 .iter()
-                .find_map(|command| match command {
+                .filter(|command| matches!(command,
                     DrawCommand::FillRect { rect, color, .. }
-                        if *color == theme::TRACK && (rect.height - 6.0).abs() < 0.01 =>
-                    {
-                        Some(rect)
-                    }
-                    _ => None,
-                })
-                .expect("the free context window must have a visible track");
-            assert!(free_track.width > width.min(344.0) * 0.60);
+                        if *color == theme::menu_palette().hover
+                            && rect.width == rect.height
+                            && rect.width < 8.0))
+                .count();
+            assert_eq!(free, 183);
             let summary = frame
                 .regions
                 .iter()
@@ -3305,7 +3313,8 @@ pub(crate) mod tests {
                 crate::composer_context_ui::diagnostic(&usage),
                 "Diagnóstico del contexto\n · \nEstado: Aún no hay una respuesta medida\n\n\
                  Instrucciones y herramientas\n\
-                 Skills: 2 · 400 bytes — Diagnostic SHA-256 must be optional\n\n\
+                 Skills: 2 · 400 bytes — Diagnostic SHA-256 must be optional\n\
+                 Conversación: 240 entrada · 60 salida — Uso medido\n\n\
                  Detalles\nIdentidad: Diagnostic SHA-256 — Exact origin details\n"
             );
         }

@@ -4897,12 +4897,17 @@ mod tests {
                 last_usage_sequence: Some(12),
                 journal_last_sequence: 13,
                 reported_responses: 1,
-                breakdown: vec![NativeContextCategory::new(
-                    "tools",
-                    "Herramientas",
-                    "4 definiciones",
-                    "Catálogo original de sólo lectura; no representa tokens.",
-                )],
+                breakdown: vec![
+                    NativeContextCategory::new(
+                        "tools",
+                        "Herramientas",
+                        "4 definiciones",
+                        "Catálogo original de sólo lectura; no representa tokens.",
+                    ),
+                    // The card's figure is the sum of its rows: as in the real
+                    // projection, the conversation takes what was measured.
+                    NativeContextCategory::new("conversation", "Conversación", "240 entrada · 60 salida", ""),
+                ],
                 sections: vec![NativeContextSection {
                     title: "Ruta y límites registrados".into(),
                     rows: vec![NativeContextRow::new(
@@ -4935,7 +4940,7 @@ mod tests {
             state.composer_context_open = true;
             tree.set_root(build_session_surface(&state, width, false, false));
             let summary = tree.layout(viewport);
-            for value in ["300 / 2K tokens", "Herramientas"] {
+            for value in ["300 de 2K tokens", "15%", "exact-model-original", "Herramientas"] {
                 assert!(
                     visible_text(&summary).contains(value),
                     "missing {value} at {width}"

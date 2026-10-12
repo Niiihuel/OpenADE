@@ -554,13 +554,11 @@ pub const NEW_FILE_FIELD: FormFieldSizing = FormFieldSizing {
     ..FormFieldSizing::DEFAULT
 };
 
-/// The context summary: wider gaps inside a padded popover, and a hairline
-/// only above its actions.
+/// The context summary: the card insets itself and its foot reaches the
+/// popover's edges, so the panel adds no space; a hairline above its actions.
 pub const CONTEXT_POPOVER: PopoverPanelSizing = PopoverPanelSizing {
-    gap: 8.0,
-    // Rows reach this close to the edge so their hover has air around the
-    // text; everything else is inset by `CONTEXT_ROW_INSET` to line up.
-    padding: 4.0,
+    gap: 0.0,
+    padding: 0.0,
     header_rule: false,
 };
 

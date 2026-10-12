@@ -8,9 +8,10 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    Button, ButtonGroup, ButtonVariant, Color, Component, ContextMeter, ControlSize, Element,
-    Icon, IconButton, Popover, PopoverPanel, PopoverPlacement, ScrollArea, ScrollbarAppearance, Text, TextRole,
-    Tooltip, TooltipPlacement, TooltipSpec,
+    Button, ButtonGroup, ButtonVariant, Color, Component, ContextMeter, ContextShare,
+    ContextShareAction, ContextTones, ContextWindow, ControlSize, Element, ElementKind, Icon,
+    IconButton, Popover, PopoverPanel, PopoverPlacement, ScrollArea, ScrollbarAppearance, Text,
+    TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 use std::path::Path;
 
@@ -121,20 +122,35 @@ fn usage_ink(fraction: Option<f32>) -> Color {
         _ => theme::FOREGROUND,
     }
 }
-/// Height of the segmented bar and the narrowest segment it paints.
-const BAR_HEIGHT: f32 = 6.0;
-const MIN_SEGMENT: f32 = 2.0;
-/// Whole pixels, so the rows add up to exactly the height the body is given:
-/// a fraction of rounding would count as overflow and show a scrollbar.
-const ROW_HEIGHT: f32 = 16.0;
-/// A category row's hover extends this far past its text on each side.
-const CONTEXT_ROW_INSET: f32 = 8.0;
-const CATEGORY_ROW_HEIGHT: f32 = 22.0;
+/// ID of the context card; it names its rows and actions after it.
+pub(crate) const CONTEXT_CARD: &str = "composer_context";
+/// The card insets its own content this far; what stands under it lines up.
+const CARD_INSET: f32 = 16.0;
 
-/// Lines an element up with the text of the category rows.
+/// Lines an element up with the content of the card.
 fn inset(element: Element) -> Element {
-    let side = || Element::spacer().size(Some(CONTEXT_ROW_INSET), None);
+    let side = || Element::spacer().size(Some(CARD_INSET), None);
     Element::row(vec![side(), element.flex(1.0), side()])
+}
+
+/// `tokens` for the card, whose figures pass through fractions as they count.
+fn card_tokens(value: f32) -> String {
+    tokens(value.round() as u64)
+}
+
+/// The card names its own controls; make the one called `id` dispatch `action`.
+fn dispatch_as(element: &mut Element, id: &str, action: &str) {
+    match &mut element.kind {
+        ElementKind::Clickable { id: own, .. } if *own == id => {
+            element.action_alias = Some(action.into());
+        }
+        ElementKind::Column(children) | ElementKind::Row(children) => {
+            for child in children {
+                dispatch_as(child, id, action);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// One token figure per category, in order: bytes / 4 where a category states
@@ -173,74 +189,6 @@ pub(crate) fn category_tokens(
         tokens[index] = Some(used.saturating_sub(others));
     }
     tokens
-}
-
-/// Width of each category's segment on a bar `track` wide. With a known window
-/// the rest of the track is the free part; without one the segments share the
-/// whole track. A category that has tokens never paints narrower than
-/// `MIN_SEGMENT`, and the segments together never exceed the track.
-pub(crate) fn segment_widths(tokens: &[Option<u64>], window: Option<u64>, track: f32) -> Vec<f32> {
-    let sum = tokens.iter().flatten().fold(0u64, |sum, value| sum.saturating_add(*value));
-    if sum == 0 || !(track > 0.0) {
-        return vec![0.0; tokens.len()];
-    }
-    // An estimate larger than the window fills the track rather than overflow it.
-    let scale = window.filter(|window| *window > 0).unwrap_or(sum).max(sum) as f64;
-    let mut widths: Vec<f32> = tokens
-        .iter()
-        .map(|tokens| match tokens {
-            Some(tokens) if *tokens > 0 => {
-                ((*tokens as f64 / scale * f64::from(track)) as f32).max(MIN_SEGMENT)
-            }
-            _ => 0.0,
-        })
-        .collect();
-    let excess = widths.iter().sum::<f32>() - track;
-    if excess > 0.0 {
-        let painted = widths.iter().filter(|width| **width > 0.0).count() as f32;
-        let spare = widths.iter().sum::<f32>() - painted * MIN_SEGMENT;
-        for width in widths.iter_mut().filter(|width| **width > 0.0) {
-            *width = if spare >= excess {
-                *width - (*width - MIN_SEGMENT) * excess / spare
-            } else {
-                track / painted
-            };
-        }
-    }
-    widths
-}
-
-/// A segment's colour; with a category under the pointer the others recede.
-fn segment_ink(id: &str, hovered: Option<&str>) -> Color {
-    let ink = theme::context_category_ink(id);
-    if hovered.is_some_and(|hovered| hovered != id) {
-        Color::rgba(ink.r, ink.g, ink.b, 70)
-    } else {
-        ink
-    }
-}
-
-fn segmented_bar(
-    categories: &[NativeContextCategory],
-    widths: &[f32],
-    hovered: Option<&str>,
-) -> Element {
-    let mut pieces: Vec<_> = categories
-        .iter()
-        .zip(widths)
-        .filter(|(_, width)| **width > 0.0)
-        .map(|(category, width)| {
-            Element::spacer()
-                .size(Some(*width), Some(BAR_HEIGHT))
-                .background(segment_ink(&category.id, hovered))
-        })
-        .collect();
-    pieces.push(Element::spacer().flex(1.0));
-    // Clipped so a rounding error in the split cannot paint past the bar.
-    Element::row(pieces)
-        .background(theme::TRACK)
-        .size(None, Some(BAR_HEIGHT))
-        .clip_children()
 }
 
 /// Plain text of everything the journal projection recorded, for a bug report.
@@ -287,89 +235,124 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         usage.window.filter(|limit| *limit > 0).is_none()
             && usage.input_limit.is_some_and(|limit| limit > 0)
     });
-    let total = match (occupancy, used) {
-        (Some(occupancy), _) => format!(
-            "{} / {} tokens",
-            tokens(occupancy.used),
-            tokens(occupancy.capacity)
-        ),
-        (None, Some(used)) => format!("{} tokens · ventana desconocida", tokens(used)),
-        _ => "Ventana desconocida".into(),
-    };
     let categories = usage.map_or(&[][..], |usage| &usage.breakdown);
     let hovered = usage.and_then(|usage| usage.hovered_category.as_deref());
-    let shares = category_tokens(categories, used);
-    let header = openide_ui::PanelHeader::new("", theme::menu_palette())
-        .leading(
-            Text::new(
-                if input_only {
-                    "Uso de entrada"
-                } else {
-                    "Uso de contexto"
-                },
-                theme::component_palette(),
+    let action = props.context_compaction;
+    let compact = action
+        .session_id
+        .filter(|_| action.unavailable.is_none() && !action.busy)
+        .map(|session_id| format!("composer_context_compact:{session_id}"));
+    // The card offers nothing while compaction is unavailable, so it says why.
+    let unavailable = action.session_id.and(action.unavailable);
+    let after_checkpoint = usage.is_some_and(|usage| {
+        usage.measurement_status == NativeContextMeasurementStatus::AfterCheckpoint
+    });
+    let mut figures = category_tokens(categories, used);
+    let sum = figures.iter().flatten().fold(0u64, |sum, value| sum.saturating_add(*value));
+    // The card's figure is the sum of its shares and has to be the occupancy
+    // every surface shows: estimates beyond what was measured are brought
+    // down to it in proportion, the running total keeping the sum exact.
+    if let Some(used) = used.filter(|used| *used < sum) {
+        let (mut counted, mut placed) = (0u128, 0u128);
+        for figure in figures.iter_mut().flatten() {
+            counted += u128::from(*figure);
+            let end = counted * u128::from(used) / u128::from(sum);
+            *figure = (end - placed) as u64;
+            placed = end;
+        }
+    }
+    let width = popover_width(props.width);
+    // shortcut: the card cuts neither its badge nor an action's words, so both
+    // are fitted here by widths read off the app's faces; drop this when the
+    // component fits them itself. Under 296 the conversation's row has no room
+    // for the words beside its label and figure, and the action keeps its icon.
+    let words = |text: &str| if width >= 296.0 { text.to_owned() } else { String::new() };
+    let shares: Vec<_> = categories
+        .iter()
+        .zip(figures)
+        .map(|(category, tokens)| ContextShare {
+            action: match category.id.as_str() {
+                "conversation" if action.busy => Some(ContextShareAction::Busy(words("Compactando"))),
+                "conversation" if after_checkpoint => Some(ContextShareAction::Done(words("Compactada"))),
+                "conversation" if compact.is_some() => Some(ContextShareAction::Offer(words("Compactar"))),
+                _ => None,
+            },
+            // The card has no row without a figure: such a category counts as zero.
+            ..ContextShare::new(
+                &category.id,
+                &category.label,
+                tokens.unwrap_or(0),
+                theme::context_category_ink(&category.id),
             )
-            .render(),
+        })
+        .collect();
+    // The card states a window only where the ring does: with an occupancy.
+    let window = occupancy.map(|occupancy| occupancy.capacity);
+    let in_focus = hovered.and_then(|id| shares.iter().find(|share| share.id == id));
+    let line = if let (Some(share), Some(window)) = (in_focus, window) {
+        format!(
+            "{} · {}% de la ventana",
+            share.label,
+            (share.tokens.saturating_mul(100) + window / 2) / window
         )
-        // The close button's hint names its key, so it is built here.
-        .trailing(vec![IconButton::new(
-            "composer_context_dismiss",
-            Icon::Close,
-            theme::menu_palette(),
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
-        .tooltip_with(
-            TooltipSpec::new("Cerrar contexto")
-                .shortcut("Esc")
-                .placement(TooltipPlacement::Below),
-        )
-        .render()])
-        .sizing(openide_ui::HeaderSizing::POPOVER)
-        .render();
-    let mut content = vec![
-        inset(
-            Text::new(total, theme::component_palette())
-                .ink(usage_ink(fraction))
-                .render(),
-        )
-        .size(None, Some(ROW_HEIGHT)),
-        inset(segmented_bar(
-            categories,
-            &segment_widths(&shares, capacity, bar_width(props.width)),
-            hovered,
-        )),
-    ];
-    for (category, share) in categories.iter().zip(&shares) {
-        let under_pointer = hovered == Some(category.id.as_str());
-        let label = Text::new(&category.label, theme::component_palette());
-        let row = Element::row(vec![
-            Element::spacer().size(Some(0.0), None),
-            Element::spacer()
-                .size(Some(10.0), Some(10.0))
-                .background(segment_ink(&category.id, hovered))
-                .radius(2.0)
-                .centered_y(),
-            if under_pointer { label } else { label.muted() }.render(),
-            Element::spacer().flex(1.0),
-            // A category without a figure only says that nothing was measured.
-            Text::new(
-                share.map_or_else(|| "–".into(), tokens),
-                theme::component_palette(),
-            )
-            .render()
-            .centered_y(),
-            Element::spacer().size(Some(0.0), None),
-        ])
-        // The row's gap is also its inset: zero-width ends leave 8 px each side.
-        .gap(CONTEXT_ROW_INSET)
-        .background(if under_pointer { theme::menu_palette().hover } else { Color::TRANSPARENT })
-        .radius(openide_ui::RadiusRole::Control.px())
-        .size(None, Some(CATEGORY_ROW_HEIGHT));
-        // The row's hint states what was measured, in the app's own units.
+    } else if action.busy {
+        "Compactando…".into()
+    } else if let Some(reason) = unavailable {
+        reason.into()
+    } else if let Some(occupancy) = occupancy {
+        format!("{} libres", tokens(occupancy.capacity.saturating_sub(occupancy.used)))
+    } else {
+        "Ventana desconocida".into()
+    };
+    let mut card = ContextWindow::new(
+        CONTEXT_CARD,
+        if input_only {
+            "Uso de entrada"
+        } else {
+            "Uso de contexto"
+        },
+        shares,
+        window.unwrap_or(0),
+        theme::menu_palette(),
+        ContextTones {
+            warning: theme::CONTEXT_WARNING,
+            // The card turns to danger at 95%; the app stays amber until the window is full.
+            danger: usage_ink(fraction),
+            success: theme::DIFF_ADDED,
+        },
+    )
+    .caption(match window {
+        Some(window) => format!("de {} tokens", tokens(window)),
+        None => "tokens".into(),
+    })
+    .focused(hovered)
+    .status(line)
+    // The popover's surface keeps one pixel around the card for its border.
+    .width(width - 2.0)
+    .format(card_tokens);
+    // The model's own name, the last segment of its ID, in the characters that
+    // fit beside the title: 150 px go to the title, the insets and the badge's
+    // padding, and the monospace face advances 6.7 px.
+    let room = ((width - 150.0) / 6.7) as usize;
+    let model = usage.and_then(|usage| usage.model.rsplit('/').next()).unwrap_or("");
+    if !model.is_empty() && room > 8 {
+        card = card.badge(crate::view::shorten(model, room - 1));
+    }
+    let mut card = card.render();
+    if let Some(compact) = &compact {
+        let control = format!("{CONTEXT_CARD}:action:conversation");
+        dispatch_as(&mut card, &control, compact);
+        card = Tooltip::new(card, control, "Compactar conversación", theme::menu_palette())
+            .description("Resume mensajes anteriores y conserva la conversación. El historial guardado no se elimina.")
+            .placement(TooltipPlacement::Left)
+            .render();
+    }
+    // The card builds its rows itself, so each row's hint hangs on the whole
+    // card: it states what was measured, in the app's own units.
+    for category in categories {
         let mut hint = Tooltip::new(
-            row,
-            format!("composer_context_row:{}", category.id),
+            card,
+            format!("{CONTEXT_CARD}:share:{}", category.id),
             &category.label,
             theme::component_palette(),
         )
@@ -377,7 +360,10 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         if !category.value.trim().is_empty() {
             hint = hint.description(&category.value);
         }
-        content.push(hint.render());
+        if let Some(reason) = unavailable.filter(|_| category.id == "conversation") {
+            hint = hint.footer(reason);
+        }
+        card = hint.render();
     }
     // One status line at most; a normal measurement needs none.
     let failure = usage
@@ -385,9 +371,7 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         .map(|error| format!("{}: {error}", "Consulta no disponible"));
     let status = if let Some(failure) = &failure {
         Some(failure.as_str())
-    } else if usage.is_some_and(|usage| {
-        usage.measurement_status == NativeContextMeasurementStatus::AfterCheckpoint
-    }) {
+    } else if after_checkpoint {
         Some("El resumen está guardado. El uso se medirá en la próxima respuesta.")
     } else if fraction.is_some_and(|fraction| fraction >= 0.8) {
         Some("Queda poco espacio. Puedes compactar para continuar.")
@@ -415,74 +399,56 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         None => Some("Aún no hay una respuesta medida".into()),
     };
     let status = status.or(reason.as_deref());
+    // Under the card and outside its scroll area, so it shows in a short window too.
+    let mut foot = Vec::new();
     if let Some(status) = status {
-        content.push(inset(
-            Text::new(status, theme::component_palette())
-                .role(TextRole::Small)
-                .ink(if fraction.is_some() {
-                    usage_ink(fraction)
-                } else {
-                    theme::FOREGROUND_SUBTLE
-                })
-                .render(),
-        ));
+        foot.extend([
+            Element::spacer().size(None, Some(8.0)),
+            inset(
+                Text::new(status, theme::component_palette())
+                    .role(TextRole::Small)
+                    .ink(if fraction.is_some() {
+                        usage_ink(fraction)
+                    } else {
+                        theme::FOREGROUND_SUBTLE
+                    })
+                    .render(),
+            ),
+        ]);
     }
-    let action = props.context_compaction;
-    let mut footer = ButtonGroup::new(vec![Button::new(
-        "composer_context_copy_diagnostic",
-        "Copiar diagnóstico",
-        theme::menu_palette(),
-    )
-    .variant(ButtonVariant::Ghost)
-    .size(ControlSize::Compact)
-    .render()])
-    .align_end();
-    if let Some(session_id) = action.session_id {
-        let id = format!("composer_context_compact:{session_id}");
-        let button = Button::new(
-            &id,
-            if action.busy {
-                "Compactando"
-            } else {
-                "Compactar"
-            },
+    let actions = ButtonGroup::new(vec![
+        Button::new(
+            "composer_context_copy_diagnostic",
+            "Copiar diagnóstico",
             theme::menu_palette(),
         )
-        .icon(Icon::Collapse)
-        .variant(ButtonVariant::Outline)
+        .variant(ButtonVariant::Ghost)
         .size(ControlSize::Compact)
-        .loading(action.busy)
-        .enabled(action.unavailable.is_none() && !action.busy)
-        .render();
-        footer = footer.leading(Tooltip::new(button, id, "Compactar conversación", theme::menu_palette())
-            .description(action.unavailable.unwrap_or("Resume mensajes anteriores y conserva la conversación. El historial guardado no se elimina."))
-            .render());
-    }
+        .render(),
+        // The close button's hint names its key, so it is built here.
+        IconButton::new("composer_context_dismiss", Icon::Close, theme::menu_palette())
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .tooltip_with(TooltipSpec::new("Cerrar contexto").shortcut("Esc"))
+            .render()
+            .centered_y(),
+    ])
+    .align_end();
+    foot.push(inset(actions.render().centered_y()).size(None, Some(40.0)));
     PopoverPanel::new(theme::component_palette())
-        .header(inset(header))
         .body(
-            ScrollArea::new(
-                "composer_context_summary",
-                Element::column(content).gap(2.0),
-            )
-            // An overlay keeps the width the bar's segments were sized for.
-            .appearance(ScrollbarAppearance::overlay())
-            .render(),
+            ScrollArea::new("composer_context_summary", card)
+                // An overlay keeps the width the card was sized for.
+                .appearance(ScrollbarAppearance::overlay())
+                .render(),
         )
-        // A safety cap only: the usual seven categories fit without scrolling.
-        .body_max_height(280.0)
-        .footer(inset(footer.render()).size(None, Some(28.0)))
+        .footer(Element::column(foot))
         .sizing(crate::ui_sizing::CONTEXT_POPOVER)
         .render()
 }
 
 fn popover_width(composer: f32) -> f32 {
     (composer - 16.0).clamp(96.0, 320.0)
-}
-/// The bar spans the popover between the insets of its surface (6) and panel.
-fn bar_width(composer: f32) -> f32 {
-    popover_width(composer)
-        - 2.0 * (6.0 + crate::ui_sizing::CONTEXT_POPOVER.padding + CONTEXT_ROW_INSET)
 }
 
 pub(crate) fn control_width(props: &ComposerProps<'_>) -> f32 {
@@ -529,7 +495,7 @@ pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
     if !props.context_open {
         return trigger;
     }
-    Popover::new(
+    let mut popover = Popover::new(
         trigger,
         summary(props),
         true,
@@ -539,7 +505,12 @@ pub(crate) fn control(props: &ComposerProps<'_>) -> Element {
     .width(popover_width(props.width))
     .placement(PopoverPlacement::TopEnd)
     .render()
-    .popover_return_focus("composer_context_toggle")
+    .popover_return_focus("composer_context_toggle");
+    // The card brings its own inset and its foot reaches the surface's edges.
+    if let ElementKind::Popover { floating, .. } = &mut popover.kind {
+        floating.style.padding = 1.0;
+    }
+    popover
 }
 
 #[cfg(test)]
@@ -626,48 +597,6 @@ mod tests {
         assert_eq!(category_tokens(&grown, None), [Some(0), Some(1_024)]);
         // Without an observed project or skills the copy is all system.
         assert_eq!(category_tokens(&categories(&[("system", Some(8_192))]), None), [Some(2_048)]);
-    }
-
-    #[test]
-    fn a_hovered_category_keeps_its_ink_and_the_others_recede() {
-        let full = theme::context_category_ink("system");
-        assert_eq!(segment_ink("system", None), full);
-        assert_eq!(segment_ink("system", Some("system")), full);
-        let dimmed = segment_ink("system", Some("conversation"));
-        assert_eq!((dimmed.r, dimmed.g, dimmed.b), (full.r, full.g, full.b));
-        assert!(dimmed.a < full.a);
-    }
-
-    #[test]
-    fn segments_follow_the_window_and_share_the_track_without_one() {
-        let shares = [Some(10_000), None, Some(0), Some(20_000)];
-        // Known window: each share of 100 000 on 300 px, the rest stays free.
-        assert_eq!(
-            segment_widths(&shares, Some(100_000), 300.0),
-            [30.0, 0.0, 0.0, 60.0]
-        );
-        // Unknown window: proportional to their own sum, filling the track.
-        assert_eq!(segment_widths(&shares, None, 300.0), [100.0, 0.0, 0.0, 200.0]);
-    }
-
-    #[test]
-    fn segments_clamp_to_the_track_keep_two_pixels_and_vanish_without_figures() {
-        // Nothing measured and all-zero paint nothing and divide by nothing.
-        assert_eq!(segment_widths(&[None, None], Some(1_000), 300.0), [0.0, 0.0]);
-        assert_eq!(segment_widths(&[Some(0), Some(0)], None, 300.0), [0.0, 0.0]);
-        assert_eq!(segment_widths(&[], None, 300.0), [0.0; 0]);
-        // A sum beyond the window fills the track and never overflows it.
-        let over = segment_widths(&[Some(150_000), Some(50_000)], Some(100_000), 300.0);
-        assert_eq!(over, [225.0, 75.0]);
-        // A sliver is widened to 2 px and the widest segment gives the room.
-        let sliver = segment_widths(&[Some(1), Some(1_000_000)], None, 300.0);
-        assert_eq!(sliver[0], 2.0);
-        assert!((sliver.iter().sum::<f32>() - 300.0).abs() < 0.01, "{sliver:?}");
-        let small = segment_widths(&[Some(1), Some(2)], Some(1_000_000), 300.0);
-        assert_eq!(small, [2.0, 2.0]);
-        // A track too short for 2 px each is split evenly instead of overflowing.
-        let cramped = segment_widths(&[Some(1), Some(1), Some(1)], None, 3.0);
-        assert_eq!(cramped, [1.0, 1.0, 1.0]);
     }
 
     #[test]

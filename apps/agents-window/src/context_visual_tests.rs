@@ -6,15 +6,18 @@ use crate::native_context_ui::{
     NativeContextCategory, NativeContextMeasurementStatus, NativeContextRow, NativeContextSection,
     NativeContextUiState,
 };
+use crate::composer_context_ui::CONTEXT_CARD;
 use crate::{theme, view};
 use eframe::egui;
 use openide_core::ModelTokenUsage;
 use openide_ui::{
-    DrawCommand, Element, FontFamily, Frame, Key, Rect, Size, UiAction, UiEvent, UiTree,
+    Color, ContextWindow, DrawCommand, Element, FontFamily, Frame, Key, Point, Rect, Size,
+    UiAction, UiEvent, UiTree,
 };
 use std::path::Path;
+use std::time::{Duration, Instant};
 
-const CASES: [&str; 11] = [
+const CASES: [&str; 13] = [
     "unknown",
     "unknown-window",
     "measured-30",
@@ -25,6 +28,8 @@ const CASES: [&str; 11] = [
     "five-long-sources",
     "ready-to-compact",
     "compacting",
+    "compaction-unavailable",
+    "category-in-focus",
     "error",
 ];
 const SOURCES: [&str; 7] = [
@@ -39,6 +44,8 @@ const SOURCES: [&str; 7] = [
 const DRAFT: &str = "Revisá el uso de contexto sin modificar los archivos.";
 const UNKNOWN_WINDOW: &str =
     "Ventana no publicada: context-review-model";
+/// A route as long as the ones providers publish, for the card's badge.
+const LONG_MODEL: &str = "fixture-account/models/context-review-2026-10-preview";
 const DETAIL_MARKER: &str = "DIAGNOSTIC_FINGERPRINT_NOT_SUMMARY";
 
 fn usage(input: u64, output: u64) -> ModelTokenUsage {
@@ -57,7 +64,12 @@ fn fixture(name: &str) -> view::ViewState {
     state.workspace = workspace.display().to_string();
     state.selected_backend = "native".into();
     state.native_provider_id = "fixture-provider".into();
-    state.model = "context-review-model".into();
+    state.model = if name == "five-long-sources" {
+        LONG_MODEL
+    } else {
+        "context-review-model"
+    }
+    .into();
     state.composer_model = state.model.clone();
     state.composer_model_options = vec![(state.model.clone(), "Modelo de revisión".into())];
     state.prompt = DRAFT.into();
@@ -99,6 +111,7 @@ fn fixture(name: &str) -> view::ViewState {
             context.window = None;
             context.input_limit = Some(100_000);
         }
+        "category-in-focus" => context.hovered_category = Some("conversation".into()),
         _ => {}
     }
     context.remaining_percent = context
@@ -159,7 +172,7 @@ fn fixture(name: &str) -> view::ViewState {
         )],
     });
     state.native_context = context;
-    if matches!(name, "ready-to-compact" | "compacting") {
+    if matches!(name, "ready-to-compact" | "compacting" | "compaction-unavailable") {
         state.selected_session = Some("context-conversation".into());
         state.native_context.owner = state.selected_session.clone();
         state.sessions.push(view::SessionView {
@@ -176,6 +189,13 @@ fn fixture(name: &str) -> view::ViewState {
             state
                 .conversation_activity
                 .begin_compaction("context-conversation", Path::new(&state.workspace));
+        }
+        if name == "compaction-unavailable" {
+            state.pending_permissions.push(view::PermissionView {
+                request_id: "approval".into(),
+                tool_name: "run_command".into(),
+                arguments: "{}".into(),
+            });
         }
     }
     state
@@ -376,37 +396,41 @@ fn context_popup_real_composer_preserves_exact_usage_and_short_window_bounds() {
 fn context_lists_every_category_in_one_level_without_scrolling() {
     for width in [360.0, 900.0] {
         for name in ["measured-30", "five-long-sources"] {
-            let size = Size::new(width, 420.0);
+            // Tall enough for the card, its seven rows and the actions under it.
+            let size = Size::new(width, 640.0);
             let mut state = fixture(name);
             state.composer_context_open = true;
             let (ctx, mut tree) = native_tree(root(&state, size), size);
             let frame = tree.layout(size);
             assert_popup_bounds(&frame, size);
             let text = visible_text(&frame, size);
+            let shown = |value: &str| text.iter().filter(|text| *text == value).count();
             for label in SOURCES {
-                assert!(text.iter().any(|text| text == label), "{label}: {text:?}");
+                assert_eq!(shown(label), 1, "{label}: {text:?}");
             }
-            assert!(text
-                .iter()
-                .any(|text| text == "30K / 100K tokens"));
-            assert!(text.iter().any(|text| text == "Copiar diagnóstico"));
-            assert!(
-                !text.iter().any(|text| text == "Detalles"),
-                "there is no second level"
-            );
-            // Tools, MCP and subagents state no size; raw units stay in the dump.
-            assert_eq!(text.iter().filter(|text| *text == "–").count(), 3);
+            // The figure, its caption, the percentage and what is left of the window.
+            for value in ["30K", "de 100K tokens", "30%", "70K libres", "Copiar diagnóstico"] {
+                assert_eq!(shown(value), 1, "{value}: {text:?}");
+            }
+            assert_eq!(shown("Detalles"), 0, "there is no second level");
+            // Raw units stay in the dump.
             assert!(!text.iter().any(|text| text.contains("bytes")));
             if name == "measured-30" {
                 // The 8192-byte system copy holds the project's 4096 and the
                 // skills' 2048: 2048, 4096 and 2048 bytes at four a token, and
-                // the rest of the 30 000 measured is conversation.
-                for (figure, times) in [("512", 2), ("1K", 1), ("28K", 1)] {
-                    let shown = text.iter().filter(|text| *text == figure).count();
-                    assert_eq!(shown, times, "{figure}: {text:?}");
+                // the rest of the 30 000 measured is conversation. Tools, MCP
+                // and subagents state no size and count as zero.
+                for (figure, times) in [("512", 2), ("1K", 1), ("28K", 1), ("0", 3)] {
+                    assert_eq!(shown(figure), times, "{figure}: {text:?}");
                 }
                 assert!(crate::composer_context_ui::diagnostic(&state.native_context)
                     .contains("Proyecto: 3 docs · 4096 bytes — "));
+            } else {
+                // Sizes that add up to 96 074 tokens are brought down to the
+                // 30 000 measured, so the figure stays the one the ring shows.
+                for (figure, times) in [("7.7K", 1), ("7.5K", 1), ("14.7K", 1), ("0", 4)] {
+                    assert_eq!(shown(figure), times, "{figure}: {text:?}");
+                }
             }
             tree.scroll_to_end("composer_context_summary");
             tree.layout(size);
@@ -421,49 +445,43 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
     }
 }
 
-/// The bar's painted pieces: its track and, left to right, its segments.
-fn bar(frame: &Frame) -> (Rect, Vec<(Rect, openide_ui::Color)>) {
-    let fills: Vec<_> = frame
+/// The card's field of cells inside the popover, in reading order.
+fn cells(frame: &Frame) -> Vec<(Rect, Color)> {
+    let popup = region(frame, "popover_surface:composer_context_dismiss");
+    frame
         .commands
         .iter()
         .filter_map(|command| match command {
-            DrawCommand::FillRect { rect, color, .. } if rect.height == 6.0 => {
+            DrawCommand::FillRect { rect, color, .. }
+                if rect.width == rect.height
+                    && rect.width < 8.0
+                    && popup.contains(Point::new(rect.x, rect.y)) =>
+            {
                 Some((*rect, *color))
             }
             _ => None,
         })
-        .collect();
-    let track = fills
-        .iter()
-        .find(|(_, color)| *color == theme::TRACK)
-        .expect("the bar paints its track")
-        .0;
-    (
-        track,
-        fills
-            .into_iter()
-            .filter(|(_, color)| *color != theme::TRACK)
-            .collect(),
-    )
+        .collect()
 }
 
 #[test]
-fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
+fn context_card_shares_its_cells_among_the_measured_categories() {
     let ink = theme::context_category_ink;
+    let empty = theme::menu_palette().hover;
     for width in [360.0, 900.0] {
-        for (name, inks, fills_track) in [
+        for (name, inks, fills_field) in [
             (
                 "measured-30",
                 vec!["system", "project", "skills", "conversation"],
                 false,
             ),
-            // 95 000 of 100 000 tokens leave a twentieth of the track free.
+            // 95 000 of 100 000 tokens leave a twentieth of the field empty.
             (
                 "near-full-95",
                 vec!["system", "project", "skills", "conversation"],
                 false,
             ),
-            // Without a window the measured segments share the whole track.
+            // Without a window the measured shares fill the field between them.
             (
                 "unknown-window",
                 vec!["system", "project", "skills", "conversation"],
@@ -472,45 +490,58 @@ fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
             // Nothing measured: only what states its bytes, against the window.
             ("unknown", vec!["system", "project", "skills"], false),
             ("compacted", vec!["system", "project", "skills"], false),
-            ("error", vec!["system", "project", "skills"], false),
+            // A failed query has no occupancy, so no window to set them against.
+            ("error", vec!["system", "project", "skills"], true),
         ] {
-            // Tall enough that the seven rows and a status line need no scrollbar.
-            let size = Size::new(width, 520.0);
+            let size = Size::new(width, 640.0);
             let mut state = fixture(name);
             state.composer_context_open = true;
             let (ctx, mut tree) = native_tree(root(&state, size), size);
             let frame = tree.layout(size);
-            let (track, segments) = bar(&frame);
+            let cells = cells(&frame);
             let popup = region(&frame, "popover_surface:composer_context_dismiss");
-            // The segments are sized for exactly the track the popover lays out.
-            assert!((track.width - (popup.width - 36.0)).abs() < 0.1, "{track:?}");
+            // The component's own field: 36 by 6 cells inside the card's inset.
+            assert_eq!(cells.len(), 216, "{name}");
+            assert!(cells.iter().all(|(rect, _)| rect.x >= popup.x + 16.0
+                && rect.x + rect.width <= popup.x + popup.width - 16.0));
+            let mut painted: Vec<_> = cells
+                .iter()
+                .map(|(_, color)| *color)
+                .filter(|color| *color != empty)
+                .collect();
+            painted.dedup();
             assert_eq!(
-                segments.iter().map(|(_, color)| *color).collect::<Vec<_>>(),
+                painted,
                 inks.iter().map(|id| ink(id)).collect::<Vec<_>>(),
                 "{name}"
             );
-            let painted: f32 = segments.iter().map(|(rect, _)| rect.width).sum();
-            assert!(painted <= track.width + 0.1, "{name}: {painted}");
-            assert_eq!((painted - track.width).abs() < 0.1, fills_track, "{name}");
-            assert!(segments.iter().all(|(rect, _)| rect.width >= 2.0
-                && rect.x >= track.x - 0.1
-                && rect.x + rect.width <= track.x + track.width + 0.1));
+            let free = cells.iter().filter(|(_, color)| *color == empty).count();
+            assert_eq!(free == 0, fills_field, "{name}: {free}");
             if name == "near-full-95" {
-                assert!((painted / track.width - 0.95).abs() < 0.01, "{painted}");
+                assert!((free as f32 / 216.0 - 0.05).abs() < 0.01, "{free}");
             }
             let text = visible_text(&frame, size);
             let has = |value: &str| text.iter().any(|text| text == value);
             match name {
-                "near-full-95" => assert!(has("95K / 100K tokens")),
+                "near-full-95" => {
+                    assert!(has("95K") && has("de 100K tokens") && has("95%") && has("5K libres"))
+                }
                 "unknown-window" => {
-                    assert!(has("30K tokens · ventana desconocida")
-                            && has(UNKNOWN_WINDOW));
+                    assert!(has("30K") && has("tokens") && has("Ventana desconocida"));
+                    assert!(has(UNKNOWN_WINDOW));
                     assert!(!text.iter().any(|text| text.contains('%')));
                 }
                 // Nothing measured yet: the sized instructions alone, as an estimate.
                 "unknown" => assert!(
-                    has("2K / 100K tokens") && has("Estimado: aún no hay una respuesta medida.")
+                    has("2K")
+                        && has("de 100K tokens")
+                        && has("Estimado: aún no hay una respuesta medida.")
                 ),
+                "compacted" => assert!(has("Compactada")),
+                "error" => {
+                    assert!(has("2K") && has("tokens") && has("Ventana desconocida"));
+                    assert!(!text.iter().any(|text| text.contains('%')));
+                }
                 _ => {}
             }
             assert!(
@@ -518,17 +549,91 @@ fn context_bar_paints_one_segment_per_measured_category_inside_its_track() {
                     DrawCommand::FillRect { rect, .. } if rect.width == 5.0)),
                 "{name} at {width}: content that fits paints no scrollbar thumb"
             );
-            // Every legend row carries its 10 px swatch.
+            // Every row carries its 8 px swatch.
             let swatches = frame
                 .commands
                 .iter()
                 .filter(|command| matches!(command, DrawCommand::FillRect { rect, radius, .. }
-                    if rect.width == 10.0 && rect.height == 10.0 && *radius == 2.0))
+                    if rect.width == 8.0 && rect.height == 8.0 && *radius == 2.0))
                 .count();
             assert_eq!(swatches, SOURCES.len(), "{name}");
             ctx.end_pass().textures_delta.clear();
         }
     }
+}
+
+#[test]
+fn context_figures_count_down_to_a_smaller_conversation() {
+    let size = Size::new(360.0, 640.0);
+    let mut state = fixture("measured-30");
+    state.composer_context_open = true;
+    let (ctx, mut tree) = native_tree(root(&state, size), size);
+    tree.set_reduced_motion(false);
+    let start = Instant::now() - Duration::from_secs(10);
+    let roll = Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) * 3);
+    let conversation = theme::context_category_ink("conversation");
+    let taken = |frame: &Frame| cells(frame).iter().filter(|(_, color)| *color == conversation).count();
+    let has = |frame: &Frame, value: &str| visible_text(frame, size).iter().any(|text| text == value);
+    tree.layout_at(size, start);
+    // The popover has opened by now.
+    let opened = start + Duration::from_secs(2);
+    let frame = tree.layout_at(size, opened);
+    assert!(has(&frame, "30K") && has(&frame, "28K") && has(&frame, "70K libres"));
+    assert_eq!(taken(&frame), 60);
+    // A response that reports 12 000 tokens leaves 9952 to the conversation.
+    state.native_context.last_usage = Some(usage(9_000, 3_000));
+    tree.set_root(root(&state, size));
+    tree.layout_at(size, opened);
+    let frame = tree.layout_at(size, opened + roll / 3);
+    // Midway the figures read values in between and the share has given cells up.
+    assert!(!has(&frame, "30K") && !has(&frame, "12K"));
+    assert!(!has(&frame, "28K") && !has(&frame, "10K"));
+    let midway = taken(&frame);
+    assert!(midway < 60 && midway > 21, "{midway}");
+    let frame = tree.layout_at(size, opened + roll * 2);
+    assert!(has(&frame, "12K") && has(&frame, "10K") && has(&frame, "12%"));
+    assert!(has(&frame, "88K libres"));
+    assert_eq!(taken(&frame), 21);
+    ctx.end_pass().textures_delta.clear();
+}
+
+#[test]
+fn a_category_under_the_pointer_takes_the_figure_and_the_status_line() {
+    let size = Size::new(360.0, 640.0);
+    let mut state = fixture("measured-30");
+    state.composer_context_open = true;
+    let (ctx, mut tree) = native_tree(root(&state, size), size);
+    let frame = tree.layout(size);
+    let row = region(&frame, &format!("{CONTEXT_CARD}:share:skills"));
+    let moved = Instant::now();
+    tree.handle_event_at(
+        UiEvent::PointerMove(Point::new(row.x + 4.0, row.y + row.height / 2.0)),
+        moved,
+    );
+    // The app mirrors the control under the pointer into the usage it draws.
+    let hovered = tree
+        .hovered_id()
+        .and_then(|id| ContextWindow::share_under(CONTEXT_CARD, id))
+        .map(str::to_owned);
+    assert_eq!(hovered.as_deref(), Some("skills"));
+    state.native_context.hovered_category = hovered;
+    tree.set_root(root(&state, size));
+    // Long enough under the pointer for the row's hint to open.
+    let frame = tree.layout_at(size, moved + Duration::from_secs(1));
+    let text = visible_text(&frame, size);
+    let shown = |value: &str| text.iter().filter(|text| *text == value).count();
+    // The figure reads the share's count beside its own row and the system's.
+    assert_eq!(shown("512"), 3, "{text:?}");
+    assert_eq!(shown("de 100K tokens"), 0);
+    assert_eq!(shown("Skills · 1% de la ventana"), 1, "{text:?}");
+    assert_eq!(shown("30%"), 1, "the percentage stays the window's");
+    // The hint states what was measured, in the app's own units.
+    assert_eq!(shown("4 locales · 2048 bytes"), 1, "{text:?}");
+    // On the field the share keeps its ink and the others recede.
+    let inks: Vec<_> = cells(&frame).into_iter().map(|(_, color)| color).collect();
+    let full = |id: &str| inks.iter().filter(|color| **color == theme::context_category_ink(id)).count();
+    assert_eq!((full("skills"), full("system"), full("conversation")), (1, 0, 0));
+    ctx.end_pass().textures_delta.clear();
 }
 
 #[test]
@@ -571,24 +676,39 @@ fn context_shows_one_status_line_only_when_the_measurement_needs_it() {
 
 #[test]
 fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() {
+    // The card names its control; activating it dispatches the scoped action.
     const ACTION: &str = "composer_context_compact:context-conversation";
+    let control = format!("{CONTEXT_CARD}:action:conversation");
     for width in [280.0, 360.0, 900.0] {
-        let size = Size::new(width, 420.0);
+        let size = Size::new(width, 640.0);
         let mut state = fixture("ready-to-compact");
         state.composer_context_open = true;
         let (ctx, mut tree) = native_tree(root(&state, size), size);
         let frame = tree.layout(size);
         assert_popup_bounds(&frame, size);
-        let compact = region(&frame, ACTION);
+        let compact = region(&frame, &control);
+        let row = region(&frame, &format!("{CONTEXT_CARD}:share:conversation"));
         let details = region(&frame, "composer_context_copy_diagnostic");
         let popup = region(&frame, "popover_surface:composer_context_dismiss");
         assert!(compact.width > 0.0 && compact.height >= 28.0);
-        assert!(compact.x >= popup.x && compact.x + compact.width <= details.x);
-        assert!(compact.y + compact.height <= popup.y + popup.height);
-        assert!(visible_text(&frame, size)
-            .iter()
-            .any(|text| text == "Compactar"));
-        activate(&mut tree, ACTION);
+        // In the conversation's row, after its label and inside the card's inset.
+        assert!(compact.y == row.y && compact.x >= row.x + row.width);
+        assert!(compact.x + compact.width <= popup.x + popup.width - 16.0);
+        assert!(compact.y + compact.height <= details.y);
+        // A narrow card keeps the action's icon and leaves its word out.
+        let roomy = width >= 360.0;
+        let text = visible_text(&frame, size);
+        assert_eq!(text.iter().any(|text| text == "Compactar"), roomy);
+        assert!(text.iter().any(|text| text == "70K libres"));
+        assert!(tree.focus(&control), "focus {control}");
+        assert_eq!(
+            tree.handle_event(UiEvent::Key {
+                key: Key::Enter,
+                shift: false,
+                ctrl: false
+            }),
+            vec![UiAction::Clicked { id: ACTION.into() }]
+        );
         assert_eq!(tree.input_value("prompt"), Some(DRAFT));
 
         state
@@ -596,12 +716,12 @@ fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() 
             .begin_compaction("context-conversation", Path::new(&state.workspace));
         tree.set_root(root(&state, size));
         let busy = tree.layout(size);
-        assert!(visible_text(&busy, size)
-            .iter()
-            .any(|text| text == "Compactando"));
+        let text = visible_text(&busy, size);
+        assert_eq!(text.iter().any(|text| text == "Compactando"), roomy);
+        assert!(text.iter().any(|text| text == "Compactando…"));
         assert!(
-            !tree.focus(ACTION),
-            "disabled compaction cannot receive keyboard activation"
+            !tree.focus(&control),
+            "compaction in progress cannot receive keyboard activation"
         );
         let actions = tree.handle_event(UiEvent::Key {
             key: Key::Enter,
@@ -611,14 +731,22 @@ fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() 
         assert!(!actions.contains(&UiAction::Clicked { id: ACTION.into() }));
         activate(&mut tree, "composer_context_copy_diagnostic");
 
+        // Unavailable: nothing to activate, and the status line says why.
+        state = fixture("compaction-unavailable");
+        state.composer_context_open = true;
+        tree.set_root(root(&state, size));
+        let unavailable = tree.layout(size);
+        assert!(!unavailable.regions.iter().any(|region| region.id == control));
+        assert!(visible_text(&unavailable, size)
+            .iter()
+            .any(|text| text.starts_with("Resuelve los permisos")));
+
         state = fixture("unknown");
         state.composer_context_open = true;
         tree.set_root(root(&state, size));
         let home = tree.layout(size);
-        assert!(!home
-            .regions
-            .iter()
-            .any(|region| region.id.starts_with("composer_context_compact:")));
+        assert!(!home.regions.iter().any(|region| region.id == control));
+        assert!(!tree.focus(&control));
         assert_eq!(tree.input_value("prompt"), Some(DRAFT));
         ctx.end_pass().textures_delta.clear();
     }
@@ -692,16 +820,23 @@ fn export_context_visual_review() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/context-visual-qa");
     std::fs::create_dir_all(&directory).unwrap();
     for name in CASES {
-        for width in [360.0, 900.0] {
-            for height in [320.0, 420.0, 520.0] {
+        for width in [280.0, 360.0, 900.0] {
+            for height in [320.0, 420.0, 640.0] {
                 let size = Size::new(width, height);
                 let mut state = fixture(name);
                 state.composer_context_open = true;
                 let (ctx, mut tree) = native_tree(root(&state, size), size);
-                let frame = tree.layout(size);
+                let mut frame = tree.layout(size);
                 assert_popup_bounds(&frame, size);
                 assert!(frame.commands.iter().any(|command| matches!(command,
                     DrawCommand::ProgressRing { fraction, .. } if *fraction == state.native_context.occupancy().map(|occupancy| occupancy.fraction()))));
+                // The category in focus is under the pointer, long enough for its hint.
+                let row = format!("{CONTEXT_CARD}:share:conversation");
+                if let Some(row) = frame.regions.iter().find(|region| name == "category-in-focus" && region.id == row) {
+                    let moved = Instant::now();
+                    tree.handle_event_at(UiEvent::PointerMove(Point::new(row.rect.x + 4.0, row.rect.y + 4.0)), moved);
+                    frame = tree.layout_at(size, moved + Duration::from_secs(1));
+                }
                 export(&frame, &directory, name, size);
                 ctx.end_pass().textures_delta.clear();
             }

@@ -785,7 +785,7 @@ fn field(id: &str, value: &str, placeholder: &str) -> Element {
         .min_size(80.0, 32.0)
 }
 
-fn shorten(value: &str, max_chars: usize) -> String {
+pub(crate) fn shorten(value: &str, max_chars: usize) -> String {
     let mut chars = value.chars();
     let prefix: String = chars.by_ref().take(max_chars).collect();
     if chars.next().is_some() {
