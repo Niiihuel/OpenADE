@@ -2524,7 +2524,7 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
     screenshot["full_page"] = json!({"type":"boolean"});
     add(
         "browser_take_screenshot",
-        "Capture a PNG at CSS pixel scale: the viewport by default, the whole scrollable page with `full_page`, or one element given by `ref`, `role` and `name` or `selector` (which may scroll it into view). A capture above 2 MiB fails; take a smaller region. The image comes back as an image block. A client that cannot pass tool images to its model shows it only to the user (OpenIDE's own agent is such a client), so read the page with browser_snapshot rather than from this picture.",
+        "Capture a PNG at CSS pixel scale: the viewport by default, the whole scrollable page with `full_page`, or one element given by `ref`, `role` and `name` or `selector` (which may scroll it into view). A capture above 2 MiB fails; take a smaller region. The image comes back as an image block; OpenIDE's own agent passes it to a model that reads images and tells one that does not. A capture wider or taller than 8000 px is shown to the user and not sent to the model, and a very tall full-page capture reaches the model scaled down until its text cannot be read: read the page with browser_snapshot, and look at it through the viewport or one element.",
         screenshot,
         vec![],
     );
