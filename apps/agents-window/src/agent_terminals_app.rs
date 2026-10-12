@@ -280,7 +280,9 @@ impl AgentsWindow {
         // Unless that replaces what the user is typing in: a terminal's
         // screen, or another section of the IDE's bottom panel. Then the tab
         // is only listed, and the panel stays as it was.
+        // Nor does it bring back the panel a maximized dock hid.
         let busy = self.view.ide.bottom_open
+            || self.dock.is_maximized(&scope)
             || self
                 .tree
                 .focused_id()

@@ -932,3 +932,369 @@ fn environment_motion_moves_the_bottom_separator_continuously_without_hiding_com
         }
     }
 }
+
+/// A conversation with a draft, two right tabs and a terminal showing.
+fn maximize_fixture() -> (tempfile::TempDir, AgentsWindow, DockTabId) {
+    let (root, mut app) = fixture();
+    let scope = app.dock_scope();
+    let browser = app.dock.open(&scope, DockTabKind::Browser);
+    app.dock.set_width_px(&app.view.workspace, 432.0);
+    app.view.prompt = "Borrador intacto".into();
+    app.tree.set_input_value("prompt", "Borrador intacto");
+    click(&mut app, "terminal_toggle");
+    assert!(app.view.show_terminal_panel && !app.view.dock_maximized);
+    (root, app, browser)
+}
+
+/// Ctrl+Alt+E, through the keymap, as the window receives it.
+fn maximize_shortcut(app: &mut AgentsWindow) {
+    let (handled, events) =
+        super::keymap_app::tests::dispatch(app, egui::Key::E, false, true, false, false);
+    assert!(handled && events.is_empty(), "the shortcut is claimed");
+}
+
+fn press(app: &mut AgentsWindow, id: &str) {
+    let rect = region_rect(app, id);
+    let point = openide_ui::Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+    assert_eq!(app.tree.frame().hit_test(point), Some(id));
+    for event in [UiEvent::PointerDown(point), UiEvent::PointerUp(point)] {
+        for action in app.tree.handle_event(event) {
+            app.apply_action(action, &egui::Context::default());
+        }
+    }
+}
+
+fn shown(app: &AgentsWindow, id: &str) -> bool {
+    app.tree.frame().regions.iter().any(|region| region.id == id)
+}
+
+#[test]
+fn the_dock_is_maximized_over_the_conversation_and_restored_by_its_control_and_by_the_shortcut() {
+    const MAXIMIZE: &str = crate::view::dock_chrome::MAXIMIZE;
+    let (_root, mut app, browser) = maximize_fixture();
+    let scope = app.dock_scope();
+    let ctx = egui::Context::default();
+    let tabs = |app: &AgentsWindow| -> Vec<(u64, bool)> {
+        app.view.dock_tabs.iter().map(|tab| (tab.id, tab.active)).collect()
+    };
+    for narrow in [false, true] {
+        // In the narrow window the sidebar leaves the dock no room beside
+        // the conversation; maximized it needs none.
+        app.viewport_width = if narrow { 900.0 } else { 1280.0 };
+        app.sync_dock_view();
+        present_workspace(&mut app);
+        let restored = (
+            crate::view::dock_layout(&app.view, app.viewport_width),
+            region_rect(&app, "prompt"),
+            app.view.right_dock_width,
+            tabs(&app),
+            crate::view::terminal_panel_height(&app.view, app.viewport_height),
+        );
+        assert_eq!(restored.0.right.is_some(), !narrow);
+        assert_eq!(restored.3.len(), 2);
+        assert!(restored.4 > 0.0);
+        for shortcut in [narrow, true] {
+            if shortcut {
+                assert!(app.tree.focus("prompt"), "the composer has the keyboard");
+                maximize_shortcut(&mut app);
+            } else {
+                press(&mut app, MAXIMIZE);
+                // The press already has the control: no keyboard ring is asked for.
+                assert_eq!(app.composer_selector_focus_pending, None);
+            }
+            assert!(app.view.dock_maximized && app.dock.is_maximized(&scope));
+            // What the window does after its next layout.
+            present_workspace(&mut app);
+            if let Some(target) = app.composer_selector_focus_pending.take() {
+                assert!(app.tree.focus(target));
+            }
+            let layout = crate::view::dock_layout(&app.view, app.viewport_width);
+            assert_eq!(layout.left, restored.0.left, "the sidebar stays as it was");
+            assert_eq!(layout.center, 0.0);
+            assert_eq!(layout.right, Some(app.viewport_width - 12.0 - layout.left));
+            assert_eq!(layout.right_split_x, None, "nothing to drag");
+            assert!(!shown(&app, "prompt") && shown(&app, MAXIMIZE));
+            assert!(!app.view.show_terminal_panel);
+            assert_eq!(crate::view::terminal_panel_height(&app.view, app.viewport_height), 0.0);
+            assert_eq!(tabs(&app), restored.3, "the same tabs, the same one in front");
+            assert_eq!(app.dock.active_tab(&scope).map(|tab| tab.id), Some(browser));
+            // Nothing typed reaches the draft that is not on screen.
+            assert_eq!(app.tree.focused_id(), Some(MAXIMIZE));
+            app.tree.handle_event(UiEvent::Text("x".into()));
+            assert_eq!(app.tree.input_value("prompt"), Some("Borrador intacto"));
+            // Escape belongs to the page and the editors: it restores nothing.
+            let escape = UiEvent::Key { key: Key::Escape, ctrl: false, shift: false };
+            for action in app.tree.handle_event(escape) {
+                app.apply_action(action, &ctx);
+            }
+            assert!(!app.dismiss_environment_level(&ctx));
+            assert!(app.view.dock_maximized);
+            // Neither width is in transit: the change is whole on its frame.
+            app.update_dock_motion(app.viewport_width, Instant::now());
+            assert_eq!(app.view.right_presentation_width, None);
+            assert_eq!(app.view.bottom_presentation_height, None);
+
+            if shortcut {
+                maximize_shortcut(&mut app);
+            } else {
+                press(&mut app, MAXIMIZE);
+            }
+            assert!(!app.view.dock_maximized && !app.dock.is_maximized(&scope));
+            assert!(app.prompt_focus_pending, "the keyboard goes back to the composer");
+            app.update_dock_motion(app.viewport_width, Instant::now());
+            present_workspace(&mut app);
+            app.focus_prompt_if_pending();
+            assert_eq!(app.tree.focused_id(), Some("prompt"));
+            assert_eq!(
+                (
+                    crate::view::dock_layout(&app.view, app.viewport_width),
+                    region_rect(&app, "prompt"),
+                    app.view.right_dock_width,
+                    tabs(&app),
+                    crate::view::terminal_panel_height(&app.view, app.viewport_height),
+                ),
+                restored,
+                "the conversation, the dock's width and the terminal are back"
+            );
+            assert_eq!(app.tree.input_value("prompt"), Some("Borrador intacto"));
+            assert!(app.view.show_terminal_panel);
+        }
+    }
+}
+
+#[test]
+fn every_way_out_of_a_maximized_dock_shows_the_conversation_with_its_terminal() {
+    type Exit = fn(&mut AgentsWindow);
+    let exits: [(&str, Exit, bool); 6] = [
+        ("the dock is hidden", |app| click(app, "toggle_side_pane"), false),
+        (
+            "its last tab is closed",
+            |app| {
+                for tab in app.view.dock_tabs.clone() {
+                    click(app, format!("dock_close:{}", tab.id));
+                }
+            },
+            true,
+        ),
+        ("Environment opens", |app| app.open_environment(), false),
+        (
+            "another conversation is selected",
+            |app| {
+                app.view.selected_session = Some("bob".into());
+                app.sync_dock_view();
+                assert!(!app.view.dock_maximized && !app.view.show_terminal_panel);
+                app.view.selected_session = Some("alice".into());
+                app.sync_dock_view();
+            },
+            true,
+        ),
+        ("a new conversation starts", |app| app.new_session(), true),
+        ("the window becomes the IDE", |app| click(app, "window_mode_toggle"), true),
+    ];
+    for (name, exit, dock_open) in exits {
+        let (_root, mut app, _) = maximize_fixture();
+        let alice = app.dock_scope();
+        click(&mut app, crate::view::dock_chrome::MAXIMIZE);
+        assert!(app.view.dock_maximized && !app.view.show_terminal_panel, "{name}");
+        exit(&mut app);
+        assert!(!app.view.dock_maximized, "{name}");
+        assert!(!app.dock.is_maximized(&alice), "{name}");
+        assert!(!app.dock.is_terminal_collapsed(&alice), "{name}: the terminal is back");
+        assert_eq!(!app.dock.is_collapsed(&alice), dock_open, "{name}");
+        // Showing the dock again does not maximize it again.
+        app.dock.set_collapsed(&alice, false);
+        app.sync_dock_view();
+        assert!(!app.view.dock_maximized, "{name}");
+    }
+
+    // A dock with nothing in it, or hidden, has nothing to maximize.
+    let (_root, mut app, _) = maximize_fixture();
+    click(&mut app, "toggle_side_pane");
+    let (handled, events) =
+        super::keymap_app::tests::dispatch(&mut app, egui::Key::E, false, true, false, false);
+    assert!(!handled && events.len() == 1 && !app.view.dock_maximized);
+    click(&mut app, "toggle_side_pane");
+    for tab in app.view.dock_tabs.clone() {
+        click(&mut app, format!("dock_close:{}", tab.id));
+    }
+    click(&mut app, crate::view::dock_chrome::MAXIMIZE);
+    assert!(!app.view.dock_maximized && app.view.show_side_pane);
+}
+
+#[test]
+fn a_terminal_asked_for_under_a_maximized_dock_shows_below_it_and_the_hidden_one_comes_back() {
+    let (_root, mut app, _) = maximize_fixture();
+    click(&mut app, crate::view::dock_chrome::MAXIMIZE);
+    click(&mut app, "terminal_toggle");
+    assert!(app.view.dock_maximized && app.view.show_terminal_panel);
+    present_workspace(&mut app);
+    let dock = region_rect(&app, "right_dock_tabs");
+    let layout = crate::view::dock_layout(&app.view, app.viewport_width);
+    assert!(dock.x >= layout.left && !shown(&app, "prompt"));
+    assert!(crate::view::terminal_panel_height(&app.view, app.viewport_height) > 0.0);
+    click(&mut app, "terminal_toggle");
+    click(&mut app, crate::view::dock_chrome::MAXIMIZE);
+    assert!(app.view.show_terminal_panel, "what maximizing hid comes back");
+}
+
+#[test]
+fn a_conversation_under_its_maximized_dock_is_notified_and_the_notification_uncovers_it() {
+    use crate::notifications::Event;
+    let (_root, mut app, _) = maximize_fixture();
+    app.window_focused = true;
+    app.notify_session(Event::Approval, "Permiso pendiente: run_command", "alice");
+    assert!(app.view.notifications.items().is_empty(), "the conversation is on screen");
+    click(&mut app, crate::view::dock_chrome::MAXIMIZE);
+    app.notify_session(Event::Approval, "Permiso pendiente: run_command", "alice");
+    let [notification] = app.view.notifications.items() else {
+        panic!("what waits under the dock is announced");
+    };
+    let id = notification.id;
+    // The turn that waits is still running: its conversation is not opened
+    // again, only uncovered.
+    app.view.running = true;
+    click(&mut app, format!("notification_open:{id}"));
+    assert!(!app.view.dock_maximized && app.view.show_terminal_panel);
+    assert_eq!(app.view.selected_session.as_deref(), Some("alice"));
+}
+
+#[test]
+fn a_maximized_browser_tab_is_the_same_page_resized_to_the_larger_panel() {
+    use crate::browser_runtime::{BrowserCommand, BrowserScope, BrowserSnapshot};
+    let (_root, mut app, browser) = maximize_fixture();
+    let snapshot = |width, height| BrowserSnapshot {
+        started: true,
+        generation: 1,
+        url: "http://localhost:3000/".into(),
+        viewport_width: width,
+        viewport_height: height,
+        ..Default::default()
+    };
+    let (runtime, commands) = crate::browser_runtime::tests::fixture(
+        BrowserScope {
+            workspace: PathBuf::from(&app.view.workspace),
+            session_id: "alice".into(),
+        },
+        snapshot(640, 480),
+    );
+    app.browsers.insert(browser.get(), runtime);
+    app.browser_live.insert(browser.get(), true);
+    app.sync_dock_view();
+    let ctx = egui::Context::default();
+    // The size the host asks the page for after a layout, as it confirms it.
+    let mut resized = |app: &mut AgentsWindow| -> (u32, u32) {
+        app.update_browser(&ctx);
+        present_workspace(app);
+        let pane = region_rect(app, "browser_viewport");
+        app.update_browser(&ctx);
+        let Some(BrowserCommand::Resize { width, height }) = commands.finish_next() else {
+            panic!("the page is resized to its panel");
+        };
+        assert_eq!((width as f32, height as f32), (pane.width.round(), pane.height.round()));
+        commands.set_snapshot(snapshot(width, height));
+        app.browser_requests.clear();
+        (width, height)
+    };
+    let restored = resized(&mut app);
+    click(&mut app, crate::view::dock_chrome::MAXIMIZE);
+    let maximized = resized(&mut app);
+    let layout = crate::view::dock_layout(&app.view, app.viewport_width);
+    assert_eq!(maximized.0 as f32, layout.right.unwrap(), "as wide as the panel now is");
+    assert!(maximized.0 > restored.0 && maximized.1 > restored.1, "{restored:?} {maximized:?}");
+    // The same tab and runtime, at the scale the window has: nothing started again.
+    assert_eq!(app.view.browser.tab_id, Some(browser.get()));
+    assert_eq!(app.browsers.len(), 1);
+    assert_eq!(app.browsers[&browser.get()].scale(), app.browser_scale);
+    assert!(app.browser_starts.is_empty() && app.browser_restart_urls.is_empty());
+    click(&mut app, crate::view::dock_chrome::MAXIMIZE);
+    assert_eq!(resized(&mut app), restored);
+}
+
+#[test]
+#[ignore = "exports the right dock restored and maximized, with a browser tab and with a file tab, as PNG under docs/ui-separation/shots/dock-maximize"]
+fn export_dock_maximize_visual_review() {
+    use crate::browser_runtime::{BrowserScope, BrowserSnapshot};
+    const MAXIMIZE: &str = crate::view::dock_chrome::MAXIMIZE;
+    let directory = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/ui-separation/shots/dock-maximize"
+    ));
+    let (_root, mut app, browser) = maximize_fixture();
+    let ctx = egui::Context::default();
+    let scope = app.dock_scope();
+    app.view.selected_session_title = Some("Revisar la vista previa".into());
+    app.view.transcript = vec![
+        TranscriptItem::User {
+            content: "Levantá el servidor y mostrame la página de inicio.".into(),
+            images: Vec::new(),
+        },
+        TranscriptItem::Assistant {
+            content: "El servidor está en `localhost:3000`. Abrí la página en el navegador del panel derecho y dejé `src/main.rs` a mano para revisar el arranque.".into(),
+            streaming: false,
+        },
+    ];
+    let (runtime, _commands) = crate::browser_runtime::tests::fixture(
+        BrowserScope {
+            workspace: PathBuf::from(&app.view.workspace),
+            session_id: "alice".into(),
+        },
+        BrowserSnapshot {
+            started: true,
+            generation: 1,
+            url: "http://localhost:3000/".into(),
+            title: "Inicio".into(),
+            viewport_width: 640,
+            viewport_height: 480,
+            ..Default::default()
+        },
+    );
+    app.browsers.insert(browser.get(), runtime);
+    app.browser_live.insert(browser.get(), true);
+    let source = Path::new(&app.view.workspace).join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(
+        source.join("main.rs"),
+        "use std::net::TcpListener;\n\nfn main() -> std::io::Result<()> {\n    let listener = TcpListener::bind(\"127.0.0.1:3000\")?;\n    for stream in listener.incoming() {\n        serve(stream?)?;\n    }\n    Ok(())\n}\n",
+    )
+    .unwrap();
+    let file = app.dock.open(&scope, DockTabKind::FilePreview { path: "src/main.rs".into() });
+    app.viewport_height = 760.0;
+    let mut export = |app: &mut AgentsWindow, name: &str, maximized: bool| {
+        assert_eq!(app.view.dock_maximized, maximized, "{name}");
+        let size = Size::new(app.viewport_width, app.viewport_height);
+        let (context, mut tree) = crate::view::ide_visual_tests::native_tree(
+            crate::view::build_window_view(&app.view, size.width, size.height),
+        );
+        let frame = tree.layout(size);
+        let drawn = |id: &str| frame.regions.iter().any(|region| region.id == id);
+        assert!(drawn(MAXIMIZE), "{name}: the control is in the tab bar");
+        assert_eq!(drawn("prompt"), !maximized, "{name}");
+        crate::document_preview_visual_tests::export_to(directory, &frame, size, name);
+        context.end_pass().textures_delta.clear();
+    };
+    for (width, sidebar) in [(1200.0, true), (900.0, false)] {
+        app.viewport_width = width;
+        // Beside the conversation the dock only fits the narrow window
+        // without the sidebar.
+        app.view.sidebar_collapsed = !sidebar;
+        for (tab_name, tab) in [("browser", browser), ("file", file)] {
+            app.dock.activate(&scope, tab);
+            app.sync_dock_view();
+            app.update_browser(&ctx);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while app.view.code_editor.as_ref().is_some_and(|editor| editor.loading) {
+                app.poll_code_editor(&ctx);
+                assert!(Instant::now() < deadline, "editor load did not finish");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            export(&mut app, &format!("{tab_name}-restored"), false);
+            click(&mut app, MAXIMIZE);
+            export(&mut app, &format!("{tab_name}-maximized"), true);
+            click(&mut app, MAXIMIZE);
+        }
+    }
+    // With the sidebar, the narrow window shows the dock only maximized.
+    app.view.sidebar_collapsed = false;
+    click(&mut app, MAXIMIZE);
+    export(&mut app, "file-maximized-beside-the-sidebar", true);
+}

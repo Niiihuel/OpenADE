@@ -12,7 +12,11 @@ use openide_ui::{
 #[cfg(test)]
 const HEADER_PADDING: f32 = 2.0;
 #[cfg(test)]
-const TOOLBAR_WIDTH: f32 = TOOL_SIZE * 4.0;
+const TOOLBAR_WIDTH: f32 = TOOL_SIZE * 5.0;
+
+/// The control that maximizes the right dock over the conversation and
+/// restores it.
+pub(crate) const MAXIMIZE: &str = "dock_maximize";
 
 pub(crate) fn file_action(state: &ViewState, tab: u64, operation: &str) -> String {
     format!(
@@ -254,6 +258,35 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
         controls.push(all_tabs_menu(state));
     }
     if !ide {
+        controls.push(
+            UiIconButton::new(
+                MAXIMIZE,
+                if state.dock_maximized {
+                    Icon::Collapse
+                } else {
+                    Icon::Expand
+                },
+                theme::action_palette(Color::TRANSPARENT, theme::FOREGROUND),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            // A dock without tabs has nothing to show any larger.
+            .enabled(!state.dock_tabs.is_empty())
+            .tooltip_with(
+                TooltipSpec::new(if state.dock_maximized {
+                    "Restaurar panel"
+                } else {
+                    "Maximizar panel"
+                })
+                .shortcut(
+                    state
+                        .keymap_profile
+                        .shortcut(crate::keymap::ShortcutAction::MaximizeDock),
+                )
+                .placement(TooltipPlacement::Below),
+            )
+            .render(),
+        );
         controls.push(
             UiIconButton::new(
                 "toggle_side_pane",

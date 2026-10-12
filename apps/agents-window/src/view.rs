@@ -710,6 +710,8 @@ pub struct ViewState {
     pub terminal_menu_open: bool,
     pub terminal_controls: crate::terminal_dock_ui::TerminalControlsView,
     pub terminal_maximized: bool,
+    /// The right dock takes the room of the conversation and its composer.
+    pub dock_maximized: bool,
     pub show_terminal_panel: bool,
     pub terminal_panel_height: f32,
     pub terminal_snapshot: Option<TerminalSnapshot>,
@@ -914,12 +916,33 @@ pub fn dock_layout(state: &ViewState, viewport: f32) -> DockLayout {
                 .clamp(MIN_RIGHT_DOCK.min(max_width), max_width)
         }
     });
+    let left_split_x = left_visible.then_some(GAP + left + GAP / 2.0);
+    // Maximized, the right dock takes the conversation's room beside the
+    // sidebar as it stands: it shows in a window of any width, and has no
+    // center to keep nor divider to drag.
+    if state.dock_maximized
+        && side_requested
+        && !state.show_settings
+        && state.main_page == MainPage::Workspace
+    {
+        let room = (viewport - (2.0 + f32::from(left_visible)) * GAP - left).max(0.0);
+        let right = state
+            .right_presentation_width
+            .map_or(room, |width| width.clamp(0.0, room));
+        return DockLayout {
+            left,
+            right: Some(right),
+            center: room - right,
+            left_split_x,
+            right_split_x: None,
+        };
+    }
     let center = viewport - gaps - left - right.unwrap_or(0.0);
     DockLayout {
         left,
         right,
         center,
-        left_split_x: left_visible.then_some(GAP + left + GAP / 2.0),
+        left_split_x,
         right_split_x: right.map(|width| viewport - GAP - width - RIGHT_DIVIDER / 2.0),
     }
 }
@@ -3236,6 +3259,35 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
     let workspace_height = (viewport_height - terminal_height).max(0.0);
     let left = layout.left;
     let left_visible = left > 1.0;
+    // Maximized, the right dock is the whole workspace surface: the
+    // conversation and its composer are not built until it is restored.
+    if let Some(right) = layout.right.filter(|_| state.dock_maximized) {
+        let mut docks = Vec::new();
+        if left_visible {
+            docks.push(
+                sidebar_for_height(state, left, viewport_height - 2.0 * GAP)
+                    .corner_mask(theme::WINDOW)
+                    .clip_children(),
+            );
+        }
+        let mut workspace = vec![Element::row(vec![
+            side_pane_sized(state, right, workspace_height).clip_children(),
+        ])
+        .flex(1.0)
+        .clip_children()];
+        if terminal_height > 0.0 {
+            workspace.push(
+                ide_ui::bottom::build(state, right, terminal_height)
+                    .size(None, Some(terminal_height)),
+            );
+        }
+        docks.push(workspace_frame(Element::column(workspace)));
+        let base = Element::row(docks)
+            .gap(GAP)
+            .padding(GAP)
+            .background(theme::WINDOW);
+        return workspace_modals(state, base, viewport_width);
+    }
     let center_min_with_right = if state.side_tab == SideTab::Files {
         MIN_CENTER_COMPACT
     } else {
@@ -4165,6 +4217,7 @@ pub(crate) mod tests {
             terminal_menu_open: false,
             terminal_controls: Default::default(),
             terminal_maximized: false,
+            dock_maximized: false,
             show_terminal_panel: false,
             terminal_panel_height: 240.0,
             terminal_snapshot: None,

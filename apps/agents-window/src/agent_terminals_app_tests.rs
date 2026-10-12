@@ -102,6 +102,26 @@ fn alive(pid: i32) -> bool {
 }
 
 #[tokio::test]
+async fn a_command_started_under_a_maximized_dock_is_listed_without_bringing_the_terminal_back() {
+    let mut fixture = fixture();
+    let scope = fixture.app.dock_scope();
+    fixture.app.dock.open(&scope, DockTabKind::Files);
+    fixture.app.dock.set_maximized(&scope, true);
+    fixture.app.sync_dock_view();
+    let (_, tab) = fixture.start("exit 0");
+    assert!(fixture.app.view.dock_maximized && !fixture.app.view.show_terminal_panel);
+    assert!(fixture.app.view.terminal_tabs.iter().any(|shown| shown.id == tab));
+    fixture.wait("the exit", |fixture| {
+        fixture.app.follow_agent_terminals();
+        fixture.view(tab).ended.is_some()
+    });
+    // Restored, the panel is as it was before the dock covered it: hidden.
+    fixture.app.dock.set_maximized(&scope, false);
+    fixture.app.sync_dock_view();
+    assert!(!fixture.app.view.show_terminal_panel);
+}
+
+#[tokio::test]
 async fn a_started_command_is_an_interactive_tab_and_the_agent_still_polls_plain_text() {
     let mut fixture = fixture();
     let (command, tab) = fixture.start(

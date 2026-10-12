@@ -137,6 +137,9 @@ struct WorkspaceDock {
 pub struct DockState {
     workspaces: HashMap<String, WorkspaceDock>,
     next_tab_id: u64,
+    /// The scope whose right dock is maximized, and whether that hid its
+    /// bottom terminal. One at a time: a conversation is left restored.
+    maximized: Option<(DockScope, bool)>,
 }
 
 impl DockState {
@@ -287,6 +290,11 @@ impl DockState {
                 preferences.insert(target.clone(), value);
             }
         }
+        if let Some((scope, _)) = &mut self.maximized {
+            if scope.workspace_id == workspace_id && scope.owner == DockOwner::Draft {
+                scope.owner = target.clone();
+            }
+        }
         // Draft history follows the task just like its open tabs. Keep the
         // newest entry for each kind and discard entries now open in the task.
         let target = DockOwner::Task(task_id.to_owned());
@@ -350,6 +358,13 @@ impl DockState {
         workspace.terminal_active_by_owner.remove(&owner);
         workspace.terminal_collapsed_by_owner.remove(&owner);
         workspace.terminal_maximized_by_owner.remove(&owner);
+        if self
+            .maximized
+            .as_ref()
+            .is_some_and(|(scope, _)| scope.workspace_id == workspace_id && scope.owner == owner)
+        {
+            self.maximized = None;
+        }
     }
 
     /// The complete visible resource registry, including the bottom terminals.
@@ -573,6 +588,10 @@ impl DockState {
     }
 
     pub fn set_collapsed(&mut self, scope: &DockScope, collapsed: bool) {
+        if collapsed {
+            // A hidden dock covers nothing: the conversation comes back.
+            self.set_maximized(scope, false);
+        }
         self.workspaces
             .entry(scope.workspace_id.clone())
             .or_default()
@@ -590,6 +609,38 @@ impl DockState {
             .and_then(|workspace| workspace.collapsed_by_owner.get(&scope.owner))
             .copied()
             .unwrap_or(true)
+    }
+
+    /// The right dock takes the room of the conversation. A bottom terminal
+    /// that was showing is hidden for as long and comes back on restore; the
+    /// dock's tabs, selection and preferred width are not touched. Any other
+    /// maximized scope is restored first.
+    pub fn set_maximized(&mut self, scope: &DockScope, maximized: bool) {
+        if self.is_maximized(scope) == maximized {
+            return;
+        }
+        self.restore_maximized();
+        if maximized {
+            self.set_collapsed(scope, false);
+            let hid_terminal = !self.is_terminal_collapsed(scope);
+            if hid_terminal {
+                self.set_terminal_collapsed(scope, true);
+            }
+            self.maximized = Some((scope.clone(), hid_terminal));
+        }
+    }
+
+    pub fn is_maximized(&self, scope: &DockScope) -> bool {
+        self.maximized
+            .as_ref()
+            .is_some_and(|(maximized, _)| maximized == scope)
+    }
+
+    /// Back to the conversation, whichever scope's dock was maximized.
+    pub fn restore_maximized(&mut self) {
+        if let Some((scope, true)) = self.maximized.take() {
+            self.set_terminal_collapsed(&scope, false);
+        }
     }
 
     pub fn set_terminal_collapsed(&mut self, scope: &DockScope, collapsed: bool) {
@@ -1203,6 +1254,70 @@ mod tests {
         assert!(dock.contains_tab(existing.get()));
         assert!(dock.contains_tab(first.get()));
         assert!(dock.contains_tab(second.get()));
+    }
+
+    #[test]
+    fn a_maximized_dock_hides_its_terminal_and_every_exit_brings_it_back() {
+        let mut dock = DockState::default();
+        let alice = task("repo", "alice");
+        let bob = task("repo", "bob");
+        let browser = dock.open(&alice, DockTabKind::Browser);
+        let file = dock.open(&alice, DockTabKind::Files);
+        dock.new_terminal(&alice);
+        dock.set_width_px("repo", 512.0);
+        let tabs = |dock: &DockState| -> Vec<DockTabId> {
+            dock.right_tabs(&alice).iter().map(|tab| tab.id).collect()
+        };
+        // The toggle, collapsing the dock, and another scope taking its turn.
+        let exits: [fn(&mut DockState, &DockScope, &DockScope); 3] = [
+            |dock, alice, _| dock.set_maximized(alice, false),
+            |dock, alice, _| dock.set_collapsed(alice, true),
+            |dock, _, bob| dock.set_maximized(bob, true),
+        ];
+        for (index, exit) in exits.into_iter().enumerate() {
+            dock.set_collapsed(&alice, false);
+            dock.set_maximized(&bob, false);
+            assert!(!dock.is_maximized(&alice) && !dock.is_terminal_collapsed(&alice));
+            dock.set_maximized(&alice, true);
+            assert!(dock.is_maximized(&alice) && !dock.is_maximized(&bob));
+            assert!(!dock.is_collapsed(&alice) && dock.is_terminal_collapsed(&alice));
+            exit(&mut dock, &alice, &bob);
+            assert!(!dock.is_maximized(&alice), "exit {index}");
+            assert!(!dock.is_terminal_collapsed(&alice), "exit {index}");
+            assert_eq!(dock.is_collapsed(&alice), index == 1);
+            assert_eq!(tabs(&dock), [browser, file]);
+            assert_eq!(dock.active_tab(&alice).map(|tab| tab.id), Some(file));
+            assert_eq!(dock.width_px("repo", 2000.0), 512.0);
+        }
+        // A terminal that was hidden stays hidden, and one shown while the
+        // dock was maximized is not hidden again by the restore.
+        dock.set_maximized(&bob, false);
+        dock.set_terminal_collapsed(&alice, true);
+        dock.set_maximized(&alice, true);
+        dock.set_maximized(&alice, false);
+        assert!(dock.is_terminal_collapsed(&alice));
+        dock.set_maximized(&alice, true);
+        dock.set_terminal_collapsed(&alice, false);
+        dock.set_maximized(&alice, false);
+        assert!(!dock.is_terminal_collapsed(&alice));
+    }
+
+    #[test]
+    fn a_maximized_draft_stays_maximized_as_its_task_and_a_forgotten_task_is_not() {
+        let mut dock = DockState::default();
+        let draft = DockScope::new("repo", DockOwner::Draft);
+        let alice = task("repo", "alice");
+        dock.open(&draft, DockTabKind::Browser);
+        dock.new_terminal(&draft);
+        dock.set_maximized(&draft, true);
+        dock.promote_draft("repo", "alice");
+        assert!(dock.is_maximized(&alice) && !dock.is_maximized(&draft));
+        dock.set_maximized(&alice, false);
+        assert!(!dock.is_terminal_collapsed(&alice), "the task's terminal comes back");
+        dock.set_maximized(&alice, true);
+        dock.forget_task("repo", "alice");
+        dock.restore_maximized();
+        assert!(!dock.is_maximized(&alice) && dock.is_terminal_collapsed(&alice));
     }
 
     #[test]

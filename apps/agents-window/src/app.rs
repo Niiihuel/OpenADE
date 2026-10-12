@@ -1117,6 +1117,7 @@ struct DockMotion {
     viewport_height: Option<f32>,
     bottom_maximized: bool,
     ide: bool,
+    maximized: bool,
 }
 
 impl DockMotion {
@@ -1133,6 +1134,7 @@ impl DockMotion {
             viewport_height: None,
             bottom_maximized: false,
             ide: false,
+            maximized: false,
         }
     }
 
@@ -5717,6 +5719,16 @@ impl AgentsWindow {
                 closable: true,
             })
             .collect();
+        // A conversation is never found maximized: leaving it restores its
+        // dock, and so does closing its last tab. In the IDE these tabs are
+        // the editor area itself.
+        if !self.dock.is_maximized(&scope)
+            || self.view.dock_tabs.is_empty()
+            || self.view.ide.is_active()
+        {
+            self.dock.restore_maximized();
+        }
+        self.view.dock_maximized = self.dock.is_maximized(&scope);
         self.view.terminal_tabs = self.dock.terminal_tabs(&scope).into_iter().enumerate().map(|(index, tab)| DockTabView {
             id: tab.id.get(),
             title: format!("Terminal {}", index + 1),
@@ -6828,6 +6840,7 @@ impl AgentsWindow {
             terminal_controls: Default::default(),
             terminal_menu_open: false,
             terminal_maximized: false,
+            dock_maximized: false,
             show_terminal_panel: false,
             terminal_panel_height: 240.0,
             terminal_snapshot: None,
@@ -11778,6 +11791,8 @@ impl AgentsWindow {
         self.view.composer_branches.open = false;
         self.view.main_page = MainPage::Workspace;
         self.view.background_run_selected = false;
+        // Whatever is selected next, a draft included, shows its conversation.
+        self.dock.restore_maximized();
         self.view.selected_session = None;
         self.view.selected_session_title = None;
         self.view.selected_backend = "native".to_owned();
@@ -13391,7 +13406,8 @@ impl AgentsWindow {
     }
 
     /// Records a session event the user is not watching: the window is in
-    /// the background or another task is on screen.
+    /// the background, another task is on screen, or this one's conversation
+    /// is under its maximized dock.
     fn notify_session(
         &mut self,
         event: crate::notifications::Event,
@@ -13399,7 +13415,8 @@ impl AgentsWindow {
         session_id: &str,
     ) {
         let selected = self.view.selected_session.as_deref() == Some(session_id);
-        if self.window_focused && selected || !self.view.notifications.settings.allows(event) {
+        let watching = self.window_focused && selected && !self.view.dock_maximized;
+        if watching || !self.view.notifications.settings.allows(event) {
             return;
         }
         let task = self
@@ -17933,6 +17950,10 @@ impl AgentsWindow {
                     .and_then(|id| self.view.notifications.take(id));
                 self.view.notifications.close();
                 if let Some(crate::notifications::Target::Session(session)) = target {
+                    // It may name the conversation a maximized dock covers,
+                    // which a running turn does not let open again.
+                    self.dock.restore_maximized();
+                    self.sync_dock_view();
                     self.open_session(&session);
                 }
             }
@@ -19607,6 +19628,9 @@ impl AgentsWindow {
                     }
                 }
             }
+            UiAction::Clicked { id } if id == crate::view::dock_chrome::MAXIMIZE => {
+                self.toggle_dock_maximized();
+            }
             UiAction::Clicked { id }
                 if matches!(id.as_str(), "toggle_side_pane" | "toggle_side_pane_header") =>
             {
@@ -20264,6 +20288,37 @@ impl AgentsWindow {
         }
     }
 
+    /// The right dock over the conversation, and back. Escape is not a way
+    /// out: that key belongs to the page and the editors the dock shows.
+    pub(super) fn toggle_dock_maximized(&mut self) {
+        let scope = self.dock_scope();
+        if self.ide_workspace_active() || self.dock.right_tabs(&scope).is_empty() {
+            return;
+        }
+        let control = crate::view::dock_chrome::MAXIMIZE;
+        let maximized = !self.dock.is_maximized(&scope);
+        if maximized {
+            // What holds the keyboard outside the dock leaves the window, and
+            // typing must not reach a draft nobody sees.
+            let split = self.nominal_dock_layout().right_split_x;
+            let focused = self.tree.focused_id();
+            let in_dock = split.is_some_and(|split| {
+                self.tree.frame().regions.iter().any(|region| {
+                    Some(region.id.as_str()) == focused && region.rect.x >= split
+                })
+            });
+            if !in_dock {
+                self.composer_selector_focus_pending = Some(control);
+            }
+        } else if self.tree.focused_id() == Some(control) {
+            // The keyboard goes back to where it most likely came from.
+            self.prompt_focus_pending = true;
+        }
+        self.dock.set_maximized(&scope, maximized);
+        self.dock_drag = None;
+        self.sync_dock_view();
+    }
+
     fn toggle_left_sidebar(&mut self) {
         if self.ide_workspace_active() {
             self.toggle_ide_panel(crate::ide_workspace::IdePanel::Explorer);
@@ -20296,10 +20351,13 @@ impl AgentsWindow {
         let right_target = nominal.right.unwrap_or(0.0);
         let bottom_target =
             crate::view::nominal_terminal_panel_height(&self.view, self.viewport_height);
+        // The right dock is maximized and restored at once: the conversation
+        // is never laid out in what is left of a width in transit.
+        let maximized = self.view.dock_maximized;
         if self
             .dock_motion
             .as_ref()
-            .is_some_and(|motion| motion.ide != ide)
+            .is_some_and(|motion| motion.ide != ide || motion.maximized != maximized)
         {
             self.dock_motion = None;
         }
@@ -20315,6 +20373,7 @@ impl AgentsWindow {
         let motion = self.dock_motion.get_or_insert_with(|| {
             let mut motion = DockMotion::new(left_target, right_target, viewport_width, now);
             motion.ide = ide;
+            motion.maximized = maximized;
             motion
         });
         let (left, right) = motion.update(
