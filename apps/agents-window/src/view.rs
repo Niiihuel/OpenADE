@@ -613,6 +613,7 @@ pub struct ViewState {
     pub settings_terminal_shell_menu_open: bool,
     pub(crate) settings_choice_menu_open: Option<String>,
     pub(crate) chat_link_opening: crate::chat_links::ChatLinkOpening,
+    pub(crate) preview_opening: crate::preview::PreviewOpening,
     /// The link whose context menu is open.
     pub(crate) chat_link_menu: Option<crate::chat_links::ChatLinkMenu>,
     pub settings_terminal_shell_editing: bool,
@@ -4045,6 +4046,7 @@ pub(crate) mod tests {
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
             chat_link_opening: Default::default(),
+            preview_opening: Default::default(),
             chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),

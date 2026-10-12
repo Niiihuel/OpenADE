@@ -326,6 +326,8 @@ struct AgentLink {
     /// `None`: a pipe-backed command, shown as a read-only mirror.
     input: Option<PersistentTerminalInput>,
     exit: Arc<Mutex<Option<PersistentCommandExit>>>,
+    /// The address its server printed, once something answers there.
+    preview: Arc<Mutex<Option<String>>>,
 }
 
 /// The reader's view of the command's output copy.
@@ -334,12 +336,20 @@ struct AgentOutput {
     pending: Vec<u8>,
     mirror: bool,
     exit: Arc<Mutex<Option<PersistentCommandExit>>>,
+    /// Reads the start of the output for the address of a server.
+    watch: Option<crate::preview::OutputWatch>,
 }
 
 impl Read for AgentOutput {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         while self.pending.is_empty() {
-            match self.terminal.next_event() {
+            let event = self.terminal.next_event();
+            if let Some(PersistentTerminalEvent::Output(bytes)) = &event {
+                if self.watch.as_mut().is_some_and(|watch| !watch.feed(bytes)) {
+                    self.watch = None;
+                }
+            }
+            match event {
                 Some(PersistentTerminalEvent::Output(bytes)) if self.mirror => {
                     // Pipes carry bare line feeds; a screen needs the return too.
                     for byte in bytes {
@@ -399,8 +409,13 @@ pub struct TerminalSession {
 impl TerminalSession {
     /// Show a command the agent started: a copy of its output and, when it
     /// runs on a terminal, the user's keys, paste and size. Closing or
-    /// dropping the session never stops the process.
-    pub fn attach(terminal: PersistentTerminal, label: &str) -> io::Result<Self> {
+    /// dropping the session never stops the process. With `watch_preview`
+    /// the start of the output is read for the address of a server.
+    pub fn attach(
+        terminal: PersistentTerminal,
+        label: &str,
+        watch_preview: bool,
+    ) -> io::Result<Self> {
         // The size the harness opens a host terminal with, so the retained
         // tail lays out as printed; the dock resizes both when it shows them.
         let size = Dimensions::new(120, 30);
@@ -408,12 +423,20 @@ impl TerminalSession {
         let input = handle.as_ref().map(|_| Arc::new(InputQueue::default()));
         let shared = Arc::new(SharedScreen::new(size, input.as_ref().map(Arc::downgrade)));
         let exit = Arc::new(Mutex::new(None));
+        let preview = Arc::new(Mutex::new(None));
+        let woken = Arc::clone(&shared);
         start_reader(
             Box::new(AgentOutput {
                 terminal,
                 pending: Vec::new(),
                 mirror: handle.is_none(),
                 exit: Arc::clone(&exit),
+                watch: watch_preview.then(|| {
+                    crate::preview::OutputWatch::new(
+                        Arc::clone(&preview),
+                        Arc::new(move || woken.changed()),
+                    )
+                }),
             }),
             Arc::clone(&shared),
         )?;
@@ -435,8 +458,22 @@ impl TerminalSession {
             shell: label.to_owned(),
             selection: None,
             scroll_remainder: 0.0,
-            agent: Some(AgentLink { input: handle, exit }),
+            agent: Some(AgentLink {
+                input: handle,
+                exit,
+                preview,
+            }),
         })
+    }
+
+    /// Where the agent's command serves, once that address answered.
+    pub fn agent_preview(&self) -> Option<String> {
+        self.agent
+            .as_ref()?
+            .preview
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// How the agent's command ended, once it has. `None` for a shell.

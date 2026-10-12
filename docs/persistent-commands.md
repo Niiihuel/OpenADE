@@ -281,6 +281,65 @@ resumed catalog. The contained profile was not run here (no Bubblewrap helper
 in the test shell): its mirror is exercised with a pipe-backed manager. No
 macOS or Windows run; nothing here drives the real window.
 
+## Live preview of a started server
+
+A started command that turns out to be a server gets a live preview in the
+conversation's browser tab (`apps/agents-window/src/preview.rs`).
+
+**Detection.** The screen attached to the command reads the start of its
+output: the first 8 KiB, for at most a minute, with escape sequences removed
+(Vite colours the middle of its address). The first address matching
+`http(s)://localhost|127.x.y.z|[::1]|0.0.0.0` with an optional port and path
+counts, once something follows it in the output, so an address still being
+printed is not cut short. Addresses of other machines, names that merely look
+local (`localhost.example`), other schemes and addresses with credentials are
+skipped. `0.0.0.0` becomes `localhost`.
+
+Only a `HostUnrestricted` command is watched. A contained command has no
+network of the host's, so whatever answers at an address it prints is another
+program on this machine: it is neither recorded nor opened. The address comes
+from the command's output, so a host command decides which loopback address
+opens; it runs with the user's network already.
+
+**Check.** A thread then connects to that port on loopback, up to 20 times
+250 ms apart, and hangs up: no request is sent and no name is resolved
+(`localhost` is tried as `127.0.0.1` and `::1`). Only an address that
+answered is recorded on the command as its preview URL; a server that printed
+an address and never listened gets none.
+
+**Opening.** Settings › Navegador › "Abrir la vista previa de los servidores
+que inicia el agente" is saved with the other preferences as
+`preview_opening`:
+
+- *Automáticamente* (default): the first time the port answers, the
+  conversation's "Navegador" tab is opened, or reused, on that address, and a
+  notice says "Vista previa abierta: <url>". The keyboard stays where it is.
+  The tab comes to the front unless the user is typing in a field or editor
+  other than the composer, which that tab might cover; then it waits among
+  the tabs. A server of a conversation that is not on screen gets its tab
+  there, for when the conversation is opened.
+- *Preguntar*: nothing opens; the command's card and its Activity detail
+  offer "Abrir vista previa" while the server runs.
+- *Nunca*: nothing opens and nothing is offered.
+
+Each command reports its address once, so it never opens twice by itself. An
+address that is not loopback is never opened by any of this: the function that
+opens the tab checks it again. The agent's `open_preview` tool
+([browser tools](browser-tools.md)) uses the recorded address as its default.
+A browser context only starts when its tab is shown, as before.
+
+A preview whose server stopped reads "No se pudo conectar con localhost:5173
+— ¿sigue corriendo el servidor?" with "Reintentar" in the browser tab.
+
+Acceptance (Linux, 2026-10-12): `preview::tests` cover the address on typical
+dev-server lines, what is skipped, the 8 KiB bound, a coloured address split
+across reads, the connection against a listener of the test and a closed
+port, and that the check sends nothing; `agent_terminals_app_tests` cover the
+three settings with a shell that prints the address of such a listener, one
+automatic opening per command, the reused tab, the keyboard and the recorded
+default of `open_preview`. No browser starts in these tests and no real dev
+server was run.
+
 ## Runtime lifetime across turns
 
 The manager starts a private current-thread Tokio reactor lazily, before its

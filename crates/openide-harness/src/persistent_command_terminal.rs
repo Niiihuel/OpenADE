@@ -142,6 +142,8 @@ pub struct PersistentCommandLaunch {
     pub id: String,
     /// Literal program followed by its arguments.
     pub argv: Vec<String>,
+    /// Where it runs: a contained command has no network of the host's.
+    pub isolation: crate::CommandIsolation,
     pub terminal: PersistentTerminal,
 }
 

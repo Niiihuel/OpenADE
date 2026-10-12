@@ -1134,6 +1134,7 @@ fn host_terminal_keeps_every_recorded_identity_and_shows_started_commands_to_the
     let launch = started.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(launch.owner_session_id.as_deref(), Some(owner.as_str()));
     assert_eq!(launch.generation, manager.generation());
+    assert_eq!(launch.isolation, CommandIsolation::HostUnrestricted);
     assert_eq!(launch.argv[0], "/bin/sh");
     assert_eq!((launch.id.as_str(), launch.argv.len()), (command.id.as_str(), 3));
     // The tab keeps the terminal's bytes, colour and line discipline included.

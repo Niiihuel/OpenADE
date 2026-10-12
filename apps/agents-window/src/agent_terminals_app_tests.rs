@@ -18,9 +18,10 @@ fn fixture() -> Fixture {
     let workspace = root.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
     let mut app = AgentsWindow::with_data_root(root.path().join("data"));
-    // A user terminal opened by a test must never start the owner's shell.
+    // A user terminal opened by a test must never start the owner's shell:
+    // a path that can be saved with the preferences and names no program.
     app.settings_preferences.terminal_shell =
-        TerminalShell::Custom("fixture-shell-relative-invalid".into());
+        TerminalShell::Custom("/nonexistent/openade-fixture-shell".into());
     let session = app
         .store
         .as_ref()
@@ -203,6 +204,8 @@ fn closing_a_running_tab_asks_and_then_stops_the_whole_tree() {
 #[test]
 fn a_pipe_backed_command_is_a_read_only_mirror_that_says_so() {
     let mut fixture = fixture();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
     // What the contained profile hands the host: a command on pipes.
     let pipes = PersistentCommandManager::new(
         fixture.workspace.clone(),
@@ -215,7 +218,9 @@ fn a_pipe_backed_command_is_a_read_only_mirror_that_says_so() {
             "/bin/sh",
             &[
                 "-c".into(),
-                "echo UNO; echo DOS >&2; read line; echo GOT:$line".into(),
+                format!(
+                    "echo UNO; echo DOS >&2; echo SIRVE http://127.0.0.1:{port}/; read line; echo GOT:$line"
+                ),
             ],
             &CancellationToken::new(),
         )
@@ -225,6 +230,7 @@ fn a_pipe_backed_command_is_a_read_only_mirror_that_says_so() {
         generation: pipes.generation().into(),
         id: started.id.clone(),
         argv: vec!["/bin/sh".into()],
+        isolation: CommandIsolation::WorkspaceWriteOffline,
         terminal: pipes.attach_terminal(&started.id).unwrap(),
     };
     assert!(fixture
@@ -234,13 +240,22 @@ fn a_pipe_backed_command_is_a_read_only_mirror_that_says_so() {
     assert!(fixture.view(tab).read_only);
     fixture.wait("both streams", |fixture| {
         let screen = fixture.screen(tab);
-        screen.contains("UNO") && screen.contains("DOS")
+        screen.contains("UNO") && screen.contains("DOS") && screen.contains("SIRVE")
     });
     // Each line starts at the first column although pipes send no returns.
-    assert!(fixture
-        .screen(tab)
-        .lines()
-        .all(|line| line.is_empty() || line == "UNO" || line == "DOS"));
+    let screen = fixture.screen(tab);
+    for line in ["UNO", "DOS"] {
+        assert!(screen.lines().any(|shown| shown == line), "{screen:?}");
+    }
+    // A contained command has no network of the host's: an address it prints
+    // that answers is another program's, and is neither recorded nor opened.
+    for _ in 0..60 {
+        fixture.app.follow_agent_terminals();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(fixture.app.agent_terminals[&tab].preview.is_none());
+    assert!(fixture.browser_tabs().is_empty() && fixture.notices().is_empty());
+    drop(listener);
     // Keys and paste go nowhere, without an error.
     fixture.app.terminal_write(b"hola\r");
     fixture.app.terminals.get_mut(&tab).unwrap().paste("hola\n").unwrap();
@@ -359,4 +374,293 @@ fn tabs_follow_their_conversation_and_a_revocation_marks_them() {
         Some("Detenido · se revocaron los comandos de esta conversación")
     );
     assert_eq!(fixture.app.view.terminal_tabs.len(), 1);
+}
+
+// ---- Live preview ----------------------------------------------------------
+// The "server" is a listener of the test on a loopback port and a shell that
+// prints its address the way a dev server does. No browser starts: a tab's
+// context only starts from a painted frame, which these tests never run.
+
+struct Server {
+    _listener: std::net::TcpListener,
+    url: String,
+    command: String,
+    tab: u64,
+}
+
+impl Fixture {
+    fn serve(&mut self) -> Server {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://127.0.0.1:{}/", listener.local_addr().unwrap().port());
+        // Colour around the address, as Vite prints it.
+        let (command, tab) = self.start(&format!(
+            r"printf '  VITE ready\n  Local:   \033[36m{url}\033[39m\n'; sleep 300"
+        ));
+        Server {
+            _listener: listener,
+            url,
+            command,
+            tab,
+        }
+    }
+
+    /// Frames of the window until the command's address is known to answer.
+    fn answered(&mut self, server: &Server) {
+        let tab = server.tab;
+        self.wait("the server's address", |fixture| {
+            fixture.app.follow_agent_terminals();
+            fixture.app.agent_terminals[&tab].preview.is_some()
+        });
+        assert_eq!(
+            self.app.agent_terminals[&tab].preview.as_deref(),
+            Some(server.url.as_str())
+        );
+    }
+
+    fn scope(&self) -> DockScope {
+        self.app.dock_scope()
+    }
+
+    fn browser_tabs(&self) -> Vec<crate::dock::DockTab> {
+        self.app
+            .dock
+            .tabs(&self.scope().workspace_id)
+            .iter()
+            .filter(|tab| tab.kind == DockTabKind::Browser)
+            .cloned()
+            .collect()
+    }
+
+    /// A window with the composer and one other field, `focused` among them.
+    fn present_with_focus(&mut self, focused: &str) {
+        self.app.tree.set_root(Element::column(vec![
+            Element::text_input("prompt", "", "Task").size(None, Some(36.0)),
+            Element::text_input("another_field", "", "Buscar").size(None, Some(36.0)),
+        ]));
+        self.app.tree.layout(Size::new(640.0, 200.0));
+        assert!(self.app.tree.focus(focused));
+    }
+
+    fn notices(&self) -> Vec<String> {
+        self.app
+            .view
+            .notifications
+            .items()
+            .iter()
+            .map(|item| item.title.clone())
+            .collect()
+    }
+
+    fn stop(&mut self, server: &Server) {
+        self.click(format!("terminal_close:{}", server.tab));
+        self.click(format!("agent_terminal_stop:{}", server.tab));
+    }
+}
+
+#[test]
+fn the_preview_opens_once_when_the_server_answers_and_the_composer_keeps_the_keyboard() {
+    let mut fixture = fixture();
+    assert_eq!(fixture.app.view.preview_opening, crate::preview::PreviewOpening::Auto);
+    fixture.present_with_focus("prompt");
+    let server = fixture.serve();
+    fixture.answered(&server);
+    // The conversation's browser tab, in front, waiting on that address.
+    let [browser] = fixture.browser_tabs().try_into().unwrap();
+    let scope = fixture.scope();
+    assert_eq!(fixture.app.dock.active_tab(&scope).map(|tab| tab.id), Some(browser.id));
+    assert!(fixture.app.view.show_side_pane && fixture.app.view.side_tab == SideTab::Browser);
+    assert_eq!(
+        fixture.app.browser_restart_urls.get(&browser.id.get()),
+        Some(&server.url)
+    );
+    assert_eq!(fixture.app.view.browser.url_draft, server.url);
+    assert_eq!(fixture.app.tree.focused_id(), Some("prompt"));
+    assert_eq!(fixture.notices(), [format!("Vista previa abierta: {}", server.url)]);
+    // Never a second time for the same command, whatever the window does.
+    fixture.app.browser_restart_urls.clear();
+    for _ in 0..30 {
+        fixture.app.follow_agent_terminals();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(fixture.app.browser_restart_urls.is_empty());
+    assert_eq!(fixture.notices().len(), 1);
+    assert_eq!(fixture.app.view.notifications.items()[0].count, 1);
+    // Another server of the conversation reuses the tab.
+    let second = fixture.serve();
+    fixture.answered(&second);
+    assert_eq!(fixture.browser_tabs().len(), 1);
+    assert_eq!(
+        fixture.app.browser_restart_urls.get(&browser.id.get()),
+        Some(&second.url)
+    );
+    // Only an address of this machine is ever opened this way.
+    assert!(!fixture.app.open_preview(&scope, "https://example.test/"));
+    assert!(!fixture.app.open_preview(&scope, "http://192.168.1.10:5173/"));
+    assert_eq!(
+        fixture.app.browser_restart_urls.get(&browser.id.get()),
+        Some(&second.url)
+    );
+    fixture.stop(&server);
+    fixture.stop(&second);
+}
+
+#[test]
+fn a_field_the_user_types_in_keeps_its_tab_in_front_of_the_preview() {
+    let mut fixture = fixture();
+    let scope = fixture.scope();
+    let activity = fixture.app.dock.open(&scope, DockTabKind::Activity);
+    fixture.app.sync_dock_view();
+    fixture.present_with_focus("another_field");
+    let server = fixture.serve();
+    fixture.answered(&server);
+    // The preview is there to switch to, and says so; nothing was covered.
+    let [browser] = fixture.browser_tabs().try_into().unwrap();
+    assert_eq!(fixture.app.dock.active_tab(&scope).map(|tab| tab.id), Some(activity));
+    assert_eq!(fixture.app.tree.focused_id(), Some("another_field"));
+    assert_eq!(
+        fixture.app.browser_restart_urls.get(&browser.id.get()),
+        Some(&server.url)
+    );
+    assert_eq!(fixture.notices().len(), 1);
+    fixture.stop(&server);
+}
+
+#[test]
+fn asking_offers_the_preview_on_the_card_and_never_opens_nothing() {
+    let mut fixture = fixture();
+    // The choice is made in Settings and saved with the other preferences.
+    fixture.app.view.show_settings = true;
+    fixture.click(SettingsPage::Browser.action_id());
+    fixture.click("settings_choice_toggle:preview_opening");
+    assert_eq!(
+        fixture.app.view.settings_choice_menu_open.as_deref(),
+        Some("preview_opening")
+    );
+    fixture.click("preview_opening:ask");
+    assert_eq!(fixture.app.view.settings_choice_menu_open, None);
+    assert_eq!(fixture.app.view.preview_opening, crate::preview::PreviewOpening::Ask);
+    assert_eq!(
+        crate::settings_preferences::SettingsPreferences::load(&fixture.app.data_root)
+            .preview_opening,
+        crate::preview::PreviewOpening::Ask
+    );
+    fixture.click("preview_opening:siempre");
+    assert_eq!(fixture.app.view.preview_opening, crate::preview::PreviewOpening::Ask);
+    fixture.app.view.show_settings = false;
+
+    let server = fixture.serve();
+    fixture.answered(&server);
+    assert!(fixture.browser_tabs().is_empty());
+    assert!(fixture.notices().is_empty());
+    assert_eq!(fixture.view(server.tab).preview.as_deref(), Some(server.url.as_str()));
+    let result = serde_json::json!({ "session_id": server.command }).to_string();
+    let offered = |app: &AgentsWindow| {
+        let card = crate::terminal_dock_ui::command_actions(
+            &app.view,
+            "card",
+            "call-1",
+            "start_command",
+            Some(&result),
+        )
+        .expect("a started command's actions");
+        let frame = openide_ui::UiTree::new(card).layout(Size::new(480.0, 40.0));
+        frame
+            .regions
+            .iter()
+            .any(|region| region.id == "agent_preview_link:card:call-1")
+    };
+    assert!(offered(&fixture.app));
+    // The user asks: the conversation's browser tab opens on that address.
+    fixture.click(format!("agent_preview_open:{}", server.command));
+    let [browser] = fixture.browser_tabs().try_into().unwrap();
+    assert_eq!(
+        fixture.app.browser_restart_urls.get(&browser.id.get()),
+        Some(&server.url)
+    );
+    assert!(fixture.notices().is_empty());
+
+    // "Nunca": nothing opens and nothing is offered, for this server or the next.
+    fixture.click("preview_opening:never");
+    assert!(fixture.view(server.tab).preview.is_none());
+    assert!(!offered(&fixture.app));
+    fixture.app.browser_restart_urls.clear();
+    let second = fixture.serve();
+    fixture.answered(&second);
+    assert!(fixture.view(second.tab).preview.is_none());
+    assert!(fixture.app.browser_restart_urls.is_empty());
+    assert_eq!(fixture.browser_tabs().len(), 1);
+    fixture.click(format!("agent_preview_open:{}", second.command));
+    assert_eq!(
+        fixture.app.browser_restart_urls.get(&browser.id.get()),
+        Some(&second.url),
+        "a click the card no longer offers still only opens the recorded address"
+    );
+    // A server that stopped is not offered either.
+    fixture.click("preview_opening:ask");
+    assert!(fixture.view(second.tab).preview.is_some());
+    let manager = fixture.manager.clone();
+    manager.stop(&second.command).unwrap();
+    fixture.wait("the stop", |fixture| {
+        fixture.app.follow_agent_terminals();
+        fixture.view(second.tab).ended.is_some()
+    });
+    assert!(fixture.view(second.tab).preview.is_none());
+    fixture.stop(&server);
+}
+
+#[tokio::test]
+async fn the_agents_open_preview_defaults_to_the_conversations_server_and_shows_its_tab() {
+    use crate::browser_runtime::{BrowserCommand, BrowserScope, BrowserSnapshot};
+    use openide_harness::McpToolClient;
+    let mut fixture = fixture();
+    fixture.click("preview_opening:ask");
+    let scope = fixture.scope();
+    // A browser tab whose context is a fixture: no browser, no network.
+    let browser = fixture.app.dock.open(&scope, DockTabKind::Browser);
+    let (runtime, commands) = crate::browser_runtime::tests::fixture(
+        BrowserScope {
+            workspace: fixture.workspace.canonicalize().unwrap(),
+            session_id: fixture.session.clone(),
+        },
+        BrowserSnapshot {
+            started: true,
+            generation: 1,
+            viewport_width: 640,
+            viewport_height: 480,
+            ..Default::default()
+        },
+    );
+    let client = runtime.mcp_client();
+    fixture.app.browsers.insert(browser.get(), runtime);
+    let activity = fixture.app.dock.open(&scope, DockTabKind::Activity);
+    fixture.app.sync_dock_view();
+    assert_eq!(fixture.app.dock.active_tab(&scope).map(|tab| tab.id), Some(activity));
+
+    let server = fixture.serve();
+    fixture.answered(&server);
+    fixture.app.follow_agent_terminals();
+    let call = tokio::spawn(async move {
+        client
+            .call_tool(
+                crate::browser_runtime::OPEN_PREVIEW,
+                serde_json::json!({}),
+                &CancellationToken::new(),
+            )
+            .await
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let navigated = loop {
+        if let Some(command) = commands.finish_next() {
+            break command;
+        }
+        assert!(Instant::now() < deadline, "open_preview reached no page");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    assert!(matches!(navigated, BrowserCommand::Navigate { url } if url == server.url));
+    assert!(!call.await.unwrap().unwrap().is_error);
+    // The window brings the tab the agent opened forward.
+    assert!(fixture.app.follow_agent_terminals());
+    assert_eq!(fixture.app.dock.active_tab(&scope).map(|tab| tab.id), Some(browser));
+    assert!(!fixture.app.follow_agent_terminals(), "shown once");
+    fixture.stop(&server);
 }

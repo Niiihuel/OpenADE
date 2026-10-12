@@ -900,6 +900,7 @@ impl PersistentCommandManager {
                     argv: std::iter::once(program.to_owned())
                         .chain(args.iter().cloned())
                         .collect(),
+                    isolation: self.isolation,
                     terminal,
                 });
             }

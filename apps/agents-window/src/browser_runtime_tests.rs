@@ -53,6 +53,8 @@ pub(crate) fn fixture(
         process: Arc::default(),
         scope,
         identity_digest: "fixture".into(),
+        preview: Arc::default(),
+        reveal: Arc::default(),
     };
     (
         BrowserRuntime {
@@ -82,6 +84,8 @@ fn handle() -> BrowserHandle {
             session_id: "browser-test".into(),
         },
         identity_digest: "fixture".into(),
+        preview: Arc::default(),
+        reveal: Arc::default(),
     }
 }
 
@@ -1073,7 +1077,8 @@ async fn native_client_returns_a_stale_ref_as_a_readable_tool_error() {
     );
     let client = runtime.mcp_client();
     let listed = client.list_tools(&CancellationToken::new()).await.unwrap();
-    assert_eq!(listed.len(), catalog().len());
+    // The shared catalog and `open_preview`, the native agent's own.
+    assert_eq!(listed.len(), catalog().len() + 1);
     let worker = thread::spawn(move || {
         answer_with(
             &commands,
@@ -1856,4 +1861,74 @@ fn the_external_connection_is_this_executable_as_a_proxy_with_only_its_broker_in
     let (other, _endpoint, _workspace) = scripted((640, 480), 1.0, |_, _, _| None);
     let other = other.external_mcp_config().unwrap();
     assert_ne!(other.env[std::ffi::OsStr::new("OPENIDE_BROWSER_TOKEN")], config.env[std::ffi::OsStr::new("OPENIDE_BROWSER_TOKEN")]);
+}
+
+#[tokio::test]
+async fn open_preview_opens_only_this_machines_addresses_and_defaults_to_the_conversations_server() {
+    let (runtime, endpoint, _workspace) = scripted((640, 480), 1.0, |_, _, _| None);
+    let client = runtime.mcp_client();
+    let cancel = CancellationToken::new();
+    // The native agent has it beside the browser tools; the catalog an
+    // external MCP client is served does not.
+    let listed = client.list_tools(&cancel).await.unwrap();
+    assert_eq!(listed.len(), browser_mcp_tools().len() + 1);
+    assert_eq!(listed.last().unwrap().name, OPEN_PREVIEW);
+    assert!(browser_mcp_tools().iter().all(|tool| tool.name != OPEN_PREVIEW));
+    let navigated = || {
+        endpoint
+            .asked("Page.navigate")
+            .last()
+            .map(|params| params["url"].as_str().unwrap_or_default().to_owned())
+    };
+    // Any other site is refused with the tool that does open it, and the
+    // page is not touched.
+    for url in [
+        "https://example.test/",
+        "http://192.168.1.10:5173/",
+        "http://localhost.evil.test/",
+        "http://127.0.0.1.evil.test/",
+        "http://usuario:clave@localhost:3000/",
+        "file:///etc/hosts",
+        "localhost:3000",
+    ] {
+        let refused = client
+            .call_tool(OPEN_PREVIEW, json!({ "url": url }), &cancel)
+            .await
+            .unwrap();
+        assert!(refused.is_error, "{url}");
+        let said = refused.content[0]["text"].as_str().unwrap();
+        assert!(said.contains("browser_navigate") && said.contains("este equipo"), "{said}");
+    }
+    assert!(client
+        .call_tool(OPEN_PREVIEW, json!({"url":"http://localhost:1/","otro":1}), &cancel)
+        .await
+        .unwrap()
+        .is_error);
+    // Without an address there has to be a server of this conversation.
+    let missing = client.call_tool(OPEN_PREVIEW, json!({}), &cancel).await.unwrap();
+    assert!(missing.is_error);
+    assert!(missing.content[0]["text"].as_str().unwrap().contains("Indicá url"));
+    assert_eq!(navigated(), None);
+    assert!(!runtime.take_reveal());
+
+    runtime.set_preview_url(Some("http://localhost:5173/".into()));
+    let opened = client.call_tool(OPEN_PREVIEW, json!({}), &cancel).await.unwrap();
+    assert!(!opened.is_error);
+    assert_eq!(navigated().as_deref(), Some("http://localhost:5173/"));
+    // Opening is also showing the tab, once.
+    assert!(runtime.take_reveal() && !runtime.take_reveal());
+    // Where a server listens is not where its page is.
+    let listening = client
+        .call_tool(OPEN_PREVIEW, json!({"url":"http://0.0.0.0:8000/docs"}), &cancel)
+        .await
+        .unwrap();
+    assert!(!listening.is_error);
+    assert_eq!(navigated().as_deref(), Some("http://localhost:8000/docs"));
+    for address in ["http://127.0.0.1:3000/", "http://[::1]:3000/", "https://localhost/"] {
+        client
+            .call_tool(OPEN_PREVIEW, json!({ "url": address }), &cancel)
+            .await
+            .unwrap();
+        assert_eq!(navigated().as_deref(), Some(address));
+    }
 }

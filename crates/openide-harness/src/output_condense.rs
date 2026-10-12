@@ -74,7 +74,8 @@ impl AnsiStripper {
     }
 }
 
-fn strip_ansi(text: &str) -> String {
+/// A terminal's text without its CSI and OSC escape sequences.
+pub fn strip_ansi(text: &str) -> String {
     let mut out = Vec::with_capacity(text.len());
     AnsiStripper::default().strip(text.as_bytes(), &mut out);
     // Only whole sequences ending in an ASCII byte were removed from valid UTF-8.

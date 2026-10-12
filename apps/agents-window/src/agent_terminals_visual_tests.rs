@@ -63,6 +63,7 @@ pub(crate) fn fixture(mode: WindowMode, active: u64) -> ViewState {
             task: "Revisar el workspace".into(),
             read_only: false,
             ended: None,
+            preview: None,
         },
         AgentTerminalView {
             id: 83,
@@ -70,6 +71,7 @@ pub(crate) fn fixture(mode: WindowMode, active: u64) -> ViewState {
             task: "Revisar el workspace".into(),
             read_only: false,
             ended: Some("Proceso finalizado · código 0".into()),
+            preview: None,
         },
     ];
     state.terminal_snapshot = Some(match active {
@@ -234,6 +236,92 @@ fn closing_a_running_command_shows_what_will_stop() {
     assert!(!crate::view::dialog_open(&state, SIZE.width));
 }
 
+const PREVIEW: &str = "http://localhost:5173/";
+
+/// The conversation's browser tab in front of the right dock.
+fn with_browser(state: &mut ViewState, browser: crate::browser_ui::BrowserUiState) {
+    state.side_tab = SideTab::Browser;
+    state.dock_tabs.retain(|tab| tab.kind != SideTab::Browser);
+    for tab in &mut state.dock_tabs {
+        tab.active = false;
+    }
+    state.dock_tabs.push(DockTabView {
+        id: 90,
+        title: "Navegador".into(),
+        full_path: None,
+        active: true,
+        kind: SideTab::Browser,
+        closable: true,
+    });
+    state.browser = crate::browser_ui::BrowserUiState {
+        tab_id: Some(90),
+        started: true,
+        url_draft: PREVIEW.into(),
+        ..browser
+    };
+}
+
+#[test]
+fn a_serving_command_offers_its_preview_and_a_dead_server_asks_for_it() {
+    // "Preguntar": the card of the command that serves offers the preview.
+    let mut state = fixture(WindowMode::Agents, 82);
+    state.terminal_controls.agents[0].preview = Some(PREVIEW.into());
+    let (_context, mut tree, frame) = window(&state);
+    let link = rect(&frame, "agent_preview_link:card:call-server");
+    assert!(has_text(&frame, "Abrir vista previa") && has_text(&frame, "Ver en terminal"));
+    let point = openide_ui::Point::new(link.x + link.width / 2.0, link.y + link.height / 2.0);
+    tree.handle_event(UiEvent::PointerDown(point));
+    assert_eq!(
+        tree.handle_event(UiEvent::PointerUp(point)),
+        vec![UiAction::Clicked {
+            id: format!("agent_preview_open:{SERVER}")
+        }]
+    );
+    // The address of a server that is gone: the question, and the retry.
+    with_browser(
+        &mut state,
+        crate::browser_ui::BrowserUiState {
+            url: "chrome-error://chromewebdata/".into(),
+            error: Some(format!("net::ERR_CONNECTION_REFUSED at {PREVIEW}")),
+            load_failed: true,
+            ..Default::default()
+        },
+    );
+    let (_context, _tree, frame) = window(&state);
+    // One sentence, wrapped to the card: "… localhost:5173 — ¿sigue / corriendo el servidor?".
+    assert!(has_text(&frame, "No se pudo conectar con localhost:5173"));
+    assert!(has_text(&frame, "¿sigue") && has_text(&frame, "el servidor?"));
+    assert!(frame.regions.iter().any(|region| region.id == "browser_navigate"));
+    assert!(has_text(&frame, "Reintentar"));
+    // Until the profile is the project's, the footer keeps saying what is true.
+    state.browser = crate::browser_ui::BrowserUiState {
+        tab_id: Some(90),
+        started: true,
+        live: true,
+        url: PREVIEW.into(),
+        url_draft: PREVIEW.into(),
+        ..Default::default()
+    };
+    let (_context, _tree, frame) = window(&state);
+    assert!(has_text(&frame, "Sesión aislada · Compartida con el agente"));
+}
+
+#[test]
+fn settings_offer_when_the_preview_opens_beside_the_browsers_other_choice() {
+    let mut state = fixture(WindowMode::Agents, 82);
+    state.show_settings = true;
+    state.settings_page = crate::settings_ui::SettingsPage::Browser;
+    state.settings_choice_menu_open = Some("preview_opening".into());
+    let (_context, _tree, frame) = window(&state);
+    assert!(has_text(&frame, "Abrir la vista previa de los servidores que inicia el agente"));
+    for id in ["preview_opening:auto", "preview_opening:ask", "preview_opening:never"] {
+        assert!(frame.regions.iter().any(|region| region.id == id), "{id}");
+    }
+    for label in ["Automáticamente", "Preguntar", "Nunca", "Abrir enlaces del chat en"] {
+        assert!(has_text(&frame, label), "{label}");
+    }
+}
+
 #[test]
 #[ignore = "writes the agent terminals captures under docs/ui-separation/shots/agent-terminals"]
 fn export_agent_terminals_visual_review() {
@@ -258,4 +346,42 @@ fn export_agent_terminals_visual_review() {
     let mut state = fixture(WindowMode::Agents, 82);
     state.terminal_controls.agents[0].read_only = true;
     shot(&state, "s1-read-only");
+
+    // Stage 2: the live preview.
+    let mut state = fixture(WindowMode::Agents, 82);
+    state.show_settings = true;
+    state.settings_page = crate::settings_ui::SettingsPage::Browser;
+    shot(&state, "s2-settings-row");
+    state.settings_choice_menu_open = Some("preview_opening".into());
+    shot(&state, "s2-settings-choices");
+    let mut state = fixture(WindowMode::Agents, 82);
+    state.terminal_controls.agents[0].preview = Some(PREVIEW.into());
+    shot(&state, "s2-command-card-preview");
+    with_browser(
+        &mut state,
+        crate::browser_ui::BrowserUiState {
+            url: PREVIEW.into(),
+            navigating: true,
+            loading: true,
+            ..Default::default()
+        },
+    );
+    state.notifications.push(
+        crate::notifications::Severity::Info,
+        format!("Vista previa abierta: {PREVIEW}"),
+        "Revisar el workspace",
+        Some(crate::notifications::Target::Session("ide-review".into())),
+    );
+    shot(&state, "s2-notice");
+    with_browser(
+        &mut state,
+        crate::browser_ui::BrowserUiState {
+            url: "chrome-error://chromewebdata/".into(),
+            error: Some(format!("net::ERR_CONNECTION_REFUSED at {PREVIEW}")),
+            load_failed: true,
+            ..Default::default()
+        },
+    );
+    state.notifications = Default::default();
+    shot(&state, "s2-dead-server");
 }

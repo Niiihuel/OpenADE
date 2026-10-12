@@ -40,7 +40,13 @@ impl StartedCommand {
             id: launch.id,
             argv: launch.argv,
             read_only: !launch.terminal.interactive(),
-            session: crate::terminal::TerminalSession::attach(launch.terminal, &label),
+            // A contained command cannot serve the host: whatever answers at
+            // an address it prints is another program's, and is not opened.
+            session: crate::terminal::TerminalSession::attach(
+                launch.terminal,
+                &label,
+                launch.isolation == CommandIsolation::HostUnrestricted,
+            ),
         })
     }
 }

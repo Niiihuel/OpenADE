@@ -44,6 +44,8 @@ pub(crate) struct AgentTerminalView {
     pub read_only: bool,
     /// How it ended, once it has.
     pub ended: Option<String>,
+    /// The address its server answers on, while a preview of it is offered.
+    pub preview: Option<String>,
 }
 
 pub(crate) const AGENT_READ_ONLY: &str =
@@ -71,22 +73,44 @@ pub(crate) fn command_actions(
     }
     let result: serde_json::Value = serde_json::from_str(output?).ok()?;
     let command = result.get("session_id")?.as_str()?;
-    state
+    let agent = state
         .terminal_controls
         .agents
         .iter()
         .find(|agent| agent.command_id == command)?;
-    let show = Button::new(
-        format!("agent_terminal_link:{surface}:{call}"),
+    let action = |kind: &str, label: &str, icon: Icon, dispatch: &str| {
+        Button::new(
+            format!("agent_{kind}_link:{surface}:{call}"),
+            label,
+            theme::component_palette(),
+        )
+        .icon(icon)
+        .variant(ButtonVariant::Outline)
+        .size(ControlSize::Compact)
+        .render()
+        .dispatch_as(format!("{dispatch}:{command}"))
+    };
+    let mut actions = vec![action(
+        "terminal",
         "Ver en terminal",
-        theme::component_palette(),
-    )
-    .icon(Icon::Terminal)
-    .variant(ButtonVariant::Outline)
-    .size(ControlSize::Compact)
-    .render()
-    .dispatch_as(format!("agent_terminal_show:{command}"));
-    Some(Element::row(vec![show, Element::spacer().flex(1.0)]).gap(6.0))
+        Icon::Terminal,
+        "agent_terminal_show",
+    )];
+    if let Some(url) = &agent.preview {
+        let open = action("preview", "Abrir vista previa", Icon::Globe, "agent_preview_open");
+        actions.push(
+            openide_ui::Tooltip::new(
+                open,
+                format!("agent_preview_link:{surface}:{call}"),
+                "Abrir en el navegador integrado",
+                theme::component_palette(),
+            )
+            .description(url.clone())
+            .render(),
+        );
+    }
+    actions.push(Element::spacer().flex(1.0));
+    Some(Element::row(actions).gap(6.0))
 }
 
 /// The agent's mark on a session it started; a shell keeps the terminal's.

@@ -471,7 +471,12 @@ mod tests {
             .into_iter()
             .map(|tool| format!("mcp__openide_browser__{}", tool.name))
             .collect();
-        assert_eq!(advertised.len(), 20);
+        // The catalog every client gets, and the native agent's `open_preview`.
+        let expected: Vec<_> = expected
+            .into_iter()
+            .chain(["mcp__openide_browser__open_preview".to_owned()])
+            .collect();
+        assert_eq!(advertised.len(), 21);
         for name in &expected {
             assert!(advertised.contains(name), "{name} is not advertised");
             assert!(prepared.ask_tool_names().contains(name), "{name} skips approval");

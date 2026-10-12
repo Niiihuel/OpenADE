@@ -125,6 +125,7 @@ pub use native_command_registry::{
 pub use native_context::{
     native_model_context_digest, native_model_context_digest_for_recorded_workspace,
 };
+pub use output_condense::strip_ansi;
 pub use permission::{
     PermissionChoice, PermissionMode, PermissionPolicy, SessionApprovalError, SessionApprovalGrant,
     SESSION_APPROVAL_GRANT_VERSION,

@@ -4,14 +4,21 @@
 //! window on it. What the user types there goes straight to the process: it
 //! is their own terminal, so it passes neither the manual-input policy of
 //! "Operaciones" nor the command hooks. The agent's `write_stdin` is unchanged.
+//!
+//! A command that turns out to be a server (it prints an address of this
+//! machine, and that address answers) gets a live preview in the
+//! conversation's browser tab, when the user's setting says so.
 use super::*;
-use crate::terminal_dock_ui::AgentTerminalView;
 use crate::native_command_sessions::StartedCommand;
+use crate::preview::PreviewOpening;
+use crate::terminal_dock_ui::AgentTerminalView;
 use openide_harness::PersistentCommandExit;
 
 pub(super) struct AgentTerminal {
     /// The native session whose agent started it; its tab shows with it.
     owner: String,
+    /// That conversation's tabs: its terminal, and the browser of a preview.
+    scope: DockScope,
     /// The manager that runs it: another one means it was revoked.
     generation: String,
     command_id: String,
@@ -19,7 +26,14 @@ pub(super) struct AgentTerminal {
     command: String,
     read_only: bool,
     ended: Option<String>,
+    /// The address its server printed, once something answered there.
+    preview: Option<String>,
+    started: Instant,
 }
+
+/// A server says where it listens within its first minute, and the check of
+/// that address takes a few seconds more.
+const PREVIEW_WAIT: Duration = Duration::from_secs(70);
 
 fn ended_label(exit: &PersistentCommandExit, revoked: bool) -> String {
     match exit {
@@ -69,22 +83,142 @@ impl AgentsWindow {
         for started in self.native_command_sessions.take_started() {
             changed |= self.open_agent_terminal(started);
         }
+        let mut answered = Vec::new();
         for (id, agent) in &mut self.agent_terminals {
-            if agent.ended.is_some() {
-                continue;
-            }
-            let Some(exit) = self.terminals.get(id).and_then(TerminalSession::agent_exit) else {
+            let Some(session) = self.terminals.get(id).filter(|_| agent.ended.is_none()) else {
                 continue;
             };
-            let revoked = self
-                .native_command_sessions
-                .manager(&agent.owner)
-                .is_none_or(|manager| manager.generation() != agent.generation);
-            agent.ended = Some(ended_label(&exit, revoked));
-            changed = true;
+            if agent.preview.is_none() {
+                // Reported once per command, so it never opens a second time.
+                if let Some(url) = session.agent_preview() {
+                    agent.preview = Some(url.clone());
+                    answered.push((agent.owner.clone(), agent.scope.clone(), url));
+                    changed = true;
+                }
+            }
+            if let Some(exit) = session.agent_exit() {
+                let revoked = self
+                    .native_command_sessions
+                    .manager(&agent.owner)
+                    .is_none_or(|manager| manager.generation() != agent.generation);
+                agent.ended = Some(ended_label(&exit, revoked));
+                changed = true;
+            }
         }
+        for (owner, scope, url) in answered {
+            if self.settings_preferences.preview_opening == PreviewOpening::Auto {
+                self.open_preview(&scope, &url);
+                let task = self.session_title(&owner);
+                self.view.notifications.push(
+                    crate::notifications::Severity::Info,
+                    format!("Vista previa abierta: {url}"),
+                    task,
+                    Some(crate::notifications::Target::Session(owner)),
+                );
+            }
+        }
+        changed |= self.follow_browser_previews();
         if changed {
             self.refresh_agent_terminal_views();
+        }
+        changed
+    }
+
+    /// A command may still announce a server. Its terminal can be hidden,
+    /// and then nothing repaints the window: it keeps looking by itself.
+    pub(super) fn awaiting_agent_preview(&self) -> bool {
+        self.settings_preferences.preview_opening != PreviewOpening::Never
+            && self.agent_terminals.values().any(|agent| {
+                agent.ended.is_none()
+                    && agent.preview.is_none()
+                    && agent.started.elapsed() < PREVIEW_WAIT
+            })
+    }
+
+    fn session_title(&self, session: &str) -> String {
+        self.view
+            .sessions
+            .iter()
+            .find(|listed| listed.id == session)
+            .map_or_else(|| "esta conversación".to_owned(), |listed| listed.title.clone())
+    }
+
+    /// Open or reuse a conversation's "Navegador" tab on the address of a
+    /// server of this machine, and of no other. The keyboard stays where it
+    /// is: the tab comes forward only when that does not replace what the
+    /// user is typing in, and is otherwise left among the tabs.
+    fn open_preview(&mut self, scope: &DockScope, url: &str) -> bool {
+        let Some(url) = crate::preview::loopback_url(url) else {
+            return false;
+        };
+        let shown = *scope == self.dock_scope();
+        let previous = self.dock.active_tab(scope).map(|tab| tab.id);
+        let collapsed = self.dock.is_collapsed(scope);
+        let tab = self.dock.open(scope, DockTabKind::Browser);
+        self.dock.set_collapsed(scope, false);
+        // The composer is beside the dock; any other field or editor may be
+        // the tab this one would cover.
+        let typing = shown && self.typing_in().is_some_and(|field| field != "prompt");
+        if typing {
+            if let Some(previous) = previous {
+                self.dock.activate(scope, previous);
+            }
+            self.dock.set_collapsed(scope, collapsed);
+        }
+        // The tab's context may still be starting, or not be started until
+        // the tab is shown: the address waits and opens once it is ready.
+        self.browser_restart_urls.insert(tab.get(), url);
+        if shown {
+            self.sync_dock_view();
+        }
+        true
+    }
+
+    /// The text field or editor that holds the keyboard, if one does.
+    fn typing_in(&self) -> Option<&str> {
+        use openide_ui::HitKind::{CodeEditor, TextArea, TextInput};
+        let focused = self.tree.focused_id()?;
+        self.tree
+            .frame()
+            .regions
+            .iter()
+            .any(|region| {
+                region.id == focused && matches!(region.kind, CodeEditor | TextArea | TextInput)
+            })
+            .then_some(focused)
+    }
+
+    /// The agent's `open_preview`: tell each browser which address it opens
+    /// by default, and show the tab of one it just opened.
+    fn follow_browser_previews(&mut self) -> bool {
+        let mut reveal = Vec::new();
+        for (id, runtime) in &self.browsers {
+            // The newest command of that conversation that serves.
+            let serving = self
+                .agent_terminals
+                .iter()
+                .filter(|(_, agent)| {
+                    agent.ended.is_none() && agent.owner == runtime.scope().session_id
+                })
+                .max_by_key(|(tab, _)| **tab)
+                .and_then(|(_, agent)| agent.preview.clone());
+            runtime.set_preview_url(serving);
+            if runtime.take_reveal() {
+                reveal.push(*id);
+            }
+        }
+        let mut changed = false;
+        for id in reveal {
+            let Some(tab) = self.dock.tab(id).cloned() else {
+                continue;
+            };
+            let scope = DockScope::new(tab.workspace_id, tab.owner);
+            self.dock.activate(&scope, tab.id);
+            self.dock.set_collapsed(&scope, false);
+            if scope == self.dock_scope() {
+                self.sync_dock_view();
+                changed = true;
+            }
         }
         changed
     }
@@ -129,11 +263,14 @@ impl AgentsWindow {
             id,
             AgentTerminal {
                 owner,
+                scope: scope.clone(),
                 generation: started.generation,
                 command_id: started.id,
                 command,
                 read_only: started.read_only,
                 ended: None,
+                preview: None,
+                started: Instant::now(),
             },
         );
         if scope != self.dock_scope() {
@@ -168,14 +305,14 @@ impl AgentsWindow {
                 Some(AgentTerminalView {
                     id: tab.id,
                     command_id: agent.command_id.clone(),
-                    task: self
-                        .view
-                        .sessions
-                        .iter()
-                        .find(|session| session.id == agent.owner)
-                        .map_or_else(|| "esta conversación".to_owned(), |session| session.title.clone()),
+                    task: self.session_title(&agent.owner),
                     read_only: agent.read_only,
                     ended: agent.ended.clone(),
+                    // Offered while it serves, unless the user wants none.
+                    preview: agent.preview.clone().filter(|_| {
+                        agent.ended.is_none()
+                            && self.settings_preferences.preview_opening != PreviewOpening::Never
+                    }),
                 })
             })
             .collect();
@@ -246,6 +383,16 @@ impl AgentsWindow {
             self.view.terminal_controls.closing = None;
         } else if let Some(command) = id.strip_prefix("agent_terminal_show:") {
             self.show_agent_terminal(command);
+        } else if let Some(command) = id.strip_prefix("agent_preview_open:") {
+            // The user asked: the address is the one recorded on the command.
+            let found = self
+                .agent_terminals
+                .values()
+                .find(|agent| agent.command_id == command && agent.scope == self.dock_scope())
+                .and_then(|agent| Some((agent.scope.clone(), agent.preview.clone()?)));
+            if let Some((scope, url)) = found {
+                self.open_preview(&scope, &url);
+            }
         } else {
             return false;
         }

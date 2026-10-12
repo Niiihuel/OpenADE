@@ -207,16 +207,7 @@ fn local_address(browser: &BrowserUiState) -> bool {
     } else {
         &browser.url_draft
     };
-    reqwest::Url::parse(address)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_owned))
-        .is_some_and(|host| {
-            host == "localhost"
-                || host.ends_with(".localhost")
-                || host == "[::1]"
-                || host == "::1"
-                || host.starts_with("127.")
-        })
+    crate::chat_links::is_local(address)
 }
 
 fn error_copy(browser: &BrowserUiState) -> (String, String) {
@@ -227,8 +218,9 @@ fn error_copy(browser: &BrowserUiState) -> (String, String) {
             "Instalá Google Chrome, Chromium o Microsoft Edge, o indicá la ruta de uno en la variable OPENIDE_BROWSER_EXECUTABLE. Después volvé a intentar.".into(),
         )
     } else if error.contains("ERR_CONNECTION_REFUSED") && local_address(browser) {
-        (format!("No se pudo conectar con {}", address_host(browser).unwrap_or_else(|| "localhost".into())),
-        "El equipo rechazó la conexión. Verificá que el servidor del proyecto esté iniciado y que use ese puerto.".into())
+        // Nobody listens there: the project's server stopped, or never started.
+        (format!("No se pudo conectar con {} — ¿sigue corriendo el servidor?", address_host(browser).unwrap_or_else(|| "localhost".into())),
+        "Nada responde en ese puerto de este equipo. Iniciá el servidor del proyecto, o revisá el puerto, y reintentá.".into())
     } else if error.contains("ERR_CONNECTION_REFUSED") {
         (
             "El sitio rechazó la conexión".into(),

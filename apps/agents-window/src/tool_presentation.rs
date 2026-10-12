@@ -38,7 +38,7 @@ pub(crate) fn navigation_target<'a>(
             (&["path", "file_path"], true)
         }
         "rename_file" => (&["to", "destination"], true),
-        "web_fetch" | "browser_open" | "browser_navigate" => (&["url"], false),
+        "web_fetch" | "browser_open" | "browser_navigate" | "open_preview" => (&["url"], false),
         _ => return None,
     };
     let target = keys.iter().find_map(|key| arguments.get(*key)?.as_str())?;
@@ -261,6 +261,14 @@ fn meta(name: &str) -> Meta<'_> {
             &["query", "q"],
             Web,
             Icon::Search,
+        ),
+        "open_preview" => (
+            "Vista previa",
+            "Abriendo vista previa",
+            "Vista previa abierta",
+            &["url"],
+            Web,
+            Icon::Globe,
         ),
         "web_fetch" | "browser_open" | "browser_navigate" => (
             "Navegación web",

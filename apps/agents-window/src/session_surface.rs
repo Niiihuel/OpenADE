@@ -4242,6 +4242,7 @@ mod tests {
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
             chat_link_opening: Default::default(),
+            preview_opening: Default::default(),
             chat_link_menu: None,
             settings_terminal_shell_editing: false,
             mcp_servers: Vec::new(),

@@ -6756,6 +6756,7 @@ impl AgentsWindow {
             settings_terminal_shell_menu_open: false,
             settings_choice_menu_open: None,
             chat_link_opening: settings_preferences.chat_links,
+            preview_opening: settings_preferences.preview_opening,
             chat_link_menu: None,
             settings_terminal_shell_editing: false,
             show_settings: false,
@@ -16686,6 +16687,17 @@ impl AgentsWindow {
                     }
                 }
             }
+            UiAction::Clicked { id } if id.starts_with(crate::preview::SETTING_ACTION_PREFIX) => {
+                self.view.settings_choice_menu_open = None;
+                if let Some(opening) = crate::preview::PreviewOpening::from_action_id(&id) {
+                    let mut next = self.settings_preferences.clone();
+                    next.preview_opening = opening;
+                    if self.commit_settings_preferences(next, "Apertura de la vista previa guardada") {
+                        self.view.preview_opening = opening;
+                        self.refresh_agent_terminal_views();
+                    }
+                }
+            }
             UiAction::CopyRequested { text } => ctx.copy_text(text),
             UiAction::PasteRequested { id } => self.request_text_paste(id, ctx),
             UiAction::Clicked { id } if id.starts_with("conversation_source:") => {
@@ -19204,7 +19216,7 @@ impl AgentsWindow {
                         (SettingsPage::Data, "organization" | "sort")
                             | (SettingsPage::Agent, "isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search" | "image_model" | "image_quality")
                             | (SettingsPage::ExternalAgents, "external_permission")
-                            | (SettingsPage::Browser, "chat_links")
+                            | (SettingsPage::Browser, "chat_links" | "preview_opening")
                     );
                 if valid {
                     self.view.settings_terminal_shell_menu_open = false;
@@ -20245,7 +20257,7 @@ impl AgentsWindow {
                 (SettingsPage::Data, Some("organization" | "sort"))
                     | (SettingsPage::Agent, Some("isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search"))
                     | (SettingsPage::ExternalAgents, Some("external_permission"))
-                    | (SettingsPage::Browser, Some("chat_links"))
+                    | (SettingsPage::Browser, Some("chat_links" | "preview_opening"))
             )
         {
             self.view.settings_choice_menu_open = None;
@@ -21102,6 +21114,9 @@ impl eframe::App for AgentsWindow {
                     .is_some_and(|id| self.native_command_sessions.manager(id).is_some()))
         {
             ctx.request_repaint_after(Duration::from_millis(150));
+        }
+        if self.awaiting_agent_preview() {
+            ctx.request_repaint_after(Duration::from_millis(250));
         }
         ctx.request_repaint_after(Duration::from_secs(30));
         let animation_interval = [

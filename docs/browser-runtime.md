@@ -639,6 +639,69 @@ python3 scripts/browser-desktop-e2e.py --binary target/desktop/agents-window \
   --output /tmp/openade-browser-native-e2e
 ```
 
+## Vista previa de un servidor del agente
+
+Un comando que el agente inicia y que resulta ser un servidor abre su vista
+previa en la pestaña Navegador de la conversación, según la preferencia
+"Abrir la vista previa de los servidores que inicia el agente" de esta misma
+sección de Ajustes. La detección de la dirección, la comprobación del puerto y
+las tres opciones están en
+[Comandos persistentes](persistent-commands.md#live-preview-of-a-started-server);
+la herramienta `open_preview` del agente, en
+[Herramientas del navegador](browser-tools.md#vista-previa-de-un-servidor-local).
+La apertura reutiliza el mecanismo de los enlaces del chat: la dirección espera
+en `browser_restart_urls` y se navega cuando el contexto está listo.
+
+Una dirección de este equipo en la que nadie responde (un servidor que se
+detuvo) se muestra como «No se pudo conectar con localhost:5173 — ¿sigue
+corriendo el servidor?», con **Reintentar** y **Editar dirección**. «De este
+equipo» es lo mismo que para los enlaces del chat (`chat_links::is_local`):
+`localhost`, sus subdominios, el bloque `127.0.0.0/8`, `0.0.0.0` y `[::1]`.
+
+## Perfil por proyecto: pendiente
+
+Hoy cada conversación tiene un contexto propio en memoria y el pie de la
+pestaña dice «Sesión aislada · Compartida con el agente». Que las cookies y el
+`localStorage` sobrevivan entre conversaciones del mismo proyecto no se
+implementó: sólo uno de los dos motores puede hacerlo sin que una conversación
+bloquee o corrompa a otra.
+
+- **Chrome del sistema (camino por defecto).** Hay un proceso de Chrome por
+  pestaña, lanzado con `--user-data-dir` en un directorio privado y
+  descartable, y la página vive en un contexto creado con
+  `Target.createBrowserContext`, que es sólo memoria. Un perfil persistente
+  exige el contexto por defecto del navegador sobre un `--user-data-dir`
+  estable, y Chrome admite **un proceso por directorio** (`SingletonLock`):
+  dos conversaciones del mismo proyecto abiertas a la vez serían dos procesos
+  sobre el mismo directorio; el segundo no arranca, y saltarse el candado
+  corrompe las bases de cookies y de `localStorage`. Hace falta un proceso de
+  Chrome **por proyecto**, compartido por sus conversaciones: un registro con
+  conteo de referencias, un `Client` de DevTools multiplexado por sesión de
+  destino (hoy cada `Driver` es dueño de su proceso, de su tubería, que admite
+  un solo cliente, y lo mata y borra su directorio al soltarse), cierre por
+  `Target.closeTarget`, el barrido de directorios huérfanos sin tocar los
+  perfiles, una ruta corta para los sockets de Chromium (el directorio de
+  datos supera los 48 bytes que hoy se garantizan) y qué hacer con una
+  segunda instancia de la aplicación sobre el mismo proyecto (perfil
+  efímero).
+- **Chromium embebido (`--features cef`).** Puede hacerlo dentro de un
+  proceso: `root_cache_path` estable bajo el directorio de datos en lugar del
+  directorio privado, y `RequestContextSettings.cache_path` por proyecto en
+  vez del contexto sin ruta de hoy; dos navegadores con la misma ruta
+  comparten el perfil sin conflicto. Entre procesos CEF también toma su raíz
+  en exclusiva: una segunda instancia cae al Chrome del sistema.
+- **Común a ambos.** La clave: SHA-256 de la ruta canónica del proyecto bajo
+  `<datos>/browser-profiles/`. «Borrar datos de navegación de este proyecto»
+  en el menú de la pestaña: con el perfil en uso, `Storage.clearDataForOrigin`
+  y borrado de cookies por contexto; sin uso, borrar el directorio. El pie
+  pasaría a «Perfil del proyecto · Compartido con el agente». Las pruebas de
+  aislamiento de `browser_cef` y del driver (dos contextos no comparten nada,
+  nada llega al disco) cambian de contrato.
+
+Guardar y restaurar cookies por CDP al abrir y cerrar cada contexto se
+descartó: la última conversación en cerrar pisaría la sesión más nueva de
+otra, y `localStorage`, IndexedDB y los service workers no se restauran así.
+
 ## Lo que no se incluye
 
 - **Zoom de página.** Control + rueda y el gesto de pellizco no amplían la
