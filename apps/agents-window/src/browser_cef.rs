@@ -256,6 +256,9 @@ impl Embedded {
         if let Some(at) = paint.popup {
             let bgra = paint.bgra.to_vec();
             canvas.popup = (!bgra.is_empty()).then_some(Popup { bgra, size, at });
+            // News whatever the page under it looks like: an agent capture
+            // that left the page as it was does not hold this back.
+            canvas.before_capture = None;
             // Drawn over a page: one that was never painted has none to show.
             if canvas.bgra.is_empty() {
                 return;
@@ -579,7 +582,42 @@ pub(crate) fn probe() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{accept_languages, display_rate, overlay, Popup};
+    use super::{accept_languages, display_rate, overlay, LiveView, Popup};
+    use openide_cef::Paint;
+
+    #[test]
+    fn a_list_that_opens_changes_or_closes_reaches_the_view_also_right_after_an_agent_capture() {
+        let view = LiveView::default();
+        let embedded = &view.embedded;
+        embedded.canvas().scale = 1.0;
+        embedded.show(true);
+        let white = [255u8; 2 * 2 * 4];
+        let page = Paint { width: 2, height: 2, bgra: &white, popup: None };
+        let list = |bgra: &'static [u8]| Paint { width: 1, height: 1, bgra, popup: Some((1, 1)) };
+        // A list alone, before the page was ever painted, is nothing to show.
+        embedded.paint(&view, &list(&[0, 0, 255, 255]));
+        assert!(embedded.frame(&view).is_none());
+        embedded.paint(&view, &page);
+        assert!(embedded.frame(&view).is_some(), "the page, with the list over it");
+        assert_eq!(embedded.rgb.lock().unwrap()[9..], [255, 0, 0]);
+        assert!(embedded.frame(&view).is_none(), "once per paint");
+        // An agent capture makes Chromium paint the page again, unchanged:
+        // that is not news. What the list did meanwhile is.
+        embedded.before_capture();
+        embedded.paint(&view, &page);
+        assert!(embedded.frame(&view).is_none());
+        for (painted, shown) in [(list(&[255, 0, 0, 255]), [0, 0, 255]), (list(&[]), [255, 255, 255])] {
+            embedded.before_capture();
+            embedded.paint(&view, &page);
+            embedded.paint(&view, &painted);
+            assert!(embedded.frame(&view).is_some());
+            assert_eq!(embedded.rgb.lock().unwrap()[9..], shown);
+        }
+        // Hidden, the view lets go of the list with the page.
+        embedded.paint(&view, &list(&[0, 255, 0, 255]));
+        embedded.show(false);
+        assert!(embedded.popup_box().is_none() && embedded.frame(&view).is_none());
+    }
 
     #[test]
     fn a_widget_painted_apart_goes_over_the_page_where_it_says_and_only_inside_the_view() {

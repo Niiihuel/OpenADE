@@ -389,9 +389,11 @@ distribuir ese subconjunto.**
 
 Las pruebas rápidas no inician CEF, con la opción o sin ella. Con la opción
 se agregan las de `browser_cef.rs`: el idioma que se anuncia a las páginas, la
-frecuencia de la pantalla y cómo se dibuja una lista sobre la página, también
-cuando asoma por un borde. El aviso del pie y su descarte se prueban sin la
-opción, en `browser_ui_tests.rs` y `browser_host_tests.rs`.
+frecuencia de la pantalla, cómo se dibuja una lista sobre la página, también
+cuando asoma por un borde, y que una lista que se abre, cambia o se cierra
+llega a la vista aunque una captura del agente acabe de repintar la página
+sin cambios. El aviso del pie y su descarte se prueban sin la opción, en
+`browser_ui_tests.rs` y `browser_host_tests.rs`.
 
 Las pruebas contra el Chromium embebido están ignoradas por defecto. Son los
 mismos escenarios que corren contra Chrome real en `browser_chrome_tests.rs`,
