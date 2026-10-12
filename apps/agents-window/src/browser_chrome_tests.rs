@@ -78,8 +78,14 @@ addEventListener('keydown', event => note('key', held(event), event.key), true);
 addEventListener('mousemove', event => { window.buttons = event.buttons; }, true);
 </script></body></html>"#;
 
+/// Every pixel of the view changes with every frame.
+const FULL: &str = r#"<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Completa</title><style>
+html{animation:hue 2s linear infinite alternate}@keyframes hue{from{background:#024}to{background:#fc8}}
+</style></head><body></body></html>"#;
+
 /// The fixture pages on a free loopback port: `/` holds still, `/animated`
-/// never does, `/form` is the one above. Only this machine can reach them.
+/// never does, `/form` is the one above, `/full` changes whole. Only this
+/// machine can reach them.
 fn site() -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -94,6 +100,8 @@ fn site() -> String {
             let body = if request[..read].starts_with(b"GET /form") {
                 let options: String = (0..30).map(|option| format!("<option>Opción {option}</option>")).collect();
                 FORM.replace("OPTIONS", &options)
+            } else if request[..read].starts_with(b"GET /full") {
+                FULL.to_owned()
             } else {
                 PAGE.replace("ROWS", &rows)
                     .replace("SPIN", if animated { r#"<div id="spin"></div>"# } else { "" })
@@ -1556,6 +1564,76 @@ fn native_wheel(session: &Session) {
 #[ignore = "opt-in timing: starts the embedded Chromium and prints measurements"]
 fn real_cef_measurements_of_the_live_view_and_of_what_the_browser_adds() {
     measurements(Chromium::Embedded);
+}
+
+/// What a change costs by how much of the view it is: the processor this
+/// process and Chromium's spend on a blinking caret, a small spinner, a
+/// continuous scroll and an animation of the whole view, at 2560 × 1600,
+/// composited 60 and 120 times a second. Run like the measurements above.
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in timing: starts the embedded Chromium and prints measurements"]
+fn real_cef_measurements_of_what_a_change_costs_by_how_much_of_the_view_it_is() {
+    let origin = site();
+    let own = std::process::id();
+    let session = launch(Chromium::Embedded, (1280, 800), 2.0);
+    // The window takes every frame it is told of. Here it is taken and dropped.
+    let (taken, view) = (session.frames.clone(), Arc::downgrade(&session.runtime.handle.view));
+    session.runtime.on_frame(move || {
+        taken.fetch_add(1, Ordering::Relaxed);
+        if let Some(view) = view.upgrade() {
+            drop(view.decoded.lock().unwrap().take());
+        }
+    });
+    let load = || fs::read_to_string("/proc/loadavg").unwrap_or_default().trim().to_owned();
+    eprintln!("load average before: {}", load());
+    let measure = |what: &str, rate: u32, during: &dyn Fn(Instant)| {
+        let busy = || (processor_seconds(&[own]), processor_seconds(&session.browser_processes()));
+        let (from, started, used) = (session.frames.load(Ordering::Relaxed), Instant::now(), busy());
+        during(started);
+        let (elapsed, now) = (started.elapsed().as_secs_f64(), busy());
+        eprintln!(
+            "{what}, composited {rate} times a second: {:.1} frames per second to the view; this process {:.1} % of one core, the browser's processes {:.1} %",
+            (session.frames.load(Ordering::Relaxed) - from) as f64 / elapsed,
+            (now.0 - used.0) / elapsed * 100.0,
+            (now.1 - used.1) / elapsed * 100.0
+        );
+    };
+    for rate in [60, 120] {
+        cef::set_display_rate(rate);
+        for (what, path) in [("a blinking caret", "/form"), ("a small spinner", "/animated"), ("an animation of the whole view", "/full")] {
+            session.open(format!("{origin}{path}"));
+            if path == "/form" {
+                thread::sleep(Duration::from_millis(300));
+                assert!(!session.agent("browser_click", json!({"selector": "#field"})).is_error);
+            }
+            thread::sleep(Duration::from_secs(1));
+            measure(what, rate, &|_| thread::sleep(Duration::from_secs(4)));
+        }
+        // A wheel step with every frame, one in flight at a time, as the
+        // window sends them.
+        session.open(format!("{origin}/"));
+        session.settle(Duration::from_millis(600));
+        session.window(BrowserCommand::PointerMove { x: 640.0, y: 400.0, modifiers: 0 }).unwrap();
+        measure("a continuous scroll of a page of text", rate, &|started| {
+            let (mut direction, mut travelled) = (30.0, 0.0);
+            while started.elapsed() < Duration::from_secs(4) {
+                let tick = Instant::now();
+                let mut request = session.runtime.submit_ui(BrowserCommand::Scroll { dx: 0.0, dy: direction, modifiers: 0 }).unwrap();
+                while request.poll().is_none() {
+                    assert!(tick.elapsed() < Duration::from_secs(10), "the wheel was never answered");
+                    thread::sleep(Duration::from_micros(100));
+                }
+                travelled += direction;
+                if !(0.0..1200.0).contains(&travelled) {
+                    direction = -direction;
+                }
+                thread::sleep((Duration::from_secs(1) / rate).saturating_sub(tick.elapsed()));
+            }
+        });
+    }
+    cef::set_display_rate(60);
+    eprintln!("load average after: {}", load());
 }
 
 #[cfg(feature = "cef")]

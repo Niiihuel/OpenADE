@@ -39,6 +39,13 @@ pub(crate) fn observe_window_frame(interval: f32) -> bool {
     false
 }
 
+/// A measurement asks for the rate of another display. The window alone
+/// decides it in the application.
+#[cfg(test)]
+pub(super) fn set_display_rate(rate: u32) {
+    DISPLAY_RATE.store(rate, Ordering::Relaxed);
+}
+
 /// The refresh rate a run of frame intervals shows. The first follow a
 /// wake-up, and a slow frame says nothing about the display: the quick ones
 /// do. A rate close to a usual one is that one.
