@@ -4,8 +4,8 @@ use crate::{
     theme, ui_sizing,
 };
 use openide_ui::{
-    Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton, ListRow,
-    Text, TextRole, TooltipPlacement, TooltipSpec,
+    Button, ButtonVariant, Collapse, Component, ControlSize, Element, FontFamily, Icon, IconButton,
+    ListRow, Text, TextRole, TooltipPlacement, TooltipSpec,
 };
 
 /// What stands among the action rows starts where their copy does.
@@ -179,14 +179,13 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
     if state.saving || state.loading {
         rows.push(inset(status_line(state.saving)).size(Some(width), Some(20.0)));
     }
-    if state.editor_open {
-        rows.push(inset(editor(state, width - 2.0 * INSET)));
-    } else {
+    let mut list = Vec::new();
+    if !state.editor_open {
         for action in &state.actions {
-            rows.push(action_row(action, width, !state.saving && !state.loading));
+            list.push(action_row(action, width, !state.saving && !state.loading));
         }
         if state.actions.is_empty() && !state.loading {
-            rows.push(inset(
+            list.push(inset(
                 Text::new(
                     "Guarda los comandos que usas para ejecutar, compilar o probar este proyecto.",
                     theme::component_palette(),
@@ -197,7 +196,7 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
             ));
         }
         // The way to add one, under the list.
-        rows.push(Element::row(vec![
+        list.push(Element::row(vec![
             Button::new(
                 "project_action_new",
                 "Nueva acción",
@@ -222,7 +221,7 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
             })
             .collect();
         if !suggestions.is_empty() {
-            rows.push(
+            list.push(
                 Text::new("Sugeridas por el proyecto", theme::component_palette())
                     .role(TextRole::Micro)
                     .muted()
@@ -230,7 +229,7 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
                     .padding(INSET),
             );
             for preset in suggestions {
-                rows.push(
+                list.push(
                     Element::row(vec![
                         Element::column(vec![
                             Text::new(&preset.label, theme::component_palette())
@@ -255,6 +254,22 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
             }
         }
     }
+    // The list and the editor each have a slot that opens and closes on the
+    // library's spring. The one shown stands first, so it opens in its place
+    // while the other closes under it.
+    let slot = |id: &str, content: Option<Element>| Collapse::new(id, content).expand().render();
+    let editor = state
+        .editor_open
+        .then(|| inset(editor(state, width - 2.0 * INSET)));
+    let list = (!state.editor_open).then(|| Element::column(list).gap(5.0));
+    let mut views = vec![
+        slot("project_actions_editor", editor),
+        slot("project_actions_list", list),
+    ];
+    if !state.editor_open {
+        views.reverse();
+    }
+    rows.push(Element::column(views));
     if let Some(error) = &state.error {
         rows.push(inset(error_line(error)));
     }

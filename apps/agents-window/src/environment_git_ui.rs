@@ -6,7 +6,7 @@ use crate::{
     theme,
 };
 use openide_ui::{
-    Button, ButtonVariant, Card, CardDensity, Component, ControlSize, DropdownMenu,
+    Button, ButtonVariant, Card, CardDensity, Color, Component, ControlSize, DropdownMenu,
     DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, Icon, IconButton, PanelHeader,
     PopoverPlacement, RadiusRole, Separator, Text, TextArea, TextField, TextRole, Tooltip,
     TooltipPlacement,
@@ -64,9 +64,18 @@ pub(crate) fn notices(state: &EnvironmentGitUiState) -> Vec<Element> {
     rows
 }
 
+/// The surface the commit view stands on: the sidebar's, or the card's.
+fn commit_surface(sidebar: bool) -> openide_ui::ComponentPalette {
+    if sidebar {
+        theme::sidebar_palette()
+    } else {
+        crate::environment_ui::card_palette()
+    }
+}
+
 /// The commit view's heading. In the sidebar the panel has no close button.
 fn commit_header(enabled: bool, sidebar: bool, width: f32) -> Element {
-    let palette = theme::sidebar_palette();
+    let palette = commit_surface(sidebar);
     let header = PanelHeader::new("Commit", palette)
         .back("environment_git_back", "Volver a los cambios")
         .trailing(vec![IconButton::new(
@@ -112,7 +121,8 @@ fn branch_context(branch: &str, width: f32) -> Element {
     .render()
 }
 
-fn change_count(title: &str, count: usize, staged: bool, width: f32) -> Element {
+/// `well` is the fill of the count: a shade under the surface it stands on.
+fn change_count(title: &str, count: usize, staged: bool, width: f32, well: Color) -> Element {
     Element::row(vec![
         Element::truncated_text(title)
             .font_family(FontFamily::Sans)
@@ -129,7 +139,7 @@ fn change_count(title: &str, count: usize, staged: bool, width: f32) -> Element 
             })
             .center_content()
             .size(Some(44.0), Some(24.0))
-            .background(theme::PANEL)
+            .background(well)
             .radius(4.0),
     ])
     .gap(8.0)
@@ -196,10 +206,12 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
     rows.extend(notices(state));
     if let Some(snapshot) = &state.snapshot {
         rows.push(branch_context(&snapshot.branches.label, inner));
+        // The card is darker than the sidebar, so its wells are the canvas.
+        let well = if sidebar { theme::PANEL } else { theme::BACKGROUND };
         let mut changes = vec![
-            change_count("Preparados", snapshot.staged, true, inner),
-            change_count("Sin preparar", snapshot.unstaged, false, inner),
-            change_count("Nuevos", snapshot.untracked, false, inner),
+            change_count("Preparados", snapshot.staged, true, inner, well),
+            change_count("Sin preparar", snapshot.unstaged, false, inner, well),
+            change_count("Nuevos", snapshot.untracked, false, inner, well),
         ];
         if snapshot.conflicts > 0 {
             changes.push(
@@ -232,7 +244,7 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
             Button::new(
                 "dock_open:review",
                 "Revisar y preparar archivos",
-                theme::action_palette(theme::SIDEBAR, theme::FOREGROUND),
+                commit_surface(sidebar),
             )
             .icon(Icon::File)
             .variant(ButtonVariant::Ghost)
@@ -428,7 +440,7 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
                     } else {
                         "Publicar rama"
                     },
-                    theme::sidebar_palette(),
+                    commit_surface(sidebar),
                 )
                 .icon(Icon::ArrowUp)
                 .variant(ButtonVariant::Outline)
@@ -449,7 +461,7 @@ fn commit_view(state: &EnvironmentGitUiState, width: f32, locked: bool, sidebar:
 
 /// The heading of a Git panel inside the environment card.
 fn panel_header(title: &str, enabled: bool) -> Element {
-    let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
+    let palette = crate::environment_ui::card_palette();
     PanelHeader::new("", palette)
         .back("environment_git_back", "Volver al entorno")
         .leading(
@@ -611,7 +623,8 @@ pub(crate) fn build(state: &EnvironmentGitUiState, width: f32, locked: bool) -> 
                             .render(),
                         ])
                         .gap(8.0),
-                        theme::panel_card_palette(),
+                        // A well in the card, as the commit form's counts are.
+                        theme::canvas_card_palette(),
                     )
                     .density(CardDensity::Roomy)
                     .border(false)

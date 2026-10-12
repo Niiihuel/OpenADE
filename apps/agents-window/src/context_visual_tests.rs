@@ -58,7 +58,7 @@ fn usage(input: u64, output: u64) -> ModelTokenUsage {
     }
 }
 
-fn fixture(name: &str) -> view::ViewState {
+pub(crate) fn fixture(name: &str) -> view::ViewState {
     let mut state = view::tests::empty_state();
     let workspace = std::env::temp_dir().canonicalize().unwrap();
     state.workspace = workspace.display().to_string();

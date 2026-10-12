@@ -21,8 +21,10 @@ pertenecen a una revisión de Git; una selección anterior a una actualización
 no puede cambiar de carpeta.
 
 El icono Entorno está en la cabecera del chat, junto al botón del panel
-derecho. La tarjeta es un `FramedCard` de limn sobre la superficie del panel:
-la cabecera con Actualizar y Cerrar, las filas y, sobre el marco, el pie. Las
+derecho. El panel es la tarjeta: tiene la superficie del popover de Contexto
+(la paleta de menú, su borde y su radio) y el contenido se apoya directo en
+ella, sin marco ni tarjeta interior. Es un `FramedCard` plano de limn: la
+cabecera con Actualizar y Cerrar, las filas y, bajo una línea, el pie. Las
 filas son el proyecto (nombre y ruta), Local y la rama, cada una con su menú,
 y **Comparar cambios**, que abre el formulario de comparación. **Acciones del
 proyecto** y **Fuentes y herramientas** se abren en su lugar como un solo
@@ -41,7 +43,16 @@ Commit y push y Comparar cambios quedan atenuados y su tooltip dice por qué.
 El panel tiene la altura de su contenido hasta el límite que le da la
 ventana. Pasado ese límite se desplazan las filas, con la cabecera y el pie
 fijos; si no queda lugar para dos filas se desplaza la tarjeta entera. Los
-formularios de Git ocupan el panel completo, sin marco, con Volver.
+formularios de Git ocupan el panel completo, sobre la misma superficie, con
+Volver.
+
+Los bloques se abren y se cierran en su lugar con el resorte de limn. Al
+cambiar de vista (el resumen, Commit, Comparar, Crear rama o Crear worktree)
+la vista nueva se abre en su lugar con ese mismo resorte mientras la anterior
+se cierra debajo de ella, y la altura del panel acompaña a las dos; la lista
+de acciones y su editor se reemplazan igual dentro de su bloque. Los menús de
+los selectores son popovers y entran con su propia animación. Reducir
+movimiento aplica el estado final sin transición.
 
 Entorno y el panel derecho son excluyentes: abrir Entorno colapsa el panel,
 y abrir una herramienta o desplegar el panel cierra Entorno. Colapsar conserva

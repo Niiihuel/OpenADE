@@ -1063,6 +1063,61 @@ fn export_environment_visual_review() {
         shot(&state, 620.0, "compare", None);
         state.environment.workflow.panel = EnvironmentGitPanel::Overview;
     }
+    // The context popover beside the card: one surface, one border, the same
+    // corners.
+    let mut context = crate::context_visual_tests::fixture("measured-30");
+    context.composer_context_open = true;
+    let props = crate::composer_ui::ComposerProps::from_state(&context, 336.0, false, None, "", None);
+    export(
+        Element::row(vec![
+            environment_card(&state, 320.0, 344.0),
+            Element::spacer().flex(1.0),
+            Element::column(vec![
+                Element::spacer().flex(1.0),
+                crate::composer_context_ui::control(&props),
+            ]),
+        ])
+        .padding(16.0),
+        720.0,
+        420.0,
+        "environment-beside-context",
+    );
+    // Half way from the overview to the commit form, and back.
+    {
+        let size = Size::new(380.0, 620.0);
+        let root = |state: &ViewState| {
+            Element::panel(environment_card(state, 380.0, 620.0))
+                .background(theme::BACKGROUND)
+                .size(Some(380.0), Some(620.0))
+        };
+        let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root(&state));
+        tree.set_reduced_motion(false);
+        let settle = std::time::Duration::from_millis(
+            u64::from(openide_ui::tokens().motion.move_ms) * 3 / 2,
+        );
+        let mut now = std::time::Instant::now() - std::time::Duration::from_secs(10);
+        tree.layout_at(size, now);
+        for (panel, name) in [
+            (EnvironmentGitPanel::Commit, "switch-to-commit-380"),
+            (EnvironmentGitPanel::Overview, "switch-to-overview-380"),
+        ] {
+            state.environment.workflow.panel = panel;
+            tree.set_root(root(&state));
+            tree.layout_at(size, now);
+            for (step, part) in [(1, "early"), (2, "midway")] {
+                let frame = tree.layout_at(size, now + settle * step / 4);
+                crate::view::ide_visual_tests::export_shot(
+                    &frame,
+                    size,
+                    "environment-card",
+                    &format!("{name}-{part}"),
+                );
+            }
+            now += settle * 3;
+            tree.layout_at(size, now);
+        }
+        context.end_pass().textures_delta.clear();
+    }
     state.show_side_pane = false;
     export(
         build_window_view(&state, 1440.0, 900.0),
