@@ -134,6 +134,7 @@ fn export_browser_ui_visual_review() {
             "more",
             "error-startup",
             "error-missing",
+            "notice",
         ] {
             let mut state = crate::view::tests::empty_state();
             state.browser = browser_fixture();
@@ -153,6 +154,9 @@ fn export_browser_ui_visual_review() {
                     );
                 }
                 "more" => state.browser.more_open = true,
+                "notice" => {
+                    state.browser.engine_notice = Some("Falta icudtl.dat junto a libcef.so.".into());
+                }
                 "error-startup" => {
                     state.browser.started = false;
                     state.browser.error = Some("El navegador no pudo iniciarse: error while loading shared libraries: libglib-2.0.so.0".into());

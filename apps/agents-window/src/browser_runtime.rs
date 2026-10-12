@@ -86,6 +86,9 @@ pub(crate) struct BrowserSnapshot {
     pub navigating: bool,
     /// No Chrome, Chromium or Edge was found to start a context with.
     pub browser_missing: bool,
+    /// Why the context runs on the system's browser when the application
+    /// embeds one that could not start.
+    pub engine_notice: Option<Arc<str>>,
     pub url: String,
     pub title: String,
     pub error: Option<String>,
@@ -127,6 +130,7 @@ impl Default for BrowserSnapshot {
             loading: false,
             navigating: false,
             browser_missing: false,
+            engine_notice: None,
             url: "about:blank".into(),
             title: String::new(),
             error: None,
@@ -748,7 +752,7 @@ impl BrowserRuntime {
                     let scale = device_scale(launch.device_scale);
                     match cef::Embedded::start(&embedded_view, &base_dir, viewport, scale) {
                         Ok(driver) => return Ok(driver),
-                        Err(reason) => cef::report_fallback(&reason),
+                        Err(reason) => cef::report_fallback(&embedded_view, &reason),
                     }
                 }
                 let missing = |message| StartFailure {
@@ -1302,6 +1306,11 @@ impl Worker {
                     .lock()
                     .unwrap_or_else(|poison| poison.into_inner()) = driver.process_id();
                 self.driver = Some(driver);
+                #[cfg(feature = "cef")]
+                {
+                    let notice = self.handle.view.embedded.fallback();
+                    self.handle.state.lock().unwrap_or_else(|poison| poison.into_inner()).engine_notice = notice;
+                }
                 let _ = apply_reply(
                     &self.handle,
                     PageReply {

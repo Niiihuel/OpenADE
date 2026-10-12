@@ -1009,3 +1009,23 @@ fn a_typed_character_is_a_key_the_page_hears_and_other_text_is_inserted() {
     assert!(app.handle_browser_event(&key(Key::A, false, false)));
     assert!(commands.finish_next().is_none());
 }
+
+#[test]
+fn the_notice_of_an_embedded_browser_that_could_not_start_is_said_until_dismissed_and_not_again() {
+    let (_root, mut app, id) = fixture();
+    let told = |generation| BrowserSnapshot {
+        engine_notice: Some("Falta icudtl.dat junto a libcef.so.".into()),
+        ..blank(generation)
+    };
+    let commands = install_runtime(&mut app, id, told(1));
+    assert!(app.apply_browser_snapshot(id.get(), told(1)));
+    assert_eq!(app.view.browser.engine_notice.as_deref(), Some("Falta icudtl.dat junto a libcef.so."));
+    let ctx = egui::Context::default();
+    app.apply_action(UiAction::Clicked { id: "browser_notice_dismiss".into() }, &ctx);
+    assert_eq!(app.view.browser.engine_notice, None);
+    // The context still says why it runs where it runs; the panel does not
+    // repeat it, in this tab or in another started later.
+    commands.set_snapshot(told(2));
+    app.apply_browser_snapshot(id.get(), told(2));
+    assert_eq!(app.view.browser.engine_notice, None);
+}

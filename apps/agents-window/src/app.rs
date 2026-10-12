@@ -1426,6 +1426,9 @@ pub struct AgentsWindow {
     browser_wheel: browser_input_app::WheelGlide,
     // The modifier keys held this frame, as the page's pointer events carry them.
     browser_modifiers: u8,
+    // The notice of an embedded browser that could not start was dismissed:
+    // it is not said again while the application runs.
+    browser_notice_dismissed: bool,
     // The last left press a tab's page took: when, where and which click of a
     // run it was. The next one close to it in both is a double or triple click.
     browser_click: Option<(u64, Instant, f64, f64, u8)>,
@@ -4911,6 +4914,10 @@ impl AgentsWindow {
         self.view.browser.load_failed =
             snapshot.error_code.as_deref() == Some("navigation_failed");
         self.view.browser.browser_missing = snapshot.browser_missing;
+        self.view.browser.engine_notice = snapshot
+            .engine_notice
+            .filter(|_| !self.browser_notice_dismissed)
+            .map(|reason| reason.to_string());
         self.view.browser.can_go_back = snapshot.can_go_back;
         self.view.browser.can_go_forward = snapshot.can_go_forward;
         previous != self.view.browser
@@ -7016,6 +7023,7 @@ impl AgentsWindow {
             browser_pointer_down: None,
             browser_wheel: Default::default(),
             browser_modifiers: 0,
+            browser_notice_dismissed: false,
             browser_click: None,
             session_changes_worker: crate::session_changes::SessionChangesWorker::spawn().ok(),
             environment_dirty: true,
@@ -16260,6 +16268,10 @@ impl AgentsWindow {
                 "browser_reload" => self.submit_browser_command(BrowserCommand::Reload),
                 "browser_more_toggle" => self.view.browser.more_open = !self.view.browser.more_open,
                 "browser_more_dismiss" => self.view.browser.more_open = false,
+                "browser_notice_dismiss" => {
+                    self.browser_notice_dismissed = true;
+                    self.view.browser.engine_notice = None;
+                },
                 "browser_focus_url" => { self.view.browser.more_open = false; self.tree.focus("browser_url"); },
                 "browser_copy_url" => {
                     self.view.browser.more_open = false;

@@ -126,6 +126,8 @@ pub(super) struct Embedded {
     /// The frame thread's own: the canvas in the channel order a frame is
     /// built from, kept between frames.
     rgb: Mutex<Vec<u8>>,
+    /// Why this context is not on the embedded Chromium, when it was meant to be.
+    fallback: Mutex<Option<Arc<str>>>,
 }
 
 /// How CEF starts in this process. Its helper processes are this executable,
@@ -447,6 +449,10 @@ impl Embedded {
     pub(super) fn cursor(&self) -> Option<egui::CursorIcon> {
         self.page().as_ref().map(|page| cursor_icon(page.cursor()))
     }
+
+    pub(super) fn fallback(&self) -> Option<Arc<str>> {
+        self.fallback.lock().unwrap_or_else(|poison| poison.into_inner()).clone()
+    }
 }
 
 fn cursor_icon(cursor: openide_cef::Cursor) -> egui::CursorIcon {
@@ -494,13 +500,15 @@ fn cursor_icon(cursor: openide_cef::Cursor) -> egui::CursorIcon {
     }
 }
 
-/// Said once: CEF starts once per process, so a start that failed fails the
-/// same way for every later context.
-pub(super) fn report_fallback(reason: &str) {
+/// Said once on the error output: CEF starts once per process, so a start
+/// that failed fails the same way for every later context. The context keeps
+/// the reason for its panel to say.
+pub(super) fn report_fallback(view: &LiveView, reason: &str) {
     static SAID: std::sync::Once = std::sync::Once::new();
     SAID.call_once(|| {
         eprintln!("OpenIDE: el navegador embebido (CEF) no pudo iniciarse y se usa el navegador del sistema. {reason}");
     });
+    *view.embedded.fallback.lock().unwrap_or_else(|poison| poison.into_inner()) = Some(reason.into());
 }
 
 /// `agents-window --cef-probe`: starts a browser context the way the window
@@ -534,7 +542,10 @@ pub(crate) fn probe() -> i32 {
                 return Err(error);
             }
             if state.started && !runtime.handle.view.embedded.is_open() {
-                return Err("CEF no se inició; la aplicación usa el navegador del sistema.".into());
+                return Err(format!(
+                    "CEF no se inició; la aplicación usa el navegador del sistema. El panel avisa: {}",
+                    state.engine_notice.as_deref().unwrap_or("nada")
+                ));
             }
             if let Some(frame) = runtime.take_frame() {
                 return Ok((frame.size(), started.elapsed()));

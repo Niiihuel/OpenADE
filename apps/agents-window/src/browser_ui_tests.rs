@@ -353,3 +353,43 @@ fn browser_navigation_tooltips_open_below_the_toolbar() {
         );
     }
 }
+
+#[test]
+fn a_browser_that_fell_back_says_so_in_the_footer_with_its_reason_and_a_way_to_dismiss_it() {
+    const NOTICE: &str = "El navegador embebido no pudo iniciarse; se usa el del sistema.";
+    for width in [240.0, 320.0, 640.0] {
+        let mut state = state();
+        state.browser.engine_notice = Some("Falta icudtl.dat junto a libcef.so.".into());
+        let mut tree = UiTree::new(build(&state, width));
+        let frame = tree.layout(Size::new(width, 620.0));
+        // In the footer's own line: the page keeps its place and its size.
+        let page = |frame: &Frame| frame.regions.iter().find(|region| region.id == "browser_viewport").unwrap().rect;
+        let mut plain = UiTree::new(build(&self::state(), width));
+        assert_eq!(page(&frame), page(&plain.layout(Size::new(width, 620.0))));
+        assert!(texts(&frame).iter().any(|text| NOTICE.starts_with(text.trim_end_matches('…'))), "{:?}", texts(&frame));
+        assert!(!texts(&frame).contains(&"Sesión aislada · Compartida con el agente"));
+        let dismiss = frame
+            .regions
+            .iter()
+            .find(|region| region.id == "browser_notice_dismiss" && region.kind != HitKind::Hover)
+            .unwrap_or_else(|| panic!("no way to dismiss it at {width}"))
+            .rect;
+        assert!(dismiss.x >= 0.0 && dismiss.x + dismiss.width <= width && dismiss.y >= 620.0 - STATUS_HEIGHT, "{dismiss:?}");
+        let point = Point::new(dismiss.x + dismiss.width / 2.0, dismiss.y + dismiss.height / 2.0);
+        tree.handle_event(UiEvent::PointerDown(point));
+        assert_eq!(
+            tree.handle_event(UiEvent::PointerUp(point)),
+            vec![UiAction::Clicked { id: "browser_notice_dismiss".into() }]
+        );
+
+        // Anything the footer has to say about the page comes first.
+        state.browser.input_rejection = Some("La cola de entrada está llena.".into());
+        let frame = UiTree::new(build(&state, width)).layout(Size::new(width, 620.0));
+        assert!(!frame.regions.iter().any(|region| region.id == "browser_notice_dismiss"));
+        // Dismissed, the footer is the usual one.
+        state.browser.input_rejection = None;
+        state.browser.engine_notice = None;
+        let frame = UiTree::new(build(&state, width)).layout(Size::new(width, 620.0));
+        assert!(!frame.regions.iter().any(|region| region.id == "browser_notice_dismiss"));
+    }
+}

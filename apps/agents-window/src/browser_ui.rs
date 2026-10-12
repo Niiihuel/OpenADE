@@ -40,6 +40,9 @@ pub(crate) struct BrowserUiState {
     pub queued_inputs: usize,
     pub input_rejection: Option<String>,
     pub more_open: bool,
+    /// Why the page runs on the system's browser and not on the embedded
+    /// one, until the notice is dismissed.
+    pub engine_notice: Option<String>,
 }
 
 /// The live surface a browser tab's frames are presented on.
@@ -385,6 +388,10 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
             .then_some(browser.error.as_deref())
             .flatten()
     });
+    // Said while the footer has nothing else to say, and until dismissed.
+    let notice = browser.engine_notice.as_deref().filter(|_| {
+        error.is_none() && browser.queued_inputs == 0 && !browser.navigating && !browser.loading
+    });
     let text = if let Some(error) = error {
         error
             .lines()
@@ -399,21 +406,24 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
         "Cargando página…".into()
     } else if browser.loading {
         "Actualizando vista…".into()
+    } else if notice.is_some() {
+        "El navegador embebido no pudo iniciarse; se usa el del sistema.".into()
     } else {
         "Sesión aislada · Compartida con el agente".into()
     };
-    let row = Text::new(text, theme::component_palette())
-        .size(10.5)
-        .muted()
+    let small = |text: String| Text::new(text, theme::component_palette()).size(10.5).muted();
+    let row = small(text)
         .truncate()
         .render()
         .padding(3.0)
-        .size(Some(width), Some(STATUS_HEIGHT));
-    Tooltip::new(
+        .size(notice.is_none().then_some(width), Some(STATUS_HEIGHT));
+    let told = Tooltip::new(
         row,
         "browser_status",
         if error.is_some() {
             "Entrada del navegador"
+        } else if notice.is_some() {
+            "Navegador embebido"
         } else {
             "Navegador de esta conversación"
         },
@@ -421,6 +431,7 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
     )
     .description(
         error
+            .or(notice)
             .unwrap_or(
                 "Esta página pertenece a la conversación. No usa tu perfil personal del navegador.",
             )
@@ -429,7 +440,16 @@ fn status(browser: &BrowserUiState, width: f32, mode: Surface) -> Element {
             .collect::<String>(),
     )
     .max_width(360.0)
-    .render()
+    .render();
+    if notice.is_none() {
+        return told;
+    }
+    let dismiss = Element::clickable(
+        "browser_notice_dismiss",
+        small("Descartar".into()).render().padding(3.0),
+    )
+    .underline_on_hover();
+    Element::row(vec![told.flex(1.0), dismiss]).size(Some(width), Some(STATUS_HEIGHT))
 }
 
 pub(crate) fn build(state: &ViewState, width: f32) -> Element {
