@@ -14,8 +14,37 @@ use sha2::{Digest, Sha256};
 
 use crate::theme;
 
+// shortcut: an answer's body size and leading, written again because limn's
+// Markdown keeps its own private; take them from limn once it exposes them.
 const BODY_SIZE: f32 = 14.0;
+const BODY_LINE_HEIGHT: f32 = 22.0;
 const CODE_SIZE: f32 = 13.0;
+
+/// The height of a line of `size`: the body's reading leading, and the
+/// tighter one of a heading.
+fn leading(size: f32) -> f32 {
+    if size == BODY_SIZE {
+        BODY_LINE_HEIGHT
+    } else {
+        (size * 1.3).round()
+    }
+}
+
+/// The room above a block, as an answer spaces its own: a heading opens a
+/// section and keeps what follows close; everything else is a line apart.
+fn spacing(previous: Option<&MarkdownBlock>, current: &MarkdownBlock) -> f32 {
+    match (previous, current) {
+        (None, _) => 0.0,
+        (_, MarkdownBlock::Heading { .. }) => 24.0,
+        (Some(MarkdownBlock::Heading { .. }), _) => 10.0,
+        _ => 14.0,
+    }
+}
+
+/// `block` under the room it keeps from the one before it.
+fn spaced(above: f32, block: Element) -> Element {
+    Element::column(vec![Element::spacer().size(None, Some(above)), block])
+}
 const IMAGE_CACHE_ENTRIES: usize = 16;
 const IMAGE_CACHE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -88,9 +117,21 @@ pub(crate) fn build(document: &MarkdownDocument, width: f32, action_prefix: &str
     } else {
         0.0
     };
-    let mut blocks = render_blocks(&document.blocks, document, width, action_prefix);
+    let mut previous = None;
+    let mut blocks: Vec<Element> = document
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            spaced(
+                spacing(previous.replace(block), block),
+                render_block(block, document, width, action_prefix, index),
+            )
+        })
+        .collect();
     if let Some(warning) = &document.warning {
-        blocks.push(
+        blocks.push(spaced(
+            14.0,
             Element::text(warning)
                 .font_family(FontFamily::Sans)
                 .font_size(12.0)
@@ -98,7 +139,7 @@ pub(crate) fn build(document: &MarkdownDocument, width: f32, action_prefix: &str
                 .padding(10.0)
                 .background(theme::PANEL)
                 .radius(6.0),
-        );
+        ));
     }
     if blocks.is_empty() {
         blocks.push(
@@ -108,7 +149,7 @@ pub(crate) fn build(document: &MarkdownDocument, width: f32, action_prefix: &str
                 .foreground(theme::FOREGROUND_SUBTLE),
         );
     }
-    Element::column(blocks).gap(14.0).size(Some(width), None)
+    Element::column(blocks).size(Some(width), None)
 }
 
 /// Stable native focus target for an internal Markdown heading link.
@@ -145,10 +186,22 @@ fn render_block(
                 4 => 17.0,
                 _ => 15.0,
             };
-            Element::clickable(
+            let heading = Element::clickable(
                 heading_action(prefix, id),
                 inline(content, document, width, size, prefix),
-            )
+            );
+            if *level <= 2 {
+                // The title and its sections are ruled off, as GitHub and Zed do.
+                Element::column(vec![
+                    heading,
+                    Element::spacer()
+                        .size(Some(width), Some(1.0))
+                        .background(theme::BORDER),
+                ])
+                .gap(8.0)
+            } else {
+                heading
+            }
         }
         MarkdownBlock::Paragraph(content) => inline(content, document, width, BODY_SIZE, prefix),
         MarkdownBlock::Quote(blocks) => Element::row(vec![
@@ -181,15 +234,19 @@ fn render_block(
                     };
                     let marker_width = if start.is_some() { 34.0_f32 } else { 22.0 }.min(width);
                     Element::row(vec![
-                        Element::text(marker)
-                            .font_family(FontFamily::Sans)
-                            .font_size(BODY_SIZE)
-                            .foreground(if item.checked == Some(true) {
+                        // On the leading of the line it marks.
+                        Element::formatted_text(vec![TextSpan::new(
+                            marker,
+                            if item.checked == Some(true) {
                                 theme::DIFF_ADDED
                             } else {
                                 theme::FOREGROUND_SUBTLE
-                            })
-                            .size(Some(marker_width), None),
+                            },
+                            BODY_SIZE,
+                            FontFamily::Sans,
+                        )])
+                        .line_height(BODY_LINE_HEIGHT)
+                        .size(Some(marker_width), None),
                         Element::column(render_blocks(
                             &item.blocks,
                             document,
@@ -203,7 +260,7 @@ fn render_block(
                 })
                 .collect(),
         )
-        .gap(7.0)
+        .gap(4.0)
         .size(Some(width), None),
         MarkdownBlock::Code { language, source } => code(language, source, width),
         MarkdownBlock::Table { header, rows, .. } => {
@@ -261,7 +318,11 @@ fn inline(
     let mut spans = Vec::new();
     let flush = |spans: &mut Vec<TextSpan>, elements: &mut Vec<Element>| {
         if !spans.is_empty() {
-            elements.push(Element::formatted_text(std::mem::take(spans)).size(Some(width), None));
+            elements.push(
+                Element::formatted_text(std::mem::take(spans))
+                    .line_height(leading(size))
+                    .size(Some(width), None),
+            );
         }
     };
     for item in content {
@@ -472,6 +533,58 @@ mod tests {
         assert!(actions
             .iter()
             .all(|hit| hit.rect.x >= 0.0 && hit.rect.x + hit.rect.width <= 420.1));
+    }
+
+    #[test]
+    fn a_document_reads_with_an_answers_leading_and_keeps_a_heading_with_its_section() {
+        let document = openide_preview::markdown::parse(
+            "uno\n\ndos\n\n## Sección\n\ntres\n\n- punto\n- otro\n\n### Nota\n\ncuatro\n",
+        );
+        let mut tree = UiTree::new(build(&document, 420.0, "preview:7:2"));
+        let frame = tree.layout(Size::new(420.0, 900.0));
+        let y = |wanted: &str| {
+            frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Text { text, position, .. } if text == wanted => Some(position.y),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("missing {wanted}"))
+        };
+        // One line of body and the room between two paragraphs.
+        assert_eq!(y("dos") - y("uno"), BODY_LINE_HEIGHT + 14.0);
+        // A marker stands on the line it marks, and items keep close.
+        assert_eq!(y("•"), y("punto"));
+        assert_eq!(y("otro") - y("punto"), BODY_LINE_HEIGHT + 4.0);
+        // One root per source block, as the heading navigation expects.
+        assert!(matches!(&build(&document, 420.0, "preview:7:2").kind,
+            openide_ui::ElementKind::Column(blocks) if blocks.len() == document.blocks.len()));
+        // A heading is farther from what precedes it than from its own section.
+        // The first block starts at the top, so its text shows where a line's
+        // text sits in its box.
+        let top = |wanted: &str| y(wanted) - y("uno");
+        let headings: Vec<_> = frame
+            .regions
+            .iter()
+            .filter(|region| region.id.starts_with("preview:7:2:heading:"))
+            .map(|region| region.rect)
+            .collect();
+        let (section, note) = (headings[0], headings[1]);
+        assert_eq!(section.y - (top("dos") + BODY_LINE_HEIGHT), 24.0);
+        assert_eq!(note.y - (top("otro") + BODY_LINE_HEIGHT), 24.0);
+        assert_eq!(top("cuatro") - (note.y + note.height), 10.0);
+        // A ruled heading keeps its rule between itself and its section.
+        assert_eq!(top("tres") - (section.y + section.height), 8.0 + 1.0 + 10.0);
+        // The title and the sections are ruled off; a smaller heading is not.
+        let rules = frame
+            .commands
+            .iter()
+            .filter(|command| matches!(command,
+                DrawCommand::FillRect { rect, color, .. }
+                    if *color == theme::BORDER && rect.height == 1.0 && rect.width == 420.0))
+            .count();
+        assert_eq!(rules, 1);
     }
 
     #[test]

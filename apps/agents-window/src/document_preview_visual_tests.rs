@@ -833,3 +833,80 @@ fn export_markdown_diagrams_visual_review() {
         assert!(crate::rich_text::toggle_diagram_source("chat_diagram_source:close"));
     }
 }
+
+#[test]
+#[ignore = "exports a Markdown preview of prose, lists, a quote, a table and code as PNG under docs/ui-separation/shots/markdown-reading"]
+fn export_markdown_reading_visual_review() {
+    let directory = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/ui-separation/shots/markdown-reading"
+    ));
+    let elements = "# Aprobaciones y selección pendiente\n\n\
+        Las decisiones son permitir una vez, denegar y permitir la misma operación en la sesión. Esta última conserva el alcance \
+        existente del harness: herramienta, argumentos y contexto; no equivale a autorizar todas las llamadas de una herramienta.\n\n\
+        El host valida conversación, proyecto, subagente y solicitud antes de cada decisión.\n\n\
+        ## Elección para el siguiente mensaje\n\n\
+        El selector de modelo, esfuerzo y permisos sigue disponible durante una respuesta. La elección se presenta como «Para el \
+        próximo mensaje», con «Deshacer». Volver a elegir reemplaza la selección pendiente.\n\n\
+        - Se aplica cuando termina el worker del turno.\n- Antes de aplicar se vuelven a validar el catálogo y los permisos guardados, \
+        y el consentimiento de acceso completo, que es lo que más tarda.\n  - Si ya no es válida, queda un aviso en el composer.\n\
+        - Cambiar de conversación la descarta.\n\n\
+        1. Abrí el selector.\n2. Elegí un modelo.\n3. Enviá el mensaje.\n\n\
+        - [x] Selector pendiente\n- [ ] Validación antes de aplicar\n\n\
+        > La decisión siempre corresponde a los argumentos completos.\n\n\
+        ### Historial y cierre\n\n\
+        `DismissButton` reutiliza `Kbd` para el cierre visible `Esc` y restaura el foco. Más en la [documentación](./alerts.md).\n\n\
+        ```rust\nfn decide(request: &Request) -> Decision {\n    Decision::AllowOnce\n}\n```\n\n\
+        | Decisión | Alcance |\n|---|---|\n| Permitir una vez | Esta llamada |\n| Permitir en la sesión | La misma operación |\n\n\
+        ---\n\nLas pruebas cubren estados de permiso y replay.\n";
+    let prose = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/approvals-and-pending-selection.md"
+    ))
+    .unwrap();
+    for (name, source) in [("elements", elements), ("prose", prose.as_str())] {
+        let mut state = markdown_geometry_fixture();
+        state.markdown_preview = None;
+        let preview = state.document_preview.as_mut().unwrap();
+        preview.mode = PreviewMode::Preview;
+        preview.document = Some(Arc::new(Document::Markdown(openide_preview::markdown::parse(source))));
+        for size in [Size::new(1440.0, 900.0), Size::new(520.0, 680.0)] {
+            let (context, mut tree) = view::ide_visual_tests::native_tree(view::build_window_view(
+                &state,
+                size.width,
+                size.height,
+            ));
+            export_to(directory, &tree.layout(size), size, name);
+            context.end_pass().textures_delta.clear();
+        }
+    }
+}
+
+#[test]
+fn a_markdown_document_keeps_to_an_answers_reading_width_centered_in_its_pane() {
+    let mut state = markdown_geometry_fixture();
+    state.markdown_preview = None;
+    state.document_preview.as_mut().unwrap().mode = PreviewMode::Preview;
+    for size in [Size::new(2400.0, 900.0), Size::new(520.0, 680.0)] {
+        let (context, mut tree) = view::ide_visual_tests::native_tree(view::build_window_view(
+            &state,
+            size.width,
+            size.height,
+        ));
+        let frame = tree.layout(size);
+        let pane = region(&frame, "document_preview_scroll:101");
+        let heading = frame
+            .regions
+            .iter()
+            .find(|region| region.id.contains(":heading:"))
+            .expect("the document's title")
+            .rect;
+        // As wide as an answer, or the pane inside a page's margins.
+        let width = (pane.width - 48.0).min(crate::session_surface::READING_WIDTH);
+        assert_eq!(heading.width, width, "{size:?}");
+        let (left, right) = (heading.x - pane.x, pane.x + pane.width - heading.x - heading.width);
+        assert!((left - right).abs() < 0.5 && left >= 24.0, "{left} {right}");
+        assert_eq!(heading.y - pane.y, 24.0);
+        context.end_pass().textures_delta.clear();
+    }
+}
