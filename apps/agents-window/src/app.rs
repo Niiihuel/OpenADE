@@ -20940,6 +20940,18 @@ impl eframe::App for AgentsWindow {
                     || (p.y < split_y && dock.right_split_x.is_some_and(|right| (p.x - right).abs() <= 5.0))
             })
         };
+        // An embedded page says which pointer it wants under the window's.
+        // egui goes back to the arrow by itself once it is over anything else.
+        #[cfg(feature = "cef")]
+        if let Some(icon) = pointer
+            .filter(|p| {
+                self.browser_takes_input()
+                    && self.tree.frame().hit_test(openide_ui::Point::new(p.x, p.y)) == Some("browser_viewport")
+            })
+            .and_then(|_| self.browsers.get(&self.active_browser_id()?)?.cursor())
+        {
+            ctx.set_cursor_icon(icon);
+        }
         let can_resize = !workflow_modal_open && !self.tree.has_open_popover();
         if can_resize && (near_bottom || self.dock_drag == Some(DockDrag::Bottom)) {
             ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);

@@ -916,6 +916,11 @@ impl BrowserRuntime {
     pub(crate) fn visible(&self) -> bool {
         self.handle.visible.load(Ordering::Acquire)
     }
+    /// The pointer an embedded page asks for where the window's last was.
+    #[cfg(feature = "cef")]
+    pub(crate) fn cursor(&self) -> Option<eframe::egui::CursorIcon> {
+        self.handle.view.embedded.cursor()
+    }
     /// The newest decoded frame of the page, once; older ones were replaced.
     pub(crate) fn take_frame(&self) -> Option<limn_egui::SurfaceFrame> {
         self.handle
@@ -1591,6 +1596,13 @@ fn execute(
     let agent = pending.include_aria;
     let mut reply = PageReply::default();
     let mut options = SnapshotOptions::default();
+    // The list of a <select> on an embedded page is Chromium's to click.
+    // The page is still told of a button that comes up over it: it may have
+    // seen it go down.
+    #[cfg(feature = "cef")]
+    if !agent && view.embedded.takes_pointer(&pending.command) && !matches!(pending.command, PointerUp { .. }) {
+        return Ok(reply);
+    }
     match &pending.command {
         Navigate { url } => driver.navigate(url)?,
         Back => driver.back()?,

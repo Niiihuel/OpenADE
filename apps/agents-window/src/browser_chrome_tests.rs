@@ -944,6 +944,141 @@ fn value(session: &Session, expression: &str) -> Value {
     serde_json::from_str(read.content[1]["text"].as_str().unwrap()).unwrap()
 }
 
+/// The pixels of a frame the view was handed, as its texture gets them.
+fn pixels(frame: limn_egui::SurfaceFrame) -> Arc<eframe::egui::ColorImage> {
+    let size = frame.size();
+    let ctx = eframe::egui::Context::default();
+    let input = eframe::egui::RawInput {
+        max_texture_side: Some(8192),
+        ..Default::default()
+    };
+    ctx.run_ui(input, |_| {}).textures_delta.clear();
+    assert!(limn_egui::present_surface(&ctx, "pixels", frame));
+    let mut delta = ctx.run_ui(Default::default(), |_| {}).textures_delta;
+    limn_egui::forget_surface("pixels");
+    let found = delta.set.values().flatten().find_map(|delta| match &delta.image {
+        eframe::egui::ImageData::Color(image) if image.size == size => Some(image.clone()),
+        _ => None,
+    });
+    delta.clear();
+    found.expect("the frame reached its texture")
+}
+
+#[test]
+#[ignore = "opt-in: launches a real Chrome against local fixture pages"]
+fn real_chrome_draws_the_list_of_a_select_and_takes_keys_on_it() {
+    for scale in [2.0, 1.0] {
+        the_list_of_a_select(Chromium::Launched, scale);
+    }
+}
+
+/// The list of a `<select>` is a widget of its own, which Chromium paints
+/// apart from the page: the view shows it where it opens, at the page's
+/// scale, and what is done on it chooses.
+fn the_list_of_a_select(engine: Chromium, scale: f32) {
+    let origin = site();
+    let session = launch(engine, (640, 480), scale);
+    session.open(format!("{origin}/form"));
+    // Chromium drops what is clicked on a document it has not painted yet.
+    session.settle(Duration::from_millis(300));
+    let click = |x: f64, y: f64| {
+        let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+        session.window(BrowserCommand::PointerDown { x, y, button, clicks, modifiers }).unwrap();
+        session.window(BrowserCommand::PointerUp { x, y, button, clicks, modifiers }).unwrap();
+    };
+    let press = |key: &str| session.window(BrowserCommand::Press { key: key.into() }).unwrap();
+    let chosen = || value(&session, "document.querySelector('#pick').value");
+    // The select is 200 × 30 at (20, 20) and its list opens under it, in rows
+    // of 26.5 CSS pixels. The chosen row of an open list is blue.
+    let row = |index: f64| 50.0 + 26.5 * (index + 0.5);
+    let shown = std::cell::RefCell::new(None);
+    let blue = |what: &str, index: f64, wanted: bool| {
+        session.until(what, || {
+            if let Some(frame) = session.runtime.take_frame() {
+                *shown.borrow_mut() = Some(pixels(frame));
+            }
+            shown.borrow().as_ref().is_some_and(|image: &Arc<eframe::egui::ColorImage>| {
+                let colour = image[((150.0 * scale) as usize, (row(index) as f32 * scale) as usize)];
+                (colour.b() > colour.r().saturating_add(60)) == wanted
+            })
+        });
+    };
+
+    // Opened with the pointer, it is drawn under the select.
+    click(100.0, 35.0);
+    blue("the list under the select, its first row chosen", 0.0, true);
+    #[cfg(feature = "cef")]
+    if engine == Chromium::Embedded {
+        let (at, size) = session.runtime.handle.view.embedded.popup_box().expect("the list is open");
+        assert_eq!((at, size[0]), (((20.0 * scale) as i32, (50.0 * scale) as i32), (200.0 * scale) as usize), "{size:?}");
+    }
+    // The keyboard moves along it and chooses, and it is gone.
+    press("ArrowDown");
+    press("ArrowDown");
+    blue("the third row chosen", 2.0, true);
+    press("Enter");
+    assert_eq!(chosen(), "Opción 2");
+    blue("the page again where the list was", 2.0, false);
+    // Escape closes it with nothing else chosen.
+    click(100.0, 35.0);
+    blue("the list again", 2.0, true);
+    press("Escape");
+    blue("the page again", 2.0, false);
+    assert_eq!(chosen(), "Opción 2");
+
+    click(100.0, 35.0);
+    blue("the list once more", 2.0, true);
+    match engine {
+        // The launched Chrome draws the list but its protocol's clicks only
+        // ever reach the page under it: one there closes the list.
+        Chromium::Launched => {
+            click(100.0, row(4.0));
+            blue("the page again", 2.0, false);
+            assert_eq!(chosen(), "Opción 2");
+        }
+        #[cfg(feature = "cef")]
+        Chromium::Embedded => {
+            let embedded = &session.runtime.handle.view.embedded;
+            // The pointer over a row, and a click on it.
+            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
+            blue("the row under the pointer", 4.0, true);
+            click(100.0, row(4.0));
+            session.until("the list to close", || embedded.popup_box().is_none());
+            assert_eq!(chosen(), "Opción 4");
+            blue("the page again", 4.0, false);
+            // The wheel turns the list, not the page under it.
+            click(100.0, 35.0);
+            session.until("the list to open", || embedded.popup_box().is_some());
+            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(4.0), modifiers: 0 }).unwrap();
+            session.window(BrowserCommand::Scroll { dx: 0.0, dy: 265.0, modifiers: 0 }).unwrap();
+            session.settle(Duration::from_millis(500));
+            click(100.0, row(4.0));
+            session.until("the list to close", || embedded.popup_box().is_none());
+            let further: u32 = chosen().as_str().unwrap().trim_start_matches("Opción ").parse().unwrap();
+            assert!(further >= 10, "the row under the pointer is now Opción {further}");
+            assert_eq!(value(&session, "scrollY"), 0);
+            // Pressed on the select, dragged to a row and released there: the
+            // row is chosen, and the page knows the button came up.
+            let (button, clicks, modifiers) = (MouseButton::Left, 1, 0);
+            session.window(BrowserCommand::PointerDown { x: 100.0, y: 35.0, button, clicks, modifiers }).unwrap();
+            session.until("the list to open", || embedded.popup_box().is_some());
+            session.window(BrowserCommand::PointerMove { x: 100.0, y: row(1.0), modifiers }).unwrap();
+            session.window(BrowserCommand::PointerUp { x: 100.0, y: row(1.0), button, clicks, modifiers }).unwrap();
+            session.until("the list to close", || embedded.popup_box().is_none());
+            assert_eq!(chosen(), "Opción 1");
+            session.window(BrowserCommand::PointerMove { x: 500.0, y: 400.0, modifiers }).unwrap();
+            session.until("the page to hear the pointer move", || value(&session, "window.buttons") == 0);
+            // A list left open goes with the view, and comes back with it.
+            click(100.0, 35.0);
+            session.until("the list to open", || embedded.popup_box().is_some());
+            session.runtime.set_visible(false);
+            session.until("the hidden view to let go of it", || embedded.popup_box().is_none());
+            session.runtime.set_visible(true);
+            session.until("the list of the view shown again", || embedded.popup_box().is_some());
+        }
+    }
+}
+
 #[test]
 #[ignore = "opt-in: launches a real Chrome against local fixture pages"]
 fn real_chrome_takes_modifier_keys_with_the_pointer_and_the_wheel() {
@@ -1423,6 +1558,15 @@ fn real_cef_measurements_of_the_live_view_and_of_what_the_browser_adds() {
 #[cfg(feature = "cef")]
 #[test]
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_draws_the_list_of_a_select_and_takes_keys_the_pointer_and_the_wheel_on_it() {
+    for scale in [2.0, 1.0] {
+        the_list_of_a_select(Chromium::Embedded, scale);
+    }
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_takes_modifier_keys_with_the_pointer_and_the_wheel() {
     modifier_keys_with_the_pointer_and_the_wheel(Chromium::Embedded);
 }
@@ -1432,4 +1576,27 @@ fn real_cef_takes_modifier_keys_with_the_pointer_and_the_wheel() {
 #[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
 fn real_cef_takes_what_a_spanish_keyboard_types_and_its_editing_keys() {
     what_a_spanish_keyboard_types(Chromium::Embedded);
+}
+
+#[cfg(feature = "cef")]
+#[test]
+#[ignore = "opt-in: starts the embedded Chromium, windowless, against local fixture pages"]
+fn real_cef_says_which_pointer_the_page_asks_for_under_the_windows() {
+    use eframe::egui::CursorIcon;
+    let origin = site();
+    let session = launch(Chromium::Embedded, (640, 480), 2.0);
+    session.open(format!("{origin}/form"));
+    // Chromium drops what is clicked on a document it has not painted yet.
+    session.settle(Duration::from_millis(300));
+    for (what, x, y, icon) in [
+        ("a link", 320.0, 30.0, CursorIcon::PointingHand),
+        ("a line of text", 60.0, 95.0, CursorIcon::Text),
+        ("what is not allowed", 450.0, 95.0, CursorIcon::NotAllowed),
+        ("a column divider", 450.0, 155.0, CursorIcon::ResizeColumn),
+        ("a field", 60.0, 150.0, CursorIcon::Text),
+        ("the page itself", 600.0, 440.0, CursorIcon::Default),
+    ] {
+        session.window(BrowserCommand::PointerMove { x, y, modifiers: 0 }).unwrap();
+        session.until(&format!("the pointer of {what}"), || session.runtime.cursor() == Some(icon));
+    }
 }

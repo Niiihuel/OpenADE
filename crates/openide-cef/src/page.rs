@@ -23,14 +23,21 @@ const MESSAGE_BACKLOG: usize = 256;
 /// Leading bytes kept of a message over the transport's limit: its `id`.
 const OVERSIZED_PREFIX: usize = 256;
 
-/// One paint of a page by Chromium's software compositor. The pixels are
-/// valid only during the call.
+/// One paint by Chromium's software compositor. The pixels are valid only
+/// during the call.
 pub struct Paint<'a> {
     pub width: u32,
     pub height: u32,
-    /// The whole view: rows of premultiplied BGRA, top to bottom.
+    /// Rows of premultiplied BGRA, top to bottom.
     pub bgra: &'a [u8],
+    /// `None` when the pixels are the whole view. A widget Chromium paints
+    /// apart, such as the list of a `<select>`, says where its top-left
+    /// corner goes in the view, in device pixels; without pixels, it closed.
+    pub popup: Option<(i32, i32)>,
 }
+
+/// The pointer a page asks for, as CEF names it.
+pub use cef::sys::cef_cursor_type_t as Cursor;
 
 /// CEF's objects are reference counted across threads and say which thread
 /// each call needs; cef-rs leaves stating that to the embedder.
@@ -45,6 +52,9 @@ struct Core {
     height: AtomicI32,
     scale: f32,
     paint: Box<dyn Fn(&Paint) + Send + Sync>,
+    /// Where the widget painted apart goes in the view, in device pixels.
+    popup: Mutex<(i32, i32)>,
+    cursor: Mutex<CursorType>,
     state: Mutex<State>,
     changed: Condvar,
 }
@@ -62,6 +72,10 @@ struct State {
     closed: bool,
 }
 
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
 /// Releasing the last reference to a CEF object may call back into a handler
 /// of this file, which locks the state again: what leaves the state is
 /// dropped only after the lock is.
@@ -71,7 +85,7 @@ fn outside_the_lock<T>(taken: T) {
 
 impl Core {
     fn state(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|poison| poison.into_inner())
+        lock(&self.state)
     }
 
     fn view(&self) -> Rect {
@@ -161,15 +175,49 @@ wrap_render_handler! {
             width: c_int,
             height: c_int,
         ) {
-            // The page itself, not the list of a <select>.
-            if type_ != PaintElementType::default() || buffer.is_null() || width <= 0 || height <= 0 {
+            if buffer.is_null() || width <= 0 || height <= 0 {
                 return;
             }
             let (width, height) = (width as u32, height as u32);
-            // Always the whole view. The dirty rectangles are not passed on:
+            // The page, or the list of a <select> that goes over it.
+            let popup = (type_ != PaintElementType::default()).then(|| *lock(&self.core.popup));
+            // Always the whole of it. The dirty rectangles are not passed on:
             // the embedder shows whole frames.
             let bgra = unsafe { std::slice::from_raw_parts(buffer, width as usize * height as usize * 4) };
-            (self.core.paint)(&Paint { width, height, bgra });
+            (self.core.paint)(&Paint { width, height, bgra, popup });
+        }
+
+        fn on_popup_show(&self, _browser: Option<&mut Browser>, show: c_int) {
+            if show == 0 {
+                (self.core.paint)(&Paint { width: 0, height: 0, bgra: &[], popup: Some((0, 0)) });
+            }
+        }
+
+        fn on_popup_size(&self, _browser: Option<&mut Browser>, rect: Option<&Rect>) {
+            // In CSS pixels of the view; its paint follows.
+            if let Some(rect) = rect {
+                let device = |css: c_int| (css as f32 * self.core.scale).round() as i32;
+                *lock(&self.core.popup) = (device(rect.x), device(rect.y));
+            }
+        }
+    }
+}
+
+wrap_display_handler! {
+    struct Display {
+        core: Arc<Core>,
+    }
+    impl DisplayHandler {
+        fn on_cursor_change(
+            &self,
+            _browser: Option<&mut Browser>,
+            _cursor: std::os::raw::c_ulong,
+            type_: CursorType,
+            _custom_cursor_info: Option<&CursorInfo>,
+        ) -> c_int {
+            // There is no window to set it on: whoever shows the page does.
+            *lock(&self.core.cursor) = type_;
+            1
         }
     }
 }
@@ -344,6 +392,7 @@ wrap_download_handler! {
 wrap_client! {
     struct PageClient {
         render: RenderHandler,
+        display: DisplayHandler,
         life: LifeSpanHandler,
         dialogs: JsdialogHandler,
         files: DialogHandler,
@@ -353,6 +402,9 @@ wrap_client! {
     impl Client {
         fn render_handler(&self) -> Option<RenderHandler> {
             Some(self.render.clone())
+        }
+        fn display_handler(&self) -> Option<DisplayHandler> {
+            Some(self.display.clone())
         }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(self.life.clone())
@@ -423,6 +475,8 @@ impl Page {
             height: AtomicI32::new(size.1 as i32),
             scale,
             paint: Box::new(paint),
+            popup: Mutex::default(),
+            cursor: Mutex::default(),
             state: Mutex::new(State {
                 messages: Some(messages),
                 ..State::default()
@@ -444,6 +498,7 @@ impl Page {
         };
         let mut client = PageClient::new(
             Render::new(core.clone()),
+            Display::new(core.clone()),
             Life::new(core.clone()),
             Dialogs::new(core.clone()),
             Files::new(),
@@ -520,14 +575,38 @@ impl Page {
         self.host(|host| host.set_windowless_frame_rate(frame_rate as c_int));
     }
 
-    /// Asks for a paint of the whole view, also of a page that did not change.
+    /// Asks for a paint of the whole view, and of a widget open over it,
+    /// also when nothing changed.
     pub fn invalidate(&self) {
-        self.host(|host| host.invalidate(PaintElementType::default()));
+        self.host(|host| {
+            host.invalidate(PaintElementType::default());
+            host.invalidate(sys::cef_paint_element_type_t::PET_POPUP.into());
+        });
     }
 
-    /// CEF's own wheel event at a point of the view, in CSS pixels. The
-    /// browser's input goes through the driver; this exists to measure one
-    /// against the other.
+    /// The pointer the page asks for where the pointer last was.
+    pub fn cursor(&self) -> Cursor {
+        *lock(&self.core.cursor).as_ref()
+    }
+
+    // CEF's own pointer events at a point of the view, in CSS pixels. The
+    // browser's input goes through the driver, whose events only ever reach
+    // the page: these also reach a widget Chromium paints apart, when the
+    // point is on it.
+
+    pub fn pointer_move(&self, x: i32, y: i32) {
+        let event = MouseEvent { x, y, modifiers: 0 };
+        self.host(|host| host.send_mouse_move_event(Some(&event), 0));
+    }
+
+    /// The left button going down, or coming `up`. `clicks` is 2 for the
+    /// second press of a double click.
+    pub fn pointer_button(&self, x: i32, y: i32, up: bool, clicks: u8) {
+        let event = MouseEvent { x, y, modifiers: 0 };
+        self.host(|host| host.send_mouse_click_event(Some(&event), MouseButtonType::default(), up.into(), clicks.into()));
+    }
+
+    /// A turn of the wheel. CEF counts one towards the user as negative.
     pub fn wheel(&self, x: i32, y: i32, dx: i32, dy: i32) {
         let event = MouseEvent { x, y, modifiers: 0 };
         self.host(|host| host.send_mouse_wheel_event(Some(&event), dx, dy));

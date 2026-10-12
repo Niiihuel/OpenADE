@@ -8,6 +8,7 @@
 //! paint the view has not taken is painted over by the next.
 
 use super::*;
+use eframe::egui;
 use std::hash::Hasher;
 use std::sync::atomic::AtomicU32;
 
@@ -84,6 +85,37 @@ struct Canvas {
     rate: u32,
     /// What the canvas held, all of it shown, when an agent capture began.
     before_capture: Option<u64>,
+    /// A widget Chromium paints apart, over the page: the list of a `<select>`.
+    popup: Option<Popup>,
+    /// Where the window's pointer last was on the page, in CSS pixels.
+    pointer: (f64, f64),
+}
+
+struct Popup {
+    bgra: Vec<u8>,
+    size: [usize; 2],
+    /// Where its top-left corner goes in the view. All in device pixels.
+    at: (i32, i32),
+}
+
+/// Draws the rows of `popup` that fall inside a view of `size` over it.
+fn overlay(rgb: &mut [u8], size: [usize; 2], popup: &Popup) {
+    let (left, top) = (popup.at.0.max(0) as usize, popup.at.1.max(0) as usize);
+    // What of the popup lies left of or above the view is not drawn.
+    let (skip_x, skip_y) = ((-popup.at.0).max(0) as usize, (-popup.at.1).max(0) as usize);
+    let width = popup.size[0].saturating_sub(skip_x).min(size[0].saturating_sub(left));
+    for row in skip_y..popup.size[1].min(skip_y + size[1].saturating_sub(top)) {
+        let from = (row * popup.size[0] + skip_x) * 4;
+        let to = ((top + row - skip_y) * size[0] + left) * 3;
+        let pixels = popup.bgra[from..from + width * 4].chunks_exact(4);
+        for (rgb, bgra) in rgb[to..to + width * 3].chunks_exact_mut(3).zip(pixels) {
+            // Premultiplied: what shows through is the page under it.
+            let under = 255 - u16::from(bgra[3]);
+            for (channel, colour) in rgb.iter_mut().zip([bgra[2], bgra[1], bgra[0]]) {
+                *channel = colour.saturating_add((u16::from(*channel) * under / 255) as u8);
+            }
+        }
+    }
 }
 
 /// The embedded page of one context, when it runs on one.
@@ -218,9 +250,19 @@ impl Embedded {
         if !canvas.visible {
             return;
         }
-        canvas.size = [paint.width as usize, paint.height as usize];
-        canvas.bgra.clear();
-        canvas.bgra.extend_from_slice(paint.bgra);
+        let size = [paint.width as usize, paint.height as usize];
+        if let Some(at) = paint.popup {
+            let bgra = paint.bgra.to_vec();
+            canvas.popup = (!bgra.is_empty()).then_some(Popup { bgra, size, at });
+            // Drawn over a page: one that was never painted has none to show.
+            if canvas.bgra.is_empty() {
+                return;
+            }
+        } else {
+            canvas.size = size;
+            canvas.bgra.clear();
+            canvas.bgra.extend_from_slice(paint.bgra);
+        }
         canvas.dirty = true;
         drop(canvas);
         view.feed().woken = true;
@@ -263,6 +305,9 @@ impl Embedded {
         rgb.resize(canvas.bgra.len() / 4 * 3, 0);
         bgra_to_rgb(&canvas.bgra, &mut rgb);
         let (size, scale) = (canvas.size, canvas.scale);
+        if let Some(popup) = &canvas.popup {
+            overlay(&mut rgb, size, popup);
+        }
         // CEF may paint again while the frame is built.
         drop(canvas);
         limn_egui::SurfaceFrame::from_rgb(size, &rgb, scale)
@@ -290,6 +335,7 @@ impl Embedded {
             // A hidden page takes no paint, and keeps none: shown again it
             // is painted whole.
             canvas.bgra = Vec::new();
+            canvas.popup = None;
             canvas.dirty = false;
         }
         drop(canvas);
@@ -353,6 +399,98 @@ impl Embedded {
         if let Some(page) = &*self.page() {
             page.wheel(x, y, 0, dy);
         }
+    }
+
+    /// The window's pointer on a widget Chromium paints apart: the driver's
+    /// events only ever reach the page under it, which closes the widget, so
+    /// these go to Chromium itself. True when `command` was one of them.
+    pub(super) fn takes_pointer(&self, command: &BrowserCommand) -> bool {
+        let mut canvas = self.canvas();
+        if let BrowserCommand::PointerMove { x, y, .. }
+        | BrowserCommand::PointerDown { x, y, .. }
+        | BrowserCommand::PointerUp { x, y, .. } = command
+        {
+            canvas.pointer = (*x, *y);
+        }
+        let (x, y) = canvas.pointer;
+        let device = |css: f64| (css * f64::from(canvas.scale)) as i32;
+        let over = canvas.popup.as_ref().is_some_and(|popup| {
+            let inside = |point: i32, from: i32, length: usize| (from..from + length as i32).contains(&point);
+            inside(device(x), popup.at.0, popup.size[0]) && inside(device(y), popup.at.1, popup.size[1])
+        });
+        drop(canvas);
+        let page = self.page();
+        let (Some(page), true) = (&*page, over) else {
+            return false;
+        };
+        let (x, y) = (x as i32, y as i32);
+        match command {
+            BrowserCommand::PointerMove { .. } => page.pointer_move(x, y),
+            // Only the button that chooses: the others mean nothing there.
+            BrowserCommand::PointerDown { button: MouseButton::Left, clicks, .. } => page.pointer_button(x, y, false, *clicks),
+            BrowserCommand::PointerUp { button: MouseButton::Left, clicks, .. } => page.pointer_button(x, y, true, *clicks),
+            BrowserCommand::PointerDown { .. } | BrowserCommand::PointerUp { .. } => {}
+            // CEF counts a turn towards the user as negative.
+            BrowserCommand::Scroll { dx, dy, .. } => page.wheel(x, y, -dx.round() as i32, -dy.round() as i32),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Where a widget painted apart is over the page and how large, in device pixels.
+    #[cfg(test)]
+    pub(super) fn popup_box(&self) -> Option<((i32, i32), [usize; 2])> {
+        self.canvas().popup.as_ref().map(|popup| (popup.at, popup.size))
+    }
+
+    /// The pointer the page asks for under the window's, as the window shows it.
+    pub(super) fn cursor(&self) -> Option<egui::CursorIcon> {
+        self.page().as_ref().map(|page| cursor_icon(page.cursor()))
+    }
+}
+
+fn cursor_icon(cursor: openide_cef::Cursor) -> egui::CursorIcon {
+    use egui::CursorIcon as Icon;
+    use openide_cef::Cursor::*;
+    match cursor {
+        CT_CROSS => Icon::Crosshair,
+        CT_HAND => Icon::PointingHand,
+        CT_IBEAM => Icon::Text,
+        CT_WAIT => Icon::Wait,
+        CT_HELP => Icon::Help,
+        CT_EASTRESIZE => Icon::ResizeEast,
+        CT_NORTHRESIZE => Icon::ResizeNorth,
+        CT_NORTHEASTRESIZE => Icon::ResizeNorthEast,
+        CT_NORTHWESTRESIZE => Icon::ResizeNorthWest,
+        CT_SOUTHRESIZE => Icon::ResizeSouth,
+        CT_SOUTHEASTRESIZE => Icon::ResizeSouthEast,
+        CT_SOUTHWESTRESIZE => Icon::ResizeSouthWest,
+        CT_WESTRESIZE => Icon::ResizeWest,
+        CT_NORTHSOUTHRESIZE => Icon::ResizeVertical,
+        CT_EASTWESTRESIZE => Icon::ResizeHorizontal,
+        CT_NORTHEASTSOUTHWESTRESIZE => Icon::ResizeNeSw,
+        CT_NORTHWESTSOUTHEASTRESIZE => Icon::ResizeNwSe,
+        CT_COLUMNRESIZE => Icon::ResizeColumn,
+        CT_ROWRESIZE => Icon::ResizeRow,
+        CT_MIDDLEPANNING | CT_MIDDLE_PANNING_VERTICAL | CT_MIDDLE_PANNING_HORIZONTAL | CT_EASTPANNING
+        | CT_NORTHPANNING | CT_NORTHEASTPANNING | CT_NORTHWESTPANNING | CT_SOUTHPANNING
+        | CT_SOUTHEASTPANNING | CT_SOUTHWESTPANNING | CT_WESTPANNING => Icon::AllScroll,
+        CT_MOVE => Icon::Move,
+        CT_VERTICALTEXT => Icon::VerticalText,
+        CT_CELL => Icon::Cell,
+        CT_CONTEXTMENU => Icon::ContextMenu,
+        CT_ALIAS => Icon::Alias,
+        CT_PROGRESS => Icon::Progress,
+        CT_NODROP => Icon::NoDrop,
+        CT_COPY => Icon::Copy,
+        CT_NONE => Icon::None,
+        CT_NOTALLOWED => Icon::NotAllowed,
+        CT_ZOOMIN => Icon::ZoomIn,
+        CT_ZOOMOUT => Icon::ZoomOut,
+        CT_GRAB => Icon::Grab,
+        CT_GRABBING => Icon::Grabbing,
+        // The arrow, and a picture of the page's own, which is not shown.
+        _ => Icon::Default,
     }
 }
 
@@ -430,7 +568,42 @@ pub(crate) fn probe() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{accept_languages, display_rate};
+    use super::{accept_languages, display_rate, overlay, Popup};
+
+    #[test]
+    fn a_widget_painted_apart_goes_over_the_page_where_it_says_and_only_inside_the_view() {
+        // A view of 4 × 3 grey pixels and a list of 2 × 2: one row opaque
+        // red, one half-transparent blue, premultiplied as Chromium paints.
+        let page = || vec![100u8; 4 * 3 * 3];
+        let popup = |at| Popup {
+            bgra: vec![0, 0, 255, 255, 0, 0, 255, 255, 128, 0, 0, 128, 128, 0, 0, 128],
+            size: [2, 2],
+            at,
+        };
+        let pixel = |rgb: &[u8], x: usize, y: usize| [rgb[(y * 4 + x) * 3], rgb[(y * 4 + x) * 3 + 1], rgb[(y * 4 + x) * 3 + 2]];
+        let mut rgb = page();
+        overlay(&mut rgb, [4, 3], &popup((1, 1)));
+        assert_eq!([pixel(&rgb, 1, 1), pixel(&rgb, 2, 1)], [[255, 0, 0]; 2]);
+        // The page shows through what is not opaque.
+        assert_eq!(pixel(&rgb, 1, 2), [49, 49, 177]);
+        for (x, y) in [(0, 0), (0, 1), (3, 1), (3, 2), (1, 0)] {
+            assert_eq!(pixel(&rgb, x, y), [100; 3], "({x}, {y}) is the page's");
+        }
+        // Past an edge only what is inside is drawn, and nothing wraps.
+        let mut rgb = page();
+        overlay(&mut rgb, [4, 3], &popup((3, 2)));
+        assert_eq!(pixel(&rgb, 3, 2), [255, 0, 0]);
+        assert_eq!(rgb.iter().filter(|channel| **channel != 100).count(), 3);
+        let mut rgb = page();
+        overlay(&mut rgb, [4, 3], &popup((-1, -1)));
+        assert_eq!(pixel(&rgb, 0, 0), [49, 49, 177]);
+        assert_eq!(rgb.iter().filter(|channel| **channel != 100).count(), 3);
+        for outside in [(4, 0), (0, 3), (-2, 0), (0, -2), (-9, -9), (9, 9)] {
+            let mut rgb = page();
+            overlay(&mut rgb, [4, 3], &popup(outside));
+            assert_eq!(rgb, page(), "{outside:?}");
+        }
+    }
 
     #[test]
     fn the_windows_quick_frames_say_the_displays_refresh_rate() {
