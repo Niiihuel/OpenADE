@@ -485,10 +485,10 @@ impl Page {
             host.0.set_focus(1);
         }
         drop(state);
-        PAGES
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .push(Arc::downgrade(&page.core));
+        let mut pages = PAGES.lock().unwrap_or_else(|poison| poison.into_inner());
+        pages.retain(|open| open.strong_count() > 0);
+        pages.push(Arc::downgrade(&page.core));
+        drop(pages);
         Ok(page)
     }
 

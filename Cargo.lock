@@ -3947,6 +3947,7 @@ name = "openide-cef"
 version = "0.1.0"
 dependencies = [
  "cef",
+ "cef-dll-sys",
  "libc",
  "openide-browser",
 ]

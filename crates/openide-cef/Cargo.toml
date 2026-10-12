@@ -10,5 +10,7 @@ description = "Chromium embedded through CEF, without a window and without the G
 
 [dependencies]
 cef = { git = "https://github.com/tauri-apps/cef-rs", rev = "2861f6991fae3ee31f877891382adcbc9b9f0953", default-features = false }
+# Named so that build.rs runs after its build script.
+cef-dll-sys = { git = "https://github.com/tauri-apps/cef-rs", rev = "2861f6991fae3ee31f877891382adcbc9b9f0953" }
 openide-browser = { path = "../openide-browser" }
 libc = "0.2"

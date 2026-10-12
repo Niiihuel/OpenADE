@@ -27,12 +27,19 @@ nix-shell nix/shell-cef.nix --run "target/desktop/agents-window"
 
 `nix/shell-cef.nix` es el shell normal más CEF (`nix/cef.nix`, un archivo de
 300 MB que el shell normal nunca descarga). Define `CEF_PATH`, con lo que
-`cef-dll-sys` enlaza contra ese directorio y no descarga nada, y lo pone
-primero en `LD_LIBRARY_PATH`: de ahí se carga `libcef.so`, y CEF lee sus
-recursos y sus locales del directorio del que se cargó la biblioteca. El
-script de compilación de cef-rs copia además esos archivos (unos 360 MB) a
-`target/<perfil>/`; quedan sin usar mientras el directorio del shell esté antes
-en la ruta.
+`cef-dll-sys` enlaza contra ese directorio y no descarga nada, y lo agrega al
+final de `LD_LIBRARY_PATH`: de ahí se carga `libcef.so`, y CEF lee sus
+recursos y sus locales del directorio del que se cargó la biblioteca. Va al
+final porque ese directorio trae también el cargador de Vulkan de Chromium
+con el nombre del del sistema (`libvulkan.so.1`), y el de la ventana de la
+aplicación tiene que seguir siendo el del sistema.
+
+El script de compilación de cef-rs copia además los archivos de CEF (unos
+360 MB) a `target/<perfil>/`, y cargo pone ese directorio primero en la ruta
+de bibliotecas de todo lo que ejecuta (`cargo run`, `cargo test`). Por eso
+`crates/openide-cef/build.rs` borra de ahí la copia de `libvulkan.so.1` cada
+vez que cef-rs la deja. El resto de la copia es lo que usan las pruebas; al
+abrir el binario directamente, como hace `scripts/build.py`, no se usa.
 
 Para comprobar una instalación sin abrir la ventana:
 
@@ -201,6 +208,11 @@ Chrome de reemplazo.
   la respuesta de un diálogo vuelve a llamar al manejador de diálogos en el
   mismo hilo. Nada de CEF se suelta con un candado tomado.
 - **Faltando sus recursos, CEF aborta el proceso** en lugar de fallar.
+- **CEF trae un `libvulkan.so.1` propio** y cef-rs lo copia junto a los
+  ejecutables. Con el directorio de CEF primero en la ruta de bibliotecas, o
+  al usar `cargo run` después de compilar con la opción, la ventana de la
+  aplicación habría abierto ese cargador en lugar del del sistema. No llegó a
+  pasar: nada de esto se ejecutó con ventana.
 - **Chromium toma SIGHUP, SIGINT y SIGTERM** aunque se le pida que no instale
   manejadores (`disable_signal_handlers` sólo conserva los de fallos): con
   ellos, una señal terminaba la aplicación con código 0. Se vuelven a dejar
@@ -354,7 +366,7 @@ Ese comando no recompila el ejecutable de la aplicación; tiene que existir de
 antes, compilado con la opción y el mismo perfil.
 
 Validado el 11 de octubre de 2026 con CEF 154.0.34 (Chromium 154.0.8037.98) en
-NixOS, sandbox activo: las siete pruebas pasaron en tres corridas seguidas y
+NixOS, sandbox activo: las nueve pruebas pasaron en tres corridas seguidas y
 después de cada una no quedó ningún proceso de CEF ni directorio.
 
 ## Lo que queda para el paso de GPU
