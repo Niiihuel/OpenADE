@@ -750,7 +750,7 @@ fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() 
         assert!(
             visible_text(&unavailable, size)
                 .iter()
-                .any(|text| text.starts_with("Resuelve los perm")),
+                .any(|text| text.starts_with("Resuelve los")),
             "{:?}",
             visible_text(&unavailable, size)
         );

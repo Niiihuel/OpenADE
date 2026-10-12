@@ -333,7 +333,9 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     .status(line)
     .header_icon("composer_context_copy_diagnostic", Icon::Copy, "Copiar diagnóstico")
     .footer_action("new_session_context", "Nueva tarea")
-    // The popover's surface keeps one pixel around the card for its border.
+    // The popover's surface is the card: the content stands on it, with no
+    // frame or card of its own, one pixel in for the surface's border.
+    .flat()
     .width(width - 2.0)
     .format(card_tokens);
     if let Some(lead) = lead {
@@ -347,7 +349,8 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     if !model.is_empty() && room > 8 {
         card = card.badge(crate::view::shorten(model, room - 1));
     }
-    let mut card = card.render();
+    // The rows scroll; the status and its action stay under them.
+    let (mut card, card_foot) = card.parts();
     if let Some(compact) = &compact {
         let control = format!("{CONTEXT_CARD}:action:conversation");
         dispatch_as(&mut card, &control, compact);
@@ -408,11 +411,10 @@ fn summary(props: &ComposerProps<'_>) -> Element {
         None => Some("Aún no hay una respuesta medida".into()),
     };
     let status = status.or(reason.as_deref());
-    // Under the card and outside its scroll area, so it shows in a short window too.
-    let mut foot = Vec::new();
+    // Under the rows and outside their scroll area, so both show in a short window too.
+    let mut foot = vec![card_foot];
     if let Some(status) = status {
         foot.extend([
-            Element::spacer().size(None, Some(8.0)),
             inset(
                 Text::new(status, theme::component_palette())
                     .role(TextRole::Small)
@@ -434,9 +436,9 @@ fn summary(props: &ComposerProps<'_>) -> Element {
                 .render(),
         )
         .sizing(crate::ui_sizing::CONTEXT_POPOVER);
-    // The popover closes with Escape, a click outside it or its ring, so the
-    // card needs no button for that; a notice is all that stands under it.
-    if foot.is_empty() { panel.render() } else { panel.footer(Element::column(foot)).render() }
+    // The popover closes with Escape, a click outside it or its ring, so it
+    // needs no button for that.
+    panel.footer(Element::column(foot)).render()
 }
 
 fn popover_width(composer: f32) -> f32 {
