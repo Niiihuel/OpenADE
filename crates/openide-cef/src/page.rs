@@ -30,6 +30,10 @@ pub struct Paint<'a> {
     pub height: u32,
     /// Rows of premultiplied BGRA, top to bottom.
     pub bgra: &'a [u8],
+    /// What Chromium painted again: the columns `dirty[0]..dirty[2]` of the
+    /// rows `dirty[1]..dirty[3]`. The other pixels are as its last paint of
+    /// the same thing at the same size left them.
+    pub dirty: [usize; 4],
     /// `None` when the pixels are the whole view. A widget Chromium paints
     /// apart, such as the list of a `<select>`, says where its top-left
     /// corner goes in the view, in device pixels; without pixels, it closed.
@@ -170,7 +174,7 @@ wrap_render_handler! {
             &self,
             _browser: Option<&mut Browser>,
             type_: PaintElementType,
-            _dirty_rects: Option<&[Rect]>,
+            dirty_rects: Option<&[Rect]>,
             buffer: *const u8,
             width: c_int,
             height: c_int,
@@ -181,15 +185,27 @@ wrap_render_handler! {
             let (width, height) = (width as u32, height as u32);
             // The page, or the list of a <select> that goes over it.
             let popup = (type_ != PaintElementType::default()).then(|| *lock(&self.core.popup));
-            // Always the whole of it. The dirty rectangles are not passed on:
-            // the embedder shows whole frames.
+            // The buffer is always the whole of it; what changed in it is one
+            // rectangle around those Chromium names, or all when it names none.
+            let whole = [0, 0, width as usize, height as usize];
+            let within = |value: c_int, limit: u32| (value.max(0) as usize).min(limit as usize);
+            let dirty = dirty_rects.filter(|rects| !rects.is_empty()).map_or(whole, |rects| {
+                rects.iter().fold([usize::MAX, usize::MAX, 0, 0], |all, rect| {
+                    [
+                        all[0].min(within(rect.x, width)),
+                        all[1].min(within(rect.y, height)),
+                        all[2].max(within(rect.x.saturating_add(rect.width), width)),
+                        all[3].max(within(rect.y.saturating_add(rect.height), height)),
+                    ]
+                })
+            });
             let bgra = unsafe { std::slice::from_raw_parts(buffer, width as usize * height as usize * 4) };
-            (self.core.paint)(&Paint { width, height, bgra, popup });
+            (self.core.paint)(&Paint { width, height, bgra, dirty, popup });
         }
 
         fn on_popup_show(&self, _browser: Option<&mut Browser>, show: c_int) {
             if show == 0 {
-                (self.core.paint)(&Paint { width: 0, height: 0, bgra: &[], popup: Some((0, 0)) });
+                (self.core.paint)(&Paint { width: 0, height: 0, bgra: &[], dirty: [0; 4], popup: Some((0, 0)) });
             }
         }
 
@@ -243,7 +259,8 @@ wrap_life_span_handler! {
             _extra_info: Option<&mut Option<DictionaryValue>>,
             _no_javascript_access: Option<&mut c_int>,
         ) -> c_int {
-            // One panel has one page: no other window is ever created.
+            // One panel has one page: no other window is ever created. What
+            // a click asked to see in one, the driver opens in this page.
             1
         }
 
@@ -389,11 +406,33 @@ wrap_download_handler! {
     }
 }
 
+wrap_request_handler! {
+    struct Requests;
+    impl RequestHandler {
+        fn on_open_urlfrom_tab(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _target_url: Option<&CefString>,
+            target_disposition: WindowOpenDisposition,
+            user_gesture: c_int,
+        ) -> c_int {
+            // A link clicked with Control, Shift or the middle button asks
+            // for another tab. Let through, Chromium opens it in the page
+            // itself, where there is no other. What asks for one with no
+            // click of the user's behind it is refused, as a popup is.
+            let here = target_disposition == sys::cef_window_open_disposition_t::CEF_WOD_CURRENT_TAB.into();
+            (!here && user_gesture == 0).into()
+        }
+    }
+}
+
 wrap_client! {
     struct PageClient {
         render: RenderHandler,
         display: DisplayHandler,
         life: LifeSpanHandler,
+        requests: RequestHandler,
         dialogs: JsdialogHandler,
         files: DialogHandler,
         menus: ContextMenuHandler,
@@ -408,6 +447,9 @@ wrap_client! {
         }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(self.life.clone())
+        }
+        fn request_handler(&self) -> Option<RequestHandler> {
+            Some(self.requests.clone())
         }
         fn jsdialog_handler(&self) -> Option<JsdialogHandler> {
             Some(self.dialogs.clone())
@@ -500,6 +542,7 @@ impl Page {
             Render::new(core.clone()),
             Display::new(core.clone()),
             Life::new(core.clone()),
+            Requests::new(),
             Dialogs::new(core.clone()),
             Files::new(),
             Menus::new(),

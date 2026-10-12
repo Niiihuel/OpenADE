@@ -5,7 +5,8 @@
 //! bounded state the driver reads under a lock. Nothing is queued, so a page
 //! that logs or fetches without pause costs a fixed amount of memory. What
 //! must be answered at once (a dialog blocks the page until it is, a popup
-//! must not linger) is answered from here without waiting for a reply.
+//! must not linger, a link meant for another tab opens in this one) is
+//! answered from here without waiting for a reply.
 
 use crate::cdp::{Client, EventSink, ScreencastFrame};
 use crate::stream::StreamSlot;
@@ -352,6 +353,14 @@ impl EventSink for Observer {
                     state.gone = Some("La página del navegador se cerró.".into());
                 }
             }
+            "Page.windowOpen" => {
+                // A link for another tab, or a script that opens a window:
+                // announced before the browser is asked, with where it goes.
+                // What the user did not ask for with a click opens nothing.
+                if params["userGesture"] == true {
+                    state.open_here(client, text(&params, "url"));
+                }
+            }
             "Target.targetCreated" => {
                 // One panel has one authoritative page. Another window is
                 // closed rather than left running where nobody observes it.
@@ -361,6 +370,12 @@ impl EventSink for Observer {
                     && text(info, "targetId") != state.page_target;
                 if popup {
                     let _ = client.post("", "Target.closeTarget", json!({"targetId": text(info, "targetId")}));
+                    // A tab the browser itself made, for a link clicked with
+                    // Control, Shift or the middle button, says where it
+                    // goes. One a page's script made does not: it was
+                    // announced above. The browser makes neither without a
+                    // click behind it.
+                    state.open_here(client, text(info, "url"));
                 }
             }
             "Inspector.targetCrashed" if session == state.page_session => {
@@ -407,6 +422,19 @@ pub(crate) fn child_setup() -> [(&'static str, Value); 6] {
 }
 
 impl State {
+    /// Opens in the page itself an address that was meant for another tab or
+    /// window. Only an address of the web: the browser is the one navigating,
+    /// which a page's own link could not make it do to a file or a script.
+    fn open_here(&mut self, client: &Client, url: &str) {
+        if self.page_session.is_empty() || !(url.starts_with("http://") || url.starts_with("https://")) {
+            return;
+        }
+        // As when the page itself asks to navigate: the action that led here
+        // waits for the new document.
+        self.requested += 1;
+        let _ = client.post(&self.page_session, "Page.navigate", json!({"url": url}));
+    }
+
     fn entry(&mut self, request_id: &str) -> Option<&mut NetworkEntry> {
         self.network.entries.iter_mut().rev().find(|entry| entry.request_id == request_id)
     }

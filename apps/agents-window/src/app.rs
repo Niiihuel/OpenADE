@@ -5031,9 +5031,15 @@ impl AgentsWindow {
         // Frames were decoded on the runtime's own thread. Here they are only
         // handed to the texture their surface already paints.
         for (id, runtime) in &self.browsers {
-            if let Some(frame) = runtime.take_frame() {
+            // A whole frame, and after it the part that changed since.
+            while let Some(frame) = runtime.take_frame() {
+                let part = frame.part().is_some();
                 if limn_egui::present_surface(ctx, &crate::browser_ui::surface_id(*id), frame) {
                     self.browser_live.insert(*id, runtime.visible());
+                } else if part && self.browser_live.contains_key(id) {
+                    // The surface no longer shows the frame this was a part
+                    // of: a whole one makes up for it.
+                    runtime.restart_stream();
                 }
             }
         }
