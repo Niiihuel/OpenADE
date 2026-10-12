@@ -241,13 +241,21 @@ vista). Una captura de más de 2 MiB falla con un mensaje que propone capturar
 el viewport o un elemento; no se reduce ni se recorta en silencio. La imagen
 viaja como bloque `image` de MCP junto con su ancho, alto y tamaño.
 
-El motor propio todavía no pasa imágenes de resultados de herramientas al
-modelo: los adaptadores de proveedor sólo aceptan imágenes en mensajes del
-usuario y el resultado llega al modelo como texto cortado a 16.000 caracteres.
-En ese camino la imagen se muestra al usuario en el chat y el modelo recibe
-sólo las medidas y el comienzo de los datos. Un cliente MCP externo que admita
-imágenes sí la entrega a su modelo. Para leer la página se usa
-`browser_snapshot`.
+En el motor propio la imagen se muestra al usuario en el chat y también llega
+al modelo, junto al resultado, cuando la ruta y el modelo leen imágenes: dentro
+del `tool_result` en Messages, dentro del `function_call_output` en Responses y
+en un mensaje posterior a los resultados en Chat Completions. El texto del
+resultado lleva las medidas y la línea `[image 1: image/png, 1280x800 px]` en
+el lugar del bloque. Un modelo que no lee imágenes recibe una línea que dice
+que hubo una y que no puede verla. Los límites, lo que pasa al reanudar o
+compactar y la tabla por proveedor están en
+[Imágenes de resultados de herramientas](native-tool-images.md). Un cliente MCP
+externo que admita imágenes también la entrega a su modelo.
+
+Una captura de más de 8000 px por lado no se envía al modelo, y una página
+completa muy alta le llega reducida por el proveedor hasta no poder leerse:
+para leer la página se usa `browser_snapshot`, y para verla el viewport o un
+elemento.
 
 ## Guardas
 

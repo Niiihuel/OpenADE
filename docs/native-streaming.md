@@ -63,8 +63,10 @@ deben existir dentro del workspace canonicalizado; los enlaces admiten HTTP(S).
 Un preview de argumentos no habilita navegación ni ejecución.
 
 Las imágenes MCP se conservan en `ToolResultMedia`, antes del recorte textual
-de `ToolFinished`. Este evento observa el resultado de una llamada MCP iniciada;
-no confirma por sí solo el efecto ni agrega imágenes al historial del modelo.
+de `ToolFinished`. Este evento observa el resultado de una llamada MCP iniciada
+y no confirma por sí solo el efecto. Las imágenes que marca para el modelo
+(`model_images`) se suman al resultado que confirma `ToolFinished`; ver
+[Imágenes de resultados de herramientas](native-tool-images.md).
 La proyección convierte sus datos una vez a `RasterImage` compartidas y las
 presenta en la misma tarjeta, incluso al reabrir el journal. Así una captura
 normal no depende de caber como base64 dentro de los 16.000 caracteres del

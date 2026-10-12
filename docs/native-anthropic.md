@@ -80,7 +80,9 @@ conteo de uso guardado puede seguir visible como dato histórico, pero sin un
 límite verificable no aparece un porcentaje o segmento de ocupación.
 
 Imágenes exigen capacidad positiva del ID exacto. Los bytes/MIME/hashes del
-journal se envían inline y sobreviven a reapertura. El protocolo soporta otros
+journal se envían inline y sobreviven a reapertura. Las que devuelve una
+herramienta viajan como bloques `image` dentro de su `tool_result`
+([detalle](native-tool-images.md)). El protocolo soporta otros
 tipos que OpenIDE aún no admite: PDF/documentos, audio/video, salida multimodal,
 herramientas alojadas y gestión de contexto del proveedor permanecen pendientes.
 
