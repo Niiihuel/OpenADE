@@ -23,7 +23,8 @@ pub(crate) struct PreviewView {
     pub error: Option<String>,
     pub page: usize,
     pub pages: usize,
-    /// None fits to the viewport, Some is a scale relative to rendered pixels.
+    /// Of a PDF's page: None fits to the viewport, Some is a scale relative
+    /// to rendered pixels. An image always fits.
     pub zoom: Option<f32>,
 }
 

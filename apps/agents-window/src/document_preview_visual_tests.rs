@@ -20,13 +20,8 @@ use crate::{
 const DIRECTORY: &str = "/tmp/openade-document-preview-review";
 const SOURCE: &str = "# Un proyecto, todas sus vistas\n\nEl editor y la vista previa comparten **el mismo archivo**. Consultá [la guía del proyecto](docs/guide.md) o saltá a [validación](#validacion).\n\n![Distribución del workspace](assets/workspace.png)\n\n## Recursos\n\n| Archivo | Vista |\n| --- | --- |\n| README.md | Markdown editable |\n| workspace.png | Imagen nativa |\n| workspace.pdf | Documento PDF |\n\n- El árbol conserva el contexto del proyecto.\n- El agente acompaña la edición del documento.\n\n## Validación\n\n```rust\nlet workspace = Workspace::open(path)?;\nworkspace.open_file(\"README.md\");\n```\n\n> Los cambios de texto se reflejan en la vista previa.\n";
 
-fn write_fixture_files(workspace: &Path) {
-    std::fs::create_dir_all(workspace.join("assets")).unwrap();
-    std::fs::create_dir_all(workspace.join("docs")).unwrap();
-    std::fs::write(workspace.join("README.md"), SOURCE).unwrap();
-    std::fs::write(workspace.join("docs/guide.md"), "# Guía del proyecto\n").unwrap();
-    // A small known PNG, decoded by the same image worker as a real project asset.
-    let source = r##"<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160">
+/// A small picture of the workspace, as an SVG file and as the PNG drawn from it.
+pub(crate) const PICTURE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160">
       <rect width="640" height="160" rx="10" fill="#292929"/>
       <rect x="12" y="28" width="116" height="120" rx="6" fill="#333333"/>
       <rect x="138" y="28" width="308" height="120" rx="6" fill="#151515"/>
@@ -37,8 +32,15 @@ fn write_fixture_files(workspace: &Path) {
       <g fill="#b991d4"><rect x="154" y="72" width="136" height="5" rx="2"/><rect x="154" y="91" width="242" height="4" rx="2"/><rect x="154" y="110" width="196" height="4" rx="2"/></g>
       <rect x="470" y="68" width="142" height="29" rx="7" fill="#292929"/><rect x="470" y="110" width="142" height="23" rx="9" fill="#292929"/><circle cx="598" cy="121" r="7" fill="#2874ff"/>
     </svg>"##;
+
+fn write_fixture_files(workspace: &Path) {
+    std::fs::create_dir_all(workspace.join("assets")).unwrap();
+    std::fs::create_dir_all(workspace.join("docs")).unwrap();
+    std::fs::write(workspace.join("README.md"), SOURCE).unwrap();
+    std::fs::write(workspace.join("docs/guide.md"), "# Guía del proyecto\n").unwrap();
+    // A small known PNG, decoded by the same image worker as a real project asset.
     let parsed =
-        resvg::usvg::Tree::from_str(source, &crate::settings_ui::visual_qa::native_svg_options())
+        resvg::usvg::Tree::from_str(PICTURE, &crate::settings_ui::visual_qa::native_svg_options())
             .unwrap();
     let mut pixels = resvg::tiny_skia::Pixmap::new(640, 160).unwrap();
     resvg::render(
@@ -435,7 +437,7 @@ fn export(frame: &Frame, size: Size, name: &str) {
     export_to(Path::new(DIRECTORY), frame, size, name);
 }
 
-fn export_to(directory: &Path, frame: &Frame, size: Size, name: &str) {
+pub(crate) fn export_to(directory: &Path, frame: &Frame, size: Size, name: &str) {
     std::fs::create_dir_all(directory).unwrap();
     let path = directory.join(format!("{name}-{:.0}x{:.0}.svg", size.width, size.height));
     crate::settings_ui::visual_qa::write_native_frame_svg(frame, &path, size.width, size.height)
@@ -675,9 +677,10 @@ fn export_document_previews_visual_review() {
             }
             export(&frame, size, name);
             context.end_pass().textures_delta.clear();
-            if kind != PreviewKind::Markdown {
+            // An image only fits its panel; a PDF's page is zoomed and panned.
+            if kind == PreviewKind::Pdf {
                 let mut zoomed = state.document_preview.as_ref().unwrap().clone();
-                zoomed.zoom = Some(if kind == PreviewKind::Pdf { 1.25 } else { 2.0 });
+                zoomed.zoom = Some(1.25);
                 let scroll_id = zoomed.scroll_id();
                 let zoomed = fixture(zoomed);
                 let (context, mut tree) = view::ide_visual_tests::native_tree(
@@ -718,12 +721,10 @@ fn export_document_previews_visual_review() {
                     after.x < before.x,
                     "horizontal pan reaches the zoomed asset"
                 );
-                if kind == PreviewKind::Pdf {
-                    assert!(
-                        after.y < before.y,
-                        "the same gesture also pans the tall PDF vertically"
-                    );
-                }
+                assert!(
+                    after.y < before.y,
+                    "the same gesture also pans the tall PDF vertically"
+                );
                 assert_eq!(
                     (after.width, after.height),
                     (before.width, before.height),

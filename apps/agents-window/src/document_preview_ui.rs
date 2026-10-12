@@ -79,11 +79,25 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
         Vec::new()
     };
     let mut used = actions.len() as f32 * 28.0;
+    if view.kind == PreviewKind::Image {
+        // The panel only fits the picture; the window's viewer shows it whole.
+        actions.push(
+            IconButton::new(
+                format!("{}:fullscreen", view.chrome_action_prefix()),
+                Icon::Expand,
+                theme::component_palette(),
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(view.raster.is_some())
+            .tooltip_with(TooltipSpec::new("Pantalla completa").placement(TooltipPlacement::Below))
+            .render(),
+        );
+        used += 28.0;
+    }
     if view.kind == PreviewKind::Pdf {
         actions.push(pdf_pager(view));
         used += 112.0;
-    }
-    if view.kind != PreviewKind::Markdown {
         actions.push(
             IconButton::new(
                 format!("{}:zoom_out", view.chrome_action_prefix()),

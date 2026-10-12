@@ -404,6 +404,139 @@ fn returning_to_pdf_restores_page_and_zoom_after_visiting_markdown() {
     ));
 }
 
+const PICTURE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120"><rect width="320" height="120" rx="12" fill="#2874ff"/><circle cx="60" cy="60" r="32" fill="#ffffff"/></svg>"##;
+
+/// The operations of the preview's toolbar, in the order they are drawn.
+fn toolbar(frame: &Frame, tab: DockTabId) -> Vec<String> {
+    let prefix = format!("document_preview_view:{}:", tab.get());
+    let mut operations: Vec<String> = frame
+        .regions
+        .iter()
+        .filter(|region| region.kind == HitKind::Button)
+        .filter_map(|region| region.id.strip_prefix(&prefix).map(str::to_owned))
+        .collect();
+    operations.dedup();
+    operations
+}
+
+fn key(app: &mut AgentsWindow, key: Key) {
+    let event = UiEvent::Key { key, ctrl: false, shift: false };
+    for action in app.tree.handle_event(event) {
+        app.apply_action(action, &egui::Context::default());
+    }
+}
+
+#[test]
+fn an_image_opens_in_the_window_viewer_by_pointer_and_keyboard_and_returns_to_its_preview() {
+    let (_root, mut app) = fixture("# Other file");
+    let workspace = PathBuf::from(&app.view.workspace);
+    std::fs::write(workspace.join("logo.svg"), PICTURE).unwrap();
+    image::RgbaImage::from_pixel(48, 32, image::Rgba([40, 116, 255, 255]))
+        .save(workspace.join("shot.png"))
+        .unwrap();
+    for name in ["logo.svg", "shot.png"] {
+        let tab = open(&mut app, name);
+        wait_preview(&mut app);
+        let control = format!("document_preview_view:{}:fullscreen", tab.get());
+        // One control beside the refresh, and no zoom behind an old action either.
+        assert_eq!(toolbar(&frame(&mut app), tab), ["fullscreen", "reload"]);
+        for operation in ["zoom_in", "zoom_out", "fit"] {
+            action(&mut app, operation);
+            assert_eq!(app.view.document_preview.as_ref().unwrap().zoom, None);
+        }
+        let view = app.view.document_preview.as_ref().unwrap();
+        let (scope, raster) = (view.scope.clone(), view.raster.clone().unwrap());
+        // The pointer and the close control, then Enter and Escape.
+        for keyboard in [false, true] {
+            let closed = window_frame(&mut app);
+            assert!(!closed.regions.iter().any(|region| region.id == "composer_image_close"));
+            if keyboard {
+                assert!(app.tree.focus(&control));
+                key(&mut app, Key::Enter);
+            } else {
+                press(&mut app, &closed, &control);
+            }
+            let gallery = app.view.composer_image_viewer.as_ref().expect("the viewer opens");
+            assert_eq!(gallery.attachments[0].label, name);
+            assert_eq!(gallery.image_count(), 1);
+            assert!(!gallery.loading && gallery.error.is_none());
+            let open = window_frame(&mut app);
+            assert!(painted(&open, name), "the viewer is titled with the file");
+            assert!(open.commands.iter().any(|command| matches!(command,
+                DrawCommand::RasterImage { image, .. }
+                    if image.sha256() == raster.sha256() && image.is_full_resolution())));
+            if keyboard {
+                key(&mut app, Key::Escape);
+            } else {
+                press(&mut app, &open, "composer_image_close");
+            }
+            assert!(app.view.composer_image_viewer.is_none());
+            let view = app.view.document_preview.as_ref().unwrap();
+            assert_eq!(view.scope, scope, "the same preview, not loaded again");
+            assert!(view.raster.is_some() && !view.loading);
+            assert_eq!(app.dock.active_tab(&app.dock_scope()).map(|tab| tab.id), Some(tab));
+            assert_eq!(toolbar(&window_frame(&mut app), tab), ["fullscreen", "reload"]);
+        }
+    }
+}
+
+#[test]
+#[ignore = "exports an SVG file's preview and the viewer it opens as PNG under docs/ui-separation/shots/preview-fullscreen"]
+fn export_preview_fullscreen_visual_review() {
+    let directory = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/ui-separation/shots/preview-fullscreen"
+    ));
+    let (_root, mut app) = fixture("# Other file");
+    std::fs::write(
+        Path::new(&app.view.workspace).join("workspace.svg"),
+        crate::document_preview_visual_tests::PICTURE,
+    )
+    .unwrap();
+    let tab = open(&mut app, "workspace.svg");
+    wait_preview(&mut app);
+    let control = format!("document_preview_view:{}:fullscreen", tab.get());
+    for size in [Size::new(1200.0, 760.0), Size::new(900.0, 680.0)] {
+        // The sidebar leaves no room for the right dock in the narrow window.
+        app.view.sidebar_collapsed = size.width < 1000.0;
+        for name in ["image-toolbar", "image-viewer"] {
+            let (context, mut tree) = crate::view::ide_visual_tests::native_tree(
+                crate::view::build_window_view(&app.view, size.width, size.height),
+            );
+            let frame = tree.layout(size);
+            assert_eq!(
+                frame.regions.iter().any(|region| region.id == "composer_image_close"),
+                name == "image-viewer"
+            );
+            crate::document_preview_visual_tests::export_to(directory, &frame, size, name);
+            context.end_pass().textures_delta.clear();
+            // Open for the second capture, closed again for the next size.
+            let id = if name == "image-toolbar" { control.as_str() } else { "composer_image_close" };
+            assert!(frame.regions.iter().any(|region| region.id == id), "{id} is drawn");
+            app.apply_action(UiAction::Clicked { id: id.into() }, &egui::Context::default());
+        }
+    }
+}
+
+#[test]
+fn a_pdf_keeps_its_pager_and_its_zoom_and_has_no_viewer_control() {
+    let (_root, mut app) = fixture("# Other file");
+    std::fs::write(Path::new(&app.view.workspace).join("report.pdf"), two_page_pdf()).unwrap();
+    let tab = open(&mut app, "report.pdf");
+    wait_preview(&mut app);
+    // A pager control with nowhere to go is drawn, and takes no pointer.
+    for page in ["next", "previous"] {
+        assert_eq!(
+            toolbar(&frame(&mut app), tab),
+            [page, "zoom_out", "fit", "zoom_in", "reload"]
+        );
+        action(&mut app, page);
+        wait_preview(&mut app);
+    }
+    action(&mut app, "fullscreen");
+    assert!(app.view.composer_image_viewer.is_none());
+}
+
 #[test]
 fn oversized_live_markdown_invalidates_queued_render_and_keeps_the_error() {
     let (_root, mut app) = fixture("# Last valid render\n");
