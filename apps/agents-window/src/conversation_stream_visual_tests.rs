@@ -2221,6 +2221,7 @@ fn export_conversation_stream_visual_review() {
                             image: Some(parsed.images[0].clone()),
                             error: None,
                             loading: false,
+                            zoom: 1.0,
                             tool_source: Some(crate::composer_attachments::ToolImageGallery {
                                 owner: OWNER.into(),
                                 call_id: "image-call".into(),

@@ -15787,6 +15787,7 @@ impl AgentsWindow {
             image: None,
             error: None,
             loading: true,
+            zoom: 1.0,
         });
         self.view.composer_add_menu_open = false;
         self.view.composer_model_menu_open = false;
@@ -15805,6 +15806,8 @@ impl AgentsWindow {
         viewer.generation = self.attachment_viewer_generation;
         viewer.image = None;
         viewer.error = None;
+        // Another picture starts fitted to the window.
+        viewer.zoom = 1.0;
         if let Some(source) = &viewer.tool_source {
             viewer.image = source.images.get(viewer.selected).cloned();
             viewer.loading = false;
@@ -17055,6 +17058,16 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "composer_image_close" => {
                 self.view.composer_image_viewer = None;
                 self.prompt_focus_pending = true;
+            }
+            UiAction::Clicked { id } if id.starts_with("composer_image_zoom_") => {
+                if let Some(viewer) = self.view.composer_image_viewer.as_mut() {
+                    viewer.zoom = match id.as_str() {
+                        "composer_image_zoom_in" => viewer.zoom * 1.5,
+                        "composer_image_zoom_out" => viewer.zoom / 1.5,
+                        _ => 1.0,
+                    }
+                    .clamp(1.0, openide_ui::ImageViewer::MAX_ZOOM);
+                }
             }
             UiAction::Clicked { id } if id == "composer_image_previous" => {
                 self.navigate_composer_images(-1, ctx);

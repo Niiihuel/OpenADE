@@ -156,6 +156,7 @@ impl AgentsWindow {
             image: Some(image),
             error: None,
             loading: false,
+            zoom: 1.0,
             tool_source: Some(crate::composer_attachments::ToolImageGallery {
                 owner,
                 call_id,

@@ -84,7 +84,8 @@ fn preview_header(view: &PreviewView, width: f32, split: bool) -> Element {
         actions.push(
             IconButton::new(
                 format!("{}:fullscreen", view.chrome_action_prefix()),
-                Icon::Expand,
+                // Four corners: the diagonal arrows are the panel's own maximize.
+                Icon::Fullscreen,
                 theme::component_palette(),
             )
             .variant(ButtonVariant::Ghost)

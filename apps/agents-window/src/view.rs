@@ -3648,6 +3648,12 @@ pub fn build_window_view(state: &ViewState, width: f32, height: f32) -> Element 
     .gallery(gallery.selected, gallery.image_count())
     .previous_action("composer_image_previous")
     .next_action("composer_image_next")
+    .zoom(gallery.zoom)
+    .zoom_actions(
+        "composer_image_zoom_out",
+        "composer_image_zoom_fit",
+        "composer_image_zoom_in",
+    )
     .return_focus("prompt");
     if let Some(image) = &gallery.image {
         viewer = viewer.image(image.clone());
