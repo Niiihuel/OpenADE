@@ -184,7 +184,8 @@ pub use subagents::{
 pub use tool_output::{ToolOutputSender, MAX_TOOL_STREAM_BYTES, MAX_TOOL_STREAM_EVENTS};
 pub use tool_preparation::{PreparedToolSession, ToolPreparation};
 pub use tools::{
-    LocalTool, LocalTools, ToolContext, ToolDefinition, ToolExecutor, ToolOutput, ToolPermissions,
+    atomic_write, writable_workspace_path, LocalTool, LocalTools, ToolContext, ToolDefinition,
+    ToolExecutor, ToolOutput, ToolPermissions,
 };
 
 mod goal_context;

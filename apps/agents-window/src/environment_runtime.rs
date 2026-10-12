@@ -9,14 +9,15 @@ use std::{
 use async_trait::async_trait;
 use openide_core::AgentEvent;
 use openide_harness::{
-    AgentError, McpCompositeTools, McpServerBinding, PreparedToolSession, ToolExecutor,
-    ToolPreparation,
+    AgentError, McpCompositeTools, McpServerBinding, McpToolClient, PreparedToolSession,
+    ToolExecutor, ToolPreparation,
 };
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     browser_runtime::BrowserMcpClient,
+    image_runtime::ImageMcpClient,
     mcp_runtime::McpToolPreparation,
     mcp_settings::{McpServerSettings, McpSettings},
 };
@@ -27,6 +28,7 @@ pub(crate) struct EnvironmentToolPreparation {
     prior_events: Arc<Vec<AgentEvent>>,
     servers: Vec<McpServerSettings>,
     browser: Option<BrowserMcpClient>,
+    image: Option<ImageMcpClient>,
     plugin_root: Option<PathBuf>,
 }
 
@@ -44,8 +46,16 @@ impl EnvironmentToolPreparation {
             prior_events,
             servers,
             browser,
+            image: None,
             plugin_root: None,
         }
+    }
+
+    /// Image generation writes a file and spends money: the caller offers it
+    /// only in a turn that may write, and every call still asks.
+    pub fn with_image_generation(mut self, image: Option<ImageMcpClient>) -> Self {
+        self.image = image;
+        self
     }
 
     /// Opt in only for a principal Build turn or its resume. Construction is
@@ -165,16 +175,25 @@ impl ToolPreparation for EnvironmentToolPreparation {
         let mut asks = inner
             .as_ref()
             .map_or_else(Vec::new, |prepared| prepared.ask_tool_names().to_vec());
+        // The tools this window serves itself. Each of them asks every time.
+        let mut own: Vec<(&str, Arc<dyn McpToolClient>)> = Vec::new();
         if let Some(browser) = &self.browser {
+            own.push(("openide_browser", Arc::new(browser.clone())));
+        }
+        if let Some(image) = &self.image {
+            own.push((crate::image_runtime::SERVER, Arc::new(image.clone())));
+        }
+        if !own.is_empty() {
             let composite = async {
-                let binding = McpServerBinding::discover(
-                    "openide_browser",
-                    Arc::new(browser.clone()),
-                    cancellation,
-                )
-                .await
-                .map_err(|error| AgentError::Runtime(error.to_string()))?;
-                McpCompositeTools::new(tools.clone(), vec![binding])
+                let mut bindings = Vec::new();
+                for (name, client) in own {
+                    bindings.push(
+                        McpServerBinding::discover(name, client, cancellation)
+                            .await
+                            .map_err(|error| AgentError::Runtime(error.to_string()))?,
+                    );
+                }
+                McpCompositeTools::new(tools.clone(), bindings)
                     .map_err(|error| AgentError::Runtime(error.to_string()))
             }
             .await;
@@ -191,13 +210,7 @@ impl ToolPreparation for EnvironmentToolPreparation {
                     });
                 }
             };
-            asks.extend(
-                composite
-                    .definitions()
-                    .into_iter()
-                    .filter(|tool| tool.name.starts_with("mcp__openide_browser__"))
-                    .map(|tool| tool.name),
-            );
+            asks.extend(composite.mcp_tool_names().map(str::to_owned));
             tools = Arc::new(composite);
         }
         let external_identity = inner
@@ -206,15 +219,24 @@ impl ToolPreparation for EnvironmentToolPreparation {
         // The browser identity includes this live actor instance and its frozen
         // scope. Replacing a closed browser cannot resume an old tool batch.
         // An unverified external MCP identity remains unverified after composition.
-        let resume_identity = match (&self.browser, inner.as_ref(), external_identity) {
-            (None, _, identity) => identity.map(str::to_owned),
-            (Some(_), Some(_), None) => None,
-            (Some(browser), _, identity) => {
+        let serves_own = self.browser.is_some() || self.image.is_some();
+        let resume_identity = match (serves_own, inner.as_ref(), external_identity) {
+            (false, _, identity) => identity.map(str::to_owned),
+            (true, Some(_), None) => None,
+            (true, _, identity) => {
                 let mut hash = Sha256::new();
                 hash.update(b"openide-conversation-environment-v1\0");
                 hash.update(identity.unwrap_or("no-external-mcp").as_bytes());
                 hash.update([0]);
-                hash.update(browser.identity_digest().as_bytes());
+                if let Some(browser) = &self.browser {
+                    hash.update(browser.identity_digest().as_bytes());
+                }
+                // After a separator the browser's hex digest never holds, so a
+                // turn with only the browser keeps the identity it had.
+                if let Some(image) = &self.image {
+                    hash.update([0]);
+                    hash.update(image.identity_digest().as_bytes());
+                }
                 Some(format!("{:x}", hash.finalize()))
             }
         };
@@ -343,6 +365,73 @@ mod tests {
         let stale = preparation(Vec::new());
         fs::write(installed[0].path.join("server.sh"), "exit 0\n").unwrap();
         assert!(stale.runtime_servers(workspace.path()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn image_generation_is_offered_only_when_bound_and_asks_even_under_full_access() {
+        use openide_harness::{LocalTools, PermissionMode, PermissionPolicy};
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let (root, workspace) = (root.path(), workspace.path());
+        let prepare = |image| async move {
+            EnvironmentToolPreparation::new(
+                root.to_path_buf(),
+                "fixture".into(),
+                Arc::new(Vec::new()),
+                Vec::new(),
+                None,
+            )
+            .with_image_generation(image)
+            .prepare(workspace, Arc::new(LocalTools::new()), &CancellationToken::new())
+            .await
+            .unwrap()
+        };
+        let name = crate::image_runtime::TOOL;
+        let offered = |prepared: &dyn PreparedToolSession| {
+            prepared.tools().definitions().iter().any(|tool| tool.name == name)
+        };
+        // No connected provider, a Plan turn or a read-only one: nothing is bound.
+        let without = prepare(None).await;
+        assert!(!offered(without.as_ref()) && without.ask_tool_names().is_empty());
+        assert!(without.mcp_resume_identity_digest().is_none());
+
+        let client = ImageMcpClient::new(
+            workspace,
+            root,
+            "http://127.0.0.1:9/v1",
+            true,
+            || Err("the credential is not read to offer the tool".into()),
+        );
+        let identity = client.identity_digest();
+        let prepared = prepare(Some(client)).await;
+        assert!(offered(prepared.as_ref()));
+        assert_eq!(prepared.ask_tool_names(), [name.to_owned()]);
+        // A verified identity of its own, so a session approval can be saved.
+        let digest = prepared.mcp_resume_identity_digest().unwrap();
+        assert!(digest.len() == 64 && digest != identity);
+
+        let call = openide_core::ToolCall {
+            id: "call".into(),
+            name: name.into(),
+            arguments: json!({"prompt":"Un faro","path":"faro.png"}),
+        };
+        let mode = |mut policy: PermissionPolicy| {
+            for name in prepared.ask_tool_names() {
+                policy.require_ask_unless_denied(name);
+            }
+            policy.mode_for_call_with_session_grants("fixture", workspace, workspace, "", &call, &[])
+        };
+        let open = PermissionPolicy::new().with_default_mode(PermissionMode::Allow);
+        assert_eq!(mode(open.clone()), PermissionMode::Ask);
+        assert_eq!(
+            mode(open.with_tool(name, PermissionMode::Deny)),
+            PermissionMode::Deny
+        );
+        // The window's own default denies what it does not know: still asked.
+        assert_eq!(
+            mode(PermissionPolicy::new().with_default_mode(PermissionMode::Deny)),
+            PermissionMode::Ask
+        );
     }
 
     #[tokio::test]

@@ -16,6 +16,7 @@ use std::{
 use openide_harness::HostedWebSearchMode;
 use serde::{Deserialize, Serialize};
 
+use crate::image_runtime::{DEFAULT_QUALITY, IMAGE_MODELS};
 use crate::keymap::KeymapProfile;
 
 const FILE_NAME: &str = "settings-preferences.json";
@@ -142,6 +143,10 @@ pub(crate) struct SettingsPreferences {
     pub tours: std::collections::BTreeMap<String, TourRecord>,
     /// Where a click on a link of the conversation opens.
     pub chat_links: crate::chat_links::ChatLinkOpening,
+    /// The model and quality `generate_image` uses, as the user chose them.
+    /// `image_runtime::image_choice` says what a call sends for the pair.
+    pub image_model: String,
+    pub image_quality: String,
 }
 
 impl Default for SettingsPreferences {
@@ -167,6 +172,8 @@ impl Default for SettingsPreferences {
             github_account: GithubAccountPreference::Automatic,
             tours: Default::default(),
             chat_links: Default::default(),
+            image_model: IMAGE_MODELS[0].id.to_owned(),
+            image_quality: DEFAULT_QUALITY.to_owned(),
         }
     }
 }
@@ -289,6 +296,18 @@ impl SettingsPreferences {
         {
             preferences.chat_links = opening;
         }
+        // A model or level this build does not list keeps the default.
+        let known = |key: &str, listed: &dyn Fn(&str) -> bool| {
+            value.get(key)?.as_str().filter(|id| listed(id)).map(str::to_owned)
+        };
+        if let Some(model) = known("image_model", &|id| IMAGE_MODELS.iter().any(|model| model.id == id)) {
+            preferences.image_model = model;
+        }
+        if let Some(quality) = known("image_quality", &|id| {
+            IMAGE_MODELS.iter().any(|model| model.qualities.contains(&id))
+        }) {
+            preferences.image_quality = quality;
+        }
         preferences
     }
 
@@ -374,6 +393,8 @@ impl SettingsPreferences {
             "github_account": self.github_account,
             "tours": self.tours,
             "chat_links": self.chat_links,
+            "image_model": self.image_model,
+            "image_quality": self.image_quality,
         }))
         .map_err(|error| format!("No se pudieron serializar las preferencias: {error}"))?;
         let temp = root.join(format!(
@@ -709,6 +730,8 @@ mod tests {
         preferences.set_last_workspace(project.path()).unwrap();
         preferences.hosted_web_search_mode = Some(HostedWebSearchMode::Indexed);
         preferences.tours.insert("agents".into(), TourRecord { version: 2, completed: true });
+        preferences.image_model = "gpt-image-2.5-flare".into();
+        preferences.image_quality = "max".into();
         preferences
             .set_last_settings_page("settings_page:providers")
             .unwrap();
@@ -727,6 +750,26 @@ mod tests {
             1,
             "atomic replacement must not leave a temporary file"
         );
+    }
+
+    #[test]
+    fn an_image_model_or_quality_this_build_does_not_list_keeps_the_default() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join(FILE_NAME),
+            r#"{"version":1,"vim_mode":true,"image_model":"retired-model","image_quality":"xhigh"}"#,
+        )
+        .unwrap();
+        let loaded = SettingsPreferences::load(root.path());
+        assert!(loaded.vim_mode);
+        assert_eq!((loaded.image_model.as_str(), loaded.image_quality.as_str()), ("gpt-image-2", "xhigh"));
+        fs::write(
+            root.path().join(FILE_NAME),
+            r#"{"version":1,"image_model":"gpt-image-1.5","image_quality":"ultra"}"#,
+        )
+        .unwrap();
+        let loaded = SettingsPreferences::load(root.path());
+        assert_eq!((loaded.image_model.as_str(), loaded.image_quality.as_str()), ("gpt-image-1.5", "medium"));
     }
 
     #[test]

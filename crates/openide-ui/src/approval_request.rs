@@ -17,6 +17,7 @@ pub struct ApprovalRequest {
     icon: Icon,
     palette: ComponentPalette,
     stacked: bool,
+    link: Option<(String, String)>,
 }
 
 impl ApprovalRequest {
@@ -37,7 +38,15 @@ impl ApprovalRequest {
             icon: Icon::InfoCircle,
             palette,
             stacked: false,
+            link: None,
         }
+    }
+
+    /// A text action under the target, for what the request takes from a
+    /// setting the person may want to change before answering.
+    pub fn link(mut self, id: impl Into<String>, label: impl Into<String>) -> Self {
+        self.link = Some((id.into(), label.into()));
+        self
     }
 
     /// Put the answers in a column when the card is too narrow for a row.
@@ -85,6 +94,12 @@ impl Component for ApprovalRequest {
                     .muted()
                     .render(),
             );
+        }
+        if let Some((id, label)) = self.link {
+            summary.push(Element::row(vec![Button::new(id, label, self.palette)
+                .variant(ButtonVariant::Link)
+                .size(ControlSize::Compact)
+                .render()]));
         }
         // The lasting choice sits apart from the two answers to this request.
         let decisions = ButtonGroup::new(vec![

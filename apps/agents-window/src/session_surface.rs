@@ -4120,6 +4120,8 @@ mod tests {
             native_output_limit_messages: false,
             native_output_limit_load_error: None,
             hosted_web_search_mode: None,
+            image_model: crate::image_runtime::IMAGE_MODELS[0].id.into(),
+            image_quality: crate::image_runtime::DEFAULT_QUALITY.into(),
             catalog: None,
             catalog_status: String::new(),
             catalog_refreshing: false,
