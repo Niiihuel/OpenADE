@@ -1423,6 +1423,7 @@ pub struct AgentsWindow {
     // A press a tab's page received and whose release it is still owed, with
     // the page's pixel the pointer was last on and the clicks the press counted.
     browser_pointer_down: Option<(u64, f64, f64, u8)>,
+    browser_wheel: browser_input_app::WheelGlide,
     // The last left press a tab's page took: when, where and which click of a
     // run it was. The next one close to it in both is a double or triple click.
     browser_click: Option<(u64, Instant, f64, f64, u8)>,
@@ -1505,27 +1506,32 @@ pub struct AgentsWindow {
 /// How soon after a press on the page the next one continues its run of clicks.
 const BROWSER_MULTI_CLICK: Duration = Duration::from_millis(500);
 
-fn browser_scroll_delta(event: &UiEvent) -> Option<(openide_ui::Point, f32, f32)> {
-    let (position, x, y) = match event {
-        UiEvent::Scroll { position, delta_y } | UiEvent::ScrollDirect { position, delta_y } => {
-            (*position, 0.0, *delta_y)
-        }
+/// A wheel notch reaches here as one 30-pixel line; a page scrolls about 80
+/// for it, as in Chrome under Wayland.
+const BROWSER_NOTCH_SCALE: f32 = 80.0 / 30.0;
+
+/// Where, how far on each axis, and whether the deltas are a touchpad's own
+/// rather than a wheel's notches.
+fn browser_scroll_delta(event: &UiEvent) -> Option<(openide_ui::Point, f32, f32, bool)> {
+    let (position, x, y, direct) = match event {
+        UiEvent::Scroll { position, delta_y } => (*position, 0.0, *delta_y, false),
+        UiEvent::ScrollDirect { position, delta_y } => (*position, 0.0, *delta_y, true),
         UiEvent::Scroll2D {
             position,
             delta_x,
             delta_y,
             shift,
-            ..
+            direct,
         } => {
             if *shift && *delta_x == 0.0 {
-                (*position, *delta_y, 0.0)
+                (*position, *delta_y, 0.0, *direct)
             } else {
-                (*position, *delta_x, *delta_y)
+                (*position, *delta_x, *delta_y, *direct)
             }
         }
         _ => return None,
     };
-    (x.is_finite() && y.is_finite()).then_some((position, x, y))
+    (x.is_finite() && y.is_finite()).then_some((position, x, y, direct))
 }
 
 fn browser_restart_url(value: &str) -> Option<String> {
@@ -4902,11 +4908,41 @@ impl AgentsWindow {
     fn update_browser(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
         self.browser_scale = crate::browser_runtime::device_scale(ctx.pixels_per_point());
+        // A page keeps the scale its context started with. One whose window
+        // has another now starts again at its address instead of staying
+        // blurred: the window moved to a display of another density, or the
+        // context started on the window's first frame, which under Wayland
+        // does not know its scale yet and says 1.
+        let rescaled: Vec<(u64, String)> = self
+            .browsers
+            .iter()
+            .filter(|(_, runtime)| runtime.scale() != self.browser_scale)
+            .map(|(id, runtime)| (*id, runtime.snapshot().url))
+            .collect();
+        for (id, url) in rescaled {
+            self.browser_requests.remove(&id);
+            self.browser_inputs.remove(&id);
+            self.browsers.remove(&id);
+            if let Some(url) = browser_restart_url(&url) {
+                self.browser_restart_urls.insert(id, url);
+            }
+            changed = true;
+        }
         // The embedded page is composited as often as this window is shown.
         #[cfg(feature = "cef")]
         if !self.browsers.is_empty()
             && crate::browser_runtime::cef_observe_window_frame(ctx.input(|input| input.unstable_dt))
         {
+            ctx.request_repaint();
+        }
+        // A wheel notch still gliding: the page gets this frame's share.
+        if let Some((dx, dy)) = self.browser_wheel.step(Instant::now()) {
+            if dx != 0.0 || dy != 0.0 {
+                self.submit_browser_command(crate::browser_runtime::BrowserCommand::Scroll {
+                    dx: f64::from(dx),
+                    dy: f64::from(dy),
+                });
+            }
             ctx.request_repaint();
         }
         // The button came up while the window showed something else.
@@ -5407,7 +5443,7 @@ impl AgentsWindow {
             }
             return false;
         }
-        if let Some((position, delta_x, delta_y)) = browser_scroll_delta(event) {
+        if let Some((position, delta_x, delta_y, direct)) = browser_scroll_delta(event) {
             if self.tree.frame().hit_test(position) == Some("browser_viewport") {
                 if navigating {
                     return true;
@@ -5415,9 +5451,20 @@ impl AgentsWindow {
                 if self.browser_page_point(position, false).is_none() {
                     return true;
                 }
+                if !direct && !self.reduced_motion {
+                    // Sent a frame at a time from `update_browser`.
+                    self.browser_wheel.push(
+                        -delta_x * BROWSER_NOTCH_SCALE,
+                        -delta_y * BROWSER_NOTCH_SCALE,
+                        Instant::now(),
+                    );
+                    return true;
+                }
+                let scale = if direct { 1.0 } else { f64::from(BROWSER_NOTCH_SCALE) };
+                let (delta_x, delta_y) = (f64::from(delta_x) * scale, f64::from(delta_y) * scale);
                 return self.try_submit_browser_command(BrowserCommand::Scroll {
-                    dx: (-f64::from(delta_x)).clamp(-100_000.0, 100_000.0),
-                    dy: (-f64::from(delta_y)).clamp(-100_000.0, 100_000.0),
+                    dx: (-delta_x).clamp(-100_000.0, 100_000.0),
+                    dy: (-delta_y).clamp(-100_000.0, 100_000.0),
                 });
             }
         }
@@ -6936,6 +6983,7 @@ impl AgentsWindow {
             browser_live: HashMap::new(),
             browser_scale: 0.0,
             browser_pointer_down: None,
+            browser_wheel: Default::default(),
             browser_click: None,
             session_changes_worker: crate::session_changes::SessionChangesWorker::spawn().ok(),
             environment_dirty: true,

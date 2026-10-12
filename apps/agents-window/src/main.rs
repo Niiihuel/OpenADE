@@ -187,7 +187,7 @@ fn main() -> eframe::Result {
     }
     #[cfg(feature = "editor-e2e")]
     let editor_fixture = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let options = eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([900.0, 620.0])
@@ -195,6 +195,15 @@ fn main() -> eframe::Result {
             .with_maximized(true),
         ..Default::default()
     };
+    // The window is drawn by the graphics the display hangs from: on a laptop
+    // with two, the integrated one. Drawn on the discrete card every frame is
+    // copied across, and at 120 Hz one in five was lost once that card
+    // throttled down (measured on an AMD + NVIDIA laptop); it also keeps the
+    // discrete card awake. `WGPU_POWER_PREF=high` chooses it back.
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        setup.power_preference = eframe::wgpu::PowerPreference::from_env()
+            .unwrap_or(eframe::wgpu::PowerPreference::LowPower);
+    }
     eframe::run_native(
         "OpenIDE",
         options,

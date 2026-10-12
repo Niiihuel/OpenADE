@@ -292,14 +292,14 @@ fn wheel_trackpad_and_shift_preserve_both_axes_in_css_pixels_and_reject_nonfinit
             position: point,
             delta_y: 10.0
         }),
-        Some((point, 0.0, 10.0))
+        Some((point, 0.0, 10.0, false))
     );
     assert_eq!(
         browser_scroll_delta(&UiEvent::ScrollDirect {
             position: point,
             delta_y: -2.5
         }),
-        Some((point, 0.0, -2.5))
+        Some((point, 0.0, -2.5, true))
     );
     let scroll = |x, y, shift| UiEvent::Scroll2D {
         position: point,
@@ -310,15 +310,15 @@ fn wheel_trackpad_and_shift_preserve_both_axes_in_css_pixels_and_reject_nonfinit
     };
     assert_eq!(
         browser_scroll_delta(&scroll(3.5, -6.0, false)),
-        Some((point, 3.5, -6.0))
+        Some((point, 3.5, -6.0, true))
     );
     assert_eq!(
         browser_scroll_delta(&scroll(0.0, 9.0, true)),
-        Some((point, 9.0, 0.0))
+        Some((point, 9.0, 0.0, true))
     );
     assert_eq!(
         browser_scroll_delta(&scroll(3.0, 9.0, true)),
-        Some((point, 3.0, 9.0))
+        Some((point, 3.0, 9.0, true))
     );
     assert!(browser_scroll_delta(&scroll(f32::NAN, 1.0, false)).is_none());
     assert!(browser_scroll_delta(&scroll(0.0, f32::INFINITY, false)).is_none());
@@ -696,6 +696,27 @@ fn a_tab_is_a_page_only_while_its_surface_holds_a_frame_of_a_started_context() {
     app.browsers.remove(&id.get());
     app.update_browser(&egui::Context::default());
     assert!(!app.browser_live.contains_key(&id.get()));
+}
+
+#[test]
+fn a_context_started_for_another_scale_starts_again_at_its_address() {
+    let (_root, mut app, id) = fixture();
+    let _commands = install_runtime(&mut app, id, BrowserSnapshot {
+        url: "http://localhost:3000/docs".into(),
+        ..blank(1)
+    });
+    // The fixture context was started for scale 1, and the window has it.
+    let ctx = egui::Context::default();
+    app.update_browser(&ctx);
+    assert!(app.browsers.contains_key(&id.get()));
+    assert!(!app.browser_restart_urls.contains_key(&id.get()));
+    // The window turns out to be on a denser display.
+    ctx.set_pixels_per_point(2.0);
+    ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+    assert_eq!(ctx.pixels_per_point(), 2.0);
+    assert!(app.update_browser(&ctx));
+    assert!(!app.browsers.contains_key(&id.get()), "a page at the old scale would stay blurred");
+    assert_eq!(app.browser_restart_urls.get(&id.get()).map(String::as_str), Some("http://localhost:3000/docs"));
 }
 
 #[test]

@@ -2,6 +2,46 @@ use super::*;
 use crate::browser_runtime::{BrowserClipboardOperation, BrowserCommand};
 use std::collections::VecDeque;
 
+/// A wheel notch on the page, eased like the application's own lists instead
+/// of a jump: each frame the page is sent what the motion covered since the
+/// last one. A touchpad's own deltas do not come through here; they stay
+/// attached to the fingers.
+#[derive(Default)]
+pub(super) struct WheelGlide {
+    /// How far the notches so far ask the page to go, and how much of it
+    /// the page was already sent, per axis.
+    motion: Option<[(openide_ui::ScalarTransition, f32); 2]>,
+}
+
+impl WheelGlide {
+    pub(super) fn push(&mut self, dx: f32, dy: f32, now: Instant) {
+        let policy = openide_ui::ScrollMotion::default();
+        let duration = Duration::from_millis(u64::from(policy.duration_ms));
+        let motion = self.motion.get_or_insert_with(|| {
+            [(); 2].map(|_| (openide_ui::ScalarTransition::new(0.0, now).easing(policy.easing), 0.0))
+        });
+        for ((transition, _), delta) in motion.iter_mut().zip([dx, dy]) {
+            transition.retarget(transition.target() + delta, now, duration);
+        }
+    }
+
+    /// What the page scrolls by now. `None` once every notch is spent.
+    pub(super) fn step(&mut self, now: Instant) -> Option<(f32, f32)> {
+        let motion = self.motion.as_mut()?;
+        let mut moved = [0.0; 2];
+        let mut active = false;
+        for ((transition, sent), moved) in motion.iter_mut().zip(&mut moved) {
+            active |= transition.is_active(now);
+            *moved = transition.value(now) - *sent;
+            *sent += *moved;
+        }
+        if !active {
+            self.motion = None;
+        }
+        Some((moved[0], moved[1]))
+    }
+}
+
 const MAX_QUEUED_COMMANDS: usize = 128;
 const MAX_QUEUED_BYTES: usize = 256 * 1024;
 const MAX_IN_FLIGHT: usize = 4;
@@ -261,6 +301,37 @@ impl AgentsWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wheel_notches_reach_the_page_eased_and_whole() {
+        let start = Instant::now();
+        let mut glide = WheelGlide::default();
+        assert_eq!(glide.step(start), None);
+        glide.push(0.0, 80.0, start);
+        let mut steps = Vec::new();
+        for frame in 1.. {
+            let now = start + Duration::from_millis(frame * 8);
+            if frame == 5 {
+                // A second notch before the first is spent adds to it.
+                glide.push(0.0, 80.0, now);
+            }
+            match glide.step(now) {
+                Some((x, y)) => {
+                    assert_eq!(x, 0.0);
+                    steps.push(y);
+                }
+                None => break,
+            }
+        }
+        // Many small steps, none backwards, adding up to both notches.
+        assert!(steps.len() > 15, "{steps:?}");
+        assert!(steps.iter().all(|step| *step >= 0.0 && *step < 40.0), "{steps:?}");
+        assert!((steps.iter().sum::<f32>() - 160.0).abs() < 0.01, "{steps:?}");
+        // Spent: the next notch starts from nothing.
+        glide.push(-30.0, 0.0, start + Duration::from_secs(2));
+        assert!(glide.step(start + Duration::from_secs(3)).is_some_and(|(x, y)| (x + 30.0).abs() < 0.01 && y == 0.0));
+        assert_eq!(glide.step(start + Duration::from_secs(4)), None);
+    }
     #[test]
     fn coalescing_preserves_text_scroll_and_all_command_barriers() {
         let mut queue = BrowserInputQueue::default();
