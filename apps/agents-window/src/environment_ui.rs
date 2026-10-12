@@ -4,10 +4,11 @@
 use std::{collections::HashSet, path::Path};
 
 use openide_ui::{
-    ButtonVariant, Color, Component, ComponentPalette, ControlSize, DiffStat, DropdownMenu,
-    DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, FramedCard, Icon, IconButton, ListRow,
-    PopoverPlacement, ScrollArea, ScrollbarAppearance, SectionHeader, SectionSizing, SpinnerVariant,
-    Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
+    Button, ButtonVariant, Collapse, Color, Component, ComponentPalette, ControlSize, DiffStat,
+    DropdownMenu, DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, FramedCard, Icon,
+    IconButton, ListRow, PopoverPanel, PopoverPlacement, RadiusRole, ScrollArea,
+    ScrollbarAppearance, SectionHeader, SectionSizing, SpinnerVariant, Text, TextRole, Tooltip,
+    TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -46,12 +47,15 @@ pub(crate) struct EnvironmentUiState {
     pub project_query: String,
     pub changes: SessionChangesSummaryView,
     pub details_expanded: bool,
+    pub subagents_expanded: bool,
+    pub terminals_expanded: bool,
     pub workflow: crate::environment_git_ui::EnvironmentGitUiState,
 }
 
-/// The card's palette: its rows hover one step above it.
-fn card_palette() -> ComponentPalette {
-    theme::action_palette(theme::CARD, theme::FOREGROUND)
+/// The panel is the card, on the surface a popover has: the palette the
+/// context popover gives its own card.
+pub(crate) fn card_palette() -> ComponentPalette {
+    theme::menu_palette()
 }
 
 /// For what an open block of the card lists: the block is filled with the
@@ -138,10 +142,17 @@ pub(crate) fn layout(
         != crate::environment_git_ui::EnvironmentGitPanel::Overview
     {
         620.0
-    } else if state.environment.details_expanded {
+    } else if state.environment.details_expanded
+        || state.environment.subagents_expanded
+        || state.environment.terminals_expanded
+    {
         580.0
     } else {
-        344.0
+        // One more row fits under the closed card; each one after it adds its own.
+        let running = usize::from(subagents(state).next().is_some())
+            + usize::from(!state.terminal_controls.agents.is_empty())
+            + usize::from(preview(state).is_some());
+        344.0 + running.saturating_sub(1) as f32 * (FramedCard::ROW_HEIGHT + FramedCard::ROW_GAP)
     };
     let panel_height = if stacked {
         (available_height * 0.35 - 12.0)
@@ -165,12 +176,14 @@ pub(crate) fn layout(
     }
 }
 
-/// What the card puts around its rows: the frame, its margins above and
-/// below, the header and the foot.
-// shortcut: a framed card on limn does not scroll its rows under a height, so
-// the sum of what it adds is written here and a test holds it; drop it when
-// the card can keep its header and its foot while its rows scroll.
-const CARD_CHROME: f32 = 86.0;
+/// What stays around the card's scrolling rows: the header under its margin,
+/// the hairline and the foot.
+// shortcut: the rows are capped by what is left of the panel's height, so the
+// sum of what stays is written here and a test holds it; drop it when a
+// panel in the flow can cap a body between a header and a foot by itself.
+const CARD_CHROME: f32 = 77.0;
+/// The margins a flat card keeps over its first row and under its last.
+const BODY_MARGINS: f32 = 16.0;
 const HEADER_HEIGHT: f32 = 28.0;
 /// The project's row: its name over its path.
 const PROJECT_ROW_HEIGHT: f32 = 44.0;
@@ -192,35 +205,64 @@ fn locked(state: &ViewState) -> bool {
         || state.composer_branches.switching()
 }
 
-/// As tall as what it shows, up to `height`: the card's rows scroll past
-/// that, between its header and its foot.
+/// The views the panel switches between. The project actions open inside
+/// the overview.
+const VIEWS: [crate::environment_git_ui::EnvironmentGitPanel; 5] = {
+    use crate::environment_git_ui::EnvironmentGitPanel::*;
+    [Overview, Commit, Compare, CreateBranch, CreateWorktree]
+};
+
+/// The panel is the card: the surface of a popover, with its content
+/// straight on it. As tall as what it shows, up to `height`: the card's rows
+/// scroll past that, between its header and its foot.
 pub(crate) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
     use crate::environment_git_ui::EnvironmentGitPanel;
     let workflow = &state.environment.workflow;
-    let content = if matches!(
-        workflow.panel,
-        EnvironmentGitPanel::Overview | EnvironmentGitPanel::Actions
-    ) {
-        card(state, width, height)
+    // One pixel in on every side for the surface's border, as the context
+    // popover's content stands.
+    let (inner, room) = ((width - 2.0).max(0.0), (height - 2.0).max(0.0));
+    let shown = match workflow.panel {
+        EnvironmentGitPanel::Actions => EnvironmentGitPanel::Overview,
+        panel => panel,
+    };
+    let content = if shown == EnvironmentGitPanel::Overview {
+        card(state, inner, room)
     } else {
-        // A Git form stands on the panel's own surface.
-        let inner = (width - 12.0).max(120.0);
+        // A Git form keeps the six pixels it always stood in from the edge.
+        let form = (inner - 10.0).max(120.0);
         Element::panel(
             ScrollArea::new(
                 "chat_environment",
-                crate::environment_git_ui::build(workflow, inner, locked(state)),
+                crate::environment_git_ui::build(workflow, form, locked(state)),
             )
             .tint(theme::FOREGROUND_SUBTLE)
             .render()
-            .size(Some(inner), None)
-            .max_height((height - 12.0).max(0.0)),
+            .size(Some(form), None)
+            .max_height((room - 10.0).max(0.0)),
         )
-        .padding(6.0)
+        .padding(5.0)
     };
-    Element::panel(content)
-        .background(theme::CARD)
-        .border(theme::BORDER, 1.0)
-        .radius(16.0)
+    // Each view has a slot that opens and closes on the library's spring. The
+    // one shown stands first: it opens in its place while the one it replaces
+    // closes under it, and the panel's height follows both.
+    let slot = |view: EnvironmentGitPanel, content| {
+        Collapse::new(format!("environment_view:{view:?}"), content)
+            .expand()
+            .render()
+    };
+    let mut slots = vec![slot(shown, Some(content))];
+    slots.extend(
+        VIEWS
+            .into_iter()
+            .filter(|view| *view != shown)
+            .map(|view| slot(view, None)),
+    );
+    let surface = card_palette();
+    Element::column(slots)
+        .padding(1.0)
+        .background(surface.raised)
+        .border(surface.border, 1.0)
+        .radius(RadiusRole::Surface.px())
         .size(Some(width), None)
         .clip_children()
 }
@@ -784,9 +826,9 @@ fn card_header(loading: bool) -> Element {
 /// The card's foot. On the left, the repository's changes, which open their
 /// review; on the right, the commit, while there is a repository to commit to.
 fn foot(state: &ViewState, width: f32, locked: bool) -> Element {
-    // The frame is a shade above the card, so its controls hover as those of
-    // an open block do.
-    let palette = block_palette();
+    // The foot stands on the card's own surface, so its controls hover as
+    // the rows do.
+    let palette = card_palette();
     let text = |value: &str, ink| {
         Element::truncated_text(value)
             .font_family(FontFamily::Sans)
@@ -920,6 +962,147 @@ fn foot(state: &ViewState, width: f32, locked: bool) -> Element {
     Element::row(foot)
 }
 
+/// The subagents the selected conversation started, each with whether it can
+/// still be stopped.
+pub(crate) fn subagents(
+    state: &ViewState,
+) -> impl Iterator<Item = (&crate::view::SubagentSessionView, bool)> {
+    let selected = state.selected_session.as_deref();
+    state
+        .subagent_sessions
+        .iter()
+        .filter(move |run| selected == Some(run.parent_session_id.as_str()))
+        .map(|run| {
+            let live = state
+                .active_subagents
+                .iter()
+                .any(|live| live.child_session_id == run.child_session_id);
+            (run, crate::session_surface::subagent_cancellable(run, live))
+        })
+}
+
+/// The newest command of this conversation that serves a preview, as the
+/// browser's default address is chosen.
+fn preview(state: &ViewState) -> Option<&crate::terminal_dock_ui::AgentTerminalView> {
+    state
+        .terminal_controls
+        .agents
+        .iter()
+        .filter(|agent| agent.preview.is_some())
+        .max_by_key(|agent| agent.id)
+}
+
+/// A block's title with a figure beside it: how many of what it lists are
+/// still going, or how many there are once none is.
+fn tallied(title: &str, going: usize, total: usize) -> Element {
+    let figure = if going > 0 {
+        format!("{going} en curso")
+    } else {
+        total.to_string()
+    };
+    Element::row(vec![
+        label(title, theme::FOREGROUND).flex(1.0),
+        theme::text_px(figure, 10.5, theme::FOREGROUND_SUBTLE).centered_y(),
+    ])
+    .gap(8.0)
+}
+
+/// What "Subagentes" lists: each one's task and state, which opens its
+/// conversation, and the way to stop those still going.
+fn subagent_rows(state: &ViewState, width: f32) -> Vec<Element> {
+    let mut going = 0;
+    let mut rows: Vec<Element> = subagents(state)
+        .map(|(run, stoppable)| {
+            going += usize::from(stoppable);
+            let status = if state.pause.sessions.contains_key(&run.child_session_id) {
+                "En pausa"
+            } else {
+                crate::session_surface::subagent_status_label(run.status)
+            };
+            let detail = if run.cancellation_requested {
+                format!("{status} · Cancelación solicitada")
+            } else {
+                status.to_owned()
+            };
+            // A target of its own: the conversation's card has the same action.
+            let id = format!("environment_subagent:{}", run.child_session_id);
+            let row = ListRow::new(&id, &run.title, block_palette())
+                .icon(Icon::Users)
+                .subtitle(detail)
+                .trailing_icon(Icon::ChevronRight)
+                .width(width)
+                .sizing(crate::ui_sizing::ENVIRONMENT_ACTION)
+                .render()
+                .dispatch_as(format!("subagent_open:{}", run.child_session_id));
+            Tooltip::new(row, id, "Abrir subagente", theme::component_palette())
+                .description(run.title.clone())
+                .render()
+        })
+        .collect();
+    if going > 0 {
+        rows.push(Element::row(vec![
+            Button::new("environment_subagents_stop", "Detener todos", block_button_palette())
+                .icon(Icon::Stop)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Compact)
+                .tooltip("Cancelar los subagentes en curso de esta conversación")
+                .render(),
+            Element::spacer().flex(1.0),
+        ]));
+    }
+    rows
+}
+
+/// What "Terminales" lists: the commands the agent started here, each with
+/// how it stands. A row shows its tab; a running one can be stopped, which
+/// asks first as closing its tab does.
+fn terminal_rows(state: &ViewState, width: f32) -> Vec<Element> {
+    state
+        .terminal_controls
+        .agents
+        .iter()
+        .map(|agent| {
+            let command = state
+                .terminal_tabs
+                .iter()
+                .find(|tab| tab.id == agent.id)
+                .map_or("Comando", |tab| tab.title.as_str());
+            let row = ListRow::new(
+                format!("agent_terminal_show:{}", agent.command_id),
+                command,
+                block_palette(),
+            )
+            .icon(Icon::Terminal)
+            .subtitle(agent.ended.as_deref().unwrap_or("En ejecución"))
+            .tooltip_with(
+                TooltipSpec::new("Ver en terminal")
+                    .description(command)
+                    .palette(theme::component_palette()),
+            )
+            .sizing(crate::ui_sizing::ENVIRONMENT_ACTION)
+            .render()
+            .flex(1.0);
+            let mut row = vec![row];
+            if agent.ended.is_none() {
+                row.push(
+                    IconButton::new(
+                        format!("environment_terminal_stop:{}", agent.id),
+                        Icon::Stop,
+                        block_palette(),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Regular)
+                    .tooltip_with(TooltipSpec::new("Detener").placement(TooltipPlacement::Above))
+                    .dispatch_as(format!("terminal_close:{}", agent.id))
+                    .render()
+                    .centered_y(),
+                );
+            }
+            Element::row(row).gap(2.0).size(Some(width), None)
+        })
+        .collect()
+}
+
 /// What "Fuentes y herramientas" lists: the chat's changes, its sources and
 /// the tools of the conversation.
 fn details(state: &ViewState, width: f32) -> Vec<Element> {
@@ -970,8 +1153,9 @@ fn details(state: &ViewState, width: f32) -> Vec<Element> {
     rows
 }
 
-/// The card on the panel's frame. Its header and its foot stay; the rows
-/// between them scroll once the card would be taller than `height`.
+/// The overview, straight on the panel's surface as the context summary
+/// stands on its popover's. Its header and its foot stay; the rows between
+/// them scroll once the card would be taller than `height`.
 fn card(state: &ViewState, width: f32, height: f32) -> Element {
     use crate::environment_git_ui::EnvironmentGitPanel;
     let palette = card_palette();
@@ -1087,6 +1271,64 @@ fn card(state: &ViewState, width: f32, height: f32) -> Element {
         }),
         palette,
     );
+    // What the conversation has going is listed only while there is any.
+    let mut running = Vec::new();
+    let (going, total) = subagents(state).fold((0, 0), |(going, total), (_, stoppable)| {
+        (going + usize::from(stoppable), total + 1)
+    });
+    if total > 0 {
+        let open = state.environment.subagents_expanded;
+        running.push(FramedCard::block(
+            "environment_subagents",
+            card_row(
+                "environment_subagents_toggle",
+                Icon::Users,
+                tallied("Subagentes", going, total),
+                chevron(open),
+                "Subagentes que inició esta conversación",
+                Some("environment_subagents_toggle"),
+            ),
+            open.then(|| listed(subagent_rows(state, list_width))),
+            palette,
+        ));
+    }
+    let agents = &state.terminal_controls.agents;
+    if !agents.is_empty() {
+        let open = state.environment.terminals_expanded;
+        let going = agents.iter().filter(|agent| agent.ended.is_none()).count();
+        running.push(FramedCard::block(
+            "environment_terminals",
+            card_row(
+                "environment_terminals_toggle",
+                Icon::Terminal,
+                tallied("Terminales", going, agents.len()),
+                chevron(open),
+                "Comandos que el agente inició en esta conversación",
+                Some("environment_terminals_toggle"),
+            ),
+            open.then(|| listed(terminal_rows(state, list_width))),
+            palette,
+        ));
+    }
+    if let Some((agent, url)) = preview(state).and_then(|agent| Some((agent, agent.preview.as_deref()?))) {
+        running.push(card_row(
+            "environment_preview",
+            Icon::Globe,
+            Element::row(vec![
+                label("Vista previa", theme::FOREGROUND).shrink_to_fit(),
+                Element::truncated_text(url)
+                    .font_family(FontFamily::Sans)
+                    .font_size(10.5)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .flex(1.0)
+                    .centered_y(),
+            ])
+            .gap(8.0),
+            Icon::ChevronRight,
+            &format!("Abrir en el navegador integrado\n{url}"),
+            Some(&format!("agent_preview_open:{}", agent.command_id)),
+        ));
+    }
     let details_open = state.environment.details_expanded;
     let details = FramedCard::block(
         "environment_details",
@@ -1109,8 +1351,9 @@ fn card(state: &ViewState, width: f32, height: f32) -> Element {
         Element::spacer().size(None, Some(2.0)),
         compare,
         actions,
-        details,
     ];
+    rows.extend(running);
+    rows.push(details);
     // The foot already says the repository is being read for the first time.
     let said = workflow.loading && workflow.busy.is_none() && !matches!(state.git_review, Some(Ok(_)));
     let notices: Vec<_> = crate::environment_git_ui::notices(workflow)
@@ -1124,7 +1367,7 @@ fn card(state: &ViewState, width: f32, height: f32) -> Element {
         rows.push(Element::spacer().size(None, Some(2.0)));
     }
     // The rail keeps to the room a row leaves beside its content.
-    let scroll = |content: Element, height: f32| {
+    let scroll = |content: Element| {
         ScrollArea::new("chat_environment", content)
             .appearance(
                 ScrollbarAppearance::overlay()
@@ -1134,31 +1377,42 @@ fn card(state: &ViewState, width: f32, height: f32) -> Element {
                     .tint(theme::FOREGROUND_SUBTLE),
             )
             .render()
-            .max_height(height.max(0.0))
     };
-    let rows = Element::column(rows).gap(FramedCard::ROW_GAP);
+    let (body, foot) = FramedCard::new(palette)
+        .flat()
+        .width(width)
+        .rows(Element::column(rows).gap(FramedCard::ROW_GAP))
+        .foot(foot(state, width, locked))
+        .into_parts();
     // With no room for two rows between them, the header and the foot scroll
     // with the rows instead of staying.
-    let pinned = height - CARD_CHROME >= PROJECT_ROW_HEIGHT + FramedCard::ROW_HEIGHT;
-    let card = FramedCard::new(palette)
-        .width(width)
-        .section(card_header(workflow.loading))
-        .rows(if pinned {
-            scroll(rows, height - CARD_CHROME)
-        } else {
-            rows
-        })
-        .foot(foot(state, width, locked))
-        .render();
+    let pinned = height - CARD_CHROME - BODY_MARGINS >= PROJECT_ROW_HEIGHT + FramedCard::ROW_HEIGHT;
+    // limn gives a flat card's body and foot apart, not its head, so the
+    // header keeps the card's inset and top margin here.
+    let side = || Element::spacer().size(Some(FramedCard::INSET), None);
+    let header = Element::column(vec![
+        Element::spacer().size(None, Some(8.0)),
+        Element::row(vec![side(), card_header(workflow.loading).flex(1.0), side()]),
+    ]);
+    // The context summary's parts: the foot under the body, with its hairline.
+    let mut card = PopoverPanel::new(theme::component_palette())
+        .header(header)
+        .body(if pinned { scroll(body) } else { body })
+        .footer(Element::column(foot.into_iter().collect()))
+        .sizing(crate::ui_sizing::CONTEXT_POPOVER);
+    if pinned {
+        card = card.body_max_height(height - CARD_CHROME);
+    }
+    let card = card.render().size(Some(width), None);
     if pinned {
         card
     } else {
-        scroll(card, height)
+        scroll(card).max_height(height.max(0.0))
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::environment_git_ui::EnvironmentGitPanel;
     use openide_ui::{
@@ -1167,6 +1421,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const SIZE: Size = Size::new(420.0, 1200.0);
+    /// The panel's border, which its content stands inside.
+    const EDGE: f32 = 1.0;
 
     fn repository(state: &mut ViewState) {
         state.git_review = Some(Ok(crate::git_review::GitReview {
@@ -1176,6 +1432,51 @@ mod tests {
             ..Default::default()
         }
         .into()));
+    }
+
+    /// A conversation with two subagents, two commands its agent started and
+    /// a preview one of them serves; another conversation's subagent beside them.
+    pub(crate) fn going(state: &mut ViewState) {
+        use openide_harness::SubagentStatus;
+        let selected = state.selected_session.get_or_insert_with(|| "s1".into()).clone();
+        for (child, parent, title, status) in [
+            ("child-1", selected.as_str(), "Actualizar pruebas", SubagentStatus::Running),
+            ("child-2", selected.as_str(), "Revisar el diff", SubagentStatus::Completed),
+            ("other", "another", "De otra conversación", SubagentStatus::Running),
+        ] {
+            state.subagent_sessions.push(crate::view::SubagentSessionView {
+                child_session_id: child.into(),
+                parent_session_id: parent.into(),
+                title: title.into(),
+                status,
+                cancellation_requested: false,
+                open_inputs: 0,
+                inputs: vec![],
+                dispatch_error: None,
+                depth: 1,
+            });
+        }
+        for (id, command, ended, preview) in [
+            (7, "npm run dev", None, Some("http://localhost:5173/")),
+            (8, "cargo test", Some("Proceso finalizado · código 0"), None),
+        ] {
+            state.terminal_tabs.push(crate::view::DockTabView {
+                id,
+                title: command.into(),
+                full_path: None,
+                active: id == 7,
+                kind: SideTab::Terminal,
+                closable: true,
+            });
+            state.terminal_controls.agents.push(crate::terminal_dock_ui::AgentTerminalView {
+                id,
+                command_id: format!("cmd-{id}"),
+                task: "Tarea".into(),
+                read_only: false,
+                ended: ended.map(str::to_owned),
+                preview: preview.map(str::to_owned),
+            });
+        }
     }
 
     fn saved_action(state: &mut ViewState) {
@@ -1228,6 +1529,11 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The panel's own fill: the first thing it paints.
+    fn surface(frame: &Frame) -> Rect {
+        fills(frame, card_palette().raised)[0]
     }
 
     fn center(rect: Rect) -> Point {
@@ -1396,7 +1702,8 @@ mod tests {
     fn a_rows_hover_fill_reaches_past_its_content_and_keeps_off_the_cards_edge() {
         let state = crate::view::tests::empty_state();
         let hover = card_palette().hover;
-        let (inset, reach) = (FramedCard::INSET, FramedCard::INSET - FramedCard::REACH);
+        // From the panel's edge, inside its border.
+        let (inset, reach) = (EDGE + FramedCard::INSET, EDGE + FramedCard::INSET - FramedCard::REACH);
         for width in [280.0, 380.0] {
             let mut tree = tree(&state, width, 344.0);
             let frame = tree.layout(SIZE);
@@ -1417,7 +1724,7 @@ mod tests {
                 let fill = fill[0];
                 assert_eq!((fill.x, fill.x + fill.width), (reach, width - reach), "{id}");
                 assert_eq!((fill.y, fill.height), (content.y, content.height), "{id}");
-                assert!(fill.x > FramedCard::FRAME + 1.0);
+                assert!(fill.x > EDGE);
             }
         }
     }
@@ -1448,7 +1755,7 @@ mod tests {
                 ["environment_changes_open", "dock_open:activity"],
             ),
         ] {
-            let reach = FramedCard::INSET - FramedCard::REACH;
+            let reach = EDGE + FramedCard::INSET - FramedCard::REACH;
             assert_eq!((block.x, block.x + block.width), (reach, width - reach), "{row}");
             // The row is the top of the block, and what it lists is inside it.
             assert_eq!(rect(row).y, block.y, "{row}");
@@ -1471,7 +1778,7 @@ mod tests {
                 Element::spacer().flex(1.0),
             ])
         };
-        let height = |frame: &Frame| fills(frame, theme::CARD)[0].height;
+        let height = |frame: &Frame| surface(frame).height;
         let listed = |frame: &Frame| button(frame, "dock_open:activity").is_some();
         // A slot opens and closes on a spring that all but arrives in one and
         // a half moves; it is at rest well within three times that.
@@ -1582,8 +1889,8 @@ mod tests {
             context.end_pass().textures_delta.clear();
             let rect = |id: &str| button(&frame, id).unwrap();
             let (changes, commit) = (rect("dock_open:review"), rect("environment_git_open_commit"));
-            assert!(changes.x >= FramedCard::INSET && changes.x + changes.width <= commit.x);
-            assert_eq!(commit.x + commit.width, width - FramedCard::INSET);
+            assert!(changes.x >= EDGE + FramedCard::INSET && changes.x + changes.width <= commit.x);
+            assert_eq!(commit.x + commit.width, width - EDGE - FramedCard::INSET);
             assert!(commit.width <= COMMIT_WIDTH, "{commit:?}");
             texts(&frame).into_iter().map(str::to_owned).collect::<Vec<_>>()
         };
@@ -1655,12 +1962,11 @@ mod tests {
     fn the_panel_is_as_tall_as_its_rows_until_they_scroll_between_header_and_foot() {
         let mut state = crate::view::tests::empty_state();
         repository(&mut state);
-        let surface = |frame: &Frame| fills(frame, theme::CARD)[0];
         let short = frame(&state, 320.0, 620.0);
         let natural = surface(&short).height;
         assert!(natural < 344.0, "the closed card fits its preferred height: {natural}");
         let rows = short.regions.iter().find(|region| region.id == "chat_environment").unwrap().rect;
-        assert_eq!(natural, rows.height + CARD_CHROME);
+        assert_eq!(natural, rows.height + CARD_CHROME + 2.0 * EDGE);
         // Open, a section makes the panel taller, up to what it is given.
         state.environment.details_expanded = true;
         let open = frame(&state, 320.0, 1100.0);
@@ -1675,7 +1981,7 @@ mod tests {
         let tiny = frame(&state, 320.0, 120.0);
         assert_eq!(surface(&tiny).height, 120.0);
         let scroll = tiny.regions.iter().find(|region| region.id == "chat_environment").unwrap();
-        assert_eq!(scroll.rect, Rect::new(0.0, 0.0, 320.0, 120.0));
+        assert_eq!(scroll.rect, Rect::new(EDGE, EDGE, 320.0 - 2.0 * EDGE, 120.0 - 2.0 * EDGE));
         assert!(holds(scroll.rect, button(&tiny, "environment_dismiss").unwrap()));
         // A Git form keeps to the same limit.
         state.environment.workflow.panel = EnvironmentGitPanel::Compare;
@@ -1683,6 +1989,412 @@ mod tests {
         assert!(surface(&form).height <= 240.0);
         assert!(button(&form, "environment_git_back").is_some());
         assert!(button(&form, "environment_dismiss").is_some());
+    }
+
+    /// The fill and the border painted on exactly `rect`.
+    fn shell(frame: &Frame, rect: Rect) -> ((Color, f32), (Color, f32, f32)) {
+        let fill = frame.commands.iter().find_map(|command| match command {
+            DrawCommand::FillRect { rect: own, color, radius } if *own == rect => Some((*color, *radius)),
+            _ => None,
+        });
+        let border = frame.commands.iter().find_map(|command| match command {
+            DrawCommand::StrokeRect { rect: own, color, width, radius } if *own == rect => {
+                Some((*color, *width, *radius))
+            }
+            _ => None,
+        });
+        (fill.expect("a fill"), border.expect("a border"))
+    }
+
+    /// A repository read from an empty one in a temporary directory.
+    fn snapshot() -> crate::environment_git::GitSnapshot {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(crate::child_process::command_no_window("git")
+            .args(["init", "-q"])
+            .current_dir(directory.path())
+            .status()
+            .unwrap()
+            .success());
+        crate::environment_git::load_snapshot(directory.path()).unwrap()
+    }
+
+    #[test]
+    fn the_panel_is_the_surface_the_context_popover_stands_on() {
+        // The context popover, open over its ring.
+        let mut state = crate::view::tests::empty_state();
+        state.selected_backend = "native".into();
+        state.composer_context_open = true;
+        let props = ComposerProps::from_state(&state, 400.0, false, None, "", None);
+        let mut popover = UiTree::new(Element::column(vec![
+            Element::spacer().flex(1.0),
+            Element::row(vec![Element::spacer().flex(1.0), crate::composer_context_ui::control(&props)]),
+        ]));
+        popover.set_reduced_motion(true);
+        let popover = popover.layout(SIZE);
+        let floating = popover
+            .regions
+            .iter()
+            .find(|region| region.id == "popover_surface:composer_context_dismiss")
+            .expect("the context popover is open")
+            .rect;
+        let reference = shell(&popover, floating);
+
+        repository(&mut state);
+        let shot = |state: &ViewState, height: f32| (frame(state, 320.0, height), height);
+        let mut states = vec![("overview", shot(&state, 344.0))];
+        state.environment.details_expanded = true;
+        state.environment.workflow.panel = EnvironmentGitPanel::Actions;
+        states.push(("sections", shot(&state, 1100.0)));
+        states.push(("short", shot(&state, 240.0)));
+        states.push(("tiny", shot(&state, 120.0)));
+        state.environment.workflow.snapshot = Some(snapshot());
+        for panel in [
+            EnvironmentGitPanel::Commit,
+            EnvironmentGitPanel::Compare,
+            EnvironmentGitPanel::CreateBranch,
+            EnvironmentGitPanel::CreateWorktree,
+        ] {
+            state.environment.workflow.panel = panel;
+            states.push(("form", shot(&state, 620.0)));
+        }
+        let tint = card_palette().hover;
+        let tint = Color::rgba(tint.r, tint.g, tint.b, tint.a / 2);
+        for (name, (frame, height)) in states {
+            let panel = surface(&frame);
+            assert_eq!((panel.x, panel.y, panel.width), (0.0, 0.0, 320.0), "{name}");
+            assert!(panel.height <= height, "{name}: {panel:?}");
+            // Its fill, its border and its corners are the popover's own.
+            assert_eq!(shell(&frame, panel), reference, "{name}");
+            assert_eq!(reference.0, (theme::menu_palette().raised, RadiusRole::Surface.px()));
+            // Nothing stands between the surface and its content: no second
+            // card, and no frame tinted around one.
+            assert_eq!(fills(&frame, card_palette().raised).len(), 1, "{name}");
+            assert!(fills(&frame, tint).is_empty(), "{name}");
+            // Its four corners stay round: nothing else is painted over them.
+            for (x, y) in [(0.5, 0.5), (319.5, 0.5), (0.5, panel.height - 0.5), (319.5, panel.height - 0.5)] {
+                let over = frame.commands.iter().skip(1).any(|command| match command {
+                    DrawCommand::FillRect { rect, .. } | DrawCommand::FillCornerRect { rect, .. } => {
+                        *rect != panel && holds(*rect, Rect::new(x, y, 0.0, 0.0))
+                    }
+                    _ => false,
+                });
+                assert!(!over, "{name}: a fill covers the corner at {x}, {y}");
+            }
+            // Every state keeps the way out, and a form the way back.
+            assert!(button(&frame, "environment_dismiss").is_some(), "{name}");
+            if name == "form" {
+                assert!(button(&frame, "environment_git_back").is_some());
+            } else if name != "tiny" {
+                for id in ["dock_open:review", "environment_git_open_commit", "environment_git_refresh"] {
+                    assert!(holds(panel, button(&frame, id).unwrap()), "{name}: {id}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_foot_stays_under_its_hairline_while_the_rows_scroll() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        state.environment.details_expanded = true;
+        let mut tree = tree(&state, 320.0, 240.0);
+        let frame = tree.layout(SIZE);
+        let rect = |frame: &Frame, id: &str| button(frame, id).unwrap_or_else(|| panic!("missing {id}"));
+        // The hairline the context popover has over its own foot.
+        let rule = |frame: &Frame| {
+            let rules: Vec<_> = fills(frame, theme::component_palette().border)
+                .into_iter()
+                .filter(|rect| rect.height == 1.0)
+                .collect();
+            assert_eq!(rules.len(), 1, "{rules:?}");
+            rules[0]
+        };
+        let rows = frame.regions.iter().find(|region| region.id == "chat_environment").unwrap().rect;
+        let (line, changes, commit, close) = (
+            rule(&frame),
+            rect(&frame, "dock_open:review"),
+            rect(&frame, "environment_git_open_commit"),
+            rect(&frame, "environment_dismiss"),
+        );
+        // It spans the surface inside its border, between the rows and the foot.
+        assert_eq!((line.x, line.width), (EDGE, 320.0 - 2.0 * EDGE));
+        assert_eq!(line.y, rows.y + rows.height);
+        assert!(changes.y > line.y && commit.y > line.y);
+        assert_eq!(surface(&frame).height, 240.0);
+        let first = rect(&frame, "environment_project_toggle");
+        // A wheel turned down moves the rows up under the header.
+        tree.handle_event(UiEvent::ScrollDirect { position: center(rows), delta_y: -120.0 });
+        let scrolled = tree.layout(SIZE);
+        assert_eq!(tree.scroll_offset("chat_environment"), 120.0);
+        assert!(button(&scrolled, "environment_project_toggle").is_none_or(|rect| rect.y < first.y));
+        assert_eq!(rule(&scrolled), line);
+        assert_eq!(rect(&scrolled, "dock_open:review"), changes);
+        assert_eq!(rect(&scrolled, "environment_git_open_commit"), commit);
+        assert_eq!(rect(&scrolled, "environment_dismiss"), close);
+        assert_eq!(surface(&scrolled).height, 240.0);
+    }
+
+    #[test]
+    fn a_view_opens_in_place_of_the_one_it_replaces_and_the_panel_follows_both() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        let mut repository = snapshot();
+        repository.staged = 1;
+        state.environment.workflow.snapshot = Some(repository);
+        let root = |state: &ViewState| {
+            Element::row(vec![
+                Element::column(vec![panel(state, 320.0, 620.0), Element::spacer().flex(1.0)]),
+                Element::spacer().flex(1.0),
+            ])
+        };
+        let height = |frame: &Frame| surface(frame).height;
+        // A view's slot moves on the library's spring: it all but arrives in
+        // one and a half moves and is at rest well within three times that.
+        let settle = Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) * 3 / 2);
+        let start = Instant::now() - Duration::from_secs(10);
+        let mut tree = UiTree::new(root(&state));
+        let overview = height(&tree.layout_at(SIZE, start));
+
+        state.environment.workflow.panel = EnvironmentGitPanel::Commit;
+        tree.set_root(root(&state));
+        // The frame the form arrives in has not grown.
+        assert_eq!(height(&tree.layout_at(SIZE, start)), overview);
+        let frame = tree.layout_at(SIZE, start + settle / 2);
+        let midway = height(&frame);
+        // The form's heading is where it will stay, over what it replaces.
+        let back = button(&frame, "environment_git_back").expect("the form is reachable as it opens");
+        assert!(texts(&frame).contains(&"Entorno"), "the overview is still fading");
+        assert!(button(&frame, "environment_git_open_commit").is_none(), "what leaves is paint only");
+        let end = start + settle * 3;
+        let frame = tree.layout_at(SIZE, end);
+        let form = height(&frame);
+        assert!(overview < midway && midway < form, "{overview} {midway} {form}");
+        assert_eq!(button(&frame, "environment_git_back").unwrap().y, back.y);
+        assert!(!texts(&frame).contains(&"Entorno"));
+
+        // Back, the overview opens over the form the same way.
+        state.environment.workflow.panel = EnvironmentGitPanel::Overview;
+        tree.set_root(root(&state));
+        assert_eq!(height(&tree.layout_at(SIZE, end)), form);
+        let frame = tree.layout_at(SIZE, end + settle / 2);
+        let midway = height(&frame);
+        assert!(overview < midway && midway < form, "{overview} {midway} {form}");
+        assert!(button(&frame, "environment_dismiss").is_some());
+        let frame = tree.layout_at(SIZE, end + settle * 3);
+        assert_eq!(height(&frame), overview);
+        assert!(button(&frame, "environment_git_open_commit").is_some());
+        assert!(button(&frame, "environment_git_back").is_none());
+        assert!(!tree.is_animating());
+    }
+
+    #[test]
+    fn the_action_editor_opens_in_place_of_the_list_and_its_block_follows() {
+        let mut state = crate::view::tests::empty_state();
+        saved_action(&mut state);
+        state.environment.workflow.panel = EnvironmentGitPanel::Actions;
+        let root = |state: &ViewState| {
+            Element::row(vec![
+                Element::column(vec![panel(state, 320.0, 1100.0), Element::spacer().flex(1.0)]),
+                Element::spacer().flex(1.0),
+            ])
+        };
+        let height = |frame: &Frame| surface(frame).height;
+        let has = |frame: &Frame, id: &str| frame.regions.iter().any(|region| region.id == id);
+        // The same spring as a section: all but there in one and a half
+        // moves, at rest well within three times that.
+        let settle = Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) * 3 / 2);
+        let start = Instant::now() - Duration::from_secs(10);
+        let mut tree = UiTree::new(root(&state));
+        let list = height(&tree.layout_at(SIZE, start));
+
+        state.project_actions.begin_new();
+        tree.set_root(root(&state));
+        assert_eq!(height(&tree.layout_at(SIZE, start)), list);
+        let frame = tree.layout_at(SIZE, start + settle / 2);
+        let midway = height(&frame);
+        assert!(has(&frame, "project_action_label"));
+        assert!(!has(&frame, "project_action_run:check"), "the list that leaves is paint only");
+        let end = start + settle * 3;
+        let editor = height(&tree.layout_at(SIZE, end));
+        assert!(list < midway && midway < editor, "{list} {midway} {editor}");
+
+        state.project_actions.cancel_edit();
+        tree.set_root(root(&state));
+        assert_eq!(height(&tree.layout_at(SIZE, end)), editor);
+        let midway = height(&tree.layout_at(SIZE, end + settle / 2));
+        assert!(list < midway && midway < editor, "{list} {midway} {editor}");
+        let frame = tree.layout_at(SIZE, end + settle * 3);
+        assert_eq!(height(&frame), list);
+        assert!(has(&frame, "project_action_run:check") && !has(&frame, "project_action_label"));
+        assert!(!tree.is_animating());
+    }
+
+    #[test]
+    fn what_the_conversation_has_going_is_listed_only_while_there_is_any() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        let quiet = frame(&state, 380.0, 1100.0);
+        for id in ["environment_subagents_toggle", "environment_terminals_toggle", "environment_preview"] {
+            assert!(button(&quiet, id).is_none(), "{id}");
+        }
+        going(&mut state);
+        let closed = frame(&state, 380.0, 1100.0);
+        // Between the project's actions and the sources.
+        let y = |id: &str| button(&closed, id).unwrap_or_else(|| panic!("missing {id}")).y;
+        let order = [
+            "project_actions_open",
+            "environment_subagents_toggle",
+            "environment_terminals_toggle",
+            "environment_preview",
+            "environment_details_toggle",
+        ];
+        assert!(order.windows(2).all(|pair| y(pair[0]) < y(pair[1])));
+        // Each block says how many of its own are still going.
+        let said = texts(&closed);
+        assert_eq!(said.iter().filter(|text| **text == "1 en curso").count(), 2, "{said:?}");
+        assert!(said.contains(&"http://localhost:5173/"));
+        assert!(button(&closed, "environment_subagent:child-1").is_none());
+
+        state.environment.subagents_expanded = true;
+        state.environment.terminals_expanded = true;
+        let open = frame(&state, 380.0, 1100.0);
+        let said = texts(&open);
+        for text in [
+            "Actualizar pruebas",
+            "En ejecución",
+            "Revisar el diff",
+            "Completado",
+            "Detener todos",
+            "npm run dev",
+            "cargo test",
+            "Proceso finalizado · código 0",
+        ] {
+            assert!(said.contains(&text), "{text}: {said:?}");
+        }
+        // Another conversation's subagent is not this one's.
+        assert!(!said.contains(&"De otra conversación"));
+        assert!(button(&open, "environment_subagent:other").is_none());
+        // Only a command still running can be stopped.
+        assert!(button(&open, "environment_terminal_stop:7").is_some());
+        assert!(button(&open, "environment_terminal_stop:8").is_none());
+    }
+
+    #[test]
+    fn what_is_going_dispatches_the_actions_the_app_already_has() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        going(&mut state);
+        state.environment.subagents_expanded = true;
+        state.environment.terminals_expanded = true;
+        for (id, action) in [
+            ("environment_subagents_toggle", "environment_subagents_toggle"),
+            ("environment_subagent:child-1", "subagent_open:child-1"),
+            ("environment_subagent:child-2", "subagent_open:child-2"),
+            ("environment_subagents_stop", "environment_subagents_stop"),
+            ("environment_terminals_toggle", "environment_terminals_toggle"),
+            ("agent_terminal_show:cmd-7", "agent_terminal_show:cmd-7"),
+            ("agent_terminal_show:cmd-8", "agent_terminal_show:cmd-8"),
+            // Closing its tab is what asks before the process is stopped.
+            ("environment_terminal_stop:7", "terminal_close:7"),
+            ("environment_preview", "agent_preview_open:cmd-7"),
+        ] {
+            let mut tree = tree(&state, 380.0, 1100.0);
+            let frame = tree.layout(SIZE);
+            let point = center(button(&frame, id).unwrap_or_else(|| panic!("missing {id}")));
+            let clicked = vec![UiAction::Clicked { id: action.into() }];
+            tree.handle_event(UiEvent::PointerDown(point));
+            assert_eq!(tree.handle_event(UiEvent::PointerUp(point)), clicked, "{id}");
+            assert!(tree.focus(id), "{id} takes no focus");
+            let enter = UiEvent::Key { key: Key::Enter, shift: false, ctrl: false };
+            assert_eq!(tree.handle_event(enter), clicked, "{id}");
+        }
+    }
+
+    #[test]
+    fn a_change_of_state_shows_on_its_row_and_in_its_blocks_figure() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        going(&mut state);
+        state.environment.subagents_expanded = true;
+        state.environment.terminals_expanded = true;
+        // Paused on a limit is its own state.
+        state.pause.sessions.insert(
+            "child-1".into(),
+            crate::pause::PausedTurn {
+                class: openide_core::TurnPauseClass::LimitReached,
+                limit_key: "fixture".into(),
+                resets_at_ms: None,
+                detail: String::new(),
+                provider_id: "fixture".into(),
+                parent: Some("s1".into()),
+                paused_at_ms: 0,
+                pauses_in_turn: 1,
+            },
+        );
+        assert!(texts(&frame(&state, 380.0, 1100.0)).contains(&"En pausa"));
+        state.pause.sessions.clear();
+        state.subagent_sessions[0].cancellation_requested = true;
+        let asked = frame(&state, 380.0, 1100.0);
+        assert!(texts(&asked).contains(&"En ejecución · Cancelación solicitada"));
+        // Nothing is left to stop, so the way to stop them all goes.
+        assert!(button(&asked, "environment_subagents_stop").is_none());
+        state.subagent_sessions[0].status = openide_harness::SubagentStatus::Cancelled;
+        // The command ends, and with it the preview it served.
+        let served = &mut state.terminal_controls.agents[0];
+        served.ended = Some("Detenido".into());
+        served.preview = None;
+        let ended = frame(&state, 380.0, 1100.0);
+        let said = texts(&ended);
+        assert!(said.contains(&"Cancelado · Cancelación solicitada") && said.contains(&"Detenido"));
+        assert!(!said.contains(&"1 en curso"), "{said:?}");
+        // With none going, each block counts what it lists.
+        assert_eq!(said.iter().filter(|text| **text == "2").count(), 2, "{said:?}");
+        assert!(button(&ended, "environment_terminal_stop:7").is_none());
+        assert!(button(&ended, "environment_preview").is_none());
+        assert!(button(&ended, "agent_terminal_show:cmd-7").is_some());
+    }
+
+    #[test]
+    fn the_card_makes_room_for_what_is_going_and_scrolls_it_when_short() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        going(&mut state);
+        state.environment.open = true;
+        // Closed, the three rows fit in the height the panel asks for.
+        let preferred = layout(&state, 1200.0, 900.0).panel_height;
+        for width in [280.0, 380.0] {
+            let closed = frame(&state, width, preferred);
+            let panel = surface(&closed);
+            assert!(panel.height <= preferred, "{panel:?}");
+            assert_eq!(tree(&state, width, preferred).layout(SIZE).regions.iter().filter(|region| region.id == "chat_environment").count(), 1);
+            for id in ["environment_subagents_toggle", "environment_terminals_toggle", "environment_preview", "environment_details_toggle"] {
+                assert!(holds(panel, button(&closed, id).unwrap_or_else(|| panic!("missing {id}"))), "{id}");
+            }
+        }
+        let mut one = crate::view::tests::empty_state();
+        one.environment.open = true;
+        assert!(preferred > layout(&one, 1200.0, 900.0).panel_height);
+        // Open in a short panel, the rows scroll between the header and the foot.
+        state.environment.subagents_expanded = true;
+        state.environment.terminals_expanded = true;
+        let mut tree = tree(&state, 280.0, 240.0);
+        let short = tree.layout(SIZE);
+        let panel = surface(&short);
+        assert_eq!(panel.height, 240.0);
+        let rows = short.regions.iter().find(|region| region.id == "chat_environment").unwrap().rect;
+        for id in ["environment_dismiss", "dock_open:review", "environment_git_open_commit"] {
+            let rect = button(&short, id).unwrap_or_else(|| panic!("missing {id}"));
+            assert!(holds(panel, rect) && !holds(rows, rect), "{id}");
+        }
+        // Every row keeps inside the panel's width.
+        for region in &short.regions {
+            if region.id.starts_with("environment_") || region.id.starts_with("agent_") {
+                assert!(region.rect.x >= panel.x && region.rect.x + region.rect.width <= panel.x + panel.width, "{region:?}");
+            }
+        }
+        tree.handle_event(UiEvent::ScrollDirect { position: center(rows), delta_y: -400.0 });
+        tree.layout(SIZE);
+        assert!(tree.scroll_offset("chat_environment") > 0.0);
     }
 }
 

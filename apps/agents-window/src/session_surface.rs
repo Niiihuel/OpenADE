@@ -2959,6 +2959,16 @@ pub(crate) fn subagent_status_label(status: openide_harness::SubagentStatus) -> 
     }
 }
 
+/// A subagent that can still be cancelled: it runs, waits to start, or holds
+/// inputs it has not processed.
+pub(crate) fn subagent_cancellable(run: &crate::view::SubagentSessionView, live: bool) -> bool {
+    use openide_harness::SubagentStatus::{Completed, Ready, Running};
+    !run.cancellation_requested
+        && (live
+            || matches!(run.status, Ready | Running)
+            || (run.status == Completed && run.open_inputs > 0))
+}
+
 /// Shared by the session layout and the workspace fallback so permissions
 /// remain actionable while either related session is selected.
 fn persisted_subagent_card(
@@ -3018,12 +3028,7 @@ fn persisted_subagent_card(
     .variant(ButtonVariant::Outline)
     .size(ControlSize::Compact)
     .render()];
-    let cancellable =
-        live || matches!(
-            run.status,
-            openide_harness::SubagentStatus::Ready | openide_harness::SubagentStatus::Running
-        ) || (run.status == openide_harness::SubagentStatus::Completed && run.open_inputs > 0);
-    if cancellable && !run.cancellation_requested {
+    if subagent_cancellable(run, live) {
         actions.push(
             Button::new(
                 format!("subagent_cancel:{}", run.child_session_id),

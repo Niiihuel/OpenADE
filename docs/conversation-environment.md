@@ -21,14 +21,36 @@ pertenecen a una revisión de Git; una selección anterior a una actualización
 no puede cambiar de carpeta.
 
 El icono Entorno está en la cabecera del chat, junto al botón del panel
-derecho. La tarjeta es un `FramedCard` de limn sobre la superficie del panel:
-la cabecera con Actualizar y Cerrar, las filas y, sobre el marco, el pie. Las
+derecho. El panel es la tarjeta: tiene la superficie del popover de Contexto
+(la paleta de menú, su borde y su radio) y el contenido se apoya directo en
+ella, sin marco ni tarjeta interior. Es un `FramedCard` plano de limn: la
+cabecera con Actualizar y Cerrar, las filas y, bajo una línea, el pie. Las
 filas son el proyecto (nombre y ruta), Local y la rama, cada una con su menú,
 y **Comparar cambios**, que abre el formulario de comparación. **Acciones del
 proyecto** y **Fuentes y herramientas** se abren en su lugar como un solo
 bloque con lo que listan: las acciones guardadas, las sugeridas, su editor y
 **Nueva acción**; y los cambios del chat, las fuentes y las herramientas. La
 fila de un bloque abierto lo cierra, igual que Escape con las acciones.
+
+Entre las acciones y las fuentes, la tarjeta lista lo que la conversación
+tiene en marcha, y sólo mientras hay algo que listar:
+
+- **Subagentes**: los que inició esta conversación, cada uno con su tarea y
+  su estado (Pendiente, En ejecución, En pausa, Interrumpido, Completado,
+  Fallido, Cancelado). La fila abre su conversación. Mientras quede alguno que
+  se pueda cancelar, el bloque termina en **Detener todos**, que cancela cada
+  uno con la misma acción y las mismas comprobaciones que **Cancelar** en su
+  tarjeta; no pide confirmación, igual que esa acción.
+- **Terminales**: los comandos que el agente inició aquí, con **En ejecución**
+  o la forma en que terminaron. La fila muestra su pestaña (**Ver en
+  terminal**). Uno en ejecución tiene **Detener**, que pide la misma
+  confirmación que cerrar su pestaña, detiene el proceso y cierra la pestaña.
+- **Vista previa**: la dirección local del servidor más reciente que sigue
+  respondiendo; abre la pestaña Navegador. No aparece si la preferencia de
+  vista previa es Nunca.
+
+La fila de cada bloque dice cuántos siguen en curso y, cuando no queda
+ninguno, cuántos lista. Cerrada, la tarjeta pide la altura de esas filas.
 
 El pie resume los cambios del repositorio (archivos y sumas `+ / −`) y abre
 Repositorio; a la derecha, **Commit y push** abre su formulario. Si las sumas
@@ -41,7 +63,16 @@ Commit y push y Comparar cambios quedan atenuados y su tooltip dice por qué.
 El panel tiene la altura de su contenido hasta el límite que le da la
 ventana. Pasado ese límite se desplazan las filas, con la cabecera y el pie
 fijos; si no queda lugar para dos filas se desplaza la tarjeta entera. Los
-formularios de Git ocupan el panel completo, sin marco, con Volver.
+formularios de Git ocupan el panel completo, sobre la misma superficie, con
+Volver.
+
+Los bloques se abren y se cierran en su lugar con el resorte de limn. Al
+cambiar de vista (el resumen, Commit, Comparar, Crear rama o Crear worktree)
+la vista nueva se abre en su lugar con ese mismo resorte mientras la anterior
+se cierra debajo de ella, y la altura del panel acompaña a las dos; la lista
+de acciones y su editor se reemplazan igual dentro de su bloque. Los menús de
+los selectores son popovers y entran con su propia animación. Reducir
+movimiento aplica el estado final sin transición.
 
 Entorno y el panel derecho son excluyentes: abrir Entorno colapsa el panel,
 y abrir una herramienta o desplegar el panel cierra Entorno. Colapsar conserva

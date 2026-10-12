@@ -282,6 +282,25 @@ impl AgentsWindow {
                         self.view.environment.details_expanded =
                             !self.view.environment.details_expanded
                     }
+                    "environment_subagents_toggle" => {
+                        self.view.environment.subagents_expanded =
+                            !self.view.environment.subagents_expanded
+                    }
+                    "environment_terminals_toggle" => {
+                        self.view.environment.terminals_expanded =
+                            !self.view.environment.terminals_expanded
+                    }
+                    "environment_subagents_stop" => {
+                        // Each goes through its own cancel, with the guards
+                        // its card's "Cancelar" has.
+                        let going: Vec<String> = crate::environment_ui::subagents(&self.view)
+                            .filter(|(_, stoppable)| *stoppable)
+                            .map(|(run, _)| run.child_session_id.clone())
+                            .collect();
+                        for child in going {
+                            self.cancel_subagent(&child);
+                        }
+                    }
                     "environment_local_toggle" => {
                         self.view.environment.composer_local_open = false;
                         self.view.environment.menu =
