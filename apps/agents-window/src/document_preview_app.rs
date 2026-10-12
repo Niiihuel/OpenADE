@@ -427,7 +427,42 @@ impl AgentsWindow {
             "preview" => self.set_document_preview_mode(PreviewMode::Preview),
             "split" => self.set_document_preview_mode(PreviewMode::Split),
             "reload" => self.document_preview.due = Some(Instant::now()),
-            "fit" | "zoom_in" | "zoom_out" => {
+            // The picture the panel already decoded, in the window's viewer:
+            // nothing is read again, and an SVG is the raster it was drawn as.
+            "fullscreen" => {
+                if let (PreviewKind::Image, Some(image)) = (view.kind, view.raster.clone()) {
+                    let path = view.scope.path.to_string_lossy().into_owned();
+                    let label = view
+                        .scope
+                        .path
+                        .file_name()
+                        .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned());
+                    self.close_composer_floating_controls();
+                    // A response still on its way to an earlier viewer is not this one's.
+                    self.attachment_viewer_generation =
+                        self.attachment_viewer_generation.wrapping_add(1);
+                    self.view.composer_image_viewer =
+                        Some(crate::composer_attachments::ImageGalleryView {
+                            workspace: self.view.workspace.clone(),
+                            attachments: vec![crate::view::ComposerAttachmentView {
+                                path,
+                                label,
+                                is_dir: false,
+                                selection: None,
+                            }],
+                            selected: 0,
+                            generation: self.attachment_viewer_generation,
+                            image: Some(image),
+                            error: None,
+                            loading: false,
+                            tool_source: None,
+                        });
+                    self.prompt_focus_pending = false;
+                    self.dock_drag = None;
+                }
+            }
+            // An image only fits its panel: these belong to a PDF's page.
+            "fit" | "zoom_in" | "zoom_out" if view.kind == PreviewKind::Pdf => {
                 let base = view.zoom.unwrap_or_else(|| {
                     let pixels = match view.document.as_deref() {
                         Some(Document::Image(image) | Document::Pdf { image, .. }) => image.width,

@@ -17,6 +17,7 @@ pub(crate) enum ShortcutAction {
     ToggleSidebar,
     ToggleBottomPanel,
     ToggleTerminal,
+    MaximizeDock,
     NewFile,
     NewTask,
     Settings,
@@ -33,7 +34,7 @@ pub(crate) enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::CommandPalette,
         Self::QuickOpen,
         Self::NewFile,
@@ -42,6 +43,7 @@ impl ShortcutAction {
         Self::ToggleSidebar,
         Self::ToggleBottomPanel,
         Self::ToggleTerminal,
+        Self::MaximizeDock,
         Self::Files,
         Self::Search,
         Self::Git,
@@ -61,6 +63,7 @@ impl ShortcutAction {
             Self::ToggleSidebar => "Mostrar u ocultar la barra lateral",
             Self::ToggleBottomPanel => "Mostrar u ocultar el panel inferior",
             Self::ToggleTerminal => "Abrir o enfocar la terminal",
+            Self::MaximizeDock => "Maximizar o restaurar el panel derecho",
             Self::NewFile => "Nuevo archivo en el IDE",
             Self::NewTask => "Nueva tarea",
             Self::Settings => "Abrir configuración",
@@ -180,6 +183,7 @@ impl KeymapProfile {
             ToggleSidebar => (Key::B, false, false, "Ctrl+B", "Cmd+B"),
             ToggleBottomPanel => (Key::J, false, false, "Ctrl+J", "Cmd+J"),
             ToggleTerminal => (Key::Backtick, false, false, "Ctrl+`", "Ctrl+`"),
+            MaximizeDock => (Key::E, false, true, "Ctrl+Alt+E", "Cmd+Alt+E"),
             NewFile if classic => return None,
             NewFile => (Key::N, false, false, "Ctrl+N", "Cmd+N"),
             NewTask if classic => (Key::N, false, false, "Ctrl+N", "Cmd+N"),

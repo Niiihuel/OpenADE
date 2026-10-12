@@ -47,7 +47,8 @@ Entorno y el panel derecho son excluyentes: abrir Entorno colapsa el panel,
 y abrir una herramienta o desplegar el panel cierra Entorno. Colapsar conserva
 pestañas, borradores, terminales y navegador. Una actualización de pestañas
 ocultas no vuelve a desplegar el panel ni cierra Entorno. La terminal inferior
-mantiene su visibilidad independiente.
+mantiene su visibilidad independiente. Si el panel estaba maximizado sobre la
+conversación, abrir Entorno lo restaura antes de colapsarlo.
 
 Entorno reserva una columna junto al chat; el historial y el composer se
 centran en el ancho restante. La cabecera conserva el ancho completo. Abrir y

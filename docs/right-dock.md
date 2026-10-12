@@ -12,7 +12,8 @@ franja continua con scroll horizontal; la rueda sobre la barra, Shift+rueda y
 el gesto horizontal del touchpad recorren el contenido. La selección revela la
 pestaña completa, incluido su cierre, al cambiar de pestaña o ancho. Una
 reconstrucción con la misma selección conserva el desplazamiento manual. Los
-botones de nueva pestaña, menú y ocultar panel permanecen fijos a la derecha.
+botones de terminal, nueva pestaña, menú, maximizar y ocultar panel permanecen
+fijos a la derecha.
 El menú da acceso al conjunto completo y a la administración de abiertas y
 cerradas recientemente.
 
@@ -109,6 +110,45 @@ Cambiar de sección conserva las sesiones de terminal; abrir Problemas no crea
 procesos. Agentes mantiene las pestañas de sesiones cuando caben y el selector
 de sesiones en anchos pequeños. El panel comparte altura, resize y animación;
 el atajo de alternar el panel inferior recupera la sección seleccionada.
+
+## Maximizar el panel
+
+**Maximizar panel**, en la barra de pestañas junto a Ocultar panel, y
+`Ctrl+Alt+E` hacen que el panel derecho ocupe el lugar de la conversación y de
+su composer. La barra lateral queda como estaba. El mismo control, ya como
+**Restaurar panel**, y el mismo atajo lo devuelven. El atajo está en el registro
+de `keymap.rs` (`MaximizeDock`), es igual en los tres perfiles y funciona con el
+foco en cualquier parte, también mientras se escribe en el composer; no actúa
+con el panel oculto o sin pestañas, donde el control aparece deshabilitado.
+
+- Es el mismo panel: pestañas, pestaña activa, buffers y página del navegador
+  no se recrean. El navegador recibe el `Resize` de siempre con el tamaño del
+  panel, en píxeles CSS y a la escala de la ventana; su vista sigue limitada a
+  1600 × 1200.
+- La terminal inferior que estaba a la vista se oculta al maximizar y vuelve al
+  restaurar. Pedida a mano mientras tanto (su botón, Ctrl + acento grave) se muestra
+  debajo del panel; un comando del agente queda listado sin abrirla. Problemas
+  no se oculta: acompaña al archivo del panel.
+- El ancho preferido no cambia y vuelve tal cual. Maximizado no hay divisor que
+  arrastrar, y el cambio es inmediato, sin transición.
+- En una ventana angosta, donde el panel no entra junto a la conversación y la
+  barra lateral, maximizado sí se muestra.
+- Escape no restaura: esa tecla es de la página y de los editores.
+- Si el foco estaba fuera del panel pasa al control, para que nada de lo que se
+  escriba llegue a un borrador que no se ve; restaurar desde ahí lo devuelve al
+  composer. El foco que ya estaba en el panel se queda donde estaba.
+- Ocultar el panel, cerrar su última pestaña, abrir Entorno, elegir una
+  conversación, empezar una tarea y pasar a la ventana IDE restauran. Una
+  conversación nunca se encuentra maximizada al volver a ella, y volver a
+  mostrar el panel no lo maximiza otra vez.
+- Mientras la conversación está tapada, sus avisos (permiso pendiente, turno
+  completado o fallido) se notifican como los de una tarea que no está en
+  pantalla, y abrir la notificación la destapa.
+
+El estado está en `DockState`, junto al colapso y en memoria como él, y es de
+una sola conversación a la vez. La ventana IDE no lo tiene: allí estas pestañas
+son el área del editor y la conversación es el panel del agente, con su propio
+control. Las capturas están en `docs/ui-separation/shots/dock-maximize/`.
 
 ## Repositorio y diffs
 

@@ -87,6 +87,15 @@ impl AgentsWindow {
             Settings => !palette,
             QuickOpen => workspace,
             ToggleSidebar | ToggleBottomPanel | ToggleTerminal => workspace && !palette,
+            // Wherever the keyboard is, the composer included; a dock that is
+            // hidden or has no tab has nothing to maximize.
+            MaximizeDock => {
+                workspace
+                    && !palette
+                    && !ide
+                    && self.view.show_side_pane
+                    && !self.view.dock_tabs.is_empty()
+            }
             NewFile => workspace && !palette && !terminal_focused,
             NewTask => !palette && !terminal_focused,
             Problems => workspace && !palette,
@@ -95,6 +104,7 @@ impl AgentsWindow {
                 workspace
                     && !palette
                     && !terminal_focused
+                    && !self.view.dock_maximized
                     && self.view.selected_backend == "native"
                     && (!self.view.composer_model_options.is_empty()
                         || !self.view.composer_effort_options.is_empty())
@@ -261,6 +271,7 @@ impl AgentsWindow {
                 self.request_command_search();
             }
             ToggleSidebar => self.toggle_left_sidebar(),
+            MaximizeDock => self.toggle_dock_maximized(),
             ToggleBottomPanel => {
                 self.apply_action(
                     UiAction::Clicked {
@@ -362,7 +373,7 @@ impl AgentsWindow {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::ide_workspace::{IdeBottomPanel, WindowMode};
 
@@ -375,7 +386,7 @@ mod tests {
         (root, app)
     }
 
-    fn dispatch(
+    pub(in crate::app) fn dispatch(
         app: &mut AgentsWindow,
         key: egui::Key,
         shift: bool,

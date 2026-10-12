@@ -22,7 +22,9 @@ Un bloque `mermaid` que sea un diagrama de flujo o de secuencia se dibuja con el
 
 Las imágenes locales pasan por `image`; SVG por `resvg`. Los enlaces HTTP/HTTPS sólo abren el navegador cuando el usuario los activa. La preview no descarga imágenes remotas ni referencias externas de SVG. Las rutas de archivos y recursos permanecen dentro del proyecto; en Unix se recorren mediante descriptores con `openat`, `O_NOFOLLOW` y `O_NONBLOCK` para evitar seguir enlaces o bloquearse con un FIFO sustituido durante la lectura.
 
-Hayro está fijado a `0.7.1`. El worker conserva un PDF analizado, identificado por ruta, tamaño, fecha de modificación y dispositivo/inodo en Unix, y rasteriza únicamente la página pedida. Las imágenes PNG resultantes pasan al componente raster existente. Los botones de zoom actúan sobre la escala visible, incluyendo cuando el punto de partida es Ajustar al panel.
+Hayro está fijado a `0.7.1`. El worker conserva un PDF analizado, identificado por ruta, tamaño, fecha de modificación y dispositivo/inodo en Unix, y rasteriza únicamente la página pedida. Las imágenes PNG resultantes pasan al componente raster existente. Los botones de zoom del PDF actúan sobre la escala visible, incluyendo cuando el punto de partida es Ajustar al panel.
+
+Una imagen no tiene zoom en el panel: siempre se ajusta a él, y **Pantalla completa** abre el raster que el panel ya decodificó (para un SVG, el que dibujó `resvg`) en `ImageViewer`, el visor de imágenes de la ventana, sin volver a leer el archivo.
 
 Los hosts están en `apps/agents-window/src/document_preview_app.rs` y `markdown_preview_app.rs`; la presentación de documentos en `document_preview_ui.rs` y el renderer de Markdown en `document_markdown_ui.rs`. Las acciones del editor oculto se rechazan; guardar el Markdown sigue permitido. Una navegación explícita a una línea desde Buscar vuelve a Código antes de mover el cursor.
 

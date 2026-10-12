@@ -6,6 +6,8 @@ En **Configuración → Atajos** se elige el perfil de navegación y paneles. La
 - **Zed** usa las combinaciones de navegación y paneles adoptadas de su mapa base. Conserva las acciones de OpenIDE; las acciones sin combinación de ese perfil siguen disponibles en sus controles y menús.
 - **OpenIDE clásico** conserva `Ctrl+K` para la paleta y `Ctrl+N` para una tarea. La configuración enumera el resto de sus combinaciones activas.
 
+`Ctrl+Alt+E` maximiza o restaura el panel derecho de la ventana Agents en los tres perfiles, como en la ventana de agentes de VS Code. Funciona con el foco en cualquier parte, también en el composer; no actúa con el panel oculto o sin pestañas, ni en la ventana IDE. Escape no lo restaura. El detalle está en [Panel derecho](right-dock.md#maximizar-el-panel).
+
 Estos perfiles cubren las acciones registradas por OpenIDE. No importan automáticamente todos los comandos, extensiones ni archivos de configuración del editor de referencia. El registro central está en `apps/agents-window/src/keymap.rs`; cada acción suministra tanto su combinación funcional como su etiqueta visible.
 
 ## Revisión de cambios del agente

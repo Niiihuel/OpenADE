@@ -9,7 +9,8 @@ lateral, conservando los documentos y la sesión. Usa los componentes nativos de
 `openide-ui`; los detalles están en [Espacio de trabajo IDE](docs/ide-workspace.md).
 
 Markdown ofrece Código, Vista previa y vista dividida sobre el mismo buffer.
-Imágenes y PDF se abren en visores nativos con zoom y ajuste al panel. El motor
+Las imágenes se ajustan al panel y se abren a pantalla completa en el visor de
+la ventana; los PDF tienen páginas, zoom y ajuste al panel. El motor
 Rust compartido se documenta en [Vistas previas de documentos](docs/native-document-preview.md).
 
 Los [plugins locales](docs/plugins.md) pueden aportar herramientas MCP al agente.

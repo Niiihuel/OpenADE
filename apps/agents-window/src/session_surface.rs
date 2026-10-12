@@ -4336,6 +4336,7 @@ mod tests {
             terminal_menu_open: false,
             terminal_controls: Default::default(),
             terminal_maximized: false,
+            dock_maximized: false,
             show_terminal_panel: false,
             terminal_panel_height: 240.0,
             terminal_snapshot: None,
