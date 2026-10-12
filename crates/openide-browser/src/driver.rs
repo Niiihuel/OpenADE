@@ -180,6 +180,14 @@ pub(crate) fn validate_viewport(width: u32, height: u32) -> Outcome<()> {
     }
 }
 
+fn validate_scale(scale: f64) -> Outcome<()> {
+    if scale.is_finite() && (0.5..=4.0).contains(&scale) {
+        Ok(())
+    } else {
+        Err(invalid("Escala de dispositivo permitida: 0,5 a 4"))
+    }
+}
+
 /// Only `about:blank` and HTTP or HTTPS addresses with a host and without
 /// embedded credentials. Stricter than a URL parser on purpose: what is not
 /// plainly `scheme://host` is refused rather than interpreted.
@@ -260,11 +268,9 @@ impl Driver {
     #[cfg(unix)]
     pub fn launch(options: &LaunchOptions) -> Result<Self, DriverError> {
         validate_viewport(options.width, options.height)?;
-        if !(options.scale.is_finite() && (0.5..=4.0).contains(&options.scale)) {
-            return Err(invalid("Escala de dispositivo permitida: 0,5 a 4"));
-        }
+        validate_scale(options.scale)?;
         let (chrome, transport) = crate::chrome::Chrome::launch(options)?;
-        let mut driver = Self::attach(transport, options.width, options.height, options.scale).map_err(|error| {
+        let mut driver = Self::attach(transport, options.width, options.height, options.scale, false).map_err(|error| {
             // Chrome that dies while starting says why on its standard error.
             let output = chrome.startup_output();
             let detail = match error.kind {
@@ -292,10 +298,21 @@ impl Driver {
     /// browser's lifetime.
     pub fn connect(transport: Transport, width: u32, height: u32, scale: f64) -> Result<Self, DriverError> {
         validate_viewport(width, height)?;
-        Self::attach(transport, width, height, scale)
+        Self::attach(transport, width, height, scale, false)
     }
 
-    fn attach(transport: Transport, width: u32, height: u32, scale: f64) -> Outcome<Self> {
+    /// Drives the one page an embedder already created, when `transport`
+    /// reaches that page and not a browser: an embedded Chromium hands out
+    /// the DevTools endpoint of each page it makes. Its storage, its popups
+    /// and its downloads are the embedder's to isolate and refuse, and
+    /// `scale` is the one it draws the page at.
+    pub fn connect_to_page(transport: Transport, width: u32, height: u32, scale: f64) -> Result<Self, DriverError> {
+        validate_viewport(width, height)?;
+        validate_scale(scale)?;
+        Self::attach(transport, width, height, scale, true)
+    }
+
+    fn attach(transport: Transport, width: u32, height: u32, scale: f64, existing: bool) -> Outcome<Self> {
         let shared = Shared::new();
         let observer = Observer {
             shared: shared.clone(),
@@ -320,20 +337,28 @@ impl Driver {
             buttons: 0,
             modifiers: 0,
         };
-        let context: Value = driver.call("", "Target.createBrowserContext", json!({"disposeOnDetach": true}))?;
-        let context = &context["browserContextId"];
-        // Nothing is ever written to the user's disk on the page's behalf.
-        let _: Outcome<Value> = driver.call(
-            "",
-            "Browser.setDownloadBehavior",
-            json!({"behavior": "deny", "browserContextId": context}),
-        );
-        let target: Value = driver.call(
-            "",
-            "Target.createTarget",
-            json!({"url": "about:blank", "browserContextId": context}),
-        )?;
-        let target = target["targetId"].as_str().unwrap_or_default().to_owned();
+        let target = if existing {
+            // The endpoint is the page, and names itself.
+            let info: Value = driver.call("", "Target.getTargetInfo", json!({}))?;
+            info["targetInfo"]["targetId"].as_str().unwrap_or_default().to_owned()
+        } else {
+            let context: Value = driver.call("", "Target.createBrowserContext", json!({"disposeOnDetach": true}))?;
+            let context = &context["browserContextId"];
+            // Nothing is ever written to the user's disk on the page's behalf.
+            let _: Outcome<Value> = driver.call(
+                "",
+                "Browser.setDownloadBehavior",
+                json!({"behavior": "deny", "browserContextId": context}),
+            );
+            let target: Value = driver.call(
+                "",
+                "Target.createTarget",
+                json!({"url": "about:blank", "browserContextId": context}),
+            )?;
+            target["targetId"].as_str().unwrap_or_default().to_owned()
+        };
+        // A session of its own for the page, also when the endpoint is that
+        // page: everything below addresses the page the same way either way.
         let attached: Value = driver.call("", "Target.attachToTarget", json!({"targetId": target, "flatten": true}))?;
         driver.session = attached["sessionId"].as_str().unwrap_or_default().to_owned();
         if target.is_empty() || driver.session.is_empty() {
@@ -353,6 +378,11 @@ impl Driver {
         driver.apply_viewport()?;
         for (method, params) in child_setup() {
             driver.call::<Value>(&session, method, params)?;
+        }
+        // An embedder presents its page itself, and its other targets are
+        // pages of other drivers: it refuses popups before they exist.
+        if existing {
+            return Ok(driver);
         }
         // A headless page that has never been presented may sit without
         // producing frames: nothing animates and a screencast started now

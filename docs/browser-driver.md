@@ -44,7 +44,8 @@ navegadores.
 - **Entorno reducido.** Chrome hereda sólo `PATH`, `HOME`, `USER`, `LOGNAME`,
   `LANG`, `LC_ALL` y `XDG_RUNTIME_DIR`. `TMPDIR`, `TMP` y `TEMP` apuntan al
   directorio privado.
-- **Directorio privado.** `oid-XXXXXX`, modo 0700, con el perfil adentro. La
+- **Directorio privado.** `oid-XXXXXX`, modo 0700, con el perfil adentro
+  (`PrivateDirectory`, que también usa el Chromium embebido para el suyo). La
   ruta completa no supera 48 bytes: Chromium crea sockets Unix debajo de su
   raíz temporal y `sockaddr_un` admite 108 bytes. Si la raíz pedida es profunda o ya no existe se usa la heredada y
   después `/tmp`; un directorio borrado no se recrea.
@@ -97,12 +98,19 @@ que intercambie mensajes DevTools.
 
 - **Chromium embebido (CEF).** Habla el mismo protocolo en el mismo proceso:
   el `MessageSink` llama a `SendDevToolsMessage` y el `MessageSource` entrega
-  lo que reciba el observador de mensajes DevTools, por ejemplo a través de un
-  canal. Queda por resolver en esa integración que `connect` crea su propio
-  contexto y su propia página con `Target.createBrowserContext` y
-  `Target.createTarget`; un navegador embebido que ya tiene su página
-  necesitará adjuntarse a ella. La escala la fija quien embebe: el driver
-  sólo la usa para devolver capturas a escala CSS.
+  lo que recibe el observador de mensajes DevTools a través de un canal
+  acotado. Ese transporte está en `crates/openide-cef`
+  ([Chromium embebido](browser-cef.md)). Su extremo es la página y no el
+  navegador, así que se usa con
+  `Driver::connect_to_page(transport, ancho, alto, escala)`: en lugar de crear
+  un contexto y una página con `Target.createBrowserContext` y
+  `Target.createTarget`, el driver le pregunta al extremo qué página es
+  (`Target.getTargetInfo`) y se adjunta a ella con una sesión propia. Lo
+  demás es igual, salvo tres cosas que quedan a cargo de quien embebe: aislar
+  el almacenamiento, rechazar las ventanas emergentes (el driver no pide
+  descubrir otros destinos, que serían páginas ajenas) y rechazar las
+  descargas. La escala también la fija quien embebe: el driver sólo la usa
+  para devolver capturas a escala CSS.
 - **Windows.** No hay implementación y **el crate no se compiló para Windows**
   (el entorno sólo tiene la biblioteca estándar de Linux); la separación por
   `cfg(unix)` se revisó leyendo el código. `Driver::launch` devuelve allí un
@@ -133,7 +141,7 @@ let png = driver.screenshot(Capture::Viewport)?;
 
 | Grupo | Métodos |
 | --- | --- |
-| Ciclo de vida | `launch`, `connect`, `resize`, `close`, `process_id`, `directory` |
+| Ciclo de vida | `launch`, `connect`, `connect_to_page`, `resize`, `close`, `process_id`, `directory` |
 | Navegación | `navigate`, `back`, `forward`, `reload`, `info` (URL, título, historial, viewport) |
 | Lectura | `snapshot`, `console_messages`, `network_requests`, `screenshot`, `evaluate` |
 | Acciones | `click`, `click_at`, `fill`, `type_text`, `press`, `scroll`, `hover`, `select_options`, `set_checked`, `drag` |
@@ -479,7 +487,8 @@ modo.
 
 Buscar un navegador (lo decide el host), varias pestañas, descargas, subida
 de archivos, PDF, trazas, grabación, otros motores, un transporte TCP o
-WebSocket, modificadores por evento del puntero, la forma del cursor, y CEF.
+WebSocket, modificadores por evento del puntero y la forma del cursor. El
+transporte de CEF vive en `crates/openide-cef`, no acá.
 
 Atajos conocidos:
 

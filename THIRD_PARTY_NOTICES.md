@@ -120,6 +120,19 @@ elemento, en `src/scripts.rs`, siguen las de Playwright del mismo modo. No se
 incluye código de Playwright; [browser-driver.md](docs/browser-driver.md)
 enumera las diferencias de comportamiento.
 
+## Chromium embebido (opcional)
+
+Sólo con la opción de compilación `cef`
+([docs/browser-cef.md](docs/browser-cef.md)), que está apagada por defecto, la
+aplicación enlaza el [Chromium Embedded Framework](https://bitbucket.org/chromiumembedded/cef)
+154.0.34, Copyright (c) Marshall A. Greenblatt, bajo licencia BSD de tres
+cláusulas. Incluye Chromium 154.0.8037.98 y sus componentes; las licencias de
+todos ellos están en el `CREDITS.html` que acompaña a la distribución de CEF.
+Los enlaces a Rust son [cef-rs](https://github.com/tauri-apps/cef-rs) en la
+revisión `2861f6991fae3ee31f877891382adcbc9b9f0953`, Copyright (c) 2023 Wu
+Yuwei, bajo Apache-2.0 o MIT. No se copia código de ninguno al repositorio:
+CEF se obtiene con `nix/cef.nix`.
+
 ## Editor de código y Unicode
 
 El editor propio usa las siguientes dependencias Cargo independientes:

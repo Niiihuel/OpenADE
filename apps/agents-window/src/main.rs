@@ -164,11 +164,23 @@ use app::AgentsWindow;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    // The embedded Chromium starts its helper processes as this executable.
+    // Such a process is not the application either, and any other start
+    // goes on without CEF being called.
+    #[cfg(feature = "cef")]
+    if let Some(code) = openide_cef::run_child_process() {
+        std::process::exit(code);
+    }
     // An external MCP client runs this executable as its proxy to one
     // browser context. That process is not the application: it opens no
     // window and reads no configuration.
     if std::env::args_os().nth(1).is_some_and(|argument| argument == browser_mcp::FLAG) {
         std::process::exit(browser_mcp::main());
+    }
+    // Checks, without a window, that the embedded Chromium runs here.
+    #[cfg(feature = "cef")]
+    if std::env::args_os().nth(1).is_some_and(|argument| argument == "--cef-probe") {
+        std::process::exit(browser_runtime::cef_probe());
     }
     if let Some(code) = openide_harness::run_elevated_command_helper_from_env() {
         std::process::exit(code);

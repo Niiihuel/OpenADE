@@ -6,6 +6,9 @@ rust-version.workspace = true
 
 [features]
 editor-e2e = []
+# The project browser on an embedded Chromium instead of a launched Chrome.
+# Needs CEF: build and run inside `nix-shell nix/shell-cef.nix`.
+cef = ["dep:openide-cef"]
 
 [dependencies]
 openide-connections = { path = "../../crates/openide-connections" }
@@ -15,6 +18,7 @@ openide-harness = { path = "../../crates/openide-harness" }
 openide-cli = { path = "../../crates/openide-cli" }
 openide-bridge = { path = "../../crates/openide-bridge" }
 openide-browser = { path = "../../crates/openide-browser" }
+openide-cef = { path = "../../crates/openide-cef", optional = true }
 openide-ui = { path = "../../crates/openide-ui" }
 limn-egui = { git = "https://github.com/Niiihuel/limn.git", tag = "v0.1.15" }
 openide-preview = { path = "../../crates/openide-preview" }

@@ -13,6 +13,9 @@ members = [
     "crates/openide-browser",
     "crates/openide-connections",
 ]
+# Built only as a dependency of `agents-window --features cef`: it needs CEF
+# itself, which the normal shell does not provide.
+exclude = ["crates/openide-cef"]
 
 [workspace.package]
 version = "0.1.0"

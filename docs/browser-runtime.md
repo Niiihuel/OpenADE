@@ -4,7 +4,10 @@ La interfaz es nativa de OpenIDE. El contenido web lo procesa Chromium, en un
 proceso que la aplicación inicia y maneja directamente por el protocolo
 DevTools con su propio driver en Rust
 ([`crates/openide-browser`](browser-driver.md)). No intervienen Node, npm ni
-Playwright: no hay otro proceso entre la ventana y el navegador. El contexto
+Playwright: no hay otro proceso entre la ventana y el navegador. Compilada con
+la opción `cef`, la aplicación usa en cambio un
+[Chromium embebido](browser-cef.md) y deja este camino como reemplazo; lo que
+sigue describe el camino por defecto. El contexto
 es nuevo y aislado por conversación: no abre el perfil personal de Chrome. El
 usuario y el agente comparten esa misma página, con una cola limitada y las
 políticas de permisos del host. No se repiten automáticamente acciones
@@ -368,9 +371,17 @@ El flujo comprimido no llega a la frecuencia de la pantalla. El plan acordado:
    el proceso Node (unos 107 MB junto a los ~295 MB de Chromium, medidos aquí),
    el instalador y los dos scripts `.mjs`. El proxy MCP externo es el propio
    ejecutable.
-4. Chromium embebido (CEF) dibujando en una textura compartida de GPU, para
-   mostrar la página sin comprimir a la frecuencia de la pantalla. El mismo
-   manejador hablará con CEF, que expone el mismo protocolo dentro del proceso.
+4. **Hecha la primera mitad (11 de octubre de 2026), detrás de la opción de
+   compilación `cef`.** Chromium embebido (CEF) con el mismo manejador, que
+   habla con él por el mismo protocolo dentro del proceso. Compone por
+   software y entrega cada cuadro sin comprimir: 60 cuadros por segundo a
+   2560 × 1600 y 16 ms de la rueda al cuadro, sin tocar la GPU. Ver
+   [Chromium embebido](browser-cef.md).
+5. Los cuadros de CEF en una textura compartida de GPU, para llegar a la
+   frecuencia de la pantalla sin copiar píxeles. Necesita la plataforma de la
+   sesión en lugar de la headless y una superficie de limn que acepte una
+   textura importada;
+   [lo que queda](browser-cef.md#lo-que-queda-para-el-paso-de-gpu) lo detalla.
 
 ### Prueba de viabilidad de CEF (11 de octubre de 2026)
 
@@ -394,8 +405,12 @@ Lo que no salió como se suponía:
   Marcar los cuadros desde el host agrega unos 20 ms de demora y pierde
   alguno; no conviene.
 - Bajo Wayland CEF ignora la escala del dispositivo en una vista sin ventana.
-  Se obtiene escala 2 con una vista en píxeles físicos más
-  `Emulation.setDeviceMetricsOverride`, o con zoom de página al 200 %.
+  Se obtiene escala 2 con zoom de página al 200 %. La otra salida que se
+  anotó acá, una vista en píxeles físicos más
+  `Emulation.setDeviceMetricsOverride`, **no sirve**: al mirar el cuadro
+  (11 de octubre de 2026, plataforma headless) la página queda a escala 1 en
+  un cuarto del búfer, aunque diga `devicePixelRatio` 2. Aquella prueba había
+  mirado una captura DevTools, no el cuadro.
 - Con el proceso de GPU de Chromium en la NVIDIA no llegan cuadros acelerados.
   Chromium en la AMD con wgpu en la NVIDIA sí funciona, cacheando la importación.
 - El CEF precompilado no reproduce H.264, HEVC ni AAC; sí MP3, VP8, VP9, AV1 y Opus.
@@ -405,7 +420,9 @@ Lo que no salió como se suponía:
 Sin verificar, porque exige una ventana visible: fluidez real en pantalla,
 sincronía con el compositor y la integración con eframe (teclado, IME,
 cursores, ventanas emergentes, cambio de tamaño). El prototipo y sus comandos
-están fuera del repositorio, en `../openADE-spike-cef`.
+están fuera del repositorio, en `../openADE-spike-cef`. Lo que se construyó a
+partir de él, y lo que resultó distinto, está en
+[Chromium embebido](browser-cef.md).
 
 ## Validación reproducible
 
@@ -418,8 +435,8 @@ nix-shell --run "cargo test -p agents-window -- browser_ approval_ui"
 
 - `browser_runtime_tests.rs` maneja el runtime real (trabajador, driver,
   decodificador y broker) contra un extremo DevTools guionado en lugar de
-  Chrome, por el mismo punto de reemplazo que usará un Chromium embebido
-  (`Driver::connect`). Cubre el arranque, la falta de navegador y su
+  Chrome, por el punto de reemplazo del driver (`Driver::connect`). Cubre el
+  arranque, la falta de navegador y su
   reintento, el orden de búsqueda del ejecutable, las referencias y cada
   clase de fallo, la entrada de la ventana con sus botones y clics, el flujo
   (cuadros sólo mientras es visible, acuse al tomarlos, cuadro repetido, cuadro
@@ -461,6 +478,9 @@ OPENIDE_BROWSER_EXECUTABLE="$(command -v google-chrome-stable)" \
 - Entrada de la ventana: `:hover`, selección por arrastre, doble y triple
   clic, botones derecho y del medio, rueda, texto, teclas y portapapeles en
   dos pasos.
+
+Los mismos escenarios corren sobre el Chromium embebido, compilando con la
+opción `cef`: ver [Chromium embebido](browser-cef.md#validación).
 
 Las mediciones de arriba se repiten con el perfil optimizado, sin otra
 compilación en curso:
@@ -508,6 +528,6 @@ python3 scripts/browser-desktop-e2e.py --binary target/desktop/agents-window \
 - **Forma del cursor.** El protocolo no avisa cuando la página cambia el
   cursor; habría que consultarlo en cada movimiento.
 - **Descarga de un navegador.** Sin un Chrome, Chromium o Edge instalado el
-  panel lo dice y no hace nada más. El plan es embeber el motor.
+  panel lo dice y no hace nada más. Con la opción `cef` el motor va embebido.
 - **Windows.** Falta el transporte de tubería del driver; ver
   [Otros transportes](browser-driver.md#otros-transportes).
