@@ -2346,6 +2346,84 @@ mod tests {
         }
     }
 
+    /// The host terminal is how a command runs, not something a turn records:
+    /// a session interrupted before the desktop turned it on resumes under
+    /// the catalog it committed, and its commands then run on a terminal.
+    #[tokio::test]
+    async fn resume_of_a_turn_recorded_before_the_host_terminal_keeps_its_catalog() {
+        let workspace = tempfile::tempdir().unwrap();
+        let tools = |manager: PersistentCommandManager| -> Arc<dyn ToolExecutor> {
+            Arc::new(
+                LocalTools::new()
+                    .with_write_access(true)
+                    .with_command_isolation(openide_harness::CommandIsolation::HostUnrestricted)
+                    .with_persistent_commands(Arc::new(manager)),
+            )
+        };
+        let manager = || {
+            PersistentCommandManager::new(
+                workspace.path().to_path_buf(),
+                openide_harness::CommandIsolation::HostUnrestricted,
+                openide_harness::PersistentCommandLimits::default(),
+            )
+            .unwrap()
+        };
+        let saved = ToolCatalog::from_executor(tools(manager()).as_ref())
+            .unwrap()
+            .digest_hex();
+        let current = tools(manager().with_host_terminal());
+        let (selected, catalog) = select_saved_catalog(current.clone(), Some(&saved)).unwrap();
+        assert_eq!(catalog.digest_hex(), saved);
+        assert!(Arc::ptr_eq(&selected, &current));
+        // An even older turn, from before `timeout_ms`, still finds its own.
+        let older = ToolCatalog::new(
+            tools(manager().with_tools_before_command_revision())
+                .definitions()
+                .into_iter()
+                .map(openide_harness::definition_before_command_revision),
+        )
+        .unwrap()
+        .digest_hex();
+        let (selected, catalog) = select_saved_catalog(current, Some(&older)).unwrap();
+        assert_eq!(catalog.digest_hex(), older);
+        #[cfg(unix)]
+        {
+            let context = ToolContext {
+                workspace: workspace.path().to_path_buf(),
+                cancel: CancellationToken::new(),
+            };
+            let call = |name: &str, arguments| ToolCall {
+                id: "old-turn-command".into(),
+                name: name.into(),
+                arguments,
+            };
+            let started = selected
+                .execute(
+                    &call(
+                        "start_command",
+                        serde_json::json!({"command":"/bin/sh","args":["-c","test -t 1 && echo TTY"]}),
+                    ),
+                    &context,
+                )
+                .await
+                .unwrap();
+            let started: serde_json::Value = serde_json::from_str(&started.content).unwrap();
+            let polled = selected
+                .execute(
+                    &call(
+                        "poll_command",
+                        serde_json::json!({"session_id":started["session_id"],"wait_ms":5000}),
+                    ),
+                    &context,
+                )
+                .await
+                .unwrap();
+            let polled: serde_json::Value = serde_json::from_str(&polled.content).unwrap();
+            assert_eq!(polled["events"][0]["stream"], "terminal", "{polled}");
+            assert_eq!(polled["events"][0]["text"], "TTY\n", "{polled}");
+        }
+    }
+
     #[tokio::test]
     async fn resume_selects_legacy_persistent_command_schema_and_blocks_pty_fields() {
         let workspace = tempfile::tempdir().unwrap();

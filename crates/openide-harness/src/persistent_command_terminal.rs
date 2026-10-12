@@ -73,6 +73,81 @@ impl TerminalTap {
     }
 }
 
+/// What the agent's poll, the durable capture and the transcript read of a
+/// command on a host terminal: no escape sequences and `\n` line ends, as
+/// pipes gave them. The host tab keeps the raw bytes.
+#[derive(Default)]
+pub(super) struct PlainText {
+    ansi: crate::output_condense::AnsiStripper,
+    held_return: bool,
+}
+
+impl PlainText {
+    pub(super) fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let mut stripped = Vec::with_capacity(bytes.len());
+        self.ansi.strip(bytes, &mut stripped);
+        let mut out = Vec::with_capacity(stripped.len());
+        for byte in stripped {
+            // The terminal turns `\n` into `\r\n`; any other return is kept.
+            if std::mem::take(&mut self.held_return) && byte != b'\n' {
+                out.push(b'\r');
+            }
+            if byte == b'\r' {
+                self.held_return = true;
+            } else {
+                out.push(byte);
+            }
+        }
+        out
+    }
+}
+
+/// The typing half of a host tab, for a host that reads the events on another
+/// thread. It exists only for a command on a terminal.
+#[derive(Clone)]
+pub struct PersistentTerminalInput {
+    #[cfg(unix)]
+    master: std::sync::Arc<unix::Master>,
+}
+
+impl PersistentTerminalInput {
+    /// Bytes typed by the user in the host tab.
+    pub fn write(&self, bytes: &[u8]) -> std::io::Result<()> {
+        #[cfg(unix)]
+        return self.master.write_blocking(bytes);
+        #[cfg(not(unix))]
+        {
+            let _ = bytes;
+            Err(std::io::Error::other("command has no terminal"))
+        }
+    }
+
+    pub fn resize(&self, columns: u16, rows: u16) -> std::io::Result<()> {
+        #[cfg(unix)]
+        return self.master.resize(columns, rows);
+        #[cfg(not(unix))]
+        {
+            let _ = (columns, rows);
+            Err(std::io::Error::other("command has no terminal"))
+        }
+    }
+}
+
+/// A command that just started, for a host that asked to observe starts so
+/// it can show each one as a tab.
+pub struct PersistentCommandLaunch {
+    pub owner_session_id: Option<String>,
+    /// The manager instance: tells a revoked or replaced manager apart.
+    pub generation: String,
+    pub id: String,
+    /// Literal program followed by its arguments.
+    pub argv: Vec<String>,
+    pub terminal: PersistentTerminal,
+}
+
+pub type PersistentCommandStartObserver =
+    std::sync::Arc<dyn Fn(PersistentCommandLaunch) + Send + Sync>;
+
 /// A host tab's handle on one started command. Dropping it changes nothing
 /// for the process. Output is a copy; input and resize exist only when the
 /// command runs on a terminal.
@@ -94,6 +169,22 @@ impl PersistentTerminal {
 
     pub fn try_event(&self) -> Option<PersistentTerminalEvent> {
         self.events.try_recv().ok()
+    }
+
+    /// Waits for the next event. `None` once the exit was delivered, or when
+    /// the command is gone without one (its manager was dropped).
+    pub fn next_event(&self) -> Option<PersistentTerminalEvent> {
+        self.events.recv().ok()
+    }
+
+    pub fn input(&self) -> Option<PersistentTerminalInput> {
+        #[cfg(unix)]
+        return self
+            .master
+            .clone()
+            .map(|master| PersistentTerminalInput { master });
+        #[cfg(not(unix))]
+        None
     }
 
     /// Bytes typed by the user in the host tab.

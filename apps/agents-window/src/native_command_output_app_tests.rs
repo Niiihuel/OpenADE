@@ -62,6 +62,8 @@ async fn pending_output_inspection_host_observes_real_process_without_consumptio
     let binary = probe(root.path());
     let data = root.path().join("data");
     let mut app = AgentsWindow::with_data_root(data.clone());
+    // This test is about the pipe contract; see `keep_pipes`.
+    app.native_command_sessions.keep_pipes();
     let session = app
         .store
         .as_ref()

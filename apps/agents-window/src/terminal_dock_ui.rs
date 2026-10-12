@@ -27,6 +27,75 @@ pub(crate) struct TerminalControlsView {
     pub panes: Vec<TerminalPaneView>,
     /// The session whose tab is under the pointer or holds the focus.
     pub revealed: Option<u64>,
+    /// The visible sessions that show a command the agent started.
+    pub agents: Vec<AgentTerminalView>,
+    /// The running agent command whose tab the user asked to close.
+    pub closing: Option<u64>,
+}
+
+/// A terminal tab that shows a command the native agent started.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct AgentTerminalView {
+    pub id: u64,
+    pub command_id: String,
+    /// The conversation that started it.
+    pub task: String,
+    /// A contained command runs on pipes: the tab mirrors it and takes no keys.
+    pub read_only: bool,
+    /// How it ended, once it has.
+    pub ended: Option<String>,
+}
+
+pub(crate) const AGENT_READ_ONLY: &str =
+    "Solo lectura · el comando corre contenido y no recibe teclas";
+
+pub(crate) fn agent_terminal(state: &ViewState, id: u64) -> Option<&AgentTerminalView> {
+    state
+        .terminal_controls
+        .agents
+        .iter()
+        .find(|agent| agent.id == id)
+}
+
+/// What a started command's card offers while its tab is open: the way to it.
+/// `surface` keeps the control's identity apart where two cards show one call.
+pub(crate) fn command_actions(
+    state: &ViewState,
+    surface: &str,
+    call: &str,
+    tool: &str,
+    output: Option<&str>,
+) -> Option<Element> {
+    if tool != "start_command" {
+        return None;
+    }
+    let result: serde_json::Value = serde_json::from_str(output?).ok()?;
+    let command = result.get("session_id")?.as_str()?;
+    state
+        .terminal_controls
+        .agents
+        .iter()
+        .find(|agent| agent.command_id == command)?;
+    let show = Button::new(
+        format!("agent_terminal_link:{surface}:{call}"),
+        "Ver en terminal",
+        theme::component_palette(),
+    )
+    .icon(Icon::Terminal)
+    .variant(ButtonVariant::Outline)
+    .size(ControlSize::Compact)
+    .render()
+    .dispatch_as(format!("agent_terminal_show:{command}"));
+    Some(Element::row(vec![show, Element::spacer().flex(1.0)]).gap(6.0))
+}
+
+/// The agent's mark on a session it started; a shell keeps the terminal's.
+fn session_icon(state: &ViewState, id: u64) -> Icon {
+    if agent_terminal(state, id).is_some() {
+        Icon::Chat
+    } else {
+        Icon::Terminal
+    }
 }
 
 /// The session a tab or its close button belongs to, from either one's ID.
@@ -101,13 +170,10 @@ fn session_menu_row(state: &ViewState, tab: &DockTabView) -> Element {
         &title,
         theme::menu_palette(),
     )
-    .icon(Icon::Terminal)
+    .icon(session_icon(state, tab.id))
     .tooltip_with(
         TooltipSpec::new(&title)
-            .description(format!(
-                "Directorio inicial: {}",
-                tab.full_path.as_deref().unwrap_or(&state.workspace)
-            ))
+            .description(session_origin(state, tab))
             .placement(TooltipPlacement::Above),
     )
     .trailing_action(
@@ -129,17 +195,16 @@ fn session_menu_row(state: &ViewState, tab: &DockTabView) -> Element {
 /// The trigger of the session list when the sessions do not fit as tabs: the
 /// active session's name, where the tabs would be.
 fn session_selector_label(state: &ViewState, width: f32) -> Element {
-    let title = state
+    let active = state
         .terminal_tabs
         .iter()
         .find(|tab| tab.active)
-        .or(state.terminal_tabs.first())
-        .map(|tab| tab_label(state, tab))
-        .unwrap_or_default();
+        .or(state.terminal_tabs.first());
+    let title = active.map(|tab| tab_label(state, tab)).unwrap_or_default();
     let id = "terminal_sessions_toggle";
     let content = Element::row(vec![
         Element::spacer().size(Some(0.0), None),
-        Element::icon(Icon::Terminal)
+        Element::icon(active.map_or(Icon::Terminal, |tab| session_icon(state, tab.id)))
             .foreground(theme::FOREGROUND)
             .size(Some(16.0), Some(TOOL_SIZE)),
         Element::faded_text(title, 12.0)
@@ -382,7 +447,8 @@ fn actions_menu(state: &ViewState, width: f32) -> Element {
                 .into(),
         );
     }
-    if !running {
+    // An agent's command is started again by the agent, not from its tab.
+    if !running && active.is_none_or(|tab| agent_terminal(state, tab.id).is_none()) {
         entries.push(
             DropdownMenuItem::new("terminal_restart", "Reiniciar terminal")
                 .icon(Icon::Refresh)
@@ -454,6 +520,21 @@ fn actions_menu(state: &ViewState, width: f32) -> Element {
     .popover_return_focus("terminal_menu_toggle")
 }
 
+/// Where a session comes from: the agent that started it, or its directory.
+fn session_origin(state: &ViewState, tab: &DockTabView) -> String {
+    match agent_terminal(state, tab.id) {
+        Some(agent) => format!(
+            "Iniciada por el agente · {}{}",
+            agent.task,
+            if agent.read_only { " · solo lectura" } else { "" }
+        ),
+        None => format!(
+            "Directorio inicial: {}",
+            tab.full_path.as_deref().unwrap_or(&state.workspace)
+        ),
+    }
+}
+
 fn session_help(state: &ViewState, tab: &DockTabView, title: &str) -> String {
     let visible_in_split = state
         .terminal_controls
@@ -461,13 +542,13 @@ fn session_help(state: &ViewState, tab: &DockTabView, title: &str) -> String {
         .iter()
         .any(|pane| pane.id == tab.id);
     format!(
-        "{title}{}\nDirectorio inicial: {}",
+        "{title}{}\n{}",
         if visible_in_split {
             " · Visible en la división"
         } else {
             ""
         },
-        tab.full_path.as_deref().unwrap_or(&state.workspace)
+        session_origin(state, tab)
     )
 }
 
@@ -480,7 +561,12 @@ fn session_close(state: &ViewState, tab: &DockTabView, title: &str) -> Element {
     .variant(ButtonVariant::Ghost)
     .sizing(crate::ui_sizing::TAB_CLOSE)
     .tooltip_with(
-        TooltipSpec::new(format!("Terminar {title}")).placement(header_tooltip_placement(state)),
+        TooltipSpec::new(match agent_terminal(state, tab.id) {
+            Some(agent) if agent.ended.is_some() => format!("Cerrar {title}"),
+            Some(_) => format!("Detener {title}…"),
+            None => format!("Terminar {title}"),
+        })
+        .placement(header_tooltip_placement(state)),
     )
     .render()
 }
@@ -492,7 +578,7 @@ fn terminal_tab(state: &ViewState, tab: &DockTabView, width: f32) -> TabItem {
     TabItem::new(
         format!("terminal_tab:{}", tab.id),
         format!("terminal_tab_extent:{}", tab.id),
-        Icon::Terminal,
+        session_icon(state, tab.id),
         title,
         width,
     )
@@ -525,7 +611,7 @@ fn session_chip(state: &ViewState, tab: &DockTabView) -> Element {
         &id,
         Element::row(vec![
             Element::spacer().size(Some(0.0), None),
-            Element::icon(Icon::Terminal)
+            Element::icon(session_icon(state, tab.id))
                 .foreground(ink)
                 .size(Some(16.0), Some(TOOL_SIZE)),
             Element::faded_text(&title, 12.0)
@@ -607,7 +693,7 @@ fn sessions_control(state: &ViewState, room: f32) -> Sessions {
         }
         let label = openide_ui::Tooltip::new(
             Element::row(vec![
-                Element::icon(Icon::Terminal)
+                Element::icon(session_icon(state, tab.id))
                     .foreground(theme::FOREGROUND_SUBTLE)
                     .size(Some(16.0), Some(TOOL_SIZE)),
                 Element::faded_text(&title, 12.0)
@@ -900,6 +986,7 @@ pub(crate) fn build_panes(state: &ViewState, width: f32, height: f32) -> Element
             } else {
                 pane.error.as_deref()
             },
+            agent_terminal(state, pane.id),
             pane.id,
             &screen_id(pane.id, true),
             pane_width,
@@ -939,3 +1026,7 @@ pub(crate) fn build_panes(state: &ViewState, width: f32, height: f32) -> Element
 #[cfg(test)]
 #[path = "terminal_dock_ui_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "agent_terminals_visual_tests.rs"]
+pub(crate) mod agent_terminals_visual_tests;

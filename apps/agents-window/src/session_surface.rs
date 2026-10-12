@@ -1494,6 +1494,11 @@ fn terminal_activity(
             .center_content(),
         );
     }
+    if let Some(actions) =
+        crate::terminal_dock_ui::command_actions(state, "card", id, name, output.as_deref())
+    {
+        body.push(actions.padding(8.0));
+    }
     let failed = *is_error || *activity == ActivityStatus::Failed;
     let mut terminal = ToolActivity::new(
         &disclosure,

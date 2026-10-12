@@ -131,10 +131,11 @@ pub use permission::{
 };
 pub use persistent_command::{
     PersistentCommandControlInspection, PersistentCommandDimensions, PersistentCommandEvent,
-    PersistentCommandExit, PersistentCommandInspection, PersistentCommandLimits,
-    PersistentTerminal, PersistentTerminalEvent,
-    PersistentCommandManager, PersistentCommandSessionInfo, PersistentCommandSnapshot,
-    PersistentCommandStarted, PersistentCommandStdinState, PersistentCommandStream,
+    PersistentCommandExit, PersistentCommandInspection, PersistentCommandLaunch,
+    PersistentCommandLimits, PersistentCommandManager, PersistentCommandSessionInfo,
+    PersistentCommandSnapshot, PersistentCommandStartObserver, PersistentCommandStarted,
+    PersistentCommandStdinState, PersistentCommandStream, PersistentTerminal,
+    PersistentTerminalEvent, PersistentTerminalInput,
 };
 pub use plan_tool::update_plan_tool_definition;
 pub use user_interaction::{

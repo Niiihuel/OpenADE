@@ -1073,3 +1073,117 @@ fn offline_registry_uses_real_confinement_and_durable_capture_without_host_fallb
     );
     assert!(page.summary.terminal.unwrap().exit_observed);
 }
+
+/// What a host that turns the terminal on changes for sessions made before
+/// it: nothing they recorded. The reservation digest of a child, current or
+/// frozen, is the one the previous release computed.
+#[test]
+#[cfg(unix)]
+fn host_terminal_keeps_every_recorded_identity_and_shows_started_commands_to_the_host() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let sessions = Arc::new(SessionStore::open(root.path().join("sessions")).unwrap());
+    let owner = sessions.create(&workspace, "native").unwrap().id;
+    let child = sessions.create(&workspace, "native").unwrap().id;
+    let (sender, started) = std::sync::mpsc::channel();
+    let registry = Arc::new(NativeCommandRegistry::new(sessions).with_start_observer(Arc::new(
+        move |launch| {
+            let _ = sender.send(launch);
+        },
+    )));
+    let before = registry
+        .profile(NativeCommandProfileOptions::default())
+        .unwrap();
+    let profile = registry
+        .profile(NativeCommandProfileOptions {
+            host_terminal: true,
+            ..NativeCommandProfileOptions::default()
+        })
+        .unwrap();
+    assert_eq!(profile.identity_digest(), before.identity_digest());
+    assert_eq!(profile.definitions(), before.definitions());
+    let reserved = profile.before_command_revision().unwrap();
+    assert_eq!(
+        reserved.identity_digest(),
+        "a17447e631148e550563a327d7afd61f78b3e36c404ac950f4bc88e559079f35"
+    );
+    // A child reserved under the frozen profile gets a terminal like any other.
+    let reserved_manager = reserved.manager(&child, &workspace).unwrap();
+    let cancel = CancellationToken::new();
+    let frozen = reserved_manager
+        .start("/bin/sh", &["-c".into(), "test -t 1 && echo TTY".into()], &cancel)
+        .unwrap();
+    let launch = started.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(launch.owner_session_id.as_deref(), Some(child.as_str()));
+    assert_eq!(launch.id, frozen.id);
+    assert!(launch.terminal.interactive());
+
+    let manager = profile.manager(&owner, &workspace).unwrap();
+    let command = manager
+        .start(
+            "/bin/sh",
+            &[
+                "-c".into(),
+                r"printf '\033[1;32mlisto\033[0m en \033]8;;http://x\007verde\033]8;;\033\\\n'; printf 'dos\n'"
+                    .into(),
+            ],
+            &cancel,
+        )
+        .unwrap();
+    let launch = started.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(launch.owner_session_id.as_deref(), Some(owner.as_str()));
+    assert_eq!(launch.generation, manager.generation());
+    assert_eq!(launch.argv[0], "/bin/sh");
+    assert_eq!((launch.id.as_str(), launch.argv.len()), (command.id.as_str(), 3));
+    // The tab keeps the terminal's bytes, colour and line discipline included.
+    let (mut tab, mut exit) = (Vec::new(), None);
+    while let Some(event) = launch.terminal.next_event() {
+        match event {
+            crate::PersistentTerminalEvent::Output(bytes) => tab.extend(bytes),
+            crate::PersistentTerminalEvent::Exited(status) => exit = Some(status),
+        }
+    }
+    assert_eq!(exit, Some(crate::PersistentCommandExit::Exited { code: Some(0) }));
+    let tab = String::from_utf8_lossy(&tab);
+    assert!(tab.contains("\u{1b}[1;32mlisto\u{1b}[0m"), "{tab:?}");
+    assert!(tab.contains("dos\r\n"), "{tab:?}");
+    // What the agent polls and what "Historial" stores are plain text.
+    let plain = b"listo en verde\ndos\n";
+    runtime().block_on(wait_until(|| {
+        manager
+            .inspect_pending_output(&command.id)
+            .unwrap()
+            .exit
+            .is_some()
+    }));
+    assert_eq!(copy_output(&manager, &command.id), plain);
+    let binding = NativeCommandOutputBinding {
+        session_id: owner.clone(),
+        workspace: workspace.canonicalize().unwrap(),
+        manager_generation: manager.generation().into(),
+        command_id: command.id.clone(),
+    };
+    let page = registry.output.read(&binding, 0, 4096, 16).unwrap();
+    assert_eq!(
+        page.chunks
+            .into_iter()
+            .flat_map(|chunk| chunk.bytes)
+            .collect::<Vec<_>>(),
+        plain
+    );
+    // A tab the user closes stops the tree; the agent still gets the exit.
+    let server = manager
+        .start("/bin/sh", &["-c".into(), "echo READY; sleep 300".into()], &cancel)
+        .unwrap();
+    let launch = started.recv_timeout(Duration::from_secs(5)).unwrap();
+    manager.stop(&server.id).unwrap();
+    let mut exit = None;
+    while let Some(event) = launch.terminal.next_event() {
+        if let crate::PersistentTerminalEvent::Exited(status) = event {
+            exit = Some(status);
+        }
+    }
+    assert_eq!(exit, Some(crate::PersistentCommandExit::Terminated));
+    registry.revoke_all().unwrap();
+}

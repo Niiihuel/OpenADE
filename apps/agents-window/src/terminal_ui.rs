@@ -130,6 +130,7 @@ pub(crate) fn build_body(state: &ViewState, width: f32, height: f32) -> Element 
     build_pane(
         state.terminal_snapshot.as_ref(),
         state.terminal_error.as_deref(),
+        crate::terminal_dock_ui::agent_terminal(state, id),
         id,
         "terminal_screen",
         width,
@@ -140,6 +141,7 @@ pub(crate) fn build_body(state: &ViewState, width: f32, height: f32) -> Element 
 pub(crate) fn build_pane(
     snapshot: Option<&TerminalSnapshot>,
     terminal_error: Option<&str>,
+    agent: Option<&crate::terminal_dock_ui::AgentTerminalView>,
     id: u64,
     screen_id: &str,
     width: f32,
@@ -178,7 +180,8 @@ pub(crate) fn build_pane(
             .gap(8.0)
             .size(None, Some(24.0)),
         ];
-        if terminal_error.is_some() {
+        // An agent's command is the agent's to start again, not the tab's.
+        if terminal_error.is_some() && agent.is_none() {
             content.push(
                 Button::new(&restart, "Reintentar", theme::component_palette())
                     .variant(ButtonVariant::Ghost)
@@ -197,13 +200,26 @@ pub(crate) fn build_pane(
     let screen = terminal_screen(snapshot, width, Some(height), id, screen_id);
     let error = terminal_error.or(snapshot.error.as_deref());
     let notice = if error.is_some() || !snapshot.running {
-        let status = error.map(str::to_owned).unwrap_or_else(|| {
-            snapshot.exit_code.map_or_else(
-                || "Sesión finalizada".to_owned(),
-                |code| format!("Proceso finalizado · código {code}"),
-            )
-        });
-        Some(exit_notice(status, error.is_some(), &restart))
+        let status = error
+            .map(str::to_owned)
+            .or_else(|| agent.and_then(|agent| agent.ended.clone()))
+            .unwrap_or_else(|| {
+                snapshot.exit_code.map_or_else(
+                    || "Sesión finalizada".to_owned(),
+                    |code| format!("Proceso finalizado · código {code}"),
+                )
+            });
+        Some(exit_notice(
+            status,
+            error.is_some(),
+            agent.is_none().then_some(restart.as_str()),
+        ))
+    } else if agent.is_some_and(|agent| agent.read_only) {
+        Some(exit_notice(
+            crate::terminal_dock_ui::AGENT_READ_ONLY.into(),
+            false,
+            None,
+        ))
     } else if snapshot.scrollback_position > 0 {
         Some(
             Element::row(vec![
@@ -240,9 +256,10 @@ fn restart_button(id: &str) -> Element {
         .render()
 }
 
-/// The bar over a terminal that ended or failed, with the way to restart it.
-fn exit_notice(status: String, failed: bool, restart: &str) -> Element {
-    Notice::new(
+/// The bar over a terminal that ended or failed, with the way to restart it
+/// when it is a shell.
+fn exit_notice(status: String, failed: bool, restart: Option<&str>) -> Element {
+    let notice = Notice::new(
         status,
         openide_ui::ComponentPalette {
             surface: theme::PANEL,
@@ -253,8 +270,11 @@ fn exit_notice(status: String, failed: bool, restart: &str) -> Element {
         theme::DESTRUCTIVE
     } else {
         theme::FOREGROUND_SUBTLE
-    })
-    .trailing(restart_button(restart))
+    });
+    match restart {
+        Some(restart) => notice.trailing(restart_button(restart)),
+        None => notice,
+    }
     .framed()
     .sizing(crate::ui_sizing::TERMINAL_EXIT)
     .render()
@@ -576,6 +596,7 @@ mod tests {
                 let mut tree = UiTree::new(build_pane(
                     Some(&snapshot),
                     None,
+                    None,
                     42,
                     screen_id,
                     width,
@@ -619,6 +640,7 @@ mod tests {
         let mut tree = UiTree::new(build_pane(
             Some(&snapshot),
             None,
+            None,
             7,
             "terminal_screen:7",
             120.0,
@@ -630,6 +652,7 @@ mod tests {
         {
             tree.set_root(build_pane(
                 Some(&snapshot),
+                None,
                 None,
                 7,
                 "terminal_screen:7",
@@ -666,6 +689,7 @@ mod tests {
         let mut tree = UiTree::new(build_pane(
             Some(&grid_snapshot(&["prompt", "output"])),
             None,
+            None,
             1,
             "terminal_screen",
             240.0,
@@ -674,6 +698,7 @@ mod tests {
         let without_blank = tree.layout(Size::new(240.0, 62.0));
         tree.set_root(build_pane(
             Some(&grid_snapshot(&["", "prompt", "output"])),
+            None,
             None,
             1,
             "terminal_screen",

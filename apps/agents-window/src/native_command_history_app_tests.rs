@@ -164,6 +164,8 @@ async fn capture_fixture() -> CaptureFixture {
     let data = root.path().join("data");
     let binary = probe(root.path());
     let mut app = AgentsWindow::with_data_root(data.clone());
+    // This test is about the pipe contract; see `keep_pipes`.
+    app.native_command_sessions.keep_pipes();
     let session = app
         .store
         .as_ref()

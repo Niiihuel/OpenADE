@@ -57,6 +57,9 @@ impl AgentsWindow {
         if let Some(name) = self.terminal_controls_host.names.get(&id) {
             return name.clone();
         }
+        if let Some(command) = self.agent_terminal_title(id) {
+            return command.to_owned();
+        }
         if let Some(session) = self.terminals.get(&id) {
             return format!("{} {}", session.shell_label(), index + 1);
         }
@@ -157,6 +160,7 @@ impl AgentsWindow {
             self.terminal_controls_host.rename_scope = None;
         }
         self.refresh_terminal_titles();
+        self.refresh_agent_terminal_views();
     }
 
     pub(super) fn close_terminal_controls(&mut self) {
@@ -389,6 +393,12 @@ impl AgentsWindow {
             && !self.tree.has_open_popover();
         let retain_session_list =
             kind == "terminal_close" && self.view.terminal_controls.sessions_open;
+        if kind == "terminal_close" && self.agent_terminal_running(target.get()) {
+            // The agent's process is stopped only after the user confirms.
+            self.close_terminal_controls();
+            self.view.terminal_controls.closing = Some(target.get());
+            return;
+        }
         let scope = self.dock_scope();
         if kind == "terminal_close" {
             let split_neighbor = self

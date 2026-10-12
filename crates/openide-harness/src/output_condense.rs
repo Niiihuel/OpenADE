@@ -34,37 +34,51 @@ pub(crate) fn condense_output(text: &str) -> String {
     out
 }
 
-/// Removes CSI (`ESC [ ... final`) and OSC (`ESC ] ... BEL | ESC \`) sequences.
-fn strip_ansi(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\u{1b}' {
-            out.push(ch);
-            continue;
-        }
-        match chars.peek() {
-            Some('[') => {
-                chars.next();
-                for next in chars.by_ref() {
-                    if ('\u{40}'..='\u{7e}').contains(&next) {
-                        break;
-                    }
+/// Removes CSI (`ESC [ ... final`) and OSC (`ESC ] ... BEL | ESC \`) sequences
+/// from a byte stream. A sequence may be split across calls; every byte it
+/// looks at is ASCII, so multi-byte characters pass through whole.
+#[derive(Default)]
+pub(crate) struct AnsiStripper(AnsiState);
+
+#[derive(Clone, Copy, Default)]
+enum AnsiState {
+    #[default]
+    Text,
+    Escape,
+    Csi,
+    Osc,
+    OscEscape,
+}
+
+impl AnsiStripper {
+    pub(crate) fn strip(&mut self, bytes: &[u8], out: &mut Vec<u8>) {
+        for &byte in bytes {
+            self.0 = match (self.0, byte) {
+                (AnsiState::Text, 0x1b) => AnsiState::Escape,
+                (AnsiState::Escape, b'[') => AnsiState::Csi,
+                (AnsiState::Escape, b']') => AnsiState::Osc,
+                // A lone escape or a two-character sequence: drop the escape only.
+                (AnsiState::Escape, 0x1b) => AnsiState::Escape,
+                (AnsiState::Text | AnsiState::Escape, _) => {
+                    out.push(byte);
+                    AnsiState::Text
                 }
-            }
-            Some(']') => {
-                chars.next();
-                while let Some(next) = chars.next() {
-                    if next == '\u{7}' || next == '\u{1b}' && chars.next_if_eq(&'\\').is_some() {
-                        break;
-                    }
-                }
-            }
-            // A lone escape or a two-character sequence: drop the escape only.
-            _ => {}
+                (AnsiState::Csi, 0x40..=0x7e) => AnsiState::Text,
+                (AnsiState::Csi, _) => AnsiState::Csi,
+                (AnsiState::Osc | AnsiState::OscEscape, 0x07) => AnsiState::Text,
+                (AnsiState::Osc | AnsiState::OscEscape, 0x1b) => AnsiState::OscEscape,
+                (AnsiState::OscEscape, b'\\') => AnsiState::Text,
+                (AnsiState::Osc | AnsiState::OscEscape, _) => AnsiState::Osc,
+            };
         }
     }
-    out
+}
+
+fn strip_ansi(text: &str) -> String {
+    let mut out = Vec::with_capacity(text.len());
+    AnsiStripper::default().strip(text.as_bytes(), &mut out);
+    // Only whole sequences ending in an ASCII byte were removed from valid UTF-8.
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -85,6 +99,23 @@ mod tests {
             "error: link ok"
         );
         assert_eq!(condense_output(" 10%\r 55%\r100% done\nnext\r\n"), "100% done\nnext\n");
+    }
+
+    #[test]
+    fn a_sequence_split_across_chunks_is_still_removed() {
+        let mut stripper = AnsiStripper::default();
+        let mut out = Vec::new();
+        for chunk in [
+            &b"a\x1b"[..],
+            b"[1;3",
+            b"1mrojo\x1b]0;ti",
+            b"tulo\x1b",
+            b"\\ fin \xc3",
+            b"\xb1",
+        ] {
+            stripper.strip(chunk, &mut out);
+        }
+        assert_eq!(out, "arojo fin ñ".as_bytes());
     }
 
     #[test]

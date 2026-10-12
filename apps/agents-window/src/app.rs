@@ -84,6 +84,8 @@ mod provider_usage_app;
 mod session_delete_app_tests;
 #[path = "terminal_controls_app.rs"]
 mod terminal_controls_app;
+#[path = "agent_terminals_app.rs"]
+mod agent_terminals_app;
 #[path = "external_bridge_app.rs"]
 pub(crate) mod external_bridge_app;
 #[path = "text_context_app.rs"]
@@ -1397,6 +1399,8 @@ pub struct AgentsWindow {
     viewport_height: f32,
     dock: DockState,
     terminals: HashMap<u64, TerminalSession>,
+    /// The terminal tabs that show a command the native agent started.
+    agent_terminals: HashMap<u64, agent_terminals_app::AgentTerminal>,
     terminal_controls_host: terminal_controls_app::TerminalControlsHost,
     external_bridge: external_bridge_app::ExternalBridgeHost,
     /// Where Claude Code hooks are discovered. Tests set it; they never read the real one.
@@ -4265,7 +4269,11 @@ impl AgentsWindow {
     }
 
     fn ensure_terminal_session(&mut self, id: u64) -> bool {
-        if self.terminals.contains_key(&id) || !self.terminal_id_in_scope(id) {
+        // An agent's tab shows the agent's command; it never gets a shell.
+        if self.terminals.contains_key(&id)
+            || !self.terminal_id_in_scope(id)
+            || self.is_agent_terminal(id)
+        {
             return false;
         }
         // Failed launches are scoped to the PTY identity. A failed split pane
@@ -5614,6 +5622,7 @@ impl AgentsWindow {
         self.view.show_dock_tabs_menu = false;
         let scope = self.dock_scope();
         self.terminals.retain(|id, _| self.dock.contains_tab(*id));
+        self.forget_closed_agent_terminals();
         self.prune_external_grants();
         self.browsers.retain(|id, _| self.dock.contains_tab(*id));
         self.browser_starts
@@ -5632,7 +5641,9 @@ impl AgentsWindow {
         let next_terminal = self.dock.active_terminal(&scope)
             .map(|tab| tab.id.get());
         if previous_terminal != next_terminal {
-            self.terminal_focus_pending = next_terminal.is_some();
+            // An agent's command takes the keyboard only when the user asks.
+            self.terminal_focus_pending =
+                next_terminal.is_some_and(|id| !self.is_agent_terminal(id));
             self.view.terminal_input.clear();
             self.tree.set_input_value("terminal_input", "");
         }
@@ -7005,6 +7016,7 @@ impl AgentsWindow {
             dock,
             terminals: HashMap::new(),
             terminal_controls_host: Default::default(),
+            agent_terminals: HashMap::new(),
             external_bridge: external_bridge_app::ExternalBridgeHost::new(external_agent_settings),
             // An unreadable file means no check runs, never a guessed command.
             turn_check_settings: crate::turn_check::TurnCheckSettings::load(&root).unwrap_or_default(),
@@ -16582,6 +16594,9 @@ impl AgentsWindow {
         if self.apply_file_activity_open(&action) {
             return;
         }
+        if self.apply_agent_terminal_action(&action) {
+            return;
+        }
         if self.handle_terminal_controls_action(&action, ctx) {
             return;
         }
@@ -17980,7 +17995,7 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "terminal_restart" => {
                 self.view.terminal_menu_open = false;
                 self.terminal_focus_pending = true;
-                if let Some(id) = self.active_terminal_id() {
+                if let Some(id) = self.active_terminal_id().filter(|id| !self.is_agent_terminal(*id)) {
                     self.terminals.remove(&id);
                     self.terminal_controls_host.errors.remove(&id);
                     self.view.terminal_error = None;
@@ -20492,6 +20507,7 @@ impl eframe::App for AgentsWindow {
             | self.poll_resume()
             | self.poll_child_recovery()
             | self.poll_native_command_sessions()
+            | self.follow_agent_terminals()
             | self.poll_marketplace()
             | self.poll_plugins()
             | self.poll_catalog()
@@ -20540,6 +20556,7 @@ impl eframe::App for AgentsWindow {
             || self.view.marketplace.pending_remove_source_id.is_some()
             || self.view.pending_mcp_delete_id.is_some()
             || self.view.pending_native_command_termination.is_some()
+            || self.view.terminal_controls.closing.is_some()
             || (self.view.show_settings
                 && self.view.settings_page == SettingsPage::Providers
                 && self.view.catalog_expanded_model.is_some())

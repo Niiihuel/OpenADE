@@ -30,7 +30,10 @@ use uuid::Uuid;
 mod windows_pty;
 #[path = "persistent_command_terminal.rs"]
 mod terminal;
-pub use terminal::{PersistentTerminal, PersistentTerminalEvent};
+pub use terminal::{
+    PersistentCommandLaunch, PersistentCommandStartObserver, PersistentTerminal,
+    PersistentTerminalEvent, PersistentTerminalInput,
+};
 #[cfg(all(test, unix))]
 #[path = "persistent_command_terminal_tests.rs"]
 mod terminal_tests;
@@ -436,6 +439,7 @@ pub struct PersistentCommandManager {
     pty_resize_tools_enabled: bool,
     start_wait_tools: bool,
     host_terminal: bool,
+    start_observer: Option<PersistentCommandStartObserver>,
     runtime: OnceLock<Result<CommandRuntime, String>>,
     native_output_store: Option<Arc<NativeCommandOutputStore>>,
 }
@@ -486,6 +490,7 @@ impl PersistentCommandManager {
             pty_resize_tools_enabled: false,
             start_wait_tools: true,
             host_terminal: false,
+            start_observer: None,
             runtime: OnceLock::new(),
             native_output_store: None,
         })
@@ -636,6 +641,20 @@ impl PersistentCommandManager {
     pub fn with_host_terminal(mut self) -> Self {
         self.host_terminal = true;
         self
+    }
+
+    /// Host opt-in: called once per started command, before its ID is
+    /// returned to the caller, with the command's host tab. It must not block.
+    pub fn with_start_observer(mut self, observer: PersistentCommandStartObserver) -> Self {
+        self.start_observer = Some(observer);
+        self
+    }
+
+    /// Stop one command's process tree without waiting for its exit, for a
+    /// host tab the user closes. The agent still polls the remaining output.
+    pub fn stop(&self, id: &str) -> Result<(), AgentError> {
+        self.session(id)?.stop_tree();
+        Ok(())
     }
 
     /// A host tab's view of one started command: a copy of its output from
@@ -870,6 +889,31 @@ impl PersistentCommandManager {
         terminal: Option<(u16, u16)>,
         cancellation: &CancellationToken,
     ) -> Result<PersistentCommandStarted, AgentError> {
+        let started = self.spawn_with_terminal(program, args, terminal, cancellation)?;
+        if let Some(observer) = &self.start_observer {
+            // Nobody has this ID yet, so the tab attaches before any poll.
+            if let Ok(terminal) = self.attach_terminal(&started.id) {
+                observer(PersistentCommandLaunch {
+                    owner_session_id: self.owner_session_id.clone(),
+                    generation: self.generation.clone(),
+                    id: started.id.clone(),
+                    argv: std::iter::once(program.to_owned())
+                        .chain(args.iter().cloned())
+                        .collect(),
+                    terminal,
+                });
+            }
+        }
+        Ok(started)
+    }
+
+    fn spawn_with_terminal(
+        &self,
+        program: &str,
+        args: &[String],
+        terminal: Option<(u16, u16)>,
+        cancellation: &CancellationToken,
+    ) -> Result<PersistentCommandStarted, AgentError> {
         if cancellation.is_cancelled() {
             return Err(AgentError::Cancelled);
         }
@@ -936,7 +980,13 @@ impl PersistentCommandManager {
             return Err(AgentError::Cancelled);
         }
         let id = Uuid::new_v4().to_string();
-        let capture = self.register_output(&id, program, args, terminal.is_some())?;
+        // A host terminal is one merged stream too; the capture must be
+        // registered as one or it refuses that stream and stops the command.
+        let on_terminal = terminal.is_some()
+            || (cfg!(unix)
+                && self.host_terminal
+                && self.isolation == CommandIsolation::HostUnrestricted);
+        let capture = self.register_output(&id, program, args, on_terminal)?;
         if cancellation.is_cancelled() || self.revoked.is_cancelled() {
             return Err(AgentError::Cancelled);
         }
@@ -1055,9 +1105,10 @@ impl PersistentCommandManager {
                     .into(),
             ));
         }
-        let output = Arc::new(
-            OutputBuffer::new(self.limits.max_buffered_output_bytes).with_capture(capture),
-        );
+        let output = OutputBuffer::new(self.limits.max_buffered_output_bytes).with_capture(capture);
+        #[cfg(unix)]
+        let output = output.with_plain_text(host_master.is_some());
+        let output = Arc::new(output);
         type Reader = tokio::task::JoinHandle<std::io::Result<()>>;
         let piped = |child: &mut Child| -> Result<_, AgentError> {
             let missing = |name: &str| {
@@ -1690,6 +1741,9 @@ struct OutputBuffer {
     failure_tree: Mutex<Option<Arc<Mutex<Option<SessionTree>>>>>,
     /// A copy for the host's tab; independent of retention and of the cursor.
     tap: terminal::TerminalTap,
+    /// Set for a command on a host terminal: everything but the tab reads
+    /// its output through this filter.
+    plain: Option<Mutex<terminal::PlainText>>,
 }
 
 impl OutputBuffer {
@@ -1704,7 +1758,14 @@ impl OutputBuffer {
             stop: CancellationToken::new(),
             failure_tree: Mutex::new(None),
             tap: terminal::TerminalTap::default(),
+            plain: None,
         }
+    }
+
+    #[cfg(unix)]
+    fn with_plain_text(mut self, plain: bool) -> Self {
+        self.plain = plain.then(Mutex::default);
+        self
     }
 
     fn with_capture(mut self, capture: Option<Arc<NativeOutputCapture>>) -> Self {
@@ -1750,6 +1811,22 @@ impl OutputBuffer {
 
     fn push(&self, stream: PersistentCommandStream, bytes: &[u8]) -> std::io::Result<()> {
         self.tap.push(bytes);
+        // The one place where a terminal's escape sequences are removed: the
+        // poll buffer and the durable capture below never see them.
+        let plain;
+        let bytes = match &self.plain {
+            Some(filter) => {
+                plain = filter
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .feed(bytes);
+                if plain.is_empty() {
+                    return Ok(());
+                }
+                plain.as_slice()
+            }
+            None => bytes,
+        };
         let mut committed_cursor = match self.capture.as_ref() {
             Some(capture) => Some(capture.cursor.lock().map_err(|_| {
                 self.fail_capture("native output producer cursor is unavailable".into())
