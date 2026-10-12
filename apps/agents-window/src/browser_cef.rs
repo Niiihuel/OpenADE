@@ -9,10 +9,60 @@
 
 use super::*;
 use std::hash::Hasher;
+use std::sync::atomic::AtomicU32;
 
 /// How often Chromium composites a page that is on screen, or that a command
-/// is waiting on: a click and a capture each take a frame or two.
-const FRAME_RATE: u32 = 60;
+/// is waiting on: as often as the window itself is presented, which under
+/// vsync is the display's refresh rate. Sixty until the window has said.
+static DISPLAY_RATE: AtomicU32 = AtomicU32::new(60);
+/// The window's first frame intervals with a browser open.
+static WINDOW_FRAMES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+const WINDOW_FRAMES_WANTED: usize = 48;
+
+/// Takes the time between two frames of the window while its rate is being
+/// measured, and says whether the next frame is wanted at once.
+// shortcut: measured once per run; a window moved to a display with another
+// refresh rate keeps the first one until the application restarts.
+pub(crate) fn observe_window_frame(interval: f32) -> bool {
+    let mut frames = WINDOW_FRAMES.lock().unwrap_or_else(|poison| poison.into_inner());
+    if frames.len() >= WINDOW_FRAMES_WANTED {
+        return false;
+    }
+    frames.push(interval);
+    if frames.len() < WINDOW_FRAMES_WANTED {
+        return true;
+    }
+    if let Some(rate) = display_rate(&frames) {
+        DISPLAY_RATE.store(rate, Ordering::Relaxed);
+    }
+    false
+}
+
+/// The refresh rate a run of frame intervals shows. The first follow a
+/// wake-up, and a slow frame says nothing about the display: the quick ones
+/// do. A rate close to a usual one is that one.
+fn display_rate(intervals: &[f32]) -> Option<u32> {
+    let mut steady: Vec<f32> = intervals
+        .iter()
+        .skip(8)
+        .copied()
+        .filter(|interval| interval.is_finite() && *interval > 0.0)
+        .collect();
+    if steady.len() < 16 {
+        return None;
+    }
+    steady.sort_by(f32::total_cmp);
+    let measured = 1.0 / steady[steady.len() / 4];
+    let off = |rate: &u32| (*rate as f32 - measured).abs();
+    let usual = [60, 72, 75, 90, 100, 120, 144, 165, 240]
+        .into_iter()
+        .min_by(|a, b| off(a).total_cmp(&off(b)))?;
+    Some(if off(&usual) <= usual as f32 * 0.06 {
+        usual
+    } else {
+        (measured.round() as u32).clamp(30, 240)
+    })
+}
 /// And one that is neither. Its paints go nowhere, but it stays a visible
 /// page: one CEF hides stops animating and timing for the agent's next step.
 const IDLE_FRAME_RATE: u32 = 10;
@@ -183,6 +233,8 @@ impl Embedded {
     /// that moment are held back, and what is left after it is news only if
     /// it differs from what the view already shows.
     pub(super) fn frame(&self, view: &LiveView) -> Option<limn_egui::SurfaceFrame> {
+        // The window's rate may have been measured since the page was shown.
+        self.pace();
         let mut canvas = self.canvas();
         let feed = view.feed();
         let redrawing = feed.rerendering
@@ -258,7 +310,11 @@ impl Embedded {
 
     fn pace(&self) {
         let mut canvas = self.canvas();
-        let rate = if canvas.visible || canvas.busy { FRAME_RATE } else { IDLE_FRAME_RATE };
+        let rate = if canvas.visible || canvas.busy {
+            DISPLAY_RATE.load(Ordering::Relaxed)
+        } else {
+            IDLE_FRAME_RATE
+        };
         // Only a change: setting the rate it has restarts Chromium's frame timer.
         let changed = std::mem::replace(&mut canvas.rate, rate) != rate;
         drop(canvas);
@@ -374,7 +430,28 @@ pub(crate) fn probe() -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::accept_languages;
+    use super::{accept_languages, display_rate};
+
+    #[test]
+    fn the_windows_quick_frames_say_the_displays_refresh_rate() {
+        let run = |interval: f32| -> Vec<f32> {
+            // A wake-up, then steady frames with a slow one now and then.
+            let mut frames = vec![2.5, 0.2, 0.05];
+            frames.extend((0..45).map(|index| if index % 7 == 0 { interval * 3.0 } else { interval }));
+            frames
+        };
+        assert_eq!(display_rate(&run(1.0 / 119.6)), Some(120));
+        assert_eq!(display_rate(&run(1.0 / 60.3)), Some(60));
+        assert_eq!(display_rate(&run(1.0 / 143.2)), Some(144));
+        // Not a usual rate: taken as measured, within what a display has.
+        assert_eq!(display_rate(&run(1.0 / 50.0)), Some(50));
+        assert_eq!(display_rate(&run(1.0 / 2000.0)), Some(240));
+        assert_eq!(display_rate(&run(1.0)), Some(30));
+        // Too few frames, or none that mean anything, say nothing.
+        assert_eq!(display_rate(&[0.008; 20]), None);
+        assert_eq!(display_rate(&[f32::NAN; 48]), None);
+        assert_eq!(display_rate(&[0.0; 48]), None);
+    }
 
     #[test]
     fn languages_follow_the_locale_and_fall_back_to_english() {

@@ -2793,7 +2793,7 @@ fn hex_digest(bytes: &[u8]) -> String {
 #[path = "browser_cef.rs"]
 mod cef;
 #[cfg(feature = "cef")]
-pub(crate) use cef::probe as cef_probe;
+pub(crate) use cef::{observe_window_frame as cef_observe_window_frame, probe as cef_probe};
 
 #[cfg(test)]
 #[path = "browser_runtime_tests.rs"]

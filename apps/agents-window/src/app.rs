@@ -4902,6 +4902,13 @@ impl AgentsWindow {
     fn update_browser(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
         self.browser_scale = crate::browser_runtime::device_scale(ctx.pixels_per_point());
+        // The embedded page is composited as often as this window is shown.
+        #[cfg(feature = "cef")]
+        if !self.browsers.is_empty()
+            && crate::browser_runtime::cef_observe_window_frame(ctx.input(|input| input.unstable_dt))
+        {
+            ctx.request_repaint();
+        }
         // The button came up while the window showed something else.
         if self.browser_pointer_down.is_some() && !ctx.input(|input| input.pointer.primary_down()) {
             self.release_browser_pointer(None);

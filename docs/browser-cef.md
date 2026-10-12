@@ -222,10 +222,15 @@ Chrome de reemplazo.
 ## Límites
 
 - Sin WebGL y sin H.264, HEVC ni AAC (el CEF precompilado no los trae).
-- 60 cuadros por segundo, no los 120 de la pantalla. A 120 la animación de
-  prueba llegó a 120,1 con 65 % de un núcleo en la aplicación en lugar de
-  37 %, y 18 % en lugar de 10 % en los procesos de Chromium (una corrida); es
-  la constante `FRAME_RATE` de `browser_cef.rs`.
+- La página se compone a la frecuencia con que la ventana se presenta, que
+  con vsync es la de la pantalla: la ventana mide sus primeros 48 cuadros con
+  un navegador abierto (`observe_window_frame` en `browser_cef.rs`) y hasta
+  entonces son 60. Se mide una vez por ejecución: una ventana movida a una
+  pantalla de otra frecuencia conserva la primera. A 120, sin ventana, la
+  animación de prueba llegó a 120,1 con 65 % de un núcleo en la aplicación en
+  lugar de 37 %, y 18 % en lugar de 10 % en los procesos de Chromium (una
+  corrida). Con ventana no se midió: falta saber si subir a la GPU un cuadro
+  de 2560 × 1600 por cada refresco sostiene los 120.
 - Cada cuadro se copia y se convierte entero aunque cambie un píxel: una
   animación chica cuesta lo mismo que una de pantalla completa.
 - La lista de un `<select>` abierta desde la ventana no se dibuja (CEF la
@@ -391,7 +396,7 @@ después de cada una no quedó ningún proceso de CEF ni directorio.
 - **Los interruptores.** Quitar los tres que apagan la GPU en `openide-cef` y
   elegir en qué GPU corre Chromium: la prueba de viabilidad no obtuvo cuadros
   acelerados con Chromium en la NVIDIA.
-- **La frecuencia.** La ventana tiene que decirle al runtime la frecuencia de
-  su pantalla; hoy es una constante.
+- **La frecuencia.** Ya sigue a la ventana (ver Límites); el paso de GPU sólo
+  tiene que conservarlo.
 - **Las pruebas.** La que vigila que no se toque la GPU pasa a valer sólo para
   el camino por software, que conviene conservar como reemplazo.
