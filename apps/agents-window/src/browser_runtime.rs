@@ -721,10 +721,24 @@ impl BrowserRuntime {
         private_directory(&base_dir)?;
         let base_dir = fs::canonicalize(&base_dir).map_err(|error| error.to_string())?;
         let (data_root, launch) = (data_root.to_owned(), options.clone());
-        Self::start_with(
+        let view = Arc::<LiveView>::default();
+        #[cfg(feature = "cef")]
+        let embedded_view = view.clone();
+        Self::start_on(
             scope,
             options,
             Box::new(move || {
+                // The embedded Chromium, unless the caller chose a browser.
+                // One that cannot start leaves the system's.
+                #[cfg(feature = "cef")]
+                if launch.browser_executable.is_none() {
+                    let viewport = (launch.viewport_width, launch.viewport_height);
+                    let scale = device_scale(launch.device_scale);
+                    match cef::Embedded::start(&embedded_view, &base_dir, viewport, scale) {
+                        Ok(driver) => return Ok(driver),
+                        Err(reason) => cef::report_fallback(&reason),
+                    }
+                }
                 let missing = |message| StartFailure {
                     code: "browser_missing",
                     message,
@@ -747,13 +761,27 @@ impl BrowserRuntime {
                     message: error.message,
                 })
             }),
+            view,
         )
     }
 
+    /// A context on whatever the launcher starts: the tests' own endpoints.
+    #[cfg(test)]
     fn start_with(
         scope: BrowserScope,
         options: BrowserLaunchOptions,
         launch: Launcher,
+    ) -> Result<Self, String> {
+        Self::start_on(scope, options, launch, Arc::default())
+    }
+
+    /// `view` is where the context's frames go; a launcher that paints the
+    /// page itself holds it too.
+    fn start_on(
+        scope: BrowserScope,
+        options: BrowserLaunchOptions,
+        launch: Launcher,
+        view: Arc<LiveView>,
     ) -> Result<Self, String> {
         validate_viewport(options.viewport_width, options.viewport_height)?;
         if scope.session_id.is_empty()
@@ -801,7 +829,7 @@ impl BrowserRuntime {
             closed: Arc::new(AtomicBool::new(false)),
             context_lost: Arc::new(AtomicBool::new(false)),
             visible: Arc::new(AtomicBool::new(true)),
-            view: Arc::default(),
+            view,
             process: Arc::default(),
             scope,
             identity_digest,
@@ -950,6 +978,10 @@ impl BrowserRuntime {
                 libc::kill(-(process as libc::pid_t), libc::SIGKILL);
             }
         }
+        // An embedded page has no process of its own to kill: closing it is
+        // what ends a request in flight.
+        #[cfg(feature = "cef")]
+        self.handle.view.embedded.interrupt();
         // An idle worker would only notice at its next tick: a request that
         // is already cancelled wakes it now.
         let (reply, _) = mpsc::sync_channel(1);
@@ -1272,6 +1304,8 @@ impl Worker {
             .unwrap_or_else(|poison| poison.into_inner())
             .take();
         self.driver = None;
+        #[cfg(feature = "cef")]
+        self.handle.view.embedded.close();
     }
 
     fn lose_context(&mut self, error: &str) {
@@ -1305,7 +1339,17 @@ impl Worker {
         };
         let agent = pending.include_aria;
         let view = &self.handle.view;
-        match execute(driver, pending, view, self.scale) {
+        // An embedded page is as large as its view, which changes first.
+        #[cfg(feature = "cef")]
+        if let BrowserCommand::Resize { width, height } = pending.command {
+            view.embedded.resize((width, height));
+        }
+        #[cfg(feature = "cef")]
+        view.embedded.busy(true);
+        let outcome = execute(driver, pending, view, self.scale);
+        #[cfg(feature = "cef")]
+        view.embedded.busy(false);
+        match outcome {
             Ok(reply) => {
                 if let BrowserCommand::Resize { width, height } = pending.command {
                     // A resized page has other frame bounds, and owes a first
@@ -1362,6 +1406,17 @@ impl Worker {
         let view = &self.handle.view;
         let wanted = self.handle.visible.load(Ordering::Acquire);
         let restart = wanted && view.restart.load(Ordering::Acquire);
+        // An embedded page paints by itself: there is no stream to start,
+        // only its paints to let through, and a restart is one more of them.
+        #[cfg(feature = "cef")]
+        if view.embedded.is_open() {
+            if wanted != self.streaming || restart {
+                view.restart.store(false, Ordering::Release);
+                self.streaming = wanted;
+                view.embedded.show(wanted);
+            }
+            return;
+        }
         let waiting = wanted && Instant::now() < self.stream_retry;
         let mut lost = None;
         if (wanted != self.streaming || restart) && !waiting {
@@ -1775,6 +1830,10 @@ struct LiveView {
     decoded: Mutex<Option<limn_egui::SurfaceFrame>>,
     notify: Mutex<Option<Box<dyn Fn() + Send>>>,
     restart: AtomicBool,
+    /// The page itself, when an embedded Chromium paints it: frames then
+    /// come from there and not from a stream.
+    #[cfg(feature = "cef")]
+    embedded: cef::Embedded,
 }
 
 impl LiveView {
@@ -1796,10 +1855,16 @@ impl LiveView {
     /// the last true one, until the frame it had comes back or, on a page
     /// that moved meanwhile, for `RERENDER_SETTLE`.
     fn while_redrawing<T>(&self, redraws: bool, take: impl FnOnce() -> T) -> T {
+        // Chromium paints an embedded page again for any capture, also one
+        // that changes nothing.
+        #[cfg(feature = "cef")]
+        let redraws = redraws || self.embedded.is_open();
         if !redraws {
             return take();
         }
         self.feed().rerendering = true;
+        #[cfg(feature = "cef")]
+        self.embedded.before_capture();
         let taken = take();
         let mut feed = self.feed();
         feed.rerendering = false;
@@ -1981,6 +2046,11 @@ fn decode_frames(handle: &BrowserHandle) {
         // A frame that arrives from here on sets it again.
         feed.woken = false;
         drop(feed);
+        #[cfg(feature = "cef")]
+        if let Some(frame) = view.embedded.frame(view) {
+            view.publish(frame);
+            continue;
+        }
         // Taking the frame is what lets Chrome send the next one.
         let Some(frame) = stream.and_then(|stream| stream.try_next()) else {
             let feed = view.feed();
@@ -2718,6 +2788,12 @@ fn hex_digest(bytes: &[u8]) -> String {
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
+
+#[cfg(feature = "cef")]
+#[path = "browser_cef.rs"]
+mod cef;
+#[cfg(feature = "cef")]
+pub(crate) use cef::probe as cef_probe;
 
 #[cfg(test)]
 #[path = "browser_runtime_tests.rs"]
