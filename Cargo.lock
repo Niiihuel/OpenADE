@@ -2965,7 +2965,7 @@ dependencies = [
 [[package]]
 name = "limn"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.17#95f072b0a5e934b53e6c11088d9e8662846bdee2"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.18#20f60885cc41cef06adca6aa0a829a24ea20226f"
 dependencies = [
  "limn-editor",
  "limn-language",
@@ -2978,7 +2978,7 @@ dependencies = [
 [[package]]
 name = "limn-editor"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.17#95f072b0a5e934b53e6c11088d9e8662846bdee2"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.18#20f60885cc41cef06adca6aa0a829a24ea20226f"
 dependencies = [
  "regex",
  "ropey",
@@ -2989,7 +2989,7 @@ dependencies = [
 [[package]]
 name = "limn-egui"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.17#95f072b0a5e934b53e6c11088d9e8662846bdee2"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.18#20f60885cc41cef06adca6aa0a829a24ea20226f"
 dependencies = [
  "base64 0.22.1",
  "eframe",
@@ -3002,7 +3002,7 @@ dependencies = [
 [[package]]
 name = "limn-language"
 version = "0.1.0"
-source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.17#95f072b0a5e934b53e6c11088d9e8662846bdee2"
+source = "git+https://github.com/Niiihuel/limn.git?tag=v0.1.18#20f60885cc41cef06adca6aa0a829a24ea20226f"
 dependencies = [
  "limn-editor",
  "pulldown-cmark",
