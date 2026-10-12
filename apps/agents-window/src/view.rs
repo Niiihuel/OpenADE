@@ -3860,6 +3860,21 @@ pub(crate) mod tests {
         assert!(frame.commands.iter().any(|command| matches!(command,
             DrawCommand::Text { text, .. } if text == "Revocar"
         )));
+        // Open, the heading and the grants it lists are one filled block.
+        let rect = |id: &str| frame.regions.iter().find(|region| region.id == id).unwrap().rect;
+        let (heading, revoke) = (
+            rect("dock_activity:grants"),
+            rect(&format!("session_approval_revoke:{digest}")),
+        );
+        let fill = theme::component_palette().hover;
+        assert!(frame.commands.iter().any(|command| matches!(command,
+            DrawCommand::FillRect { rect, color, .. } if *color == fill
+                && rect.y == heading.y
+                && rect.y + rect.height >= revoke.y + revoke.height
+        )));
+        assert!(!closed.commands.iter().any(|command| matches!(command,
+            DrawCommand::FillRect { color, .. } if *color == fill
+        )));
     }
 
     pub(crate) fn empty_state() -> ViewState {
@@ -4660,7 +4675,11 @@ pub(crate) mod tests {
                 "environment-360".into(),
                 360.0,
                 420.0,
-                crate::environment_ui::panel(&state, 360.0, 420.0),
+                // At its own height, as beside the chat.
+                Element::column(vec![
+                    crate::environment_ui::panel(&state, 360.0, 420.0),
+                    Element::spacer().flex(1.0),
+                ]),
             ));
             state.selected_session = None;
             state.selected_backend = "native".into();

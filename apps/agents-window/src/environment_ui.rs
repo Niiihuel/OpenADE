@@ -3,11 +3,11 @@
 
 use std::{collections::HashSet, path::Path};
 
-use openide_ui::{PopoverPlacement, 
-    ButtonVariant, Component, ComponentPalette, ControlSize, DiffStat, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, Element, HeaderSizing, Icon, IconButton, ListRow, PanelHeader,
-    ScrollArea, SectionHeader, SectionSizing, Separator, SpinnerVariant, Text, TextRole, Tooltip,
-    TooltipPlacement, TooltipSpec,
+use openide_ui::{
+    ButtonVariant, Color, Component, ComponentPalette, ControlSize, DiffStat, DropdownMenu,
+    DropdownMenuEntry, DropdownMenuItem, Element, FontFamily, FramedCard, Icon, IconButton, ListRow,
+    PopoverPlacement, ScrollArea, ScrollbarAppearance, SectionHeader, SectionSizing, SpinnerVariant,
+    Text, TextRole, Tooltip, TooltipPlacement, TooltipSpec,
 };
 
 use crate::{
@@ -49,15 +49,35 @@ pub(crate) struct EnvironmentUiState {
     pub workflow: crate::environment_git_ui::EnvironmentGitUiState,
 }
 
-/// The canvas palette with the card's hover and press, for a limn button
-/// inside the environment card.
-pub(crate) fn card_button_palette() -> ComponentPalette {
-    let card = theme::action_palette(theme::CARD, theme::FOREGROUND);
+/// The card's palette: its rows hover one step above it.
+fn card_palette() -> ComponentPalette {
+    theme::action_palette(theme::CARD, theme::FOREGROUND)
+}
+
+/// For what an open block of the card lists: the block is filled with the
+/// card's hover, so its controls hover one step above that.
+pub(crate) fn block_palette() -> ComponentPalette {
+    theme::action_palette(card_palette().hover, theme::FOREGROUND)
+}
+
+/// The canvas palette with the hover and press of the surface a limn button
+/// stands on.
+fn button_palette(surface: ComponentPalette) -> ComponentPalette {
     ComponentPalette {
-        hover: card.hover,
-        selected: card.selected,
+        hover: surface.hover,
+        selected: surface.selected,
         ..theme::component_palette()
     }
+}
+
+/// For a limn button on the environment card.
+pub(crate) fn card_button_palette() -> ComponentPalette {
+    button_palette(card_palette())
+}
+
+/// For a limn button inside an open block of the card.
+pub(crate) fn block_button_palette() -> ComponentPalette {
+    button_palette(block_palette())
 }
 
 /// The environment shares the conversation's trailing space with the utility
@@ -145,22 +165,64 @@ pub(crate) fn layout(
     }
 }
 
+/// What the card puts around its rows: the frame, its margins above and
+/// below, the header and the foot.
+// shortcut: a framed card on limn does not scroll its rows under a height, so
+// the sum of what it adds is written here and a test holds it; drop it when
+// the card can keep its header and its foot while its rows scroll.
+const CARD_CHROME: f32 = 86.0;
+const HEADER_HEIGHT: f32 = 28.0;
+/// The project's row: its name over its path.
+const PROJECT_ROW_HEIGHT: f32 = 44.0;
+/// Between an open block's fill and what it lists.
+const LIST_INSET: f32 = 4.0;
+const LOCKED: &str = "Esperá a que termine la operación en curso.";
+/// A control of the foot: this far from its fill on every side.
+const FOOT_PAD: f32 = 6.0;
+/// "Commit y push" with its arrow, inside its fill.
+const COMMIT_WIDTH: f32 = 109.0;
+/// Between the parts of the foot's summary.
+const SUMMARY_GAP: f32 = 6.0;
+
+/// A Git operation, a run or a branch change is under way.
+fn locked(state: &ViewState) -> bool {
+    state.running
+        || state.background_run_selected
+        || state.git_action_pending
+        || state.composer_branches.switching()
+}
+
+/// As tall as what it shows, up to `height`: the card's rows scroll past
+/// that, between its header and its foot.
 pub(crate) fn panel(state: &ViewState, width: f32, height: f32) -> Element {
-    Element::panel(
-        ScrollArea::new("chat_environment", build(state, (width - 12.0).max(0.0)))
+    use crate::environment_git_ui::EnvironmentGitPanel;
+    let workflow = &state.environment.workflow;
+    let content = if matches!(
+        workflow.panel,
+        EnvironmentGitPanel::Overview | EnvironmentGitPanel::Actions
+    ) {
+        card(state, width, height)
+    } else {
+        // A Git form stands on the panel's own surface.
+        let inner = (width - 12.0).max(120.0);
+        Element::panel(
+            ScrollArea::new(
+                "chat_environment",
+                crate::environment_git_ui::build(workflow, inner, locked(state)),
+            )
             .tint(theme::FOREGROUND_SUBTLE)
             .render()
-            .size(
-                Some((width - 12.0).max(0.0)),
-                Some((height - 12.0).max(0.0)),
-            ),
-    )
-    .padding(6.0)
-    .background(theme::CARD)
-    .border(theme::BORDER, 1.0)
-    .radius(12.0)
-    .size(Some(width), Some(height))
-    .clip_children()
+            .size(Some(inner), None)
+            .max_height((height - 12.0).max(0.0)),
+        )
+        .padding(6.0)
+    };
+    Element::panel(content)
+        .background(theme::CARD)
+        .border(theme::BORDER, 1.0)
+        .radius(16.0)
+        .size(Some(width), None)
+        .clip_children()
 }
 
 fn folder_name(workspace: &str) -> &str {
@@ -177,31 +239,75 @@ fn folder_name(workspace: &str) -> &str {
         })
 }
 
-/// The copy keeps the width the card budgets for it, so in a card laid out
-/// narrower than `width` the chevron falls outside the clip, as it always has.
-fn selector_trigger(
+fn label(value: &str, ink: Color) -> Element {
+    Element::truncated_text(value)
+        .font_family(FontFamily::Sans)
+        .font_size(13.0)
+        .foreground(ink)
+}
+
+fn glyph(icon: Icon) -> Element {
+    Element::icon(icon)
+        .foreground(theme::FOREGROUND_SUBTLE)
+        .size(Some(14.0), Some(14.0))
+        .centered_y()
+}
+
+fn chevron(open: bool) -> Icon {
+    if open {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronRight
+    }
+}
+
+/// One row of the card: an icon, its copy and a mark at its end, on a hover
+/// fill that reaches past them. It dispatches `action`; without one it keeps
+/// its hint and takes no pointer.
+fn card_row(
     id: &str,
     icon: Icon,
-    label: &str,
-    detail: &str,
-    width: f32,
-    enabled: bool,
+    copy: Element,
+    mark: Icon,
+    help: &str,
+    action: Option<&str>,
 ) -> Element {
-    let trigger = ListRow::new(
-        id,
-        label,
-        theme::action_palette(theme::CARD, theme::FOREGROUND),
+    let content = Element::row(vec![glyph(icon), copy.flex(1.0).centered_y(), glyph(mark)]).gap(10.0);
+    let target = match action {
+        Some(action) => {
+            // Rounded for its focus ring, which follows it.
+            let target =
+                Element::clickable(id, content).radius(openide_ui::tokens().radius.control);
+            if action == id {
+                target
+            } else {
+                target.dispatch_as(action)
+            }
+        }
+        None => Element::panel(content),
+    };
+    FramedCard::row(
+        format!("{id}:fill"),
+        Tooltip::new(target, id, help, theme::component_palette()).render(),
+        action.map(|_| id),
+        card_palette(),
     )
-    .icon(icon)
-    .subtitle(detail)
-    .trailing_icon(Icon::ChevronDown)
-    .enabled(enabled)
-    .title_ink(theme::FOREGROUND)
-    .copy_width((width - 54.0).max(0.0))
-    .width(width)
-    .sizing(crate::ui_sizing::ENVIRONMENT_SELECTOR)
-    .render();
-    Tooltip::new(trigger, id, detail, theme::component_palette()).render()
+}
+
+/// Content that keeps to the card's inset among its rows, whose fills reach
+/// past it.
+fn inset(content: Element) -> Element {
+    let side = || Element::spacer().size(Some(FramedCard::REACH), None);
+    Element::row(vec![side(), content.flex(1.0), side()])
+}
+
+/// What an open block lists, inside the block's fill.
+fn listed(rows: Vec<Element>) -> Element {
+    let side = || Element::spacer().size(Some(LIST_INSET), None);
+    Element::column(vec![
+        Element::row(vec![side(), Element::column(rows).gap(2.0).flex(1.0), side()]),
+        Element::spacer().size(None, Some(LIST_INSET)),
+    ])
 }
 
 fn counts(additions: usize, deletions: usize) -> Element {
@@ -245,17 +351,21 @@ fn changes_help_summary(changes: &SessionChangesSummaryView) -> String {
 }
 
 fn section_heading(title: &str, detail: Option<String>, width: f32) -> Element {
+    // Inset like the copy of the rows it stands over.
     let mut heading = SectionHeader::new(title, theme::component_palette())
         .width(width)
-        .sizing(SectionSizing::LABEL);
+        .sizing(SectionSizing {
+            padding: 6.0,
+            ..SectionSizing::LABEL
+        });
     if let Some(detail) = detail {
         heading = heading.detail(detail);
     }
     heading.render()
 }
 
-/// Like `selector_trigger`, its copy keeps the card's budget: laid out
-/// narrower than `width`, its counts are cut and its chevron is hidden.
+/// A row of what an open block lists: a title, a detail under it, and a
+/// figure or a status beside the title.
 fn action_row(
     id: &str,
     icon: Icon,
@@ -265,17 +375,12 @@ fn action_row(
     help: &str,
     width: f32,
 ) -> Element {
-    let mut row = ListRow::new(
-        id,
-        title,
-        theme::action_palette(theme::CARD, theme::FOREGROUND),
-    )
-    .icon(icon)
-    .subtitle(detail)
-    .trailing_icon(Icon::ChevronRight)
-    .copy_width((width - 48.0).max(0.0))
-    .width(width)
-    .sizing(crate::ui_sizing::ENVIRONMENT_ACTION);
+    let mut row = ListRow::new(id, title, block_palette())
+        .icon(icon)
+        .subtitle(detail)
+        .trailing_icon(Icon::ChevronRight)
+        .width(width)
+        .sizing(crate::ui_sizing::ENVIRONMENT_ACTION);
     if let Some(trailing) = trailing {
         row = row.meta_element(trailing);
     }
@@ -291,17 +396,12 @@ fn source_row(
     width: f32,
 ) -> Element {
     let row = |id: &str| {
-        ListRow::new(
-            id,
-            title,
-            theme::action_palette(theme::CARD, theme::FOREGROUND),
-        )
-        .leading(preview)
-        .subtitle(detail)
-        .title_ink(theme::FOREGROUND)
-        .copy_width((width - 56.0).max(0.0))
-        .width(width)
-        .sizing(crate::ui_sizing::ENVIRONMENT_SOURCE)
+        ListRow::new(id, title, block_palette())
+            .leading(preview)
+            .subtitle(detail)
+            .title_ink(theme::FOREGROUND)
+            .width(width)
+            .sizing(crate::ui_sizing::ENVIRONMENT_SOURCE)
     };
     match action {
         Some(action) => Tooltip::new(
@@ -393,7 +493,7 @@ fn sources(state: &ViewState, width: f32) -> Element {
     let mut rows = vec![section_heading("Fuentes", Some(total.to_string()), width)];
     if total == 0 {
         rows.push(
-            theme::text_px("Sin fuentes registradas.", 11.5, theme::FOREGROUND_SUBTLE).padding(5.0),
+            theme::text_px("Sin fuentes registradas.", 11.5, theme::FOREGROUND_SUBTLE).padding(6.0),
         );
         return Element::column(rows).gap(2.0).size(Some(width), None);
     }
@@ -501,7 +601,7 @@ fn sources(state: &ViewState, width: f32) -> Element {
                 10.5,
                 theme::FOREGROUND_SUBTLE,
             )
-            .padding(5.0),
+            .padding(6.0),
         );
     }
     // One scroll belongs to the entire popover; short source lists never
@@ -563,28 +663,6 @@ fn tab_status(state: &ViewState, kind: SideTab) -> String {
         "{opened} {}",
         if opened == 1 { "abierta" } else { "abiertas" }
     )
-}
-
-/// A one-line row of the card: the card's hover step, and a hint in the
-/// page's colors. The caller adds its trailing element.
-fn compact_row(
-    id: &str,
-    icon: Icon,
-    title: &str,
-    help: &str,
-    width: f32,
-    enabled: bool,
-) -> ListRow {
-    ListRow::new(
-        id,
-        title,
-        theme::action_palette(theme::CARD, theme::FOREGROUND),
-    )
-    .icon(icon)
-    .icon_ink(theme::ICON_PRIMARY)
-    .enabled(enabled)
-    .width(width)
-    .tooltip_with(TooltipSpec::new(help).palette(theme::component_palette()))
 }
 
 fn local_menu(state: &ViewState, width: f32, locked: bool) -> Element {
@@ -654,16 +732,14 @@ fn local_menu(state: &ViewState, width: f32, locked: bool) -> Element {
         )
         .into(),
     );
-    let anchor = compact_row(
+    let anchor = card_row(
         "environment_local_toggle",
         Icon::Laptop,
-        "Local",
+        label("Local", theme::FOREGROUND),
+        Icon::ChevronDown,
         &format!("Carpeta de trabajo\n{}", state.workspace),
-        width,
-        true,
-    )
-    .trailing_icon(Icon::ChevronDown)
-    .render();
+        Some("environment_local_toggle"),
+    );
     DropdownMenu::new(
         anchor,
         entries,
@@ -678,85 +754,234 @@ fn local_menu(state: &ViewState, width: f32, locked: bool) -> Element {
 }
 
 /// The card's heading: its title, the refresh tool and the close button.
-fn card_header(loading: bool, width: f32) -> Element {
-    let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
-    PanelHeader::new("", palette)
-        // The title wraps and can be selected, which a header's own cannot.
-        .leading(
-            Text::new("Entorno", theme::component_palette())
-                .role(TextRole::Body)
-                .render(),
-        )
-        .trailing(vec![IconButton::new(
-            "environment_git_refresh",
-            Icon::Refresh,
-            palette,
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Dense)
-        .enabled(!loading)
-        .tooltip_with(TooltipSpec::new("Actualizar entorno").placement(TooltipPlacement::Below))
-        .render()])
-        .dismiss("environment_dismiss", "Cerrar entorno del chat")
-        .width(width)
-        .sizing(HeaderSizing::CARD)
-        .render()
+fn card_header(loading: bool) -> Element {
+    let palette = ComponentPalette {
+        text: theme::FOREGROUND_SUBTLE,
+        ..card_palette()
+    };
+    let tool = |id: &str, icon: Icon, hint: &str, enabled: bool| {
+        IconButton::new(id, icon, palette)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Dense)
+            .enabled(enabled)
+            .tooltip_with(TooltipSpec::new(hint).placement(TooltipPlacement::Below))
+            .render()
+            .centered_y()
+    };
+    Element::row(vec![
+        // The title can be selected.
+        Text::new("Entorno", theme::component_palette())
+            .role(TextRole::Body)
+            .render()
+            .flex(1.0)
+            .centered_y(),
+        tool("environment_git_refresh", Icon::Refresh, "Actualizar entorno", !loading),
+        tool("environment_dismiss", Icon::Close, "Cerrar entorno del chat", true),
+    ])
+    .size(None, Some(HEADER_HEIGHT))
 }
 
-/// The heading of the project actions: back, the title, "new" and close.
-fn actions_header(new_action: Option<bool>, width: f32) -> Element {
-    let palette = theme::action_palette(theme::CARD, theme::FOREGROUND);
-    let tools = new_action
-        .map(|enabled| {
-            IconButton::new("project_action_new", Icon::Add, palette)
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Dense)
-                .enabled(enabled)
-                .tooltip_with(TooltipSpec::new("Crear acción").placement(TooltipPlacement::Below))
-                .render()
-        })
-        .into_iter()
-        .collect();
-    PanelHeader::new("", palette)
-        .back("environment_git_back", "Volver al entorno")
-        .leading(
-            Text::new("Acciones del proyecto", theme::component_palette())
-                .role(TextRole::Body)
-                .render(),
-        )
-        .trailing(tools)
-        .dismiss("environment_dismiss", "Cerrar entorno del chat")
-        .width(width)
-        .sizing(crate::ui_sizing::TALL_HEADER)
-        .render()
-}
-
-pub(crate) fn build(state: &ViewState, width: f32) -> Element {
-    use crate::environment_git_ui::EnvironmentGitPanel;
-    let width = width.max(120.0);
-    let inner_width = (width - 16.0).max(0.0);
-    let workflow = &state.environment.workflow;
-    let locked = state.running
-        || state.background_run_selected
-        || state.git_action_pending
-        || state.composer_branches.switching();
-    if workflow.panel == EnvironmentGitPanel::Actions {
-        let new_action = (!state.project_actions.actions.is_empty()
-            && !state.project_actions.editor_open)
-            .then_some(!state.project_actions.saving);
-        return Element::column(vec![
-            actions_header(new_action, inner_width),
-            crate::project_actions_ui::build(&state.project_actions, inner_width),
+/// The card's foot. On the left, the repository's changes, which open their
+/// review; on the right, the commit, while there is a repository to commit to.
+fn foot(state: &ViewState, width: f32, locked: bool) -> Element {
+    // The frame is a shade above the card, so its controls hover as those of
+    // an open block do.
+    let palette = block_palette();
+    let text = |value: &str, ink| {
+        Element::truncated_text(value)
+            .font_family(FontFamily::Sans)
+            .font_size(12.0)
+            .foreground(ink)
+            .centered_y()
+    };
+    let review = state.git_review.as_ref();
+    let repo = review.and_then(|review| review.as_ref().ok());
+    let reading = repo.is_none() && state.environment.workflow.loading;
+    let outside = !reading
+        && matches!(review, Some(Err(error)) if error == crate::git_review::NOT_A_REPOSITORY);
+    let commit = !reading && !outside;
+    // shortcut: a row cuts a text that does not fit, and a cut count reads as
+    // another count, so the counts are fitted here by widths read off the
+    // app's face (at 12 px a digit or a sign advances 6.8 px, a letter 5.3 on
+    // average) and left to the hint when there is no room; drop this when limn
+    // can leave out a text that does not fit whole.
+    let advance = |text: &str| {
+        text.chars()
+            .map(|c| if c.is_alphabetic() || c == ' ' { 5.3 } else { 6.8 })
+            .sum::<f32>()
+    };
+    let room = width
+        - 2.0 * FramedCard::INSET
+        - 2.0 * FOOT_PAD
+        - if commit { COMMIT_WIDTH } else { 0.0 };
+    let mut summary = Vec::new();
+    let mut figures = None;
+    match repo {
+        Some(review) => {
+            // New files are changes too, before git tracks them.
+            let files = review.files + review.untracked.len();
+            let files_label = match files {
+                0 => "Sin cambios".to_owned(),
+                1 => "1 archivo".to_owned(),
+                files => format!("{files} archivos"),
+            };
+            let (added, removed) = (
+                format!("+{}", review.additions),
+                format!("\u{2212}{}", review.deletions),
+            );
+            figures = Some(format!(
+                "{files} archivos · {added} · {removed}{}",
+                if review.truncated {
+                    " · Vista parcial"
+                } else {
+                    ""
+                }
+            ));
+            let fits = advance(&files_label) + advance(&added) + advance(&removed)
+                + 2.0 * SUMMARY_GAP
+                <= room;
+            summary.push(text(&files_label, theme::FOREGROUND).shrink_to_fit());
+            if files > 0 && fits {
+                summary.push(text(&added, theme::DIFF_ADDED));
+                summary.push(text(&removed, theme::DIFF_REMOVED));
+            }
+        }
+        None if reading => {
+            summary.push(
+                Element::spinner(
+                    "environment_repo_progress",
+                    theme::FOREGROUND_SUBTLE,
+                    SpinnerVariant::Circle,
+                )
+                .size(Some(12.0), Some(12.0))
+                .centered_y(),
+            );
+            summary.push(text("Actualizando repositorio…", theme::FOREGROUND_SUBTLE).shrink_to_fit());
+        }
+        None => summary.push(
+            text(
+                if outside {
+                    "Sin repositorio de Git"
+                } else {
+                    "Ver cambios"
+                },
+                theme::FOREGROUND_SUBTLE,
+            )
+            .shrink_to_fit(),
+        ),
+    }
+    let pill = |target: Element| target.padding(FOOT_PAD).size(None, Some(26.0)).centered_y();
+    let mut changes = Tooltip::new(
+        pill(palette.interactive_surface(Element::clickable(
+            "dock_open:review",
+            Element::row(summary).gap(SUMMARY_GAP),
+        ))),
+        "dock_open:review",
+        "Abrir cambios del repositorio",
+        theme::component_palette(),
+    );
+    if let Some(figures) = figures {
+        changes = changes.description(figures);
+    }
+    let mut foot = vec![changes.render().shrink_to_fit(), Element::spacer().flex(1.0)];
+    if commit {
+        let ink = if locked {
+            theme::FOREGROUND_SUBTLE
+        } else {
+            theme::FOREGROUND
+        };
+        let content = Element::row(vec![
+            text("Commit y push", ink),
+            Element::icon(Icon::ArrowRight)
+                .foreground(ink)
+                .size(Some(12.0), Some(12.0))
+                .centered_y(),
         ])
-        .gap(10.0)
-        .padding(8.0)
-        .size(Some(width), None);
+        .gap(4.0);
+        // While it is off it says why, and takes no pointer.
+        let (target, help) = if locked {
+            (Element::panel(content), LOCKED)
+        } else {
+            (
+                palette.interactive_surface(Element::clickable("environment_git_open_commit", content)),
+                "Revisar archivos preparados, crear un commit y publicar la rama",
+            )
+        };
+        foot.push(
+            Tooltip::new(
+                pill(target),
+                "environment_git_open_commit",
+                help,
+                theme::component_palette(),
+            )
+            .render(),
+        );
     }
-    if workflow.panel != EnvironmentGitPanel::Overview {
-        return crate::environment_git_ui::build(workflow, width, locked);
+    Element::row(foot)
+}
+
+/// What "Fuentes y herramientas" lists: the chat's changes, its sources and
+/// the tools of the conversation.
+fn details(state: &ViewState, width: f32) -> Vec<Element> {
+    let changes = &state.environment.changes;
+    let changes_detail = if changes.loading {
+        "Actualizando…".into()
+    } else if changes.available {
+        format!(
+            "{} archivos{}",
+            changes.files,
+            if changes.partial { " · Parcial" } else { "" }
+        )
+    } else {
+        "Dato no disponible".into()
+    };
+    let mut rows = vec![
+        action_row(
+            "environment_changes_open",
+            Icon::Code,
+            "Cambios del chat",
+            &changes_detail,
+            changes
+                .available
+                .then(|| counts(changes.additions, changes.deletions).centered_y()),
+            &changes_help_summary(changes),
+            width,
+        ),
+        sources(state, width),
+        section_heading("Herramientas", None, width),
+    ];
+    for (id, icon, title, kind) in [
+        ("terminal", Icon::Terminal, "Terminal", SideTab::Terminal),
+        ("browser", Icon::Globe, "Navegador", SideTab::Browser),
+        ("files", Icon::Folder, "Archivos", SideTab::Files),
+        ("activity", Icon::History, "Actividad", SideTab::Activity),
+    ] {
+        let status = tab_status(state, kind);
+        rows.push(action_row(
+            &format!("dock_open:{id}"),
+            icon,
+            title,
+            "",
+            Some(theme::text_px(&status, 10.5, theme::FOREGROUND_SUBTLE).centered_y()),
+            &format!("Abrir {title} de esta conversación · {status}"),
+            width,
+        ));
     }
-    let group_width = inner_width;
-    let mut props = ComposerProps::from_state(state, group_width, false, None, "", None);
+    rows
+}
+
+/// The card on the panel's frame. Its header and its foot stay; the rows
+/// between them scroll once the card would be taller than `height`.
+fn card(state: &ViewState, width: f32, height: f32) -> Element {
+    use crate::environment_git_ui::EnvironmentGitPanel;
+    let palette = card_palette();
+    let workflow = &state.environment.workflow;
+    let locked = locked(state);
+    // A row's fill, and what an open block lists inside it.
+    let fill_width = (width - 2.0 * (FramedCard::INSET - FramedCard::REACH)).max(120.0);
+    let list_width = fill_width - 2.0 * LIST_INSET;
+    // A menu is as wide as the row it opens from.
+    let mut props = ComposerProps::from_state(state, fill_width + 16.0, false, None, "", None);
     props.project_menu_open =
         state.composer_project_menu_open && state.environment.menu == EnvironmentMenu::Project;
     props.branch_menu_open =
@@ -772,240 +997,178 @@ pub(crate) fn build(state: &ViewState, width: f32) -> Element {
         .as_deref()
         .or(state.composer_branches.blocked_reason)
         .unwrap_or("Cambiar rama de trabajo");
-    let repo = state
-        .git_review
-        .as_ref()
-        .and_then(|review| review.as_ref().ok());
-    let changes_trailing = repo
-        .map(|review| counts(review.additions, review.deletions))
-        .or_else(|| {
-            workflow.loading.then(|| {
-                Element::spinner(
-                    "environment_repo_progress",
-                    theme::FOREGROUND_SUBTLE,
-                    SpinnerVariant::Circle,
-                )
-                .size(Some(16.0), Some(20.0))
-            })
-        });
-    let changes_label = repo.map_or_else(
-        || "Cambios del repositorio".into(),
-        |review| {
-            // New files are changes too, before git tracks them.
-            match review.files + review.untracked.len() {
-                0 => "Sin cambios".into(),
-                1 => "1 archivo".into(),
-                files => format!("{files} archivos"),
-            }
-        },
-    );
-    let changes_help = repo.map_or_else(
-        || "Abrir cambios del repositorio".into(),
-        |review| {
-            format!(
-                "{} archivos · +{} · −{}{}",
-                review.files + review.untracked.len(),
-                review.additions,
-                review.deletions,
-                if review.truncated {
-                    " · Vista parcial"
-                } else {
-                    ""
-                }
-            )
-        },
-    );
+    let path = if state.workspace.is_empty() {
+        "Elegir carpeta"
+    } else {
+        &state.workspace
+    };
     let project = project_selector(
         &props,
-        selector_trigger(
+        card_row(
             "environment_project_toggle",
             Icon::Folder,
-            folder_name(&state.workspace),
-            if state.workspace.is_empty() {
-                "Elegir carpeta"
-            } else {
-                &state.workspace
-            },
-            group_width,
-            !locked,
-        ),
+            Element::column(vec![
+                label(folder_name(&state.workspace), theme::FOREGROUND).size(None, Some(18.0)),
+                Element::truncated_text(path)
+                    .font_family(FontFamily::Sans)
+                    .font_size(11.0)
+                    .foreground(theme::FOREGROUND_SUBTLE)
+                    .size(None, Some(16.0)),
+            ]),
+            Icon::ChevronDown,
+            path,
+            (!locked).then_some("environment_project_toggle"),
+        )
+        .size(None, Some(PROJECT_ROW_HEIGHT)),
         PopoverPlacement::BottomStart,
         "environment_project_toggle",
     );
+    let switching = state.composer_branches.switching();
     let branch = branch_selector(
         &props,
-        compact_row(
+        card_row(
             "environment_branch_toggle",
             Icon::GitBranch,
-            branch,
+            label(
+                branch,
+                if switching {
+                    theme::FOREGROUND_SUBTLE
+                } else {
+                    theme::FOREGROUND
+                },
+            ),
+            Icon::ChevronDown,
             branch_detail,
-            group_width,
-            !state.composer_branches.switching(),
-        )
-        .trailing_icon(Icon::ChevronDown)
-        .render(),
+            (!switching).then_some("environment_branch_toggle"),
+        ),
         PopoverPlacement::BottomStart,
         "environment_branch_toggle",
     );
-    let action_width = (group_width - 6.0) / 2.0;
-    // Rows sit directly on the card; thin rules separate the sections.
-    let group = |rows| {
-        Element::column(rows)
-            .gap(2.0)
-            .size(Some(inner_width), None)
-    };
-    let git_action = |id: &str, icon: Icon, label: &str, help: &str| {
-        openide_ui::Component::render(
-            openide_ui::Button::new(id, label, crate::settings_ui::control_palette())
-                .icon(icon)
-                .variant(openide_ui::ButtonVariant::Outline)
-                .size(openide_ui::ControlSize::Compact)
-                .width(action_width)
-                .enabled(!locked)
-                .tooltip(help),
-        )
-    };
-    let mut rows = vec![
-        card_header(workflow.loading, inner_width),
-        group(vec![
-            project,
-            local_menu(state, group_width, locked),
-            branch,
-        ]),
-        Separator::horizontal(theme::component_palette())
-            .length(inner_width)
-            .render(),
-        section_heading("Control de versiones", None, inner_width),
-        group(vec![
-            {
-                let changes = compact_row(
-                    "dock_open:review",
-                    Icon::Code,
-                    &changes_label,
-                    &changes_help,
-                    group_width,
-                    true,
-                );
-                match changes_trailing {
-                    Some(trailing) => changes.trailing(trailing),
-                    None => changes,
-                }
-                .render()
+    let compare = card_row(
+        "environment_git_open_compare",
+        Icon::Code,
+        label(
+            "Comparar cambios",
+            if locked {
+                theme::FOREGROUND_SUBTLE
+            } else {
+                theme::FOREGROUND
             },
-            Element::row(vec![
-                git_action(
-                    "environment_git_open_commit",
-                    Icon::Check,
-                    "Commit y push",
-                    "Revisar archivos preparados, crear un commit y publicar la rama",
-                ),
-                git_action(
-                    "environment_git_open_compare",
-                    Icon::GitBranch,
-                    "Comparar",
-                    "Elegir una rama base y comparar los commits confirmados",
-                ),
-            ])
-            .gap(6.0)
-            .size(Some(group_width), None),
-        ]),
-        Separator::horizontal(theme::component_palette())
-            .length(inner_width)
-            .render(),
-        compact_row(
+        ),
+        Icon::ChevronRight,
+        if locked {
+            LOCKED
+        } else {
+            "Elegir una rama base y comparar los commits confirmados"
+        },
+        (!locked).then_some("environment_git_open_compare"),
+    );
+    let actions_open = workflow.panel == EnvironmentGitPanel::Actions;
+    let actions = FramedCard::block(
+        "environment_actions",
+        card_row(
             "project_actions_open",
             Icon::Play,
-            "Acciones del proyecto",
+            label("Acciones del proyecto", theme::FOREGROUND),
+            chevron(actions_open),
             "Configurar y ejecutar tareas del proyecto",
-            inner_width,
-            true,
-        )
-        .trailing_icon(Icon::ChevronRight)
-        .render(),
-        compact_row(
+            // The open row closes its block, as the back button of its panel did.
+            Some(if actions_open {
+                "environment_git_back"
+            } else {
+                "project_actions_open"
+            }),
+        ),
+        actions_open.then(|| {
+            listed(vec![crate::project_actions_ui::build(
+                &state.project_actions,
+                list_width,
+            )])
+        }),
+        palette,
+    );
+    let details_open = state.environment.details_expanded;
+    let details = FramedCard::block(
+        "environment_details",
+        card_row(
             "environment_details_toggle",
             Icon::Book,
-            "Fuentes y herramientas",
+            label("Fuentes y herramientas", theme::FOREGROUND),
+            chevron(details_open),
             "Archivos consultados, referencias y herramientas de esta conversación",
-            inner_width,
-            true,
-        )
-        .trailing_icon(if state.environment.details_expanded {
-            Icon::ChevronDown
-        } else {
-            Icon::ChevronRight
-        })
-        .render(),
+            Some("environment_details_toggle"),
+        ),
+        details_open.then(|| listed(details(state, list_width))),
+        palette,
+    );
+    let mut rows = vec![
+        project,
+        local_menu(state, fill_width, locked),
+        branch,
+        // With the gap on each side of it, what parts the selectors from the rest.
+        Element::spacer().size(None, Some(2.0)),
+        compare,
+        actions,
+        details,
     ];
-    rows.extend(crate::environment_git_ui::notices(workflow));
-    if state.environment.details_expanded {
-        rows.push(
-            Separator::horizontal(theme::component_palette())
-                .length(inner_width)
-                .render(),
-        );
-        let changes = &state.environment.changes;
-        let changes_detail = if changes.loading {
-            "Actualizando…".into()
-        } else if changes.available {
-            format!(
-                "{} archivos{}",
-                changes.files,
-                if changes.partial { " · Parcial" } else { "" }
-            )
-        } else {
-            "Dato no disponible".into()
-        };
-        rows.push(action_row(
-            "environment_changes_open",
-            Icon::Code,
-            "Cambios del chat",
-            &changes_detail,
-            changes
-                .available
-                .then(|| counts(changes.additions, changes.deletions)),
-            &changes_help_summary(changes),
-            inner_width,
-        ));
-        rows.push(sources(state, inner_width));
-        rows.push(
-            Separator::horizontal(theme::component_palette())
-                .length(inner_width)
-                .render(),
-        );
-        rows.push(section_heading("Herramientas", None, inner_width));
-        for (id, icon, title, kind) in [
-            ("terminal", Icon::Terminal, "Terminal", SideTab::Terminal),
-            ("browser", Icon::Globe, "Navegador", SideTab::Browser),
-            ("files", Icon::Folder, "Archivos", SideTab::Files),
-            ("activity", Icon::History, "Actividad", SideTab::Activity),
-        ] {
-            let status = tab_status(state, kind);
-            rows.push(action_row(
-                &format!("dock_open:{id}"),
-                icon,
-                title,
-                "",
-                Some(theme::text_px(&status, 10.5, theme::FOREGROUND_SUBTLE)),
-                &format!("Abrir {title} de esta conversación · {status}"),
-                inner_width,
-            ));
-        }
+    // The foot already says the repository is being read for the first time.
+    let said = workflow.loading && workflow.busy.is_none() && !matches!(state.git_review, Some(Ok(_)));
+    let notices: Vec<_> = crate::environment_git_ui::notices(workflow)
+        .into_iter()
+        .skip(usize::from(said))
+        .map(inset)
+        .collect();
+    if !notices.is_empty() {
+        rows.push(Element::spacer().size(None, Some(2.0)));
+        rows.extend(notices);
+        rows.push(Element::spacer().size(None, Some(2.0)));
     }
-    Element::column(rows)
-        .gap(3.0)
-        .padding(8.0)
-        .size(Some(width), None)
+    // The rail keeps to the room a row leaves beside its content.
+    let scroll = |content: Element, height: f32| {
+        ScrollArea::new("chat_environment", content)
+            .appearance(
+                ScrollbarAppearance::overlay()
+                    .rail_width(FramedCard::REACH)
+                    .thumb_width(4.0)
+                    .buttons(false)
+                    .tint(theme::FOREGROUND_SUBTLE),
+            )
+            .render()
+            .max_height(height.max(0.0))
+    };
+    let rows = Element::column(rows).gap(FramedCard::ROW_GAP);
+    // With no room for two rows between them, the header and the foot scroll
+    // with the rows instead of staying.
+    let pinned = height - CARD_CHROME >= PROJECT_ROW_HEIGHT + FramedCard::ROW_HEIGHT;
+    let card = FramedCard::new(palette)
+        .width(width)
+        .section(card_header(workflow.loading))
+        .rows(if pinned {
+            scroll(rows, height - CARD_CHROME)
+        } else {
+            rows
+        })
+        .foot(foot(state, width, locked))
+        .render();
+    if pinned {
+        card
+    } else {
+        scroll(card, height)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openide_ui::{DrawCommand, HitKind, Size, UiTree};
+    use crate::environment_git_ui::EnvironmentGitPanel;
+    use openide_ui::{
+        DrawCommand, Frame, HitKind, Key, Point, Rect, Size, UiAction, UiEvent, UiTree,
+    };
+    use std::time::{Duration, Instant};
 
-    #[test]
-    fn compact_environment_keeps_primary_actions_in_one_short_card() {
-        let mut state = crate::view::tests::empty_state();
+    const SIZE: Size = Size::new(420.0, 1200.0);
+
+    fn repository(state: &mut ViewState) {
         state.git_review = Some(Ok(crate::git_review::GitReview {
             additions: 25813,
             deletions: 8475,
@@ -1013,42 +1176,119 @@ mod tests {
             ..Default::default()
         }
         .into()));
-        let frame = UiTree::new(build(&state, 340.0)).layout(Size::new(340.0, 332.0));
-        for id in [
-            "environment_project_toggle",
-            "dock_open:review",
-            "environment_local_toggle",
-            "environment_branch_toggle",
-            "environment_git_open_commit",
-            "environment_git_open_compare",
-            "environment_details_toggle",
-            "project_actions_open",
-        ] {
-            let region = frame
-                .regions
-                .iter()
-                .find(|region| region.id == id && region.kind == HitKind::Button)
-                .unwrap_or_else(|| panic!("missing {id}"));
-            assert!(
-                region.rect.y + region.rect.height <= 332.0,
-                "{id}: {:?}",
-                region.rect
-            );
-        }
-        let labels: Vec<_> = frame
+    }
+
+    fn saved_action(state: &mut ViewState) {
+        state.project_actions.actions = vec![crate::project_actions::ProjectAction {
+            id: "check".into(),
+            label: "Verificar proyecto".into(),
+            command: "cargo check --workspace".into(),
+        }];
+    }
+
+    /// The panel as its host lays it out: at its own height, with room left over.
+    fn tree(state: &ViewState, width: f32, height: f32) -> UiTree {
+        let mut tree = UiTree::new(Element::row(vec![
+            Element::column(vec![panel(state, width, height), Element::spacer().flex(1.0)]),
+            Element::spacer().flex(1.0),
+        ]));
+        tree.set_reduced_motion(true);
+        tree
+    }
+
+    fn frame(state: &ViewState, width: f32, height: f32) -> Frame {
+        tree(state, width, height).layout(SIZE)
+    }
+
+    fn button(frame: &Frame, id: &str) -> Option<Rect> {
+        frame
+            .regions
+            .iter()
+            .find(|region| region.id == id && region.kind == HitKind::Button)
+            .map(|region| region.rect)
+    }
+
+    fn texts(frame: &Frame) -> Vec<&str> {
+        frame
             .commands
             .iter()
             .filter_map(|command| match command {
                 DrawCommand::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
-            .collect();
-        assert!(labels.contains(&"+25813"));
-        assert!(labels.contains(&"−8475"));
-        assert!(!frame
-            .regions
+            .collect()
+    }
+
+    fn fills(frame: &Frame, wanted: Color) -> Vec<Rect> {
+        frame
+            .commands
             .iter()
-            .any(|region| region.id == "environment_changes_open"));
+            .filter_map(|command| match command {
+                DrawCommand::FillRect { rect, color, .. } if *color == wanted => Some(*rect),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn center(rect: Rect) -> Point {
+        Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)
+    }
+
+    fn holds(outer: Rect, inner: Rect) -> bool {
+        inner.x >= outer.x
+            && inner.y >= outer.y
+            && inner.x + inner.width <= outer.x + outer.width
+            && inner.y + inner.height <= outer.y + outer.height
+    }
+
+    #[test]
+    fn the_card_keeps_every_action_between_its_header_and_its_foot() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        let frame = frame(&state, 380.0, 344.0);
+        for id in [
+            "environment_git_refresh",
+            "environment_dismiss",
+            "environment_project_toggle",
+            "environment_local_toggle",
+            "environment_branch_toggle",
+            "environment_git_open_compare",
+            "project_actions_open",
+            "environment_details_toggle",
+            "dock_open:review",
+            "environment_git_open_commit",
+        ] {
+            let rect = button(&frame, id).unwrap_or_else(|| panic!("missing {id}"));
+            assert!(
+                holds(Rect::new(0.0, 0.0, 380.0, 344.0), rect),
+                "{id}: {rect:?}"
+            );
+        }
+        let labels = texts(&frame);
+        for label in [
+            "Entorno",
+            "Local",
+            "Comparar cambios",
+            "Acciones del proyecto",
+            "Fuentes y herramientas",
+            "17 archivos",
+            "+25813",
+            "−8475",
+            "Commit y push",
+        ] {
+            assert!(labels.contains(&label), "{label} in {labels:?}");
+        }
+        assert!(!labels.contains(&"Control de versiones"));
+        // The changes and the commit share the foot, under every row.
+        let rect = |id: &str| button(&frame, id).unwrap();
+        let (changes, commit) = (rect("dock_open:review"), rect("environment_git_open_commit"));
+        let last = rect("environment_details_toggle");
+        assert!(changes.y > last.y + last.height, "{changes:?} {last:?}");
+        assert_eq!(changes.y, commit.y);
+        assert!(changes.x + changes.width <= commit.x);
+        // A closed section lists nothing.
+        assert!(button(&frame, "environment_changes_open").is_none());
+        assert!(button(&frame, "project_action_new").is_none());
     }
 
     #[test]
@@ -1056,7 +1296,7 @@ mod tests {
         let mut state = crate::view::tests::empty_state();
         state.environment.details_expanded = true;
         state.environment.menu = EnvironmentMenu::Local;
-        let frame = UiTree::new(build(&state, 380.0)).layout(Size::new(380.0, 1000.0));
+        let frame = frame(&state, 380.0, 1000.0);
         let mut ids = HashSet::new();
         for region in frame
             .regions
@@ -1065,14 +1305,383 @@ mod tests {
         {
             assert!(ids.insert(&region.id), "duplicate button {}", region.id);
         }
-        assert!(frame
-            .regions
-            .iter()
-            .any(|region| region.id == "environment_choose_project"));
-        assert!(frame
-            .regions
-            .iter()
-            .any(|region| region.id == "environment_local_files"));
+        assert!(button(&frame, "environment_choose_project").is_some());
+        assert!(button(&frame, "environment_local_files").is_some());
+    }
+
+    #[test]
+    fn every_action_of_the_card_answers_the_pointer_and_the_keyboard() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        saved_action(&mut state);
+        state.environment.details_expanded = true;
+        // Without sources the list says so.
+        assert!(texts(&frame(&state, 380.0, 1100.0)).contains(&"Sin fuentes registradas."));
+        state.transcript = vec![
+            TranscriptItem::Tool {
+                id: "read".into(),
+                name: "read_file".into(),
+                arguments: serde_json::json!({"path": "src/main.rs"}),
+                output: Some("fn main() {}".into()),
+                is_error: false,
+                activity: ActivityStatus::Completed,
+            },
+            TranscriptItem::WebCitation {
+                title: "Referencia".into(),
+                url: "https://example.com/referencia".into(),
+            },
+        ];
+        let check = |state: &ViewState, id: &str, action: &str| {
+            let mut tree = tree(state, 380.0, 1100.0);
+            let frame = tree.layout(SIZE);
+            let point = center(button(&frame, id).unwrap_or_else(|| panic!("missing {id}")));
+            let clicked = vec![UiAction::Clicked { id: action.into() }];
+            tree.handle_event(UiEvent::PointerDown(point));
+            assert_eq!(tree.handle_event(UiEvent::PointerUp(point)), clicked, "{id}");
+            assert!(tree.focus(id), "{id} takes no focus");
+            let enter = UiEvent::Key {
+                key: Key::Enter,
+                shift: false,
+                ctrl: false,
+            };
+            assert_eq!(tree.handle_event(enter), clicked, "{id}");
+        };
+        for id in [
+            "environment_git_refresh",
+            "environment_dismiss",
+            "environment_project_toggle",
+            "environment_local_toggle",
+            "environment_branch_toggle",
+            "environment_git_open_compare",
+            "project_actions_open",
+            "environment_details_toggle",
+            "environment_changes_open",
+            "environment_source_file:0",
+            "web_citation_open:1",
+            "dock_open:terminal",
+            "dock_open:browser",
+            "dock_open:files",
+            "dock_open:activity",
+            "dock_open:review",
+            "environment_git_open_commit",
+        ] {
+            check(&state, id, id);
+        }
+        // Open, the project actions list their controls, and their row closes
+        // them with the action their panel's back button had.
+        state.environment.workflow.panel = EnvironmentGitPanel::Actions;
+        check(&state, "project_actions_open", "environment_git_back");
+        for id in [
+            "project_action_run:check",
+            "project_action_edit:check",
+            "project_action_delete:check",
+            "project_action_new",
+            "environment_details_toggle",
+            "environment_git_open_commit",
+        ] {
+            check(&state, id, id);
+        }
+        // An empty list offers its first action once, and an open editor none.
+        state.project_actions.actions.clear();
+        check(&state, "project_action_new", "project_action_new");
+        state.project_actions.begin_new();
+        let frame = frame(&state, 380.0, 1100.0);
+        assert!(button(&frame, "project_action_new").is_none());
+        for id in ["project_action_label", "project_action_command", "project_action_cancel"] {
+            assert!(frame.regions.iter().any(|region| region.id == id), "{id}");
+        }
+    }
+
+    #[test]
+    fn a_rows_hover_fill_reaches_past_its_content_and_keeps_off_the_cards_edge() {
+        let state = crate::view::tests::empty_state();
+        let hover = card_palette().hover;
+        let (inset, reach) = (FramedCard::INSET, FramedCard::INSET - FramedCard::REACH);
+        for width in [280.0, 380.0] {
+            let mut tree = tree(&state, width, 344.0);
+            let frame = tree.layout(SIZE);
+            assert!(fills(&frame, hover).is_empty());
+            for id in [
+                "environment_project_toggle",
+                "environment_local_toggle",
+                "environment_branch_toggle",
+                "environment_git_open_compare",
+                "project_actions_open",
+                "environment_details_toggle",
+            ] {
+                let content = button(&frame, id).unwrap();
+                assert_eq!((content.x, content.x + content.width), (inset, width - inset), "{id}");
+                tree.handle_event(UiEvent::PointerMove(center(content)));
+                let fill = fills(&tree.layout(SIZE), hover);
+                assert_eq!(fill.len(), 1, "{id}: {fill:?}");
+                let fill = fill[0];
+                assert_eq!((fill.x, fill.x + fill.width), (reach, width - reach), "{id}");
+                assert_eq!((fill.y, fill.height), (content.y, content.height), "{id}");
+                assert!(fill.x > FramedCard::FRAME + 1.0);
+            }
+        }
+    }
+
+    #[test]
+    fn an_open_section_and_what_it_lists_are_one_block() {
+        let mut state = crate::view::tests::empty_state();
+        saved_action(&mut state);
+        let hover = card_palette().hover;
+        let width = 320.0;
+        assert!(fills(&frame(&state, width, 1100.0), hover).is_empty());
+        state.environment.details_expanded = true;
+        state.environment.workflow.panel = EnvironmentGitPanel::Actions;
+        let frame = frame(&state, width, 1100.0);
+        let rect = |id: &str| button(&frame, id).unwrap_or_else(|| panic!("missing {id}"));
+        let mut blocks = fills(&frame, hover);
+        blocks.sort_by(|a, b| a.y.total_cmp(&b.y));
+        assert_eq!(blocks.len(), 2, "{blocks:?}");
+        for (block, row, listed) in [
+            (
+                blocks[0],
+                "project_actions_open",
+                ["project_action_run:check", "project_action_new"],
+            ),
+            (
+                blocks[1],
+                "environment_details_toggle",
+                ["environment_changes_open", "dock_open:activity"],
+            ),
+        ] {
+            let reach = FramedCard::INSET - FramedCard::REACH;
+            assert_eq!((block.x, block.x + block.width), (reach, width - reach), "{row}");
+            // The row is the top of the block, and what it lists is inside it.
+            assert_eq!(rect(row).y, block.y, "{row}");
+            for id in listed {
+                assert!(holds(block, rect(id)), "{id} {:?} in {block:?}", rect(id));
+            }
+        }
+        // Two fills never touch.
+        assert!(blocks[0].y + blocks[0].height + FramedCard::ROW_GAP <= blocks[1].y);
+        let above = rect("environment_git_open_compare");
+        assert!(above.y + above.height + FramedCard::ROW_GAP <= blocks[0].y);
+    }
+
+    #[test]
+    fn a_section_opens_and_closes_in_place_and_the_panel_follows_it() {
+        let mut state = crate::view::tests::empty_state();
+        let root = |state: &ViewState| {
+            Element::row(vec![
+                Element::column(vec![panel(state, 320.0, 1100.0), Element::spacer().flex(1.0)]),
+                Element::spacer().flex(1.0),
+            ])
+        };
+        let height = |frame: &Frame| fills(frame, theme::CARD)[0].height;
+        let listed = |frame: &Frame| button(frame, "dock_open:activity").is_some();
+        let motion = openide_ui::tokens().motion;
+        let enter = Duration::from_millis(u64::from(motion.enter_ms));
+        let exit = Duration::from_millis(u64::from(motion.exit_ms));
+        let start = Instant::now() - Duration::from_secs(10);
+        let mut tree = UiTree::new(root(&state));
+        let closed = height(&tree.layout_at(SIZE, start));
+
+        state.environment.details_expanded = true;
+        tree.set_root(root(&state));
+        // The frame it opens in has not grown: the block opens from its row.
+        assert_eq!(height(&tree.layout_at(SIZE, start)), closed);
+        let opening = height(&tree.layout_at(SIZE, start + enter / 2));
+        let end = start + enter * 2;
+        let frame = tree.layout_at(SIZE, end);
+        let open = height(&frame);
+        assert!(closed < opening && opening < open, "{closed} {opening} {open}");
+        assert!(listed(&frame));
+
+        state.environment.details_expanded = false;
+        tree.set_root(root(&state));
+        assert_eq!(height(&tree.layout_at(SIZE, end)), open);
+        let frame = tree.layout_at(SIZE, end + exit / 2);
+        let closing = height(&frame);
+        assert!(closed < closing && closing < open, "{closed} {closing} {open}");
+        // What it listed is paint only while it closes.
+        assert!(!listed(&frame));
+        assert_eq!(height(&tree.layout_at(SIZE, end + exit * 2)), closed);
+    }
+
+    #[test]
+    fn the_foot_says_when_there_is_no_repository_or_it_is_being_read() {
+        let mut state = crate::view::tests::empty_state();
+        let count = |frame: &Frame, wanted: &str| {
+            texts(frame).iter().filter(|text| **text == wanted).count()
+        };
+        let figure = |frame: &Frame| {
+            texts(frame)
+                .iter()
+                .any(|text| text.starts_with('+') || text.starts_with('−'))
+        };
+        // Not read yet: no figure, and the review and the commit stay reachable.
+        let unread = frame(&state, 320.0, 344.0);
+        assert_eq!(count(&unread, "Ver cambios"), 1);
+        assert!(button(&unread, "environment_git_open_commit").is_some());
+        assert!(!figure(&unread));
+
+        state.environment.workflow.loading = true;
+        let reading = frame(&state, 320.0, 344.0);
+        assert_eq!(count(&reading, "Actualizando repositorio…"), 1);
+        assert_eq!(count(&reading, "Commit y push"), 0);
+        assert!(!reading.regions.iter().any(|region| region.id == "environment_git_open_commit"));
+        assert!(button(&reading, "environment_git_refresh").is_none());
+        assert!(button(&reading, "dock_open:review").is_some());
+        assert!(!figure(&reading));
+
+        state.environment.workflow.loading = false;
+        state.git_review = Some(Err(crate::git_review::NOT_A_REPOSITORY.into()));
+        let outside = frame(&state, 320.0, 344.0);
+        assert_eq!(count(&outside, "Sin repositorio de Git"), 1);
+        assert_eq!(count(&outside, "Commit y push"), 0);
+        assert!(!outside.regions.iter().any(|region| region.id == "environment_git_open_commit"));
+        assert!(button(&outside, "dock_open:review").is_some());
+        assert!(button(&outside, "environment_git_refresh").is_some());
+        assert!(!figure(&outside));
+
+        // A review that failed for another reason does not say there is no repository.
+        state.git_review = Some(Err("fatal: index file corrupt".into()));
+        let failed = frame(&state, 320.0, 344.0);
+        assert_eq!(count(&failed, "Ver cambios"), 1);
+        assert!(button(&failed, "environment_git_open_commit").is_some());
+
+        // Figures already read stay while the repository is read again.
+        repository(&mut state);
+        state.environment.workflow.loading = true;
+        let refreshing = frame(&state, 380.0, 344.0);
+        assert_eq!(count(&refreshing, "17 archivos"), 1);
+        assert_eq!(count(&refreshing, "Actualizando repositorio…"), 1);
+        assert!(button(&refreshing, "environment_git_open_commit").is_some());
+
+        // What Git answered stands in the card, and an operation says its name.
+        state.environment.workflow.loading = false;
+        state.environment.workflow.busy = Some("Enviando commits…".into());
+        state.environment.workflow.error = Some("No se pudo publicar la rama".into());
+        let failed = frame(&state, 320.0, 344.0);
+        assert_eq!(count(&failed, "Enviando commits…"), 1);
+        assert_eq!(count(&failed, "No se pudo publicar la rama"), 1);
+    }
+
+    #[test]
+    fn the_counts_leave_the_foot_whole_when_they_do_not_fit_beside_the_commit() {
+        // In the app's own face, which the fit is read off.
+        let foot = |files: usize, additions: usize, deletions: usize, width: f32| {
+            let mut state = crate::view::tests::empty_state();
+            state.git_review = Some(Ok(crate::git_review::GitReview {
+                additions,
+                deletions,
+                files,
+                ..Default::default()
+            }
+            .into()));
+            let (context, mut tree) = crate::view::ide_visual_tests::native_tree(Element::row(vec![
+                Element::column(vec![panel(&state, width, 344.0), Element::spacer().flex(1.0)]),
+                Element::spacer().flex(1.0),
+            ]));
+            let frame = tree.layout(SIZE);
+            context.end_pass().textures_delta.clear();
+            let rect = |id: &str| button(&frame, id).unwrap();
+            let (changes, commit) = (rect("dock_open:review"), rect("environment_git_open_commit"));
+            assert!(changes.x >= FramedCard::INSET && changes.x + changes.width <= commit.x);
+            assert_eq!(commit.x + commit.width, width - FramedCard::INSET);
+            assert!(commit.width <= COMMIT_WIDTH, "{commit:?}");
+            texts(&frame).into_iter().map(str::to_owned).collect::<Vec<_>>()
+        };
+        let has = |labels: &[String], wanted: &str| labels.iter().any(|label| label == wanted);
+        let narrow = foot(8, 248, 31, 280.0);
+        for label in ["8 archivos", "+248", "−31", "Commit y push"] {
+            assert!(has(&narrow, label), "{label} in {narrow:?}");
+        }
+        // Counts that would be cut are left to the hint; the files stay whole.
+        let narrow = foot(68, 25813, 8475, 280.0);
+        assert!(has(&narrow, "68 archivos") && has(&narrow, "Commit y push"), "{narrow:?}");
+        assert!(!narrow.iter().any(|text| text.starts_with('+') || text.starts_with('−')));
+        let wide = foot(68, 25813, 8475, 320.0);
+        for label in ["68 archivos", "+25813", "−8475", "Commit y push"] {
+            assert!(has(&wide, label), "{label} in {wide:?}");
+        }
+        // Nothing changed: no counts to read.
+        let clean = foot(0, 0, 0, 320.0);
+        assert!(has(&clean, "Sin cambios") && !has(&clean, "+0"), "{clean:?}");
+    }
+
+    #[test]
+    fn a_run_under_way_turns_off_what_would_change_the_repository_and_says_why() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        state.running = true;
+        let mut tree = tree(&state, 340.0, 344.0);
+        let started = Instant::now();
+        let frame = tree.layout_at(SIZE, started);
+        for id in [
+            "environment_project_toggle",
+            "environment_git_open_compare",
+            "environment_git_open_commit",
+        ] {
+            assert!(button(&frame, id).is_none(), "{id}");
+        }
+        for id in [
+            "environment_local_toggle",
+            "environment_branch_toggle",
+            "project_actions_open",
+            "environment_details_toggle",
+            "dock_open:review",
+            "environment_dismiss",
+        ] {
+            assert!(button(&frame, id).is_some(), "{id}");
+        }
+        assert!(texts(&frame).contains(&"Commit y push"));
+        assert!(texts(&frame).contains(&"Comparar cambios"));
+        // The reason is one hover away, on both.
+        for id in ["environment_git_open_commit", "environment_git_open_compare"] {
+            let anchor = frame.regions.iter().find(|region| region.id == id).unwrap().rect;
+            tree.handle_event_at(UiEvent::PointerMove(center(anchor)), started);
+            tree.layout_at(SIZE, started);
+            let hint = tree.layout_at(SIZE, started + Duration::from_secs(1));
+            assert!(texts(&hint).contains(&LOCKED), "{id}: {:?}", texts(&hint));
+        }
+        // A branch that is changing cannot be changed again.
+        state.running = false;
+        state.composer_branches.switching = Some("feature/alpha".into());
+        let frame = tree_frame(&state);
+        assert!(button(&frame, "environment_branch_toggle").is_none());
+    }
+
+    fn tree_frame(state: &ViewState) -> Frame {
+        frame(state, 340.0, 344.0)
+    }
+
+    #[test]
+    fn the_panel_is_as_tall_as_its_rows_until_they_scroll_between_header_and_foot() {
+        let mut state = crate::view::tests::empty_state();
+        repository(&mut state);
+        let surface = |frame: &Frame| fills(frame, theme::CARD)[0];
+        let short = frame(&state, 320.0, 620.0);
+        let natural = surface(&short).height;
+        assert!(natural < 344.0, "the closed card fits its preferred height: {natural}");
+        let rows = short.regions.iter().find(|region| region.id == "chat_environment").unwrap().rect;
+        assert_eq!(natural, rows.height + CARD_CHROME);
+        // Open, a section makes the panel taller, up to what it is given.
+        state.environment.details_expanded = true;
+        let open = frame(&state, 320.0, 1100.0);
+        assert!(surface(&open).height > natural);
+        let capped = frame(&state, 320.0, 240.0);
+        assert_eq!(surface(&capped).height, 240.0);
+        let rect = |id: &str| button(&capped, id).unwrap();
+        for id in ["environment_dismiss", "dock_open:review", "environment_git_open_commit"] {
+            assert!(holds(Rect::new(0.0, 0.0, 320.0, 240.0), rect(id)), "{id}");
+        }
+        // Too short for two rows between them, the header and the foot scroll too.
+        let tiny = frame(&state, 320.0, 120.0);
+        assert_eq!(surface(&tiny).height, 120.0);
+        let scroll = tiny.regions.iter().find(|region| region.id == "chat_environment").unwrap();
+        assert_eq!(scroll.rect, Rect::new(0.0, 0.0, 320.0, 120.0));
+        assert!(holds(scroll.rect, button(&tiny, "environment_dismiss").unwrap()));
+        // A Git form keeps to the same limit.
+        state.environment.workflow.panel = EnvironmentGitPanel::Compare;
+        let form = frame(&state, 320.0, 240.0);
+        assert!(surface(&form).height <= 240.0);
+        assert!(button(&form, "environment_git_back").is_some());
+        assert!(button(&form, "environment_dismiss").is_some());
     }
 }
 

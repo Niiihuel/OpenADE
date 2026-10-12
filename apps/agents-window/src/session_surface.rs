@@ -507,11 +507,8 @@ pub(crate) fn model_stream_item(
                 )
             };
             let line = stream_line(vec![label], Some(detail_action(state, id)), Some(expanded));
-            if !expanded {
-                return line;
-            }
-            let visible = &content[..state.stream_presentation.visible_bytes(item_index, content)];
-            let body = {
+            let body = expanded.then(|| {
+                let visible = &content[..state.stream_presentation.visible_bytes(item_index, content)];
                 let rendered = if receiving {
                     rich_text::render_streaming_markdown_at_width(visible, reading_width.max(48.0))
                 } else {
@@ -538,8 +535,14 @@ pub(crate) fn model_stream_item(
                 .tint(theme::FOREGROUND_SUBTLE)
                 .render()
                 .max_height(160.0)
-            };
-            Element::column(vec![line, body])
+            });
+            // The text opens and closes under its line instead of jumping.
+            Element::column(vec![
+                line,
+                Collapse::new(format!("reasoning-open:{owner}:{id}"), body)
+                    .expand()
+                    .render(),
+            ])
         }
         TranscriptItem::ToolPreview {
             id,
@@ -1198,6 +1201,10 @@ pub(crate) fn tool_line_with_output(
     } else {
         theme::FOREGROUND_SUBTLE
     };
+    let palette = theme::action_palette(theme::BACKGROUND, ink);
+    // Open, the row and its details are one block filled with the row's
+    // hover, so the buttons inside hover one step above it.
+    let on_block = theme::action_palette(palette.hover, theme::FOREGROUND);
     let mut details = Vec::new();
     if expanded {
         details.push(tool_detail_body(
@@ -1216,7 +1223,7 @@ pub(crate) fn tool_line_with_output(
                             tool_presentation::ToolNavigationTarget::File(_) => "Abrir archivo",
                             tool_presentation::ToolNavigationTarget::Url(_) => "Abrir enlace",
                         },
-                        theme::component_palette(),
+                        on_block,
                     )
                     .variant(ButtonVariant::Subtle)
                     .size(ControlSize::Compact)
@@ -1228,7 +1235,7 @@ pub(crate) fn tool_line_with_output(
             Button::new(
                 format!("tool:{id}"),
                 "Inspeccionar actividad",
-                theme::component_palette(),
+                on_block,
             )
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
@@ -1244,7 +1251,7 @@ pub(crate) fn tool_line_with_output(
         detail_action(state, &disclosure),
         &presentation.title,
         Element::column(details).gap(7.0),
-        theme::action_palette(theme::BACKGROUND, ink),
+        palette,
     )
     .ink(ink)
     .icon(presentation.icon)

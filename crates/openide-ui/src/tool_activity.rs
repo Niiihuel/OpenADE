@@ -3,7 +3,7 @@
 //! an argument preview as execution or a process launch as process completion.
 
 use crate::{
-    Card, CardDensity, Color, Component, ComponentPalette, Element, FontFamily, Icon, Separator,
+    Card, CardDensity, Collapse, Color, Component, ComponentPalette, Element, FontFamily, Icon,
     Text, TextRole,
 };
 
@@ -312,31 +312,46 @@ impl Component for ToolActivity {
             ))
             .padding(HEADER_PADDING)
             .size(None, Some(HEADER_HEIGHT));
-        let mut rows = vec![header];
-        if let Some(note) = self.note.filter(|note| !note.is_empty()) {
-            rows.push(
+        // Under the title, past the leading icon; the spacing above each part
+        // is its own, so it closes with it.
+        let under_title = |element: Element| {
+            Element::column(vec![
+                Element::spacer().size(None, Some(4.0)),
                 Element::row(vec![
                     Element::spacer().size(Some(TEXT_INSET), None),
-                    Text::new(note, self.palette)
-                        .role(TextRole::Small)
-                        .muted()
-                        .render()
-                        .flex(1.0),
+                    element.flex(1.0),
                     Element::spacer().size(Some(HEADER_PADDING), None),
                 ])
                 .clip_children(),
-            );
+            ])
+        };
+        let mut rows = vec![header];
+        if let Some(note) = self.note.filter(|note| !note.is_empty()) {
+            rows.push(under_title(
+                Text::new(note, self.palette)
+                    .role(TextRole::Small)
+                    .muted()
+                    .render(),
+            ));
         }
-        if self.expanded {
-            rows.push(Element::row(vec![
-                Element::spacer().size(Some(HEADER_PADDING + ICON_SIDE / 2.0), None),
-                Separator::vertical(self.palette).render(),
-                Element::spacer().size(Some(ICON_SIDE / 2.0 + HEADER_GAP - 1.0), None),
-                self.content.flex(1.0),
-            ]));
-            rows.push(crate::collapse_footer(&self.id, self.palette));
+        let (id, palette) = (self.id, self.palette);
+        let body = self.expanded.then(|| {
+            Element::column(vec![
+                under_title(self.content),
+                Element::spacer().size(None, Some(4.0)),
+                crate::collapse_footer(&id, palette),
+            ])
+        });
+        // As limn's Collapsible: the header and what it discloses read as one
+        // block while open, and the body opens and closes in place.
+        let expanded = body.is_some();
+        rows.push(Collapse::new(format!("{id}:body"), body).expand().render());
+        let block = Element::column(rows).radius(crate::RadiusRole::Surface.px());
+        if expanded {
+            block.background(palette.hover)
+        } else {
+            block
         }
-        Element::column(rows).gap(4.0)
     }
 }
 
@@ -557,6 +572,83 @@ mod tests {
             assert_eq!(static_frame.commands, later.commands);
             assert!(!tree.is_animating());
         }
+    }
+
+    #[test]
+    fn an_open_tool_is_one_block_with_what_it_discloses_and_opens_in_place() {
+        let palette = ComponentPalette::neutral_dark();
+        let make = |expanded| {
+            Element::column(vec![
+                ToolActivity::new(
+                    "tool:call",
+                    "Leyó",
+                    Element::text("actual tool output").size(None, Some(60.0)),
+                    palette,
+                )
+                .target("src/main.rs")
+                .expanded(expanded)
+                .render(),
+                Element::text("below").size(None, Some(20.0)),
+            ])
+        };
+        let size = Size::new(360.0, 300.0);
+        let fills = |frame: &crate::Frame| {
+            frame
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::FillRect { rect, color, .. } if *color == palette.hover => Some(*rect),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let y = |frame: &crate::Frame, wanted: &str| {
+            frame
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Text { text, position, .. } if text == wanted => Some(position.y),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let enter = Duration::from_millis(u64::from(crate::tokens().motion.enter_ms));
+        let exit = Duration::from_millis(u64::from(crate::tokens().motion.exit_ms));
+        let start = Instant::now() - Duration::from_secs(10);
+        let mut tree = UiTree::new(make(false));
+        let closed = tree.layout_at(size, start);
+        assert!(fills(&closed).is_empty());
+        let closed_y = y(&closed, "below");
+
+        tree.set_root(make(true));
+        // The frame it opens in has not moved what follows.
+        assert_eq!(y(&tree.layout_at(size, start), "below"), closed_y);
+        let opening = y(&tree.layout_at(size, start + enter / 2), "below");
+        let end = start + enter * 2;
+        let open = tree.layout_at(size, end);
+        let open_y = y(&open, "below");
+        assert!(closed_y < opening && opening < open_y, "{closed_y} {opening} {open_y}");
+        // One fill from the header to the footer, as wide as the row.
+        let block = fills(&open);
+        assert_eq!(block.len(), 1, "{block:?}");
+        let block = block[0];
+        assert_eq!((block.x, block.y, block.width), (0.0, 0.0, 360.0));
+        let rect = |id: &str| open.regions.iter().find(|region| region.id == id).unwrap().rect;
+        assert_eq!(rect("tool:call").y, block.y);
+        let footer = rect("tool:call:collapse");
+        assert!(footer.y + footer.height <= block.y + block.height);
+        let output = y(&open, "actual tool output");
+        assert!(output > HEADER_HEIGHT && output < footer.y);
+        // What follows starts under the block; nothing of it is outside.
+        assert!((block.y + block.height - open_y).abs() < 20.0);
+
+        tree.set_root(make(false));
+        assert_eq!(y(&tree.layout_at(size, end), "below"), open_y);
+        let closing = y(&tree.layout_at(size, end + exit / 2), "below");
+        assert!(closed_y < closing && closing < open_y, "{closed_y} {closing} {open_y}");
+        let settled = tree.layout_at(size, end + exit * 2);
+        assert_eq!(y(&settled, "below"), closed_y);
+        assert!(fills(&settled).is_empty());
     }
 
     #[test]

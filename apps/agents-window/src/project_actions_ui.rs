@@ -1,4 +1,4 @@
-//! Project action controls embedded in the environment card.
+//! Project action controls listed by their block of the environment card.
 use crate::{
     project_actions::{ProjectAction, ProjectActionsState},
     theme, ui_sizing,
@@ -7,6 +7,14 @@ use openide_ui::{
     Button, ButtonVariant, Component, ControlSize, Element, FontFamily, Icon, IconButton, ListRow,
     Text, TextRole, TooltipPlacement, TooltipSpec,
 };
+
+/// What stands among the action rows starts where their copy does.
+const INSET: f32 = 5.0;
+
+fn inset(element: Element) -> Element {
+    let side = || Element::spacer().size(Some(INSET), None);
+    Element::row(vec![side(), element.flex(1.0), side()])
+}
 
 fn status_line(saving: bool) -> Element {
     Text::new(
@@ -36,7 +44,7 @@ fn launch(action: &ProjectAction, enabled: bool) -> Element {
     ListRow::new(
         &id,
         &action.label,
-        theme::action_palette(theme::CARD, theme::FOREGROUND),
+        crate::environment_ui::block_palette(),
     )
     .leading(Element::icon(Icon::Terminal).foreground(theme::FOREGROUND_SUBTLE))
     .subtitle(action.command.lines().next().unwrap_or_default())
@@ -60,7 +68,7 @@ fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
         IconButton::new(
             format!("project_action_edit:{}", action.id),
             Icon::Edit,
-            theme::action_palette(theme::CARD, theme::FOREGROUND),
+            crate::environment_ui::block_palette(),
         )
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Regular)
@@ -70,7 +78,7 @@ fn action_row(action: &ProjectAction, width: f32, enabled: bool) -> Element {
         IconButton::new(
             format!("project_action_delete:{}", action.id),
             Icon::Trash,
-            theme::action_palette(theme::CARD, theme::FOREGROUND),
+            crate::environment_ui::block_palette(),
         )
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Regular)
@@ -140,7 +148,7 @@ fn editor(state: &ProjectActionsState, width: f32) -> Element {
             Button::new(
                 "project_action_cancel",
                 "Cancelar",
-                crate::environment_ui::card_button_palette(),
+                crate::environment_ui::block_button_palette(),
             )
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Compact)
@@ -153,7 +161,7 @@ fn editor(state: &ProjectActionsState, width: f32) -> Element {
 }
 
 pub(crate) fn preset_add(id: String, enabled: bool) -> Element {
-    let button = Button::new(id, "Añadir", crate::environment_ui::card_button_palette())
+    let button = Button::new(id, "Añadir", crate::environment_ui::block_button_palette())
         .variant(ButtonVariant::Ghost)
         .enabled(enabled);
     // Disabled, the label keeps the Compact 12 px it always had.
@@ -169,16 +177,16 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
     let width = width.max(160.0);
     let mut rows = Vec::new();
     if state.saving || state.loading {
-        rows.push(status_line(state.saving).size(Some(width), Some(20.0)));
+        rows.push(inset(status_line(state.saving)).size(Some(width), Some(20.0)));
     }
     if state.editor_open {
-        rows.push(editor(state, width));
+        rows.push(inset(editor(state, width - 2.0 * INSET)));
     } else {
         for action in &state.actions {
             rows.push(action_row(action, width, !state.saving && !state.loading));
         }
         if state.actions.is_empty() && !state.loading {
-            rows.push(
+            rows.push(inset(
                 Text::new(
                     "Guarda los comandos que usas para ejecutar, compilar o probar este proyecto.",
                     theme::component_palette(),
@@ -186,19 +194,23 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
                 .role(TextRole::Small)
                 .muted()
                 .render(),
-            );
-            rows.push(
-                Button::new(
-                    "project_action_new",
-                    "Crear acción",
-                    crate::environment_ui::card_button_palette(),
-                )
-                .variant(ButtonVariant::Subtle)
-                .size(ControlSize::Compact)
-                .enabled(!state.saving)
-                .render(),
-            );
+            ));
         }
+        // The way to add one, under the list.
+        rows.push(Element::row(vec![
+            Button::new(
+                "project_action_new",
+                "Nueva acción",
+                crate::environment_ui::block_button_palette(),
+            )
+            .icon(Icon::Add)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Compact)
+            .enabled(!state.saving)
+            .tooltip("Crear acción")
+            .render(),
+            Element::spacer().flex(1.0),
+        ]));
         let suggestions: Vec<_> = state
             .presets
             .iter()
@@ -215,7 +227,7 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
                     .role(TextRole::Micro)
                     .muted()
                     .render()
-                    .padding(3.0),
+                    .padding(INSET),
             );
             for preset in suggestions {
                 rows.push(
@@ -237,14 +249,14 @@ pub(crate) fn build(state: &ProjectActionsState, width: f32) -> Element {
                         ),
                     ])
                     .gap(5.0)
-                    .padding(3.0)
-                    .size(Some(width), Some(40.0)),
+                    .padding(INSET)
+                    .size(Some(width), Some(44.0)),
                 );
             }
         }
     }
     if let Some(error) = &state.error {
-        rows.push(error_line(error));
+        rows.push(inset(error_line(error)));
     }
     Element::column(rows).gap(5.0).size(Some(width), None)
 }

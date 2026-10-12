@@ -954,45 +954,101 @@ fn environment_visual_fixture() -> (tempfile::TempDir, ViewState) {
     (directory, state)
 }
 
+/// The panel as its host lays it out: at its own height, with room left over.
 fn environment_card(state: &ViewState, width: f32, height: f32) -> Element {
-    crate::environment_ui::panel(state, width, height)
+    Element::column(vec![
+        crate::environment_ui::panel(state, width, height),
+        Element::spacer().flex(1.0),
+    ])
 }
 
 #[test]
 #[ignore = "opt-in environment card inspection with native fonts"]
 fn export_environment_visual_review() {
     use crate::environment_git_ui::EnvironmentGitPanel;
+    use ExportInteraction::Hover;
     let (_directory, mut state) = environment_visual_fixture();
-    for width in [320.0, 380.0] {
-        export(
-            environment_card(&state, width, 298.0),
-            width,
-            298.0,
-            &format!("environment-overview-{width}"),
-        );
+    state.project_actions.workspace = Some(state.workspace.clone().into());
+    state.project_actions.actions = vec![crate::project_actions::ProjectAction {
+        id: "check".into(),
+        label: "Verificar proyecto".into(),
+        command: "cargo check --workspace".into(),
+    }];
+    state.project_actions.presets = vec![crate::project_actions::ProjectAction {
+        id: "cargo-test".into(),
+        label: "Probar".into(),
+        command: "cargo test --workspace".into(),
+    }];
+    let figures = state.git_review.clone();
+    for width in [280.0, 380.0] {
+        let mut shot = |state: &ViewState, height: f32, name: &str, hover: Option<&'static str>| {
+            export_with_interaction(
+                environment_card(state, width, height),
+                width,
+                height,
+                &format!("environment-{name}-{width}"),
+                hover.map(Hover),
+            );
+        };
+        shot(&state, 344.0, "overview", None);
+        shot(&state, 344.0, "row-hover", Some("environment_branch_toggle"));
+        shot(&state, 344.0, "commit-hover", Some("environment_git_open_commit"));
+        for (name, id) in [
+            ("row-focus", "environment_local_toggle"),
+            ("commit-focus", "environment_git_open_commit"),
+        ] {
+            export_with_interaction(
+                environment_card(&state, width, 344.0),
+                width,
+                344.0,
+                &format!("environment-{name}-{width}"),
+                Some(ExportInteraction::Focus(id)),
+            );
+        }
+        // The changes of a working day, which fit beside the commit at any width.
+        state.git_review = Some(Ok(crate::git_review::GitReview {
+            files: 8,
+            additions: 248,
+            deletions: 31,
+            ..Default::default()
+        }
+        .into()));
+        shot(&state, 344.0, "overview-day", None);
+        shot(&state, 344.0, "changes-hover", Some("dock_open:review"));
         state.environment.details_expanded = true;
-        export(
-            environment_card(&state, width, 650.0),
-            width,
-            650.0,
-            &format!("environment-details-{width}"),
-        );
+        shot(&state, 760.0, "details", None);
+        shot(&state, 760.0, "details-hover", Some("environment_source_file:0"));
+        // Shorter than its rows: they scroll between the header and the foot.
+        shot(&state, 344.0, "details-short", None);
+        state.environment.workflow.panel = EnvironmentGitPanel::Actions;
+        shot(&state, 900.0, "sections", None);
         state.environment.details_expanded = false;
+        shot(&state, 620.0, "actions", None);
+        shot(&state, 620.0, "actions-hover", Some("project_action_run:check"));
+        state.project_actions.begin_new();
+        shot(&state, 620.0, "action-editor", None);
+        state.project_actions.cancel_edit();
+        let saved = std::mem::take(&mut state.project_actions.actions);
+        shot(&state, 620.0, "actions-empty", None);
+        state.project_actions.actions = saved;
+        state.environment.workflow.panel = EnvironmentGitPanel::Overview;
         state.environment.menu = crate::environment_ui::EnvironmentMenu::Local;
-        export(
-            environment_card(&state, width, 440.0),
-            width,
-            440.0,
-            &format!("environment-local-{width}"),
-        );
+        shot(&state, 520.0, "local", None);
         state.environment.menu = crate::environment_ui::EnvironmentMenu::None;
+        state.running = true;
+        shot(&state, 344.0, "locked", None);
+        state.running = false;
+        state.git_review = None;
+        state.environment.workflow.loading = true;
+        shot(&state, 344.0, "loading", None);
+        state.environment.workflow.loading = false;
+        state.git_review = Some(Err(crate::git_review::NOT_A_REPOSITORY.into()));
+        state.environment.workflow.error = Some(crate::git_review::NOT_A_REPOSITORY.into());
+        shot(&state, 344.0, "no-repository", None);
+        state.environment.workflow.error = None;
+        state.git_review = figures.clone();
         state.environment.workflow.panel = EnvironmentGitPanel::Commit;
-        export(
-            environment_card(&state, width, 590.0),
-            width,
-            590.0,
-            &format!("environment-commit-{width}"),
-        );
+        shot(&state, 620.0, "commit", None);
         state.environment.workflow.panel = EnvironmentGitPanel::Compare;
         state.environment.workflow.comparison = Some(crate::environment_git::BranchComparison {
             reference: "refs/heads/main".into(),
@@ -1004,12 +1060,7 @@ fn export_environment_visual_review() {
         });
         state.environment.workflow.compare_url =
             Some("https://github.com/example/openade/compare/main...codex/update-controls".into());
-        export(
-            environment_card(&state, width, 410.0),
-            width,
-            410.0,
-            &format!("environment-compare-{width}"),
-        );
+        shot(&state, 620.0, "compare", None);
         state.environment.workflow.panel = EnvironmentGitPanel::Overview;
     }
     state.show_side_pane = false;
@@ -1325,6 +1376,9 @@ fn export_converged_controls_visual_review() {
         })
         .collect();
     let revoke = format!("session_approval_revoke:{}", "run_command".repeat(8)).leak();
+    // The session's permissions are listed by a disclosure: closed, then open.
+    export(activity_content(&state), 360.0, 360.0, "session-grants-closed");
+    state.activity.grants_open = true;
     for (name, hover) in [("idle", None), ("revoke-hover", Some(Hover(revoke)))] {
         export_with_interaction(
             activity_content(&state),
@@ -1334,6 +1388,7 @@ fn export_converged_controls_visual_review() {
             hover,
         );
     }
+    state.activity.grants_open = false;
 
     let preset = crate::project_actions::ProjectAction {
         id: "dev".into(),
@@ -1359,7 +1414,8 @@ fn export_converged_controls_visual_review() {
         )
         .gap(20.0)
         .padding(12.0)
-        .background(theme::CARD),
+        // The fill of the block that lists them in the environment card.
+        .background(crate::environment_ui::block_palette().surface),
         320.0,
         560.0,
         "converged-project-actions",

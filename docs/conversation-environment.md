@@ -21,13 +21,27 @@ pertenecen a una revisión de Git; una selección anterior a una actualización
 no puede cambiar de carpeta.
 
 El icono Entorno está en la cabecera del chat, junto al botón del panel
-derecho. La tarjeta agrupa la identidad del proyecto (nombre y ruta), el
-selector Local y la rama actual. Control de versiones reúne Cambios del
-repositorio, sus sumas `+ / −`, Commit / push y Comparar. **Acciones del
-proyecto** tiene un acceso propio; **Fuentes y herramientas** despliega
-cambios del chat, archivos consultados, referencias y utilidades.
-Las filas usan iconos de 16 px, controles de 24 px y acciones de 28 px, con
-hover redondeado y las mismas superficies de OpenIDE.
+derecho. La tarjeta es un `FramedCard` de limn sobre la superficie del panel:
+la cabecera con Actualizar y Cerrar, las filas y, sobre el marco, el pie. Las
+filas son el proyecto (nombre y ruta), Local y la rama, cada una con su menú,
+y **Comparar cambios**, que abre el formulario de comparación. **Acciones del
+proyecto** y **Fuentes y herramientas** se abren en su lugar como un solo
+bloque con lo que listan: las acciones guardadas, las sugeridas, su editor y
+**Nueva acción**; y los cambios del chat, las fuentes y las herramientas. La
+fila de un bloque abierto lo cierra, igual que Escape con las acciones.
+
+El pie resume los cambios del repositorio (archivos y sumas `+ / −`) y abre
+Repositorio; a la derecha, **Commit y push** abre su formulario. Si las sumas
+no entran junto a la acción quedan en el tooltip, nunca cortadas. Mientras se
+lee el repositorio por primera vez dice **Actualizando repositorio…** y, en
+una carpeta sin Git, **Sin repositorio de Git**; en ambos casos no ofrece el
+commit. Durante una ejecución, una operación de Git o un cambio de rama,
+Commit y push y Comparar cambios quedan atenuados y su tooltip dice por qué.
+
+El panel tiene la altura de su contenido hasta el límite que le da la
+ventana. Pasado ese límite se desplazan las filas, con la cabecera y el pie
+fijos; si no queda lugar para dos filas se desplaza la tarjeta entera. Los
+formularios de Git ocupan el panel completo, sin marco, con Volver.
 
 Entorno y el panel derecho son excluyentes: abrir Entorno colapsa el panel,
 y abrir una herramienta o desplegar el panel cierra Entorno. Colapsar conserva
@@ -40,7 +54,7 @@ centran en el ancho restante. La cabecera conserva el ancho completo. Abrir y
 cerrar anima el espacio reservado; reducir movimiento aplica el estado final
 sin transición. En ventanas estrechas, la tarjeta pasa arriba del chat con
 altura acotada y scroll propio para mantener accesible el composer. Los
-selectores se despliegan dentro de la tarjeta sin cubrir el historial.
+menús de los selectores flotan sobre la tarjeta sin cambiar su tamaño.
 La tarjeta se cierra al cambiar de conversación, carpeta o modo de ventana;
 Entorno no ocupa una pestaña del panel derecho.
 
