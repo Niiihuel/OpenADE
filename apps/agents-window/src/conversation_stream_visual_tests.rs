@@ -378,11 +378,10 @@ fn text_y(frame: &openide_ui::Frame, wanted: &str) -> Option<f32> {
 
 #[test]
 fn what_follows_a_group_glides_when_its_ticker_closes_and_its_lines_toggle() {
-    let motion = openide_ui::tokens().motion;
-    let (exit, enter) = (
-        Duration::from_millis(u64::from(motion.exit_ms)),
-        Duration::from_millis(u64::from(motion.enter_ms)),
-    );
+    // A slot opens and closes on a spring that all but arrives in one and a
+    // half moves; it is at rest well within three times that.
+    let settle = Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) * 3 / 2);
+    let (exit, enter) = (settle, settle);
     let mut state = state();
     state.running = true;
     state.transcript.extend([
@@ -408,7 +407,7 @@ fn what_follows_a_group_glides_when_its_ticker_closes_and_its_lines_toggle() {
     let y = text_y(&half, "TEXTO_DESPUES").unwrap();
     assert!(y < live && y > live - STREAM_LINE_HEIGHT * 2.0, "{y} of {live}");
     assert!(text(&half).contains("Buscando"), "the last step fades in what is left");
-    clock += exit * 2;
+    clock += exit * 3;
     let settled = tree.layout_at(viewport, clock);
     assert_eq!(text_y(&settled, "TEXTO_DESPUES"), Some(live - STREAM_LINE_HEIGHT * 2.0));
     assert!(!text(&settled).contains("Buscando"));
@@ -421,7 +420,7 @@ fn what_follows_a_group_glides_when_its_ticker_closes_and_its_lines_toggle() {
     assert_eq!(below(&mut tree, clock), closed);
     let y = below(&mut tree, clock + enter / 2);
     assert!(y > closed && y < closed + STREAM_LINE_HEIGHT * 2.0, "{y} of {closed}");
-    clock += enter * 2;
+    clock += enter * 3;
     assert_eq!(below(&mut tree, clock), closed + STREAM_LINE_HEIGHT * 2.0);
     assert!(!tree.is_animating());
 
@@ -433,7 +432,7 @@ fn what_follows_a_group_glides_when_its_ticker_closes_and_its_lines_toggle() {
     let y = text_y(&half, "TEXTO_DESPUES").unwrap();
     assert!(y > closed && y < closed + STREAM_LINE_HEIGHT * 2.0, "{y} of {closed}");
     assert!(half.regions.iter().all(|region| region.id != open_file("a")));
-    assert_eq!(below(&mut tree, clock + exit * 2), closed);
+    assert_eq!(below(&mut tree, clock + exit * 3), closed);
     assert!(!tree.is_animating());
 
     // A group already open when the transcript is first shown does not open.
@@ -454,11 +453,10 @@ fn what_follows_a_group_glides_when_its_ticker_closes_and_its_lines_toggle() {
 
 #[test]
 fn reasoning_and_a_tool_open_in_place_and_an_open_tool_is_one_block_with_its_details() {
-    let motion = openide_ui::tokens().motion;
-    let (exit, enter) = (
-        Duration::from_millis(u64::from(motion.exit_ms)),
-        Duration::from_millis(u64::from(motion.enter_ms)),
-    );
+    // A slot opens and closes on a spring that all but arrives in one and a
+    // half moves; it is at rest well within three times that.
+    let settle = Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) * 3 / 2);
+    let (exit, enter) = (settle, settle);
     let mut state = state();
     state.transcript.extend([
         TranscriptItem::Reasoning {
@@ -492,7 +490,7 @@ fn reasoning_and_a_tool_open_in_place_and_an_open_tool_is_one_block_with_its_det
         tree.set_root(build_session_surface(&state, width, false, false));
         assert_eq!(below(&mut tree, clock), closed, "{detail} moved nothing in the frame it opens");
         let opening = below(&mut tree, clock + enter / 2);
-        clock += enter * 2;
+        clock += enter * 3;
         let open = below(&mut tree, clock);
         assert!(closed < opening && opening < open, "{detail}: {closed} {opening} {open}");
         assert!(!tree.is_animating());
@@ -502,7 +500,7 @@ fn reasoning_and_a_tool_open_in_place_and_an_open_tool_is_one_block_with_its_det
         assert_eq!(below(&mut tree, clock), open);
         let closing = below(&mut tree, clock + exit / 2);
         assert!(closed < closing && closing < open, "{detail}: {closed} {closing} {open}");
-        clock += exit * 2;
+        clock += exit * 3;
         assert_eq!(below(&mut tree, clock), closed);
         assert!(!tree.is_animating());
     }
@@ -555,7 +553,8 @@ fn reasoning_and_a_tool_open_in_place_and_an_open_tool_is_one_block_with_its_det
 
 #[test]
 fn the_waiting_line_closes_when_content_arrives() {
-    let exit = Duration::from_millis(u64::from(openide_ui::tokens().motion.exit_ms));
+    // The slot's spring all but arrives in one and a half moves.
+    let exit = Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) * 3 / 2);
     let mut state = state();
     state.running = true;
     let width = 900.0;
@@ -571,7 +570,7 @@ fn the_waiting_line_closes_when_content_arrives() {
     let half = tree.layout_at(viewport, clock + exit / 2);
     assert!(text(&half).contains("Pensando"), "still fading");
     assert!(text_y(&half, "Pensando").unwrap() > line, "under what arrived");
-    let after = tree.layout_at(viewport, clock + exit * 2);
+    let after = tree.layout_at(viewport, clock + exit * 3);
     assert!(!text(&after).contains("Pensando"));
     assert!(!tree.is_animating());
 }

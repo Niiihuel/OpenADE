@@ -612,8 +612,10 @@ mod tests {
                 })
                 .unwrap()
         };
-        let enter = Duration::from_millis(u64::from(crate::tokens().motion.enter_ms));
-        let exit = Duration::from_millis(u64::from(crate::tokens().motion.exit_ms));
+        // A slot opens and closes on a spring that all but arrives in one and
+        // a half moves; it is at rest well within three times that.
+        let settle = Duration::from_millis(u64::from(crate::tokens().motion.move_ms) * 3 / 2);
+        let (enter, exit) = (settle, settle);
         let start = Instant::now() - Duration::from_secs(10);
         let mut tree = UiTree::new(make(false));
         let closed = tree.layout_at(size, start);
@@ -624,7 +626,7 @@ mod tests {
         // The frame it opens in has not moved what follows.
         assert_eq!(y(&tree.layout_at(size, start), "below"), closed_y);
         let opening = y(&tree.layout_at(size, start + enter / 2), "below");
-        let end = start + enter * 2;
+        let end = start + enter * 3;
         let open = tree.layout_at(size, end);
         let open_y = y(&open, "below");
         assert!(closed_y < opening && opening < open_y, "{closed_y} {opening} {open_y}");
@@ -646,7 +648,7 @@ mod tests {
         assert_eq!(y(&tree.layout_at(size, end), "below"), open_y);
         let closing = y(&tree.layout_at(size, end + exit / 2), "below");
         assert!(closed_y < closing && closing < open_y, "{closed_y} {closing} {open_y}");
-        let settled = tree.layout_at(size, end + exit * 2);
+        let settled = tree.layout_at(size, end + exit * 3);
         assert_eq!(y(&settled, "below"), closed_y);
         assert!(fills(&settled).is_empty());
     }

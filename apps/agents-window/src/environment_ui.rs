@@ -1473,9 +1473,10 @@ mod tests {
         };
         let height = |frame: &Frame| fills(frame, theme::CARD)[0].height;
         let listed = |frame: &Frame| button(frame, "dock_open:activity").is_some();
-        let motion = openide_ui::tokens().motion;
-        let enter = Duration::from_millis(u64::from(motion.enter_ms));
-        let exit = Duration::from_millis(u64::from(motion.exit_ms));
+        // A slot opens and closes on a spring that all but arrives in one and
+        // a half moves; it is at rest well within three times that.
+        let settle = Duration::from_millis(u64::from(openide_ui::tokens().motion.move_ms) * 3 / 2);
+        let (enter, exit) = (settle, settle);
         let start = Instant::now() - Duration::from_secs(10);
         let mut tree = UiTree::new(root(&state));
         let closed = height(&tree.layout_at(SIZE, start));
@@ -1485,7 +1486,7 @@ mod tests {
         // The frame it opens in has not grown: the block opens from its row.
         assert_eq!(height(&tree.layout_at(SIZE, start)), closed);
         let opening = height(&tree.layout_at(SIZE, start + enter / 2));
-        let end = start + enter * 2;
+        let end = start + enter * 3;
         let frame = tree.layout_at(SIZE, end);
         let open = height(&frame);
         assert!(closed < opening && opening < open, "{closed} {opening} {open}");
@@ -1499,7 +1500,7 @@ mod tests {
         assert!(closed < closing && closing < open, "{closed} {closing} {open}");
         // What it listed is paint only while it closes.
         assert!(!listed(&frame));
-        assert_eq!(height(&tree.layout_at(SIZE, end + exit * 2)), closed);
+        assert_eq!(height(&tree.layout_at(SIZE, end + exit * 3)), closed);
     }
 
     #[test]
