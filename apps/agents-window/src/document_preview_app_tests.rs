@@ -622,3 +622,227 @@ fn ide_switch_previews_the_same_tab_and_returns_to_the_untouched_source() {
     assert!(after.is_dirty() && buffer_text(&app).contains("## Sin guardar"));
     assert_eq!(std::fs::read_to_string(Path::new(&app.view.workspace).join("README.md")).unwrap(), disk);
 }
+
+const DIAGRAMS: &str = "# Arquitectura\n\nEl flujo:\n\n```mermaid\nflowchart LR\n    A[Editor] --> B[Vista previa]\n```\n\nY el intercambio:\n\n```mermaid\nsequenceDiagram\n    Editor->>Vista previa: Cambia el texto\n    Vista previa-->>Editor: Se redibuja\n```\n\nOtro tipo queda como código:\n\n```mermaid\nclassDiagram\n    Animal <|-- Perro\n```\n";
+
+/// The preview alone, tall enough to hold the whole document.
+fn document_frame(app: &mut AgentsWindow) -> Frame {
+    let size = Size::new(1200.0, 1600.0);
+    app.tree
+        .set_root(crate::document_preview_ui::build(&app.view, size.width, size.height).unwrap());
+    app.tree.set_reduced_motion(true);
+    app.tree.layout(size)
+}
+
+/// The whole window, as the app builds it: the preview and what opens over it.
+fn window_frame(app: &mut AgentsWindow) -> Frame {
+    let size = Size::new(app.viewport_width, app.viewport_height);
+    app.tree
+        .set_root(crate::view::build_window_view(&app.view, size.width, size.height));
+    app.tree.set_reduced_motion(true);
+    app.tree.layout(size)
+}
+
+fn strokes(frame: &Frame) -> usize {
+    frame
+        .commands
+        .iter()
+        .filter(|command| matches!(command, DrawCommand::Polyline { .. }))
+        .count()
+}
+
+fn painted(frame: &Frame, value: &str) -> bool {
+    frame.commands.iter().any(
+        |command| matches!(command, DrawCommand::Text { text, .. } if text.contains(value)),
+    )
+}
+
+fn diagram_actions(frame: &Frame, expand: bool) -> Vec<String> {
+    let mut ids: Vec<String> = frame
+        .regions
+        .iter()
+        .filter(|region| {
+            region.id.starts_with(crate::rich_text::DIAGRAM_ACTION_PREFIX)
+                && region.id.contains("expand:") == expand
+        })
+        .map(|region| region.id.clone())
+        .collect();
+    ids.dedup();
+    ids
+}
+
+/// A pointer press and release on the middle of `id`, through the real tree.
+fn press(app: &mut AgentsWindow, frame: &Frame, id: &str) {
+    let rect = frame
+        .regions
+        .iter()
+        .rev()
+        .find(|region| region.id == id)
+        .unwrap_or_else(|| panic!("rendered action missing: {id}"))
+        .rect;
+    let point = Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+    assert_eq!(frame.hit_test(point), Some(id));
+    for event in [UiEvent::PointerDown(point), UiEvent::PointerUp(point)] {
+        for action in app.tree.handle_event(event) {
+            app.apply_action(action, &egui::Context::default());
+        }
+    }
+}
+
+fn replace(app: &mut AgentsWindow, from: &str, to: &str) {
+    let editor = app.view.code_editor.as_ref().unwrap();
+    let shared = editor.controller.as_ref().unwrap().shared_buffer();
+    let mut buffer = shared.lock().unwrap();
+    let snapshot = buffer.snapshot();
+    let text = snapshot.text_range(0..snapshot.char_count()).unwrap();
+    let start = text[..text.find(from).expect("the text to replace")]
+        .chars()
+        .count();
+    buffer
+        .set_selection(Selection {
+            anchor: start,
+            head: start + from.chars().count(),
+        })
+        .unwrap();
+    buffer.insert(to, EditKind::Paste, 10).unwrap();
+    let action = UiAction::EditorChanged {
+        id: crate::code_editor_ui::view_id(editor.tab_id),
+        document_id: buffer.document_id(),
+        revision: buffer.revision(),
+    };
+    drop(buffer);
+    app.apply_action(action, &egui::Context::default());
+}
+
+#[test]
+fn a_markdown_file_draws_its_flowchart_and_its_sequence_diagram_in_the_preview() {
+    let (_root, mut app) = fixture(DIAGRAMS);
+    open(&mut app, "README.md");
+    action(&mut app, "preview");
+    wait_preview(&mut app);
+    let frame = document_frame(&mut app);
+    // One connector, then two lifelines and two messages.
+    assert_eq!(strokes(&frame), 5);
+    for text in ["Editor", "Vista previa", "Cambia el texto", "Se redibuja", "Ampliar", "Ver código"] {
+        assert!(painted(&frame, text), "{text} is not painted");
+    }
+    assert!(!painted(&frame, "flowchart LR") && !painted(&frame, "sequenceDiagram"));
+    // A kind the app does not draw keeps the preview's own code block.
+    assert!(painted(&frame, "classDiagram") && painted(&frame, "Animal"));
+    let titles = frame
+        .commands
+        .iter()
+        .filter(|command| matches!(command, DrawCommand::Text { text, .. } if text == "DIAGRAMA"))
+        .count();
+    assert_eq!(titles, 2);
+    assert_eq!(diagram_actions(&frame, true).len(), 2);
+    assert_eq!(diagram_actions(&frame, false).len(), 2);
+    for region in frame
+        .regions
+        .iter()
+        .filter(|region| region.id.starts_with(crate::rich_text::DIAGRAM_ACTION_PREFIX))
+    {
+        assert!(region.rect.x >= 0.0 && region.rect.x + region.rect.width <= 1200.0);
+    }
+
+    // The switch on a diagram shows its source in place, and draws it again.
+    let switch = diagram_actions(&frame, false).remove(1);
+    press(&mut app, &frame, &switch);
+    let source = document_frame(&mut app);
+    assert_eq!(strokes(&source), 1, "only the flowchart is still drawn");
+    assert!(painted(&source, "sequenceDiagram") && painted(&source, "Ver diagrama"));
+    press(&mut app, &source, &switch);
+    assert_eq!(strokes(&document_frame(&mut app)), 5);
+}
+
+#[test]
+fn a_diagram_in_the_preview_opens_over_the_window_and_closes_again() {
+    let (_root, mut app) = fixture(DIAGRAMS);
+    app.view.ide.mode = crate::ide_workspace::WindowMode::Ide;
+    let tab = open(&mut app, "README.md");
+    // "Vista previa | Markdown", the switch in the tab's breadcrumb row.
+    let source = window_frame(&mut app);
+    assert_eq!(strokes(&source), 0, "the source is shown as written");
+    press(&mut app, &source, &format!("document_preview_view:{}:preview", tab.get()));
+    wait_preview(&mut app);
+    let closed = window_frame(&mut app);
+    let drawn = strokes(&closed);
+    assert!(drawn >= 5, "the preview draws both diagrams in the window");
+    assert!(!closed.regions.iter().any(|region| region.id == "chat_diagram_source:close"));
+    for (index, extra) in [(0, 1), (1, 4)] {
+        // The close control, then Escape.
+        for escape in [false, true] {
+            let frame = window_frame(&mut app);
+            let expand = diagram_actions(&frame, true).remove(index);
+            press(&mut app, &frame, &expand);
+            let open = window_frame(&mut app);
+            assert_eq!(strokes(&open), drawn + extra, "the diagram is drawn again over the window");
+            let close = open
+                .regions
+                .iter()
+                .rev()
+                .find(|region| region.id == "chat_diagram_source:close" && region.kind == HitKind::Button)
+                .expect("the viewer has a close control")
+                .rect;
+            assert!(close.x >= 0.0 && close.x + close.width <= app.viewport_width && close.y >= 0.0);
+            if escape {
+                let event = UiEvent::Key { key: Key::Escape, ctrl: false, shift: false };
+                for action in app.tree.handle_event(event) {
+                    app.apply_action(action, &egui::Context::default());
+                }
+            } else {
+                press(&mut app, &open, "chat_diagram_source:close");
+            }
+            let after = window_frame(&mut app);
+            assert_eq!(strokes(&after), drawn);
+            assert!(!after.regions.iter().any(|region| region.id == "chat_diagram_source:close"));
+        }
+    }
+    // The preview under the viewer was never replaced or reloaded.
+    let view = app.view.document_preview.as_ref().unwrap();
+    assert_eq!(view.mode, PreviewMode::Preview);
+    assert!(view.error.is_none() && !view.loading);
+}
+
+#[test]
+fn the_preview_follows_an_edit_of_a_diagram_fence() {
+    // Beside the source being typed in, and alone while the buffer changes under it.
+    for mode in ["split", "preview"] {
+        follows_an_edit(mode);
+    }
+}
+
+fn follows_an_edit(mode: &str) {
+    let (_root, mut app) = fixture(DIAGRAMS);
+    open(&mut app, "README.md");
+    action(&mut app, mode);
+    wait_preview(&mut app);
+    assert_eq!(strokes(&document_frame(&mut app)), 5, "{mode}");
+
+    // A new message is drawn, and so is a new node.
+    replace(&mut app, "    Vista previa-->>Editor: Se redibuja\n", "    Vista previa-->>Editor: Se redibuja\n    Editor->>Editor: Guarda el archivo\n");
+    replace(&mut app, "B[Vista previa]\n", "B[Vista previa] --> C[Diagramas]\n");
+    wait_preview(&mut app);
+    let grown = document_frame(&mut app);
+    assert_eq!(strokes(&grown), 7);
+    assert!(painted(&grown, "Guarda el archivo") && painted(&grown, "Diagramas"));
+    assert_eq!(diagram_actions(&grown, true).len(), 2);
+
+    // What the app cannot draw falls back to the code, whole.
+    replace(&mut app, "sequenceDiagram\n", "sequenceDiagram\n    create participant Disco\n");
+    wait_preview(&mut app);
+    let code = document_frame(&mut app);
+    assert_eq!(strokes(&code), 2, "only the flowchart is drawn");
+    assert!(painted(&code, "sequenceDiagram") && painted(&code, "Guarda el archivo"));
+    assert_eq!(diagram_actions(&code, true).len(), 1);
+
+    // And is drawn again once it can be.
+    replace(&mut app, "    create participant Disco\n", "");
+    wait_preview(&mut app);
+    assert_eq!(strokes(&document_frame(&mut app)), 7);
+    // Nothing was written to disk on the way.
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&app.view.workspace).join("README.md")).unwrap(),
+        DIAGRAMS
+    );
+}

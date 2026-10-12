@@ -782,3 +782,53 @@ fn export_markdown_switch_visual_review() {
         }
     }
 }
+
+#[test]
+#[ignore = "exports a Markdown preview with drawn diagrams as PNG under /tmp/openade-sequence-diagrams-review"]
+fn export_markdown_diagrams_visual_review() {
+    let directory = Path::new("/tmp/openade-sequence-diagrams-review");
+    let source = "# Inicio de sesión\n\nEl formulario envía las credenciales y la app guarda el token que recibe.\n\n\
+         ```mermaid\nsequenceDiagram\n    participant U as Usuario\n    participant A as App\n    participant S as Servidor\n    \
+         U->>A: Ingresa sus credenciales\n    A->>+S: POST /login\n    S-->>-A: 200 OK con el token\n    A-->>U: Muestra el panel\n```\n\n\
+         Los módulos que intervienen:\n\n\
+         ```mermaid\nflowchart LR\n    form[Formulario] --> api[Cliente de la API] --> store[(Sesión)]\n    api -.->|falla| error[Aviso de error]\n```\n\n\
+         Un tipo que la app no dibuja queda como código:\n\n```mermaid\nclassDiagram\n    Sesion <|-- SesionRemota\n```\n";
+    let mut state = markdown_geometry_fixture();
+    state.markdown_preview = None;
+    let preview = state.document_preview.as_mut().unwrap();
+    preview.mode = PreviewMode::Preview;
+    preview.document = Some(Arc::new(Document::Markdown(openide_preview::markdown::parse(source))));
+    for size in [Size::new(1440.0, 900.0), Size::new(520.0, 680.0)] {
+        let (context, mut tree) = view::ide_visual_tests::native_tree(view::build_window_view(
+            &state,
+            size.width,
+            size.height,
+        ));
+        let frame = tree.layout(size);
+        let strokes = frame
+            .commands
+            .iter()
+            .filter(|command| matches!(command, DrawCommand::Polyline { .. }))
+            .count();
+        // Three lifelines and four messages, then three connectors.
+        assert_eq!(strokes, 10);
+        export_to(directory, &frame, size, "p1-preview");
+        let expand = frame
+            .regions
+            .iter()
+            .find(|region| region.id.contains("expand:"))
+            .expect("Ampliar")
+            .id
+            .clone();
+        context.end_pass().textures_delta.clear();
+        assert!(crate::rich_text::toggle_diagram_source(&expand));
+        let (context, mut tree) = view::ide_visual_tests::native_tree(view::build_window_view(
+            &state,
+            size.width,
+            size.height,
+        ));
+        export_to(directory, &tree.layout(size), size, "p2-preview-expanded");
+        context.end_pass().textures_delta.clear();
+        assert!(crate::rich_text::toggle_diagram_source("chat_diagram_source:close"));
+    }
+}

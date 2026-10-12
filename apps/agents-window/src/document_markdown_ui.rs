@@ -398,6 +398,13 @@ fn code_spans(language: &str, source: &str) -> Vec<TextSpan> {
 }
 
 fn code(language: &str, source: &str, width: f32) -> Element {
+    // A diagram is drawn as in an answer, with its switch and its expand
+    // action; a fence the app cannot draw stays code.
+    if language.eq_ignore_ascii_case("mermaid") {
+        if let Some(diagram) = crate::rich_text::render_diagram(source.trim_end()) {
+            return diagram.size(Some(width), None);
+        }
+    }
     let mut block = CodeBlock::new(source, theme::panel_card_palette())
         .spans(code_spans(language, source))
         .sizing(CodeBlockSizing::DOCUMENT)
@@ -428,6 +435,41 @@ mod tests {
             DrawCommand::Text { text, .. } if text.contains("Native preview"))));
         assert!(frame
             .regions
+            .iter()
+            .all(|hit| hit.rect.x >= 0.0 && hit.rect.x + hit.rect.width <= 420.1));
+    }
+
+    #[test]
+    fn mermaid_fences_are_drawn_wherever_they_sit_and_other_kinds_stay_code() {
+        let document = openide_preview::markdown::parse(
+            "```mermaid\nflowchart LR\n    A[Uno] --> B[Dos]\n```\n\n```mermaid\nsequenceDiagram\n    A->>B: hola\n```\n\n\
+             ```mermaid\npie\n    \"a\": 1\n```\n\n- En una lista:\n\n  ```MERMAID\n  graph TD\n      X --> Y\n  ```\n\n\
+             > ```mermaid\n> sequenceDiagram\n>     C-->>D: chau\n> ```\n",
+        );
+        let mut tree = UiTree::new(build(&document, 420.0, "preview:7:2"));
+        let frame = tree.layout(Size::new(420.0, 2400.0));
+        let strokes = frame
+            .commands
+            .iter()
+            .filter(|command| matches!(command, DrawCommand::Polyline { .. }))
+            .count();
+        // A connector; two lifelines and a message; a connector; two lifelines and a message.
+        assert_eq!(strokes, 8);
+        let painted = |value: &str| {
+            frame.commands.iter().any(
+                |command| matches!(command, DrawCommand::Text { text, .. } if text.contains(value)),
+            )
+        };
+        assert!(painted("hola") && painted("chau") && painted("Ver código"));
+        assert!(painted("pie") && !painted("flowchart LR") && !painted("graph TD"));
+        let actions: Vec<_> = frame
+            .regions
+            .iter()
+            .filter(|region| region.id.starts_with(crate::rich_text::DIAGRAM_ACTION_PREFIX))
+            .collect();
+        // Each of the four drawn diagrams switches to its source and expands.
+        assert_eq!(actions.len(), 8);
+        assert!(actions
             .iter()
             .all(|hit| hit.rect.x >= 0.0 && hit.rect.x + hit.rect.width <= 420.1));
     }
