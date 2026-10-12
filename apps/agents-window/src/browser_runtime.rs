@@ -693,6 +693,8 @@ impl BrowserHandle {
 
 pub(crate) struct BrowserRuntime {
     handle: BrowserHandle,
+    /// The window's scale this context was started for.
+    scale: f32,
     /// Disconnects once the worker has let go of its browser.
     finished: Receiver<()>,
     broker_address: String,
@@ -872,10 +874,15 @@ impl BrowserRuntime {
             })?;
         Ok(Self {
             handle,
+            scale: options.device_scale,
             finished,
             broker_address,
             broker_token,
         })
+    }
+
+    pub(crate) fn scale(&self) -> f32 {
+        self.scale
     }
 
     pub(crate) fn submit_ui(&self, command: BrowserCommand) -> Result<BrowserRequest, String> {

@@ -229,8 +229,13 @@ Chrome de reemplazo.
   pantalla de otra frecuencia conserva la primera. A 120, sin ventana, la
   animación de prueba llegó a 120,1 con 65 % de un núcleo en la aplicación en
   lugar de 37 %, y 18 % en lugar de 10 % en los procesos de Chromium (una
-  corrida). Con ventana no se midió: falta saber si subir a la GPU un cuadro
-  de 2560 × 1600 por cada refresco sostiene los 120.
+  corrida). Con ventana, en una pantalla de 120 Hz y la ventana dibujada por
+  la gráfica integrada, un panel de 1154 × 1474 píxeles sostuvo 120 cuadros
+  por segundo de la aplicación y 120 pinturas de Chromium durante 32 s. Los
+  dos relojes son independientes: cada ~15 s, durante 2–3 s, la vista toma
+  90–110 cuadros distintos de los 120 pintados (dos pinturas caen en un mismo
+  refresco y ninguna en el siguiente). Atarlos pide que la ventana marque los
+  cuadros de Chromium.
 - Cada cuadro se copia y se convierte entero aunque cambie un píxel: una
   animación chica cuesta lo mismo que una de pantalla completa.
 - La lista de un `<select>` abierta desde la ventana no se dibuja (CEF la

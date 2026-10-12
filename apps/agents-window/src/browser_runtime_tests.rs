@@ -57,6 +57,7 @@ pub(crate) fn fixture(
     (
         BrowserRuntime {
             handle: handle.clone(),
+            scale: 1.0,
             // No worker: nothing to wait for when the fixture is dropped.
             finished: mpsc::channel().1,
             broker_address: String::new(),

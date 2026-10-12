@@ -142,6 +142,26 @@ Pegar y confirmar texto de un método de entrada requieren que el viewport
 visible tenga foco; durante una navegación no se envían al documento nuevo.
 PageUp y PageDown llegan a la página.
 
+**Rueda y touchpad.** Los deltas propios de un touchpad llegan a la página tal
+cual, pegados a los dedos. Un paso de rueda no salta: recorre unos 80 píxeles
+(lo que Chrome bajo Wayland) deslizándose con la misma curva que las listas de
+la aplicación (140 ms), enviado a la página cuadro por cuadro; con movimiento
+reducido va de una vez. Medido en la ventana real a 120 Hz: doce pasos
+seguidos mueven la página 960 píxeles sin un solo cuadro de más de 9 ms.
+
+**Escala.** Una página conserva la escala con la que arrancó su contexto. Si
+la ventana pasa a tener otra (se movió a una pantalla de otra densidad, o el
+contexto arrancó en el primer cuadro de la ventana, que bajo Wayland todavía
+dice 1), el contexto se reinicia en su dirección en lugar de quedar borroso.
+
+**Qué gráfica dibuja la ventana.** La integrada, que es de la que cuelga la
+pantalla en una portátil con dos (`WGPU_POWER_PREF=high` vuelve a la otra).
+Medido en una portátil AMD + NVIDIA a 2880 × 1800 y 120 Hz con el navegador
+animando: dibujando en la NVIDIA la ventana sostenía 120 cuadros por segundo
+unos diez segundos y después 90–100, con 30–60 cuadros tardíos por segundo,
+cuando esa placa bajaba su frecuencia; en la integrada sostuvo 120 durante
+toda la medición, sin cuadros tardíos, y la NVIDIA pasó de unos 12 W a 3,5 W.
+
 Cada respuesta a una herramienta contiene la URL, el título, el historial y,
 cuando corresponde, el árbol accesible. La captura PNG del viewport ya no
 acompaña a cada respuesta: se toma sólo para `browser_take_screenshot` y para

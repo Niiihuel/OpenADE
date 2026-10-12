@@ -4908,6 +4908,26 @@ impl AgentsWindow {
     fn update_browser(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
         self.browser_scale = crate::browser_runtime::device_scale(ctx.pixels_per_point());
+        // A page keeps the scale its context started with. One whose window
+        // has another now starts again at its address instead of staying
+        // blurred: the window moved to a display of another density, or the
+        // context started on the window's first frame, which under Wayland
+        // does not know its scale yet and says 1.
+        let rescaled: Vec<(u64, String)> = self
+            .browsers
+            .iter()
+            .filter(|(_, runtime)| runtime.scale() != self.browser_scale)
+            .map(|(id, runtime)| (*id, runtime.snapshot().url))
+            .collect();
+        for (id, url) in rescaled {
+            self.browser_requests.remove(&id);
+            self.browser_inputs.remove(&id);
+            self.browsers.remove(&id);
+            if let Some(url) = browser_restart_url(&url) {
+                self.browser_restart_urls.insert(id, url);
+            }
+            changed = true;
+        }
         // The embedded page is composited as often as this window is shown.
         #[cfg(feature = "cef")]
         if !self.browsers.is_empty()

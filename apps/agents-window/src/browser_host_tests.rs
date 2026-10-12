@@ -699,6 +699,27 @@ fn a_tab_is_a_page_only_while_its_surface_holds_a_frame_of_a_started_context() {
 }
 
 #[test]
+fn a_context_started_for_another_scale_starts_again_at_its_address() {
+    let (_root, mut app, id) = fixture();
+    let _commands = install_runtime(&mut app, id, BrowserSnapshot {
+        url: "http://localhost:3000/docs".into(),
+        ..blank(1)
+    });
+    // The fixture context was started for scale 1, and the window has it.
+    let ctx = egui::Context::default();
+    app.update_browser(&ctx);
+    assert!(app.browsers.contains_key(&id.get()));
+    assert!(!app.browser_restart_urls.contains_key(&id.get()));
+    // The window turns out to be on a denser display.
+    ctx.set_pixels_per_point(2.0);
+    ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+    assert_eq!(ctx.pixels_per_point(), 2.0);
+    assert!(app.update_browser(&ctx));
+    assert!(!app.browsers.contains_key(&id.get()), "a page at the old scale would stay blurred");
+    assert_eq!(app.browser_restart_urls.get(&id.get()).map(String::as_str), Some("http://localhost:3000/docs"));
+}
+
+#[test]
 fn a_page_shown_again_takes_no_input_until_its_stream_is_back_and_a_press_is_always_released() {
     let (_root, mut app, id) = fixture();
     let commands = install_runtime(&mut app, id, blank(1));
