@@ -1143,13 +1143,16 @@ impl DockMotion {
         target_left: f32,
         target_right: f32,
         viewport_width: f32,
+        maximized: bool,
         now: Instant,
         reduced_motion: bool,
     ) -> (Option<f32>, Option<f32>) {
         let resized = (self.viewport_width - viewport_width).abs() > 0.5;
         self.viewport_width = viewport_width;
+        // Maximizing or restoring the right dock moves it as a toggle does.
         let visibility_changed = (self.left.target() > 0.5) != (target_left > 0.5)
-            || (self.right.target() > 0.5) != (target_right > 0.5);
+            || (self.right.target() > 0.5) != (target_right > 0.5)
+            || std::mem::replace(&mut self.maximized, maximized) != maximized;
         for (transition, content_width, target) in [
             (&mut self.left, &mut self.content_left, target_left),
             (&mut self.right, &mut self.content_right, target_right),
@@ -20364,14 +20367,8 @@ impl AgentsWindow {
         let right_target = nominal.right.unwrap_or(0.0);
         let bottom_target =
             crate::view::nominal_terminal_panel_height(&self.view, self.viewport_height);
-        // The right dock is maximized and restored at once: the conversation
-        // is never laid out in what is left of a width in transit.
         let maximized = self.view.dock_maximized;
-        if self
-            .dock_motion
-            .as_ref()
-            .is_some_and(|motion| motion.ide != ide || motion.maximized != maximized)
-        {
+        if self.dock_motion.as_ref().is_some_and(|motion| motion.ide != ide) {
             self.dock_motion = None;
         }
         if self.dock_drag.is_some() {
@@ -20393,6 +20390,7 @@ impl AgentsWindow {
             left_target,
             right_target,
             viewport_width,
+            maximized,
             now,
             self.reduced_motion,
         );
@@ -28713,16 +28711,16 @@ mod tests {
     fn dock_motion_retargets_without_jumping_and_snaps_during_resize() {
         let start = Instant::now();
         let mut motion = DockMotion::new(280.0, 360.0, 1400.0, start);
-        let (left, right) = motion.update(0.0, 360.0, 1400.0, start, false);
+        let (left, right) = motion.update(0.0, 360.0, 1400.0, false, start, false);
         assert_eq!(left, Some(280.0));
         assert_eq!(right, None);
         let midway = start + Duration::from_millis(80);
-        let (left, _) = motion.update(0.0, 360.0, 1400.0, midway, false);
+        let (left, _) = motion.update(0.0, 360.0, 1400.0, false, midway, false);
         let midway_width = left.unwrap();
         assert!(midway_width > 0.0 && midway_width < 280.0);
-        let (left, _) = motion.update(280.0, 360.0, 1400.0, midway, false);
+        let (left, _) = motion.update(280.0, 360.0, 1400.0, false, midway, false);
         assert!((left.unwrap() - midway_width).abs() < 0.01);
-        let (left, _) = motion.update(280.0, 360.0, 1200.0, midway, false);
+        let (left, _) = motion.update(280.0, 360.0, 1200.0, false, midway, false);
         assert_eq!(left, None);
         assert_eq!(motion.left.value(midway), 280.0);
     }
@@ -28731,7 +28729,7 @@ mod tests {
     fn dock_motion_honors_reduced_motion() {
         let now = Instant::now();
         let mut motion = DockMotion::new(280.0, 0.0, 1400.0, now);
-        let (left, right) = motion.update(0.0, 360.0, 1400.0, now, true);
+        let (left, right) = motion.update(0.0, 360.0, 1400.0, false, now, true);
         assert_eq!((left, right), (None, None));
         assert_eq!(motion.left.value(now), 0.0);
         assert_eq!(motion.right.value(now), 360.0);

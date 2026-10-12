@@ -253,6 +253,10 @@ pub(super) fn header(state: &ViewState, width: f32) -> Element {
     }
     // The resource launcher and overview belong to the Agents dock. IDE
     // exposes activities and browser navigation in its own rail and menus.
+    // Maximized, the dock covers the header that reopens a folded sidebar.
+    if !ide && state.dock_maximized && state.sidebar_collapsed {
+        controls.push(super::sidebar_reopen_control(Color::TRANSPARENT));
+    }
     if !ide {
         controls.push(dock_add_menu(state));
         controls.push(all_tabs_menu(state));

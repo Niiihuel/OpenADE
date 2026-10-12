@@ -130,7 +130,13 @@ con el panel oculto o sin pestañas, donde el control aparece deshabilitado.
   debajo del panel; un comando del agente queda listado sin abrirla. Problemas
   no se oculta: acompaña al archivo del panel.
 - El ancho preferido no cambia y vuelve tal cual. Maximizado no hay divisor que
-  arrastrar, y el cambio es inmediato, sin transición.
+  arrastrar. El panel crece desde su borde derecho sobre el lugar de la
+  conversación, y vuelve, con el mismo movimiento que abrir o cerrar un panel
+  (200 ms); la conversación no se dibuja mientras crece y vuelve a dibujarse
+  mientras el panel se achica. Reducir movimiento aplica el cambio de una vez.
+- Con la barra lateral plegada, la barra de pestañas del panel maximizado
+  ofrece **Mostrar barra lateral**, que la cabecera tapada de la conversación
+  ya no puede ofrecer.
 - En una ventana angosta, donde el panel no entra junto a la conversación y la
   barra lateral, maximizado sí se muestra.
 - Escape no restaura: esa tecla es de la página y de los editores.

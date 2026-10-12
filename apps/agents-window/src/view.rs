@@ -3270,14 +3270,17 @@ pub(crate) fn build_view_sized(state: &ViewState, viewport_width: f32, viewport_
                     .clip_children(),
             );
         }
+        // While it grows, the dock keeps to the right edge it started from,
+        // over the room the conversation left.
         let mut workspace = vec![Element::row(vec![
+            Element::spacer().size(Some(layout.center), None),
             side_pane_sized(state, right, workspace_height).clip_children(),
         ])
         .flex(1.0)
         .clip_children()];
         if terminal_height > 0.0 {
             workspace.push(
-                ide_ui::bottom::build(state, right, terminal_height)
+                ide_ui::bottom::build(state, layout.center + right, terminal_height)
                     .size(None, Some(terminal_height)),
             );
         }
