@@ -8,10 +8,9 @@ use crate::{
     view::ViewState,
 };
 use openide_ui::{
-    Button, ButtonGroup, ButtonVariant, Color, Component, ContextMeter, ContextShare,
-    ContextShareAction, ContextTones, ContextWindow, ControlSize, Element, ElementKind, Icon,
-    IconButton, Popover, PopoverPanel, PopoverPlacement, ScrollArea, ScrollbarAppearance, Text,
-    TextRole, Tooltip, TooltipPlacement, TooltipSpec,
+    Color, Component, ContextMeter, ContextShare, ContextShareAction, ContextTones,
+    ContextWindow, Element, ElementKind, Icon, Popover, PopoverPanel, PopoverPlacement,
+    ScrollArea, ScrollbarAppearance, Text, TextRole, Tooltip, TooltipPlacement,
 };
 use std::path::Path;
 
@@ -270,25 +269,30 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     let shares: Vec<_> = categories
         .iter()
         .zip(figures)
-        .map(|(category, tokens)| ContextShare {
-            action: match category.id.as_str() {
-                "conversation" if action.busy => Some(ContextShareAction::Busy(words("Compactando"))),
-                "conversation" if after_checkpoint => Some(ContextShareAction::Done(words("Compactada"))),
-                "conversation" if compact.is_some() => Some(ContextShareAction::Offer(words("Compactar"))),
-                _ => None,
-            },
-            // The card has no row without a figure: such a category counts as zero.
-            ..ContextShare::new(
-                &category.id,
-                &category.label,
-                tokens.unwrap_or(0),
-                theme::context_category_ink(&category.id),
-            )
+        .map(|(category, tokens)| {
+            let share = ContextShare {
+                action: match category.id.as_str() {
+                    "conversation" if action.busy => Some(ContextShareAction::Busy(words("Compactando"))),
+                    "conversation" if after_checkpoint => Some(ContextShareAction::Done(words("Compactada"))),
+                    "conversation" if compact.is_some() => Some(ContextShareAction::Offer(words("Compactar"))),
+                    _ => None,
+                },
+                ..ContextShare::new(
+                    &category.id,
+                    &category.label,
+                    tokens.unwrap_or(0),
+                    theme::context_category_ink(&category.id),
+                )
+            };
+            // A category without a figure is listed without a count, not as zero.
+            if tokens.is_some() { share } else { share.unmeasured() }
         })
         .collect();
     // The card states a window only where the ring does: with an occupancy.
     let window = occupancy.map(|occupancy| occupancy.capacity);
     let in_focus = hovered.and_then(|id| shares.iter().find(|share| share.id == id));
+    // The category in focus opens the status line and reads stronger there.
+    let lead = in_focus.filter(|_| window.is_some()).map(|share| share.label.clone());
     let line = if let (Some(share), Some(window)) = (in_focus, window) {
         format!(
             "{} · {}% de la ventana",
@@ -327,9 +331,14 @@ fn summary(props: &ComposerProps<'_>) -> Element {
     })
     .focused(hovered)
     .status(line)
+    .header_icon("composer_context_copy_diagnostic", Icon::Copy, "Copiar diagnóstico")
+    .footer_action("new_session_context", "Nueva tarea")
     // The popover's surface keeps one pixel around the card for its border.
     .width(width - 2.0)
     .format(card_tokens);
+    if let Some(lead) = lead {
+        card = card.status_lead(lead);
+    }
     // The model's own name, the last segment of its ID, in the characters that
     // fit beside the title: 150 px go to the title, the insets and the badge's
     // padding, and the monospace face advances 6.7 px.
@@ -414,37 +423,20 @@ fn summary(props: &ComposerProps<'_>) -> Element {
                     })
                     .render(),
             ),
+            Element::spacer().size(None, Some(8.0)),
         ]);
     }
-    let actions = ButtonGroup::new(vec![
-        Button::new(
-            "composer_context_copy_diagnostic",
-            "Copiar diagnóstico",
-            theme::menu_palette(),
-        )
-        .variant(ButtonVariant::Ghost)
-        .size(ControlSize::Compact)
-        .render(),
-        // The close button's hint names its key, so it is built here.
-        IconButton::new("composer_context_dismiss", Icon::Close, theme::menu_palette())
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Dense)
-            .tooltip_with(TooltipSpec::new("Cerrar contexto").shortcut("Esc"))
-            .render()
-            .centered_y(),
-    ])
-    .align_end();
-    foot.push(inset(actions.render().centered_y()).size(None, Some(40.0)));
-    PopoverPanel::new(theme::component_palette())
+    let panel = PopoverPanel::new(theme::component_palette())
         .body(
             ScrollArea::new("composer_context_summary", card)
                 // An overlay keeps the width the card was sized for.
                 .appearance(ScrollbarAppearance::overlay())
                 .render(),
         )
-        .footer(Element::column(foot))
-        .sizing(crate::ui_sizing::CONTEXT_POPOVER)
-        .render()
+        .sizing(crate::ui_sizing::CONTEXT_POPOVER);
+    // The popover closes with Escape, a click outside it or its ring, so the
+    // card needs no button for that; a notice is all that stands under it.
+    if foot.is_empty() { panel.render() } else { panel.footer(Element::column(foot)).render() }
 }
 
 fn popover_width(composer: f32) -> f32 {

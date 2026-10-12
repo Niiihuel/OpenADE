@@ -17362,7 +17362,7 @@ impl AgentsWindow {
             UiAction::Clicked { id }
                 if matches!(
                     id.as_str(),
-                    "new_session" | "new_session_sidebar" | "new_session_header"
+                    "new_session" | "new_session_sidebar" | "new_session_header" | "new_session_context"
                 ) =>
             {
                 self.new_session();

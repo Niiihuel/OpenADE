@@ -648,6 +648,7 @@ fn icon_svg(icon: Icon) -> &'static str {
         Icon::Filter => include_str!("../../assets/bootstrap/funnel.svg"),
         Icon::Sort => include_str!("../../assets/bootstrap/sort-down.svg"),
         Icon::Collapse => include_str!("../../assets/bootstrap/arrows-angle-contract.svg"),
+        Icon::Compact => include_str!("../../assets/bootstrap/arrows-collapse.svg"),
         Icon::Expand => include_str!("../../assets/bootstrap/arrows-angle-expand.svg"),
 
         Icon::Clock => include_str!("../../assets/bootstrap/clock.svg"),

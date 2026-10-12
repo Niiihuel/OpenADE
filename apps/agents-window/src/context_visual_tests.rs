@@ -409,9 +409,12 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
                 assert_eq!(shown(label), 1, "{label}: {text:?}");
             }
             // The figure, its caption, the percentage and what is left of the window.
-            for value in ["30K", "de 100K tokens", "30%", "70K libres", "Copiar diagnóstico"] {
+            for value in ["30K", "de 100K tokens", "30%", "70K libres", "Nueva tarea"] {
                 assert_eq!(shown(value), 1, "{value}: {text:?}");
             }
+            // The diagnostic copy is a small control in the header, not a row of its own.
+            assert!(region(&frame, "composer_context_copy_diagnostic").width > 0.0);
+            assert_eq!(shown("Copiar diagnóstico"), 0, "{text:?}");
             assert_eq!(shown("Detalles"), 0, "there is no second level");
             // Raw units stay in the dump.
             assert!(!text.iter().any(|text| text.contains("bytes")));
@@ -419,8 +422,8 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
                 // The 8192-byte system copy holds the project's 4096 and the
                 // skills' 2048: 2048, 4096 and 2048 bytes at four a token, and
                 // the rest of the 30 000 measured is conversation. Tools, MCP
-                // and subagents state no size and count as zero.
-                for (figure, times) in [("512", 2), ("1K", 1), ("28K", 1), ("0", 3)] {
+                // and subagents state no size and are listed without a count.
+                for (figure, times) in [("512", 2), ("1K", 1), ("28K", 1), ("–", 3)] {
                     assert_eq!(shown(figure), times, "{figure}: {text:?}");
                 }
                 assert!(crate::composer_context_ui::diagnostic(&state.native_context)
@@ -428,7 +431,9 @@ fn context_lists_every_category_in_one_level_without_scrolling() {
             } else {
                 // Sizes that add up to 96 074 tokens are brought down to the
                 // 30 000 measured, so the figure stays the one the ring shows.
-                for (figure, times) in [("7.7K", 1), ("7.5K", 1), ("14.7K", 1), ("0", 4)] {
+                // The conversation's measured zero stays a zero; the three
+                // categories without a size read a dash.
+                for (figure, times) in [("7.7K", 1), ("7.5K", 1), ("14.7K", 1), ("0", 1), ("–", 3)] {
                     assert_eq!(shown(figure), times, "{figure}: {text:?}");
                 }
             }
@@ -625,7 +630,9 @@ fn a_category_under_the_pointer_takes_the_figure_and_the_status_line() {
     // The figure reads the share's count beside its own row and the system's.
     assert_eq!(shown("512"), 3, "{text:?}");
     assert_eq!(shown("de 100K tokens"), 0);
-    assert_eq!(shown("Skills · 1% de la ventana"), 1, "{text:?}");
+    // The status line opens with the category, which reads stronger than the rest.
+    assert_eq!(shown(" · 1% de la ventana"), 1, "{text:?}");
+    assert_eq!(shown("Skills"), 4, "its row, the figure's caption, the status line and the hint: {text:?}");
     assert_eq!(shown("30%"), 1, "the percentage stays the window's");
     // The hint states what was measured, in the app's own units.
     assert_eq!(shown("4 locales · 2048 bytes"), 1, "{text:?}");
@@ -694,7 +701,8 @@ fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() 
         // In the conversation's row, after its label and inside the card's inset.
         assert!(compact.y == row.y && compact.x >= row.x + row.width);
         assert!(compact.x + compact.width <= popup.x + popup.width - 16.0);
-        assert!(compact.y + compact.height <= details.y);
+        // The diagnostic copy sits in the header, above the rows.
+        assert!(details.y + details.height <= compact.y);
         // A narrow card keeps the action's icon and leaves its word out.
         let roomy = width >= 360.0;
         let text = visible_text(&frame, size);
@@ -737,9 +745,15 @@ fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() 
         tree.set_root(root(&state, size));
         let unavailable = tree.layout(size);
         assert!(!unavailable.regions.iter().any(|region| region.id == control));
-        assert!(visible_text(&unavailable, size)
-            .iter()
-            .any(|text| text.starts_with("Resuelve los permisos")));
+        // Beside the foot's action a narrow card cuts the reason short; the
+        // whole of it is in the conversation row's hint.
+        assert!(
+            visible_text(&unavailable, size)
+                .iter()
+                .any(|text| text.starts_with("Resuelve los perm")),
+            "{:?}",
+            visible_text(&unavailable, size)
+        );
 
         state = fixture("unknown");
         state.composer_context_open = true;
