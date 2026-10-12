@@ -1032,7 +1032,7 @@ fn export_bottom_terminal_visual_review() {
             tree.set_text_measurer(move |text, size, family| {
                 font_context.fonts_mut(|fonts| {
                     let family = match family {
-                        FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+                        FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
                         FontFamily::Monospace => egui::FontFamily::Monospace,
                     };
                     fonts

@@ -67,7 +67,7 @@ fn native_tree(root: Element) -> (egui::Context, UiTree) {
     for family in [FontFamily::Monospace, FontFamily::Sans] {
         let font = match family {
             FontFamily::Monospace => egui::FontId::monospace(14.0),
-            FontFamily::Sans | FontFamily::SansItalic => egui::FontId::proportional(14.0),
+            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontId::proportional(14.0),
         };
         let metrics = context.fonts_mut(|fonts| FontMetrics {
             char_width: fonts
@@ -76,7 +76,7 @@ fn native_tree(root: Element) -> (egui::Context, UiTree) {
         });
         match family {
             FontFamily::Monospace => tree.set_metrics(metrics),
-            FontFamily::Sans | FontFamily::SansItalic => tree.set_sans_metrics(metrics),
+            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => tree.set_sans_metrics(metrics),
         }
     }
     install_text_measurer(&mut tree, &context);

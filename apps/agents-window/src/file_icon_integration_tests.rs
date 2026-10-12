@@ -212,7 +212,7 @@ fn export_file_icon_surface_visual_review() {
         tree.set_text_measurer(move |text, size, family| {
             native.fonts_mut(|fonts| {
                 let font = match family {
-                    openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => eframe::egui::FontId::proportional(size),
+                    openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic | openide_ui::FontFamily::SansMedium | openide_ui::FontFamily::SansBold => eframe::egui::FontId::proportional(size),
                     openide_ui::FontFamily::Monospace => eframe::egui::FontId::monospace(size),
                 };
                 fonts

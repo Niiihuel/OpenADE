@@ -270,7 +270,7 @@ fn write_frame_svg_with_families(
                 font_family,
             } => {
                 let family = match font_family {
-                    FontFamily::Sans | FontFamily::SansItalic => sans_family,
+                    FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => sans_family,
                     FontFamily::Monospace => mono_family,
                 };
                 writeln!(

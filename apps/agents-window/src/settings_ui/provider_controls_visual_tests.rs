@@ -72,7 +72,7 @@ fn native_tree_for(root: Element) -> (egui::Context, UiTree) {
                     egui::FontId::new(
                         size,
                         match family {
-                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+                            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
                             FontFamily::Monospace => egui::FontFamily::Monospace,
                         },
                     ),
@@ -225,7 +225,7 @@ fn compact_model_rows_keep_native_text_and_actions_separate() {
                             egui::FontId::new(
                                 *font_size,
                                 match font_family {
-                                    FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+                                    FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
                                     FontFamily::Monospace => egui::FontFamily::Monospace,
                                 },
                             ),

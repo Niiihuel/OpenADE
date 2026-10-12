@@ -76,7 +76,7 @@ fn native_tree_at_scale(root: Element, pixels_per_point: f32) -> (egui::Context,
             fonts.row_height(&egui::FontId::new(
                 size,
                 match family {
-                    FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+                    FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
                     FontFamily::Monospace => egui::FontFamily::Monospace,
                 },
             ))
@@ -85,7 +85,7 @@ fn native_tree_at_scale(root: Element, pixels_per_point: f32) -> (egui::Context,
     for family in [FontFamily::Monospace, FontFamily::Sans] {
         let font = match family {
             FontFamily::Monospace => egui::FontId::monospace(14.0),
-            FontFamily::Sans | FontFamily::SansItalic => egui::FontId::proportional(14.0),
+            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontId::proportional(14.0),
         };
         let metrics = context.fonts_mut(|fonts| FontMetrics {
             char_width: fonts
@@ -94,7 +94,7 @@ fn native_tree_at_scale(root: Element, pixels_per_point: f32) -> (egui::Context,
         });
         match family {
             FontFamily::Monospace => tree.set_metrics(metrics),
-            FontFamily::Sans | FontFamily::SansItalic => tree.set_sans_metrics(metrics),
+            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => tree.set_sans_metrics(metrics),
         }
     }
     let measure = context.clone();
@@ -106,7 +106,7 @@ fn native_tree_at_scale(root: Element, pixels_per_point: f32) -> (egui::Context,
                     egui::FontId::new(
                         size,
                         match family {
-                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+                            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
                             FontFamily::Monospace => egui::FontFamily::Monospace,
                         },
                     ),

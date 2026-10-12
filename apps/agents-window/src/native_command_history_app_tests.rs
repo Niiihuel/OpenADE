@@ -1120,7 +1120,7 @@ async fn export_native_command_history_visual_review() {
                             egui::FontId::new(
                                 size,
                                 match family {
-                                    openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => egui::FontFamily::Proportional,
+                                    openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic | openide_ui::FontFamily::SansMedium | openide_ui::FontFamily::SansBold => egui::FontFamily::Proportional,
                                     openide_ui::FontFamily::Monospace => {
                                         egui::FontFamily::Monospace
                                     }

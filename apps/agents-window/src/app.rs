@@ -1073,7 +1073,7 @@ fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
     tree.set_text_height_measurer(move |size, family| {
         let family = match family {
             FontFamily::Monospace => egui::FontFamily::Monospace,
-            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
         };
         height_context.fonts_mut(|fonts| fonts.row_height(&egui::FontId::new(size, family)))
     });
@@ -1081,7 +1081,7 @@ fn install_text_measurer(tree: &mut UiTree, context: &egui::Context) {
     tree.set_text_measurer(move |value, size, family| {
         let family = match family {
             FontFamily::Monospace => egui::FontFamily::Monospace,
-            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
         };
         context.fonts_mut(|fonts| {
             fonts

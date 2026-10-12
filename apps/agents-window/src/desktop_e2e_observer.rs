@@ -575,7 +575,7 @@ impl AgentsWindow {
                 "labels": frame.commands.iter().filter_map(|command| match command {
                     openide_ui::DrawCommand::Text { text, position, font_size, font_family, .. } => {
                         let font = match font_family {
-                            openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => egui::FontId::proportional(*font_size),
+                            openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic | openide_ui::FontFamily::SansMedium | openide_ui::FontFamily::SansBold => egui::FontId::proportional(*font_size),
                             openide_ui::FontFamily::Monospace => egui::FontId::monospace(*font_size),
                         };
                         let measured = ctx.fonts_mut(|fonts| fonts.layout_no_wrap(text.clone(), font, egui::Color32::WHITE).size());
@@ -636,7 +636,7 @@ impl AgentsWindow {
                 "labels": frame.commands.iter().filter_map(|command| match command {
                     openide_ui::DrawCommand::Text { text, position, font_size, font_family, .. } => {
                         let font = match font_family {
-                            openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => egui::FontId::proportional(*font_size),
+                            openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic | openide_ui::FontFamily::SansMedium | openide_ui::FontFamily::SansBold => egui::FontId::proportional(*font_size),
                             openide_ui::FontFamily::Monospace => egui::FontId::monospace(*font_size),
                         };
                         let measured = ctx.fonts_mut(|fonts| fonts.layout_no_wrap(text.clone(), font, egui::Color32::WHITE).size());
@@ -661,7 +661,7 @@ impl AgentsWindow {
                 "labels": frame.commands.iter().filter_map(|command| match command {
                     openide_ui::DrawCommand::Text { text, position, font_size, font_family, .. } => {
                         let font = match font_family {
-                            openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic => egui::FontId::proportional(*font_size),
+                            openide_ui::FontFamily::Sans | openide_ui::FontFamily::SansItalic | openide_ui::FontFamily::SansMedium | openide_ui::FontFamily::SansBold => egui::FontId::proportional(*font_size),
                             openide_ui::FontFamily::Monospace => egui::FontId::monospace(*font_size),
                         };
                         let measured = ctx.fonts_mut(|fonts| fonts.layout_no_wrap(text.clone(), font, egui::Color32::WHITE).size());

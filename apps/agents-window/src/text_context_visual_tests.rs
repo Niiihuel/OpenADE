@@ -24,7 +24,7 @@ fn native_tree(root: Element) -> (egui::Context, UiTree) {
                     egui::FontId::new(
                         size,
                         match family {
-                            FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+                            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
                             FontFamily::Monospace => egui::FontFamily::Monospace,
                         },
                     ),

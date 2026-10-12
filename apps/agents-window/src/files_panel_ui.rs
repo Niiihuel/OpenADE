@@ -1117,7 +1117,7 @@ mod tests {
         tree.set_reduced_motion(true);
         tree.set_text_measurer(move |text, size, family| {
             let family = match family {
-                FontFamily::Sans | FontFamily::SansItalic => egui::FontFamily::Proportional,
+                FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => egui::FontFamily::Proportional,
                 FontFamily::Monospace => egui::FontFamily::Monospace,
             };
             measure.fonts_mut(|fonts| {

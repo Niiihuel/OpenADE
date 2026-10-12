@@ -5283,7 +5283,7 @@ mod tests {
                                     eframe::egui::FontId::new(
                                         size,
                                         match family {
-                                            FontFamily::Sans | FontFamily::SansItalic => {
+                                            FontFamily::Sans | FontFamily::SansItalic | FontFamily::SansMedium | FontFamily::SansBold => {
                                                 eframe::egui::FontFamily::Proportional
                                             }
                                             FontFamily::Monospace => {
