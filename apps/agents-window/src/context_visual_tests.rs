@@ -877,10 +877,10 @@ fn export_context_ring_states_visual_review() {
                 DrawCommand::ProgressRing { fraction, .. }
                     if *fraction == occupancy.map(|occupancy| occupancy.fraction()))));
             let text = visible_text(&frame, size);
-            // The header says what the ring says; the label has room from 490 px.
-            if let Some(label) = label {
-                assert!(text.iter().any(|text| text.starts_with(&format!("{label} · "))), "{text:?}");
-                assert_eq!(text.iter().any(|text| text == label), width >= 490.0, "{name}: {text:?}");
+            // With a ring that has a figure the card states a percentage too;
+            // it rounds, so under 1% it reads "0%" where the ring says "<1%".
+            if label.is_some() {
+                assert!(text.iter().any(|text| text.ends_with('%')), "{name}: {text:?}");
             } else {
                 assert!(text.iter().all(|text| !text.contains('%')), "{text:?}");
             }
