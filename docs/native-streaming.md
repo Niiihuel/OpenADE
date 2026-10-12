@@ -51,7 +51,9 @@ no se usan como título.
 Errores, permisos pendientes y resultados inciertos permanecen visibles. Sólo
 las lecturas y búsquedas completadas correctamente se agrupan como exploración;
 una herramienta abierta conserva su detalle visible. El encabezado despliega
-el cuerpo dentro del chat; «Inspeccionar actividad» abre el panel lateral.
+el cuerpo dentro del chat: abierta, la fila y su cuerpo son un solo bloque con
+relleno que se abre y se cierra en su lugar, como `Collapsible` de limn.
+«Inspeccionar actividad» abre el panel lateral.
 Cada elección pertenece a la conversación y sobrevive a la llegada tardía del
 `call_id`, a la confirmación del modelo y al comienzo de ejecución, incluso si
 esas transiciones llegan en el mismo lote. Los diffs siguen mostrando cambios

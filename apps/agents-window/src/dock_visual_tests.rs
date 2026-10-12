@@ -1376,6 +1376,9 @@ fn export_converged_controls_visual_review() {
         })
         .collect();
     let revoke = format!("session_approval_revoke:{}", "run_command".repeat(8)).leak();
+    // The session's permissions are listed by a disclosure: closed, then open.
+    export(activity_content(&state), 360.0, 360.0, "session-grants-closed");
+    state.activity.grants_open = true;
     for (name, hover) in [("idle", None), ("revoke-hover", Some(Hover(revoke)))] {
         export_with_interaction(
             activity_content(&state),
@@ -1385,6 +1388,7 @@ fn export_converged_controls_visual_review() {
             hover,
         );
     }
+    state.activity.grants_open = false;
 
     let preset = crate::project_actions::ProjectAction {
         id: "dev".into(),

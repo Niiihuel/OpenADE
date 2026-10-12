@@ -453,6 +453,107 @@ fn what_follows_a_group_glides_when_its_ticker_closes_and_its_lines_toggle() {
 }
 
 #[test]
+fn reasoning_and_a_tool_open_in_place_and_an_open_tool_is_one_block_with_its_details() {
+    let motion = openide_ui::tokens().motion;
+    let (exit, enter) = (
+        Duration::from_millis(u64::from(motion.exit_ms)),
+        Duration::from_millis(u64::from(motion.enter_ms)),
+    );
+    let mut state = state();
+    state.transcript.extend([
+        TranscriptItem::Reasoning {
+            id: "reason".into(),
+            step: 1,
+            content: PUBLIC_REASONING.into(),
+            status: ModelStreamStatus::Committed,
+            truncated: false,
+        },
+        TranscriptItem::Tool {
+            id: "mcp".into(),
+            name: "mcp__github__get_issue".into(),
+            arguments: json!({"issue_number": 42}),
+            output: Some("ISSUE_DE_PRUEBA".into()),
+            is_error: false,
+            activity: ActivityStatus::Completed,
+        },
+        assistant("TEXTO_DESPUES"),
+    ]);
+    let width = 900.0;
+    let viewport = Size::new(width, 900.0);
+    // In the past, so the wall clock `is_animating` reads is after each end.
+    let mut clock = Instant::now() - Duration::from_secs(60);
+    let mut tree = surface(&state, width, false);
+    let below = |tree: &mut UiTree, clock: Instant| {
+        text_y(&tree.layout_at(viewport, clock), "TEXTO_DESPUES").unwrap()
+    };
+    let closed = below(&mut tree, clock);
+    for detail in ["reason", "tool:mcp"] {
+        state.conversation_details.set_expanded(detail, true);
+        tree.set_root(build_session_surface(&state, width, false, false));
+        assert_eq!(below(&mut tree, clock), closed, "{detail} moved nothing in the frame it opens");
+        let opening = below(&mut tree, clock + enter / 2);
+        clock += enter * 2;
+        let open = below(&mut tree, clock);
+        assert!(closed < opening && opening < open, "{detail}: {closed} {opening} {open}");
+        assert!(!tree.is_animating());
+
+        state.conversation_details.set_expanded(detail, false);
+        tree.set_root(build_session_surface(&state, width, false, false));
+        assert_eq!(below(&mut tree, clock), open);
+        let closing = below(&mut tree, clock + exit / 2);
+        assert!(closed < closing && closing < open, "{detail}: {closed} {closing} {open}");
+        clock += exit * 2;
+        assert_eq!(below(&mut tree, clock), closed);
+        assert!(!tree.is_animating());
+    }
+
+    // Open, the tool's header, its details and its footer share one fill;
+    // reasoning stays a flat line over its text.
+    let fill = theme::action_palette(theme::BACKGROUND, theme::FOREGROUND_SUBTLE).hover;
+    let toggle = action("tool:mcp");
+    let block = |frame: &openide_ui::Frame| {
+        let rect = |id: &str| frame.regions.iter().find(|region| region.id == id).map(|region| region.rect);
+        let header = rect(&toggle).unwrap();
+        frame.commands.iter().find_map(|command| match command {
+            DrawCommand::FillRect { rect: fill_rect, color, .. }
+                if *color == fill && fill_rect.y == header.y && fill_rect.height > header.height =>
+            {
+                Some((*fill_rect, rect("tool:mcp"), rect(&format!("{toggle}:collapse"))))
+            }
+            _ => None,
+        })
+    };
+    let mut still = surface(&state, width, true);
+    assert!(block(&still.layout(viewport)).is_none());
+    state.conversation_details.set_expanded("reason", true);
+    state.conversation_details.set_expanded("tool:mcp", true);
+    still.set_root(build_session_surface(&state, width, false, false));
+    let frame = still.layout(viewport);
+    let (block, inspect, footer) = block(&frame).expect("the open tool paints one block");
+    for inside in [inspect.expect("the inspector's button"), footer.expect("the footer")] {
+        assert!(inside.y >= block.y && inside.y + inside.height <= block.y + block.height);
+        assert!(inside.x >= block.x && inside.x + inside.width <= block.x + block.width);
+    }
+    assert!(text(&frame).contains(PUBLIC_REASONING));
+    // The header and the footer still close it with the same action.
+    let point = Point::new(block.x + 40.0, block.y + 14.0);
+    still.handle_event(UiEvent::PointerDown(point));
+    assert_eq!(
+        still.handle_event(UiEvent::PointerUp(point)),
+        vec![UiAction::Clicked { id: toggle.clone() }]
+    );
+    assert!(still.focus(&format!("{toggle}:collapse")));
+    assert_eq!(
+        still.handle_event(UiEvent::Key {
+            key: Key::Enter,
+            shift: false,
+            ctrl: false,
+        }),
+        vec![UiAction::Clicked { id: toggle }]
+    );
+}
+
+#[test]
 fn the_waiting_line_closes_when_content_arrives() {
     let exit = Duration::from_millis(u64::from(openide_ui::tokens().motion.exit_ms));
     let mut state = state();
