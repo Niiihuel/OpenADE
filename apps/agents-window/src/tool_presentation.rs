@@ -521,6 +521,15 @@ fn meta(name: &str) -> Meta<'_> {
             Other,
             Icon::GitBranch,
         ),
+        // The window's own image tool reads as what it does, not as a server.
+        crate::image_runtime::TOOL => (
+            "Generación de imagen",
+            "Generando imagen",
+            "Imagen generada",
+            &["path"],
+            Mcp,
+            Icon::Image,
+        ),
         "mcp_call" => (
             "Herramienta MCP",
             "Ejecutando MCP",
@@ -1125,6 +1134,30 @@ mod tests {
             present(name, &Value::Null, ActivityStatus::Completed, false, None).title,
             name
         );
+    }
+
+    #[test]
+    fn an_image_call_is_named_by_what_it_does_and_the_path_it_writes() {
+        let row = |activity, failed| {
+            let presentation = present(
+                crate::image_runtime::TOOL,
+                &json!({"prompt":"private input","path":"assets/hero.png","size":"auto"}),
+                activity,
+                failed,
+                Some("OpenAI rechazó la generación (HTTP 400: Billing hard limit has been reached)"),
+            );
+            assert_eq!(presentation.target, "assets/hero.png");
+            (presentation.title, presentation.icon, presentation.note)
+        };
+        assert_eq!(row(ActivityStatus::Running, false), ("Generando imagen".into(), Icon::Image, None));
+        assert_eq!(row(ActivityStatus::Completed, false), ("Imagen generada".into(), Icon::Image, None));
+        assert_eq!(
+            row(ActivityStatus::WaitingPermission, false).0,
+            "Permiso pendiente · Generación de imagen"
+        );
+        let (title, _, note) = row(ActivityStatus::Completed, true);
+        assert_eq!(title, "Falló · Generación de imagen");
+        assert!(note.unwrap().contains("Billing hard limit"));
     }
 
     #[test]

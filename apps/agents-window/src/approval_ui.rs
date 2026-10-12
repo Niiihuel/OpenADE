@@ -28,6 +28,8 @@ pub(crate) struct ApprovalSummary {
     pub title: String,
     pub target: String,
     pub icon: Icon,
+    /// A text action of the card, as (action, label).
+    pub link: Option<(&'static str, &'static str)>,
 }
 
 impl ApprovalTarget {
@@ -186,6 +188,11 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
             Icon::Search,
             &["query", "q"],
         ),
+        crate::image_runtime::TOOL => (
+            "Generar imagen",
+            Icon::Image,
+            &["path"],
+        ),
         "browser_click" | "browser_hover" | "browser_select_option" | "browser_check"
         | "browser_drag" => (
             "Interactuar con una página",
@@ -285,7 +292,42 @@ pub(crate) fn summary(tool_name: &str, arguments: &str) -> ApprovalSummary {
         title: title.into(),
         target,
         icon,
+        link: None,
     }
+}
+
+/// An image call says what it sends and that it may cost. The model and the
+/// quality are the user's own, read when the card is drawn: the call reads
+/// the same saved choice when it runs.
+fn with_image(mut summary: ApprovalSummary, tool_name: &str, arguments: &str, state: &ViewState) -> ApprovalSummary {
+    use crate::image_runtime::{image_choice, quality_label, PROVIDER, TOOL};
+    if tool_name != TOOL {
+        return summary;
+    }
+    let arguments = (arguments.len() <= MAX_SUMMARY_INPUT)
+        .then(|| serde_json::from_str::<Value>(arguments).ok())
+        .flatten()
+        .unwrap_or_default();
+    let text = |key: &str| arguments.get(key).and_then(Value::as_str);
+    let size = text("size")
+        .filter(|size| *size != "auto")
+        .unwrap_or("tamaño automático");
+    let (model, quality) = image_choice(&state.image_model, &state.image_quality);
+    let (prompt, clipped) = clip(
+        &text("prompt").unwrap_or_default().replace(['\r', '\n', '\t'], " "),
+        600,
+    );
+    // The prompt goes last: it is what a long card cuts.
+    let target = format!(
+        "{} · {size} · calidad {} · {PROVIDER} {} · puede tener costo — «{prompt}{}»",
+        summary.target,
+        quality_label(quality).to_lowercase(),
+        model.label,
+        if clipped { "…" } else { "" },
+    );
+    summary.target = clip(&target, MAX_TARGET_BYTES).0;
+    summary.link = Some(("image_settings_open", "Cambiar modelo o calidad"));
+    summary
 }
 
 /// A browser call that names its element by ref says what the ref is: the
@@ -346,7 +388,7 @@ fn notice(
     status: String,
     compact: bool,
 ) -> Element {
-    ApprovalRequest::new(
+    let request = ApprovalRequest::new(
         summary.title,
         target.decision_action("deny"),
         target.decision_action("allow_session"),
@@ -356,19 +398,24 @@ fn notice(
     .stacked(compact)
     .target(summary.target)
     .status(status)
-    .icon(summary.icon)
+    .icon(summary.icon);
+    match summary.link {
+        Some((action, label)) => request.link(action, label),
+        None => request,
+    }
     .render()
 }
 
 pub(crate) fn inline_root(permission: &PermissionView, state: &ViewState, compact: bool) -> Element {
+    let summary = with_element(
+        summary(&permission.tool_name, &permission.arguments),
+        &permission.tool_name,
+        &permission.arguments,
+        &state.browser_refs,
+    );
     notice(
         &root_target(permission, state),
-        with_element(
-            summary(&permission.tool_name, &permission.arguments),
-            &permission.tool_name,
-            &permission.arguments,
-            &state.browser_refs,
-        ),
+        with_image(summary, &permission.tool_name, &permission.arguments, state),
         "Aprobación pendiente".into(),
         compact,
     )
@@ -602,6 +649,55 @@ mod tests {
     }
 
     #[test]
+    fn an_image_call_asks_with_what_it_will_send_and_the_models_the_user_saved() {
+        let name = crate::image_runtime::TOOL;
+        let mut state = fixture();
+        let card = |state: &ViewState, arguments: Value| {
+            let arguments = arguments.to_string();
+            with_image(summary(name, &arguments), name, &arguments, state)
+        };
+        let asked = card(
+            &state,
+            json!({"prompt":"Un faro\nal amanecer","path":"assets/hero.png","size":"1536x1024"}),
+        );
+        assert_eq!((asked.title.as_str(), asked.icon), ("Generar imagen", Icon::Image));
+        assert_eq!(
+            asked.target,
+            "assets/hero.png · 1536x1024 · calidad media · OpenAI GPT Image 2 · puede tener costo — «Un faro al amanecer»"
+        );
+        assert_eq!(asked.link, Some(("image_settings_open", "Cambiar modelo o calidad")));
+        // The saved choice is what the card names, as the call will send it:
+        // a level the model lacks reads as its highest.
+        state.image_model = "gpt-image-2.5-flare".into();
+        state.image_quality = "max".into();
+        let arguments = json!({"prompt":"x".repeat(4000),"path":"a.png"});
+        let asked = card(&state, arguments.clone());
+        assert!(asked.target.starts_with("a.png · tamaño automático · calidad máxima · OpenAI GPT Image 2.5 Flare · puede tener costo — «xxx"));
+        assert!(asked.target.ends_with("x…»") && asked.target.len() < 800, "{}", asked.target);
+        state.image_model = "gpt-image-1-mini".into();
+        assert!(card(&state, arguments).target.contains("· calidad alta · OpenAI GPT Image 1 mini ·"));
+        // No other tool gets the link, and the card offers it as an action.
+        assert_eq!(summary("write_file", r#"{"path":"a.png"}"#).link, None);
+        state.pending_permissions[0].tool_name = name.into();
+        state.pending_permissions[0].arguments = json!({"prompt":"Un faro","path":"faro.png"}).to_string();
+        for width in [350.0, 900.0] {
+            let mut tree = UiTree::new(inline_root(&state.pending_permissions[0], &state, width < 470.0));
+            let frame = tree.layout(Size::new(width, 600.0));
+            // A narrow card wraps the target: its words are all there.
+            for word in ["faro.png", "alta", "mini", "costo"] {
+                assert!(texts(&frame).contains(word), "{word} at {width}");
+            }
+            assert_eq!(
+                click(&mut tree, &frame, "image_settings_open"),
+                [UiAction::Clicked { id: "image_settings_open".into() }]
+            );
+            for region in frame.regions.iter().filter(|region| region.kind == HitKind::Button) {
+                assert!(region.rect.x >= 0.0 && region.rect.x + region.rect.width <= width);
+            }
+        }
+    }
+
+    #[test]
     fn a_browser_ref_is_shown_with_the_role_and_name_the_last_snapshot_gave_it() {
         let snapshot = "- heading \"Cuenta\" [level=1] [ref=e1]\n- button \"Guardar\" [ref=e12] [cursor=pointer]\n- textbox [ref=e5]: ada@example.test\n- button \"Cancelar\\\" [ref=e13]\" [ref=e40]\n- tree \"Archivos\" [ref=e41]";
         let card = |tool: &str, arguments: Value| {
@@ -736,6 +832,11 @@ mod tests {
                     "mcp__project_docs__publish",
                     json!({"document_id":"introduction", "visibility":"team"}),
                 ),
+                (
+                    "generate-image",
+                    crate::image_runtime::TOOL,
+                    json!({"prompt":"Ilustración isométrica de un faro sobre un acantilado al amanecer, con niebla baja sobre el mar, paleta cálida y trazo limpio, sin texto", "path":"docs/assets/portada-faro.png", "size":"1536x1024"}),
+                ),
             ] {
                 let mut state = fixture();
                 state.selected_session_title = Some("Revisar los cambios del proyecto".into());
@@ -841,6 +942,14 @@ mod tests {
                         &mut pixmap.as_mut(),
                     );
                     pixmap.save_png(path.with_extension("png")).unwrap();
+                    if scenario == "generate-image" {
+                        crate::view::ide_visual_tests::export_shot(
+                            &frame,
+                            viewport,
+                            "agent-tools",
+                            &format!("image-approval-{width:.0}"),
+                        );
+                    }
                     context.end_pass().textures_delta.clear();
                 }
             }

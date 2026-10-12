@@ -630,7 +630,11 @@ fn reject_reparse_components(root: &Path, relative: &Path) -> Result<(), AgentEr
     Ok(())
 }
 
-fn writable_workspace_path(workspace: &Path, requested: &str) -> Result<PathBuf, AgentError> {
+/// The file `write_file` would write for `requested`: a path relative to the
+/// workspace or absolute inside it, whose parent directory exists and is not
+/// reached through a link. The file itself may be absent; a link or a
+/// directory in its place is refused.
+pub fn writable_workspace_path(workspace: &Path, requested: &str) -> Result<PathBuf, AgentError> {
     let root = workspace.canonicalize().map_err(tool_io_error)?;
     let relative = workspace_relative_path(workspace, &root, requested)?;
     if !relative
@@ -667,7 +671,10 @@ fn writable_workspace_path(workspace: &Path, requested: &str) -> Result<PathBuf,
     }
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), AgentError> {
+/// Write `bytes` beside `path` and rename over it, so a reader never sees a
+/// partial file. Replaces whatever `path` held; pass a path that
+/// `writable_workspace_path` returned.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), AgentError> {
     let parent = path
         .parent()
         .ok_or_else(|| AgentError::Tool("path has no parent directory".into()))?;

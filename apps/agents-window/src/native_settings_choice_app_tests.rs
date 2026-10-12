@@ -24,7 +24,7 @@ fn frame(app: &mut AgentsWindow, width: f32) -> openide_ui::Frame {
         true,
     ));
     app.tree.set_reduced_motion(true);
-    app.tree.layout(Size::new(width, 2_000.0))
+    app.tree.layout(Size::new(width, 2_400.0))
 }
 
 fn export_visual(frame: &openide_ui::Frame, width: f32, choice: &str) {
@@ -34,12 +34,12 @@ fn export_visual(frame: &openide_ui::Frame, width: f32, choice: &str) {
     let directory = PathBuf::from(directory);
     std::fs::create_dir_all(&directory).unwrap();
     let path = directory.join(format!("settings-choice-{choice}-{width:.0}.svg"));
-    crate::settings_ui::visual_qa::write_frame_svg(frame, &path, width, 2_000.0).unwrap();
+    crate::settings_ui::visual_qa::write_frame_svg(frame, &path, width, 2_400.0).unwrap();
     let mut options = resvg::usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
     let svg = std::fs::read_to_string(&path).unwrap();
     let tree = resvg::usvg::Tree::from_str(&svg, &options).unwrap();
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, 2_000).unwrap();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, 2_400).unwrap();
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::identity(),

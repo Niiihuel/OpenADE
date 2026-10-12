@@ -725,6 +725,7 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         ));
     }
     content.extend([
+        image_generation_group(state, compact),
         settings_parts::settings_group(
             "Herramientas del agente nativo",
             vec![
@@ -778,6 +779,53 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
         );
     }
     content
+}
+
+/// The model and quality `generate_image` sends, chosen like any other
+/// setting of the agent. The quality shown is the one the model takes.
+fn image_generation_group(state: &ViewState, compact: bool) -> Element {
+    use crate::image_runtime::{image_choice, quality_label, IMAGE_MODELS};
+    let (model, quality) = image_choice(&state.image_model, &state.image_quality);
+    settings_parts::settings_group(
+        "Generación de imágenes",
+        vec![
+            settings_parts::settings_row(
+                "Modelo",
+                "El modelo de OpenAI con el que el agente genera una imagen, en todas las conversaciones. Cada imagen puede tener costo y siempre pide tu aprobación. Si tu cuenta no admite el modelo, la herramienta lo informa y no guarda nada.",
+                settings_choice_selector(
+                    state,
+                    "image_model",
+                    model.label,
+                    IMAGE_MODELS
+                        .iter()
+                        .map(|known| {
+                            DropdownOption::new(format!("image_model:{}", known.id), known.label)
+                                .selected(known.id == model.id)
+                        })
+                        .collect(),
+                ),
+                compact,
+            ),
+            settings_parts::settings_row(
+                "Calidad",
+                "Los niveles que admite el modelo elegido. Más calidad tarda más y cuesta más.",
+                settings_choice_selector(
+                    state,
+                    "image_quality",
+                    quality_label(quality),
+                    model
+                        .qualities
+                        .iter()
+                        .map(|level| {
+                            DropdownOption::new(format!("image_quality:{level}"), quality_label(level))
+                                .selected(*level == quality)
+                        })
+                        .collect(),
+                ),
+                compact,
+            ),
+        ],
+    )
 }
 
 fn selected_native_route(
@@ -2893,6 +2941,81 @@ mod tests {
             }
             state.running = false;
             state.settings_choice_menu_open = None;
+        }
+    }
+
+    #[test]
+    fn image_generation_offers_every_model_and_only_the_qualities_of_the_chosen_one() {
+        let mut state = crate::view::tests::empty_state();
+        for width in [360.0, 900.0] {
+            let compact = width < 640.0;
+            let page = |state: &ViewState| Element::column(agent_page(state, compact));
+            let mut tree = UiTree::new(page(&state));
+            tree.set_reduced_motion(true);
+            let frame = tree.layout(Size::new(width, 10000.0));
+            for label in ["Generación de imágenes", "Modelo", "Calidad", "GPT Image 2", "Media"] {
+                assert!(paints_label(&frame, label), "{label} at {width}");
+            }
+            state.settings_choice_menu_open = Some("image_model".into());
+            tree.set_root(page(&state));
+            let frame = tree.layout(Size::new(width, 10000.0));
+            for model in &crate::image_runtime::IMAGE_MODELS {
+                assert!(tree.focus(&format!("image_model:{}", model.id)), "{}", model.id);
+            }
+            assert_eq!(
+                tree.handle_event(key(Key::Enter)),
+                vec![UiAction::Clicked { id: "image_model:gpt-image-1-mini".into() }]
+            );
+            let surface = frame
+                .regions
+                .iter()
+                .find(|region| region.id == "popover_surface:settings_choice_dismiss")
+                .unwrap()
+                .rect;
+            assert!(surface.x >= 0.0 && surface.x + surface.width <= width);
+            // The saved level stays; the selector shows what the model takes.
+            for (model, quality, shown, highest) in [
+                ("gpt-image-2", "max", "Alta", false),
+                ("gpt-image-2.5-flare", "max", "Máxima", true),
+            ] {
+                state.image_model = model.into();
+                state.image_quality = quality.into();
+                state.settings_choice_menu_open = None;
+                tree.set_root(page(&state));
+                assert!(paints_label(&tree.layout(Size::new(width, 10000.0)), shown));
+                state.settings_choice_menu_open = Some("image_quality".into());
+                tree.set_root(page(&state));
+                tree.layout(Size::new(width, 10000.0));
+                assert!(tree.focus("image_quality:low") && tree.focus("image_quality:high"));
+                assert_eq!(tree.focus("image_quality:max"), highest, "{model}");
+            }
+            state = crate::view::tests::empty_state();
+        }
+    }
+
+    #[test]
+    #[ignore = "exports the image generation settings as PNG under docs/ui-separation/shots/agent-tools"]
+    fn export_image_generation_settings_visual_review() {
+        for width in [360.0, 900.0] {
+            for (name, open, height) in [("image-settings", None, 300.0), ("image-settings-open", Some("image_quality"), 420.0)] {
+                let mut state = crate::view::tests::empty_state();
+                state.image_model = "gpt-image-2.5-flare".into();
+                state.settings_choice_menu_open = open.map(str::to_owned);
+                let size = Size::new(width, height);
+                let root = Element::panel(
+                    Element::column(vec![image_generation_group(&state, width < 640.0)]).padding(16.0),
+                )
+                .background(theme::BACKGROUND);
+                let (context, mut tree) = crate::view::ide_visual_tests::native_tree(root);
+                let frame = tree.layout(size);
+                crate::view::ide_visual_tests::export_shot(
+                    &frame,
+                    size,
+                    "agent-tools",
+                    &format!("{name}-{width:.0}"),
+                );
+                context.end_pass().textures_delta.clear();
+            }
         }
     }
 

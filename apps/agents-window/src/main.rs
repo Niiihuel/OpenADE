@@ -85,6 +85,7 @@ mod github_contributions;
 mod github_worker;
 mod home;
 mod ide_workspace;
+mod image_runtime;
 mod ide_editor_empty;
 mod ide_search;
 mod keymap;

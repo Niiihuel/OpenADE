@@ -4750,6 +4750,17 @@ impl AgentsWindow {
         valid_owner.then(|| runtime.mcp_client())
     }
 
+    /// Image generation writes a file, and a tool this window serves is not
+    /// held back by the write permission: it is offered only where
+    /// `write_file` is.
+    fn image_client_for(&self, workspace: &Path) -> Option<crate::image_runtime::ImageMcpClient> {
+        self.agent_tool_settings
+            .permissions()
+            .write_file
+            .then(|| crate::image_runtime::ImageMcpClient::connected(&self.data_root, workspace))
+            .flatten()
+    }
+
     /// A browser call waits for approval: its card describes a ref from the
     /// accessible tree the agent read it in.
     fn remember_browser_refs(&mut self, tool_name: &str) {
@@ -6585,6 +6596,8 @@ impl AgentsWindow {
             native_output_limit_messages: false,
             native_output_limit_load_error: None,
             hosted_web_search_mode: settings_preferences.hosted_web_search_mode,
+            image_model: settings_preferences.image_model.clone(),
+            image_quality: settings_preferences.image_quality.clone(),
             catalog: catalog.map(Arc::new),
             catalog_status,
             catalog_refreshing: false,
@@ -13168,7 +13181,9 @@ impl AgentsWindow {
                 browser,
             );
             if self.view.turn_mode == TurnMode::Build {
-                environment = environment.with_plugins(self.data_root.clone());
+                environment = environment
+                    .with_plugins(self.data_root.clone())
+                    .with_image_generation(self.image_client_for(&stored.session.workspace));
             }
             runner = runner.with_tool_preparation(Arc::new(environment));
             if let (Some(budget), Some(checkpoints)) = (token_budget, auto_checkpoints) {
@@ -14088,7 +14103,8 @@ impl AgentsWindow {
                             settings.servers,
                             self.browser_client_for_current_scope(),
                         )
-                        .with_plugins(self.data_root.clone()),
+                        .with_plugins(self.data_root.clone())
+                        .with_image_generation(self.image_client_for(workspace)),
                     ) as Arc<dyn openide_harness::ToolPreparation>,
                 ),
                 Err(error) => {
@@ -19171,7 +19187,7 @@ impl AgentsWindow {
                     && matches!(
                         (self.view.settings_page, choice),
                         (SettingsPage::Data, "organization" | "sort")
-                            | (SettingsPage::Agent, "isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search")
+                            | (SettingsPage::Agent, "isolation" | "review_model" | "review_provider" | "review_pick" | "native_web_search" | "image_model" | "image_quality")
                             | (SettingsPage::ExternalAgents, "external_permission")
                             | (SettingsPage::Browser, "chat_links")
                     );
@@ -19412,6 +19428,35 @@ impl AgentsWindow {
                         }
                     }
                 }
+            }
+            // Saved for every conversation; the next approved call reads it.
+            UiAction::Clicked { id }
+                if id.starts_with("image_model:") || id.starts_with("image_quality:") =>
+            {
+                use crate::image_runtime::{image_choice, IMAGE_MODELS};
+                self.view.settings_choice_menu_open = None;
+                let mut next = self.settings_preferences.clone();
+                let known = match id.split_once(':') {
+                    Some(("image_model", model)) => IMAGE_MODELS
+                        .iter()
+                        .any(|known| known.id == model)
+                        .then(|| next.image_model = model.to_owned()),
+                    Some((_, quality)) => (image_choice(&next.image_model, quality).1 == quality)
+                        .then(|| next.image_quality = quality.to_owned()),
+                    None => None,
+                };
+                let (model, quality) = (next.image_model.clone(), next.image_quality.clone());
+                if known.is_some()
+                    && self.commit_settings_preferences(next, "Generación de imágenes guardada")
+                {
+                    self.view.image_model = model;
+                    self.view.image_quality = quality;
+                }
+            }
+            // From a pending image approval: where its model and quality are chosen.
+            UiAction::Clicked { id } if id == "image_settings_open" => {
+                self.view.show_settings = true;
+                self.apply_action(UiAction::Clicked { id: "settings_page:agent".into() }, ctx);
             }
             UiAction::Clicked { id } if id == "native_output_limit_save" => {
                 self.save_output_limit_editor(false)
@@ -23977,6 +24022,41 @@ mod tests {
         );
         app.apply_action(clicked("native_web_search:off"), &ctx);
         assert_eq!(app.view.hosted_web_search_mode, None);
+    }
+
+    #[test]
+    fn image_choices_persist_reopen_and_the_tool_is_bound_only_where_files_are_written() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let mut app = AgentsWindow::with_data_root(root.path().to_path_buf());
+        let ctx = egui::Context::default();
+        let chosen = |app: &AgentsWindow| (app.view.image_model.clone(), app.view.image_quality.clone());
+        assert_eq!(chosen(&app), ("gpt-image-2".into(), "medium".into()));
+        app.apply_action(clicked("image_model:gpt-image-2.5-sunburst"), &ctx);
+        app.apply_action(clicked("image_quality:xhigh"), &ctx);
+        assert_eq!(chosen(&app), ("gpt-image-2.5-sunburst".into(), "xhigh".into()));
+        // A model this build lacks, or a level the chosen model does not
+        // take, changes nothing.
+        app.apply_action(clicked("image_model:retired-model"), &ctx);
+        app.apply_action(clicked("image_model:gpt-image-1.5"), &ctx);
+        app.apply_action(clicked("image_quality:max"), &ctx);
+        assert_eq!(chosen(&app), ("gpt-image-1.5".into(), "xhigh".into()));
+        let saved = SettingsPreferences::load(root.path());
+        assert_eq!((saved.image_model, saved.image_quality), chosen(&app));
+        let reopened = AgentsWindow::with_data_root(root.path().to_path_buf());
+        assert_eq!(chosen(&reopened), chosen(&app));
+
+        // The link of a pending image approval leads to where they are chosen.
+        app.view.show_settings = false;
+        app.apply_action(clicked("image_settings_open"), &ctx);
+        assert!(app.view.show_settings && app.view.settings_page == SettingsPage::Agent);
+
+        // A connected provider is not enough: no write permission, no tool.
+        crate::image_runtime::tests::connect_plan(root.path());
+        app.agent_tool_settings.set(LocalTool::WriteFile, false);
+        assert!(app.image_client_for(workspace.path()).is_none());
+        app.agent_tool_settings.set(LocalTool::WriteFile, true);
+        assert!(app.image_client_for(workspace.path()).is_some());
     }
 
     #[test]

@@ -474,6 +474,10 @@ pub struct ViewState {
     pub native_output_limit_messages: bool,
     pub native_output_limit_load_error: Option<String>,
     pub hosted_web_search_mode: Option<HostedWebSearchMode>,
+    /// The saved image model and quality, as chosen: what the Settings row
+    /// and a pending image approval show.
+    pub image_model: String,
+    pub image_quality: String,
     pub catalog: Option<Arc<CatalogSnapshot>>,
     pub catalog_status: String,
     pub catalog_refreshing: bool,
@@ -3906,6 +3910,8 @@ pub(crate) mod tests {
             native_output_limit_messages: false,
             native_output_limit_load_error: None,
             hosted_web_search_mode: None,
+            image_model: crate::image_runtime::IMAGE_MODELS[0].id.into(),
+            image_quality: crate::image_runtime::DEFAULT_QUALITY.into(),
             catalog: None,
             catalog_status: String::new(),
             catalog_refreshing: false,
