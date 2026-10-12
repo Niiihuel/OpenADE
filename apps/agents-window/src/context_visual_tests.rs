@@ -697,9 +697,12 @@ fn compaction_action_is_scoped_keyboard_accessible_and_never_invented_at_home() 
         let row = region(&frame, &format!("{CONTEXT_CARD}:share:conversation"));
         let details = region(&frame, "composer_context_copy_diagnostic");
         let popup = region(&frame, "popover_surface:composer_context_dismiss");
-        assert!(compact.width > 0.0 && compact.height >= 28.0);
-        // In the conversation's row, after its label and inside the card's inset.
-        assert!(compact.y == row.y && compact.x >= row.x + row.width);
+        // A dense control with a fill of its own, centred in the conversation's
+        // row, after its label and inside the card's inset.
+        assert!(compact.width > 0.0 && compact.height >= 24.0);
+        assert!(compact.y > row.y && compact.y + compact.height < row.y + row.height);
+        assert_eq!(compact.y - row.y, row.y + row.height - (compact.y + compact.height));
+        assert!(compact.x >= row.x + row.width);
         assert!(compact.x + compact.width <= popup.x + popup.width - 16.0);
         // The diagnostic copy sits in the header, above the rows.
         assert!(details.y + details.height <= compact.y);
