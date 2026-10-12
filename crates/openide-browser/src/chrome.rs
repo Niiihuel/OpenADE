@@ -238,7 +238,10 @@ fn above_standard(descriptor: OwnedFd) -> io::Result<OwnedFd> {
     Ok(unsafe { OwnedFd::from_raw_fd(duplicate) })
 }
 
-struct PrivateDirectory {
+/// A directory only this user can read, short enough for the sockets
+/// Chromium creates below it. Dropping it removes it; one whose owner died is
+/// collected by the next `create` under the same root.
+pub struct PrivateDirectory {
     path: PathBuf,
     /// Held locked for as long as the directory is in use; the kernel releases
     /// it if this process dies, which is how a later sweep recognises a leak.
@@ -247,7 +250,13 @@ struct PrivateDirectory {
 }
 
 impl PrivateDirectory {
-    fn create(preferred: Option<&Path>) -> io::Result<Self> {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Under `preferred` when that is short enough and exists, else under the
+    /// inherited temporary directory, else under `/tmp`.
+    pub fn create(preferred: Option<&Path>) -> io::Result<Self> {
         let inherited = ["TMPDIR", "TMP", "TEMP"]
             .into_iter()
             .filter_map(|name| std::env::var_os(name).map(PathBuf::from))

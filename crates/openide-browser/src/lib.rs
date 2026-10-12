@@ -23,6 +23,8 @@ mod testing;
 pub mod transport;
 
 pub use actions::MouseButton;
+#[cfg(unix)]
+pub use chrome::PrivateDirectory;
 pub use driver::{
     Capture, Driver, Evaluated, PageInfo, Png, Snapshot, Target, MAX_ARIA_BYTES, MAX_EVALUATE_BYTES,
     MAX_INPUT_TEXT_BYTES, MAX_SCREENSHOT_BYTES, MAX_SELECTION_BYTES, MAX_URL_BYTES, TIMEOUT,
