@@ -1,0 +1,14 @@
+[package]
+name = "openide-cef"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+description = "Chromium embedded through CEF, without a window and without the GPU, for the project browser"
+
+# Not a member of the workspace: building it needs CEF itself, which only
+# `nix/shell-cef.nix` provides. `agents-window --features cef` is what uses it.
+
+[dependencies]
+cef = { git = "https://github.com/tauri-apps/cef-rs", rev = "2861f6991fae3ee31f877891382adcbc9b9f0953", default-features = false }
+openide-browser = { path = "../openide-browser" }
+libc = "0.2"
