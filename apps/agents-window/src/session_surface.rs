@@ -2947,6 +2947,39 @@ pub(crate) fn plan_snapshot_item(
     )
 }
 
+/// How a plan step stands: done, the one in progress, or still to do.
+pub(crate) fn plan_step_marker(status: PlanStepStatus) -> Element {
+    // Use vector marks: the bundled UI font does not cover every
+    // Unicode circle/check glyph, and must not show missing-glyph boxes.
+    match status {
+        PlanStepStatus::Completed => Element::icon(Icon::CheckCircle)
+            .foreground(theme::FOREGROUND_SUBTLE)
+            .size(Some(14.0), Some(14.0)),
+        status => Element::panel(if status == PlanStepStatus::InProgress {
+            Element::spacer()
+                .size(Some(6.0), Some(6.0))
+                .background(theme::BRAND)
+                .radius(3.0)
+                .centered_x()
+                .size(None, Some(6.0))
+                .centered_y()
+        } else {
+            Element::spacer()
+        })
+        .size(Some(14.0), Some(14.0))
+        .center_content()
+        .border(
+            if status == PlanStepStatus::InProgress {
+                theme::BRAND
+            } else {
+                theme::FOREGROUND_SUBTLE
+            },
+            1.0,
+        )
+        .radius(7.0),
+    }
+}
+
 fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> Element {
     let completed = plan
         .snapshot
@@ -2983,37 +3016,8 @@ fn session_plan_card(session_id: &str, plan: &SessionPlanView, title: &str) -> E
         .iter()
         .enumerate()
         .map(|(index, step)| {
-            // Use vector marks: the bundled UI font does not cover every
-            // Unicode circle/check glyph, and must not show missing-glyph boxes.
-            let marker = match step.status {
-                PlanStepStatus::Completed => Element::icon(Icon::CheckCircle)
-                    .foreground(theme::FOREGROUND_SUBTLE)
-                    .size(Some(14.0), Some(14.0)),
-                status => Element::panel(if status == PlanStepStatus::InProgress {
-                    Element::spacer()
-                        .size(Some(6.0), Some(6.0))
-                        .background(theme::BRAND)
-                        .radius(3.0)
-                        .centered_x()
-                        .size(None, Some(6.0))
-                        .centered_y()
-                } else {
-                    Element::spacer()
-                })
-                .size(Some(14.0), Some(14.0))
-                .center_content()
-                .border(
-                    if status == PlanStepStatus::InProgress {
-                        theme::BRAND
-                    } else {
-                        theme::FOREGROUND_SUBTLE
-                    },
-                    1.0,
-                )
-                .radius(7.0),
-            };
             Element::row(vec![
-                marker,
+                plan_step_marker(step.status),
                 Text::new(
                     format!("{}. {}", index + 1, step.step),
                     theme::component_palette(),
