@@ -1649,7 +1649,7 @@ fn data_root() -> PathBuf {
         }
     }
     if let Some(base) = std::env::var_os("APPDATA") {
-        return PathBuf::from(base).join("OpenIDE");
+        return PathBuf::from(base).join("openADE");
     }
     if let Some(base) = std::env::var_os("XDG_DATA_HOME") {
         return PathBuf::from(base).join("openide");
@@ -3359,13 +3359,13 @@ impl AgentsWindow {
                 return Err("Espera a que termine la ejecución".into());
             }
             if self.view.selected_backend != "native" {
-                return Err("Selecciona una conversación nativa de OpenIDE".into());
+                return Err("Selecciona una conversación nativa de openADE".into());
             }
             let id = self
                 .view
                 .selected_session
                 .as_deref()
-                .ok_or_else(|| "Selecciona una conversación nativa de OpenIDE".to_owned())?;
+                .ok_or_else(|| "Selecciona una conversación nativa de openADE".to_owned())?;
             let store = self
                 .store
                 .as_ref()
@@ -7536,6 +7536,14 @@ impl AgentsWindow {
                         .cloned()
                 })
                 .collect();
+            self.view.automations.models = self
+                .view
+                .composer_routes
+                .iter()
+                .map(|route| {
+                    (route.provider_id.clone(), route.model_id.clone(), format!("{} · {}", route.provider_name, route.model_name))
+                })
+                .collect();
             self.view.automations.busy_ids = self
                 .background_automation_runs
                 .iter()
@@ -8113,6 +8121,7 @@ impl AgentsWindow {
             ("automation_once_date", once_date),
             ("automation_once_time", once_time),
             ("automation_interval", form.interval_minutes.as_str()),
+            ("automation_month_day", form.month_day.as_str()),
             ("automation_time", form.time.as_str()),
         ] {
             self.tree.set_input_value(id, value);
@@ -8174,8 +8183,16 @@ impl AgentsWindow {
             .and_then(|day| day.parse::<u8>().ok())
         {
             if day < 7 {
-                state.form.weekday = day;
+                // A day is added or taken out; the last one stays.
+                let toggled = state.form.weekdays ^ (1 << day);
+                if toggled != 0 {
+                    state.form.weekdays = toggled;
+                }
             }
+            return;
+        }
+        if id == "automation_weekdays_work" {
+            state.form.weekdays = crate::automations::WORKDAYS;
             return;
         }
         if let Some(backend) = id.strip_prefix("automation_backend:") {
@@ -8189,6 +8206,20 @@ impl AgentsWindow {
         }
         if id == "automation_native_current" {
             state.form.native_provider = Some(current_native);
+            return;
+        }
+        if let Some((provider, model, _)) = id
+            .strip_prefix("automation_model:")
+            .and_then(|index| state.models.get(index.parse::<usize>().ok()?))
+        {
+            // Its own endpoint goes with the provider it was written for.
+            let custom_endpoint =
+                if *provider == current_native.provider_id { current_native.custom_endpoint } else { String::new() };
+            state.form.native_provider = Some(crate::native_provider::NativeProviderSettings {
+                provider_id: provider.clone(),
+                model_id: model.clone(),
+                custom_endpoint,
+            });
             return;
         }
         match id {
@@ -17887,6 +17918,13 @@ impl AgentsWindow {
                 self.marketplace_operation(MarketplaceOperation::Load);
                 self.visit_navigation();
             }
+            UiAction::Clicked { id } if id == "automation_quit_confirm" || id == "automation_quit_cancel" => {
+                self.view.automations.quit_pending = false;
+                if id == "automation_quit_confirm" {
+                    self.view.automations.quit_allowed = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
             UiAction::Clicked { id } if id.starts_with("automation_") => {
                 self.handle_automation_action(&id);
             }
@@ -20679,9 +20717,9 @@ impl AgentsWindow {
             UiAction::Clicked { id } if id == "external_agents_enabled" => {
                 let mut next = self.external_agent_settings;
                 let message = if next.toggle_enabled() {
-                    "Herramientas de OpenIDE ofrecidas a las CLIs externas"
+                    "Herramientas de openADE ofrecidas a las CLIs externas"
                 } else {
-                    "Herramientas de OpenIDE cerradas para las CLIs externas"
+                    "Herramientas de openADE cerradas para las CLIs externas"
                 };
                 self.commit_external_agent_settings(next, message);
             }
@@ -20707,10 +20745,10 @@ impl AgentsWindow {
                     next.set_permission_mode(mode);
                     let message = match mode {
                         ExternalPermissionMode::MirrorCli => {
-                            "Las herramientas de OpenIDE siguen el modo de permisos de la CLI"
+                            "Las herramientas de openADE siguen el modo de permisos de la CLI"
                         }
                         ExternalPermissionMode::AlwaysAsk => {
-                            "OpenIDE pedirá aprobación en cada llamada externa"
+                            "openADE pedirá aprobación en cada llamada externa"
                         }
                     };
                     self.commit_external_agent_settings(next, message);
@@ -21135,6 +21173,7 @@ impl AgentsWindow {
                 }
                 "automation_once_time" => self.view.automations.form.set_once_time(&value),
                 "automation_interval" => self.view.automations.form.interval_minutes = value,
+                "automation_month_day" => self.view.automations.form.month_day = value,
                 "automation_time" => self.view.automations.form.time = value,
                 "marketplace_search" => self.set_marketplace_query(value),
                 "marketplace_source_draft" => self.view.marketplace.source_draft = value,
@@ -21472,6 +21511,15 @@ impl eframe::App for AgentsWindow {
         self.expire_text_paste_request();
         let quit_confirm_before = self.view.code_editor_quit_confirm;
         self.guard_editor_close(&ctx);
+        // Closing with tasks running stops them: it is asked first.
+        if ctx.input(|input| input.viewport().close_requested())
+            && !self.view.automations.quit_allowed
+            && !self.view.code_editor_quit_confirm
+            && (!self.background_automation_runs.is_empty() || !self.automation_queue.is_empty())
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.view.automations.quit_pending = true;
+        }
         self.guard_debugger_close(&ctx);
         early_changed |= quit_confirm_before != self.view.code_editor_quit_confirm;
         early_changed |= self.sync_external_approval(&ctx);

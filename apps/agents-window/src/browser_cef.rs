@@ -418,10 +418,10 @@ impl Embedded {
                 };
             }
             static SAID: std::sync::Once = std::sync::Once::new();
-            SAID.call_once(|| eprintln!("OpenIDE: el navegador embebido (CEF) no pudo iniciarse. {reason}"));
+            SAID.call_once(|| eprintln!("openADE: el navegador embebido (CEF) no pudo iniciarse. {reason}"));
             StartFailure {
                 code: "engine_failed",
-                message: format!("{reason} El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar."),
+                message: format!("{reason} El navegador embebido se inicia una sola vez por ejecución: cerrá openADE y volvé a abrirlo para reintentar."),
             }
         })
     }

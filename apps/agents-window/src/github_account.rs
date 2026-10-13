@@ -756,7 +756,7 @@ fn connect_with_gcm(
             } else {
                 unverified_accounts(
                     accounts,
-                    Some("Elige la cuenta que quieres usar en OpenIDE.".to_owned()),
+                    Some("Elige la cuenta que quieres usar en openADE.".to_owned()),
                 )
             }
         }

@@ -103,7 +103,7 @@ fn without_its_broker_the_executable_refuses_to_start_and_opens_no_window() {
         assert_eq!(output.stdout, b"");
         assert_eq!(
             String::from_utf8_lossy(&output.stderr),
-            "Missing scoped OpenIDE browser broker configuration.\n"
+            "Missing scoped openADE browser broker configuration.\n"
         );
     }
     assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);

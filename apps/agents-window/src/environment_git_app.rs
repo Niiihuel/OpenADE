@@ -716,7 +716,7 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         for args in [
             vec!["init", "--initial-branch=main"],
-            vec!["config", "user.name", "OpenIDE Test"],
+            vec!["config", "user.name", "openADE Test"],
             vec!["config", "user.email", "openide-test@example.invalid"],
             vec!["config", "commit.gpgsign", "false"],
             vec!["config", "core.hooksPath", "/dev/null"],
@@ -870,7 +870,7 @@ mod tests {
         let clone = directory.path().join("clone");
         git(directory.path(), &["clone", "-q", remote.to_str().unwrap(), clone.to_str().unwrap()]);
         for (key, value) in [
-            ("user.name", "OpenIDE Test"),
+            ("user.name", "openADE Test"),
             ("user.email", "openide-test@example.invalid"),
             ("commit.gpgsign", "false"),
         ] {

@@ -46,7 +46,7 @@ fn fixture_image() -> RasterImage {
       <path d="M0 58H640" stroke="#e6e9ee"/>
       <text x="28" y="36" font-family="sans-serif" font-size="18" fill="#182233">Proyecto local</text>
       <text x="28" y="122" font-family="sans-serif" font-size="27" fill="#182233">Una vista de tu aplicación</text>
-      <text x="28" y="154" font-family="sans-serif" font-size="15" fill="#607087">Fixture visual del navegador de OpenIDE.</text>
+      <text x="28" y="154" font-family="sans-serif" font-size="15" fill="#607087">Fixture visual del navegador de openADE.</text>
       <rect x="28" y="188" width="584" height="184" rx="12" fill="#fff" stroke="#e6e9ee"/>
       <text x="48" y="228" font-family="sans-serif" font-size="16" fill="#182233">Nombre del proyecto</text>
       <rect x="48" y="244" width="544" height="40" rx="7" fill="#f7f8fb" stroke="#d4dae4"/>
@@ -160,7 +160,7 @@ fn export_browser_ui_visual_review() {
                 "error-engine" => {
                     state.browser.started = false;
                     state.browser.engine_failed = true;
-                    state.browser.error = Some("Falta icudtl.dat junto a /nix/store/pz63ll2vbx0b2141h40y47173hvg1d59-cef-binary-spike-154.0.34/libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá OpenIDE y volvé a abrirlo para reintentar.".into());
+                    state.browser.error = Some("Falta icudtl.dat junto a /nix/store/pz63ll2vbx0b2141h40y47173hvg1d59-cef-binary-spike-154.0.34/libcef.so. El navegador embebido se inicia una sola vez por ejecución: cerrá openADE y volvé a abrirlo para reintentar.".into());
                 }
                 _ => {}
             }

@@ -142,7 +142,7 @@ impl KeymapProfile {
         match self {
             Self::VsCode => "VS Code",
             Self::Zed => "Zed",
-            Self::OpenIde => "OpenIDE clásico",
+            Self::OpenIde => "openADE clásico",
         }
     }
     pub fn description(self) -> &'static str {

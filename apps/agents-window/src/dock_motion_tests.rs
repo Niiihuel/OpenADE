@@ -274,7 +274,7 @@ fn agents_problems_bottom_animates_without_a_terminal_and_can_reverse_midway() {
 }
 
 #[test]
-#[ignore = "exports native IDE dock motion keyframes with the shared OpenIDE mode control"]
+#[ignore = "exports native IDE dock motion keyframes with the shared openADE mode control"]
 fn export_ide_dock_motion_visual_review() {
     let (_root, mut app) = fixture();
     let size = Size::new(1440.0, 900.0);

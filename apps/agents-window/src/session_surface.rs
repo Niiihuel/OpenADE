@@ -63,7 +63,7 @@ const WAITING_LABEL: &str = "Pensando el siguiente paso";
 /// error stays intact in the transcript and journal for replay and diagnosis.
 pub(crate) fn conversation_notice_message(message: &str, is_error: bool) -> &str {
     if is_error && message.contains("subscription_sharing_usage_limit_exceeded") {
-        "Se alcanzó un límite de uso de ChatGPT en OpenIDE. Revisa los límites de esta app en ChatGPT → Configuración → Uso; abre esa página desde Configuración de proveedores → Ver uso."
+        "Se alcanzó un límite de uso de ChatGPT en openADE. Revisa los límites de esta app en ChatGPT → Configuración → Uso; abre esa página desde Configuración de proveedores → Ver uso."
     } else if is_error && message.contains("subscription_sharing_usage_unavailable") {
         "ChatGPT no pudo comprobar la disponibilidad de uso para este turno. Inténtalo de nuevo más tarde."
     } else {
@@ -259,7 +259,7 @@ pub(crate) fn header(
         top.push(header_action(
             "toggle_settings_header",
             Icon::Settings,
-            "Abrir configuración de OpenIDE",
+            "Abrir configuración de openADE",
         ));
     }
     // The title sits in the middle of the header: what stands on one side
@@ -3480,7 +3480,7 @@ pub(crate) fn hook_activity_card(hook: &crate::transcript::HookActivity) -> Elem
         }
     }
     if hook.interrupted {
-        details.push(Text::new("Verifica también el efecto de este hook fuera de OpenIDE. No se repetirá automáticamente.", theme::component_palette()).muted().render());
+        details.push(Text::new("Verifica también el efecto de este hook fuera de openADE. No se repetirá automáticamente.", theme::component_palette()).muted().render());
     }
     Card::new(Element::column(details).gap(6.0), theme::panel_card_palette())
         .density(CardDensity::Roomy)
@@ -3639,7 +3639,7 @@ fn tool_verification_card(
     .render();
     interruption_card(
         "RESULTADO SIN VERIFICAR",
-        "La herramienta pudo haber tenido un efecto antes de la interrupción. Comprueba el resultado fuera de OpenIDE antes de continuar.".into(),
+        "La herramienta pudo haber tenido un efecto antes de la interrupción. Comprueba el resultado fuera de openADE antes de continuar.".into(),
         details,
         [cancel, confirm],
         compact,

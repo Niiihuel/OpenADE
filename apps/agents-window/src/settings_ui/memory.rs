@@ -40,7 +40,7 @@ pub(super) fn page(state: &ViewState, compact: bool) -> Vec<Element> {
             "Conversación nativa",
         ),
         Some(_) => (
-            "Esta conversación usa una CLI externa, que administra su contexto. Los controles nativos requieren una conversación del agente OpenIDE.",
+            "Esta conversación usa una CLI externa, que administra su contexto. Los controles nativos requieren una conversación del agente openADE.",
             "Agente externo",
         ),
         None => (

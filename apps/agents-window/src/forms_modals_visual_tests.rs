@@ -55,7 +55,7 @@ fn page_scene(name: &str, state: ViewState) -> Scene {
 
 fn automation(step: AutomationEditorStep, frequency: AutomationFrequency) -> AutomationViewState {
     let backends = vec![
-        ("native".to_owned(), "OpenIDE".to_owned()),
+        ("native".to_owned(), "openADE".to_owned()),
         ("codex".to_owned(), "Codex".to_owned()),
         ("claude".to_owned(), "Claude Code".to_owned()),
     ];
@@ -67,7 +67,7 @@ fn automation(step: AutomationEditorStep, frequency: AutomationFrequency) -> Aut
     state.form.title = "Resumen diario".into();
     state.form.frequency = frequency;
     state.form.once_at = "2026-03-14T09:30".into();
-    state.form.weekday = 2;
+    state.form.weekdays = 1 << 2;
     state
 }
 

@@ -142,7 +142,7 @@ pub fn notify_system(title: &str, detail: &str) {
             .name("desktop-notification".into())
             .spawn(move || {
                 let _ = notify_rust::Notification::new()
-                    .appname("OpenIDE")
+                    .appname("openADE")
                     .summary(&title)
                     .body(&detail)
                     .show();

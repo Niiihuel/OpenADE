@@ -1107,7 +1107,7 @@ impl BrowserRuntime {
     /// lives only in child environment, never the view state/logs.
     pub(crate) fn external_mcp_config(&self) -> Result<McpStdioConfig, String> {
         let executable = std::env::current_exe()
-            .map_err(|error| format!("No se pudo ubicar el ejecutable de OpenIDE: {error}"))?;
+            .map_err(|error| format!("No se pudo ubicar el ejecutable de openADE: {error}"))?;
         let mut config = McpStdioConfig::new(executable.into_os_string());
         config.args.push(crate::browser_mcp::FLAG.into());
         config.env.insert(
@@ -2558,7 +2558,7 @@ impl McpToolClient for ConversationBrowser {
 fn open_preview_tool() -> McpTool {
     McpTool {
         name: OPEN_PREVIEW.into(),
-        description: Some("Show the user the preview of a local server in the shared OpenIDE browser. Opens `url`, or without it the address the server started in this conversation printed once it answered (for example http://localhost:5173). Only addresses of this machine are accepted: localhost, 127.0.0.1 and [::1], and 0.0.0.0 is opened as localhost. For any other site use browser_navigate.".into()),
+        description: Some("Show the user the preview of a local server in the shared openADE browser. Opens `url`, or without it the address the server started in this conversation printed once it answered (for example http://localhost:5173). Only addresses of this machine are accepted: localhost, 127.0.0.1 and [::1], and 0.0.0.0 is opened as localhost. For any other site use browser_navigate.".into()),
         input_schema: json!({"type":"object","properties":{"url":{"type":"string","minLength":1,"maxLength":4096}},"required":[],"additionalProperties":false}),
         extra: BTreeMap::new(),
     }
@@ -2926,7 +2926,7 @@ pub(crate) fn browser_mcp_tools() -> Vec<McpTool> {
     screenshot["full_page"] = json!({"type":"boolean"});
     add(
         "browser_take_screenshot",
-        "Capture a PNG at CSS pixel scale: the viewport by default, the whole scrollable page with `full_page`, or one element given by `ref`, `role` and `name` or `selector` (which may scroll it into view). A capture above 2 MiB fails; take a smaller region. The image comes back as an image block; OpenIDE's own agent passes it to a model that reads images and tells one that does not. A capture wider or taller than 8000 px is shown to the user and not sent to the model, and a very tall full-page capture reaches the model scaled down until its text cannot be read: read the page with browser_snapshot, and look at it through the viewport or one element.",
+        "Capture a PNG at CSS pixel scale: the viewport by default, the whole scrollable page with `full_page`, or one element given by `ref`, `role` and `name` or `selector` (which may scroll it into view). A capture above 2 MiB fails; take a smaller region. The image comes back as an image block; openADE's own agent passes it to a model that reads images and tells one that does not. A capture wider or taller than 8000 px is shown to the user and not sent to the model, and a very tall full-page capture reaches the model scaled down until its text cannot be read: read the page with browser_snapshot, and look at it through the viewport or one element.",
         screenshot,
         vec![],
     );
@@ -3075,7 +3075,7 @@ mod cef;
 mod cef {
     use super::*;
 
-    const UNAVAILABLE: &str = "Esta versión de OpenIDE sólo incluye su navegador embebido para Linux.";
+    const UNAVAILABLE: &str = "Esta versión de openADE sólo incluye su navegador embebido para Linux.";
 
     #[derive(Default)]
     pub(super) struct Embedded;

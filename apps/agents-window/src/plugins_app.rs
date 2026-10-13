@@ -78,7 +78,7 @@ impl AgentsWindow {
                         PluginOperation::Load => None,
                         PluginOperation::PickFolder => {
                             if let Some(path) =
-                                choose_workspace_folder(project, "Seleccionar plugin de OpenIDE")?
+                                choose_workspace_folder(project, "Seleccionar plugin de openADE")?
                             {
                                 preview = Some(PluginStore::inspect(&path)?);
                             }

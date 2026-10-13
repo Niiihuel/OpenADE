@@ -225,16 +225,16 @@ impl SettingsPage {
         match self {
             Self::General => "Proyecto, inicio y preferencias generales.",
             Self::Appearance => "Tema y movimiento de la interfaz nativa.",
-            Self::Providers => "Conecta tus cuentas y elige modelos para trabajar en OpenIDE.",
+            Self::Providers => "Conecta tus cuentas y elige modelos para trabajar en openADE.",
             Self::Browser => "Acceso del agente a sesiones de navegador.",
             Self::ComputerUse => "Control del escritorio y sus permisos.",
             Self::Terminal => "Shell y comportamiento de la terminal integrada.",
             Self::Shortcuts => "Atajos de navegación y paneles.",
             Self::WorkspaceSearch => "Búsqueda de archivos del proyecto.",
-            Self::Agent => "Proveedor, herramientas y permisos del agente nativo de OpenIDE.",
+            Self::Agent => "Proveedor, herramientas y permisos del agente nativo de openADE.",
             Self::Memory => "Contexto, instrucciones y continuidad de la conversación.",
             Self::Subagents => "Trabajo delegado, permisos y recuperación por conversación.",
-            Self::ExternalAgents => "Herramientas de OpenIDE para Claude Code, Codex y otras CLIs.",
+            Self::ExternalAgents => "Herramientas de openADE para Claude Code, Codex y otras CLIs.",
             Self::Plugins => "Extensiones ejecutables y capacidades instaladas.",
             Self::Mcp => "Servidores de herramientas externos.",
             Self::Skills => "Instrucciones instaladas para el agente.",
@@ -439,7 +439,7 @@ pub fn build_settings_sidebar(state: &ViewState, width: f32) -> Element {
         Icon::ArrowLeft,
         theme::action_palette(theme::SIDEBAR, theme::SETTINGS_FOREGROUND_SUBTLE),
     )
-    .label("Volver a OpenIDE")
+    .label("Volver a openADE")
     .variant(ButtonVariant::Ghost)
     .sizing(crate::ui_sizing::SETTINGS_NAV)
     .render();
@@ -507,7 +507,7 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 settings_parts::switch_row(
                     "settings_reopen_last_workspace",
                     "Reabrir el último proyecto",
-                    "Continúa en la última carpeta al iniciar OpenIDE.",
+                    "Continúa en la última carpeta al iniciar openADE.",
                     state.settings_reopen_last_workspace,
                     true,
                     compact,
@@ -535,7 +535,7 @@ fn general_page(state: &ViewState, compact: bool) -> Vec<Element> {
                 ),
                 settings_parts::settings_row(
                     "Atajos de teclado",
-                    "Consulta las combinaciones disponibles en OpenIDE.",
+                    "Consulta las combinaciones disponibles en openADE.",
                     outline("settings_page:shortcuts", "Ver atajos")
                         .icon(Icon::ArrowRight)
                         .render(),
@@ -667,12 +667,12 @@ fn agent_page(state: &ViewState, compact: bool) -> Vec<Element> {
     };
     let mut content = vec![
         settings_parts::settings_group(
-            "Agente nativo de OpenIDE",
+            "Agente nativo de openADE",
             vec![
                 settings_parts::value_row(
                     "Ejecución nativa",
-                    "OpenIDE administra el contexto, las herramientas y la recuperación de la conversación, y consulta directamente la API del proveedor.",
-                    "OpenIDE",
+                    "openADE administra el contexto, las herramientas y la recuperación de la conversación, y consulta directamente la API del proveedor.",
+                    "openADE",
                     compact,
                 ),
                 settings_parts::settings_row(
@@ -1121,7 +1121,7 @@ fn automations_page(state: &ViewState, compact: bool) -> Vec<Element> {
         ));
     }
     content.push(settings_parts::settings_group("Planificador", vec![
-        page_note("Mientras OpenIDE esté abierto", "El planificador revisa horarios locales con la aplicación en ejecución. Las tareas no se ejecutan cuando está cerrada.", Icon::Clock),
+        page_note("Mientras openADE esté abierto", "El planificador revisa horarios locales con la aplicación en ejecución. Las tareas no se ejecutan cuando está cerrada.", Icon::Clock),
         page_note("Política de ejecución", "Las automatizaciones del agente nativo trabajan en sólo lectura y conservan su configuración de motor y modelo.", Icon::Check),
     ]));
     content
@@ -1166,7 +1166,7 @@ fn data_page(state: &ViewState, compact: bool) -> Vec<Element> {
         ]),
         settings_parts::settings_group("Barra lateral", vec![
             settings_parts::settings_row("Agrupar tareas", "Organiza la navegación por proyecto, grupo o actividad reciente.", organization, compact),
-            settings_parts::settings_row("Ordenar tareas", "La agrupación y el orden se conservan al reiniciar OpenIDE.", sorting, compact),
+            settings_parts::settings_row("Ordenar tareas", "La agrupación y el orden se conservan al reiniciar openADE.", sorting, compact),
         ]),
     ]
 }
@@ -1204,7 +1204,7 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
         GithubAccountStatus::Unverified { accounts, notice } => {
             let mut rows = vec![page_note(
                 "Cuentas guardadas",
-                notice.as_deref().unwrap_or("Elige la cuenta que quieres usar en OpenIDE."),
+                notice.as_deref().unwrap_or("Elige la cuenta que quieres usar en openADE."),
                 Icon::Github,
             )];
             for account in accounts {
@@ -1260,7 +1260,7 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
             compact,
         ));
         management.push(settings_parts::settings_row(
-            "Desconectar de OpenIDE",
+            "Desconectar de openADE",
             "Conserva tus credenciales de GitHub CLI y las demás aplicaciones.",
             outline("github_account_disconnect", "Desconectar")
                 .icon(Icon::CloseCircle)
@@ -1277,7 +1277,7 @@ fn github_page(state: &ViewState, compact: bool, content_width: f32) -> Vec<Elem
         vec![
             page_note(
                 "Repositorio y pull requests",
-                "Las consultas privadas usan la cuenta seleccionada en OpenIDE.",
+                "Las consultas privadas usan la cuenta seleccionada en openADE.",
                 Icon::GitBranch,
             ),
             settings_parts::settings_row(

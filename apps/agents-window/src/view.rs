@@ -1732,7 +1732,7 @@ fn sidebar_for_height(state: &ViewState, width: f32, height: f32) -> Element {
             .render(),
             // TruncatedText vertically centers its line inside the 24 px
             // header row; Text paints at the top and sat above the toggle.
-            Element::truncated_text("OpenIDE")
+            Element::truncated_text("openADE")
                 .foreground(theme::FOREGROUND)
                 .font_family(FontFamily::Sans)
                 .font_size(13.0),
@@ -2380,7 +2380,7 @@ fn workspace_header(state: &ViewState, available: bool, visible: bool, width: f3
             TooltipSpec::new(if state.show_settings {
                 "Volver al chat"
             } else {
-                "Abrir configuración de OpenIDE"
+                "Abrir configuración de openADE"
             })
             .placement(TooltipPlacement::Below)
             .palette(theme::component_palette()),
@@ -3881,6 +3881,15 @@ fn confirmation_dialog(state: &ViewState, base: Element, viewport_width: f32) ->
                 true,
             )
         })
+    } else if state.automations.quit_pending {
+        Some((
+            "¿Salir con automatizaciones en curso?".to_owned(),
+            "Las que están corriendo se cancelan, y ninguna tarea programada se ejecuta mientras openADE está cerrado.".to_owned(),
+            "automation_quit_confirm".to_owned(),
+            "automation_quit_cancel".to_owned(),
+            "Salir".to_owned(),
+            true,
+        ))
     } else if let Some(id) = state.automations.pending_delete_id.as_deref() {
         state
             .automations
@@ -4920,7 +4929,7 @@ pub(crate) mod tests {
                     })
                     .unwrap_or_else(|| panic!("missing {value} at {width}"))
             };
-            let title = text_position("OpenIDE");
+            let title = text_position("openADE");
             let nav = frame
                 .commands
                 .iter()
@@ -8908,7 +8917,7 @@ pub(crate) mod tests {
             path: "README.md".into(),
             page_index: 0,
             content: Some(Ok(PreviewPage {
-                text: "# OpenIDE".into(),
+                text: "# openADE".into(),
                 start_line: 0,
                 end_line: 1,
                 total_lines: Some(1),
