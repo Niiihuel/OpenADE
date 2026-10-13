@@ -2177,7 +2177,6 @@ pub(crate) fn build_composer_with_height(
         palette,
     )
     .auto_grow(requested_minimum.min(editor_maximum), editor_maximum)
-    .compact(compact)
     .attachments(attachments)
     .pill_controls(leading_actions(props), trailing_actions(props))
     .editor_font_size(13.0)

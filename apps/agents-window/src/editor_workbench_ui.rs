@@ -882,6 +882,7 @@ mod compact_menu_tests {
 
     #[test]
     fn compact_context_menu_keeps_primary_actions_legible_and_more_click_connected() {
+        openide_ui::set_labels(openide_ui::Labels::SPANISH);
         let size = Size::new(520.0, 640.0);
         let (ctx, mut tree) = native_tree(editor());
         tree.layout(size);

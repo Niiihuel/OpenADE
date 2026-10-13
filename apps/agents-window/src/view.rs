@@ -1062,7 +1062,7 @@ fn session_row_with_context(
 ) -> Element {
     let selected = state.selected_session.as_deref() == Some(session.id.as_str());
     let menu_open = state.session_menu_id.as_deref() == Some(session.id.as_str());
-    let row_width = (width - 18.0).max(0.0);
+    let row_width = (width - 10.0).max(0.0);
     let (status_marker, menu_button) = session_row_parts(state, session, row_width);
     let mut row = ListRow::new(
         format!("session:{}", session.id),
@@ -1275,14 +1275,16 @@ fn session_row_parts(
     .context_menu_style()
     .width(menu_width)
     .render();
+    // A square slot as tall as the row: the button's own hover keeps the
+    // same air from the row's end as from its top and bottom.
     let menu_button = menu_button
-        .centered_y()
-        .size(Some(SIDEBAR_TOOL_SIZE), Some(SIDEBAR_ROW_HEIGHT));
+        .centered()
+        .size(Some(SIDEBAR_ROW_HEIGHT), Some(SIDEBAR_ROW_HEIGHT));
     (status_marker, menu_button)
 }
 
 fn project_header(project: &str, count: usize, collapsed: bool, width: f32) -> Element {
-    let row_width = (width - 18.0).max(0.0);
+    let row_width = (width - 10.0).max(0.0);
     let action_id = format!("session_project_toggle:{project}");
     TreeRow::new(
         move |content| Element::clickable(action_id, content),
@@ -1309,7 +1311,7 @@ fn group_header(
     count: usize,
     width: f32,
 ) -> Element {
-    let row_width = (width - 18.0).max(0.0);
+    let row_width = (width - 10.0).max(0.0);
     let more = group_menu(state, group, index);
     ListRow::new(
         format!("session_group_toggle:{}", group.id),
@@ -1364,7 +1366,7 @@ fn group_draft_row(draft: &str, width: f32) -> Element {
         .flex(1.0),
     ])
     .gap(sizing.gap - sizing.padding)
-    .size(Some((width - 18.0).max(0.0)), Some(SIDEBAR_ROW_HEIGHT))
+    .size(Some((width - 10.0).max(0.0)), Some(SIDEBAR_ROW_HEIGHT))
 }
 
 /// The More menu of a group heading.
@@ -1621,7 +1623,7 @@ fn sessions_virtual_list(state: &ViewState, width: f32) -> Element {
     // Keep a small, stable end inset so the overlay scrollbar never covers
     // the menu actions on project and session rows.
     let item_width = (width - 8.0).max(0.0);
-    let row_width = (width - 26.0).max(0.0);
+    let row_width = (width - 18.0).max(0.0);
     // Each row keeps its own height at the top of a pitch 2 px taller, so a
     // selected row and a hovered neighbour do not read as one block.
     ScrollArea::uniform_list(
@@ -2860,7 +2862,7 @@ fn file_preview_content(preview: &FilePreviewView, width: f32) -> Element {
                             theme::component_palette(),
                         )
                         .mono()
-                        .size(10.5)
+                        .font_size(10.5)
                         .ink(theme::CODE_GUTTER)
                         .render()
                             .size(Some(gutter_width), Some(16.0)),
@@ -8509,7 +8511,7 @@ pub(crate) mod tests {
         };
         for width in [176.0, 264.0] {
             let frame = UiTree::new(session_row(&state, &session, width))
-                .layout(Size::new(width - 18.0, 28.0));
+                .layout(Size::new(width - 10.0, 28.0));
             let action = frame
                 .regions
                 .iter()
@@ -8524,7 +8526,7 @@ pub(crate) mod tests {
             assert_eq!(menu.rect.height, 24.0);
             assert!(action.rect.x <= menu.rect.x);
             assert!(action.rect.x + action.rect.width >= menu.rect.x + menu.rect.width);
-            assert!(menu.rect.x + menu.rect.width <= width - 18.0);
+            assert!(menu.rect.x + menu.rect.width <= width - 10.0);
             for point in [
                 Point::new(action.rect.x + 3.0, action.rect.y + 14.0),
                 Point::new(menu.rect.x - 22.0, menu.rect.y + 14.0),
@@ -8728,9 +8730,9 @@ pub(crate) mod tests {
         for width in [176.0, 264.0] {
             let mut tree = UiTree::new(session_row(&state, &session, width));
             tree.set_reduced_motion(true);
-            tree.layout(Size::new(width - 18.0, 28.0));
+            tree.layout(Size::new(width - 10.0, 28.0));
             tree.handle_event(UiEvent::PointerMove(Point::new(40.0, 16.0)));
-            let frame = tree.layout(Size::new(width - 18.0, 28.0));
+            let frame = tree.layout(Size::new(width - 10.0, 28.0));
             let clock = frame
                 .commands
                 .iter()

@@ -150,6 +150,8 @@ fn write_frame_svg_with_families(
                     clip_depth -= 1;
                 }
             }
+            // Surfaces this app does not draw.
+            DrawCommand::Glass { .. } | DrawCommand::Record { .. } => {}
             DrawCommand::FillRect {
                 rect,
                 color,
@@ -673,6 +675,8 @@ fn icon_svg(icon: Icon) -> &'static str {
         Icon::BoltFill => include_str!("../../assets/bootstrap/lightning-charge-fill.svg"),
         Icon::ArchiveFill => include_str!("../../assets/bootstrap/archive-fill.svg"),
         Icon::ChartBarFill => include_str!("../../assets/bootstrap/bar-chart-fill.svg"),
+        // Glyphs limn has and this app draws nowhere: nothing to export.
+        _ => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"/>",
     }
 }
 

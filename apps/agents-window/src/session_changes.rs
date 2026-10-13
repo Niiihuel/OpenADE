@@ -1108,15 +1108,6 @@ fn unavailable_changes(
     })
 }
 
-pub fn load_session_changes(
-    storage_root: &Path,
-    session_id: &str,
-    workspace: &Path,
-    events: &[AgentEvent],
-) -> io::Result<SessionChanges> {
-    load_changes(storage_root, session_id, workspace, events, false)
-}
-
 /// The chat's changes since its baseline, or with `last_turn` only those of
 /// its last turn: the files as the turns before it left them are then what
 /// each one is compared against.

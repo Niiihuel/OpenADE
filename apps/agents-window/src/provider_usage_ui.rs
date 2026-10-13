@@ -842,7 +842,7 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
         if let Some(reset) = reset_label(window, now) {
             parts.push(
                 Text::new(reset, theme::component_palette())
-                    .size(10.5)
+                    .font_size(10.5)
                     .muted()
                     .truncate()
                     .render()
@@ -877,7 +877,7 @@ fn popup_account(snapshot: &ProviderUsageSnapshot, now: u64) -> (Element, f32) {
     };
     rows.push(
         Text::new(notice, theme::component_palette())
-            .size(10.5)
+            .font_size(10.5)
             .ink(
                 if stale(snapshot, now) || snapshot.status == ProviderUsageStatus::NeedsSignIn {
                     theme::WARNING

@@ -6629,6 +6629,8 @@ impl AgentsWindow {
     }
 
     fn with_data_root(root: PathBuf) -> Self {
+        // limn speaks English unless told otherwise; this window is Spanish.
+        openide_ui::set_labels(openide_ui::Labels::SPANISH);
         let settings_preferences = SettingsPreferences::load(&root);
         let ide = crate::ide_workspace::IdeWorkspaceState::load(&root);
         let (agent_tool_settings, agent_tool_settings_error) = match AgentToolSettings::load(&root)
