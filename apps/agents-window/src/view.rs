@@ -645,6 +645,8 @@ pub struct ViewState {
     pub(crate) mcp_draft_url: String,
     /// Name of the bearer token environment variable; never the token value.
     pub(crate) mcp_draft_http_bearer_token_env_name: String,
+    /// One `Header=VARIABLE` per line; never a header's value.
+    pub(crate) mcp_draft_http_env_headers: String,
     pub(crate) mcp_draft_oauth_enabled: bool,
     pub(crate) mcp_draft_oauth_client_id: String,
     pub(crate) mcp_draft_oauth_issuer: String,
@@ -4201,6 +4203,7 @@ pub(crate) mod tests {
             mcp_draft_http: false,
             mcp_draft_url: String::new(),
             mcp_draft_http_bearer_token_env_name: String::new(),
+            mcp_draft_http_env_headers: String::new(),
             mcp_draft_oauth_enabled: false,
             mcp_draft_oauth_client_id: String::new(),
             mcp_draft_oauth_issuer: String::new(),
@@ -7362,6 +7365,7 @@ pub(crate) mod tests {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }];
         state.mcp_selected_id = Some("filesystem".into());
         state.mcp_draft_id = "filesystem".into();
@@ -7532,6 +7536,7 @@ pub(crate) mod tests {
                 issuer: "https://auth.example.test".into(),
                 scopes: vec!["read".into()],
             }),
+            http_env_headers: Vec::new(),
         }];
         state.mcp_oauth_status = Some(McpOAuthViewStatus {
             server_id: "remote".into(),
@@ -7712,6 +7717,7 @@ pub(crate) mod tests {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }];
         state.pending_mcp_delete_id = Some("filesystem".into());
         for width in [520.0, 1100.0] {

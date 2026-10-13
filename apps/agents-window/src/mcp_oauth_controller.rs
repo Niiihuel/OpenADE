@@ -428,6 +428,7 @@ mod tests {
                 issuer: "https://auth.example.test".into(),
                 scopes: vec!["read".into()],
             }),
+            http_env_headers: Vec::new(),
         };
         let key = oauth_token_key(&before).unwrap().unwrap();
         assert_eq!(key.resource, "https://mcp.example.test/");

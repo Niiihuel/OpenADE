@@ -313,6 +313,7 @@ mod tests {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }
     }
 

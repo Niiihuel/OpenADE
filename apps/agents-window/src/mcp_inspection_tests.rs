@@ -76,6 +76,7 @@ impl HttpFixture {
             url: Some(format!("{base}/mcp")),
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         };
         let blocked = Arc::new(AtomicBool::new(false));
         let release = Arc::new(AtomicBool::new(false));
@@ -477,6 +478,7 @@ printf 'EOF-CLOSED\n' >> "$log"
         url: None,
         http_bearer_token_env_name: None,
         http_oauth: None,
+        http_env_headers: Vec::new(),
     }
 }
 

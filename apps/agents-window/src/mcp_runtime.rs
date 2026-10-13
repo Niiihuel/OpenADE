@@ -533,6 +533,7 @@ mod tests {
             url: Some(format!("http://{address}/mcp")),
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         };
         let runtime = discover_mcp_runtime(
             &[setting],
@@ -686,6 +687,7 @@ mod tests {
                 url: Some(format!("http://{address}/mcp")),
                 http_bearer_token_env_name: None,
                 http_oauth: None,
+                http_env_headers: Vec::new(),
             }],
             workspace.path(),
             Arc::new(LocalTools::new()),
@@ -734,6 +736,7 @@ mod tests {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -895,6 +898,7 @@ mod tests {
                 url: Some(format!("http://{address}/mcp")),
                 http_bearer_token_env_name: None,
                 http_oauth: None,
+                http_env_headers: Vec::new(),
             }]);
             let cancellation = CancellationToken::new();
             let task_token = cancellation.clone();
@@ -955,6 +959,7 @@ mod tests {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         }
     }
 
@@ -1103,6 +1108,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             url: None,
             http_bearer_token_env_name: None,
             http_oauth: None,
+            http_env_headers: Vec::new(),
         };
         let failure = discover_mcp_runtime(
             &[first, second],

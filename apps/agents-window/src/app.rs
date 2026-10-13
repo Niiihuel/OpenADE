@@ -6856,6 +6856,7 @@ impl AgentsWindow {
             mcp_draft_id: String::new(),
             mcp_draft_url: String::new(),
             mcp_draft_http_bearer_token_env_name: String::new(),
+            mcp_draft_http_env_headers: String::new(),
             mcp_draft_oauth_enabled: false,
             mcp_draft_oauth_client_id: String::new(),
             mcp_draft_oauth_issuer: String::new(),
@@ -9499,6 +9500,7 @@ impl AgentsWindow {
         self.view.mcp_draft_id.clear();
         self.view.mcp_draft_url.clear();
         self.view.mcp_draft_http_bearer_token_env_name.clear();
+        self.view.mcp_draft_http_env_headers.clear();
         self.view.mcp_draft_oauth_enabled = false;
         self.view.mcp_draft_oauth_client_id.clear();
         self.view.mcp_draft_oauth_issuer.clear();
@@ -9551,6 +9553,12 @@ impl AgentsWindow {
         self.view.mcp_draft_url = server.url.unwrap_or_default();
         self.view.mcp_draft_http_bearer_token_env_name =
             server.http_bearer_token_env_name.unwrap_or_default();
+        self.view.mcp_draft_http_env_headers = server
+            .http_env_headers
+            .iter()
+            .map(|entry| format!("{}={}", entry.header, entry.env_name))
+            .collect::<Vec<_>>()
+            .join("\n");
         self.view.mcp_draft_oauth_enabled = server.http_oauth.is_some();
         if let Some(oauth) = server.http_oauth {
             self.view.mcp_draft_oauth_client_id = oauth.client_id;
@@ -9603,12 +9611,27 @@ impl AgentsWindow {
                 }
             }
         };
+        let mut http_env_headers = Vec::new();
+        for line in self.view.mcp_draft_http_env_headers.lines().map(str::trim) {
+            if !self.view.mcp_draft_http || line.is_empty() {
+                continue;
+            }
+            let Some((header, env_name)) = line.split_once('=') else {
+                self.set_settings_notice("Cada encabezado MCP va como Nombre=VARIABLE", true);
+                return;
+            };
+            http_env_headers.push(crate::mcp_settings::McpEnvHeader {
+                header: header.trim().to_owned(),
+                env_name: env_name.trim().to_owned(),
+            });
+        }
         let selected = self.view.mcp_selected_id.clone();
         let enabled = selected
             .as_deref()
             .and_then(|id| self.view.mcp_servers.iter().find(|server| server.id == id))
             .is_some_and(|server| server.enabled);
         let server = crate::mcp_settings::McpServerSettings {
+            http_env_headers,
             id: self.view.mcp_draft_id.trim().to_owned(),
             enabled,
             program: if self.view.mcp_draft_http {
@@ -20424,6 +20447,7 @@ impl AgentsWindow {
                 "mcp_draft_http_bearer_token_env_name" => {
                     self.view.mcp_draft_http_bearer_token_env_name = value
                 }
+                "mcp_draft_http_env_headers" => self.view.mcp_draft_http_env_headers = value,
                 "mcp_draft_oauth_client_id" => self.view.mcp_draft_oauth_client_id = value,
                 "mcp_draft_oauth_issuer" => self.view.mcp_draft_oauth_issuer = value,
                 "mcp_draft_oauth_scopes" => self.view.mcp_draft_oauth_scopes = value,
@@ -28982,6 +29006,7 @@ mod tests {
                 url: None,
                 http_bearer_token_env_name: None,
                 http_oauth: None,
+                http_env_headers: Vec::new(),
             }],
         }
         .save(&app.data_root, &workspace)
