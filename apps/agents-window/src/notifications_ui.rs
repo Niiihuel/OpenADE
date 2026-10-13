@@ -216,12 +216,11 @@ pub(crate) fn settings_group(center: &NotificationCenter, compact: bool) -> Elem
     )
 }
 
-/// Struck through while notices are silenced, solid while something is unread.
+/// Struck through while notices are silenced. What is unread is said by
+/// the count beside it, not by the glyph.
 pub(crate) fn bell_icon(center: &NotificationCenter) -> Icon {
     if center.settings.do_not_disturb {
         Icon::BellSlash
-    } else if center.unread() > 0 {
-        Icon::BellFill
     } else {
         Icon::Bell
     }
@@ -259,11 +258,10 @@ pub(crate) fn bell(center: &NotificationCenter, surface: Color, size: f32, above
     if unread > 0 {
         trigger.insert(
             0,
-            Text::new(unread.min(99).to_string(), theme::component_palette())
-                .role(TextRole::Small)
-                .truncate()
+            openide_ui::Chip::new(unread.min(99).to_string(), theme::component_palette())
+                .height(16.0)
                 .render()
-                .size(None, Some(size)),
+                .centered_y(),
         );
     }
     popover(center, Element::row(trigger).gap(2.0), above)

@@ -440,24 +440,19 @@ fn source_row(
     help: &str,
     width: f32,
 ) -> Element {
+    // One line, as every other row of the card: what a name leaves out is
+    // in its hint.
     let row = |id: &str| {
-        ListRow::new(id, title, block_palette())
+        let row = ListRow::new(id, title, block_palette())
             .leading(preview)
-            .subtitle(detail)
             .title_ink(theme::FOREGROUND)
             .width(width)
-            .sizing(crate::ui_sizing::ENVIRONMENT_SOURCE)
+            .sizing(crate::ui_sizing::ENVIRONMENT_ACTION);
+        if detail.is_empty() { row } else { row.meta(detail) }
     };
     match action {
         Some(action) => Tooltip::new(
-            row(&action)
-                // Centered on the two lines of copy, not on the row.
-                .trailing(
-                    Element::icon(Icon::ChevronRight)
-                        .foreground(theme::FOREGROUND_SUBTLE)
-                        .size(Some(10.0), Some(36.0)),
-                )
-                .render(),
+            row(&action).trailing_icon(Icon::ChevronRight).render(),
             action,
             help,
             theme::component_palette(),
@@ -534,21 +529,14 @@ fn sources(state: &ViewState, width: f32) -> Element {
     }
     let file_count = seen_files.len();
     let citation_count = seen_citations.len();
-    let total = state.composer_attachments.len() + image_count + file_count + citation_count;
-    let mut rows = vec![section_heading("Fuentes", Some(total.to_string()), width)];
-    if total == 0 {
-        rows.push(
-            theme::text_px("Sin fuentes registradas.", 11.5, theme::FOREGROUND_SUBTLE).padding(6.0),
-        );
-        return Element::column(rows).gap(2.0).size(Some(width), None);
+    // What the user gave the chat, then what the agent looked up.
+    let inputs = state.composer_attachments.len() + image_count;
+    let mut rows = Vec::new();
+    if inputs > 0 {
+        rows.push(section_heading("Entradas", Some(inputs.to_string()), width));
     }
     let mut omitted = 0usize;
     if !state.composer_attachments.is_empty() {
-        rows.push(section_heading(
-            "Borrador",
-            Some(state.composer_attachments.len().to_string()),
-            width,
-        ));
         for (index, attachment) in state
             .composer_attachments
             .iter()
@@ -575,7 +563,7 @@ fn sources(state: &ViewState, width: f32) -> Element {
                 Some(action),
                 preview,
                 &attachment.label,
-                &attachment.path,
+                "Borrador",
                 &attachment.path,
                 width,
             ));
@@ -583,11 +571,6 @@ fn sources(state: &ViewState, width: f32) -> Element {
         omitted += state.composer_attachments.len().saturating_sub(GROUP_LIMIT);
     }
     if !images.is_empty() {
-        rows.push(section_heading(
-            "Imágenes enviadas",
-            Some(image_count.to_string()),
-            width,
-        ));
         for (message, image) in images.iter().take(GROUP_LIMIT) {
             let preview = image.raster.as_ref().map_or_else(
                 || Element::icon(Icon::Image).foreground(theme::FOREGROUND_SUBTLE),
@@ -603,18 +586,17 @@ fn sources(state: &ViewState, width: f32) -> Element {
         }
         omitted += image_count.saturating_sub(GROUP_LIMIT);
     }
+    rows.push(section_heading("Fuentes", Some((file_count + citation_count).to_string()), width));
+    if file_count + citation_count == 0 {
+        rows.push(theme::text_px("Aún no hay fuentes.", 11.5, theme::FOREGROUND_SUBTLE).padding(6.0));
+    }
     if !files.is_empty() {
-        rows.push(section_heading(
-            "Archivos consultados",
-            Some(file_count.to_string()),
-            width,
-        ));
         for (index, path) in files.iter().take(GROUP_LIMIT) {
             rows.push(source_row(
                 Some(format!("environment_source_file:{index}")),
                 Element::icon(openide_ui::file_icon(path)).foreground(theme::FOREGROUND_SUBTLE),
                 folder_name(path),
-                path,
+                "",
                 &format!("Abrir archivo consultado\n{path}"),
                 width,
             ));
@@ -622,17 +604,12 @@ fn sources(state: &ViewState, width: f32) -> Element {
         omitted += file_count.saturating_sub(GROUP_LIMIT);
     }
     if !citations.is_empty() {
-        rows.push(section_heading(
-            "Referencias web",
-            Some(citation_count.to_string()),
-            width,
-        ));
         for (index, title, url) in citations.iter().take(GROUP_LIMIT) {
             rows.push(source_row(
                 Some(format!("web_citation_open:{index}")),
                 Element::icon(Icon::Globe).foreground(theme::FOREGROUND_SUBTLE),
                 if title.trim().is_empty() { url } else { title },
-                url,
+                "",
                 url,
                 width,
             ));
@@ -1100,7 +1077,7 @@ fn subagent_rows(state: &ViewState, width: f32) -> Vec<Element> {
     if going > 0 {
         rows.push(Element::row(vec![
             Button::new("environment_subagents_stop", "Detener todos", block_button_palette())
-                .icon(Icon::Stop)
+                .icon(Icon::StopFill)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Compact)
                 .tooltip("Cancelar los subagentes en curso de esta conversación")
@@ -1143,13 +1120,15 @@ fn terminal_rows(state: &ViewState, width: f32) -> Vec<Element> {
             let mut row = vec![row];
             if agent.ended.is_none() {
                 row.push(
+                    // The composer's stop: a solid mark on a white disc.
                     IconButton::new(
                         format!("environment_terminal_stop:{}", agent.id),
-                        Icon::Stop,
-                        block_palette(),
+                        Icon::StopFill,
+                        crate::composer_ui::round_action_palette(true),
                     )
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Regular)
+                    .variant(ButtonVariant::Subtle)
+                    .size(ControlSize::Dense)
+                    .round()
                     .tooltip_with(TooltipSpec::new("Detener").placement(TooltipPlacement::Above))
                     .dispatch_as(format!("terminal_close:{}", agent.id))
                     .render()
@@ -1176,15 +1155,20 @@ fn details(state: &ViewState, width: f32) -> Vec<Element> {
     } else {
         "Dato no disponible".into()
     };
+    // What the chat made, what it was given and what it read, in the order
+    // a summary of it is read; then the tools it works with.
+    let mut made = vec![theme::text_px(&changes_detail, 10.5, theme::FOREGROUND_SUBTLE).centered_y()];
+    if changes.available {
+        made.push(counts(changes.additions, changes.deletions).centered_y());
+    }
     let mut rows = vec![
+        section_heading("Resultados", None, width),
         action_row(
             "environment_changes_open",
             Icon::Code,
             "Cambios del chat",
-            &changes_detail,
-            changes
-                .available
-                .then(|| counts(changes.additions, changes.deletions).centered_y()),
+            "",
+            Some(Element::row(made).gap(6.0)),
             &changes_help_summary(changes),
             width,
         ),
@@ -1707,7 +1691,7 @@ pub(crate) mod tests {
         saved_action(&mut state);
         state.environment.details_expanded = true;
         // Without sources the list says so.
-        assert!(texts(&frame(&state, 380.0, 1100.0)).contains(&"Sin fuentes registradas."));
+        assert!(texts(&frame(&state, 380.0, 1100.0)).contains(&"Aún no hay fuentes."));
         state.transcript = vec![
             TranscriptItem::Tool {
                 id: "read".into(),

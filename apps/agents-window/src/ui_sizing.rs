@@ -277,20 +277,6 @@ pub const ENVIRONMENT_ACTION: RowSizing = RowSizing {
     ..RowSizing::COMPACT
 };
 
-/// A source the conversation used: a 30 px preview beside two lines of 18.
-pub const ENVIRONMENT_SOURCE: RowSizing = RowSizing {
-    height: Some(48.0),
-    two_line_height: Some(48.0),
-    padding: 5.0,
-    gap: 5.0,
-    leading_width: 30.0,
-    subtitle_size: 10.5,
-    copy_gap: 0.0,
-    title_height: Some(18.0),
-    subtitle_height: Some(18.0),
-    ..RowSizing::COMPACT
-};
-
 /// The sidebar's account row: two lines of 16 beside a mark as tall as both.
 pub const USAGE_ANCHOR: RowSizing = RowSizing {
     height: Some(44.0),
