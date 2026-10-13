@@ -295,10 +295,14 @@ pasos de una exploración, que se distinguen por su nodo apagado. Una llamada
 que falló dice el motivo donde iría su destino; el destino queda en el
 tooltip. Una llamada sobre un comando iniciado antes nombra ese comando, no
 el identificador de su sesión. El encabezado de cada turno lleva su cantidad
-de llamadas al final de la línea, y su título se acorta antes que ella. El
-detalle de la llamada elegida sigue bajo el registro: la lista es virtual y
-de paso fijo, y abrirlo debajo de su línea necesita una lista virtual de
-alturas variables que limn todavía no tiene.
+de llamadas al final de la línea, y su título se acorta antes que ella.
+
+El detalle de la llamada elegida se abre debajo de su propia línea, con el
+resorte de limn, y el riel sigue a su lado hasta la línea siguiente. La línea
+es su encabezado: volver a elegirla lo cierra, en el mismo lugar. La lista
+sigue siendo virtual (`ScrollArea::uniform_list(…).expansion(…)`, limn
+v0.1.31). Una llamada que el registro no lista, por un turno plegado o un
+filtro, muestra su detalle bajo el registro, con encabezado y cierre propios.
 
 ## Navegador
 
