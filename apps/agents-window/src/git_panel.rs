@@ -38,6 +38,8 @@ pub(crate) struct GitPanelView {
     pub viewed: std::collections::BTreeSet<String>,
     /// The block of the open diff that its tools act on, counted from zero.
     pub hunk: usize,
+    /// The pull request being written, while its form is open.
+    pub pull: Option<crate::github::PullDraft>,
 }
 
 /// A change as it was when it was marked viewed: its file, its section and
@@ -854,7 +856,7 @@ fn status_line(state: &ViewState, width: f32) -> Option<Element> {
     })
 }
 
-fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
+fn github_footer(status: &GithubStatus, pull: Option<&crate::github::PullDraft>, surface: Color) -> Option<Element> {
     let palette = theme::action_palette(surface, theme::FOREGROUND);
     match status {
         GithubStatus::Ready(github) => {
@@ -895,16 +897,38 @@ fn github_footer(status: &GithubStatus, surface: Color) -> Option<Element> {
                     );
                 }
             } else if github.branch != "HEAD separado" {
-                for (id, label) in [
-                    ("github_pr_create", "Crear pull request"),
-                    ("github_pr_create_draft", "Crear pull request en borrador"),
-                ] {
-                    rows.push(
-                        Button::new(id, label, palette)
-                            .variant(ButtonVariant::Ghost)
-                            .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+                let button = |id: &str, label: &str| {
+                    Button::new(id, label, palette)
+                        .variant(ButtonVariant::Ghost)
+                        .sizing(crate::ui_sizing::SMALL_LABEL_BUTTON)
+                        .render()
+                };
+                match pull {
+                    None => rows.push(button("github_pr_create", "Crear pull request")),
+                    // Whatever is left empty is filled in when it is sent.
+                    Some(pull) => {
+                        let field = |id: &str, value: &str, hint: &str| {
+                            openide_ui::TextField::new(id, value, hint, theme::component_palette()).size(ControlSize::Regular).render()
+                        };
+                        rows.push(field("github_pr_title", &pull.title, "Título (vacío: el del último commit)"));
+                        rows.push(
+                            TextArea::new(
+                                "github_pr_body",
+                                &pull.body,
+                                "Descripción (vacía: la del último commit)",
+                                theme::action_palette(theme::BACKGROUND, theme::FOREGROUND),
+                            )
+                            .height(64.0)
+                            .radius(RadiusRole::Surface)
                             .render(),
-                    );
+                        );
+                        rows.push(field("github_pr_base", &pull.base, "Rama base (vacía: la principal)"));
+                        rows.push(Element::row(vec![
+                            button("github_pr_submit", "Crear"),
+                            button("github_pr_submit_draft", "Crear borrador"),
+                            button("github_pr_cancel", "Cancelar"),
+                        ]));
+                    }
                 }
             }
             // Keep repository access issues visible without making them the
@@ -1408,7 +1432,7 @@ pub(super) fn navigator_body(state: &ViewState, width: f32) -> Element {
             .render(),
         );
     }
-    if let Some(footer) = github_footer(&review.github, surface) {
+    if let Some(footer) = github_footer(&review.github, state.git_panel.pull.as_ref(), surface) {
         children.push(Separator::horizontal(theme::component_palette()).render());
         children.push(footer);
     }
@@ -2207,10 +2231,15 @@ mod tests {
                 pulls,
                 notice: None,
             });
-            let mut tree = UiTree::new(github_footer(&status, theme::BACKGROUND).unwrap());
-            let frame = tree.layout(Size::new(320.0, 200.0));
-            ["github_pr_create", "github_pr_create_draft"]
-                .map(|id| frame.regions.iter().any(|region| region.id == id))
+            let form = Some(crate::github::PullDraft::default());
+            let ids = |form: Option<&crate::github::PullDraft>| {
+                let frame = UiTree::new(github_footer(&status, form, theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 320.0));
+                let ids: Vec<String> = frame.regions.iter().map(|region| region.id.to_string()).collect();
+                ids
+            };
+            // Closed it offers to open one; open it asks what to open it with.
+            let asked = ["github_pr_title", "github_pr_body", "github_pr_base", "github_pr_submit", "github_pr_submit_draft", "github_pr_cancel"];
+            [ids(None).iter().any(|id| id == "github_pr_create"), asked.iter().all(|id| ids(form.as_ref()).iter().any(|known| known == id))]
         };
         assert_eq!(offered("topic", vec![]), [true, true]);
         assert_eq!(offered("HEAD separado", vec![]), [false, false]);
@@ -2232,7 +2261,7 @@ mod tests {
             pulls: vec![open],
             notice: None,
         });
-        let frame = UiTree::new(github_footer(&status, theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 200.0));
+        let frame = UiTree::new(github_footer(&status, None, theme::BACKGROUND).unwrap()).layout(Size::new(320.0, 200.0));
         assert!(texts(&frame).contains(&"Checks fallando"), "{:?}", texts(&frame));
     }
 
@@ -2249,7 +2278,7 @@ mod tests {
             pulls: vec![],
             notice: None,
         });
-        let mut tree = UiTree::new(github_footer(&status, theme::BACKGROUND).unwrap());
+        let mut tree = UiTree::new(github_footer(&status, None, theme::BACKGROUND).unwrap());
         let frame = tree.layout(Size::new(320.0, 44.0));
         let target = frame
             .regions
