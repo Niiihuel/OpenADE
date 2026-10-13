@@ -2,8 +2,9 @@
 //!
 //! A 401 challenge is discovered with a read-only Streamable HTTP GET. The
 //! authorization URL remains in the local UI state and never enters settings
-//! or an agent journal. The loopback callback persists tokens in the Windows
-//! user vault before reporting success.
+//! or an agent journal. The loopback callback persists tokens in the user's
+//! vault (Windows) or in private files of the application's data (Unix)
+//! before reporting success.
 
 use crate::mcp_settings::McpServerSettings;
 use openide_harness::{McpHttpConfig, OAuthError, OAuthSession, TokenKey, TokenStore};
@@ -264,9 +265,22 @@ fn oauth_error(error: OAuthError) -> String {
         OAuthError::Cancelled => "Autorización MCP cancelada".to_owned(),
         OAuthError::Denied => "El usuario denegó la autorización MCP".to_owned(),
         OAuthError::Timeout => "La autorización MCP agotó el tiempo".to_owned(),
-        OAuthError::Store => "No se pudo acceder a Credential Manager para MCP".to_owned(),
+        OAuthError::Store => "No se pudo acceder al almacén de credenciales MCP".to_owned(),
         _ => format!("No se pudo completar OAuth MCP: {error}"),
     }
+}
+
+/// Where OAuth grants are kept on a system without a credential vault: a
+/// directory of the application's data, private to the user.
+#[cfg(unix)]
+static TOKEN_ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Says where the application keeps its data. Called once, at start.
+pub(crate) fn set_token_root(data_root: &std::path::Path) {
+    #[cfg(unix)]
+    let _ = TOKEN_ROOT.set(data_root.join("mcp-oauth"));
+    #[cfg(not(unix))]
+    let _ = data_root;
 }
 
 pub(crate) fn platform_token_store() -> Result<Arc<dyn TokenStore>, String> {
@@ -274,9 +288,16 @@ pub(crate) fn platform_token_store() -> Result<Arc<dyn TokenStore>, String> {
     {
         Ok(Arc::new(openide_harness::WindowsCredentialTokenStore::new()))
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
-        Err("OAuth MCP persistente requiere Credential Manager en Windows".to_owned())
+        TOKEN_ROOT
+            .get()
+            .map(|root| Arc::new(openide_harness::FileTokenStore::new(root)) as Arc<dyn TokenStore>)
+            .ok_or_else(|| "El almacén de credenciales MCP todavía no está disponible".to_owned())
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        Err("OAuth MCP no tiene dónde guardar credenciales en este sistema".to_owned())
     }
 }
 
@@ -332,7 +353,7 @@ pub(crate) fn forget_oauth_registration(server: &McpServerSettings) -> Result<()
     let Some(key) = oauth_token_key(server)? else {
         return Ok(());
     };
-    #[cfg(windows)]
+    #[cfg(any(windows, unix))]
     {
         let store = platform_token_store()?;
         std::thread::Builder::new()
@@ -348,9 +369,9 @@ pub(crate) fn forget_oauth_registration(server: &McpServerSettings) -> Result<()
             .join()
             .map_err(|_| "Falló el borrado de credenciales MCP".to_owned())?
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, unix)))]
     {
-        // The current host has no Windows Credential Manager entry to remove.
+        // This host keeps no grant to remove.
         let _ = key;
         Ok(())
     }

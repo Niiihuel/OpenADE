@@ -7206,7 +7206,10 @@ impl AgentsWindow {
             toast_shown: false,
             settings_notice_seen: None,
             // An unreadable file reviews with the selected model.
-            review_model_settings: crate::review_model::ReviewModelSettings::load(&root).unwrap_or_default(),
+            review_model_settings: {
+                crate::mcp_oauth_controller::set_token_root(&root);
+                crate::review_model::ReviewModelSettings::load(&root).unwrap_or_default()
+            },
             // An unreadable file falls back to automatic detection.
             agent_cli_paths: crate::agent_cli_definitions::AgentCliPaths::load(&root)
                 .unwrap_or_default(),

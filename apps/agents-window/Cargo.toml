@@ -44,7 +44,7 @@ portable-pty = "0.9.0"
 vt100 = "0.16.2"
 unicode-segmentation = "1.12"
 trash = "5"
-toml_edit = "0.25"
+toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 
 [dev-dependencies]
 tempfile = "3"
